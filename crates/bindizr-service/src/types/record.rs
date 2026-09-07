@@ -79,9 +79,8 @@ pub struct CreateRecordRequest {
     pub zone_name: String,
 }
 
-/// A record's data fields, used both as a bulk-insertion entry and as the
-/// record update request body. The zone is taken from the request path, so
-/// unlike [`CreateRecordRequest`] it carries no `zone_name`.
+/// A record's data fields for a bulk insertion; the zone comes from the
+/// request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordItem {
     #[schema(example = "sub")]
@@ -106,14 +105,26 @@ pub struct CreateBulkRecordsRequest {
     pub dry_run: bool,
 }
 
-/// A partial record update; an omitted field keeps the current value. Merged
-/// inside the update transaction so a concurrent write is not lost.
-#[derive(Serialize, Deserialize, Debug, Default)]
-pub struct UpdateRecordPatch {
+/// Request body for updating a record; an omitted field keeps the current
+/// value, merged inside the update transaction. `value` is required when
+/// `record_type` changes.
+#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+pub struct UpdateRecordRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "sub")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "A")]
     pub record_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<RecordValueRequest>,
+    /// Records sharing a name and type share one TTL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    /// MX and SRV priority; other record types reject it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 10)]
     pub priority: Option<i32>,
 }
 

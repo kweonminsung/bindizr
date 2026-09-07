@@ -9,8 +9,8 @@ use bindizr_service::{
     record::RecordService,
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
-        GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse, RecordItem,
-        RecordResponse,
+        GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse, RecordResponse,
+        UpdateRecordRequest,
     },
 };
 use serde::Deserialize;
@@ -139,10 +139,11 @@ pub(crate) async fn create_record(
         path = "/records/{record_id}",
         tag = "Record",
         summary = "Update a specific DNS record",
+        description = "Applies the given fields and keeps the rest. `value` is required when `record_type` changes, since a stored value is encoded per type.",
         params(
             ("record_id" = i32, Path, description = "The ID of the DNS record to update.")
         ),
-        request_body = RecordItem,
+        request_body = UpdateRecordRequest,
         responses(
             (status = 200, description = "DNS record updated successfully", body = RecordResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
@@ -158,7 +159,7 @@ pub(crate) async fn create_record(
 pub(crate) async fn update_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
-    JsonBody(body): JsonBody<RecordItem>,
+    JsonBody(body): JsonBody<UpdateRecordRequest>,
 ) -> Result<Response, ApiError> {
     let raw_record = RecordService::update(&caller, params.record_id, &body).await?;
 

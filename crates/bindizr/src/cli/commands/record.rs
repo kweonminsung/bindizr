@@ -1,6 +1,6 @@
 use bindizr_service::types::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-    GetRecordsFilter, RecordItem, RecordValueRequest, UpdateRecordPatch,
+    GetRecordsFilter, RecordItem, RecordValueRequest, UpdateRecordRequest,
 };
 use clap::Subcommand;
 
@@ -328,7 +328,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     DaemonCommandKind::UpdateRecord,
                     UpdateRecordParams {
                         id,
-                        patch: UpdateRecordPatch {
+                        request: UpdateRecordRequest {
                             name,
                             record_type,
                             value: value.map(RecordValueRequest::String),

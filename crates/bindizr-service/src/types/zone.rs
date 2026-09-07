@@ -48,7 +48,7 @@ impl GetZoneResponse {
     }
 }
 
-/// Request body for creating or updating a zone.
+/// Request body for creating a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct CreateZoneRequest {
     #[schema(example = "example.com")]
@@ -100,18 +100,38 @@ pub struct GetZonesFilter {
     pub offset: Option<u64>,
 }
 
-/// A partial zone update; an omitted field keeps the current value, merged
-/// inside the update transaction. `serial` is carried only to be rejected.
-#[derive(Serialize, Deserialize, Debug, Default)]
-pub struct UpdateZonePatch {
-    pub new_name: Option<String>,
+/// Request body for updating a zone; an omitted field keeps the current
+/// value, merged inside the update transaction. `serial` is carried only to
+/// be rejected: it is fixed at creation.
+#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+pub struct UpdateZoneRequest {
+    /// A different name renames the zone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "example.com")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "ns1.example.com")]
     pub mname: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "admin@example.com")]
     pub rname: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 3600)]
     pub default_ttl: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 7200)]
     pub refresh: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 3600)]
     pub retry: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 604800)]
     pub expire: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 3600)]
     pub minimum_ttl: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 42)]
     pub serial: Option<i32>,
 }
 

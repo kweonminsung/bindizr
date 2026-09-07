@@ -55,11 +55,11 @@ pub(crate) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
     })
 }
 
-/// Handle the `UpdateZone` command by applying a partial-update patch.
+/// Handle the `UpdateZone` command by applying a partial update.
 pub(crate) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateZoneParams = parse_params(data)?;
 
-    let zone = ZoneService::patch(&Caller::Global, &params.name, &params.patch).await?;
+    let zone = ZoneService::update(&Caller::Global, &params.zone_name, &params.request).await?;
     Ok(DaemonResponse {
         message: "Zone updated successfully".to_string(),
         data: to_response_data(GetZoneResponse::from_zone(&zone))?,

@@ -42,7 +42,7 @@ pub use pagination::{PaginatedResponse, Pagination};
 pub(crate) use record::display_record_value_request;
 pub use record::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-    GetRecordsFilter, RecordItem, RecordResponse, RecordValueRequest, UpdateRecordPatch,
+    GetRecordsFilter, RecordItem, RecordResponse, RecordValueRequest, UpdateRecordRequest,
 };
 pub use token::{
     CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenListResponse, TokenResponse,
@@ -61,5 +61,6 @@ pub use version::{
 };
 pub use zone::{
     CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter, NotifyZoneRequest,
-    SecondaryStatusResponse, UpdateZonePatch, ZoneDetailResponse, ZoneResponse, ZoneStatusResponse,
+    SecondaryStatusResponse, UpdateZoneRequest, ZoneDetailResponse, ZoneResponse,
+    ZoneStatusResponse,
 };

@@ -69,6 +69,20 @@ async fn zone_create_read_update_delete() {
     let actual_updated_zone_name = body["zone"]["name"].as_str().unwrap();
     assert_eq!(actual_updated_zone_name, updated_zone_name);
 
+    // A partial update keeps every omitted field.
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{actual_updated_zone_name}"),
+            Some(json!({ "default_ttl": 300 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["zone"]["default_ttl"], 300);
+    assert_eq!(body["zone"]["mname"], "ns2.external-dns.net");
+    assert_eq!(body["zone"]["rname"], "admin@updated-test.com");
+    assert_eq!(body["zone"]["refresh"], 14400);
+
     let (status, _) = app
         .request(
             Method::DELETE,

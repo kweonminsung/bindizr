@@ -667,6 +667,7 @@ paths:
       tags:
       - Record
       summary: Update a specific DNS record
+      description: Applies the given fields and keeps the rest. `value` is required when `record_type` changes, since a stored value is encoded per type.
       operationId: update_record
       parameters:
       - name: record_id
@@ -680,7 +681,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RecordItem'
+              $ref: '#/components/schemas/UpdateRecordRequest'
         required: true
       responses:
         '200':
@@ -1731,6 +1732,7 @@ paths:
       tags:
       - Zone
       summary: Update a specific DNS zone
+      description: Applies the given fields and keeps the rest; a different `name` renames the zone. The serial advances by itself and cannot be set here.
       operationId: update_zone
       parameters:
       - name: name
@@ -1743,7 +1745,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateZoneRequest'
+              $ref: '#/components/schemas/UpdateZoneRequest'
         required: true
       responses:
         '200':
@@ -3235,7 +3237,7 @@ components:
           example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
     CreateZoneRequest:
       type: object
-      description: Request body for creating or updating a zone.
+      description: Request body for creating a zone.
       required:
       - name
       - mname
@@ -4406,9 +4408,8 @@ components:
     RecordItem:
       type: object
       description: |-
-        A record's data fields, used both as a bulk-insertion entry and as the
-        record update request body. The zone is taken from the request path, so
-        unlike [`CreateRecordRequest`] it carries no `zone_name`.
+        A record's data fields for a bulk insertion; the zone comes from the
+        request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
       required:
       - name
       - record_type
@@ -4695,9 +4696,102 @@ components:
           - 'null'
           description: |-
             Policy to move the signed zone to; it must share the zone's denial
-            mode and key layout, and a different algorithm starts an algorithm
-            rollover.
+            mode and key layout, and a new algorithm starts a rollover.
           example: strict
+    UpdateRecordRequest:
+      type: object
+      description: |-
+        Request body for updating a record; an omitted field keeps the current
+        value, merged inside the update transaction. `value` is required when
+        `record_type` changes.
+      properties:
+        name:
+          type:
+          - string
+          - 'null'
+          example: sub
+        priority:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: MX and SRV priority; other record types reject it.
+          example: 10
+        record_type:
+          type:
+          - string
+          - 'null'
+          example: A
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Records sharing a name and type share one TTL.
+          example: 3600
+        value:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/RecordValueRequest'
+    UpdateZoneRequest:
+      type: object
+      description: |-
+        Request body for updating a zone; an omitted field keeps the current
+        value, merged inside the update transaction. `serial` is carried only to
+        be rejected: it is fixed at creation.
+      properties:
+        default_ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 3600
+        expire:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 604800
+        minimum_ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 3600
+        mname:
+          type:
+          - string
+          - 'null'
+          example: ns1.example.com
+        name:
+          type:
+          - string
+          - 'null'
+          description: A different name renames the zone.
+          example: example.com
+        refresh:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 7200
+        retry:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 3600
+        rname:
+          type:
+          - string
+          - 'null'
+          example: admin@example.com
+        serial:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 42
     VersionDetailResponse:
       type: object
       description: One version plus the reconstructed records at that serial.

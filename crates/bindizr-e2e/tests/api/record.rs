@@ -70,6 +70,19 @@ async fn record_create_read_update_delete() {
     assert_eq!(body["record"]["name"], format!("api-updated.{zone_name}."));
     assert_eq!(body["record"]["value"], "192.168.1.202");
 
+    // A partial update keeps every omitted field.
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/records/{record_id}"),
+            Some(json!({ "ttl": 600 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["record"]["ttl"], 600);
+    assert_eq!(body["record"]["name"], format!("api-updated.{zone_name}."));
+    assert_eq!(body["record"]["value"], "192.168.1.202");
+
     let (status, _) = app
         .request(Method::DELETE, &format!("/records/{record_id}"), None)
         .await;

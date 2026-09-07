@@ -17,7 +17,7 @@ use crate::{
     record::RecordService,
     repository::RepositoryService,
     serial::generate_serial,
-    types::{CreateZoneRequest, UpdateZonePatch},
+    types::{CreateZoneRequest, UpdateZoneRequest},
     zone::validation::{ResolvedSoaTimers, normalize_soa_timers, validate_create_zone_request},
 };
 
@@ -60,57 +60,35 @@ pub(crate) fn soa_replacement_changes(
 }
 
 impl ZoneService {
-    /// Full replacement (HTTP PUT): the request supplies every field.
+    /// Omitted fields keep the stored zone's value; the merge runs inside the
+    /// transaction, against the locked row.
     pub async fn update(
         caller: &Caller,
         zone_name: &str,
-        request: &CreateZoneRequest,
+        request: &UpdateZoneRequest,
     ) -> Result<Zone, ServiceError> {
         caller.require_global("update zones")?;
         validate_serial_absent(request.serial)?;
-        Self::update_locked(zone_name, |_existing| CreateZoneRequest {
-            name: request.name.clone(),
-            mname: request.mname.clone(),
-            rname: request.rname.clone(),
-            default_ttl: request.default_ttl,
+        Self::update_locked(zone_name, |existing| CreateZoneRequest {
+            name: request
+                .name
+                .clone()
+                .unwrap_or_else(|| existing.name.to_string()),
+            mname: request
+                .mname
+                .clone()
+                .unwrap_or_else(|| existing.mname.clone()),
+            rname: request
+                .rname
+                .clone()
+                .unwrap_or_else(|| existing.rname.clone()),
+            default_ttl: request.default_ttl.unwrap_or(existing.default_ttl),
             serial: None,
+            // Omitted timers fall back to the existing zone in normalize_soa_timers.
             refresh: request.refresh,
             retry: request.retry,
             expire: request.expire,
             minimum_ttl: request.minimum_ttl,
-        })
-        .await
-    }
-
-    /// Partial update (CLI): omitted fields keep the stored zone's value. The
-    /// merge runs inside the transaction, against the locked row.
-    pub async fn patch(
-        caller: &Caller,
-        zone_name: &str,
-        patch: &UpdateZonePatch,
-    ) -> Result<Zone, ServiceError> {
-        caller.require_global("update zones")?;
-        validate_serial_absent(patch.serial)?;
-        Self::update_locked(zone_name, |existing| CreateZoneRequest {
-            name: patch
-                .new_name
-                .clone()
-                .unwrap_or_else(|| existing.name.to_string()),
-            mname: patch
-                .mname
-                .clone()
-                .unwrap_or_else(|| existing.mname.clone()),
-            rname: patch
-                .rname
-                .clone()
-                .unwrap_or_else(|| existing.rname.clone()),
-            default_ttl: patch.default_ttl.unwrap_or(existing.default_ttl),
-            serial: None,
-            // Omitted timers fall back to the existing zone in normalize_soa_timers.
-            refresh: patch.refresh,
-            retry: patch.retry,
-            expire: patch.expire,
-            minimum_ttl: patch.minimum_ttl,
         })
         .await
     }

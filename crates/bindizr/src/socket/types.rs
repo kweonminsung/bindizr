@@ -3,7 +3,7 @@ use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest,
     ImportDnssecKeyRequest, ImportZoneFileRequest, ImportZoneFromServerRequest,
     RollbackZoneRequest, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
-    UpdateDnssecSettingsRequest, UpdateRecordPatch, UpdateZonePatch,
+    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateZoneRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -175,16 +175,16 @@ pub(crate) struct BulkCreateRecordsParams {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct UpdateZoneParams {
-    pub(crate) name: String,
+    pub(crate) zone_name: String,
     #[serde(flatten)]
-    pub(crate) patch: UpdateZonePatch,
+    pub(crate) request: UpdateZoneRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct UpdateRecordParams {
     pub(crate) id: i32,
     #[serde(flatten)]
-    pub(crate) patch: UpdateRecordPatch,
+    pub(crate) request: UpdateRecordRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

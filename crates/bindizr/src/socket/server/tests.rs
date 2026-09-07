@@ -38,25 +38,25 @@ fn parse_params_rejects_wrongly_typed_fields() {
 
 #[test]
 fn command_payloads_round_trip_between_client_and_server() {
-    use bindizr_service::types::{RollbackZoneRequest, UpdateZonePatch};
+    use bindizr_service::types::{RollbackZoneRequest, UpdateZoneRequest};
 
     use crate::socket::types::{RollbackZoneParams, UpdateZoneParams};
 
     // The CLI serializes these and the daemon parses them back, so a flattened
     // request body must survive the round trip alongside its target field.
     let sent = serde_json::to_value(UpdateZoneParams {
-        name: "example.com".to_string(),
-        patch: UpdateZonePatch {
-            new_name: Some("new.example.com".to_string()),
+        zone_name: "example.com".to_string(),
+        request: UpdateZoneRequest {
+            name: Some("new.example.com".to_string()),
             default_ttl: Some(300),
-            ..UpdateZonePatch::default()
+            ..UpdateZoneRequest::default()
         },
     })
     .unwrap();
     let parsed: UpdateZoneParams = parse_params(&sent).unwrap();
-    assert_eq!(parsed.name, "example.com");
-    assert_eq!(parsed.patch.new_name.as_deref(), Some("new.example.com"));
-    assert_eq!(parsed.patch.default_ttl, Some(300));
+    assert_eq!(parsed.zone_name, "example.com");
+    assert_eq!(parsed.request.name.as_deref(), Some("new.example.com"));
+    assert_eq!(parsed.request.default_ttl, Some(300));
 
     let sent = serde_json::to_value(RollbackZoneParams {
         name: "example.com".to_string(),

@@ -10,8 +10,9 @@ use bindizr_service::{
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
         ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, PaginatedResponse,
-        RollbackZoneRequest, RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse,
-        ZoneDetailResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
+        RollbackZoneRequest, RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse,
+        VersionDiffResponse, ZoneDetailResponse, ZoneResponse, ZoneStatusResponse,
+        ZoneVersionResponse,
     },
     zone::ZoneService,
 };
@@ -356,10 +357,11 @@ pub(crate) async fn create_zone(
         path = "/zones/{name}",
         tag = "Zone",
         summary = "Update a specific DNS zone",
+        description = "Applies the given fields and keeps the rest; a different `name` renames the zone. The serial advances by itself and cannot be set here.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to update.")
         ),
-        request_body = CreateZoneRequest,
+        request_body = UpdateZoneRequest,
         responses(
             (status = 200, description = "DNS zone updated successfully", body = ZoneResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
@@ -375,7 +377,7 @@ pub(crate) async fn create_zone(
 pub(crate) async fn update_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
-    JsonBody(body): JsonBody<CreateZoneRequest>,
+    JsonBody(body): JsonBody<UpdateZoneRequest>,
 ) -> Result<Response, ApiError> {
     let zone = ZoneService::update(&caller, &params.name, &body).await?;
     let response = ZoneResponse {

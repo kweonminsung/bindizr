@@ -50,13 +50,13 @@ pub(crate) async fn create_record(
     })
 }
 
-/// Handle the `UpdateRecord` command by applying a partial-update patch.
+/// Handle the `UpdateRecord` command by applying a partial update.
 pub(crate) async fn update_record(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordParams = parse_params(data)?;
 
-    let record = RecordService::patch(&Caller::Global, params.id, &params.patch).await?;
+    let record = RecordService::update(&Caller::Global, params.id, &params.request).await?;
     Ok(DaemonResponse {
         message: "Record updated successfully".to_string(),
         data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,

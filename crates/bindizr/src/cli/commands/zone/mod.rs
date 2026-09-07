@@ -6,7 +6,7 @@ mod version;
 use bindizr_service::types::{
     CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
     ImportMode as ServiceImportMode, ImportZoneFileRequest, ImportZoneFileResponse,
-    ImportZoneFromServerRequest, NotifyZoneRequest, UpdateZonePatch, ZoneStatusResponse,
+    ImportZoneFromServerRequest, NotifyZoneRequest, UpdateZoneRequest, ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -350,9 +350,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     DaemonCommandKind::UpdateZone,
                     // `name` looks up the zone; `new_name` renames it.
                     UpdateZoneParams {
-                        name,
-                        patch: UpdateZonePatch {
-                            new_name,
+                        zone_name: name,
+                        request: UpdateZoneRequest {
+                            name: new_name,
                             mname,
                             rname,
                             default_ttl,
