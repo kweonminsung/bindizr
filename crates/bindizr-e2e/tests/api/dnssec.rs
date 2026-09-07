@@ -72,14 +72,6 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(body["dnssec"]["enabled"], true);
     assert_eq!(body["dnssec"]["keys"][0]["key_tag"], key_tag);
 
-    let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/dnssec/ds"), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let ds_records = body["ds_records"].as_array().unwrap();
-    assert_eq!(ds_records.len(), 1);
-    assert_eq!(ds_records[0]["key_tag"], key_tag);
-
     let (status, _) = app
         .request(
             Method::POST,
@@ -831,11 +823,22 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED");
 
+    // A settings change must name something to change.
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "INVALID_INPUT");
+
     let parent = FakeParent::start();
     let (status, body) = app
         .request(
             Method::PUT,
-            &format!("/zones/{zone_name}/dnssec/parent-ns-addrs"),
+            &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": format!(" {} ,", parent.addr()) })),
         )
         .await;
@@ -846,7 +849,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
     let (status, body) = app
         .request(
             Method::PUT,
-            &format!("/zones/{zone_name}/dnssec/parent-ns-addrs"),
+            &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": "" })),
         )
         .await;
@@ -856,7 +859,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
     let (status, _) = app
         .request(
             Method::PUT,
-            &format!("/zones/{zone_name}/dnssec/parent-ns-addrs"),
+            &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": parent.addr() })),
         )
         .await;

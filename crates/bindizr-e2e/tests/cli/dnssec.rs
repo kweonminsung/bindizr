@@ -27,8 +27,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
     let key_tag = signing_key_tag(&app, &zone_name).await;
     assert!(key_tag > 0);
 
-    let ds = app.run_cli_success(&["dnssec", "ds", &zone_name]).await;
-    assert!(ds.contains(&format!("IN DS {key_tag} ")), "{ds}");
+    assert!(status.contains(&format!("IN DS {key_tag} ")), "{status}");
 
     // Same algorithm, denial, and key layout as `default`: the move only
     // changes the timing, so no rollover starts.
@@ -45,7 +44,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
     ])
     .await;
     let moved = app
-        .run_cli_success(&["dnssec", "set", "policy", &zone_name, &policy_name])
+        .run_cli_success(&["dnssec", "set", &zone_name, "--policy", &policy_name])
         .await;
     // The policy row of the status output carries the new timing.
     assert!(
@@ -375,14 +374,20 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
     );
 
     let cleared = app
-        .run_cli_success(&["dnssec", "set", "parent-ns-addrs", &zone_name, "--clear"])
+        .run_cli_success(&["dnssec", "set", &zone_name, "--clear-parent-ns-addrs"])
         .await;
     assert!(
         cleared.contains("Parent nameservers: discovered through the system resolver"),
         "{cleared}"
     );
     let set = app
-        .run_cli_success(&["dnssec", "set", "parent-ns-addrs", &zone_name, &parent_addr])
+        .run_cli_success(&[
+            "dnssec",
+            "set",
+            &zone_name,
+            "--parent-ns-addrs",
+            &parent_addr,
+        ])
         .await;
     assert!(
         set.contains(&format!("Parent nameservers: {parent_addr}")),

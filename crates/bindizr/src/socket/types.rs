@@ -2,8 +2,8 @@ use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest,
     ImportDnssecKeyRequest, ImportZoneFileRequest, ImportZoneFromServerRequest,
-    RollbackZoneRequest, RolloverDnssecRequest, SetDnssecParentNsAddrsRequest,
-    SetZoneDnssecPolicyRequest, UpdateDnssecPolicyRequest, UpdateRecordPatch, UpdateZonePatch,
+    RollbackZoneRequest, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
+    UpdateDnssecSettingsRequest, UpdateRecordPatch, UpdateZonePatch,
 };
 use serde::{Deserialize, Serialize};
 
@@ -60,9 +60,8 @@ pub(crate) enum DaemonCommandKind {
     ZoneDnssecRolloverDsSeen,
     ZoneDnssecWithdraw,
     ZoneDnssecWithdrawCancel,
-    ZoneDnssecSetPolicy,
+    ZoneDnssecUpdateSettings,
     ZoneDnssecCheckDs,
-    ZoneDnssecSetParentNsAddrs,
     ZoneDnssecKeysExport,
     ZoneDnssecKeysImport,
     Doctor,
@@ -241,10 +240,10 @@ pub(crate) struct ImportZoneDnssecKeyParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct SetZoneDnssecPolicyParams {
+pub(crate) struct UpdateZoneDnssecSettingsParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
-    pub(crate) request: SetZoneDnssecPolicyRequest,
+    pub(crate) request: UpdateDnssecSettingsRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -258,13 +257,6 @@ pub(crate) struct DsSeenZoneDnssecParams {
     pub(crate) zone_name: String,
     pub(crate) skip_ds_check: bool,
     pub(crate) skip_holddown: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct SetZoneDnssecParentNsAddrsParams {
-    pub(crate) zone_name: String,
-    #[serde(flatten)]
-    pub(crate) request: SetDnssecParentNsAddrsRequest,
 }
 
 /// Daemon status details returned by the `Status` command.

@@ -116,28 +116,63 @@ impl DnssecService {
         Ok(response)
     }
 
-    /// Move a signed zone to another policy. The denial mode and key layout
-    /// must match (they are fixed while signed); a different algorithm
-    /// starts an algorithm rollover under the new policy.
-    pub async fn set_policy(
+    /// Change a zone's signing settings in one transaction; an omitted field
+    /// keeps its value. A policy move needs a signed zone; `parent_ns_addrs`
+    /// given (even empty) replaces the parent nameservers, signed or not.
+    pub async fn update_settings(
         caller: &Caller,
         zone_name: &str,
-        policy_name: &str,
+        policy: Option<&str>,
+        parent_ns_addrs: Option<&str>,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
-        let policy_name = normalize_policy_name(policy_name)?;
+        if policy.is_none() && parent_ns_addrs.is_none() {
+            return Err(ServiceError::invalid_input(
+                "nothing to update: give a policy, parent nameserver addresses, or both",
+            ));
+        }
+        let policy_name = policy.map(normalize_policy_name).transpose()?;
+        let parent_ns_addrs = parent_ns_addrs
+            .map(|raw| normalize_parent_ns_addrs(Some(raw)))
+            .transpose()?;
 
-        let mut tx = RepositoryService::begin_tx("failed to change the DNSSEC policy").await?;
+        let mut tx = RepositoryService::begin_tx("failed to update DNSSEC settings").await?;
         let result = async {
-            let (zone, current, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            let zone = match parent_ns_addrs {
+                Some(parent_ns_addrs) => {
+                    RepositoryService::update_zone_parent_ns_addrs_tx(
+                        &mut tx,
+                        zone.id,
+                        parent_ns_addrs.as_deref(),
+                    )
+                    .await?;
+                    Zone {
+                        parent_ns_addrs,
+                        ..zone
+                    }
+                }
+                None => zone,
+            };
+            let keys =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
+            let Some(policy_name) = &policy_name else {
+                let policy = Self::find_zone_policy_tx(&mut tx, &zone).await?;
+                return build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await;
+            };
+
+            if keys.is_empty() {
+                return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
+            }
+            let current = Self::get_zone_policy_tx(&mut tx, &zone).await?;
             let target = RepositoryService::get_dnssec_policy_by_name_tx(
                 &mut tx,
-                &policy_name,
+                policy_name,
                 LockLevel::Shared,
             )
             .await?
-            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
+            .ok_or_else(|| ServiceError::dnssec_policy_not_found(policy_name))?;
             if target.id == current.id {
                 return build_status_tx(&mut tx, &zone, Some(&current), &keys, zone.serial).await;
             }
@@ -184,10 +219,13 @@ impl DnssecService {
         }
         .await;
         let response =
-            RepositoryService::finish_tx(tx, result, "failed to change the DNSSEC policy").await?;
+            RepositoryService::finish_tx(tx, result, "failed to update DNSSEC settings").await?;
 
-        crate::log_info!("event=dnssec_set_policy zone={}", response.zone_name);
-        notify_zone(&response.zone_name).await;
+        crate::log_info!("event=dnssec_update_settings zone={}", response.zone_name);
+        // Only a policy move changes zone data; parent nameservers are not served.
+        if policy_name.is_some() {
+            notify_zone(&response.zone_name).await;
+        }
         Ok(response)
     }
 

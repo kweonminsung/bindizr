@@ -4,8 +4,8 @@ use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
         DaemonResponse, DisableZoneDnssecParams, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
-        ImportZoneDnssecKeyParams, RolloverZoneDnssecParams, SetZoneDnssecParentNsAddrsParams,
-        SetZoneDnssecPolicyParams, ZoneNameParams,
+        ImportZoneDnssecKeyParams, RolloverZoneDnssecParams, UpdateZoneDnssecSettingsParams,
+        ZoneNameParams,
     },
 };
 
@@ -126,19 +126,23 @@ pub(crate) async fn withdraw_dnssec(
     })
 }
 
-/// Handle the `ZoneDnssecSetPolicy` command by moving the zone to another
-/// policy.
-pub(crate) async fn set_dnssec_policy(
+/// Handle the `ZoneDnssecUpdateSettings` command by changing the zone's
+/// policy and/or parent nameservers.
+pub(crate) async fn update_dnssec_settings(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: SetZoneDnssecPolicyParams = parse_params(data)?;
+    let params: UpdateZoneDnssecSettingsParams = parse_params(data)?;
 
-    let status =
-        DnssecService::set_policy(&Caller::Global, &params.zone_name, &params.request.policy)
-            .await?;
+    let status = DnssecService::update_settings(
+        &Caller::Global,
+        &params.zone_name,
+        params.request.policy.as_deref(),
+        params.request.parent_ns_addrs.as_deref(),
+    )
+    .await?;
 
     Ok(DaemonResponse {
-        message: "DNSSEC policy changed successfully".to_string(),
+        message: "DNSSEC settings changed successfully".to_string(),
         data: to_response_data(status)?,
     })
 }
@@ -199,26 +203,6 @@ pub(crate) async fn check_dnssec_ds(
 
     Ok(DaemonResponse {
         message: "Parent DS checked successfully".to_string(),
-        data: to_response_data(status)?,
-    })
-}
-
-/// Handle the `ZoneDnssecSetParentNsAddrs` command by setting or clearing the
-/// zone's parent servers.
-pub(crate) async fn set_dnssec_parent_ns_addrs(
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: SetZoneDnssecParentNsAddrsParams = parse_params(data)?;
-
-    let status = DnssecService::set_parent_ns_addrs(
-        &Caller::Global,
-        &params.zone_name,
-        params.request.parent_ns_addrs.as_deref(),
-    )
-    .await?;
-
-    Ok(DaemonResponse {
-        message: "Parent nameserver addresses set successfully".to_string(),
         data: to_response_data(status)?,
     })
 }

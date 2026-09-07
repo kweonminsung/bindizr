@@ -229,7 +229,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     let (status, body) = app
         .request(
             Method::PUT,
-            &format!("/zones/{zone_name}/dnssec/policy"),
+            &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": ed25519_policy })),
         )
         .await;
@@ -264,7 +264,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     let (status, body) = app
         .request(
             Method::PUT,
-            &format!("/zones/{zone_name}/dnssec/policy"),
+            &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": nsec3_policy })),
         )
         .await;
@@ -275,7 +275,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     let (status, body) = app
         .request(
             Method::PUT,
-            &format!("/zones/{zone_name}/dnssec/policy"),
+            &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": ed25519_policy })),
         )
         .await;

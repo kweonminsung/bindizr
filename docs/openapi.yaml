@@ -1882,6 +1882,74 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+      - DNSSEC
+      summary: Change a zone's DNSSEC settings
+      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy''s (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries (empty returns the zone to discovery), and applies to unsigned zones too.'
+      operationId: update_dnssec_settings
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDnssecSettingsRequest'
+        required: true
+      responses:
+        '200':
+          description: Settings changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecStatusResponse'
+        '400':
+          description: 'Bad request: no field given, an invalid parent address, or a policy whose denial mode or key layout differs from the zone''s'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or DNSSEC policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A policy was given for a zone without DNSSEC, or a rollover is already in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
       tags:
       - DNSSEC
@@ -2057,189 +2125,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/dnssec/ds:
-    get:
-      tags:
-      - DNSSEC
-      summary: List a zone's DS records
-      description: Returns the DS records of the zone's signing keys, in parsed fields and full presentation form, for registration in the parent zone. Empty for an unsigned zone.
-      operationId: get_dnssec_ds_records
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      responses:
-        '200':
-          description: The zone's DS records
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DnssecDsListResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/dnssec/parent-ns-addrs:
-    put:
-      tags:
-      - DNSSEC
-      summary: Set the parent zone's nameservers of a zone
-      description: Sets the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; null or empty returns the zone to discovering its parent. Needed where the parent is private, unreachable from bindizr, or undiscoverable without a system resolver.
-      operationId: set_dnssec_parent_ns_addrs
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SetDnssecParentNsAddrsRequest'
-        required: true
-      responses:
-        '200':
-          description: Parent nameservers set
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DnssecStatusResponse'
-        '400':
-          description: Bad request, invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/dnssec/policy:
-    put:
-      tags:
-      - DNSSEC
-      summary: Move a signed zone to another DNSSEC policy
-      description: 'Points the zone at another policy. The denial mode and key layout must match the current policy''s (they are fixed while signed; disable and re-enable to change them). A different algorithm starts an algorithm rollover under the new policy: every key gets a pre-published replacement and the zone is double-signed until the old keys leave after ds-seen (RFC 6840, Section 5.11). Timing changes take effect on the next signing pass.'
-      operationId: set_zone_dnssec_policy
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SetZoneDnssecPolicyRequest'
-        required: true
-      responses:
-        '200':
-          description: Policy changed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DnssecStatusResponse'
-        '400':
-          description: 'Bad request: the policy''s denial mode or key layout differs from the zone''s'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone or DNSSEC policy not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: DNSSEC is not enabled for the zone, or a rollover is already in progress
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
   /zones/{name}/dnssec/rollover:
     post:
       tags:
       - DNSSEC
       summary: Start a key rollover for a zone
-      description: Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`PUT /zones/{name}/dnssec/policy`), which double-signs the zone through the transition (RFC 6840, Section 5.11).
+      description: Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`policy` in `PUT /zones/{name}/dnssec`), which double-signs the zone through the transition (RFC 6840, Section 5.11).
       operationId: start_dnssec_rollover
       parameters:
       - name: name
@@ -3524,16 +3415,6 @@ components:
           type: string
           description: 'Full presentation form: `<zone>. IN DS <tag> <alg> 2 <digest>`.'
           example: example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
-    DnssecDsListResponse:
-      type: object
-      description: The DS records of a zone's signing keys.
-      required:
-      - ds_records
-      properties:
-        ds_records:
-          type: array
-          items:
-            $ref: '#/components/schemas/DnssecDsInfo'
     DnssecKeyInfo:
       type: object
       description: A signing key's public half; the private key never leaves the server.
@@ -4677,30 +4558,6 @@ components:
           - 'null'
           format: int64
           example: 42
-    SetDnssecParentNsAddrsRequest:
-      type: object
-      description: Request body for setting a zone's parent nameservers.
-      properties:
-        parent_ns_addrs:
-          type:
-          - string
-          - 'null'
-          description: |-
-            Comma-separated `host[:port]` entries; null or empty returns the zone
-            to parent discovery.
-          example: a.gtld-servers.net,b.gtld-servers.net
-    SetZoneDnssecPolicyRequest:
-      type: object
-      description: Request body for moving a signed zone to another DNSSEC policy.
-      required:
-      - policy
-      properties:
-        policy:
-          type: string
-          description: |-
-            Name of an existing DNSSEC policy with the zone's denial mode and key
-            layout; a different algorithm starts an algorithm rollover.
-          example: strict
     TokenGrantListResponse:
       type: object
       description: Grants of one token, or every grant that applies to one zone.
@@ -4818,6 +4675,29 @@ components:
           format: int32
           example: 90
           minimum: 0
+    UpdateDnssecSettingsRequest:
+      type: object
+      description: |-
+        Request body for changing a zone's signing settings; an omitted field
+        keeps its value.
+      properties:
+        parent_ns_addrs:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The parent zone's nameservers (comma-separated `host[:port]`); empty
+            returns the zone to parent discovery.
+          example: a.gtld-servers.net,b.gtld-servers.net
+        policy:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Policy to move the signed zone to; it must share the zone's denial
+            mode and key layout, and a different algorithm starts an algorithm
+            rollover.
+          example: strict
     VersionDetailResponse:
       type: object
       description: One version plus the reconstructed records at that serial.

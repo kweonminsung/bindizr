@@ -8,9 +8,8 @@ use axum::{
 use bindizr_service::{
     dnssec::DnssecService,
     types::{
-        DnssecDsListResponse, DnssecStatusResponse, EnableDnssecRequest, ErrorResponse,
-        MessageResponse, RolloverDnssecRequest, SetDnssecParentNsAddrsRequest,
-        SetZoneDnssecPolicyRequest,
+        DnssecStatusResponse, EnableDnssecRequest, ErrorResponse, MessageResponse,
+        RolloverDnssecRequest, UpdateDnssecSettingsRequest,
     },
 };
 use serde::Deserialize;
@@ -27,10 +26,7 @@ impl DnssecApi {
             .route("/zones/{name}/dnssec", routing::get(get_dnssec_status))
             .route("/zones/{name}/dnssec", routing::post(enable_dnssec))
             .route("/zones/{name}/dnssec", routing::delete(disable_dnssec))
-            .route(
-                "/zones/{name}/dnssec/ds",
-                routing::get(get_dnssec_ds_records),
-            )
+            .route("/zones/{name}/dnssec", routing::put(update_dnssec_settings))
             .route("/zones/{name}/dnssec/sign", routing::post(sign_zone))
             .route(
                 "/zones/{name}/dnssec/rollover",
@@ -45,16 +41,8 @@ impl DnssecApi {
                 routing::post(withdraw_dnssec).delete(cancel_dnssec_withdrawal),
             )
             .route(
-                "/zones/{name}/dnssec/policy",
-                routing::put(set_zone_dnssec_policy),
-            )
-            .route(
                 "/zones/{name}/dnssec/check-ds",
                 routing::post(check_dnssec_ds),
-            )
-            .route(
-                "/zones/{name}/dnssec/parent-ns-addrs",
-                routing::put(set_dnssec_parent_ns_addrs),
             )
     }
 }
@@ -162,35 +150,6 @@ pub(crate) async fn disable_dnssec(
 }
 
 #[utoipa::path(
-        get,
-        path = "/zones/{name}/dnssec/ds",
-        tag = "DNSSEC",
-        summary = "List a zone's DS records",
-        description = "Returns the DS records of the zone's signing keys, in parsed fields and full presentation form, for registration in the parent zone. Empty for an unsigned zone.",
-        params(
-            ("name" = String, Path, description = "The name of the DNS zone.")
-        ),
-        responses(
-            (status = 200, description = "The zone's DS records", body = DnssecDsListResponse),
-            (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
-            (status = 404, description = "Zone not found", body = ErrorResponse),
-            (status = 500, description = "Internal server error", body = ErrorResponse)
-        )
-)]
-/// List the DS records of a zone's signing keys.
-pub(crate) async fn get_dnssec_ds_records(
-    RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
-) -> Result<Response, ApiError> {
-    let status = DnssecService::get_status(&caller, &params.name).await?;
-    let response = DnssecDsListResponse {
-        ds_records: status.ds_records,
-    };
-    Ok((StatusCode::OK, Json(response)).into_response())
-}
-
-#[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/sign",
         tag = "DNSSEC",
@@ -225,7 +184,7 @@ pub(crate) async fn sign_zone(
         path = "/zones/{name}/dnssec/rollover",
         tag = "DNSSEC",
         summary = "Start a key rollover for a zone",
-        description = "Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`PUT /zones/{name}/dnssec/policy`), which double-signs the zone through the transition (RFC 6840, Section 5.11).",
+        description = "Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`policy` in `PUT /zones/{name}/dnssec`), which double-signs the zone through the transition (RFC 6840, Section 5.11).",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -326,38 +285,6 @@ pub(crate) async fn withdraw_dnssec(
 }
 
 #[utoipa::path(
-        put,
-        path = "/zones/{name}/dnssec/policy",
-        tag = "DNSSEC",
-        summary = "Move a signed zone to another DNSSEC policy",
-        description = "Points the zone at another policy. The denial mode and key layout must match the current policy's (they are fixed while signed; disable and re-enable to change them). A different algorithm starts an algorithm rollover under the new policy: every key gets a pre-published replacement and the zone is double-signed until the old keys leave after ds-seen (RFC 6840, Section 5.11). Timing changes take effect on the next signing pass.",
-        params(
-            ("name" = String, Path, description = "The name of the DNS zone.")
-        ),
-        request_body = SetZoneDnssecPolicyRequest,
-        responses(
-            (status = 200, description = "Policy changed", body = DnssecStatusResponse),
-            (status = 400, description = "Bad request: the policy's denial mode or key layout differs from the zone's", body = ErrorResponse),
-            (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
-            (status = 404, description = "Zone or DNSSEC policy not found", body = ErrorResponse),
-            (status = 409, description = "DNSSEC is not enabled for the zone, or a rollover is already in progress", body = ErrorResponse),
-            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
-            (status = 500, description = "Internal server error", body = ErrorResponse)
-        )
-)]
-/// Move a signed zone to another DNSSEC policy.
-pub(crate) async fn set_zone_dnssec_policy(
-    RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
-    JsonBody(body): JsonBody<SetZoneDnssecPolicyRequest>,
-) -> Result<Response, ApiError> {
-    let status = DnssecService::set_policy(&caller, &params.name, &body.policy).await?;
-    let response = DnssecStatusResponse { dnssec: status };
-    Ok((StatusCode::OK, Json(response)).into_response())
-}
-
-#[utoipa::path(
         delete,
         path = "/zones/{name}/dnssec/withdraw",
         tag = "DNSSEC",
@@ -416,33 +343,38 @@ pub(crate) async fn check_dnssec_ds(
 
 #[utoipa::path(
         put,
-        path = "/zones/{name}/dnssec/parent-ns-addrs",
+        path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
-        summary = "Set the parent zone's nameservers of a zone",
-        description = "Sets the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; null or empty returns the zone to discovering its parent. Needed where the parent is private, unreachable from bindizr, or undiscoverable without a system resolver.",
+        summary = "Change a zone's DNSSEC settings",
+        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy's (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries (empty returns the zone to discovery), and applies to unsigned zones too.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
-        request_body = SetDnssecParentNsAddrsRequest,
+        request_body = UpdateDnssecSettingsRequest,
         responses(
-            (status = 200, description = "Parent nameservers set", body = DnssecStatusResponse),
-            (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
+            (status = 200, description = "Settings changed", body = DnssecStatusResponse),
+            (status = 400, description = "Bad request: no field given, an invalid parent address, or a policy whose denial mode or key layout differs from the zone's", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
-            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 404, description = "Zone or DNSSEC policy not found", body = ErrorResponse),
+            (status = 409, description = "A policy was given for a zone without DNSSEC, or a rollover is already in progress", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Set the parent zone's servers of a zone.
-pub(crate) async fn set_dnssec_parent_ns_addrs(
+/// Change a zone's DNSSEC settings.
+pub(crate) async fn update_dnssec_settings(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
-    JsonBody(body): JsonBody<SetDnssecParentNsAddrsRequest>,
+    JsonBody(body): JsonBody<UpdateDnssecSettingsRequest>,
 ) -> Result<Response, ApiError> {
-    let status =
-        DnssecService::set_parent_ns_addrs(&caller, &params.name, body.parent_ns_addrs.as_deref())
-            .await?;
+    let status = DnssecService::update_settings(
+        &caller,
+        &params.name,
+        body.policy.as_deref(),
+        body.parent_ns_addrs.as_deref(),
+    )
+    .await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

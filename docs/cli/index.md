@@ -22,7 +22,7 @@ package install, or a shell inside the container for Compose and Helm.
 
 Every `create`, `list`, `get`, and `update` command prints a table and takes
 `-o json` or `-o yaml`; `delete` and the one-shot actions print a message.
-`zone export`, `dnssec ds`, and `dnssec keys export` print paste-ready text.
+`zone export` and `dnssec keys export` print paste-ready text.
 
 ## Service
 

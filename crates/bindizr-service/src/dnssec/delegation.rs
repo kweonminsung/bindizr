@@ -1,5 +1,4 @@
-//! The parent side of a signed zone: which servers to ask for its DS, and
-//! asking them.
+//! The parent side of a signed zone: asking its nameservers for the DS.
 
 use bindizr_core::dns::name::has_whitespace_or_control;
 use chrono::Utc;
@@ -16,7 +15,6 @@ use crate::{
     },
     repository::RepositoryService,
     types::{DnssecDelegationInfo, DnssecDelegationKeyInfo, GetDnssecStatusResponse},
-    zone::ZoneService,
 };
 
 impl DnssecService {
@@ -49,52 +47,6 @@ impl DnssecService {
             RepositoryService::finish_tx(tx, result, "failed to check the parent DS").await?;
         status.delegation = Some(delegation);
         Ok(status)
-    }
-
-    /// Set the servers asked whether the parent still serves the zone's DS,
-    /// or with `None` return the zone to parent discovery.
-    pub async fn set_parent_ns_addrs(
-        caller: &Caller,
-        zone_name: &str,
-        parent_ns_addrs: Option<&str>,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
-        let parent_ns_addrs = normalize_parent_ns_addrs(parent_ns_addrs)?;
-
-        let mut tx =
-            RepositoryService::begin_tx("failed to set the zone's parent nameserver addresses")
-                .await?;
-        let result = async {
-            let zone =
-                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            RepositoryService::update_zone_parent_ns_addrs_tx(
-                &mut tx,
-                zone.id,
-                parent_ns_addrs.as_deref(),
-            )
-            .await?;
-            let zone = Zone {
-                parent_ns_addrs,
-                ..zone
-            };
-            let keys =
-                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            let policy = Self::find_zone_policy_tx(&mut tx, &zone).await?;
-            build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
-        }
-        .await;
-        let response = RepositoryService::finish_tx(
-            tx,
-            result,
-            "failed to set the zone's parent nameserver addresses",
-        )
-        .await?;
-
-        crate::log_info!(
-            "event=dnssec_set_parent_ns_addrs zone={}",
-            response.zone_name
-        );
-        Ok(response)
     }
 
     /// The parent's answer about the zone's DS, matched against the zone's

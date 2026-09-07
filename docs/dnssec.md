@@ -84,10 +84,10 @@ private key never leaves bindizr.
 A signed zone moves to another policy with:
 
 ```sh
-bindizr dnssec set policy example.com strict
+bindizr dnssec set example.com --policy strict
 ```
 
-Also `PUT /zones/{name}/dnssec/policy`. The target must share the zone's
+Also `policy` in `PUT /zones/{name}/dnssec`. The target must share the zone's
 denial mode and key layout — those have no safe in-place transition, so to
 change them disable DNSSEC and re-enable under the new policy, going
 insecure in between. A different algorithm starts an
@@ -96,21 +96,19 @@ the next signing pass.
 
 ## Completing the chain of trust
 
-Signatures only validate once the parent delegates trust to your key. Fetch
-the DS record and register it at your parent (usually via your registrar):
-
-```sh
-bindizr dnssec ds example.com
-```
+Signatures only validate once the parent delegates trust to your key. The
+DS record to register at your parent (usually via your registrar) is in the
+enable output and in `bindizr dnssec status example.com` (`ds_records` of
+`GET /zones/{name}/dnssec`):
 
 ```text
-example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
+DS records (register in the parent zone):
+  example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
 ```
 
 Signed zones also publish `CDS`/`CDNSKEY` (RFC 7344) for parents that scan
 for DS changes. Until the DS is published, resolvers simply treat the zone
-as insecure — safe to roll out gradually. `bindizr dnssec status
-example.com` shows the signing state at any time.
+as insecure — safe to roll out gradually.
 
 ## Key rollover
 
@@ -152,7 +150,7 @@ A retired key stays published for the policy's
 shows every key's state (`published`/`active`/`retired`) throughout.
 
 An **algorithm rollover** (RFC 6840, Section 5.11) is started by moving the
-zone to a policy of the new algorithm (`dnssec set policy`): every key is
+zone to a policy of the new algorithm (`dnssec set --policy`): every key is
 replaced with one of the new algorithm and the zone is double-signed — both
 algorithms cover all data — until the old keys leave together after
 `ds-seen`.
@@ -166,7 +164,7 @@ sign example.com` forces a full re-sign if stored signatures are ever
 doubted.
 
 To give some zones different timing, create a policy with the values you
-want and move them to it with `dnssec set policy`; editing a policy
+want and move them to it with `dnssec set --policy`; editing a policy
 with `dnssec-policy update` changes every zone under it from the next
 signing pass or maintenance scan. `dnssec status` reports the zone's
 policy and its values.
@@ -224,12 +222,12 @@ instead:
 
 ```sh
 bindizr dnssec enable example.com --parent-ns-addrs ns1.parent.example,ns2.parent.example
-bindizr dnssec set parent-ns-addrs example.com ns1.parent.example:5353
-bindizr dnssec set parent-ns-addrs example.com --clear    # back to discovery
+bindizr dnssec set example.com --parent-ns-addrs ns1.parent.example:5353
+bindizr dnssec set example.com --clear-parent-ns-addrs    # back to discovery
 ```
 
-Also `parent_ns_addrs` in the enable body and `PUT
-/zones/{name}/dnssec/parent-ns-addrs`; `dnssec status` shows the setting.
+Also `parent_ns_addrs` in the enable body and in `PUT /zones/{name}/dnssec`;
+`dnssec status` shows the setting.
 
 ## Behavior notes
 

@@ -21,11 +21,18 @@ pub struct EnableDnssecRequest {
     pub parent_ns_addrs: Option<String>,
 }
 
-/// Request body for setting a zone's parent nameservers.
+/// Request body for changing a zone's signing settings; an omitted field
+/// keeps its value.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
-pub struct SetDnssecParentNsAddrsRequest {
-    /// Comma-separated `host[:port]` entries; null or empty returns the zone
-    /// to parent discovery.
+pub struct UpdateDnssecSettingsRequest {
+    /// Policy to move the signed zone to; it must share the zone's denial
+    /// mode and key layout, and a new algorithm starts a rollover.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "strict")]
+    pub policy: Option<String>,
+    /// The parent zone's nameservers (comma-separated `host[:port]`); empty
+    /// returns the zone to parent discovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
     pub parent_ns_addrs: Option<String>,
 }
@@ -72,15 +79,6 @@ pub struct DnssecDelegationInfo {
     #[schema(example = 86400)]
     pub ds_ttl: Option<u32>,
     pub checked_at: DateTime<Utc>,
-}
-
-/// Request body for moving a signed zone to another DNSSEC policy.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct SetZoneDnssecPolicyRequest {
-    /// Name of an existing DNSSEC policy with the zone's denial mode and key
-    /// layout; a different algorithm starts an algorithm rollover.
-    #[schema(example = "strict")]
-    pub policy: String,
 }
 
 /// Request body for starting a key rollover.
@@ -217,10 +215,4 @@ pub struct ImportDnssecKeyRequest {
 #[derive(Serialize, Debug, ToSchema)]
 pub struct DnssecStatusResponse {
     pub dnssec: GetDnssecStatusResponse,
-}
-
-/// The DS records of a zone's signing keys.
-#[derive(Serialize, Debug, ToSchema)]
-pub struct DnssecDsListResponse {
-    pub ds_records: Vec<DnssecDsInfo>,
 }

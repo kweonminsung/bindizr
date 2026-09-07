@@ -4,7 +4,7 @@ mod keys;
 
 use bindizr_service::types::{
     EnableDnssecRequest, GetDnssecStatusResponse, RolloverDnssecRequest,
-    SetDnssecParentNsAddrsRequest, SetZoneDnssecPolicyRequest,
+    UpdateDnssecSettingsRequest,
 };
 use clap::Subcommand;
 pub(crate) use keys::DnssecKeysCommand;
@@ -20,8 +20,8 @@ use crate::{
         client::DaemonSocketClient,
         types::{
             DaemonCommandKind, DisableZoneDnssecParams, DsSeenZoneDnssecParams,
-            EnableZoneDnssecParams, RolloverZoneDnssecParams, SetZoneDnssecParentNsAddrsParams,
-            SetZoneDnssecPolicyParams, ZoneNameParams,
+            EnableZoneDnssecParams, RolloverZoneDnssecParams, UpdateZoneDnssecSettingsParams,
+            ZoneNameParams,
         },
     },
 };
@@ -44,10 +44,23 @@ pub(crate) enum DnssecCommand {
         #[arg(long, value_name = "ADDRS")]
         parent_ns_addrs: Option<String>,
     },
-    /// Set a signed zone's policy or its parent's nameservers
+    /// Change a zone's signing settings: the policy it signs under and/or
+    /// the parent nameservers asked for its DS record
+    #[command(group = clap::ArgGroup::new("setting").required(true).multiple(true))]
     Set {
-        #[command(subcommand)]
-        subcommand: DnssecSetCommand,
+        /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
+        name: String,
+        /// Move the signed zone to this policy; denial mode and key layout
+        /// must match, and a new algorithm starts a rollover
+        #[arg(long, value_name = "POLICY_NAME", group = "setting")]
+        policy: Option<String>,
+        /// Comma-separated host[:port] entries of the parent's nameservers
+        #[arg(long, value_name = "ADDRS", group = "setting")]
+        parent_ns_addrs: Option<String>,
+        /// Return the zone to parent discovery
+        #[arg(long, group = "setting", conflicts_with = "parent_ns_addrs")]
+        clear_parent_ns_addrs: bool,
     },
     /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
     /// parent to drop the zone's DS: the first step of going insecure
@@ -86,12 +99,6 @@ pub(crate) enum DnssecCommand {
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
-    /// Print a zone's DS records for pasting into the parent zone
-    Ds {
-        /// The name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        name: String,
-    },
     /// Re-sign a zone from scratch, discarding stored signatures
     Sign {
         /// The name of the zone
@@ -110,44 +117,12 @@ pub(crate) enum DnssecCommand {
     },
 }
 
-/// Subcommands setting one attribute of a zone's signing.
-#[derive(Subcommand, Debug)]
-pub(crate) enum DnssecSetCommand {
-    /// Move a signed zone to another DNSSEC policy. The denial mode and key
-    /// layout must match; a different algorithm starts an algorithm rollover
-    Policy {
-        /// The name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        name: String,
-        /// Name of the target policy
-        #[arg(value_name = "POLICY_NAME")]
-        policy: String,
-    },
-    /// Set the parent zone's nameservers asked for this zone's DS record,
-    /// or clear them so the parent is discovered again
-    ParentNsAddrs {
-        /// The name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        name: String,
-        /// Comma-separated host[:port] entries of the parent's nameservers
-        #[arg(
-            value_name = "ADDRS",
-            required_unless_present = "clear",
-            conflicts_with = "clear"
-        )]
-        addrs: Option<String>,
-        /// Return the zone to parent discovery
-        #[arg(long)]
-        clear: bool,
-    },
-}
-
 /// Subcommands for rolling a zone's signing keys.
 #[derive(Subcommand, Debug)]
 pub(crate) enum DnssecRolloverCommand {
     /// Pre-publish a same-algorithm replacement key: it joins the DNSKEY
     /// and CDS/CDNSKEY records but signs no zone data until `ds-seen`
-    /// promotes it. To change the algorithm, use `dnssec set policy`
+    /// promotes it. To change the algorithm, use `dnssec set --policy`
     Start {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -205,34 +180,30 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 .await?;
             print_status(&response.data)?;
         }
-        DnssecCommand::Set { subcommand } => match subcommand {
-            DnssecSetCommand::Policy { name, policy } => {
-                let response = client
-                    .send_command(
-                        DaemonCommandKind::ZoneDnssecSetPolicy,
-                        SetZoneDnssecPolicyParams {
-                            zone_name: name,
-                            request: SetZoneDnssecPolicyRequest { policy },
-                        },
-                    )
-                    .await?;
-                print_status(&response.data)?;
-            }
-            DnssecSetCommand::ParentNsAddrs { name, addrs, clear } => {
-                let response = client
-                    .send_command(
-                        DaemonCommandKind::ZoneDnssecSetParentNsAddrs,
-                        SetZoneDnssecParentNsAddrsParams {
-                            zone_name: name,
-                            request: SetDnssecParentNsAddrsRequest {
-                                parent_ns_addrs: if clear { None } else { addrs },
+        DnssecCommand::Set {
+            name,
+            policy,
+            parent_ns_addrs,
+            clear_parent_ns_addrs,
+        } => {
+            let response = client
+                .send_command(
+                    DaemonCommandKind::ZoneDnssecUpdateSettings,
+                    UpdateZoneDnssecSettingsParams {
+                        zone_name: name,
+                        request: UpdateDnssecSettingsRequest {
+                            policy,
+                            parent_ns_addrs: if clear_parent_ns_addrs {
+                                Some(String::new())
+                            } else {
+                                parent_ns_addrs
                             },
                         },
-                    )
-                    .await?;
-                print_status(&response.data)?;
-            }
-        },
+                    },
+                )
+                .await?;
+            print_status(&response.data)?;
+        }
         DnssecCommand::Withdraw { name, cancel } => {
             let kind = if cancel {
                 DaemonCommandKind::ZoneDnssecWithdrawCancel
@@ -266,12 +237,6 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 OutputFormat::Table => print_status(&response.data)?,
                 _ => print_payload(&response.data, output)?,
             }
-        }
-        DnssecCommand::Ds { name } => {
-            let response = client
-                .send_command(DaemonCommandKind::ZoneDnssecStatus, ZoneNameParams { name })
-                .await?;
-            print_ds_records(&response.data)?;
         }
         DnssecCommand::Sign { name } => {
             let response = client
@@ -398,25 +363,6 @@ pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
         for ds in &status.ds_records {
             println!("  {}", ds.presentation);
         }
-    }
-
-    Ok(())
-}
-
-fn print_ds_records(data: &serde_json::Value) -> Result<(), String> {
-    let status: GetDnssecStatusResponse = parse_response(data)?;
-
-    if status.ds_records.is_empty() {
-        println!("No DS records found");
-        return Ok(());
-    }
-
-    if status.withdrawing {
-        println!("# DS withdrawal published: do not register these at the parent.");
-    }
-    // Plain presentation lines only, so the output pastes into a parent zone.
-    for ds in &status.ds_records {
-        println!("{}", ds.presentation);
     }
 
     Ok(())
