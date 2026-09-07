@@ -83,6 +83,10 @@ $ bindizr notify
 
 # Check how far each secondary has caught up with a zone
 $ bindizr zone status <ZONE_NAME>
+
+# List the API token and TSIG key grants that apply to a zone
+$ bindizr zone token-grants <ZONE_NAME>
+$ bindizr zone tsig-grants <ZONE_NAME>
 ```
 
 Bulk changes can be previewed before anything is written. `--preview` renders

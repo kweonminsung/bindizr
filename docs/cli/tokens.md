@@ -39,9 +39,9 @@ $ bindizr token grant external-dns example.com
 # Allow only A/TXT records under *.dyn
 $ bindizr token grant external-dns example.com --pattern '*.dyn' --types A,TXT
 
-# List a token's grants, or every grant that applies to a zone
+# List a token's grants, or every token grant that applies to a zone
 $ bindizr token grants external-dns
-$ bindizr token grants --zone example.com
+$ bindizr zone token-grants example.com
 
 # Revoke one grant by ID
 $ bindizr token revoke external-dns <GRANT_ID>

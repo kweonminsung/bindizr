@@ -3,7 +3,7 @@ use bindizr_service::types::{
     CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
     GetTokenResponse,
 };
-use clap::{ArgGroup, Subcommand};
+use clap::Subcommand;
 
 use crate::{
     cli::{
@@ -14,7 +14,6 @@ use crate::{
         client::DaemonSocketClient,
         types::{
             CreateTokenGrantParams, DaemonCommandKind, DeleteTokenGrantParams, TokenNameParams,
-            ZoneNameParams,
         },
     },
 };
@@ -73,15 +72,11 @@ pub(crate) enum TokenCommand {
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
-    /// List a token's grants, or every grant that applies to a zone
-    #[command(group(ArgGroup::new("scope").required(true).args(["name", "zone"])))]
+    /// List a token's grants (`zone token-grants` lists a zone's)
     Grants {
         /// Name of the token
         #[arg(value_name = "TOKEN_NAME")]
-        name: Option<String>,
-        /// List the grants that apply to this zone instead
-        #[arg(long, value_name = "ZONE_NAME")]
-        zone: Option<String>,
+        name: String,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -171,24 +166,13 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 vec![TokenGrantRow::from(grant)]
             })?;
         }
-        TokenCommand::Grants { name, zone, output } => {
-            let res = if let Some(zone) = zone {
-                client
-                    .send_command(
-                        DaemonCommandKind::TokenGrantListByZone,
-                        ZoneNameParams { name: zone },
-                    )
-                    .await?
-            } else {
-                // The `scope` group makes one of the two arguments mandatory.
-                let name = name.unwrap_or_default();
-                client
-                    .send_command(
-                        DaemonCommandKind::TokenGrantListByToken,
-                        TokenNameParams { name },
-                    )
-                    .await?
-            };
+        TokenCommand::Grants { name, output } => {
+            let res = client
+                .send_command(
+                    DaemonCommandKind::TokenGrantListByToken,
+                    TokenNameParams { name },
+                )
+                .await?;
             print_response(&res.data, output, |grants: &Vec<GetTokenGrantResponse>| {
                 grants.iter().map(TokenGrantRow::from).collect()
             })?;

@@ -83,7 +83,7 @@ async fn tsig_key_grant_grants_revoke() {
     assert!(by_key.contains("A,TXT"), "{by_key}");
 
     let by_zone = app
-        .run_cli_success(&["tsig-key", "grants", "--zone", &zone_name])
+        .run_cli_success(&["zone", "tsig-grants", &zone_name])
         .await;
     assert!(by_zone.contains("cli-grant-key"), "{by_zone}");
 

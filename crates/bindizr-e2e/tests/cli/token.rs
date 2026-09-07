@@ -47,7 +47,7 @@ async fn token_grant_grants_revoke() {
     assert!(by_token.contains(&zone_name), "{by_token}");
 
     let by_zone = app
-        .run_cli_success(&["token", "grants", "--zone", &zone_name])
+        .run_cli_success(&["zone", "token-grants", &zone_name])
         .await;
     assert!(by_zone.contains(&scoped_name), "{by_zone}");
 

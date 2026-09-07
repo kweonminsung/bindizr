@@ -4,9 +4,9 @@
 mod version;
 
 use bindizr_service::types::{
-    CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-    ImportMode as ServiceImportMode, ImportZoneRequest, ImportZoneResponse, UpdateZoneRequest,
-    ZoneStatusResponse,
+    CreateZoneRequest, ExportZoneFileResponse, GetTokenGrantResponse, GetTsigGrantResponse,
+    GetZoneResponse, GetZonesFilter, ImportMode as ServiceImportMode, ImportZoneRequest,
+    ImportZoneResponse, UpdateZoneRequest, ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -15,8 +15,9 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ImportSummaryRow, ItemOrPage, OutputFormat, SecondaryStatusRow, ZoneRow,
-            parse_response, print_response, print_table, render_change_preview,
+            ImportSummaryRow, ItemOrPage, OutputFormat, SecondaryStatusRow, TokenGrantRow,
+            TsigGrantRow, ZoneRow, parse_response, print_response, print_table,
+            render_change_preview,
         },
     },
     socket::{
@@ -200,6 +201,26 @@ $INCLUDE is not supported.")]
 
     /// Send NOTIFY messages to secondary servers for a zone
     Notify(NotifyArgs),
+
+    /// List the API token grants that apply to a zone
+    TokenGrants {
+        /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
+        name: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
+
+    /// List the TSIG key grants that apply to a zone
+    TsigGrants {
+        /// The name of the zone
+        #[arg(value_name = "ZONE_NAME")]
+        name: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
+    },
 
     /// Inspect or roll back a zone's versions (serial history)
     Version {
@@ -442,6 +463,28 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 return Ok(());
             }
             print_table(SecondaryStatusRow::rows_from_status(&status));
+        }
+        ZoneCommand::TokenGrants { name, output } => {
+            let res = client
+                .send_command(
+                    DaemonCommandKind::TokenGrantListByZone,
+                    ZoneNameParams { name },
+                )
+                .await?;
+            print_response(&res.data, output, |grants: &Vec<GetTokenGrantResponse>| {
+                grants.iter().map(TokenGrantRow::from).collect()
+            })?;
+        }
+        ZoneCommand::TsigGrants { name, output } => {
+            let res = client
+                .send_command(
+                    DaemonCommandKind::TsigGrantListByZone,
+                    ZoneNameParams { name },
+                )
+                .await?;
+            print_response(&res.data, output, |grants: &Vec<GetTsigGrantResponse>| {
+                grants.iter().map(TsigGrantRow::from).collect()
+            })?;
         }
         ZoneCommand::Notify(args) => {
             let response = client
