@@ -5,7 +5,7 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::{Duration, Utc};
 
-use super::{DnssecService, notify_zone, status::build_status_tx};
+use super::{DnssecService, notify_zone, snapshot::ProbedSnapshot, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -134,8 +134,7 @@ impl DnssecService {
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
-        // What the probe verified; the locked zone must still match it.
-        let mut verified: Option<(Option<String>, Vec<i32>)> = None;
+        let mut snapshot = None;
         if !skip_ds_check {
             // Unlocked pre-read to learn which keys await the parent; the
             // network wait must not hold the zone row.
@@ -161,22 +160,22 @@ impl DnssecService {
                     &missing,
                 ));
             }
-            verified = Some((zone.parent_ns_addrs, awaiting));
+            // Promote exactly the keys the probe verified, at the parent it asked.
+            snapshot = Some(ProbedSnapshot::take(&zone, &keys, move |zone, keys| {
+                let mut promotable = promotable_sep_key_ids(zone, keys, skip_holddown)?;
+                promotable.sort_unstable();
+                Ok((zone.parent_ns_addrs.clone(), promotable))
+            })?);
         }
 
         let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
         let result = async {
             let (zone, policy, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let mut ds_published = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
-            ds_published.sort_unstable();
-            // Keys or a parent that changed meanwhile were never checked.
-            if let Some((parent_ns_addrs, mut checked)) = verified {
-                checked.sort_unstable();
-                if parent_ns_addrs != zone.parent_ns_addrs || checked != ds_published {
-                    return Err(ServiceError::dnssec_state_changed(zone.name.as_str()));
-                }
+            if let Some(snapshot) = &snapshot {
+                snapshot.require_same(&zone, &keys)?;
             }
+            let ds_published = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
             let keys =
                 Self::promote_published_keys_tx(&mut tx, &zone, &policy, keys, &ds_published)
                     .await?;

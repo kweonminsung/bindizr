@@ -12,8 +12,11 @@ mod delegation;
 mod keys;
 mod lifecycle;
 mod maintenance;
+mod parent_ns_addrs;
 mod rollover;
+mod snapshot;
 mod status;
+mod withdraw;
 
 use bindizr_core::dns::dnssec::SignedViewParams;
 use chrono::{Duration, Utc};

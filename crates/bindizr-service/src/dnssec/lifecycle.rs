@@ -5,8 +5,8 @@ use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
 use super::{
-    DnssecService, delegation::normalize_parent_ns_addrs, notify_zone, status::build_status_tx,
-    to_key_layout,
+    DnssecService, notify_zone, parent_ns_addrs::normalize_parent_ns_addrs,
+    snapshot::ProbedSnapshot, status::build_status_tx, to_key_layout,
 };
 use crate::{
     authorization::Caller,
@@ -239,8 +239,7 @@ impl DnssecService {
     ) -> Result<(), ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
-        // The parent the probe asked; the locked zone must still name it.
-        let mut probed_parent_ns_addrs = None;
+        let mut snapshot = None;
         if !skip_ds_check {
             // Unlocked pre-read to learn which parent to ask; the network wait
             // must not hold the zone row, which the deletion re-reads locked.
@@ -258,19 +257,18 @@ impl DnssecService {
                     &delegation.ds_key_tags,
                 ));
             }
-            probed_parent_ns_addrs = Some(zone.parent_ns_addrs);
+            // The parent the probe asked; the locked zone must still name it.
+            snapshot = Some(ProbedSnapshot::take(&zone, &keys, |zone, _| {
+                Ok(zone.parent_ns_addrs.clone())
+            })?);
         }
 
         let mut tx = RepositoryService::begin_tx("failed to disable DNSSEC").await?;
         let result = async {
-            let (zone, _, _) =
+            let (zone, _, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            // A parent set meanwhile was never asked.
-            if probed_parent_ns_addrs
-                .as_ref()
-                .is_some_and(|probed| *probed != zone.parent_ns_addrs)
-            {
-                return Err(ServiceError::dnssec_state_changed(zone.name.as_str()));
+            if let Some(snapshot) = &snapshot {
+                snapshot.require_same(&zone, &keys)?;
             }
 
             let derived =
@@ -314,78 +312,6 @@ impl DnssecService {
         crate::log_info!("event=dnssec_disable zone={}", zone_name);
         notify_zone(&zone_name).await;
         Ok(())
-    }
-
-    /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
-    /// parent to drop the zone's DS: the first step of going insecure.
-    pub async fn withdraw(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
-
-        let mut tx = RepositoryService::begin_tx("failed to withdraw the parent DS").await?;
-        let result = async {
-            let (zone, policy, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_some()
-            {
-                return Err(ServiceError::invalid_input(
-                    "the DS withdrawal is already published",
-                ));
-            }
-            RepositoryService::create_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
-
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-                .await?
-                .unwrap_or(zone.serial);
-
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
-        }
-        .await;
-        let response =
-            RepositoryService::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
-
-        crate::log_info!("event=dnssec_withdraw zone={}", response.zone_name);
-        notify_zone(&response.zone_name).await;
-        Ok(response)
-    }
-
-    /// Take back a published DS withdrawal: the per-key CDS/CDNSKEY set
-    /// returns on the next signing pass.
-    pub async fn withdraw_cancel(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
-
-        let mut tx = RepositoryService::begin_tx("failed to cancel the DS withdrawal").await?;
-        let result = async {
-            let (zone, policy, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_none()
-            {
-                return Err(ServiceError::invalid_input("no DS withdrawal is published"));
-            }
-            RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
-
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-                .await?
-                .unwrap_or(zone.serial);
-
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
-        }
-        .await;
-        let response =
-            RepositoryService::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
-
-        crate::log_info!("event=dnssec_withdraw_cancel zone={}", response.zone_name);
-        notify_zone(&response.zone_name).await;
-        Ok(response)
     }
 
     /// Re-sign a zone from scratch, discarding stored signatures (recovery
