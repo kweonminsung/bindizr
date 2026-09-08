@@ -258,6 +258,53 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn record_reject_negative_ttl_on_create_and_update() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "neg",
+                "record_type": "A",
+                "value": "192.0.2.1",
+                "ttl": -1,
+                "zone_name": zone["name"]
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("TTL"), "{body}");
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "neg",
+                "record_type": "A",
+                "value": "192.0.2.1",
+                "zone_name": zone["name"]
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let record_id = body["record"]["id"].as_i64().unwrap();
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/records/{record_id}"),
+            Some(json!({ "ttl": -1 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("TTL"), "{body}");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn record_reject_priority_on_types_without_one() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
@@ -296,6 +343,30 @@ async fn record_reject_priority_on_types_without_one() {
     });
     let (status, _) = app.request(Method::POST, "/records", Some(mx)).await;
     assert_eq!(status, StatusCode::CREATED);
+
+    // An update is held to the same rule.
+    let a = json!({
+        "name": "prio",
+        "record_type": "A",
+        "value": "192.0.2.1",
+        "ttl": 3600,
+        "zone_name": zone["name"]
+    });
+    let (status, body) = app.request(Method::POST, "/records", Some(a)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let record_id = body["record"]["id"].as_i64().unwrap();
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/records/{record_id}"),
+            Some(json!({ "priority": 10 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["error"].as_str().unwrap().contains("priority"),
+        "{body}"
+    );
 }
 
 #[tokio::test]

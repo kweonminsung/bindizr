@@ -8,6 +8,7 @@ use super::{
     RecordService,
     validation::{
         normalize_record_owner_name, parse_record_type, validate_record_add_constraints_normalized,
+        validate_record_ttl,
     },
 };
 use crate::{
@@ -58,6 +59,9 @@ pub(crate) fn parse_record(
     priority: Option<i32>,
 ) -> Result<PreparedRecord, ServiceError> {
     let record_type = parse_record_type(record_type)?;
+    if let Some(ttl) = ttl {
+        validate_record_ttl(ttl)?;
+    }
     let value = value
         .to_encoded_value(&record_type, priority)
         .map_err(ServiceError::invalid_record_value)?;

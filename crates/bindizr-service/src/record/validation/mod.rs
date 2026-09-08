@@ -19,6 +19,15 @@ use crate::{
 };
 
 /// Core value validation with the error mapped to `INVALID_RECORD_VALUE`.
+/// A record TTL is non-negative (RFC 2181, Section 8); the zone's default
+/// stands in for an omitted one.
+pub(crate) fn validate_record_ttl(ttl: i32) -> Result<(), ServiceError> {
+    if ttl < 0 {
+        return Err(ServiceError::invalid_input("TTL must not be negative"));
+    }
+    Ok(())
+}
+
 fn validate_record_value(
     record_type: &RecordType,
     value: &str,

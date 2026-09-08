@@ -20,7 +20,10 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    record::{RecordService, parse_record_type, validate_record_add_constraints_normalized},
+    record::{
+        RecordService, parse_record_type, validate_record_add_constraints_normalized,
+        validate_record_ttl,
+    },
     repository::RepositoryService,
     serial::generate_serial,
     types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRecord},
@@ -82,11 +85,11 @@ fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceE
 /// ExternalDNS sends TTL 0 for "not configured"; both resolve to the zone TTL.
 fn normalize_ttl(ttl: Option<i32>) -> Result<Option<i32>, ServiceError> {
     match ttl {
-        Some(ttl) if ttl < 0 => Err(ServiceError::invalid_input(
-            "TTL must not be negative".to_string(),
-        )),
         Some(0) | None => Ok(None),
-        Some(ttl) => Ok(Some(ttl)),
+        Some(ttl) => {
+            validate_record_ttl(ttl)?;
+            Ok(Some(ttl))
+        }
     }
 }
 

@@ -4,7 +4,7 @@ use bindizr_db::repository::LockLevel;
 use super::{
     RecordService,
     validation::{
-        normalize_record_owner_name, parse_record_type,
+        normalize_record_owner_name, parse_record_type, validate_record_ttl,
         validate_record_update_constraints_normalized,
     },
 };
@@ -54,9 +54,15 @@ impl RecordService {
                     "value is required when changing a record's type".to_string(),
                 ));
             }
-            // Only MX/SRV carry a priority, so retyping to any other type clears it.
+            // Only MX/SRV carry a priority: given for another type it is the
+            // error creation gives, and retyping to another type clears it.
             let priority = if matches!(record_type, RecordType::MX | RecordType::SRV) {
                 request.priority.or(existing.priority)
+            } else if request.priority.is_some() {
+                return Err(ServiceError::invalid_record_value(format!(
+                    "{} records do not take a priority",
+                    record_type
+                )));
             } else {
                 None
             };
@@ -65,6 +71,13 @@ impl RecordService {
                     .to_encoded_value(&record_type, priority)
                     .map_err(ServiceError::invalid_record_value)?,
                 None => existing.value.clone(),
+            };
+            let ttl = match request.ttl {
+                Some(ttl) => {
+                    validate_record_ttl(ttl)?;
+                    ttl
+                }
+                None => existing.ttl,
             };
             // An omitted name keeps the stored owner, which needs no reparse.
             let owner_name = match &request.name {
@@ -75,7 +88,7 @@ impl RecordService {
                 owner_name,
                 record_type,
                 encoded_value,
-                ttl: request.ttl.unwrap_or(existing.ttl),
+                ttl,
                 priority,
             })
         })
