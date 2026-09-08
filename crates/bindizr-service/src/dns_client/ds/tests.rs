@@ -384,13 +384,13 @@ async fn discover_parent_finds_the_closest_enclosing_zone() {
             .await
             .unwrap();
     assert_eq!(parent, "example.com");
-    assert_eq!(nameservers, vec!["ns1.example.com", "ns2.example.com"]);
+    assert_eq!(nameservers, vec!["ns1.example.com.", "ns2.example.com."]);
 
     let (parent, nameservers) = discover_parent(&zone_name("example.com"), &[resolver], TIMEOUT)
         .await
         .unwrap();
     assert_eq!(parent, "com");
-    assert_eq!(nameservers, vec!["a.gtld-servers.net"]);
+    assert_eq!(nameservers, vec!["a.gtld-servers.net."]);
 }
 
 #[tokio::test]

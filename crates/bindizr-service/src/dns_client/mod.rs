@@ -12,6 +12,7 @@ use std::{net::SocketAddr, time::Duration};
 use bindizr_core::{
     dns::{
         address::{ParsedAddress, parse_address_target},
+        message::encode_tcp_message,
         query::is_truncated,
     },
     log_error,
@@ -48,36 +49,32 @@ pub(crate) async fn tcp_exchange(
     request: &[u8],
     what: &str,
 ) -> Result<Vec<u8>, String> {
-    let len = u16::try_from(request.len()).map_err(|_| {
-        format!(
-            "{} request of {} bytes exceeds a TCP frame",
-            what,
-            request.len()
-        )
-    })?;
+    let frame = encode_tcp_message(request)?;
     let exchange = async {
         let mut stream = TcpStream::connect(server_addr)
             .await
             .map_err(|e| e.to_string())?;
-        let mut frame = Vec::with_capacity(2 + request.len());
-        frame.extend_from_slice(&len.to_be_bytes());
-        frame.extend_from_slice(request);
         stream.write_all(&frame).await.map_err(|e| e.to_string())?;
-        let mut prefix = [0u8; 2];
-        stream
-            .read_exact(&mut prefix)
-            .await
-            .map_err(|e| e.to_string())?;
-        let mut response = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
-        stream
-            .read_exact(&mut response)
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok::<Vec<u8>, String>(response)
+        read_tcp_message(&mut stream).await
     };
     tokio::time::timeout(timeout, exchange)
         .await
         .map_err(|_| format!("{} TCP timeout", what))?
+}
+
+/// Read one length-prefixed DNS message (RFC 1035, Section 4.2.2).
+pub(crate) async fn read_tcp_message(stream: &mut TcpStream) -> Result<Vec<u8>, String> {
+    let mut prefix = [0u8; 2];
+    stream
+        .read_exact(&mut prefix)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut message = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
+    stream
+        .read_exact(&mut message)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(message)
 }
 
 /// Send one UDP DNS message and wait for a single response, with `timeout`

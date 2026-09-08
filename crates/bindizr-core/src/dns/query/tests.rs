@@ -236,7 +236,7 @@ fn extract_ns_names_reads_the_answer_names() {
     );
     assert_eq!(
         extract_ns_names(9, &response).unwrap(),
-        vec!["a.gtld-servers.net", "b.gtld-servers.net"]
+        vec!["a.gtld-servers.net.", "b.gtld-servers.net."]
     );
 }
 

@@ -4,7 +4,7 @@
 
 use domain::{
     base::{
-        Message, MessageBuilder, Name,
+        Message, MessageBuilder, Name, ToName,
         iana::{Class, Opcode, Rcode, Rtype},
         rdata::ComposeRecordData,
     },
@@ -294,8 +294,8 @@ pub fn extract_ds_rrset(query_id: u16, response: &[u8]) -> Result<Option<DsRrset
     Ok(Some(DsRrset { records, ttl }))
 }
 
-/// Read a resolver's answer to an NS question: the nameserver names without
-/// the trailing dot; empty for NODATA or NXDOMAIN.
+/// Read a resolver's NS answer as absolute names (trailing dot), so a later
+/// lookup skips search-list expansion; empty for NODATA or NXDOMAIN.
 pub fn extract_ns_names(query_id: u16, response: &[u8]) -> Result<Vec<String>, String> {
     let message = parse_response(query_id, response)?;
     match message.header().rcode() {
@@ -310,7 +310,7 @@ pub fn extract_ns_names(query_id: u16, response: &[u8]) -> Result<Vec<String>, S
     let mut names = Vec::new();
     for rr in answer.limit_to::<Ns<_>>() {
         let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
-        names.push(rr.data().nsdname().to_string());
+        names.push(rr.data().nsdname().fmt_with_dot().to_string());
     }
     Ok(names)
 }

@@ -128,7 +128,8 @@ pub(crate) async fn build_status_tx(
 pub(crate) fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
     let apex = to_wire_name(zone.name.to_wire())
         .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
-    let rdata = ds_rdata_for(key, &apex).map_err(ServiceError::dnssec_signing_failed)?;
+    let rdata = ds_rdata_for(key, &apex, key.algorithm.ds_digest_type())
+        .map_err(ServiceError::dnssec_signing_failed)?;
     let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
 
     Ok(DnssecDsInfo {

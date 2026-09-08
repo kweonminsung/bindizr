@@ -32,19 +32,34 @@ pub fn parse_address_target(value: &str, default_port: u16) -> ParsedAddress {
     ParsedAddress::HostPort(host_port)
 }
 
+/// `host[:port]`, `ip[:port]`, or `[ipv6][:port]` with a numeric, non-zero
+/// port: a target the resolver takes as-is.
+pub fn is_address_target(value: &str) -> bool {
+    if value.parse::<IpAddr>().is_ok() || value.parse::<SocketAddr>().is_ok() {
+        return true;
+    }
+    if let Some((ip, rest)) = value.strip_prefix('[').and_then(|v| v.split_once(']')) {
+        return ip.parse::<IpAddr>().is_ok() && (rest.is_empty() || has_explicit_port(value));
+    }
+    match value.rsplit_once(':') {
+        Some(_) => has_explicit_port(value),
+        None => !value.is_empty(),
+    }
+}
+
 fn has_explicit_port(value: &str) -> bool {
     if let Some((_, rest)) = value.strip_prefix('[').and_then(|v| v.split_once(']')) {
         return rest.strip_prefix(':').is_some_and(is_valid_port);
     }
 
     match value.rsplit_once(':') {
-        Some((host, port)) if !host.contains(':') => is_valid_port(port),
+        Some((host, port)) if !host.is_empty() && !host.contains(':') => is_valid_port(port),
         _ => false,
     }
 }
 
 fn is_valid_port(value: &str) -> bool {
-    value.parse::<u16>().is_ok()
+    value.parse::<u16>().is_ok_and(|port| port != 0)
 }
 
 #[cfg(test)]
@@ -90,6 +105,32 @@ mod tests {
             target_to_string(parse_address_target("ns2.example.com:5353", 53)),
             "HostPort(ns2.example.com:5353)"
         );
+    }
+
+    #[test]
+    fn is_address_target_accepts_host_port_forms_and_rejects_the_rest() {
+        for value in [
+            "ns.parent.example",
+            "ns.parent.example:5353",
+            "192.0.2.1",
+            "192.0.2.1:53",
+            "2001:db8::1",
+            "[2001:db8::1]",
+            "[2001:db8::1]:53",
+        ] {
+            assert!(is_address_target(value), "{value}");
+        }
+        for value in [
+            "",
+            "ns.parent.example:not-a-port",
+            "ns.parent.example:",
+            "ns.parent.example:0",
+            ":53",
+            "[2001:db8::1",
+            "[2001:db8::1]:x",
+        ] {
+            assert!(!is_address_target(value), "{value}");
+        }
     }
 
     #[test]

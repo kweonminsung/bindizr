@@ -5,13 +5,13 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 use bindizr_core::{
     dns::{
-        message::{Name, Opcode, Rtype},
+        message::{Name, Opcode, Rtype, encode_tcp_message},
         name::decode_name_labels,
         query::{TransferRr, build_question, extract_transfer_rrs},
     },
     model::record::RecordType,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 /// Transfer the zone from `server` and render it as zone-file text ready
 /// for the import parser.
@@ -56,13 +56,8 @@ async fn transfer_from(addr: SocketAddr, qname: &Name<Vec<u8>>) -> Result<Vec<Tr
     let mut stream = tokio::net::TcpStream::connect(addr)
         .await
         .map_err(|e| format!("connect failed: {}", e))?;
-    let frame = (query.len() as u16).to_be_bytes();
     stream
-        .write_all(&frame)
-        .await
-        .map_err(|e| format!("send failed: {}", e))?;
-    stream
-        .write_all(&query)
+        .write_all(&encode_tcp_message(&query)?)
         .await
         .map_err(|e| format!("send failed: {}", e))?;
 
@@ -71,22 +66,13 @@ async fn transfer_from(addr: SocketAddr, qname: &Name<Vec<u8>>) -> Result<Vec<Tr
     let mut rrs: Vec<TransferRr> = Vec::new();
     let mut total_bytes = 0usize;
     loop {
-        let mut length = [0u8; 2];
-        stream
-            .read_exact(&mut length)
+        let response = super::read_tcp_message(&mut stream)
             .await
             .map_err(|e| format!("read failed before the closing SOA: {}", e))?;
-        let length = usize::from(u16::from_be_bytes(length));
-
-        total_bytes += length;
+        total_bytes += response.len();
         if total_bytes > MAX_TRANSFER_BYTES {
             return Err(format!("transfer exceeds {} bytes", MAX_TRANSFER_BYTES));
         }
-        let mut response = vec![0u8; length];
-        stream
-            .read_exact(&mut response)
-            .await
-            .map_err(|e| format!("read failed before the closing SOA: {}", e))?;
 
         let batch = extract_transfer_rrs(query_id, &response)?;
         for rr in batch {
