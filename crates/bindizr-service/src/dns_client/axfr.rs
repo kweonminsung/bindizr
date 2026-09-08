@@ -33,8 +33,14 @@ async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferRr>,
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("invalid zone name: {}", e))?;
 
     let deadline = tokio::time::Instant::now() + TRANSFER_TIMEOUT;
+    let entries = tokio::time::timeout_at(
+        deadline,
+        super::resolve_address_entries(server, TRANSFER_TIMEOUT),
+    )
+    .await
+    .map_err(|_| format!("{}: resolution timed out", server))?;
     let mut last = None;
-    for (entry, result) in super::resolve_address_entries(server, TRANSFER_TIMEOUT).await {
+    for (entry, result) in entries {
         let addrs = result.map_err(|e| format!("failed to resolve {}: {}", entry, e))?;
         for addr in addrs {
             match tokio::time::timeout_at(deadline, transfer_from(addr, &qname)).await {

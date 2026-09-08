@@ -414,6 +414,29 @@ fn extract_ns_names_reads_the_answer_names() {
 }
 
 #[test]
+fn extract_ns_names_ignores_nameservers_of_another_owner() {
+    let alias = name("www.example.com");
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(9);
+    builder.header_mut().set_qr(true);
+    let mut question = builder.question();
+    question.push((&alias, Rtype::NS)).unwrap();
+    // A CNAME's answer: the target's NS records follow, owned by the target.
+    let mut answer = question.answer();
+    answer
+        .push((
+            &name("target.example"),
+            Class::IN,
+            Ttl::from_secs(3600),
+            Ns::new(name("ns1.target.example")),
+        ))
+        .unwrap();
+    let response = answer.finish();
+
+    assert!(extract_ns_names(9, &alias, &response).unwrap().is_empty());
+}
+
+#[test]
 fn extract_ns_names_reads_nxdomain_and_nodata_as_no_nameservers() {
     let apex = name("nx.example");
     let response = build_ns_response(9, Rcode::NXDOMAIN, &apex, &[]);

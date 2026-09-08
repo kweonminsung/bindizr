@@ -5,6 +5,7 @@ use std::{
 };
 
 use bindizr_core::dns::{
+    address::is_address_target,
     name::{OwnerName, ZoneName},
     zonefile::{ZoneFileValue, parse_zone_file},
 };
@@ -101,9 +102,9 @@ impl RecordService {
             (Some(content), None) => Cow::Borrowed(content.as_str()),
             (None, Some(server)) => {
                 let server = server.trim();
-                if server.is_empty() {
+                if !is_address_target(server) {
                     return Err(ServiceError::invalid_input(
-                        "from_server must name a server",
+                        "from_server must name one server as host[:port]",
                     ));
                 }
                 // The zone's existence precedes the outbound fetch, so a

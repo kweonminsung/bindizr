@@ -374,6 +374,11 @@ pub fn extract_ns_names(
     let mut names = Vec::new();
     for rr in answer.limit_to::<Ns<_>>() {
         let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
+        // A CNAME answer carries the target's NS set too; only the name's own
+        // NS records say it is a zone apex.
+        if !rr.owner().name_eq(qname) {
+            continue;
+        }
         names.push(rr.data().nsdname().fmt_with_dot().to_string());
     }
     Ok(names)

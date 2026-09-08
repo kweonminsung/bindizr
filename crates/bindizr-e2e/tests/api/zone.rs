@@ -1570,10 +1570,11 @@ async fn zone_import_from_server_over_http() {
     assert_eq!(body["summary"]["unchanged"], 3);
     assert_eq!(body["summary"]["added"], 0);
 
-    // Exactly one source.
+    // Exactly one source, and that source one server.
     for request in [
         json!({}),
         json!({ "content": "www IN A 192.0.2.1\n", "from_server": server }),
+        json!({ "from_server": "127.0.0.1:1,127.0.0.1:2", "mode": "replace" }),
     ] {
         let (status, _) = app
             .request(

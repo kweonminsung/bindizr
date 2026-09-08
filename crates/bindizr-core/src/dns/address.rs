@@ -37,8 +37,11 @@ pub fn parse_address_target(value: &str, default_port: u16) -> ParsedAddress {
 /// `host[:port]`, `ip[:port]`, or `[ipv6][:port]`: LDH labels (`_` allowed)
 /// and a numeric, non-zero port, as the resolver takes them.
 pub fn is_address_target(value: &str) -> bool {
-    if value.parse::<IpAddr>().is_ok() || value.parse::<SocketAddr>().is_ok() {
+    if value.parse::<IpAddr>().is_ok() {
         return true;
+    }
+    if let Ok(addr) = value.parse::<SocketAddr>() {
+        return addr.port() != 0;
     }
     if let Some((ip, rest)) = value.strip_prefix('[').and_then(|v| v.split_once(']')) {
         return ip.parse::<IpAddr>().is_ok() && (rest.is_empty() || has_explicit_port(value));
@@ -141,6 +144,8 @@ mod tests {
             "ns.parent.example:not-a-port",
             "ns.parent.example:",
             "ns.parent.example:0",
+            "192.0.2.1:0",
+            "[2001:db8::1]:0",
             ":53",
             "[2001:db8::1",
             "[2001:db8::1]:x",
