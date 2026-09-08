@@ -27,7 +27,8 @@ enum Answer {
     Silence,
 }
 
-fn encode_name(name: &str, buf: &mut Vec<u8>) {
+/// Write `name` in wire form; the other client test modules borrow it.
+pub(crate) fn encode_name(name: &str, buf: &mut Vec<u8>) {
     for label in name.split('.').filter(|label| !label.is_empty()) {
         buf.push(label.len() as u8);
         buf.extend_from_slice(label.as_bytes());

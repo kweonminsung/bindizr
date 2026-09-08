@@ -106,6 +106,31 @@ fn build_ns_response(
     answer.finish()
 }
 
+/// One AXFR response message with or without the echoed `question` and the
+/// `aa` flag, answering one IN A record for `apex`.
+fn build_transfer_message(id: u16, apex: &Name<Vec<u8>>, question: bool, aa: bool) -> Vec<u8> {
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(id);
+    builder.header_mut().set_qr(true);
+    builder.header_mut().set_aa(aa);
+    let mut answer = if question {
+        let mut q = builder.question();
+        q.push((apex, Rtype::AXFR)).unwrap();
+        q.answer()
+    } else {
+        builder.answer()
+    };
+    answer
+        .push((
+            apex,
+            Class::IN,
+            Ttl::from_secs(300),
+            A::new("192.0.2.1".parse().unwrap()),
+        ))
+        .unwrap();
+    answer.finish()
+}
+
 #[test]
 fn transfer_rejects_a_non_in_rr() {
     let name: Name<Vec<u8>> = Name::from_str("example.com").unwrap();
@@ -123,8 +148,40 @@ fn transfer_rejects_a_non_in_rr() {
         .unwrap();
     let wire = answer.finish();
 
-    let err = extract_transfer_rrs(7, &wire).unwrap_err();
+    let err = extract_transfer_rrs(7, &name, false, &wire).unwrap_err();
     assert!(err.contains("class"), "{err}");
+}
+
+#[test]
+fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
+    let apex = name("example.com");
+    let whole = build_transfer_message(7, &apex, true, true);
+    assert_eq!(
+        extract_transfer_rrs(7, &apex, true, &whole).unwrap().len(),
+        1
+    );
+
+    let unasked = build_transfer_message(7, &apex, false, true);
+    assert!(extract_transfer_rrs(7, &apex, true, &unasked).is_err());
+    // A later message may leave the question out.
+    assert_eq!(
+        extract_transfer_rrs(7, &apex, false, &unasked)
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let cached = build_transfer_message(7, &apex, true, false);
+    assert_eq!(
+        extract_transfer_rrs(7, &apex, true, &cached).unwrap_err(),
+        "response is not authoritative"
+    );
+
+    let other = build_transfer_message(7, &name("other.com"), true, true);
+    assert_eq!(
+        extract_transfer_rrs(7, &apex, false, &other).unwrap_err(),
+        "response answers another question"
+    );
 }
 
 #[test]

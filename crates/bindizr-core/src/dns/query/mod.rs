@@ -94,6 +94,21 @@ fn parse_answer<'a>(
     Ok(message)
 }
 
+/// `parse_answer`, and the answer must be the server's own (AA), not a
+/// cache's.
+fn parse_authoritative_answer<'a>(
+    query_id: u16,
+    qname: &Name<Vec<u8>>,
+    rtype: Rtype,
+    response: &'a [u8],
+) -> Result<Message<&'a [u8]>, String> {
+    let message = parse_answer(query_id, qname, rtype, response)?;
+    if !message.header().aa() {
+        return Err("response is not authoritative".to_string());
+    }
+    Ok(message)
+}
+
 /// Check a response answers our question: our id, QR set, not truncated.
 /// The RCODE is the caller's, since NXDOMAIN answers some questions.
 fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, String> {
@@ -130,10 +145,27 @@ pub struct TransferRr {
 
 /// Validate one AXFR response message and collect every answer RR; the
 /// caller assembles the stream (SOA-delimited per RFC 5936, Section 2.2).
-pub fn extract_transfer_rrs(query_id: u16, response: &[u8]) -> Result<Vec<TransferRr>, String> {
+/// The `first` message must echo the question and be authoritative; later
+/// ones may omit the question (RFC 5936, Sections 2.2.1 and 2.2.2).
+pub fn extract_transfer_rrs(
+    query_id: u16,
+    qname: &Name<Vec<u8>>,
+    first: bool,
+    response: &[u8],
+) -> Result<Vec<TransferRr>, String> {
     use domain::rdata::AllRecordData;
 
-    let message = parse_response(query_id, response)?;
+    let message = if first {
+        parse_authoritative_answer(query_id, qname, Rtype::AXFR, response)?
+    } else if parse_response(query_id, response)?
+        .header_counts()
+        .qdcount()
+        == 1
+    {
+        parse_answer(query_id, qname, Rtype::AXFR, response)?
+    } else {
+        parse_response(query_id, response)?
+    };
     if message.header().rcode() != Rcode::NOERROR {
         return Err(format!("RCODE {}", message.header().rcode().to_int()));
     }
@@ -186,23 +218,15 @@ pub fn extract_transfer_rrs(query_id: u16, response: &[u8]) -> Result<Vec<Transf
 }
 
 /// Check that a NOTIFY was acknowledged by the server we asked.
-pub fn validate_notify_response(query_id: u16, response: &[u8]) -> Result<(), String> {
-    let message = Message::from_octets(response)
-        .map_err(|e| format!("NOTIFY response is malformed: {}", e))?;
-
+pub fn validate_notify_response(
+    query_id: u16,
+    qname: &Name<Vec<u8>>,
+    response: &[u8],
+) -> Result<(), String> {
+    // The response copies the request's question (RFC 1996, Section 3.7).
+    let message =
+        parse_answer(query_id, qname, Rtype::SOA, response).map_err(|e| format!("NOTIFY {}", e))?;
     let header = message.header();
-    if header.id() != query_id {
-        return Err(format!(
-            "NOTIFY response ID mismatch: expected {}, got {}",
-            query_id,
-            header.id()
-        ));
-    }
-
-    if !header.qr() {
-        return Err("NOTIFY response does not have QR bit set".to_string());
-    }
-
     if header.opcode() != Opcode::NOTIFY {
         return Err(format!(
             "NOTIFY response opcode mismatch: expected {}, got {}",
@@ -210,21 +234,23 @@ pub fn validate_notify_response(query_id: u16, response: &[u8]) -> Result<(), St
             header.opcode().to_int()
         ));
     }
-
     if header.rcode() != Rcode::NOERROR {
         return Err(format!(
             "NOTIFY response returned RCODE {}",
             header.rcode().to_int()
         ));
     }
-
     Ok(())
 }
 
-/// Validates a SOA query response and extracts the serial from the first SOA
-/// record in the answer section.
-pub fn extract_soa_serial(query_id: u16, response: &[u8]) -> Result<u32, String> {
-    let message = parse_response(query_id, response)?;
+/// Read an authoritative SOA answer's serial: the serial a secondary itself
+/// serves for `qname`, which a cache's answer would not be.
+pub fn extract_soa_serial(
+    query_id: u16,
+    qname: &Name<Vec<u8>>,
+    response: &[u8],
+) -> Result<u32, String> {
+    let message = parse_authoritative_answer(query_id, qname, Rtype::SOA, response)?;
     if message.header().rcode() != Rcode::NOERROR {
         return Err(format!("RCODE {}", message.header().rcode().to_int()));
     }
@@ -234,7 +260,8 @@ pub fn extract_soa_serial(query_id: u16, response: &[u8]) -> Result<u32, String>
         .map_err(|e| format!("malformed answer section: {}", e))?;
     answer
         .limit_to::<Soa<_>>()
-        .find_map(|rr| rr.ok())
+        .filter_map(|rr| rr.ok())
+        .find(|rr| rr.owner().name_eq(qname))
         .map(|rr| rr.data().serial().into_int())
         .ok_or_else(|| "no SOA record in answer".to_string())
 }
@@ -275,12 +302,8 @@ pub fn extract_ds_rrset(
     qname: &Name<Vec<u8>>,
     response: &[u8],
 ) -> Result<Option<DsRrset>, String> {
-    let message = parse_answer(query_id, qname, Rtype::DS, response)?;
-    let header = message.header();
-    if !header.aa() {
-        return Err("response is not authoritative".to_string());
-    }
-    match header.rcode() {
+    let message = parse_authoritative_answer(query_id, qname, Rtype::DS, response)?;
+    match message.header().rcode() {
         Rcode::NOERROR => {}
         Rcode::NXDOMAIN => return require_parent_soa(&message, qname).map(|_| None),
         rcode => return Err(format!("RCODE {}", rcode.to_int())),

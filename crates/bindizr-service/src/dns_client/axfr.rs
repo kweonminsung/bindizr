@@ -74,7 +74,7 @@ async fn transfer_from(addr: SocketAddr, qname: &Name<Vec<u8>>) -> Result<Vec<Tr
             return Err(format!("transfer exceeds {} bytes", MAX_TRANSFER_BYTES));
         }
 
-        let batch = extract_transfer_rrs(query_id, &response)?;
+        let batch = extract_transfer_rrs(query_id, qname, rrs.is_empty(), &response)?;
         for rr in batch {
             if rrs.is_empty() {
                 if rr.rtype != Rtype::SOA {

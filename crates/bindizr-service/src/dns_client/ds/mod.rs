@@ -269,4 +269,4 @@ async fn query_ds_at(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

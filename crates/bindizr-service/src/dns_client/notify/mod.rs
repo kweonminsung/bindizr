@@ -157,7 +157,7 @@ async fn send_notify_to_server_once(
         notify_message.len()
     );
 
-    validate_notify_response(query_id, &response[..received])?;
+    validate_notify_response(query_id, qname, &response[..received])?;
 
     Ok(())
 }

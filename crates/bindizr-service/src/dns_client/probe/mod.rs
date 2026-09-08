@@ -108,7 +108,7 @@ async fn probe_one(
     let (received, response) =
         super::udp_exchange(server_addr, timeout, &query, "SOA probe").await?;
 
-    extract_soa_serial(query_id, &response[..received])
+    extract_soa_serial(query_id, qname, &response[..received])
 }
 
 #[cfg(test)]
