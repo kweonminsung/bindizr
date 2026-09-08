@@ -255,3 +255,13 @@ fn extract_ns_names_rejects_an_error_rcode() {
     let response = build_ns_response(9, Rcode::SERVFAIL, &apex, &[]);
     assert_eq!(extract_ns_names(9, &response).unwrap_err(), "RCODE 2");
 }
+
+#[test]
+fn is_truncated_reads_the_tc_flag() {
+    let child = name("example.com");
+    let truncated = build_ds_response(1, true, true, true, Rcode::NOERROR, &child, &[]);
+    let whole = build_ds_response(1, true, true, false, Rcode::NOERROR, &child, &[]);
+    assert!(is_truncated(&truncated));
+    assert!(!is_truncated(&whole));
+    assert!(!is_truncated(b"not a message"));
+}

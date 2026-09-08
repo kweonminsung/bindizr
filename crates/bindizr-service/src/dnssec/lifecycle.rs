@@ -239,6 +239,8 @@ impl DnssecService {
     ) -> Result<(), ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
+        // The parent the probe asked; the locked zone must still name it.
+        let mut probed_parent_ns_addrs = None;
         if !skip_ds_check {
             // Unlocked pre-read to learn which parent to ask; the network wait
             // must not hold the zone row, which the deletion re-reads locked.
@@ -256,12 +258,20 @@ impl DnssecService {
                     &delegation.ds_key_tags,
                 ));
             }
+            probed_parent_ns_addrs = Some(zone.parent_ns_addrs);
         }
 
         let mut tx = RepositoryService::begin_tx("failed to disable DNSSEC").await?;
         let result = async {
             let (zone, _, _) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            // A parent set meanwhile was never asked.
+            if probed_parent_ns_addrs
+                .as_ref()
+                .is_some_and(|probed| *probed != zone.parent_ns_addrs)
+            {
+                return Err(ServiceError::dnssec_state_changed(zone.name.as_str()));
+            }
 
             let derived =
                 RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)

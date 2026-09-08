@@ -199,8 +199,9 @@ CLI/daemon socket — private keys never transit the HTTP API.
 
 Dropping signatures while the parent still publishes your DS makes the zone
 **bogus**, so `dnssec disable` asks the parent's nameservers for the DS
-first and refuses while any still serves one (`DNSSEC_DS_PUBLISHED`) or
-fails to answer (`DNSSEC_DS_UNVERIFIED`). Go insecure in order:
+first and refuses while any still serves one (`DNSSEC_DS_PUBLISHED`), fails
+to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked
+(`DNSSEC_STATE_CHANGED`; retry). Go insecure in order:
 
 1. Ask the parent to remove the DS. If the parent consumes CDS,
    `bindizr dnssec withdraw start example.com` publishes the RFC 8078

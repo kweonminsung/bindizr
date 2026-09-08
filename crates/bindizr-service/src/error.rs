@@ -29,6 +29,7 @@ pub enum ErrorCode {
     DnssecDsPublished,
     DnssecDsNotPublished,
     DnssecDsUnverified,
+    DnssecStateChanged,
     DnssecPolicyNotFound,
     DnssecPolicyConflict,
     DnssecPolicyInUse,
@@ -67,6 +68,7 @@ impl ErrorCode {
             ErrorCode::DnssecDsPublished => "DNSSEC_DS_PUBLISHED",
             ErrorCode::DnssecDsNotPublished => "DNSSEC_DS_NOT_PUBLISHED",
             ErrorCode::DnssecDsUnverified => "DNSSEC_DS_UNVERIFIED",
+            ErrorCode::DnssecStateChanged => "DNSSEC_STATE_CHANGED",
             ErrorCode::DnssecPolicyNotFound => "DNSSEC_POLICY_NOT_FOUND",
             ErrorCode::DnssecPolicyConflict => "DNSSEC_POLICY_CONFLICT",
             ErrorCode::DnssecPolicyInUse => "DNSSEC_POLICY_IN_USE",
@@ -107,6 +109,7 @@ impl ErrorCode {
             "DNSSEC_DS_PUBLISHED" => ErrorCode::DnssecDsPublished,
             "DNSSEC_DS_NOT_PUBLISHED" => ErrorCode::DnssecDsNotPublished,
             "DNSSEC_DS_UNVERIFIED" => ErrorCode::DnssecDsUnverified,
+            "DNSSEC_STATE_CHANGED" => ErrorCode::DnssecStateChanged,
             "DNSSEC_POLICY_NOT_FOUND" => ErrorCode::DnssecPolicyNotFound,
             "DNSSEC_POLICY_CONFLICT" => ErrorCode::DnssecPolicyConflict,
             "DNSSEC_POLICY_IN_USE" => ErrorCode::DnssecPolicyInUse,
@@ -149,6 +152,7 @@ impl ErrorCode {
             | ErrorCode::DnssecDsPublished
             | ErrorCode::DnssecDsNotPublished
             | ErrorCode::DnssecDsUnverified
+            | ErrorCode::DnssecStateChanged
             | ErrorCode::DnssecPolicyConflict
             | ErrorCode::DnssecPolicyInUse => 409,
             ErrorCode::PayloadTooLarge => 413,
@@ -361,6 +365,17 @@ impl ServiceError {
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(", "),
+                zone_name.into()
+            ),
+        )
+    }
+
+    pub(crate) fn dnssec_state_changed(zone_name: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCode::DnssecStateChanged,
+            format!(
+                "the DNSSEC keys or parent nameservers of zone '{}' changed while the parent was \
+                 being asked; retry",
                 zone_name.into()
             ),
         )

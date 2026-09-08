@@ -156,10 +156,9 @@ async fn query_ns(
     let mut last_error = None;
     for resolver in resolvers {
         let (query_id, query) = build_edns_question(true, qname, Rtype::NS);
-        let result = match super::udp_exchange(*resolver, timeout, &query, "NS query").await {
-            Ok((received, response)) => extract_ns_names(query_id, &response[..received]),
-            Err(e) => Err(e),
-        };
+        let result = super::exchange_with_tcp_fallback(*resolver, timeout, &query, "NS query")
+            .await
+            .and_then(|response| extract_ns_names(query_id, &response));
         match result {
             Ok(names) => return Ok(names),
             Err(e) => last_error = Some(format!("resolver {}: {}", resolver, e)),
@@ -258,10 +257,9 @@ async fn query_ds_at(
     let mut last_error = None;
     for addr in addrs {
         let (query_id, query) = build_edns_question(false, qname, Rtype::DS);
-        let result = match super::udp_exchange(*addr, timeout, &query, "DS query").await {
-            Ok((received, response)) => extract_ds_rrset(query_id, &response[..received]),
-            Err(e) => Err(e),
-        };
+        let result = super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query")
+            .await
+            .and_then(|response| extract_ds_rrset(query_id, &response));
         match result {
             Ok(rrset) => return Ok(rrset),
             Err(e) => last_error = Some(e),

@@ -1,21 +1,27 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use bindizr_core::dns::{name::ZoneName, query::DsRr};
-use tokio::net::UdpSocket;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, UdpSocket},
+};
 
 use super::*;
 
 const TIMEOUT: Duration = Duration::from_secs(2);
 const FLAG_AA: u16 = 0x0400;
+const FLAG_TC: u16 = 0x0200;
 const RCODE_NXDOMAIN: u16 = 3;
 const RTYPE_NS: u16 = 2;
 const RTYPE_DS: u16 = 43;
 
 /// What a fake server answers to every question: DS records at the qname,
-/// NS records at the qname, NXDOMAIN, or nothing at all.
+/// the same but truncated over UDP so only TCP carries them, NXDOMAIN, or
+/// nothing at all.
 #[derive(Clone)]
 enum Answer {
     Ds { aa: bool, records: Vec<(u16, u32)> },
+    DsTruncatedOverUdp { records: Vec<(u16, u32)> },
     Nxdomain,
     Silence,
 }
@@ -95,10 +101,40 @@ fn ns_rr(nsdname: &str) -> Vec<u8> {
     build_rr(RTYPE_NS, 3600, &rdata)
 }
 
-/// A UDP server answering every question with `answer`, until dropped.
+/// The whole answer to `query`, as TCP always carries it.
+fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
+    match answer {
+        Answer::Silence => None,
+        Answer::Nxdomain => Some(build_response(query, FLAG_AA, RCODE_NXDOMAIN, &[])),
+        Answer::Ds { aa, records } => {
+            let answers: Vec<Vec<u8>> = records
+                .iter()
+                .map(|(key_tag, ttl)| ds_rr(*key_tag, *ttl))
+                .collect();
+            Some(build_response(
+                query,
+                if *aa { FLAG_AA } else { 0 },
+                0,
+                &answers,
+            ))
+        }
+        Answer::DsTruncatedOverUdp { records } => {
+            let answers: Vec<Vec<u8>> = records
+                .iter()
+                .map(|(key_tag, ttl)| ds_rr(*key_tag, *ttl))
+                .collect();
+            Some(build_response(query, FLAG_AA, 0, &answers))
+        }
+    }
+}
+
+/// A server answering every question with `answer` over UDP and TCP on one
+/// port, until dropped.
 async fn fake_server(answer: Answer) -> SocketAddr {
     let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
     let addr = socket.local_addr().unwrap();
+    let listener = TcpListener::bind(addr).await.unwrap();
+    let udp_answer = answer.clone();
     tokio::spawn(async move {
         let mut buf = [0u8; 4096];
         loop {
@@ -106,18 +142,37 @@ async fn fake_server(answer: Answer) -> SocketAddr {
                 return;
             };
             let query = &buf[..len];
-            let response = match &answer {
-                Answer::Silence => continue,
-                Answer::Nxdomain => build_response(query, FLAG_AA, RCODE_NXDOMAIN, &[]),
-                Answer::Ds { aa, records } => {
-                    let answers: Vec<Vec<u8>> = records
-                        .iter()
-                        .map(|(key_tag, ttl)| ds_rr(*key_tag, *ttl))
-                        .collect();
-                    build_response(query, if *aa { FLAG_AA } else { 0 }, 0, &answers)
+            let response = match &udp_answer {
+                Answer::DsTruncatedOverUdp { .. } => {
+                    build_response(query, FLAG_AA | FLAG_TC, 0, &[])
                 }
+                other => match build_full_response(query, other) {
+                    Some(response) => response,
+                    None => continue,
+                },
             };
             let _ = socket.send_to(&response, peer).await;
+        }
+    });
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut prefix = [0u8; 2];
+            if stream.read_exact(&mut prefix).await.is_err() {
+                continue;
+            }
+            let mut query = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
+            if stream.read_exact(&mut query).await.is_err() {
+                continue;
+            }
+            let Some(response) = build_full_response(&query, &answer) else {
+                continue;
+            };
+            let mut frame = (response.len() as u16).to_be_bytes().to_vec();
+            frame.extend_from_slice(&response);
+            let _ = stream.write_all(&frame).await;
         }
     });
     addr
@@ -202,6 +257,25 @@ async fn query_ds_reports_each_server_apart() {
                 ttl: 3600,
             }),
         ]
+    );
+}
+
+#[tokio::test]
+async fn query_ds_retries_a_truncated_answer_over_tcp() {
+    let server = fake_server(Answer::DsTruncatedOverUdp {
+        records: vec![(34217, 3600)],
+    })
+    .await;
+
+    let answers = query_ds(&zone_name("example.com"), &servers(&[server]), TIMEOUT)
+        .await
+        .unwrap();
+    assert_eq!(
+        answers,
+        vec![Some(DsRrset {
+            records: vec![parsed_ds_rr(34217)],
+            ttl: 3600,
+        })]
     );
 }
 

@@ -10,14 +10,75 @@ pub mod probe;
 use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{
-    dns::address::{ParsedAddress, parse_address_target},
+    dns::{
+        address::{ParsedAddress, parse_address_target},
+        query::is_truncated,
+    },
     log_error,
 };
-use tokio::net::{UdpSocket, lookup_host};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpStream, UdpSocket, lookup_host},
+};
 
 /// Maximum size of a UDP DNS response we accept: room for the
 /// `EDNS_UDP_PAYLOAD_SIZE` the DS and NS questions advertise.
 const UDP_RESPONSE_BUF: usize = 4096;
+
+/// Ask over UDP and, when the answer comes back truncated, again over TCP
+/// (RFC 1035, Section 4.2.1).
+pub(crate) async fn exchange_with_tcp_fallback(
+    server_addr: SocketAddr,
+    timeout: Duration,
+    request: &[u8],
+    what: &str,
+) -> Result<Vec<u8>, String> {
+    let (received, response) = udp_exchange(server_addr, timeout, request, what).await?;
+    if !is_truncated(&response[..received]) {
+        return Ok(response[..received].to_vec());
+    }
+    tcp_exchange(server_addr, timeout, request, what).await
+}
+
+/// Send one DNS message over TCP, length-prefixed (RFC 1035, Section
+/// 4.2.2), and read the single response; `timeout` covers the whole exchange.
+pub(crate) async fn tcp_exchange(
+    server_addr: SocketAddr,
+    timeout: Duration,
+    request: &[u8],
+    what: &str,
+) -> Result<Vec<u8>, String> {
+    let len = u16::try_from(request.len()).map_err(|_| {
+        format!(
+            "{} request of {} bytes exceeds a TCP frame",
+            what,
+            request.len()
+        )
+    })?;
+    let exchange = async {
+        let mut stream = TcpStream::connect(server_addr)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut frame = Vec::with_capacity(2 + request.len());
+        frame.extend_from_slice(&len.to_be_bytes());
+        frame.extend_from_slice(request);
+        stream.write_all(&frame).await.map_err(|e| e.to_string())?;
+        let mut prefix = [0u8; 2];
+        stream
+            .read_exact(&mut prefix)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut response = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
+        stream
+            .read_exact(&mut response)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok::<Vec<u8>, String>(response)
+    };
+    tokio::time::timeout(timeout, exchange)
+        .await
+        .map_err(|_| format!("{} TCP timeout", what))?
+}
 
 /// Send one UDP DNS message and wait for a single response, with `timeout`
 /// applied to both directions. `what` names the operation in error messages

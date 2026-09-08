@@ -67,6 +67,12 @@ pub fn build_edns_question(rd: bool, qname: &Name<Vec<u8>>, rtype: Rtype) -> (u1
     (query_id, additional.finish())
 }
 
+/// Whether a response carries the TC flag: the answer did not fit the UDP
+/// payload and is to be asked again over TCP (RFC 1035, Section 4.2.1).
+pub fn is_truncated(response: &[u8]) -> bool {
+    Message::from_octets(response).is_ok_and(|message| message.header().tc())
+}
+
 /// Check a response answers our question: our id, QR set, not truncated.
 /// The RCODE is the caller's, since NXDOMAIN answers some questions.
 fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, String> {

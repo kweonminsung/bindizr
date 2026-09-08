@@ -108,6 +108,9 @@ impl DnssecService {
     }
 }
 
+/// The width of the `zones.parent_ns_addrs` column.
+const MAX_PARENT_NS_ADDRS_LEN: usize = 1024;
+
 /// Trim a comma-separated `host[:port]` list into its stored form; `None` or
 /// an empty list clears the zone's parent nameservers.
 pub(crate) fn normalize_parent_ns_addrs(raw: Option<&str>) -> Result<Option<String>, ServiceError> {
@@ -130,5 +133,39 @@ pub(crate) fn normalize_parent_ns_addrs(raw: Option<&str>) -> Result<Option<Stri
             )));
         }
     }
-    Ok(Some(entries.join(",")))
+    let joined = entries.join(",");
+    if joined.len() > MAX_PARENT_NS_ADDRS_LEN {
+        return Err(ServiceError::invalid_input(format!(
+            "parent nameserver list is {} characters; at most {} are stored",
+            joined.len(),
+            MAX_PARENT_NS_ADDRS_LEN
+        )));
+    }
+    Ok(Some(joined))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_parent_ns_addrs;
+    use crate::error::ErrorCode;
+
+    #[test]
+    fn normalize_parent_ns_addrs_trims_entries_and_clears_on_an_empty_list() {
+        assert_eq!(
+            normalize_parent_ns_addrs(Some(" ns1.parent.example , ns2.parent.example:5353 "))
+                .unwrap()
+                .as_deref(),
+            Some("ns1.parent.example,ns2.parent.example:5353")
+        );
+        assert_eq!(normalize_parent_ns_addrs(Some(" , ")).unwrap(), None);
+        assert_eq!(normalize_parent_ns_addrs(None).unwrap(), None);
+    }
+
+    #[test]
+    fn normalize_parent_ns_addrs_rejects_a_list_wider_than_the_column() {
+        let entry = format!("{}.parent.example", "n".repeat(60));
+        let raw = vec![entry.as_str(); 20].join(",");
+        let err = normalize_parent_ns_addrs(Some(&raw)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+    }
 }
