@@ -15,16 +15,18 @@ pub(crate) struct SecondaryAcl {
     entries: Vec<SecondaryAclEntry>,
 }
 
+impl SecondaryAcl {
+    pub(crate) fn from_config() -> Self {
+        Self {
+            entries: parse_secondary_acl_entries(&config::bindizr_config().dns.secondary_addrs),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum SecondaryAclEntry {
     Ip(IpAddr),
     HostPort(String),
-}
-
-pub(crate) fn secondary_acl_from_config() -> SecondaryAcl {
-    SecondaryAcl {
-        entries: parse_secondary_acl_entries(&config::bindizr_config().dns.secondary_addrs),
-    }
 }
 
 pub(crate) async fn is_client_allowed(client_ip: IpAddr, acl: &SecondaryAcl) -> bool {

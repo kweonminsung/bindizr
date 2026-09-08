@@ -28,16 +28,6 @@ pub(crate) fn validate_record_ttl(ttl: i32) -> Result<(), ServiceError> {
     Ok(())
 }
 
-fn validate_record_value(
-    record_type: &RecordType,
-    value: &str,
-    priority: Option<i32>,
-) -> Result<(), ServiceError> {
-    record_type
-        .validate_value(value, priority)
-        .map_err(ServiceError::invalid_record_value)
-}
-
 pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
     value
         .parse::<RecordType>()
@@ -83,7 +73,9 @@ pub(crate) fn validate_record_add_constraints_normalized(
     priority: Option<i32>,
     except_record_id: Option<i32>,
 ) -> Result<(), ServiceError> {
-    validate_record_value(record_type, value, priority)?;
+    record_type
+        .validate_value(value, priority)
+        .map_err(ServiceError::invalid_record_value)?;
 
     if *record_type == RecordType::CNAME && stored_name.is_apex() {
         return Err(ServiceError::invalid_record_name(

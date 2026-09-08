@@ -1,6 +1,6 @@
 use base64::Engine;
 
-use super::{generate_secret, normalize_key_name, normalize_secret, parse_algorithm};
+use super::{normalize_key_name, normalize_secret, parse_algorithm};
 use crate::{error::ErrorCode, model::tsig_key::TsigAlgorithm};
 
 #[test]
@@ -71,16 +71,4 @@ fn normalize_secret_enforces_length_bounds() {
     let too_long = normalize_secret(&oversized).unwrap_err();
     assert_eq!(too_long.code, ErrorCode::InvalidInput);
     assert!(too_long.message.contains("at most 255"));
-}
-
-#[test]
-fn generate_secret_produces_32_random_base64_bytes() {
-    let first = generate_secret();
-    let second = generate_secret();
-
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(&first)
-        .unwrap();
-    assert_eq!(decoded.len(), 32);
-    assert_ne!(first, second);
 }

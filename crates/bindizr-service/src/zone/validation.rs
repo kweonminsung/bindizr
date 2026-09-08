@@ -25,7 +25,11 @@ pub(crate) fn normalize_create_zone_request(
     let rname = normalize_email(&request.rname)?;
     let ttl = validate_ttl(request.default_ttl)?;
 
-    validate_soa_wire_safety(&rname)?;
+    // `zone_name` and `mname` are wire-safe after `normalize_domain_name`
+    // (plain ASCII labels, each <= 63 bytes); the derived SOA RNAME's shifted
+    // label boundaries are checked by `SoaMailbox::from_email` itself.
+    SoaMailbox::from_email(&rname)
+        .map_err(|e| ServiceError::invalid_zone_field(format!("rname {}", e)))?;
 
     Ok(NormalizedCreateZoneRequest {
         name: zone_name,
@@ -208,13 +212,4 @@ fn normalize_soa_interval(
         )));
     }
     Ok(resolved)
-}
-
-// `zone_name` and `mname` are already wire-safe after `normalize_domain_name`
-// (plain ASCII labels, each <= 63 bytes); the derived SOA RNAME's shifted
-// label boundaries are checked by `SoaMailbox::from_email` itself.
-fn validate_soa_wire_safety(rname: &str) -> Result<(), ServiceError> {
-    SoaMailbox::from_email(rname)
-        .map(|_| ())
-        .map_err(|e| ServiceError::invalid_zone_field(format!("rname {}", e)))
 }

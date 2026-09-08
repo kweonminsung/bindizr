@@ -68,7 +68,12 @@ impl ZoneService {
         request: &UpdateZoneRequest,
     ) -> Result<Zone, ServiceError> {
         caller.require_global("update zones")?;
-        validate_serial_absent(request.serial)?;
+        // The serial is a system-managed version counter, never set on update.
+        if request.serial.is_some() {
+            return Err(ServiceError::invalid_input(
+                "serial is managed automatically and cannot be set on update",
+            ));
+        }
         Self::update_locked(zone_name, |existing| CreateZoneRequest {
             name: request
                 .name
@@ -265,14 +270,4 @@ impl ZoneService {
 
         Ok(updated_zone)
     }
-}
-
-/// The serial is a system-managed version counter and cannot be set on update.
-fn validate_serial_absent(serial: Option<i32>) -> Result<(), ServiceError> {
-    if serial.is_some() {
-        return Err(ServiceError::invalid_input(
-            "serial is managed automatically and cannot be set on update",
-        ));
-    }
-    Ok(())
 }

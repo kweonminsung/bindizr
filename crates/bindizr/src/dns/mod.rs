@@ -30,7 +30,7 @@ pub(crate) async fn initialize() {
         bindizr_config.dns.listen_port,
     );
 
-    let secondary_acl = server::acl::secondary_acl_from_config();
+    let secondary_acl = SecondaryAcl::from_config();
     let tcp_secondary_acl = secondary_acl.clone();
 
     tokio::spawn(async move {
