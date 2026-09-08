@@ -158,7 +158,7 @@ async fn query_ns(
         let (query_id, query) = build_edns_question(true, qname, Rtype::NS);
         let result = super::exchange_with_tcp_fallback(*resolver, timeout, &query, "NS query")
             .await
-            .and_then(|response| extract_ns_names(query_id, &response));
+            .and_then(|response| extract_ns_names(query_id, qname, &response));
         match result {
             Ok(names) => return Ok(names),
             Err(e) => last_error = Some(format!("resolver {}: {}", resolver, e)),
@@ -259,7 +259,7 @@ async fn query_ds_at(
         let (query_id, query) = build_edns_question(false, qname, Rtype::DS);
         let result = super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query")
             .await
-            .and_then(|response| extract_ds_rrset(query_id, &response));
+            .and_then(|response| extract_ds_rrset(query_id, qname, &response));
         match result {
             Ok(rrset) => return Ok(rrset),
             Err(e) => last_error = Some(e),

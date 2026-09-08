@@ -14,6 +14,7 @@ const FLAG_TC: u16 = 0x0200;
 const RCODE_NXDOMAIN: u16 = 3;
 const RTYPE_NS: u16 = 2;
 const RTYPE_DS: u16 = 43;
+const RTYPE_SOA: u16 = 6;
 
 /// What a fake server answers to every question: DS records at the qname,
 /// the same but truncated over UDP so only TCP carries them, NXDOMAIN, or
@@ -52,21 +53,49 @@ fn decode_question(query: &[u8]) -> (String, usize) {
 }
 
 /// A response echoing the query's id and question, with `flags` (QR is
-/// always set) and `rcode`, whose answer section holds `answers`.
-fn build_response(query: &[u8], flags: u16, rcode: u16, answers: &[Vec<u8>]) -> Vec<u8> {
+/// always set) and `rcode`, whose answer section holds `answers` and whose
+/// authority section holds `authority`.
+fn build_response(
+    query: &[u8],
+    flags: u16,
+    rcode: u16,
+    answers: &[Vec<u8>],
+    authority: &[Vec<u8>],
+) -> Vec<u8> {
     let (_, question_end) = decode_question(query);
     let mut buf = Vec::new();
     buf.extend_from_slice(&query[0..2]);
     buf.extend_from_slice(&(0x8000 | flags | rcode).to_be_bytes());
     buf.extend_from_slice(&1u16.to_be_bytes());
     buf.extend_from_slice(&(answers.len() as u16).to_be_bytes());
-    buf.extend_from_slice(&0u16.to_be_bytes());
+    buf.extend_from_slice(&(authority.len() as u16).to_be_bytes());
     buf.extend_from_slice(&0u16.to_be_bytes());
     buf.extend_from_slice(&query[12..question_end]);
-    for answer in answers {
-        buf.extend_from_slice(answer);
+    for rr in answers.iter().chain(authority) {
+        buf.extend_from_slice(rr);
     }
     buf
+}
+
+/// The SOA of the queried name's parent zone, as a negative answer's
+/// authority section carries it.
+fn parent_soa_rr(query: &[u8]) -> Vec<u8> {
+    let (qname, _) = decode_question(query);
+    let parent = qname.split_once('.').map_or("", |(_, rest)| rest);
+    let mut rr = Vec::new();
+    encode_name(parent, &mut rr);
+    rr.extend_from_slice(&RTYPE_SOA.to_be_bytes());
+    rr.extend_from_slice(&1u16.to_be_bytes());
+    rr.extend_from_slice(&3600u32.to_be_bytes());
+    let mut rdata = Vec::new();
+    encode_name("ns.parent.example", &mut rdata);
+    encode_name("hostmaster.parent.example", &mut rdata);
+    for field in [1u32, 3600, 600, 86400, 300] {
+        rdata.extend_from_slice(&field.to_be_bytes());
+    }
+    rr.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+    rr.extend_from_slice(&rdata);
+    rr
 }
 
 /// One answer RR owned by the question name (a pointer to offset 12).
@@ -103,9 +132,16 @@ fn ns_rr(nsdname: &str) -> Vec<u8> {
 
 /// The whole answer to `query`, as TCP always carries it.
 fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
+    let authority = [parent_soa_rr(query)];
     match answer {
         Answer::Silence => None,
-        Answer::Nxdomain => Some(build_response(query, FLAG_AA, RCODE_NXDOMAIN, &[])),
+        Answer::Nxdomain => Some(build_response(
+            query,
+            FLAG_AA,
+            RCODE_NXDOMAIN,
+            &[],
+            &authority,
+        )),
         Answer::Ds { aa, records } => {
             let answers: Vec<Vec<u8>> = records
                 .iter()
@@ -116,6 +152,7 @@ fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
                 if *aa { FLAG_AA } else { 0 },
                 0,
                 &answers,
+                &authority,
             ))
         }
         Answer::DsTruncatedOverUdp { records } => {
@@ -123,7 +160,7 @@ fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
                 .iter()
                 .map(|(key_tag, ttl)| ds_rr(*key_tag, *ttl))
                 .collect();
-            Some(build_response(query, FLAG_AA, 0, &answers))
+            Some(build_response(query, FLAG_AA, 0, &answers, &authority))
         }
     }
 }
@@ -144,7 +181,7 @@ async fn fake_server(answer: Answer) -> SocketAddr {
             let query = &buf[..len];
             let response = match &udp_answer {
                 Answer::DsTruncatedOverUdp { .. } => {
-                    build_response(query, FLAG_AA | FLAG_TC, 0, &[])
+                    build_response(query, FLAG_AA | FLAG_TC, 0, &[], &[])
                 }
                 other => match build_full_response(query, other) {
                     Some(response) => response,
@@ -198,7 +235,7 @@ async fn fake_resolver() -> SocketAddr {
             };
             let answers: Vec<Vec<u8>> = names.iter().map(|ns| ns_rr(ns)).collect();
             let _ = socket
-                .send_to(&build_response(query, 0, 0, &answers), peer)
+                .send_to(&build_response(query, 0, 0, &answers, &[]), peer)
                 .await;
         }
     });

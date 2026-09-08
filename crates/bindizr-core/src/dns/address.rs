@@ -3,6 +3,8 @@
 
 use std::net::{IpAddr, SocketAddr};
 
+use super::name::{MAX_DOMAIN_LEN, classify_domain_label};
+
 pub enum ParsedAddress {
     SocketAddr(SocketAddr),
     HostPort(String),
@@ -32,8 +34,8 @@ pub fn parse_address_target(value: &str, default_port: u16) -> ParsedAddress {
     ParsedAddress::HostPort(host_port)
 }
 
-/// `host[:port]`, `ip[:port]`, or `[ipv6][:port]` with a numeric, non-zero
-/// port: a target the resolver takes as-is.
+/// `host[:port]`, `ip[:port]`, or `[ipv6][:port]`: LDH labels (`_` allowed)
+/// and a numeric, non-zero port, as the resolver takes them.
 pub fn is_address_target(value: &str) -> bool {
     if value.parse::<IpAddr>().is_ok() || value.parse::<SocketAddr>().is_ok() {
         return true;
@@ -42,9 +44,18 @@ pub fn is_address_target(value: &str) -> bool {
         return ip.parse::<IpAddr>().is_ok() && (rest.is_empty() || has_explicit_port(value));
     }
     match value.rsplit_once(':') {
-        Some(_) => has_explicit_port(value),
-        None => !value.is_empty(),
+        Some((host, _)) => has_explicit_port(value) && is_hostname(host),
+        None => is_hostname(value),
     }
+}
+
+fn is_hostname(value: &str) -> bool {
+    let name = value.strip_suffix('.').unwrap_or(value);
+    !name.is_empty()
+        && name.len() <= MAX_DOMAIN_LEN
+        && name
+            .split('.')
+            .all(|label| classify_domain_label(label, true).is_ok())
 }
 
 fn has_explicit_port(value: &str) -> bool {
@@ -111,6 +122,8 @@ mod tests {
     fn is_address_target_accepts_host_port_forms_and_rejects_the_rest() {
         for value in [
             "ns.parent.example",
+            "ns.parent.example.",
+            "ns_1.parent.example:5353",
             "ns.parent.example:5353",
             "192.0.2.1",
             "192.0.2.1:53",
@@ -122,6 +135,9 @@ mod tests {
         }
         for value in [
             "",
+            "bad/name",
+            "bad#name:53",
+            "-bad.example",
             "ns.parent.example:not-a-port",
             "ns.parent.example:",
             "ns.parent.example:0",

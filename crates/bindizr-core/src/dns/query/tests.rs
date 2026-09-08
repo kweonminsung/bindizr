@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use domain::{
     base::{
-        Ttl,
+        Serial, Ttl,
         iana::{DigestAlgorithm, SecurityAlgorithm},
         opt::AllOptData,
     },
@@ -16,7 +16,8 @@ fn name(value: &str) -> Name<Vec<u8>> {
 }
 
 /// A response to a `qname`/`qtype` question with the flags and rcode given,
-/// whose answer section holds `records` (owner, TTL, DS fields).
+/// whose answer section holds `records` (owner, TTL, DS fields) and whose
+/// authority section holds the SOA of `authority_soa`, if any.
 fn build_ds_response(
     query_id: u16,
     qr: bool,
@@ -25,6 +26,7 @@ fn build_ds_response(
     rcode: Rcode,
     qname: &Name<Vec<u8>>,
     records: &[(&str, u32, u16)],
+    authority_soa: Option<&str>,
 ) -> Vec<u8> {
     let mut builder = MessageBuilder::new_vec();
     let header = builder.header_mut();
@@ -52,7 +54,26 @@ fn build_ds_response(
             ))
             .unwrap();
     }
-    answer.finish()
+    let mut authority = answer.authority();
+    if let Some(owner) = authority_soa {
+        authority
+            .push((
+                &name(owner),
+                Class::IN,
+                Ttl::from_secs(3600),
+                Soa::new(
+                    name("ns.parent.example"),
+                    name("hostmaster.parent.example"),
+                    Serial(1),
+                    Ttl::from_secs(3600),
+                    Ttl::from_secs(600),
+                    Ttl::from_secs(86400),
+                    Ttl::from_secs(300),
+                ),
+            ))
+            .unwrap();
+    }
+    authority.finish()
 }
 
 /// The record `build_ds_response` serves for `key_tag`, as parsed.
@@ -139,10 +160,11 @@ fn extract_ds_rrset_reads_the_records_and_the_rrset_ttl() {
             ("example.com", 3600, 2371),
             ("example.com", 86400, 34217),
         ],
+        None,
     );
 
     assert_eq!(
-        extract_ds_rrset(42, &response).unwrap(),
+        extract_ds_rrset(42, &child, &response).unwrap(),
         Some(DsRrset {
             records: vec![parsed_ds_rr(2371), parsed_ds_rr(34217)],
             ttl: 3600,
@@ -153,15 +175,77 @@ fn extract_ds_rrset_reads_the_records_and_the_rrset_ttl() {
 #[test]
 fn extract_ds_rrset_reads_nodata_as_no_ds() {
     let child = name("example.com");
-    let response = build_ds_response(42, true, true, false, Rcode::NOERROR, &child, &[]);
-    assert_eq!(extract_ds_rrset(42, &response).unwrap(), None);
+    let response = build_ds_response(
+        42,
+        true,
+        true,
+        false,
+        Rcode::NOERROR,
+        &child,
+        &[],
+        Some("com"),
+    );
+    assert_eq!(extract_ds_rrset(42, &child, &response).unwrap(), None);
 }
 
 #[test]
 fn extract_ds_rrset_reads_nxdomain_as_no_ds() {
     let child = name("example.com");
-    let response = build_ds_response(42, true, true, false, Rcode::NXDOMAIN, &child, &[]);
-    assert_eq!(extract_ds_rrset(42, &response).unwrap(), None);
+    let response = build_ds_response(
+        42,
+        true,
+        true,
+        false,
+        Rcode::NXDOMAIN,
+        &child,
+        &[],
+        Some("com"),
+    );
+    assert_eq!(extract_ds_rrset(42, &child, &response).unwrap(), None);
+}
+
+#[test]
+fn extract_ds_rrset_rejects_a_negative_answer_without_a_parent_soa() {
+    let child = name("example.com");
+    // The child's own server answers NODATA for its DS, with its own SOA.
+    for authority_soa in [None, Some("example.com"), Some("other.com")] {
+        let response = build_ds_response(
+            42,
+            true,
+            true,
+            false,
+            Rcode::NOERROR,
+            &child,
+            &[],
+            authority_soa,
+        );
+        assert_eq!(
+            extract_ds_rrset(42, &child, &response).unwrap_err(),
+            "negative answer carries no SOA of a parent zone",
+            "{authority_soa:?}"
+        );
+    }
+    let response = build_ds_response(42, true, true, false, Rcode::NXDOMAIN, &child, &[], None);
+    assert!(extract_ds_rrset(42, &child, &response).is_err());
+}
+
+#[test]
+fn extract_ds_rrset_rejects_an_answer_to_another_question() {
+    let child = name("example.com");
+    let response = build_ds_response(
+        42,
+        true,
+        true,
+        false,
+        Rcode::NOERROR,
+        &name("other.com"),
+        &[],
+        Some("com"),
+    );
+    assert_eq!(
+        extract_ds_rrset(42, &child, &response).unwrap_err(),
+        "response answers another question"
+    );
 }
 
 #[test]
@@ -175,8 +259,9 @@ fn extract_ds_rrset_ignores_records_for_another_owner() {
         Rcode::NOERROR,
         &child,
         &[("other.com", 3600, 1)],
+        Some("com"),
     );
-    assert_eq!(extract_ds_rrset(42, &response).unwrap(), None);
+    assert_eq!(extract_ds_rrset(42, &child, &response).unwrap(), None);
 }
 
 #[test]
@@ -190,9 +275,10 @@ fn extract_ds_rrset_rejects_a_non_authoritative_answer() {
         Rcode::NOERROR,
         &child,
         &[("example.com", 3600, 1)],
+        None,
     );
     assert_eq!(
-        extract_ds_rrset(42, &response).unwrap_err(),
+        extract_ds_rrset(42, &child, &response).unwrap_err(),
         "response is not authoritative"
     );
 }
@@ -200,9 +286,18 @@ fn extract_ds_rrset_rejects_a_non_authoritative_answer() {
 #[test]
 fn extract_ds_rrset_rejects_a_truncated_answer() {
     let child = name("example.com");
-    let response = build_ds_response(42, true, true, true, Rcode::NOERROR, &child, &[]);
+    let response = build_ds_response(
+        42,
+        true,
+        true,
+        true,
+        Rcode::NOERROR,
+        &child,
+        &[],
+        Some("com"),
+    );
     assert_eq!(
-        extract_ds_rrset(42, &response).unwrap_err(),
+        extract_ds_rrset(42, &child, &response).unwrap_err(),
         "truncated response"
     );
 }
@@ -210,16 +305,37 @@ fn extract_ds_rrset_rejects_a_truncated_answer() {
 #[test]
 fn extract_ds_rrset_rejects_an_error_rcode() {
     let child = name("example.com");
-    let response = build_ds_response(42, true, true, false, Rcode::REFUSED, &child, &[]);
-    assert_eq!(extract_ds_rrset(42, &response).unwrap_err(), "RCODE 5");
+    let response = build_ds_response(
+        42,
+        true,
+        true,
+        false,
+        Rcode::REFUSED,
+        &child,
+        &[],
+        Some("com"),
+    );
+    assert_eq!(
+        extract_ds_rrset(42, &child, &response).unwrap_err(),
+        "RCODE 5"
+    );
 }
 
 #[test]
 fn extract_ds_rrset_rejects_id_mismatch() {
     let child = name("example.com");
-    let response = build_ds_response(42, true, true, false, Rcode::NOERROR, &child, &[]);
+    let response = build_ds_response(
+        42,
+        true,
+        true,
+        false,
+        Rcode::NOERROR,
+        &child,
+        &[],
+        Some("com"),
+    );
     assert!(
-        extract_ds_rrset(7, &response)
+        extract_ds_rrset(7, &child, &response)
             .unwrap_err()
             .contains("ID mismatch")
     );
@@ -235,7 +351,7 @@ fn extract_ns_names_reads_the_answer_names() {
         &["a.gtld-servers.net", "b.gtld-servers.net"],
     );
     assert_eq!(
-        extract_ns_names(9, &response).unwrap(),
+        extract_ns_names(9, &apex, &response).unwrap(),
         vec!["a.gtld-servers.net.", "b.gtld-servers.net."]
     );
 }
@@ -244,23 +360,44 @@ fn extract_ns_names_reads_the_answer_names() {
 fn extract_ns_names_reads_nxdomain_and_nodata_as_no_nameservers() {
     let apex = name("nx.example");
     let response = build_ns_response(9, Rcode::NXDOMAIN, &apex, &[]);
-    assert!(extract_ns_names(9, &response).unwrap().is_empty());
+    assert!(extract_ns_names(9, &apex, &response).unwrap().is_empty());
     let response = build_ns_response(9, Rcode::NOERROR, &apex, &[]);
-    assert!(extract_ns_names(9, &response).unwrap().is_empty());
+    assert!(extract_ns_names(9, &apex, &response).unwrap().is_empty());
 }
 
 #[test]
 fn extract_ns_names_rejects_an_error_rcode() {
     let apex = name("com");
     let response = build_ns_response(9, Rcode::SERVFAIL, &apex, &[]);
-    assert_eq!(extract_ns_names(9, &response).unwrap_err(), "RCODE 2");
+    assert_eq!(
+        extract_ns_names(9, &apex, &response).unwrap_err(),
+        "RCODE 2"
+    );
 }
 
 #[test]
 fn is_truncated_reads_the_tc_flag() {
     let child = name("example.com");
-    let truncated = build_ds_response(1, true, true, true, Rcode::NOERROR, &child, &[]);
-    let whole = build_ds_response(1, true, true, false, Rcode::NOERROR, &child, &[]);
+    let truncated = build_ds_response(
+        1,
+        true,
+        true,
+        true,
+        Rcode::NOERROR,
+        &child,
+        &[],
+        Some("com"),
+    );
+    let whole = build_ds_response(
+        1,
+        true,
+        true,
+        false,
+        Rcode::NOERROR,
+        &child,
+        &[],
+        Some("com"),
+    );
     assert!(is_truncated(&truncated));
     assert!(!is_truncated(&whole));
     assert!(!is_truncated(b"not a message"));

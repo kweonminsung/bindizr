@@ -9,10 +9,10 @@ use std::{
 
 use domain::{
     base::{
-        Message, MessageBuilder, Rtype, ToName, Ttl,
+        Message, MessageBuilder, Name, Rtype, Serial, ToName, Ttl,
         iana::{Class, DigestAlgorithm, Rcode, SecurityAlgorithm},
     },
-    rdata::Ds,
+    rdata::{Ds, Soa},
 };
 use serde_json::Value;
 
@@ -87,8 +87,10 @@ impl FakeParent {
                     .start_answer(&query, Rcode::NOERROR)
                     .expect("start the answer");
                 answer.header_mut().set_aa(true);
+                let mut served_any = false;
                 if question.qtype() == Rtype::DS {
                     for record in served.lock().expect("ds lock").iter() {
+                        served_any = true;
                         answer
                             .push((
                                 &qname,
@@ -105,7 +107,31 @@ impl FakeParent {
                             .expect("push the DS record");
                     }
                 }
-                let _ = socket.send_to(&answer.finish(), peer);
+                let mut authority = answer.authority();
+                if !served_any {
+                    // A negative answer needs the parent's SOA (RFC 2308, Section 2).
+                    let parent = qname
+                        .parent()
+                        .map(|parent| parent.to_name::<Vec<u8>>())
+                        .unwrap_or_else(Name::root_vec);
+                    authority
+                        .push((
+                            &parent,
+                            Class::IN,
+                            Ttl::from_secs(60),
+                            Soa::new(
+                                parent.clone(),
+                                parent.clone(),
+                                Serial(1),
+                                Ttl::from_secs(60),
+                                Ttl::from_secs(60),
+                                Ttl::from_secs(60),
+                                Ttl::from_secs(60),
+                            ),
+                        ))
+                        .expect("push the parent SOA");
+                }
+                let _ = socket.send_to(&authority.finish(), peer);
             }
         });
 

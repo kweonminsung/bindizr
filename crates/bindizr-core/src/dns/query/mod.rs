@@ -73,6 +73,27 @@ pub fn is_truncated(response: &[u8]) -> bool {
     Message::from_octets(response).is_ok_and(|message| message.header().tc())
 }
 
+/// `parse_response`, plus the echoed question must be ours (`qname`, `rtype`,
+/// class IN).
+fn parse_answer<'a>(
+    query_id: u16,
+    qname: &Name<Vec<u8>>,
+    rtype: Rtype,
+    response: &'a [u8],
+) -> Result<Message<&'a [u8]>, String> {
+    let message = parse_response(query_id, response)?;
+    let question = message
+        .sole_question()
+        .map_err(|e| format!("malformed question section: {}", e))?;
+    if !question.qname().name_eq(qname)
+        || question.qtype() != rtype
+        || question.qclass() != Class::IN
+    {
+        return Err("response answers another question".to_string());
+    }
+    Ok(message)
+}
+
 /// Check a response answers our question: our id, QR set, not truncated.
 /// The RCODE is the caller's, since NXDOMAIN answers some questions.
 fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, String> {
@@ -249,22 +270,22 @@ pub struct DsRr {
 /// Read a parent server's answer to a DS question: `Some` with the RRset,
 /// `None` for an authoritative NODATA or NXDOMAIN. A non-authoritative
 /// answer is refused: a cache may lag the parent.
-pub fn extract_ds_rrset(query_id: u16, response: &[u8]) -> Result<Option<DsRrset>, String> {
-    let message = parse_response(query_id, response)?;
+pub fn extract_ds_rrset(
+    query_id: u16,
+    qname: &Name<Vec<u8>>,
+    response: &[u8],
+) -> Result<Option<DsRrset>, String> {
+    let message = parse_answer(query_id, qname, Rtype::DS, response)?;
     let header = message.header();
     if !header.aa() {
         return Err("response is not authoritative".to_string());
     }
     match header.rcode() {
         Rcode::NOERROR => {}
-        Rcode::NXDOMAIN => return Ok(None),
+        Rcode::NXDOMAIN => return require_parent_soa(&message, qname).map(|_| None),
         rcode => return Err(format!("RCODE {}", rcode.to_int())),
     }
 
-    let qname = message
-        .sole_question()
-        .map_err(|e| format!("malformed question section: {}", e))?
-        .into_qname();
     let answer = message
         .answer()
         .map_err(|e| format!("malformed answer section: {}", e))?;
@@ -273,7 +294,7 @@ pub fn extract_ds_rrset(query_id: u16, response: &[u8]) -> Result<Option<DsRrset
     for rr in answer.limit_to::<Ds<_>>() {
         let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
         // Only DS records at the child's own name are its delegation.
-        if rr.owner() != &qname {
+        if !rr.owner().name_eq(qname) {
             continue;
         }
         let mut rdata = Vec::new();
@@ -287,17 +308,37 @@ pub fn extract_ds_rrset(query_id: u16, response: &[u8]) -> Result<Option<DsRrset
         ttl = Some(ttl.map_or(rr.ttl().as_secs(), |t| t.min(rr.ttl().as_secs())));
     }
     let Some(ttl) = ttl else {
-        return Ok(None);
+        return require_parent_soa(&message, qname).map(|_| None);
     };
     records.sort();
     records.dedup();
     Ok(Some(DsRrset { records, ttl }))
 }
 
+/// A negative DS answer counts only with a strict ancestor's SOA in the
+/// authority section (RFC 2308, Section 2): the child's own server says
+/// NODATA just as authoritatively.
+fn require_parent_soa(message: &Message<&[u8]>, qname: &Name<Vec<u8>>) -> Result<(), String> {
+    let authority = message
+        .authority()
+        .map_err(|e| format!("malformed authority section: {}", e))?;
+    for rr in authority.limit_to::<Soa<_>>() {
+        let rr = rr.map_err(|e| format!("malformed authority record: {}", e))?;
+        if qname.ends_with(rr.owner()) && !qname.name_eq(rr.owner()) {
+            return Ok(());
+        }
+    }
+    Err("negative answer carries no SOA of a parent zone".to_string())
+}
+
 /// Read a resolver's NS answer as absolute names (trailing dot), so a later
 /// lookup skips search-list expansion; empty for NODATA or NXDOMAIN.
-pub fn extract_ns_names(query_id: u16, response: &[u8]) -> Result<Vec<String>, String> {
-    let message = parse_response(query_id, response)?;
+pub fn extract_ns_names(
+    query_id: u16,
+    qname: &Name<Vec<u8>>,
+    response: &[u8],
+) -> Result<Vec<String>, String> {
+    let message = parse_answer(query_id, qname, Rtype::NS, response)?;
     match message.header().rcode() {
         Rcode::NOERROR => {}
         Rcode::NXDOMAIN => return Ok(Vec::new()),
