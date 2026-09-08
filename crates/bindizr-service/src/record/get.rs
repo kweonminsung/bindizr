@@ -8,7 +8,7 @@ use crate::{
     log_error,
     model::{
         dnssec_record::DnssecRecordType,
-        record::{Record, RecordType, RecordWithZone},
+        record::{RecordType, RecordWithZone},
     },
     repository::RepositoryService,
     types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse},
@@ -36,19 +36,6 @@ fn parse_type_filter(
 }
 
 impl RecordService {
-    /// List a zone's records for `caller`; a zone it cannot see reads as
-    /// `NotFound`.
-    pub async fn list_in_zone(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<Vec<Record>, ServiceError> {
-        let zone = ZoneService::get_by_name(caller, zone_name).await?;
-        RepositoryService::list_records(zone.id).await.map_err(|e| {
-            log_error!("Failed to fetch records for zone {}: {}", zone_name, e);
-            ServiceError::internal(format!("Failed to fetch records for zone {}", zone_name))
-        })
-    }
-
     /// Every record, for the unauthenticated metrics endpoint.
     pub async fn count_all() -> Result<u64, ServiceError> {
         RepositoryService::count_records_by_filter(RecordFilter::default()).await

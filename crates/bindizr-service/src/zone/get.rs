@@ -127,6 +127,23 @@ impl ZoneService {
         Ok(zone)
     }
 
+    /// The zone and its records from one snapshot, so they share a serial.
+    pub async fn get_with_records(
+        caller: &Caller,
+        zone_name: &str,
+    ) -> Result<(Zone, Vec<Record>), ServiceError> {
+        let mut tx = RepositoryService::begin_read_tx("Failed to fetch zone").await?;
+        let result = async {
+            let zone =
+                Self::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
+            let records =
+                RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
+            Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
+        }
+        .await;
+        RepositoryService::finish_tx(tx, result, "Failed to fetch zone").await
+    }
+
     /// Fetch a zone by name within the caller's transaction at `lock_level`,
     /// returning `NotFound` if it does not exist.
     pub(crate) async fn get_by_name_tx(

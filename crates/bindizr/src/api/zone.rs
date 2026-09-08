@@ -327,11 +327,12 @@ pub(crate) async fn get_zone(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<GetZoneQuery>,
 ) -> Result<Response, ApiError> {
-    let raw_zone = ZoneService::get_by_name(&caller, &params.name).await?;
-
-    let raw_records = match query.records {
-        Some(true) => RecordService::list_in_zone(&caller, raw_zone.name.as_str()).await?,
-        _ => vec![],
+    let (raw_zone, raw_records) = match query.records {
+        Some(true) => ZoneService::get_with_records(&caller, &params.name).await?,
+        _ => (
+            ZoneService::get_by_name(&caller, &params.name).await?,
+            vec![],
+        ),
     };
     let records = raw_records
         .iter()

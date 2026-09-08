@@ -156,19 +156,6 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(record)
     }
 
-    async fn list(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let records =
-            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name")
-                .bind(zone_id)
-                .fetch_all(&mut *conn)
-                .await
-                ?;
-
-        Ok(records)
-    }
-
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

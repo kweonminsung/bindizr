@@ -6,7 +6,7 @@ use bindizr_core::dns::{
     name::has_whitespace_or_control,
     query::DsRrset,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use super::{DnssecService, status::build_status_tx};
 use crate::{
@@ -41,15 +41,15 @@ impl DnssecService {
         };
         let delegation = Self::probe_delegation(&zone, &keys).await?;
         let probed_parent_ns_addrs = zone.parent_ns_addrs;
-        let probed_sep_ids = sep_key_ids(&keys);
+        let probed_sep_keys = sep_key_states(&keys);
 
         let mut tx = RepositoryService::begin_read_tx("failed to check the parent DS").await?;
         let result = async {
             let (zone, policy, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-            // The status must describe the zone the parent was asked about.
+            // The zone and key states the parent was asked about must still hold.
             if zone.parent_ns_addrs != probed_parent_ns_addrs
-                || sep_key_ids(&keys) != probed_sep_ids
+                || sep_key_states(&keys) != probed_sep_keys
             {
                 return Err(ServiceError::dnssec_state_changed(zone.name.as_str()));
             }
@@ -125,15 +125,16 @@ impl DnssecService {
     }
 }
 
-/// The ids of the zone's SEP keys, ordered: what a parent's DS can name.
-fn sep_key_ids(keys: &[DnssecKey]) -> Vec<i32> {
-    let mut ids: Vec<i32> = keys
+/// The SEP keys as the delegation entries describe them: id, state, and
+/// eligibility, ordered by id.
+fn sep_key_states(keys: &[DnssecKey]) -> Vec<(i32, DnssecKeyState, DateTime<Utc>)> {
+    let mut states: Vec<_> = keys
         .iter()
         .filter(|key| key.role.is_sep())
-        .map(|key| key.id)
+        .map(|key| (key.id, key.state, key.eligible_at))
         .collect();
-    ids.sort_unstable();
-    ids
+    states.sort_unstable_by_key(|(id, _, _)| *id);
+    states
 }
 
 /// The width of the `zones.parent_ns_addrs` column.
