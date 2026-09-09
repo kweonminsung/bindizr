@@ -69,5 +69,10 @@ tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.7.0", features = ["cors"] }
 utoipa = { version = "5.5", features = ["axum_extras", "chrono", "yaml"] }
 
+[profile.dev]
+# The macOS default, "unpacked", leaves stale .o files in target/debug/deps,
+# and rustc scans that directory on every invocation.
+split-debuginfo = "off"
+
 [profile.release]
 panic = "unwind"
