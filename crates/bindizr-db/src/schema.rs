@@ -79,7 +79,8 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             CHECK ((derived = TRUE AND record_value IS NULL AND record_rdata IS NOT NULL)
                 OR (derived = FALSE AND record_value IS NOT NULL AND record_rdata IS NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            INDEX idx_zone_serial (zone_id, serial)
+            INDEX idx_zone_serial (zone_id, serial),
+            INDEX idx_zone_journal_created (created_at)
         );
         "#,
         r#"
@@ -96,6 +97,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             minimum_ttl INT NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY uq_zone_serial (zone_id, serial),
+            INDEX idx_zone_versions_created (created_at),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -287,6 +289,9 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_zone_serial ON zone_journal(zone_id, serial);
         "#,
         r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_journal_created ON zone_journal(created_at);
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS zone_versions (
             id SERIAL PRIMARY KEY,
             zone_id INTEGER NOT NULL,
@@ -302,6 +307,9 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             UNIQUE(zone_id, serial),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_versions_created ON zone_versions(created_at);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS api_tokens (
@@ -505,6 +513,9 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_zone_serial ON zone_journal(zone_id, serial);
         "#,
         r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_journal_created ON zone_journal(created_at);
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS zone_versions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             zone_id INTEGER NOT NULL,
@@ -520,6 +531,9 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             UNIQUE(zone_id, serial),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_versions_created ON zone_versions(created_at);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS api_tokens (
