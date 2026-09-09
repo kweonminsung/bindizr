@@ -197,7 +197,7 @@ fn default_notify_retries() -> u32 {
 }
 
 fn default_notify_timeout_secs() -> u64 {
-    5
+    3
 }
 
 /// Logging settings.

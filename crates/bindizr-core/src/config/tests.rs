@@ -107,7 +107,7 @@ fn from_raw_defaults_missing_optional_fields() {
     assert!(parsed.dns.notify_after_update);
     assert!(!parsed.dns.notify_on_startup);
     assert_eq!(parsed.dns.notify_retries, 3);
-    assert_eq!(parsed.dns.notify_timeout_secs, 5);
+    assert_eq!(parsed.dns.notify_timeout_secs, 3);
     assert!(!parsed.dns.nsupdate_allow_unsigned);
     assert_eq!(parsed.dns.journal_retention_days, 365);
 }
