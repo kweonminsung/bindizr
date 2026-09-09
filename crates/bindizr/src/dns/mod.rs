@@ -9,7 +9,7 @@ use std::{future::Future, io::ErrorKind, net::SocketAddr, time::Duration};
 
 use bindizr_core::{
     config,
-    dns::message::{self, Rtype},
+    dns::message::{self, Rcode, Rtype},
     log_error, log_info, log_warn,
 };
 use server::acl::SecondaryAcl;
@@ -158,11 +158,16 @@ async fn dispatch_tcp_query(
             .await
             .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
     } else {
+        // bindizr answers secondaries, not resolvers.
         log_info!(
-            "Ignoring non-XFR DNS TCP query from {} (qtype={:?})",
+            "Refusing out-of-scope DNS TCP query from {} (qtype={:?})",
             client_addr,
             query.qtype
         );
+        let response = query.error_response(Rcode::REFUSED);
+        wire::write_tcp_message(stream, &response)
+            .await
+            .map_err(|e| format!("Failed to refuse a DNS TCP query: {}", e))?;
     }
 
     Ok(())
@@ -213,14 +218,20 @@ async fn run_udp_server(
             if let Err(e) = server::soa::handle_udp_soa(&socket, client_addr, &query).await {
                 log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
             }
-        } else if server::is_xfr_query_type(query.qtype) {
-            match server::handle_udp_query(client_addr, &secondary_acl, &query).await {
-                Ok(response) => {
-                    if let Err(e) = socket.send_to(&response, client_addr).await {
-                        log_warn!("Failed to answer XFR UDP query from {}: {}", client_addr, e);
-                    }
-                }
-                Err(e) => log_warn!("Refused XFR UDP query from {}: {}", client_addr, e),
+        } else {
+            let response = if server::is_xfr_query_type(query.qtype) {
+                server::handle_udp_query(client_addr, &secondary_acl, &query).await
+            } else {
+                log_info!(
+                    "Refusing out-of-scope DNS UDP query from {} (qtype={:?})",
+                    client_addr,
+                    query.qtype
+                );
+                query.error_response(Rcode::REFUSED)
+            };
+
+            if let Err(e) = socket.send_to(&response, client_addr).await {
+                log_warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);
             }
         }
     }
