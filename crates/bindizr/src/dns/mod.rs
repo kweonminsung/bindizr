@@ -9,7 +9,7 @@ use std::{future::Future, io::ErrorKind, net::SocketAddr, time::Duration};
 
 use bindizr_core::{
     config,
-    dns::message::{self, Rcode, Rtype},
+    dns::message::{self, Opcode, Rcode, Rtype},
     log_error, log_info, log_warn,
 };
 use server::acl::SecondaryAcl;
@@ -149,6 +149,18 @@ async fn dispatch_tcp_query(
         }
     };
 
+    if query.opcode != Opcode::QUERY {
+        log_info!(
+            "Refusing DNS TCP opcode {:?} from {}",
+            query.opcode,
+            client_addr
+        );
+        let response = query.error_response(Rcode::NOTIMP);
+        return wire::write_tcp_message(stream, &response)
+            .await
+            .map_err(|e| format!("Failed to answer an unsupported DNS TCP opcode: {}", e));
+    }
+
     if query.qtype == Rtype::SOA {
         server::soa::handle_tcp_soa(stream, client_addr, &query)
             .await
@@ -213,6 +225,19 @@ async fn run_udp_server(
             Ok(query) => query,
             Err(_) => continue,
         };
+
+        if query.opcode != Opcode::QUERY {
+            log_info!(
+                "Refusing DNS UDP opcode {:?} from {}",
+                query.opcode,
+                client_addr
+            );
+            let response = query.error_response(Rcode::NOTIMP);
+            if let Err(e) = socket.send_to(&response, client_addr).await {
+                log_warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);
+            }
+            continue;
+        }
 
         if query.qtype == Rtype::SOA {
             if let Err(e) = server::soa::handle_udp_soa(&socket, client_addr, &query).await {
