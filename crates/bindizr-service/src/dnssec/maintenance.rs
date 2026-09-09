@@ -33,7 +33,14 @@ pub fn init_maintenance_scheduler() {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
-            run_maintenance_pass().await;
+            // A panic in the pass would otherwise unwind the scheduler itself.
+            if let Err(e) = tokio::spawn(run_maintenance_pass()).await {
+                log_error!("DNSSEC maintenance pass did not finish: {}", e);
+                metrics()
+                    .dnssec_maintenance_runs_total
+                    .with_label_values(&["panic"])
+                    .inc();
+            }
         }
     });
 }
