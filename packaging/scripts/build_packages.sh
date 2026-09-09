@@ -24,7 +24,8 @@ mkdir -p "$TMP_DIR/usr/share/licenses/bindizr"
 # Copy files
 echo "Copying files..."
 install -D -m 755 target/x86_64-unknown-linux-musl/release/bindizr "$TMP_DIR/usr/bin/bindizr"
-install -p -m 644 bindizr.conf.toml "$TMP_DIR/etc/bindizr/bindizr.conf.toml"
+# Owner-only: the file carries the database URL, and the daemon runs as root.
+install -p -m 600 bindizr.conf.toml "$TMP_DIR/etc/bindizr/bindizr.conf.toml"
 install -p -m 644 packaging/bindizr.service "$TMP_DIR/usr/lib/systemd/system/bindizr.service"
 install -p -m 644 README.md "$TMP_DIR/usr/share/doc/bindizr/README.md"
 install -p -m 644 LICENSE "$TMP_DIR/usr/share/licenses/bindizr/LICENSE"

@@ -2,11 +2,18 @@
 //! stop, and re-executing itself on restart. The CLI only decides when to
 //! start it.
 
+use std::time::Duration;
+
 use bindizr_core::{config, log_error, log_info, logger};
 use bindizr_db as database;
 use bindizr_service as service;
+use tokio::signal::unix::{SignalKind, signal};
 
-use crate::{api, dns, socket};
+use crate::{api, dns, shutdown::Shutdown, socket};
+
+/// How long the servers that can finish on their own get before the daemon
+/// exits anyway.
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Re-exec path captured at startup: after a package upgrade /proc/self/exe
 /// reads as a "(deleted)" path, while this path points at the replacement.
@@ -30,7 +37,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     service::dnssec::init_maintenance_scheduler();
 
-    dns::initialize().await;
+    let shutdown = Shutdown::new();
+    dns::initialize(&shutdown).await?;
 
     if config::bindizr_config().dns.notify_on_startup {
         match service::notify::send_notify(None).await {
@@ -44,14 +52,21 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     log_info!("# systemctl start bindizr");
 
     let mut control_rx = socket::server::control::init();
-    socket::server::initialize().await?;
-    api::initialize().await?;
+    let socket_task = socket::server::initialize(&shutdown).await?;
+    let api_task = api::initialize(&shutdown).await?;
+
+    let mut terminate = signal(SignalKind::terminate())
+        .map_err(|e| format!("Failed to listen for SIGTERM: {}", e))?;
 
     loop {
         let control = tokio::select! {
             result = tokio::signal::ctrl_c() => {
                 result.map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
-                log_info!("Shutdown signal received, exiting gracefully...");
+                log_info!("Interrupt received, shutting down...");
+                break;
+            }
+            _ = terminate.recv() => {
+                log_info!("SIGTERM received, shutting down...");
                 break;
             }
             control = control_rx.recv() => control,
@@ -69,6 +84,21 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
                 break;
             }
         }
+    }
+
+    shutdown.trigger();
+
+    // In-flight zone transfers are not waited on: a cut transfer is one the
+    // secondary discards and retries.
+    let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
+        let _ = tokio::join!(socket_task, api_task);
+    })
+    .await;
+    if drained.is_err() {
+        log_error!(
+            "Servers did not finish within {:?}, exiting anyway.",
+            DRAIN_TIMEOUT
+        );
     }
 
     Ok(())

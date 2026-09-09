@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use domain::base::{MessageBuilder, Name, iana::Rtype};
 
-use super::{DNS_TCP_MAX_SIZE, DnsMessageBuilder, ParsedQuery, encode_tcp_message};
+use super::{DNS_TCP_MAX_SIZE, DnsMessageBuilder, ParsedQuery, encode_tcp_message, is_response};
 use crate::model::record::RecordType;
 
 #[test]
@@ -75,4 +75,20 @@ fn truncated_response_echoes_the_question_with_tc_set() {
     assert_eq!(response[3] & 0x0f, 0);
     assert_eq!(&response[4..6], &1u16.to_be_bytes());
     assert_eq!(&response[6..8], &0u16.to_be_bytes());
+}
+
+#[test]
+fn is_response_separates_a_reply_from_a_query() {
+    let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
+
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(1234);
+    let mut question = builder.question();
+    question.push((&qname, Rtype::A)).unwrap();
+    let query = question.finish();
+    assert!(!is_response(&query));
+
+    let parsed = ParsedQuery::parse(&query).expect("a question-only query parses");
+    let reply = parsed.error_response(super::Rcode::REFUSED);
+    assert!(is_response(&reply));
 }

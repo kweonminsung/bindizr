@@ -53,7 +53,7 @@ impl log::Log for Logger {
 
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
-            let log_message = if self.log_level == Level::Debug {
+            let log_message = if self.log_level >= Level::Debug {
                 format!(
                     "{} - {}: {}\n",
                     record.level(),
@@ -98,5 +98,5 @@ pub fn initialize_with_level(level: config::LogLevel) {
     }
     log::set_max_level(log_level.to_level_filter());
 
-    println!("Console logging level: {}", log_level);
+    log::info!("Console logging level: {}", log_level);
 }

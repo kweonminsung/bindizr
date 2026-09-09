@@ -23,7 +23,9 @@ use bindizr_service::{authorization::Caller, error::ServiceError};
 use error::ApiError;
 use router::ApiRouter;
 use serde::Deserialize;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, task::JoinHandle};
+
+use crate::shutdown::Shutdown;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ZoneNameParam {
@@ -77,8 +79,10 @@ where
     }
 }
 
-/// Bind the HTTP API listener and spawn the axum server in the background.
-pub(crate) async fn initialize() -> Result<(), String> {
+/// Bind the HTTP API listener and spawn the axum server in the background. The
+/// returned handle finishes once `shutdown` fires and in-flight requests are
+/// answered.
+pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, String> {
     let bindizr_config = config::bindizr_config();
     let addr = SocketAddr::from((
         bindizr_config.api.listen_addr,
@@ -91,11 +95,13 @@ pub(crate) async fn initialize() -> Result<(), String> {
 
     log_info!("HTTP API server listening on http://{}", addr);
 
-    tokio::spawn(async move {
-        if let Err(e) = axum::serve(listener, ApiRouter::routes().await).await {
+    let stop = shutdown.waiter();
+    Ok(tokio::spawn(async move {
+        if let Err(e) = axum::serve(listener, ApiRouter::routes().await)
+            .with_graceful_shutdown(stop)
+            .await
+        {
             log_error!("API server error: {:?}", e);
         }
-    });
-
-    Ok(())
+    }))
 }

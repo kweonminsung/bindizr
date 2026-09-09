@@ -220,10 +220,10 @@ impl RecordService {
                 desired.push(DesiredRecord {
                     prepared: PreparedRecord {
                         owner_name: rr.owner_fqdn,
+                        priority: rr.record_type.stored_priority(rr.priority),
                         record_type: rr.record_type,
                         value,
                         ttl: Some(rr.ttl),
-                        priority: rr.priority,
                     },
                     stored_name,
                 });

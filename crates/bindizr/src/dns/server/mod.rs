@@ -69,7 +69,11 @@ pub(crate) async fn handle_tcp_query(
 
     if let Err(err) = validate_secondary_acl(client_ip, secondary_acl).await {
         record_xfr_metric("refused");
-        return Err(err);
+        log_warn!("Refused XFR TCP query from {}: {}", client_ip, err);
+        // RFC 5936, Section 2.2.1: refuse with an RCODE, not a dropped connection.
+        let response = query.error_response(Rcode::REFUSED);
+        wire::write_tcp_message(stream, &response).await?;
+        return Ok(());
     }
 
     log_info!(
@@ -113,9 +117,12 @@ pub(crate) async fn handle_udp_query(
     client_addr: SocketAddr,
     secondary_acl: &acl::SecondaryAcl,
     query: &message::ParsedQuery,
-) -> Result<Vec<u8>, XfrError> {
-    validate_secondary_acl(client_addr.ip(), secondary_acl).await?;
-    Ok(query.truncated_response())
+) -> Vec<u8> {
+    if let Err(err) = validate_secondary_acl(client_addr.ip(), secondary_acl).await {
+        log_warn!("Refused XFR UDP query from {}: {}", client_addr.ip(), err);
+        return query.error_response(Rcode::REFUSED);
+    }
+    query.truncated_response()
 }
 
 async fn validate_secondary_acl(

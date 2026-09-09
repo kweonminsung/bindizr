@@ -30,6 +30,7 @@ impl RecordService {
         let PreparedRecord {
             record_type,
             value: record_value,
+            priority,
             ..
         } = parse_record(
             &create_record_request.name,
@@ -90,7 +91,7 @@ impl RecordService {
                 &record_type,
                 &record_value,
                 ttl,
-                create_record_request.priority,
+                priority,
                 None,
             )?;
 
@@ -106,7 +107,7 @@ impl RecordService {
                     record_type,
                     value: record_value,
                     ttl,
-                    priority: create_record_request.priority,
+                    priority,
                     zone_id: zone.id,
                     created_at: Utc::now(),
                 }],

@@ -3,7 +3,7 @@
 use domain::{
     base::iana::{Class, Rtype},
     rdata::ZoneRecordData,
-    zonefile::inplace::{Entry, Zonefile},
+    zonefile::inplace::{Entry, Error as ZoneFileError, Zonefile},
 };
 
 use crate::{dns::name::to_fqdn_lowercase, model::record::RecordType};
@@ -39,7 +39,8 @@ pub struct ParsedZoneFile {
 pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> ParsedZoneFile {
     let origin_fqdn = to_fqdn_lowercase(zone_name);
 
-    // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and TTLs.
+    // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and
+    // TTLs. PRELUDE_LINES counts them.
     let mut buffer = format!("$ORIGIN {origin_fqdn}\n$TTL {default_ttl}\n");
     buffer.push_str(content);
     if !buffer.ends_with('\n') {
@@ -149,13 +150,33 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
             }
             Ok(None) => break,
             Err(e) => {
-                errors.push(format!("failed to parse zone file: {e}"));
+                errors.push(format!(
+                    "failed to parse zone file: {}",
+                    to_input_line_message(&e)
+                ));
+                // domain documents the scanner as invalid once an entry fails.
                 break;
             }
         }
     }
 
     ParsedZoneFile { rrs, errors }
+}
+
+/// Directives `parse_zone_file` prepends before handing the text to the parser.
+const PRELUDE_LINES: usize = 2;
+
+/// Restate a parser error in the submitted text's line numbering. `Error` keeps
+/// its position private, so its `{line}:{col}: {reason}` rendering is all there is.
+fn to_input_line_message(err: &ZoneFileError) -> String {
+    let message = err.to_string();
+    match message.split_once(':') {
+        Some((line, rest)) => match line.parse::<usize>() {
+            Ok(line) if line > PRELUDE_LINES => format!("{}:{}", line - PRELUDE_LINES, rest),
+            _ => message,
+        },
+        None => message,
+    }
 }
 
 #[cfg(test)]
@@ -177,6 +198,22 @@ mod tests {
                 .iter()
                 .any(|rr| rr.record_type == RecordType::TXT),
             "the non-UTF-8 TXT record should not have been stored"
+        );
+    }
+
+    #[test]
+    fn parse_error_names_the_line_of_the_submitted_text() {
+        // An unknown rtype is caught where it sits; an rdata error is reported
+        // at the end of the entry, which would blur what this pins down.
+        let parsed = parse_zone_file(
+            "ok IN A 192.0.2.1\nbad !!! IN A 192.0.2.2\n",
+            "example.com",
+            3600,
+        );
+        assert!(
+            parsed.errors.iter().any(|e| e.contains(": 2:")),
+            "expected the error to name line 2, got: {:?}",
+            parsed.errors
         );
     }
 

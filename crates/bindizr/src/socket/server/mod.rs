@@ -25,11 +25,15 @@ use tokio::{
     fs,
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{UnixListener, UnixStream},
+    task::JoinHandle,
 };
 
-use crate::socket::{
-    FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
-    types::{DaemonCommand, DaemonCommandKind},
+use crate::{
+    shutdown::Shutdown,
+    socket::{
+        FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
+        types::{DaemonCommand, DaemonCommandKind},
+    },
 };
 
 /// Upper bound on a single command line, so a buggy or malicious client cannot
@@ -160,16 +164,25 @@ async fn handle_client(stream: UnixStream) {
     }
 }
 
-/// Bind the daemon's Unix socket and spawn the connection accept loop.
-pub(crate) async fn initialize() -> Result<(), String> {
+/// Bind the daemon's Unix socket and spawn the connection accept loop. The
+/// returned handle finishes once `shutdown` fires and the socket file is gone.
+pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, String> {
     status::mark_start_time();
     let (socket_path, listener) = bind_daemon_socket().await?;
 
     log_info!("Daemon socket server listening on {}", socket_path);
 
-    tokio::spawn(async move {
+    let stop = shutdown.waiter();
+    Ok(tokio::spawn(async move {
+        tokio::pin!(stop);
+
         loop {
-            match listener.accept().await {
+            let accepted = tokio::select! {
+                accepted = listener.accept() => accepted,
+                () = &mut stop => break,
+            };
+
+            match accepted {
                 Ok((stream, _)) => {
                     tokio::spawn(async move {
                         handle_client(stream).await;
@@ -180,9 +193,13 @@ pub(crate) async fn initialize() -> Result<(), String> {
                 }
             }
         }
-    });
 
-    Ok(())
+        drop(listener);
+        if let Err(e) = fs::remove_file(&socket_path).await {
+            log_warn!("Failed to remove the daemon socket {}: {}", socket_path, e);
+        }
+        log_info!("Daemon socket server stopped");
+    }))
 }
 
 /// Socket paths tried in order when the daemon starts.

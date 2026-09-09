@@ -383,6 +383,12 @@ fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     Name::from_octets(wire).map_err(|e| format!("Invalid domain name '{}': {}", name, e))
 }
 
+/// Whether the message is itself a response (QR=1). Answering one lets a
+/// spoofed source aim the reply at a third party.
+pub fn is_response(message: &[u8]) -> bool {
+    Message::from_octets(message).is_ok_and(|message| message.header().qr())
+}
+
 /// A DNS query parsed once at the listener and handed to every handler.
 pub struct ParsedQuery {
     pub qname: Name<Vec<u8>>,
@@ -391,6 +397,7 @@ pub struct ParsedQuery {
     pub qtype: Rtype,
     pub client_serial: Option<u32>,
     pub query_id: u16,
+    pub opcode: Opcode,
 }
 
 impl ParsedQuery {
@@ -399,6 +406,7 @@ impl ParsedQuery {
             .map_err(|e| format!("Failed to parse DNS message: {}", e))?;
 
         let query_id = message.header().id();
+        let opcode = message.header().opcode();
 
         let question = message
             .first_question()
@@ -431,6 +439,7 @@ impl ParsedQuery {
             qtype,
             client_serial,
             query_id,
+            opcode,
         })
     }
 
@@ -455,6 +464,8 @@ impl ParsedQuery {
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);
+        // RFC 1035, Section 4.1.1: a response echoes the request's opcode.
+        header.set_opcode(self.opcode);
         set(header);
 
         let mut question = builder.question();

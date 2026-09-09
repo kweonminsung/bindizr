@@ -197,7 +197,7 @@ fn default_notify_retries() -> u32 {
 }
 
 fn default_notify_timeout_secs() -> u64 {
-    5
+    3
 }
 
 /// Logging settings.
@@ -250,7 +250,8 @@ impl std::str::FromStr for LogLevel {
 pub fn initialize(conf_file_path: Option<&str>) -> Result<(), String> {
     let conf_file_path = resolve_config_path(conf_file_path);
 
-    println!("Initializing configuration from file: {}", conf_file_path);
+    // Predates the logger, which is installed from the config this loads.
+    eprintln!("Initializing configuration from file: {}", conf_file_path);
 
     let bindizr_config = load_config_file(&conf_file_path)?;
     BINDIZR_CONFIG.get_or_init(|| bindizr_config);
