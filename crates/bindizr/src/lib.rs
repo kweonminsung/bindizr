@@ -7,6 +7,7 @@ mod cli;
 mod daemon;
 mod dns;
 mod net;
+mod shutdown;
 mod socket;
 
 pub use cli::execute;

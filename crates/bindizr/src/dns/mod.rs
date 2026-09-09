@@ -5,7 +5,7 @@ pub(crate) mod error;
 pub(crate) mod server;
 pub(crate) mod wire;
 
-use std::{io::ErrorKind, net::SocketAddr, time::Duration};
+use std::{future::Future, io::ErrorKind, net::SocketAddr, time::Duration};
 
 use bindizr_core::{
     config,
@@ -18,10 +18,12 @@ use tokio::{
     time::timeout,
 };
 
+use crate::shutdown::Shutdown;
+
 const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
-pub(crate) async fn initialize() -> Result<(), String> {
+pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
     server::initialize().await;
 
     let bindizr_config = config::bindizr_config();
@@ -43,14 +45,16 @@ pub(crate) async fn initialize() -> Result<(), String> {
     log_info!("DNS TCP server listening on {}", listen_addr);
     log_info!("DNS UDP server listening on {}", listen_addr);
 
+    let tcp_stop = shutdown.waiter();
     tokio::spawn(async move {
-        if let Err(e) = run_tcp_server(tcp_listener, tcp_secondary_acl).await {
+        if let Err(e) = run_tcp_server(tcp_listener, tcp_secondary_acl, tcp_stop).await {
             log_error!("DNS TCP server error: {}", e);
         }
     });
 
+    let udp_stop = shutdown.waiter();
     tokio::spawn(async move {
-        if let Err(e) = run_udp_server(udp_socket, secondary_acl).await {
+        if let Err(e) = run_udp_server(udp_socket, secondary_acl, udp_stop).await {
             log_error!("DNS UDP server error: {}", e);
         }
     });
@@ -58,9 +62,23 @@ pub(crate) async fn initialize() -> Result<(), String> {
     Ok(())
 }
 
-async fn run_tcp_server(listener: TcpListener, secondary_acl: SecondaryAcl) -> Result<(), String> {
+async fn run_tcp_server(
+    listener: TcpListener,
+    secondary_acl: SecondaryAcl,
+    stop: impl Future<Output = ()>,
+) -> Result<(), String> {
+    tokio::pin!(stop);
+
     loop {
-        match listener.accept().await {
+        let accepted = tokio::select! {
+            accepted = listener.accept() => accepted,
+            () = &mut stop => {
+                log_info!("DNS TCP server stopping");
+                return Ok(());
+            }
+        };
+
+        match accepted {
             Ok((stream, client_addr)) => {
                 let allowed = secondary_acl.clone();
                 tokio::spawn(async move {
@@ -150,11 +168,24 @@ async fn dispatch_tcp_query(
     Ok(())
 }
 
-async fn run_udp_server(socket: UdpSocket, secondary_acl: SecondaryAcl) -> Result<(), String> {
+async fn run_udp_server(
+    socket: UdpSocket,
+    secondary_acl: SecondaryAcl,
+    stop: impl Future<Output = ()>,
+) -> Result<(), String> {
     let mut buf = vec![0u8; 65535];
+    tokio::pin!(stop);
 
     loop {
-        let (len, client_addr) = match socket.recv_from(&mut buf).await {
+        let received = tokio::select! {
+            received = socket.recv_from(&mut buf) => received,
+            () = &mut stop => {
+                log_info!("DNS UDP server stopping");
+                return Ok(());
+            }
+        };
+
+        let (len, client_addr) = match received {
             Ok(v) => v,
             Err(e) => {
                 log_error!("Failed to receive DNS UDP packet: {}", e);
