@@ -17,9 +17,27 @@ pub(crate) struct SecondaryAcl {
 
 impl SecondaryAcl {
     pub(crate) fn from_config() -> Self {
-        Self {
-            entries: parse_secondary_acl_entries(&config::bindizr_config().dns.secondary_addrs),
-        }
+        Self::parse(&config::bindizr_config().dns.secondary_addrs)
+    }
+
+    fn parse(raw: &str) -> Self {
+        let entries = raw
+            .split(',')
+            .filter_map(|item| {
+                let trimmed = item.trim();
+                if trimmed.is_empty() {
+                    return None;
+                }
+
+                match parse_address_target(trimmed, 53) {
+                    ParsedAddress::SocketAddr(addr) => Some(SecondaryAclEntry::Ip(addr.ip())),
+                    ParsedAddress::HostPort(host_port) => {
+                        Some(SecondaryAclEntry::HostPort(host_port))
+                    }
+                }
+            })
+            .collect();
+        Self { entries }
     }
 }
 
@@ -50,22 +68,6 @@ pub(crate) async fn is_client_allowed(client_ip: IpAddr, acl: &SecondaryAcl) -> 
     false
 }
 
-fn parse_secondary_acl_entries(raw: &str) -> Vec<SecondaryAclEntry> {
-    raw.split(',')
-        .filter_map(|item| {
-            let trimmed = item.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-
-            match parse_address_target(trimmed, 53) {
-                ParsedAddress::SocketAddr(addr) => Some(SecondaryAclEntry::Ip(addr.ip())),
-                ParsedAddress::HostPort(host_port) => Some(SecondaryAclEntry::HostPort(host_port)),
-            }
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,7 +75,7 @@ mod tests {
     #[test]
     fn secondary_acl_keeps_hostnames_for_runtime_resolution() {
         assert_eq!(
-            parse_secondary_acl_entries("192.0.2.10:53, bind9-0.bind9-headless:53"),
+            SecondaryAcl::parse("192.0.2.10:53, bind9-0.bind9-headless:53").entries,
             vec![
                 SecondaryAclEntry::Ip("192.0.2.10".parse().unwrap()),
                 SecondaryAclEntry::HostPort("bind9-0.bind9-headless:53".to_string()),
@@ -84,7 +86,7 @@ mod tests {
     #[test]
     fn secondary_acl_defaults_hostname_ports() {
         assert_eq!(
-            parse_secondary_acl_entries("bind9-0.bind9-headless"),
+            SecondaryAcl::parse("bind9-0.bind9-headless").entries,
             vec![SecondaryAclEntry::HostPort(
                 "bind9-0.bind9-headless:53".to_string()
             )]

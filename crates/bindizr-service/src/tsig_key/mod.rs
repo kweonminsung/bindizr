@@ -30,7 +30,10 @@ impl TsigKeyService {
         caller.require_global("manage TSIG keys and grants")?;
 
         let name = normalize_key_name(name)?;
-        let algorithm = parse_algorithm(algorithm)?;
+        let algorithm = match algorithm {
+            None => TsigAlgorithm::default(),
+            Some(raw) => raw.parse().map_err(ServiceError::invalid_input)?,
+        };
         let secret = match secret {
             Some(secret) => normalize_secret(secret)?,
             None => generate_secret(),
@@ -107,13 +110,6 @@ impl TsigKeyService {
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
 pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
     to_lookup_name(value).map_err(|e| ServiceError::invalid_input(format!("TSIG key name {}", e)))
-}
-
-fn parse_algorithm(value: Option<&str>) -> Result<TsigAlgorithm, ServiceError> {
-    match value {
-        None => Ok(TsigAlgorithm::HmacSha256),
-        Some(raw) => raw.parse().map_err(ServiceError::invalid_input),
-    }
 }
 
 /// HMAC security degrades to the key length, so refuse imports under 128 bits.

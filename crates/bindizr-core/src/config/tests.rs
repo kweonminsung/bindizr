@@ -1,8 +1,7 @@
 use config::{Config, File, FileFormat};
 
 use crate::config::{
-    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogLevel, apply_env_overrides_from,
-    parse_bindizr_config_with_env, resolve_config_path_with_env,
+    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogLevel, resolve_config_path_with_env,
 };
 
 /// Deviations from the base config TOML; the default renders a minimal valid
@@ -73,11 +72,11 @@ fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
         .add_source(File::from_str(&toml.render(), FileFormat::Toml))
         .build()
         .unwrap();
-    parse_bindizr_config_with_env(config, |_| None)
+    BindizrConfig::from_raw(config, |_| None)
 }
 
 #[test]
-fn parse_bindizr_config_accepts_valid_config() {
+fn from_raw_accepts_valid_config() {
     let parsed = parse_config(&TestConfigToml {
         secondary_addrs: "127.0.0.1:53",
         dns_notify: "notify_after_update = false\nnotify_on_startup = true\nnotify_retries = 4\nnotify_timeout_secs = 9\nnsupdate_allow_unsigned = true",
@@ -100,7 +99,7 @@ fn parse_bindizr_config_accepts_valid_config() {
 }
 
 #[test]
-fn parse_bindizr_config_defaults_missing_optional_fields() {
+fn from_raw_defaults_missing_optional_fields() {
     let parsed = parse_config(&TestConfigToml::default()).unwrap();
 
     assert!(parsed.api.metrics_enabled);
@@ -114,7 +113,7 @@ fn parse_bindizr_config_defaults_missing_optional_fields() {
 }
 
 #[test]
-fn parse_bindizr_config_defaults_unselected_database_sections() {
+fn from_raw_defaults_unselected_database_sections() {
     let parsed = parse_config(&TestConfigToml {
         unselected_databases: false,
         ..Default::default()
@@ -130,7 +129,7 @@ fn parse_bindizr_config_defaults_unselected_database_sections() {
 }
 
 #[test]
-fn parse_bindizr_config_rejects_invalid_listen_addr() {
+fn from_raw_rejects_invalid_listen_addr() {
     let err = parse_config(&TestConfigToml {
         api_listen_addr: "not-an-ip",
         ..Default::default()
@@ -141,7 +140,7 @@ fn parse_bindizr_config_rejects_invalid_listen_addr() {
 }
 
 #[test]
-fn parse_bindizr_config_rejects_empty_selected_database_url() {
+fn from_raw_rejects_empty_selected_database_url() {
     let err = parse_config(&TestConfigToml {
         database_type: "mysql",
         ..Default::default()
@@ -159,27 +158,28 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     })
     .unwrap();
 
-    apply_env_overrides_from(&mut overridden, |name| match name {
-        "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
-        "BINDIZR_API_PORT" => Some("8000".to_string()),
-        "BINDIZR_API_REQUIRE_AUTHENTICATION" => Some("false".to_string()),
-        "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
-        "BINDIZR_API_EXTERNAL_DNS_ENABLED" => Some("true".to_string()),
-        "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
-        "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
-        "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
-        "BINDIZR_DNS_PORT" => Some("5353".to_string()),
-        "BINDIZR_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
-        "BINDIZR_NSUPDATE_ALLOW_UNSIGNED" => Some("true".to_string()),
-        "BINDIZR_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
-        "BINDIZR_NOTIFY_ON_STARTUP" => Some("true".to_string()),
-        "BINDIZR_NOTIFY_RETRIES" => Some("7".to_string()),
-        "BINDIZR_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
-        "BINDIZR_JOURNAL_RETENTION_DAYS" => Some("0".to_string()),
-        "BINDIZR_LOG_LEVEL" => Some("info".to_string()),
-        _ => None,
-    })
-    .unwrap();
+    overridden
+        .apply_env_overrides(|name| match name {
+            "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
+            "BINDIZR_API_PORT" => Some("8000".to_string()),
+            "BINDIZR_API_REQUIRE_AUTHENTICATION" => Some("false".to_string()),
+            "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
+            "BINDIZR_API_EXTERNAL_DNS_ENABLED" => Some("true".to_string()),
+            "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
+            "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
+            "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
+            "BINDIZR_DNS_PORT" => Some("5353".to_string()),
+            "BINDIZR_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
+            "BINDIZR_NSUPDATE_ALLOW_UNSIGNED" => Some("true".to_string()),
+            "BINDIZR_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
+            "BINDIZR_NOTIFY_ON_STARTUP" => Some("true".to_string()),
+            "BINDIZR_NOTIFY_RETRIES" => Some("7".to_string()),
+            "BINDIZR_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
+            "BINDIZR_JOURNAL_RETENTION_DAYS" => Some("0".to_string()),
+            "BINDIZR_LOG_LEVEL" => Some("info".to_string()),
+            _ => None,
+        })
+        .unwrap();
 
     assert_eq!(overridden.api.listen_addr.to_string(), "0.0.0.0");
     assert_eq!(overridden.api.listen_port, 8000);
@@ -217,11 +217,12 @@ fn apply_env_overrides_rejects_invalid_values() {
     })
     .unwrap();
 
-    let err = apply_env_overrides_from(&mut overridden, |name| match name {
-        "BINDIZR_API_PORT" => Some("not-a-port".to_string()),
-        _ => None,
-    })
-    .unwrap_err();
+    let err = overridden
+        .apply_env_overrides(|name| match name {
+            "BINDIZR_API_PORT" => Some("not-a-port".to_string()),
+            _ => None,
+        })
+        .unwrap_err();
 
     assert!(err.contains("Invalid BINDIZR_API_PORT environment variable"));
 }
@@ -242,7 +243,7 @@ fn resolve_config_path_prefers_argument_then_env_then_default() {
 }
 
 #[test]
-fn parse_bindizr_config_rejects_entryless_secondary_addrs() {
+fn from_raw_rejects_entryless_secondary_addrs() {
     let err = parse_config(&TestConfigToml {
         secondary_addrs: ",",
         ..Default::default()

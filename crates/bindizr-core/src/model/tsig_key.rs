@@ -2,8 +2,10 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
 /// TSIG HMAC algorithms supported for nsupdate authentication (RFC 8945).
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub enum TsigAlgorithm {
+    /// The default a key is created with, matching `tsig-keygen`'s.
+    #[default]
     HmacSha256,
     HmacSha384,
     HmacSha512,
@@ -73,4 +75,26 @@ pub struct TsigKey {
     pub secret: String,
     pub is_global: bool,
     pub created_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn algorithm_parses_storage_and_wire_forms_case_insensitively() {
+        assert_eq!(
+            "HMAC-SHA512".parse::<TsigAlgorithm>().unwrap(),
+            TsigAlgorithm::HmacSha512
+        );
+        assert_eq!(
+            "hmac-sha384.".parse::<TsigAlgorithm>().unwrap(),
+            TsigAlgorithm::HmacSha384
+        );
+    }
+
+    #[test]
+    fn algorithm_rejects_unsupported_names() {
+        assert!("hmac-md5".parse::<TsigAlgorithm>().is_err());
+    }
 }
