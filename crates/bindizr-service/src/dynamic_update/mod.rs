@@ -306,10 +306,10 @@ async fn apply_op(
                 &[Record {
                     id: 0,
                     name: owner,
-                    record_type: record_type.clone(),
                     value,
                     ttl: *ttl,
-                    priority: *priority,
+                    priority: record_type.stored_priority(*priority),
+                    record_type: record_type.clone(),
                     zone_id: zone.id,
                     created_at: Utc::now(),
                 }],

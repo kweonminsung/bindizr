@@ -57,6 +57,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             priority INT,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INT NOT NULL,
+            CHECK ((record_type IN ('MX', 'SRV')) = (priority IS NOT NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             INDEX idx_records_zone_name (zone_id, name),
             INDEX idx_records_zone_type (zone_id, record_type)
@@ -257,6 +258,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             priority INTEGER,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INTEGER NOT NULL,
+            CHECK ((record_type IN ('MX', 'SRV')) = (priority IS NOT NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -481,6 +483,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             priority INTEGER,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             zone_id INTEGER NOT NULL,
+            CHECK ((record_type IN ('MX', 'SRV')) = (priority IS NOT NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,

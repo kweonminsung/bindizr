@@ -62,6 +62,7 @@ pub(crate) fn parse_record(
     if let Some(ttl) = ttl {
         validate_record_ttl(ttl)?;
     }
+    let priority = record_type.stored_priority(priority);
     let value = value
         .to_encoded_value(&record_type, priority)
         .map_err(ServiceError::invalid_record_value)?;

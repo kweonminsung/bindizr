@@ -57,7 +57,7 @@ impl RecordService {
             // Only MX/SRV carry a priority: given for another type it is the
             // error creation gives, and retyping to another type clears it.
             let priority = if matches!(record_type, RecordType::MX | RecordType::SRV) {
-                request.priority.or(existing.priority)
+                record_type.stored_priority(request.priority.or(existing.priority))
             } else if request.priority.is_some() {
                 return Err(ServiceError::invalid_record_value(format!(
                     "{} records do not take a priority",

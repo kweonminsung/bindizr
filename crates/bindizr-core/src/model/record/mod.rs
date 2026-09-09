@@ -248,6 +248,17 @@ impl RecordType {
         self.canonical_value(left, left_priority) == self.canonical_value(right, right_priority)
     }
 
+    /// MX and SRV encode a preference in their rdata, so an omitted one takes
+    /// the default serving applies; other types pass through to be rejected.
+    pub fn stored_priority(&self, priority: Option<i32>) -> Option<i32> {
+        match self {
+            RecordType::MX | RecordType::SRV => {
+                Some(priority.unwrap_or(i32::from(DEFAULT_PRIORITY)))
+            }
+            _ => priority,
+        }
+    }
+
     /// Canonical form used only to compare two values, never to store them.
     pub fn canonical_value<'a>(
         &self,
