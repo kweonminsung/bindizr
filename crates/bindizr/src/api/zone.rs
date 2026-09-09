@@ -9,8 +9,8 @@ use bindizr_service::{
     record::RecordService,
     types::{
         CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneFileRequest, ImportZoneFileResponse, MessageResponse, PaginatedResponse,
-        RollbackZoneRequest, RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse,
+        ImportZoneRequest, ImportZoneResponse, MessageResponse, PaginatedResponse,
+        RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
         ZoneDetailResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
     },
     zone::ZoneService,
@@ -28,13 +28,13 @@ pub(crate) struct ZoneApi;
 impl ZoneApi {
     pub(crate) async fn routes() -> Router {
         Router::new()
-            .route("/zones", routing::get(get_zones))
+            .route("/zones", routing::get(list_zones))
             .route("/zones/{name}", routing::get(get_zone))
             .route("/zones", routing::post(create_zone))
             .route("/zones/{name}", routing::put(update_zone))
             .route("/zones/{name}", routing::delete(delete_zone))
             .route(
-                "/zones/{name}/imports",
+                "/zones/{name}/import",
                 routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
             )
             .route("/zones/{name}/export", routing::get(export_zone))
@@ -47,7 +47,10 @@ impl ZoneApi {
                 "/zones/{name}/versions/{serial}",
                 routing::get(get_zone_version),
             )
-            .route("/zones/{name}/rollback", routing::post(rollback_zone))
+            .route(
+                "/zones/{name}/versions/{serial}/rollback",
+                routing::post(rollback_zone),
+            )
             .route("/zones/{name}/status", routing::get(get_zone_status))
     }
 }
@@ -106,7 +109,7 @@ pub(crate) async fn export_zone(
     Query(query): Query<ExportZoneQuery>,
 ) -> Result<Response, ApiError> {
     let zone_file =
-        ZoneService::export_zone_file(&caller, &params.name, query.signed.unwrap_or(false)).await?;
+        ZoneService::export(&caller, &params.name, query.signed.unwrap_or(false)).await?;
     Ok((
         StatusCode::OK,
         [("content-type", "text/plain; charset=utf-8")],
@@ -125,7 +128,7 @@ pub(crate) async fn export_zone(
             ("name" = String, Path, description = "The name of the DNS zone."),
             ("limit" = Option<u32>, Query, description = "Maximum number of versions to return."),
             ("offset" = Option<u64>, Query, description = "Number of versions to skip."),
-            ("all" = Option<bool>, Query, description = "Include signer-only serials (DNSSEC re-signs and rollovers); by default only serials with user changes, plus the current serial, are listed.")
+            ("include_signer_serials" = Option<bool>, Query, description = "Include signer-only serials (DNSSEC re-signs and rollovers); by default only serials with user changes, plus the current serial, are listed.")
         ),
         responses(
             (status = 200, description = "A list of zone versions", body = PaginatedResponse<ZoneVersionResponse>),
@@ -140,9 +143,14 @@ pub(crate) async fn list_zone_versions(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<VersionListQuery>,
 ) -> Result<Response, ApiError> {
-    let response =
-        ZoneService::list_versions(&caller, &params.name, query.limit, query.offset, query.all)
-            .await?;
+    let response = ZoneService::list_versions(
+        &caller,
+        &params.name,
+        query.limit,
+        query.offset,
+        query.include_signer_serials,
+    )
+    .await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -174,14 +182,15 @@ pub(crate) async fn get_zone_version(
 
 #[utoipa::path(
         post,
-        path = "/zones/{name}/rollback",
+        path = "/zones/{name}/versions/{serial}/rollback",
         tag = "Zone",
         summary = "Roll a zone back to a version serial",
-        description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With dry_run the rollback is computed and reported without applying any change.",
+        description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With `dry_run=true` the rollback is computed and reported without applying any change.",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone to roll back.")
+            ("name" = String, Path, description = "The name of the DNS zone to roll back."),
+            ("serial" = i32, Path, description = "The version serial to roll back to."),
+            ("dry_run" = Option<bool>, Query, description = "Compute and report the rollback without applying it.")
         ),
-        request_body = RollbackZoneRequest,
         responses(
             (status = 200, description = "Rollback result", body = RollbackZoneResponse),
             (status = 400, description = "Bad request, invalid target serial", body = ErrorResponse),
@@ -189,25 +198,35 @@ pub(crate) async fn get_zone_version(
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone or version not found", body = ErrorResponse),
             (status = 409, description = "Record conflict", body = ErrorResponse),
-            (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
 /// Roll a zone back to the state captured at a version serial.
 pub(crate) async fn rollback_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
-    JsonBody(body): JsonBody<RollbackZoneRequest>,
+    Path(params): Path<ZoneVersionParam>,
+    Query(query): Query<RollbackQuery>,
 ) -> Result<Response, ApiError> {
-    let response = ZoneService::rollback(&caller, &params.name, body.serial, body.dry_run).await?;
+    let response = ZoneService::rollback(
+        &caller,
+        &params.name,
+        params.serial,
+        query.dry_run.unwrap_or(false),
+    )
+    .await?;
     Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RollbackQuery {
+    dry_run: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct VersionListQuery {
     limit: Option<u32>,
     #[serde(default)]
-    all: bool,
+    include_signer_serials: bool,
     offset: Option<u64>,
 }
 
@@ -277,7 +296,7 @@ pub(crate) async fn diff_zone_versions(
         )
 )]
 /// List DNS zones, optionally filtered and paginated.
-pub(crate) async fn get_zones(
+pub(crate) async fn list_zones(
     RequestCaller(caller): RequestCaller,
     Query(query): Query<GetZonesFilter>,
 ) -> Result<Response, ApiError> {
@@ -290,9 +309,10 @@ pub(crate) async fn get_zones(
         path = "/zones/{name}",
         tag = "Zone",
         summary = "Get a specific DNS zone",
+        description = "With `records=true` the response carries every record of the zone in one unpaginated array; for a large zone list them page by page with `GET /records?zone_name=` instead.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to retrieve."),
-            ("records" = Option<bool>, Query, description = "Whether to include records for the DNS zone.")
+            ("records" = Option<bool>, Query, description = "Include the zone's records, unpaginated.")
         ),
         responses(
             (status = 200, description = "Details of the DNS zone", body = ZoneDetailResponse),
@@ -307,11 +327,12 @@ pub(crate) async fn get_zone(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<GetZoneQuery>,
 ) -> Result<Response, ApiError> {
-    let raw_zone = ZoneService::get_by_name(&caller, &params.name).await?;
-
-    let raw_records = match query.records {
-        Some(true) => RecordService::list_in_zone(&caller, raw_zone.name.as_str()).await?,
-        _ => vec![],
+    let (raw_zone, raw_records) = match query.records {
+        Some(true) => ZoneService::get_with_records(&caller, &params.name).await?,
+        _ => (
+            ZoneService::get_by_name(&caller, &params.name).await?,
+            vec![],
+        ),
     };
     let records = raw_records
         .iter()
@@ -356,10 +377,11 @@ pub(crate) async fn create_zone(
         path = "/zones/{name}",
         tag = "Zone",
         summary = "Update a specific DNS zone",
+        description = "Applies the given fields and keeps the rest; a different `name` renames the zone. The serial advances by itself and cannot be set here.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to update.")
         ),
-        request_body = CreateZoneRequest,
+        request_body = UpdateZoneRequest,
         responses(
             (status = 200, description = "DNS zone updated successfully", body = ZoneResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
@@ -375,7 +397,7 @@ pub(crate) async fn create_zone(
 pub(crate) async fn update_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
-    JsonBody(body): JsonBody<CreateZoneRequest>,
+    JsonBody(body): JsonBody<UpdateZoneRequest>,
 ) -> Result<Response, ApiError> {
     let zone = ZoneService::update(&caller, &params.name, &body).await?;
     let response = ZoneResponse {
@@ -414,16 +436,16 @@ pub(crate) async fn delete_zone(
 
 #[utoipa::path(
         post,
-        path = "/zones/{name}/imports",
+        path = "/zones/{name}/import",
         tag = "Zone",
-        summary = "Import a BIND zone file into a zone",
-        description = "Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. Importing a zone over AXFR is available only through the CLI (`zone import --from-server`).",
+        summary = "Import records into a zone",
+        description = "Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to import records into.")
         ),
-        request_body = ImportZoneFileRequest,
+        request_body = ImportZoneRequest,
         responses(
-            (status = 200, description = "Import summary and validation errors", body = ImportZoneFileResponse),
+            (status = 200, description = "Import summary and validation errors", body = ImportZoneResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
@@ -433,13 +455,13 @@ pub(crate) async fn delete_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Import a BIND zone file into a zone, reconciling records in one transaction.
+/// Import records into a zone, reconciling them in one transaction.
 pub(crate) async fn import_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
-    JsonBody(body): JsonBody<ImportZoneFileRequest>,
+    JsonBody(body): JsonBody<ImportZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let response = RecordService::import_zone_file(&caller, &params.name, &body).await?;
+    let response = RecordService::import_zone(&caller, &params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

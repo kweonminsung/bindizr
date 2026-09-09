@@ -38,7 +38,7 @@ cargo +nightly fmt                                         # format (needs night
 - `bindizr-service` — business logic for zones/records (create/update/delete,
   bulk, zone-file import, tokens, serial bumping, RFC 2136 apply), plus the
   outbound DNS clients its flows drive (`dns_client/`: NOTIFY fan-out, SOA
-  probing, inbound AXFR) — the wire format stays core's.
+  probing, parent-DS probing, inbound AXFR) — the wire format stays core's.
 - `bindizr` — the binary: the daemon runtime (`daemon.rs`) and every front end
   it serves — HTTP API (axum), CLI (clap), Unix-socket daemon IPC, and the DNS
   **server** (`dns/`: TCP/UDP listeners, AXFR/IXFR/catalog/NOTIFY serving,
@@ -220,18 +220,19 @@ entity methods, and are the only exemptions.
   `in_serial_range` the closed `[from, to]`.
 - Projections — a method returning one column rather than entity rows names
   that column, pluralized, where the rows would be
-  (`list_zone_ids_expiring_before`); the facade prefixes the row set being
-  filtered (`list_rrsig_zone_ids_expiring_before` — `rrsig`, since only
-  RRSIG rows carry `expires_at`).
+  (`list_zone_ids_expiring_within_refresh`); the facade prefixes the row set
+  being filtered (`list_rrsig_zone_ids_expiring_within_refresh` — `rrsig`,
+  since only RRSIG rows carry `expires_at`).
 - `_tx` — runs on the caller's transaction, taken as the first parameter.
 
 **Time filters** take a `cutoff` parameter and resolve the predicate's
 subject one of three ways, most specific first:
 
-- bound to the preceding `_by_` value when the timestamp records entry into
-  the selected state: `list_by_state_entered_before` (`state_changed_at`);
-- the row's own timestamp column, verb-formed: `expiring_before`
-  (`expires_at`);
+- bound to the preceding `_by_` value when the timestamp is stamped on
+  entering the selected state: `list_by_state_eligible_before`
+  (`eligible_at`);
+- the row's own timestamp column, verb-formed: `expiring_within_refresh`
+  (`expires_at`, measured from `cutoff` plus the policy's re-sign window);
 - elided for the row's own age: `older_than` (`created_at`) — the `prune`
   retention form.
 
@@ -256,23 +257,66 @@ equality selector the name must carry as `_by_state`.
 
 The `get_*`/`find_*`/`list_*`/`count_*` verbs above are reserved for data
 access and mean the same thing in every crate, not just the service — a free
-helper that computes a value never takes `get_`. The
-`get_<entity>_repository()` factories in `bindizr-db` are the one exception:
-they hand out the data-access object itself. Other helper verbs:
+helper that computes a value never takes `get_`, and a metrics counter is
+`track_`, never `count_`. The `get_<entity>_repository()` factories in
+`bindizr-db` are the one exception: they hand out the data-access object
+itself. `convert_` does not exist: a conversion is `to_`, a parse `parse_`.
+Every other helper starts with one of these verbs:
 
-- `to_<form>` — convert a name/value into a named form (`to_fqdn_lowercase`,
-  `to_lookup_name`).
-- `encode_<thing>` — a typed value into its wire bytes (`encode_name`).
-- `parse_<thing>` — text or wire bytes into a typed value.
-- `classify_<thing>` — check returning core's typed `ParseNameError`, with no
+- Conversion: a name says only what the call site cannot see. `to_<form>`
+  when the source is evident there — a method's receiver, or the one
+  argument (`to_fqdn(name)`, `to_sqlite_url(path)`, `to_response_data(status)`).
+  `<source>_to_<form>` only when the source carries the meaning: the form is
+  a bare type (`serial_to_u32`), several sources reach the same form
+  (`rr_to_record_value` beside the text parser, `labels_to_wire`), or the
+  source is the point (`zone_name_to_member_id`). Two or more inputs make an
+  assembly, `build_`. `parse_<thing>` — text or wire bytes into a typed
+  value, fallible; an infallible reading is `to_` (`to_record_value_request`
+  over the `--value` arguments). `encode_<thing>` / `decode_<thing>` — a
+  typed value to and from its wire bytes (`encode_name`). `extract_<thing>`
+  — one part out of an already-parsed message (`extract_ds_rrset`).
+  `render_<thing>` — a typed value as multi-line human text
+  (`render_diff_lines`); `display_<thing>` — one table cell;
+  `<thing>_label` — a metric label value.
+- Checks: `is_<x>` / `has_<x>` / `matches_<x>` — predicates returning `bool`.
+  `classify_<thing>` — check returning core's typed `ParseNameError`, with no
   field context; `validate_<thing>` is the same check phrased against a named
   field and mapped to the caller's error type. The pair lives together.
-- `normalize_<thing>` — service-layer trim + canonicalize + validate,
-  returning the canonical value or a `ServiceError`.
-- `is_<x>` / `has_<x>` — predicates.
-- `build_<thing>` / `compute_<thing>` — assemble or derive a value from several
-  inputs (`build_record_diff`, `compute_zone_change_set`); `group_<things>`
-  partitions into a keyed map.
+  `verify_<thing>` — a cryptographic check that yields a result
+  (`verify_tsig`). `check_<thing>` — a doctor-style diagnostic that reports
+  instead of failing.
+- Derivation: `build_<thing>` / `compute_<thing>` — assemble or derive a value
+  from several inputs (`build_record_diff`, `compute_zone_change_set`);
+  `group_<things>` partitions into a keyed map; `normalize_<thing>` —
+  service-layer trim + canonicalize + validate, returning the canonical value
+  or a `ServiceError`; `generate_<thing>` — fresh key, secret, or serial
+  material.
+- I/O: `send_` (one message out), `query_` (one DNS question), `probe_` (ask
+  and report reachability or state), `fetch_` (pull a whole artifact, such as
+  an AXFR), `resolve_` / `discover_` (names to addresses, the parent zone),
+  `load_` / `read_` / `write_` (disk and streams), `print_` (stdout; CLI only).
+- Flow: `handle_<thing>` — the entry point of one request or command;
+  `apply_<thing>` — write a computed change set; `authenticate_` (who the
+  caller is) / `authorize_` (what they may do).
+
+A domain action or lifecycle step keeps its own verb (`sign_zone`,
+`escape_label`, `enqueue_notify`, `run_udp_server`); the vocabulary above is
+for the helpers around them, so an action never borrows a helper verb to
+look like one (a `build_` that writes, a `to_` that sends). Predicate
+methods read as a sentence about their receiver (`key.wants_parent_ds()`);
+`is_`/`has_`/`matches_` are for free functions, which have no subject.
+
+Noun names belong to pure derivations named by what they return, where a
+verb would add nothing the return type does not say (`elapsed_ms`,
+`rrset_digest`, `promotable_sep_key_ids`, `like_pattern`) — anything with
+I/O or a side effect keeps its verb — and to constructors, which are named
+by what they build: the kind alone where the module builds one kind of
+thing (`unauthorized(message) -> Response` in the auth middleware,
+`ServiceError::unauthorized`), with `_error` / `_response` added only where
+one module builds several (`upstream_error_response`,
+`zone_name_race_error`). Names an external trait fixes (`Log::enabled`,
+`KeyStore::get_key`, sqlx's `compatible`) and serde default providers
+(`default_<field>`) are outside the vocabulary.
 
 One concept keeps one name across crates. Do not add a wrapper that only
 reorders or renames the arguments of the function it calls — call it directly.
@@ -396,7 +440,7 @@ fields private behind constructors.
 
 Do not pre-split a function for a caller that has not arrived: extract the
 shared helper when the second caller appears (`validate_rrset_shape` left
-`convert_rrset` only when `adjust_rrset` needed it too). A single-caller
+`parse_rrset_op` only when `adjust_rrset` needed it too). A single-caller
 helper is justified by its contract, never by call count: the name plus a
 narrow signature must let the caller be read without opening the body
 (`normalize_ttl`). A name that merely labels a section of its one caller, or
@@ -456,7 +500,12 @@ the whole API surface):
 ```sh
 bindizr start -c <config> &   # config with api.openapi_enabled = true
 curl -s http://127.0.0.1:<api_port>/openapi.yaml > docs/openapi.yaml
+bindizr stop
 ```
+
+Stop it with `bindizr stop` and check that no `bindizr start` process is
+left before running the e2e suite: a leftover daemon holds the shared Unix
+socket and every test fails with "Bindizr is already running".
 
 Pages CI rebuilds the hosted API docs when `docs/openapi.yaml` changes on
 `main`.

@@ -1,6 +1,7 @@
 use bindizr_service::types::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-    GetRecordsFilter, RecordItem, RecordValueRequest, UpdateRecordPatch,
+    GetRecordsFilter, PaginatedResponse, RecordItem, RecordResponse, RecordValueRequest,
+    UpdateRecordRequest,
 };
 use clap::Subcommand;
 
@@ -8,13 +9,13 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ItemOrPage, OutputFormat, RecordRow, parse_response, print_response, print_table,
+            OutputFormat, RecordRow, parse_response, print_response, print_table,
             render_change_preview,
         },
     },
     socket::{
         client::DaemonSocketClient,
-        types::{BulkCreateRecordsParams, DaemonCommandKind, RecordIdParams, UpdateRecordParams},
+        types::{DaemonCommandKind, RecordIdParams, UpdateRecordParams},
     },
 };
 
@@ -29,9 +30,9 @@ pub(crate) enum RecordCommand {
         /// Record type (A, AAAA, CNAME, MX, etc.)
         #[arg(long = "type", alias = "record-type")]
         record_type: String,
-        /// Record value
-        #[arg(long)]
-        value: String,
+        /// Record value; repeat it for the segments of a TXT record
+        #[arg(long, value_name = "VALUE", action = clap::ArgAction::Append, required = true)]
+        value: Vec<String>,
         /// Zone name
         #[arg(short, long, value_name = "ZONE_NAME")]
         zone: String,
@@ -72,12 +73,10 @@ YAML example:
         /// Zone name
         #[arg(short, long, value_name = "ZONE_NAME")]
         zone: String,
-        /// Parse and validate without applying any change
+        /// Parse and validate without applying any change, showing the inserts
+        /// as a +/-/~ diff
         #[arg(long)]
         dry_run: bool,
-        /// Preview the inserts as a +/-/~ diff without applying them (implies --dry-run)
-        #[arg(long)]
-        preview: bool,
     },
 
     /// List records
@@ -151,9 +150,9 @@ YAML example:
         /// Record type (A, AAAA, CNAME, MX, etc.)
         #[arg(long = "type", alias = "record-type")]
         record_type: Option<String>,
-        /// Record value
-        #[arg(long)]
-        value: Option<String>,
+        /// Record value; repeat it for the segments of a TXT record
+        #[arg(long, value_name = "VALUE", action = clap::ArgAction::Append)]
+        value: Vec<String>,
         /// TTL (records sharing a name and type share one TTL)
         #[arg(long)]
         ttl: Option<i32>,
@@ -194,7 +193,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     CreateRecordRequest {
                         name,
                         record_type,
-                        value: RecordValueRequest::String(value),
+                        value: to_record_value_request(value),
                         zone_name: zone,
                         ttl,
                         priority,
@@ -203,7 +202,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?
                 .data;
 
-            print_records(&data, output)?;
+            print_response(&data, output, |response: &RecordResponse| {
+                vec![RecordRow::from(&response.record)]
+            })?;
         }
         RecordCommand::List {
             zone,
@@ -257,13 +258,18 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?
                 .data;
 
-            print_records(&data, output)?;
+            print_response(
+                &data,
+                output,
+                |page: &PaginatedResponse<GetRecordResponse>| {
+                    page.items.iter().map(RecordRow::from).collect()
+                },
+            )?;
         }
         RecordCommand::BulkCreate {
             file,
             zone,
             dry_run,
-            preview,
         } => {
             let content = super::read_input(&file)?;
             // YAML is a superset of JSON, so one parse accepts both formats.
@@ -286,25 +292,21 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let response = client
                 .send_command(
                     DaemonCommandKind::BulkCreateRecords,
-                    BulkCreateRecordsParams {
+                    CreateBulkRecordsRequest {
                         zone_name: zone,
-                        request: CreateBulkRecordsRequest {
-                            records,
-                            // Preview never applies; it is a dry run rendered as a diff.
-                            dry_run: dry_run || preview,
-                        },
+                        records,
+                        dry_run,
                     },
                 )
                 .await?;
 
             let bulk: BulkRecordsResponse = parse_response(&response.data)?;
-            if preview {
-                print!("{}", render_change_preview(&bulk.diff));
-                return Ok(());
-            }
-
             println!("{}", response.message);
-            print_table(bulk.records.iter().map(RecordRow::from).collect());
+            if dry_run {
+                print!("{}", render_change_preview(&bulk.diff));
+            } else {
+                print_table(bulk.records.iter().map(RecordRow::from).collect());
+            }
         }
         RecordCommand::Get { id, output } => {
             let data = client
@@ -312,7 +314,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?
                 .data;
 
-            print_records(&data, output)?;
+            print_response(&data, output, |response: &RecordResponse| {
+                vec![RecordRow::from(&response.record)]
+            })?;
         }
         RecordCommand::Update {
             id,
@@ -328,10 +332,10 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     DaemonCommandKind::UpdateRecord,
                     UpdateRecordParams {
                         id,
-                        patch: UpdateRecordPatch {
+                        request: UpdateRecordRequest {
                             name,
                             record_type,
-                            value: value.map(RecordValueRequest::String),
+                            value: (!value.is_empty()).then(|| to_record_value_request(value)),
                             ttl,
                             priority,
                         },
@@ -340,7 +344,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .await?
                 .data;
 
-            print_records(&data, output)?;
+            print_response(&data, output, |response: &RecordResponse| {
+                vec![RecordRow::from(&response.record)]
+            })?;
         }
         RecordCommand::Delete { id } => {
             let response = client
@@ -353,8 +359,12 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
     Ok(())
 }
 
-fn print_records(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
-    print_response(data, output, |records: &ItemOrPage<GetRecordResponse>| {
-        records.items().iter().map(RecordRow::from).collect()
-    })
+/// One `--value` is the record's value; several are the segments of a TXT
+/// record.
+fn to_record_value_request(mut values: Vec<String>) -> RecordValueRequest {
+    if values.len() == 1 {
+        RecordValueRequest::String(values.remove(0))
+    } else {
+        RecordValueRequest::Segments(values)
+    }
 }

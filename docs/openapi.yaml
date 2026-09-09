@@ -15,7 +15,7 @@ paths:
       - DNSSEC
       summary: List all DNSSEC policies
       description: 'Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC, 14-day signatures re-signed with 5 days left) is seeded at startup.'
-      operationId: get_dnssec_policies
+      operationId: list_dnssec_policies
       responses:
         '200':
           description: All DNSSEC policies
@@ -370,7 +370,7 @@ paths:
       - ExternalDNS
       summary: List the records of every ExternalDNS-managed zone
       description: 'Records of every zone the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.'
-      operationId: get_external_dns_records
+      operationId: list_external_dns_records
       responses:
         '200':
           description: Records of the allowed zones
@@ -396,7 +396,7 @@ paths:
       - ExternalDNS
       summary: List the zones ExternalDNS may manage
       description: 'Zones the calling token may manage: every zone for a global token, otherwise the zones its grants cover.'
-      operationId: get_external_dns_zones
+      operationId: list_external_dns_zones
       responses:
         '200':
           description: Allowed zones
@@ -438,12 +438,50 @@ paths:
                 $ref: '#/components/schemas/HealthResponse'
       security:
       - {}
+  /notify:
+    post:
+      tags:
+      - Notify
+      summary: Send DNS NOTIFY messages for all zones
+      operationId: notify_all_zones
+      parameters:
+      - name: bump_serial
+        in: query
+        description: Bump every zone's serial first, so secondaries transfer even when nothing changed.
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: DNS NOTIFY sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /records:
     get:
       tags:
       - Record
       summary: List all DNS records
-      operationId: get_records
+      operationId: list_records
       parameters:
       - name: zone_name
         in: query
@@ -624,6 +662,74 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /records/bulk:
+    post:
+      tags:
+      - Record
+      summary: Bulk insert DNS records into a zone
+      description: Insert many records into the named zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are. With dry_run the same validation runs but nothing is applied.
+      operationId: create_records_bulk
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBulkRecordsRequest'
+        required: true
+      responses:
+        '200':
+          description: Dry run validated successfully, nothing applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkRecordsResponse'
+        '201':
+          description: DNS records created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkRecordsResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The token's grants do not allow this record write
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found, or not visible to the token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Record conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /records/{record_id}:
     get:
       tags:
@@ -667,6 +773,7 @@ paths:
       tags:
       - Record
       summary: Update a specific DNS record
+      description: Applies the given fields and keeps the rest. `value` is required when `record_type` changes, since a stored value is encoded per type.
       operationId: update_record
       parameters:
       - name: record_id
@@ -680,7 +787,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RecordItem'
+              $ref: '#/components/schemas/UpdateRecordRequest'
         required: true
       responses:
         '200':
@@ -787,7 +894,7 @@ paths:
       - Token
       summary: List all API tokens
       description: Lists every API token without its secret; a secret is shown once, in the create response.
-      operationId: get_tokens
+      operationId: list_tokens
       responses:
         '200':
           description: All API tokens
@@ -900,7 +1007,7 @@ paths:
       - Token
       summary: List the grants of the API token making the request
       description: The calling token's grants; any token may read its own. A global token holds none, so its list is empty. With authentication disabled no token is presented, so this answers 401.
-      operationId: get_self_token_grants
+      operationId: list_self_token_grants
       responses:
         '200':
           description: The calling token's grants
@@ -970,7 +1077,7 @@ paths:
       tags:
       - Token
       summary: List an API token's grants
-      operationId: get_token_grants
+      operationId: list_token_grants
       parameters:
       - name: name
         in: path
@@ -1128,7 +1235,7 @@ paths:
       - TSIG
       summary: List all TSIG keys
       description: Lists every TSIG key without its secret. Fetch a single key to read the secret.
-      operationId: get_tsig_keys
+      operationId: list_tsig_keys
       responses:
         '200':
           description: All TSIG keys
@@ -1309,7 +1416,7 @@ paths:
       tags:
       - TSIG
       summary: List a TSIG key's grants
-      operationId: get_tsig_grants
+      operationId: list_tsig_grants
       parameters:
       - name: name
         in: path
@@ -1466,7 +1573,7 @@ paths:
       tags:
       - Zone
       summary: List all DNS zones
-      operationId: get_zones
+      operationId: list_zones
       parameters:
       - name: name
         in: query
@@ -1622,72 +1729,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/notify:
-    post:
-      tags:
-      - Notify
-      summary: Send DNS NOTIFY messages for a zone or all zones
-      operationId: notify_zones
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NotifyZoneRequest'
-        required: true
-      responses:
-        '200':
-          description: DNS NOTIFY sent successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-        '400':
-          description: Bad request, invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required to notify all zones or to bump a serial
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: Zone conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
   /zones/{name}:
     get:
       tags:
       - Zone
       summary: Get a specific DNS zone
+      description: With `records=true` the response carries every record of the zone in one unpaginated array; for a large zone list them page by page with `GET /records?zone_name=` instead.
       operationId: get_zone
       parameters:
       - name: name
@@ -1698,7 +1745,7 @@ paths:
           type: string
       - name: records
         in: query
-        description: Whether to include records for the DNS zone.
+        description: Include the zone's records, unpaginated.
         required: false
         schema:
           type: boolean
@@ -1731,6 +1778,7 @@ paths:
       tags:
       - Zone
       summary: Update a specific DNS zone
+      description: Applies the given fields and keeps the rest; a different `name` renames the zone. The serial advances by itself and cannot be set here.
       operationId: update_zone
       parameters:
       - name: name
@@ -1743,7 +1791,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateZoneRequest'
+              $ref: '#/components/schemas/UpdateZoneRequest'
         required: true
       responses:
         '200':
@@ -1882,11 +1930,79 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+      - DNSSEC
+      summary: Change a zone's DNSSEC settings
+      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy''s (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries (empty returns the zone to discovery), and applies to unsigned zones too.'
+      operationId: update_dnssec_settings
+      parameters:
+      - name: name
+        in: path
+        description: The name of the DNS zone.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDnssecSettingsRequest'
+        required: true
+      responses:
+        '200':
+          description: Settings changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnssecStatusResponse'
+        '400':
+          description: 'Bad request: no field given, an invalid parent address, or a policy whose denial mode or key layout differs from the zone''s'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone or DNSSEC policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A policy was given for a zone without DNSSEC, or a rollover is already in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
       tags:
       - DNSSEC
       summary: Enable DNSSEC for a zone
-      description: Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone.
+      description: Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` names the parent zone's nameservers that disabling DNSSEC later asks for the DS; omitted, the parent is discovered through the system resolver.
       operationId: enable_dnssec
       parameters:
       - name: name
@@ -1954,7 +2070,7 @@ paths:
       tags:
       - DNSSEC
       summary: Disable DNSSEC for a zone
-      description: 'Deletes the zone''s signing keys and derived records, so secondaries unsign via IXFR. While the parent zone still publishes a DS record, dropping the signatures makes the zone bogus for validating resolvers: remove the DS and wait out its TTL before calling this.'
+      description: 'Deletes the zone''s signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the parent''s nameservers (`parent_ns_addrs`, or the discovered ones) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`), fails to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked (`DNSSEC_STATE_CHANGED`; retry). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller''s.'
       operationId: disable_dnssec
       parameters:
       - name: name
@@ -1963,6 +2079,12 @@ paths:
         required: true
         schema:
           type: string
+      - name: skip_ds_check
+        in: query
+        description: Skip the parent DS check.
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
           description: DNSSEC disabled successfully
@@ -1989,7 +2111,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: DNSSEC is not enabled for the zone
+          description: DNSSEC is not enabled for the zone, the parent still serves its DS, or the parent could not be asked
           content:
             application/json:
               schema:
@@ -2000,13 +2122,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/dnssec/ds:
-    get:
+  /zones/{name}/dnssec/check-ds:
+    post:
       tags:
       - DNSSEC
-      summary: List a zone's DS records
-      description: Returns the DS records of the zone's signing keys, in parsed fields and full presentation form, for registration in the parent zone. Empty for an unsigned zone.
-      operationId: get_dnssec_ds_records
+      summary: Ask the parent zone whether it serves the zone's DS
+      description: 'Asks the parent zone''s nameservers (`parent_ns_addrs`, or the discovered ones) for the zone''s DS records and reports the answer in `delegation`: `published` with the key tags and TTL served, or `hidden`. The same check gates disabling DNSSEC.'
+      operationId: check_dnssec_ds
       parameters:
       - name: name
         in: path
@@ -2016,11 +2138,11 @@ paths:
           type: string
       responses:
         '200':
-          description: The zone's DS records
+          description: The parent's answer with the zone's DNSSEC status
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DnssecDsListResponse'
+                $ref: '#/components/schemas/DnssecStatusResponse'
         '401':
           description: Unauthorized
           content:
@@ -2039,71 +2161,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/dnssec/policy:
-    put:
-      tags:
-      - DNSSEC
-      summary: Move a signed zone to another DNSSEC policy
-      description: 'Points the zone at another policy. The denial mode and key layout must match the current policy''s (they are fixed while signed; disable and re-enable to change them). A different algorithm starts an algorithm rollover under the new policy: every key gets a pre-published replacement and the zone is double-signed until the old keys leave after ds-seen (RFC 6840, Section 5.11). Timing changes take effect on the next signing pass.'
-      operationId: set_zone_dnssec_policy
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SetZoneDnssecPolicyRequest'
-        required: true
-      responses:
-        '200':
-          description: Policy changed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DnssecStatusResponse'
-        '400':
-          description: 'Bad request: the policy''s denial mode or key layout differs from the zone''s'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone or DNSSEC policy not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: DNSSEC is not enabled for the zone, or a rollover is already in progress
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
+          description: DNSSEC is not enabled for the zone, or the parent could not be asked
           content:
             application/json:
               schema:
@@ -2119,7 +2178,7 @@ paths:
       tags:
       - DNSSEC
       summary: Start a key rollover for a zone
-      description: Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`PUT /zones/{name}/dnssec/policy`), which double-signs the zone through the transition (RFC 6840, Section 5.11).
+      description: Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`policy` in `PUT /zones/{name}/dnssec`), which double-signs the zone through the transition (RFC 6840, Section 5.11).
       operationId: start_dnssec_rollover
       parameters:
       - name: name
@@ -2188,7 +2247,7 @@ paths:
       tags:
       - DNSSEC
       summary: Confirm the new DS is at the parent (ds-seen)
-      description: The operator's confirmation that the new DS record has been seen at the parent zone and its TTL has passed (the `ds-seen` step, as in OpenDNSSEC/BIND); bindizr does not check the parent itself. Promotes the pre-published key to active and retires the key it replaces; retired keys are removed automatically once caches drain. ZSK rollovers involve no DS and are promoted automatically after a hold-down.
+      description: Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and every one of the parent zone's nameservers (`parent_ns_addrs`, or the discovered ones) serves the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, `DNSSEC_DS_UNVERIFIED` when they cannot be asked, or `DNSSEC_STATE_CHANGED` when the zone's keys or parent changed while they were being asked (retry). `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.
       operationId: ds_seen_dnssec_rollover
       parameters:
       - name: name
@@ -2197,6 +2256,18 @@ paths:
         required: true
         schema:
           type: string
+      - name: skip_ds_check
+        in: query
+        description: Skip the parent DS check.
+        required: false
+        schema:
+          type: boolean
+      - name: skip_holddown
+        in: query
+        description: Promote before the publish hold-down has passed.
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
           description: Rollover advanced, new key promoted
@@ -2229,7 +2300,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: DNSSEC is not enabled for the zone, or no rollover is in progress
+          description: DNSSEC is not enabled for the zone, no rollover is in progress, the parent does not serve the new DS yet, or the parent could not be asked
           content:
             application/json:
               schema:
@@ -2449,12 +2520,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/imports:
+  /zones/{name}/import:
     post:
       tags:
       - Zone
-      summary: Import a BIND zone file into a zone
-      description: Parse BIND zone file text and reconcile it with the zone using append/upsert/replace. When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. Importing a zone over AXFR is available only through the CLI (`zone import --from-server`).
+      summary: Import records into a zone
+      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.
       operationId: import_zone
       parameters:
       - name: name
@@ -2467,7 +2538,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ImportZoneFileRequest'
+              $ref: '#/components/schemas/ImportZoneRequest'
         required: true
       responses:
         '200':
@@ -2475,7 +2546,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ImportZoneFileResponse'
+                $ref: '#/components/schemas/ImportZoneResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -2518,39 +2589,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/rollback:
+  /zones/{name}/notify:
     post:
       tags:
-      - Zone
-      summary: Roll a zone back to a version serial
-      description: Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With dry_run the rollback is computed and reported without applying any change.
-      operationId: rollback_zone
+      - Notify
+      summary: Send DNS NOTIFY messages for a zone
+      operationId: notify_zone
       parameters:
       - name: name
         in: path
-        description: The name of the DNS zone to roll back.
+        description: The name of the DNS zone to notify secondaries about.
         required: true
         schema:
           type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RollbackZoneRequest'
-        required: true
+      - name: bump_serial
+        in: query
+        description: Bump the zone's serial first, so secondaries transfer even when nothing changed.
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
-          description: Rollback result
+          description: DNS NOTIFY sent successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RollbackZoneResponse'
-        '400':
-          description: Bad request, invalid target serial
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/MessageResponse'
         '401':
           description: Unauthorized
           content:
@@ -2558,25 +2622,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: A global API token is required to bump a serial or to notify the catalog zone
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: Zone or version not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: Record conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
+          description: Zone not found
           content:
             application/json:
               schema:
@@ -2631,7 +2683,7 @@ paths:
       tags:
       - Token
       summary: List the API token grants that apply to a zone
-      operationId: get_zone_token_grants
+      operationId: list_zone_token_grants
       parameters:
       - name: name
         in: path
@@ -2675,7 +2727,7 @@ paths:
       tags:
       - TSIG
       summary: List the TSIG grants that apply to a zone
-      operationId: get_zone_tsig_grants
+      operationId: list_zone_tsig_grants
       parameters:
       - name: name
         in: path
@@ -2744,7 +2796,7 @@ paths:
           type: integer
           format: int64
           minimum: 0
-      - name: all
+      - name: include_signer_serials
         in: query
         description: Include signer-only serials (DNSSEC re-signs and rollovers); by default only serials with user changes, plus the current serial, are listed.
         required: false
@@ -2874,41 +2926,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /zones/{zone_name}/records/bulk:
+  /zones/{name}/versions/{serial}/rollback:
     post:
       tags:
-      - Record
-      summary: Bulk insert DNS records into a zone
-      description: Insert many records into a single zone in one transaction. The zone serial is incremented once and a single NOTIFY is sent. Either all records are inserted or none are. With dry_run the same validation runs but nothing is applied.
-      operationId: create_records_bulk
+      - Zone
+      summary: Roll a zone back to a version serial
+      description: Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With `dry_run=true` the rollback is computed and reported without applying any change.
+      operationId: rollback_zone
       parameters:
-      - name: zone_name
+      - name: name
         in: path
-        description: The name of the DNS zone to insert records into.
+        description: The name of the DNS zone to roll back.
         required: true
         schema:
           type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateBulkRecordsRequest'
+      - name: serial
+        in: path
+        description: The version serial to roll back to.
         required: true
+        schema:
+          type: integer
+          format: int32
+      - name: dry_run
+        in: query
+        description: Compute and report the rollback without applying it.
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
-          description: Dry run validated successfully, nothing applied
+          description: Rollback result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BulkRecordsResponse'
-        '201':
-          description: DNS records created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BulkRecordsResponse'
+                $ref: '#/components/schemas/RollbackZoneResponse'
         '400':
-          description: Bad request, invalid input
+          description: Bad request, invalid target serial
           content:
             application/json:
               schema:
@@ -2920,25 +2973,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: The token's grants do not allow this record write
+          description: A global API token is required
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: Zone not found, or not visible to the token
+          description: Zone or version not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Record conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
           content:
             application/json:
               schema:
@@ -2985,6 +3032,7 @@ components:
       type: object
       description: Request body for bulk-inserting records into a zone.
       required:
+      - zone_name
       - records
       properties:
         dry_run:
@@ -2994,6 +3042,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RecordItem'
+        zone_name:
+          type: string
+          example: example.com
     CreateDnssecPolicyRequest:
       type: object
       description: |-
@@ -3212,7 +3263,7 @@ components:
           example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
     CreateZoneRequest:
       type: object
-      description: Request body for creating or updating a zone.
+      description: Request body for creating a zone.
       required:
       - name
       - mname
@@ -3275,6 +3326,96 @@ components:
           example: k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu
         token:
           $ref: '#/components/schemas/GetTokenResponse'
+    DnssecDelegationInfo:
+      type: object
+      description: What the parent zone's servers answered when asked for the zone's DS.
+      required:
+      - parent_ns_addrs
+      - discovered
+      - ds_state
+      - ds_key_tags
+      - keys
+      - checked_at
+      properties:
+        checked_at:
+          type: string
+          format: date-time
+        discovered:
+          type: boolean
+          description: Whether the servers were discovered rather than configured on the zone.
+          example: true
+        ds_key_tags:
+          type: array
+          items:
+            type: integer
+            format: int32
+            minimum: 0
+          description: Key tags of the DS records the parent serves.
+        ds_state:
+          type: string
+          description: |-
+            `published` when the parent serves a DS for the zone, `hidden` when
+            it serves none.
+          example: published
+        ds_ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            TTL of the parent's DS records: how long caches may keep serving
+            them once removed.
+          example: 86400
+          minimum: 0
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/DnssecDelegationKeyInfo'
+          description: The zone's SEP keys, each with whether the parent serves its DS.
+        parent_ns_addrs:
+          type: array
+          items:
+            type: string
+          description: 'The nameservers asked: the zone''s setting, or the discovered parent''s.'
+    DnssecDelegationKeyInfo:
+      type: object
+      description: One of the zone's SEP keys against the parent's DS records.
+      required:
+      - id
+      - key_tag
+      - role
+      - state
+      - ds_published
+      properties:
+        ds_published:
+          type: boolean
+          description: |-
+            Whether every parent server serves this key's DS (matched whole, not
+            by key tag).
+          example: true
+        eligible_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: When a `published` key's hold-down ends.
+        id:
+          type: integer
+          format: int32
+          example: 1
+        key_tag:
+          type: integer
+          format: int32
+          example: 34217
+          minimum: 0
+        role:
+          type: string
+          description: '`csk` or `ksk`.'
+          example: csk
+        state:
+          type: string
+          description: '`published`, `active`, or `retired`.'
+          example: published
     DnssecDsInfo:
       type: object
       description: A key's DS form for parent-zone registration.
@@ -3307,16 +3448,6 @@ components:
           type: string
           description: 'Full presentation form: `<zone>. IN DS <tag> <alg> 2 <digest>`.'
           example: example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
-    DnssecDsListResponse:
-      type: object
-      description: The DS records of a zone's signing keys.
-      required:
-      - ds_records
-      properties:
-        ds_records:
-          type: array
-          items:
-            $ref: '#/components/schemas/DnssecDsInfo'
     DnssecKeyInfo:
       type: object
       description: A signing key's public half; the private key never leaves the server.
@@ -3397,6 +3528,15 @@ components:
       type: object
       description: Request body for enabling DNSSEC on a zone.
       properties:
+        parent_ns_addrs:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The parent zone's nameservers (comma-separated `host[:port]`) asked
+            for the zone's DS before DNSSEC is disabled. Omitted, the zone keeps
+            its setting; a zone with none discovers its parent.
+          example: a.gtld-servers.net,b.gtld-servers.net
         policy:
           type:
           - string
@@ -3615,6 +3755,13 @@ components:
       - ds_records
       - serial
       properties:
+        delegation:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/DnssecDelegationInfo'
+            description: |-
+              The parent's answer about the zone's DS; present only when this
+              status comes from a parent check.
         ds_records:
           type: array
           items:
@@ -3633,6 +3780,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DnssecKeyInfo'
+        parent_ns_addrs:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The parent nameservers configured on the zone; absent when the
+            parent is discovered.
+          example: a.gtld-servers.net,b.gtld-servers.net
         policy:
           oneOf:
           - type: 'null'
@@ -3926,14 +4081,16 @@ components:
           type: integer
           example: 1
           minimum: 0
-    ImportZoneFileRequest:
+    ImportZoneRequest:
       type: object
-      description: Request body for importing a BIND zone file into a zone.
-      required:
-      - content
+      description: |-
+        Request body for importing records into a zone: BIND zone file text in
+        `content`, or a transfer from `from_server`; exactly one of the two.
       properties:
         content:
-          type: string
+          type:
+          - string
+          - 'null'
           description: Raw BIND zone file text.
           example: |
             www IN A 192.0.2.1
@@ -3941,11 +4098,19 @@ components:
         dry_run:
           type: boolean
           description: When true, parse and validate without applying any change.
+        from_server:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Transfer source (`host[:port]`, port 53 default) to pull the zone
+            from over AXFR; its SOA and DNSSEC-derived records are dropped.
+          example: 192.0.2.1:53
         mode:
           $ref: '#/components/schemas/ImportMode'
-    ImportZoneFileResponse:
+    ImportZoneResponse:
       type: object
-      description: Result of a zone-file import, including a summary and any validation errors.
+      description: Result of a zone import, including a summary and any validation errors.
       required:
       - applied
       - dry_run
@@ -3978,21 +4143,6 @@ components:
         message:
           type: string
           example: Deleted successfully
-    NotifyZoneRequest:
-      type: object
-      description: Request body for triggering a NOTIFY, optionally scoped to one zone.
-      properties:
-        bump_serial:
-          type: boolean
-          description: |-
-            Bump the serial first, so secondaries transfer even when nothing
-            changed.
-          example: true
-        zone_name:
-          type:
-          - string
-          - 'null'
-          example: example.com
     PaginatedResponse_GetRecordResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -4284,9 +4434,8 @@ components:
     RecordItem:
       type: object
       description: |-
-        A record's data fields, used both as a bulk-insertion entry and as the
-        record update request body. The zone is taken from the request path, so
-        unlike [`CreateRecordRequest`] it carries no `zone_name`.
+        A record's data fields for a bulk insertion; the zone comes from the
+        request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
       required:
       - name
       - record_type
@@ -4359,19 +4508,6 @@ components:
         soa_changed:
           type: boolean
           example: true
-    RollbackZoneRequest:
-      type: object
-      description: Request body for rolling a zone back to a version serial.
-      required:
-      - serial
-      properties:
-        dry_run:
-          type: boolean
-          description: When true, compute and report the rollback without applying any change.
-        serial:
-          type: integer
-          format: int32
-          example: 7
     RollbackZoneResponse:
       type: object
       description: |-
@@ -4436,18 +4572,6 @@ components:
           - 'null'
           format: int64
           example: 42
-    SetZoneDnssecPolicyRequest:
-      type: object
-      description: Request body for moving a signed zone to another DNSSEC policy.
-      required:
-      - policy
-      properties:
-        policy:
-          type: string
-          description: |-
-            Name of an existing DNSSEC policy with the zone's denial mode and key
-            layout; a different algorithm starts an algorithm rollover.
-          example: strict
     TokenGrantListResponse:
       type: object
       description: Grants of one token, or every grant that applies to one zone.
@@ -4565,6 +4689,122 @@ components:
           format: int32
           example: 90
           minimum: 0
+    UpdateDnssecSettingsRequest:
+      type: object
+      description: |-
+        Request body for changing a zone's signing settings; an omitted field
+        keeps its value.
+      properties:
+        parent_ns_addrs:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The parent zone's nameservers (comma-separated `host[:port]`); empty
+            returns the zone to parent discovery.
+          example: a.gtld-servers.net,b.gtld-servers.net
+        policy:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Policy to move the signed zone to; it must share the zone's denial
+            mode and key layout, and a new algorithm starts a rollover.
+          example: strict
+    UpdateRecordRequest:
+      type: object
+      description: |-
+        Request body for updating a record; an omitted field keeps the current
+        value, merged inside the update transaction. `value` is required when
+        `record_type` changes.
+      properties:
+        name:
+          type:
+          - string
+          - 'null'
+          example: sub
+        priority:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: MX and SRV priority; other record types reject it.
+          example: 10
+        record_type:
+          type:
+          - string
+          - 'null'
+          example: A
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Records sharing a name and type share one TTL.
+          example: 3600
+        value:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/RecordValueRequest'
+    UpdateZoneRequest:
+      type: object
+      description: |-
+        Request body for updating a zone; an omitted field keeps the current
+        value, merged inside the update transaction. `serial` is carried only to
+        be rejected: it is fixed at creation.
+      properties:
+        default_ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 3600
+        expire:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 604800
+        minimum_ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 3600
+        mname:
+          type:
+          - string
+          - 'null'
+          example: ns1.example.com
+        name:
+          type:
+          - string
+          - 'null'
+          description: A different name renames the zone.
+          example: example.com
+        refresh:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 7200
+        retry:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 3600
+        rname:
+          type:
+          - string
+          - 'null'
+          example: admin@example.com
+        serial:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          example: 42
     VersionDetailResponse:
       type: object
       description: One version plus the reconstructed records at that serial.
@@ -4736,6 +4976,6 @@ tags:
 - name: Token
   description: API tokens and the zone grants each holds.
 - name: DNSSEC
-  description: 'DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone, key rollover, and re-signing.'
+  description: 'DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone and the parent''s check of them, key rollover, and re-signing.'
 - name: ExternalDNS
   description: Provider endpoints for the ExternalDNS webhook adapter; registered only when api.external_dns_enabled is set.

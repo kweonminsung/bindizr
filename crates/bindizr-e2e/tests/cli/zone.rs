@@ -15,6 +15,46 @@ fn summary_row(stdout: &str) -> Vec<&str> {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_create_takes_soa_timers() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("cli-soa.example");
+    let mname = format!("ns1.{zone_name}");
+    let rname = format!("hostmaster@{zone_name}");
+
+    let created = app
+        .run_cli_success(&[
+            "zone",
+            "create",
+            "--name",
+            &zone_name,
+            "--mname",
+            &mname,
+            "--rname",
+            &rname,
+            "--default-ttl",
+            "3600",
+            "--refresh",
+            "300",
+            "--retry",
+            "60",
+            "--expire",
+            "1209600",
+            "--minimum-ttl",
+            "120",
+            "--output",
+            "json",
+        ])
+        .await;
+    let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
+    let zone = &created["zone"];
+    assert_eq!(zone["refresh"], 300);
+    assert_eq!(zone["retry"], 60);
+    assert_eq!(zone["expire"], 1209600);
+    assert_eq!(zone["minimum_ttl"], 120);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_create_read_delete() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("cli-zone.example");
@@ -27,8 +67,8 @@ async fn zone_create_read_delete() {
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
         .await;
     let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
-    assert_eq!(zone["name"], zone_name);
-    assert_eq!(zone["mname"], mname);
+    assert_eq!(zone["zone"]["name"], zone_name);
+    assert_eq!(zone["zone"]["mname"], mname);
 
     let deleted = app.run_cli_success(&["zone", "delete", &zone_name]).await;
     assert!(deleted.contains("deleted successfully"));
@@ -63,6 +103,7 @@ async fn zone_update_changes_only_passed_fields_via_cli() {
         ])
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    let updated = &updated["zone"];
     assert_eq!(updated["refresh"], 300);
     assert_eq!(updated["retry"], 60);
     assert_eq!(updated["default_ttl"], 3600);
@@ -174,7 +215,7 @@ async fn zone_import_zone_file_from_stdin() {
         )
         .await;
     assert!(
-        imported.contains("Zone file imported successfully"),
+        imported.contains("Zone imported successfully"),
         "{imported}"
     );
     assert_eq!(
@@ -311,23 +352,20 @@ async fn zone_export_orders_by_name_then_type_then_rdata() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn zone_import_preview_via_cli() {
+async fn zone_import_dry_run_shows_the_diff_via_cli() {
     let app = TestApp::start().await;
-    let zone_name = app.zone_name("import-preview.example");
+    let zone_name = app.zone_name("import-dry-run.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
     // Preview renders a +/-/~ diff and, being a dry run, applies nothing.
-    let preview = app
+    let dry_run = app
         .run_cli_success_with_input(
-            &["zone", "import", &zone_name, "-", "--preview"],
+            &["zone", "import", &zone_name, "-", "--dry-run"],
             "www IN A 192.0.2.30\nmail IN A 192.0.2.31\n",
         )
         .await;
-    assert!(preview.contains("+ www."), "preview was: {preview}");
-    assert!(
-        preview.contains("By name and type: +2 -0 ~0"),
-        "preview was: {preview}"
-    );
+    assert!(dry_run.contains("+ www."), "{dry_run}");
+    assert!(dry_run.contains("By name and type: +2 -0 ~0"), "{dry_run}");
 
     let records = app
         .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
@@ -355,7 +393,7 @@ async fn zone_versions_and_rollback_flow() {
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
         .await;
     let zone: Value = serde_json::from_str(&zone).expect("CLI did not return valid JSON");
-    assert_eq!(zone["serial"].as_i64().unwrap(), 1);
+    assert_eq!(zone["zone"]["serial"].as_i64().unwrap(), 1);
 
     app.run_cli_success(&[
         "record",
@@ -519,7 +557,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
     .await;
 
     let server = format!("127.0.0.1:{}", app.dns_port());
-    let preview = app
+    let dry_run = app
         .run_cli_success(&[
             "zone",
             "import",
@@ -528,11 +566,11 @@ async fn zone_import_from_server_round_trips_over_axfr() {
             &server,
             "--mode",
             "replace",
-            "--preview",
+            "--dry-run",
         ])
         .await;
     // A transfer of the zone's own content replaces it with itself.
-    assert!(preview.contains("By name and type: +0 -0 ~0"), "{preview}");
+    assert!(dry_run.contains("By name and type: +0 -0 ~0"), "{dry_run}");
 
     let applied = app
         .run_cli_success(&[
@@ -545,10 +583,7 @@ async fn zone_import_from_server_round_trips_over_axfr() {
             "replace",
         ])
         .await;
-    assert!(
-        applied.contains("Zone file imported successfully"),
-        "{applied}"
-    );
+    assert!(applied.contains("Zone imported successfully"), "{applied}");
     assert_eq!(
         summary_row(&applied),
         ["5", "0", "0", "0", "5", "0"],

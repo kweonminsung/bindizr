@@ -48,7 +48,7 @@ impl GetZoneResponse {
     }
 }
 
-/// Request body for creating or updating a zone.
+/// Request body for creating a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct CreateZoneRequest {
     #[schema(example = "example.com")]
@@ -91,7 +91,6 @@ pub struct GetZonesFilter {
     pub max_default_ttl: Option<i32>,
     #[schema(example = 42)]
     pub serial: Option<i32>,
-    #[serde(alias = "q")]
     #[schema(example = "example")]
     pub search: Option<String>,
     #[schema(example = 50)]
@@ -100,58 +99,60 @@ pub struct GetZonesFilter {
     pub offset: Option<u64>,
 }
 
-/// A partial zone update; an omitted field keeps the current value, merged
-/// inside the update transaction. `serial` is carried only to be rejected.
-#[derive(Serialize, Deserialize, Debug, Default)]
-pub struct UpdateZonePatch {
-    pub new_name: Option<String>,
+/// Request body for updating a zone; an omitted field keeps the current
+/// value, merged inside the update transaction. `serial` is carried only to
+/// be rejected: it is fixed at creation.
+#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+pub struct UpdateZoneRequest {
+    /// A different name renames the zone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "example.com")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "ns1.example.com")]
     pub mname: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "admin@example.com")]
     pub rname: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 3600)]
     pub default_ttl: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 7200)]
     pub refresh: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 3600)]
     pub retry: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 604800)]
     pub expire: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 3600)]
     pub minimum_ttl: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 42)]
     pub serial: Option<i32>,
 }
 
-/// Request body for triggering a NOTIFY, optionally scoped to one zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct NotifyZoneRequest {
-    #[schema(example = "example.com")]
-    pub zone_name: Option<String>,
-    /// Bump the serial first, so secondaries transfer even when nothing
-    /// changed.
-    #[serde(default)]
-    #[schema(example = true)]
-    pub bump_serial: bool,
-}
-
-impl NotifyZoneRequest {
-    /// The success message every front end serves for this request.
-    pub fn success_message(&self) -> String {
-        let scope = match &self.zone_name {
-            Some(zone_name) => format!("zone: {}", zone_name),
-            None => "all zones".to_string(),
-        };
-        let suffix = if self.bump_serial {
-            " (serial bumped)"
-        } else {
-            ""
-        };
-        format!("NOTIFY sent successfully for {}{}", scope, suffix)
-    }
+/// The success message every front end serves for a manual NOTIFY.
+pub fn build_notify_message(zone_name: Option<&str>, bump_serial: bool) -> String {
+    let scope = match zone_name {
+        Some(zone_name) => format!("zone: {}", zone_name),
+        None => "all zones".to_string(),
+    };
+    let suffix = if bump_serial { " (serial bumped)" } else { "" };
+    format!("NOTIFY sent successfully for {}{}", scope, suffix)
 }
 
 /// A zone together with all of its records.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ZoneDetailResponse {
     pub zone: GetZoneResponse,
     pub records: Vec<GetRecordResponse>,
 }
 
 /// A single zone wrapped in a response envelope.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ZoneResponse {
     pub zone: GetZoneResponse,
 }

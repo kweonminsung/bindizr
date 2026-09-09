@@ -40,6 +40,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             expire INT NOT NULL DEFAULT 3600000,
             minimum_ttl INT NOT NULL DEFAULT 86400,
             dnssec_policy_id INT NULL,
+            parent_ns_addrs VARCHAR(1024) NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (dnssec_policy_id) REFERENCES dnssec_policies(id),
             INDEX idx_zones_dnssec_policy (dnssec_policy_id)
@@ -235,6 +236,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             expire INTEGER NOT NULL DEFAULT 3600000,
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
             dnssec_policy_id INTEGER NULL,
+            parent_ns_addrs VARCHAR(1024) NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (dnssec_policy_id) REFERENCES dnssec_policies(id)
         );
@@ -452,6 +454,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             expire INTEGER NOT NULL DEFAULT 3600000,
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
             dnssec_policy_id INTEGER NULL,
+            parent_ns_addrs TEXT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (dnssec_policy_id) REFERENCES dnssec_policies(id)
         );

@@ -21,7 +21,7 @@ pub(crate) struct DnssecPolicyApi;
 impl DnssecPolicyApi {
     pub(crate) async fn routes() -> Router {
         Router::new()
-            .route("/dnssec-policies", routing::get(get_dnssec_policies))
+            .route("/dnssec-policies", routing::get(list_dnssec_policies))
             .route("/dnssec-policies", routing::post(create_dnssec_policy))
             .route("/dnssec-policies/{name}", routing::get(get_dnssec_policy))
             .route(
@@ -54,7 +54,7 @@ pub(crate) struct DnssecPolicyNameParam {
         )
 )]
 /// List all DNSSEC policies.
-pub(crate) async fn get_dnssec_policies(
+pub(crate) async fn list_dnssec_policies(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
     let policies = DnssecPolicyService::list(&caller).await?;

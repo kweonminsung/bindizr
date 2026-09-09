@@ -71,10 +71,7 @@ pub fn to_domain_key(key: &TsigKey) -> Result<Arc<Key>, TsigError> {
 /// Verify a TSIG-signed nsupdate request against the key it names (RFC 8945)
 /// and return the context for signing the response. `key` is `None` when the
 /// named key is unknown, which yields the BADKEY error response.
-pub fn validate_tsig(
-    query_data: &[u8],
-    key: Option<Arc<Key>>,
-) -> Result<ResponseSigner, TsigError> {
+pub fn verify_tsig(query_data: &[u8], key: Option<Arc<Key>>) -> Result<ResponseSigner, TsigError> {
     let mut message = Message::from_octets(query_data.to_vec())
         .map_err(|e| TsigError::Malformed(format!("invalid DNS message: {}", e)))?;
 
@@ -84,12 +81,12 @@ pub fn validate_tsig(
         Ok(None) => Err(TsigError::Internal(
             "TSIG record not found during validation".to_string(),
         )),
-        Err(err) => Err(tsig_failure(query_data, err)),
+        Err(err) => Err(tsig_error(query_data, err)),
     }
 }
 
 /// Map a TSIG validation failure to the complete NOTAUTH response to send.
-fn tsig_failure(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
+fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
     let msg = match Message::from_octets(query_data) {
         Ok(msg) => msg,
         Err(e) => return TsigError::Internal(format!("invalid DNS message: {}", e)),

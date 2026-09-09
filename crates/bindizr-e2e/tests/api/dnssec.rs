@@ -61,14 +61,6 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(body["dnssec"]["enabled"], true);
     assert_eq!(body["dnssec"]["keys"][0]["key_tag"], key_tag);
 
-    let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/dnssec/ds"), None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let ds_records = body["ds_records"].as_array().unwrap();
-    assert_eq!(ds_records.len(), 1);
-    assert_eq!(ds_records[0]["key_tag"], key_tag);
-
     let (status, _) = app
         .request(
             Method::POST,
@@ -107,7 +99,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     let (status, body) = app
         .request(
             Method::GET,
-            &format!("/zones/{zone_name}/versions?all=true"),
+            &format!("/zones/{zone_name}/versions?include_signer_serials=true"),
             None,
         )
         .await;
@@ -115,7 +107,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     let all_serials = listed_serials(&body);
     assert!(
         all_serials.contains(&signer_serial),
-        "all=true must include signer-only serials: {all_serials:?}"
+        "include_signer_serials=true must include signer-only serials: {all_serials:?}"
     );
 
     // A DS secures a delegation, so the NS RRset must exist first.
@@ -191,7 +183,11 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert!(!body.as_str().unwrap().contains("RRSIG"), "{body}");
 
     let (status, _) = app
-        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
+        .request(
+            Method::DELETE,
+            &format!("/zones/{zone_name}/dnssec?skip_ds_check=true"),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
 
@@ -309,21 +305,22 @@ async fn dnssec_csk_rollover_lifecycle() {
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_ROLLOVER_IN_PROGRESS");
 
-    // A replacement resolvers cannot have learned yet may not sign.
-    let (status, _) = app
-        .request(
-            Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // A replacement resolvers cannot have learned yet may not sign;
+    // `skip_ds_check` skips only the parent check, never the hold-down.
+    for path in [
+        format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+        format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_ds_check=true"),
+    ] {
+        let (status, _) = app.request(Method::POST, &path, None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}");
+    }
     tokio::time::sleep(std::time::Duration::from_secs(61)).await;
 
+    // No parent stands in here, so the DS is taken on the caller's word.
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_ds_check=true"),
             None,
         )
         .await;

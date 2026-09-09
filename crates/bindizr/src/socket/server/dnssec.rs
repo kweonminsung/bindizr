@@ -1,10 +1,13 @@
-use bindizr_service::{authorization::Caller, dnssec::DnssecService, error::ServiceError};
+use bindizr_service::{
+    authorization::Caller, dnssec::DnssecService, error::ServiceError, types::DnssecStatusResponse,
+};
 
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, EnableZoneDnssecParams, ImportZoneDnssecKeyParams,
-        RolloverZoneDnssecParams, SetZoneDnssecPolicyParams, ZoneNameParams,
+        DaemonResponse, DisableZoneDnssecParams, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
+        ImportZoneDnssecKeyParams, RolloverZoneDnssecParams, UpdateZoneDnssecSettingsParams,
+        ZoneNameParams,
     },
 };
 
@@ -18,12 +21,13 @@ pub(crate) async fn enable_dnssec(
         &Caller::Global,
         &params.zone_name,
         params.request.policy.as_deref(),
+        params.request.parent_ns_addrs.as_deref(),
     )
     .await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC enabled successfully".to_string(),
-        data: to_response_data(status)?,
+        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
     })
 }
 
@@ -32,9 +36,9 @@ pub(crate) async fn enable_dnssec(
 pub(crate) async fn disable_dnssec(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: DisableZoneDnssecParams = parse_params(data)?;
 
-    DnssecService::disable(&Caller::Global, &params.name).await?;
+    DnssecService::disable(&Caller::Global, &params.zone_name, params.skip_ds_check).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC disabled successfully".to_string(),
@@ -52,7 +56,7 @@ pub(crate) async fn get_dnssec_status(
 
     Ok(DaemonResponse {
         message: "DNSSEC status retrieved successfully".to_string(),
-        data: to_response_data(status)?,
+        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
     })
 }
 
@@ -84,7 +88,7 @@ pub(crate) async fn rollover_start(
 
     Ok(DaemonResponse {
         message: "Key rollover started successfully".to_string(),
-        data: to_response_data(status)?,
+        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
     })
 }
 
@@ -93,13 +97,19 @@ pub(crate) async fn rollover_start(
 pub(crate) async fn rollover_ds_seen(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: DsSeenZoneDnssecParams = parse_params(data)?;
 
-    let status = DnssecService::rollover_ds_seen(&Caller::Global, &params.name).await?;
+    let status = DnssecService::rollover_ds_seen(
+        &Caller::Global,
+        &params.zone_name,
+        params.skip_ds_check,
+        params.skip_holddown,
+    )
+    .await?;
 
     Ok(DaemonResponse {
         message: "Key rollover advanced successfully".to_string(),
-        data: to_response_data(status)?,
+        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
     })
 }
 
@@ -114,24 +124,28 @@ pub(crate) async fn withdraw_dnssec(
 
     Ok(DaemonResponse {
         message: "DS withdrawal published successfully".to_string(),
-        data: to_response_data(status)?,
+        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
     })
 }
 
-/// Handle the `ZoneDnssecSetPolicy` command by moving the zone to another
-/// policy.
-pub(crate) async fn set_dnssec_policy(
+/// Handle the `ZoneDnssecUpdateSettings` command by changing the zone's
+/// policy and/or parent nameservers.
+pub(crate) async fn update_dnssec_settings(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: SetZoneDnssecPolicyParams = parse_params(data)?;
+    let params: UpdateZoneDnssecSettingsParams = parse_params(data)?;
 
-    let status =
-        DnssecService::set_policy(&Caller::Global, &params.zone_name, &params.request.policy)
-            .await?;
+    let status = DnssecService::update_settings(
+        &Caller::Global,
+        &params.zone_name,
+        params.request.policy.as_deref(),
+        params.request.parent_ns_addrs.as_deref(),
+    )
+    .await?;
 
     Ok(DaemonResponse {
-        message: "DNSSEC policy changed successfully".to_string(),
-        data: to_response_data(status)?,
+        message: "DNSSEC settings changed successfully".to_string(),
+        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
     })
 }
 
@@ -162,7 +176,7 @@ pub(crate) async fn import_dnssec_key(
 
     Ok(DaemonResponse {
         message: "DNSSEC key imported successfully".to_string(),
-        data: to_response_data(status)?,
+        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
     })
 }
 
@@ -176,6 +190,21 @@ pub(crate) async fn cancel_dnssec_withdrawal(
 
     Ok(DaemonResponse {
         message: "DS withdrawal cancelled successfully".to_string(),
-        data: to_response_data(status)?,
+        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
+    })
+}
+
+/// Handle the `ZoneDnssecCheckDs` command by asking the parent zone for the
+/// zone's DS.
+pub(crate) async fn check_dnssec_ds(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: ZoneNameParams = parse_params(data)?;
+
+    let status = DnssecService::check_ds(&Caller::Global, &params.name).await?;
+
+    Ok(DaemonResponse {
+        message: "Parent DS checked successfully".to_string(),
+        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
     })
 }

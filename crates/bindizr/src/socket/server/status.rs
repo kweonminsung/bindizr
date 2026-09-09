@@ -24,7 +24,7 @@ pub(crate) fn mark_start_time() {
     );
 }
 
-/// Handle the `Status` command by returning the daemon's PID, version, and config.
+/// Handle the `Status` command with the daemon's PID, version, and start time.
 pub(crate) fn status() -> Result<DaemonResponse, ServiceError> {
     let pid = Some(process::id());
     let version = env!("CARGO_PKG_VERSION");
@@ -32,7 +32,6 @@ pub(crate) fn status() -> Result<DaemonResponse, ServiceError> {
         pid,
         version: version.to_string(),
         started_at_ms: STARTED_AT_MS.get().copied().unwrap_or(0),
-        config: config::bindizr_config().clone(),
     };
 
     let response = DaemonResponse {
@@ -40,4 +39,12 @@ pub(crate) fn status() -> Result<DaemonResponse, ServiceError> {
         data: to_response_data(status)?,
     };
     Ok(response)
+}
+
+/// Handle the `Config` command by returning the loaded configuration.
+pub(crate) fn config() -> Result<DaemonResponse, ServiceError> {
+    Ok(DaemonResponse {
+        message: "Configuration retrieved successfully".to_string(),
+        data: to_response_data(config::bindizr_config())?,
+    })
 }

@@ -91,7 +91,7 @@ impl RecordService {
 
             validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
 
-            Self::delete_records_with_changes_tx(
+            Self::delete_with_changes_tx(
                 &mut tx,
                 zone.id,
                 new_serial,

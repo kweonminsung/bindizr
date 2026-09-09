@@ -84,10 +84,10 @@ private key never leaves bindizr.
 A signed zone moves to another policy with:
 
 ```sh
-bindizr dnssec set-policy example.com strict
+bindizr dnssec set example.com --policy strict
 ```
 
-Also `PUT /zones/{name}/dnssec/policy`. The target must share the zone's
+Also `policy` in `PUT /zones/{name}/dnssec`. The target must share the zone's
 denial mode and key layout — those have no safe in-place transition, so to
 change them disable DNSSEC and re-enable under the new policy, going
 insecure in between. A different algorithm starts an
@@ -96,21 +96,19 @@ the next signing pass.
 
 ## Completing the chain of trust
 
-Signatures only validate once the parent delegates trust to your key. Fetch
-the DS record and register it at your parent (usually via your registrar):
-
-```sh
-bindizr dnssec ds example.com
-```
+Signatures only validate once the parent delegates trust to your key. The
+DS record to register at your parent (usually via your registrar) is in the
+enable output and in `bindizr dnssec status example.com` (`ds_records` of
+`GET /zones/{name}/dnssec`):
 
 ```text
-example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
+DS records (register in the parent zone):
+  example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
 ```
 
 Signed zones also publish `CDS`/`CDNSKEY` (RFC 7344) for parents that scan
 for DS changes. Until the DS is published, resolvers simply treat the zone
-as insecure — safe to roll out gradually. `bindizr dnssec status
-example.com` shows the signing state at any time.
+as insecure — safe to roll out gradually.
 
 ## Key rollover
 
@@ -133,23 +131,26 @@ to learn it. Then:
   hands-off. CSKs are never auto-rolled — their rollover needs the parent DS
   swap below.
 - **CSK / KSK** — publish the new DS at the parent (or let it consume the
-  CDS), wait out the parent's DS TTL, then confirm; an early confirmation is
-  refused:
+  CDS), wait out the parent's DS TTL, then confirm:
 
   ```sh
   bindizr dnssec rollover ds-seen example.com
   ```
 
-  bindizr takes the confirmation at its word: check with `dig DS` that the
-  parent serves the new DS before giving it, since promoting a key whose DS
-  is not yet published makes the zone bogus for validating resolvers.
+  The confirmation is refused before the hold-down passes and while the
+  parent's nameservers do not serve the new key's DS; `--skip-ds-check`
+  takes your word on the DS instead. The TTL wait itself is yours.
+  `bindizr dnssec check-ds` shows which keys' DS the parent serves and when
+  the hold-down ends. For a compromised key, `--skip-holddown` promotes
+  before the hold-down ends; resolvers still caching the previous keys fail
+  validation until their copy expires.
 
 A retired key stays published for the policy's
 `rollover_retire_holddown_secs`, then the scheduler removes it. `status`
 shows every key's state (`published`/`active`/`retired`) throughout.
 
 An **algorithm rollover** (RFC 6840, Section 5.11) is started by moving the
-zone to a policy of the new algorithm (`dnssec set-policy`): every key is
+zone to a policy of the new algorithm (`dnssec set --policy`): every key is
 replaced with one of the new algorithm and the zone is double-signed — both
 algorithms cover all data — until the old keys leave together after
 `ds-seen`.
@@ -163,7 +164,7 @@ sign example.com` forces a full re-sign if stored signatures are ever
 doubted.
 
 To give some zones different timing, create a policy with the values you
-want and move them to it with `dnssec set-policy`; editing a policy
+want and move them to it with `dnssec set --policy`; editing a policy
 with `dnssec-policy update` changes every zone under it from the next
 signing pass or maintenance scan. `dnssec status` reports the zone's
 policy and its values.
@@ -197,20 +198,45 @@ CLI/daemon socket — private keys never transit the HTTP API.
 ## Disabling DNSSEC
 
 Dropping signatures while the parent still publishes your DS makes the zone
-**bogus**. Go insecure in order:
+**bogus**, so `dnssec disable` asks the parent's nameservers for the DS
+first and refuses while any still serves one (`DNSSEC_DS_PUBLISHED`), fails
+to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked
+(`DNSSEC_STATE_CHANGED`; retry). Go insecure in order:
 
 1. Ask the parent to remove the DS. If the parent consumes CDS,
-   `bindizr dnssec withdraw example.com` publishes the RFC 8078 delete
-   pair (`CDS 0 0 0 00`) and the parent drops the DS on its own; otherwise
-   remove it at the registrar. `--cancel` takes a withdrawal back.
-2. Wait until the DS is gone and its TTL has passed.
+   `bindizr dnssec withdraw start example.com` publishes the RFC 8078
+   delete pair (`CDS 0 0 0 00`) and the parent drops the DS on its own;
+   otherwise remove it at the registrar. `bindizr dnssec withdraw cancel`
+   takes a withdrawal back.
+2. Wait until the DS is gone and its TTL has passed. `bindizr dnssec
+   check-ds example.com` (`POST /zones/{name}/dnssec/check-ds`) shows what
+   the parent serves now and its TTL; the wait itself is yours.
 3. `bindizr dnssec disable example.com`
+
+`--skip-ds-check` (`DELETE /zones/{name}/dnssec?skip_ds_check=true`) skips
+the check, for a host that cannot reach the parent at all.
+
+The parent is discovered by default: bindizr walks up the zone's name
+asking the system resolver (`/etc/resolv.conf`) for NS records, then
+queries every nameserver it finds directly. When the parent is private,
+unreachable, or the host has no resolver, name its nameservers on the zone
+instead:
+
+```sh
+bindizr dnssec enable example.com --parent-ns-addrs ns1.parent.example,ns2.parent.example
+bindizr dnssec set example.com --parent-ns-addrs ns1.parent.example:5353
+bindizr dnssec set example.com --parent-ns-addrs ""      # back to discovery
+```
+
+Also `parent_ns_addrs` in the enable body and in `PUT /zones/{name}/dnssec`;
+`dnssec status` shows the setting.
 
 ## Behavior notes
 
 - At a delegation only the child's `DS` records are signed; the `NS` records
   beside them and glue at or below the cut are served unsigned (RFC 4035).
 - The derived records are system-owned: never edited, diffed, or rolled
-  back. Version listings hide signer-only serials unless `all` is requested;
+  back. Version listings hide signer-only serials unless
+  `include_signer_serials` is requested;
   `record list --signed` (`GET /records?signed=true`) pages them after the
   user records.

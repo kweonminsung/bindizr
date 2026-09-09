@@ -96,7 +96,7 @@ impl RecordService {
 
             let new_serial = generate_serial(Some(zone.serial))?;
 
-            let created_record = Self::insert_records_with_changes_tx(
+            let created_record = Self::create_with_changes_tx(
                 &mut tx,
                 zone.id,
                 new_serial,

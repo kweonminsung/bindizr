@@ -21,7 +21,7 @@ pub(crate) mod dns;
 pub(crate) mod nsupdate;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
-pub(crate) use dns::wait_for_any_dns_record;
+pub(crate) use dns::{FakeParent, ServedDs, wait_for_any_dns_record};
 use dns::{dns_expected_value, dns_key_from_record, dns_record_type, wait_for_dns_records};
 
 const COMPOSE_FILE: &str = "docker-compose.yml";

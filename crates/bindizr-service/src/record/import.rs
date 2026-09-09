@@ -1,9 +1,11 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     time::Instant,
 };
 
 use bindizr_core::dns::{
+    address::is_address_target,
     name::{OwnerName, ZoneName},
     zonefile::{ZoneFileValue, parse_zone_file},
 };
@@ -31,8 +33,8 @@ use crate::{
     serial::generate_serial,
     timing::elapsed_ms,
     types::{
-        ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
-        ImportZoneFromServerRequest, RecordDiff, RecordValueRequest,
+        ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, RecordDiff,
+        RecordValueRequest,
     },
     zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
 };
@@ -45,7 +47,7 @@ struct DesiredRecord {
 }
 
 /// Whether `existing` is the record the import wants present.
-fn desired_matches(existing: &Record, desired: &DesiredRecord) -> bool {
+fn matches_desired(existing: &Record, desired: &DesiredRecord) -> bool {
     let record_type = &desired.prepared.record_type;
     existing.name == desired.stored_name
         && existing.record_type == *record_type
@@ -64,7 +66,7 @@ fn is_protected(zone: &Zone, record: &Record) -> bool {
 
 /// Outcome of the transactional part of a zone-file import.
 struct AppliedImport {
-    response: ImportZoneFileResponse,
+    response: ImportZoneResponse,
     zone_name: ZoneName,
     changed: bool,
 }
@@ -85,41 +87,45 @@ struct ImportTimings {
 }
 
 impl RecordService {
-    /// Import a BIND zone file into an existing zone, reconciling it by mode.
-    /// On apply the zone serial is incremented once and a single NOTIFY is
-    /// sent. If any record fails validation nothing is applied and the errors
-    /// are returned.
-    pub async fn import_zone_file(
+    /// Import records into an existing zone from BIND zone file text or over
+    /// AXFR from `from_server`, reconciling them by mode. On apply the zone
+    /// serial is incremented once and a single NOTIFY is sent. If any record
+    /// fails validation nothing is applied and the errors are returned.
+    pub async fn import_zone(
         caller: &Caller,
         zone_name: &str,
-        request: &ImportZoneFileRequest,
-    ) -> Result<ImportZoneFileResponse, ServiceError> {
-        caller.require_global("import zone files")?;
-        Self::reconcile_zone_file(zone_name, &request.content, request.mode, request.dry_run).await
-    }
-
-    /// Import the zone fetched over AXFR from the request's server, then
-    /// reconcile it like [`Self::import_zone_file`]. Reaches only the daemon
-    /// socket: the HTTP API cannot start an outbound transfer.
-    pub async fn import_zone_from_server(
-        caller: &Caller,
-        zone_name: &str,
-        request: &ImportZoneFromServerRequest,
-    ) -> Result<ImportZoneFileResponse, ServiceError> {
+        request: &ImportZoneRequest,
+    ) -> Result<ImportZoneResponse, ServiceError> {
         caller.require_global("import zone files")?;
 
-        let server = request.from_server.trim();
-        if server.is_empty() {
-            return Err(ServiceError::invalid_input("from_server is required"));
-        }
-        // The zone's existence precedes the outbound fetch, so a mistyped
-        // name cannot start a transfer.
-        ZoneService::lookup_by_name(zone_name).await?;
-        let content = crate::dns_client::axfr::fetch_zone_file(server, zone_name)
-            .await
-            .map_err(|e| {
-                ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e))
-            })?;
+        let content: Cow<'_, str> = match (&request.content, &request.from_server) {
+            (Some(content), None) => Cow::Borrowed(content.as_str()),
+            (None, Some(server)) => {
+                let server = server.trim();
+                if !is_address_target(server) {
+                    return Err(ServiceError::invalid_input(
+                        "from_server must name one server as host[:port]",
+                    ));
+                }
+                // The zone's existence precedes the outbound fetch, so a
+                // mistyped name cannot start a transfer.
+                ZoneService::lookup_by_name(zone_name).await?;
+                let content = crate::dns_client::axfr::fetch_zone_file(server, zone_name)
+                    .await
+                    .map_err(|e| {
+                        ServiceError::invalid_input(format!("AXFR from {} failed: {}", server, e))
+                    })?;
+                Cow::Owned(content)
+            }
+            (Some(_), Some(_)) => {
+                return Err(ServiceError::invalid_input(
+                    "give either content or from_server, not both",
+                ));
+            }
+            (None, None) => {
+                return Err(ServiceError::invalid_input("give content or from_server"));
+            }
+        };
         Self::reconcile_zone_file(zone_name, &content, request.mode, request.dry_run).await
     }
 
@@ -128,7 +134,7 @@ impl RecordService {
         content: &str,
         mode: ImportMode,
         dry_run: bool,
-    ) -> Result<ImportZoneFileResponse, ServiceError> {
+    ) -> Result<ImportZoneResponse, ServiceError> {
         let t_total = Instant::now();
 
         let mut timings = ImportTimings::default();
@@ -271,7 +277,7 @@ impl RecordService {
             let desired_matches_existing = |existing: &Record| {
                 desired_by_name
                     .get(&existing.name)
-                    .is_some_and(|idxs| idxs.iter().any(|&i| desired_matches(existing, &desired[i])))
+                    .is_some_and(|idxs| idxs.iter().any(|&i| matches_desired(existing, &desired[i])))
             };
             let desired_key_matches_existing = |existing: &Record| {
                 desired_by_name.get(&existing.name).is_some_and(|idxs| {
@@ -311,7 +317,7 @@ impl RecordService {
                 let mut stale = false;
                 if let Some(es) = existing_by_name.get(&d.stored_name) {
                     for &e in es {
-                        if desired_matches(e, d) {
+                        if matches_desired(e, d) {
                             present = true;
                             if reconcile_ttl && e.ttl != desired_ttl {
                                 ttl_dels.push(e.clone());
@@ -421,7 +427,7 @@ impl RecordService {
                 let t = Instant::now();
                 let mut all_dels = dels;
                 all_dels.extend(ttl_dels);
-                RecordService::delete_records_with_changes_tx(
+                RecordService::delete_with_changes_tx(
                     &mut tx, zone.id, new_serial, &all_dels,
                 )
                 .await?;
@@ -439,7 +445,7 @@ impl RecordService {
                         created_at: Utc::now(),
                     })
                     .collect();
-                RecordService::insert_records_with_changes_tx(
+                RecordService::create_with_changes_tx(
                     &mut tx, zone.id, new_serial, &to_insert,
                 )
                 .await?;
@@ -452,7 +458,7 @@ impl RecordService {
                 timings.serial_ms = elapsed_ms(t);
             }
 
-            let response = ImportZoneFileResponse {
+            let response = ImportZoneResponse {
                 applied: will_apply,
                 dry_run,
                 summary,

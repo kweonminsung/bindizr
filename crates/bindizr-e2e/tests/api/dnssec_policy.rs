@@ -179,7 +179,11 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
     assert_eq!(body["code"], "DNSSEC_POLICY_IN_USE");
 
     let (status, _) = app
-        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
+        .request(
+            Method::DELETE,
+            &format!("/zones/{zone_name}/dnssec?skip_ds_check=true"),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
 
@@ -225,7 +229,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     let (status, body) = app
         .request(
             Method::PUT,
-            &format!("/zones/{zone_name}/dnssec/policy"),
+            &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": ed25519_policy })),
         )
         .await;
@@ -260,7 +264,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     let (status, body) = app
         .request(
             Method::PUT,
-            &format!("/zones/{zone_name}/dnssec/policy"),
+            &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": nsec3_policy })),
         )
         .await;
@@ -271,7 +275,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     let (status, body) = app
         .request(
             Method::PUT,
-            &format!("/zones/{zone_name}/dnssec/policy"),
+            &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": ed25519_policy })),
         )
         .await;

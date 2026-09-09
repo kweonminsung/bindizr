@@ -124,7 +124,7 @@ fn failed_response(err: TsigError) -> Vec<u8> {
 }
 
 #[test]
-fn validate_tsig_accepts_valid_signatures_for_all_algorithms() {
+fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
     for algorithm in [
         TsigAlgorithm::HmacSha256,
         TsigAlgorithm::HmacSha384,
@@ -132,12 +132,12 @@ fn validate_tsig_accepts_valid_signatures_for_all_algorithms() {
     ] {
         let query = signed_update(algorithm, now_secs());
         let key = to_domain_key(&test_key(algorithm)).unwrap();
-        validate_tsig(&query, Some(key)).unwrap();
+        verify_tsig(&query, Some(key)).unwrap();
     }
 }
 
 #[test]
-fn validate_tsig_rejects_tampered_mac_with_badsig() {
+fn verify_tsig_rejects_tampered_mac_with_badsig() {
     let mut query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
     // The last 6 rdata bytes are original ID, error, and other-len; the byte
     // before them is the MAC's last byte.
@@ -145,7 +145,7 @@ fn validate_tsig_rejects_tampered_mac_with_badsig() {
     query[mac_end] ^= 0xFF;
 
     let key = to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
-    let err = validate_tsig(&query, Some(key)).unwrap_err();
+    let err = verify_tsig(&query, Some(key)).unwrap_err();
 
     // RFC 8945, Section 5.3.2: a MAC failure answers NOTAUTH/BADSIG with an unsigned
     // TSIG error record.
@@ -156,7 +156,7 @@ fn validate_tsig_rejects_tampered_mac_with_badsig() {
 }
 
 #[test]
-fn validate_tsig_rejects_original_id_mismatch_with_badsig() {
+fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
     let mut query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
     // Flip the original ID (first two of the trailing six rdata bytes): the
     // MAC is computed over the original ID, so verification must fail.
@@ -164,7 +164,7 @@ fn validate_tsig_rejects_original_id_mismatch_with_badsig() {
     query[original_id] ^= 0xFF;
 
     let key = to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
-    let err = validate_tsig(&query, Some(key)).unwrap_err();
+    let err = verify_tsig(&query, Some(key)).unwrap_err();
 
     let (rcode, error, _, _, _) = response_tsig(&failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
@@ -172,11 +172,11 @@ fn validate_tsig_rejects_original_id_mismatch_with_badsig() {
 }
 
 #[test]
-fn validate_tsig_rejects_algorithm_mismatch_with_badkey() {
+fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
     let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
 
     let key = to_domain_key(&test_key(TsigAlgorithm::HmacSha512)).unwrap();
-    let err = validate_tsig(&query, Some(key)).unwrap_err();
+    let err = verify_tsig(&query, Some(key)).unwrap_err();
 
     let (rcode, error, _, mac, _) = response_tsig(&failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
@@ -185,10 +185,10 @@ fn validate_tsig_rejects_algorithm_mismatch_with_badkey() {
 }
 
 #[test]
-fn validate_tsig_rejects_unknown_key_with_badkey() {
+fn verify_tsig_rejects_unknown_key_with_badkey() {
     let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
 
-    let err = validate_tsig(&query, None).unwrap_err();
+    let err = verify_tsig(&query, None).unwrap_err();
 
     let (rcode, error, _, mac, _) = response_tsig(&failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
@@ -197,12 +197,12 @@ fn validate_tsig_rejects_unknown_key_with_badkey() {
 }
 
 #[test]
-fn validate_tsig_rejects_stale_time_with_signed_badtime() {
+fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     let stale = now_secs() - 3600;
     let query = signed_update(TsigAlgorithm::HmacSha256, stale);
 
     let key = to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
-    let err = validate_tsig(&query, Some(key)).unwrap_err();
+    let err = verify_tsig(&query, Some(key)).unwrap_err();
 
     // RFC 8945, Section 5.2.3: BADTIME responses are signed, echo the client's time,
     // and carry the server's time in other data.

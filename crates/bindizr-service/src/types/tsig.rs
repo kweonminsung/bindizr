@@ -113,19 +113,19 @@ impl TsigKeyResponse {
 }
 
 /// List of TSIG keys (secrets omitted).
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct TsigKeyListResponse {
     pub tsig_keys: Vec<GetTsigKeyResponse>,
 }
 
 /// A single TSIG grant wrapped in a response envelope.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct TsigGrantResponse {
     pub tsig_grant: GetTsigGrantResponse,
 }
 
 /// Grants of one key, or every grant that applies to one zone.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct TsigGrantListResponse {
     pub tsig_grants: Vec<GetTsigGrantResponse>,
 }

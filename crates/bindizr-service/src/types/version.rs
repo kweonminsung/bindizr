@@ -144,16 +144,6 @@ pub struct VersionDiffResponse {
     pub diff: RecordDiff,
 }
 
-/// Request body for rolling a zone back to a version serial.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct RollbackZoneRequest {
-    #[schema(example = 7)]
-    pub serial: i32,
-    /// When true, compute and report the rollback without applying any change.
-    #[serde(default, alias = "dryRun")]
-    pub dry_run: bool,
-}
-
 /// Counts of what a rollback changes. TTL-only differences count as one
 /// delete plus one add.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]

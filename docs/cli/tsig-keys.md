@@ -13,9 +13,9 @@ $ bindizr tsig-key get update-key
 # Delete a key (refused while it still holds grants)
 $ bindizr tsig-key delete update-key
 
-# List a key's grants, or every grant that applies to a zone; revoke one by ID
+# List a key's grants, or every TSIG grant that applies to a zone; revoke one by ID
 $ bindizr tsig-key grants update-key
-$ bindizr tsig-key grants --zone example.com
+$ bindizr zone tsig-grants example.com
 $ bindizr tsig-key revoke update-key <GRANT_ID>
 ```
 

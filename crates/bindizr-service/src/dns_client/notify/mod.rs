@@ -65,7 +65,7 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, St
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
 
     let mut reports = Vec::new();
-    for (entry, result) in super::resolve_secondary_entries(raw, timeout).await {
+    for (entry, result) in super::resolve_address_entries(raw, timeout).await {
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {
@@ -157,7 +157,7 @@ async fn send_notify_to_server_once(
         notify_message.len()
     );
 
-    validate_notify_response(query_id, &response[..received])?;
+    validate_notify_response(query_id, qname, &response[..received])?;
 
     Ok(())
 }

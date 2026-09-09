@@ -11,7 +11,7 @@ const MATCH_ANY: &str = "*";
 /// Match a relative owner name (`@`, `www`, `a.b`, ...) against a grant
 /// pattern: `*` (any name), `@` (apex only), `*.sub` (sub and everything under
 /// it), or an exact relative name.
-pub(crate) fn pattern_matches_name(pattern: &str, name: &OwnerName) -> bool {
+pub(crate) fn matches_name(pattern: &str, name: &OwnerName) -> bool {
     if pattern == MATCH_ANY {
         return true;
     }
@@ -28,7 +28,7 @@ pub(crate) fn pattern_matches_name(pattern: &str, name: &OwnerName) -> bool {
     *name == OwnerName::from_row(pattern)
 }
 
-pub(crate) fn types_match(types: &str, record_type: Option<&RecordType>) -> bool {
+pub(crate) fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
     if types == MATCH_ANY {
         return true;
     }

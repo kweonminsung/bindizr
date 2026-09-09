@@ -2,7 +2,10 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     token::{TokenService, grant::TokenGrantService},
-    types::{CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse, GetTokenResponse},
+    types::{
+        CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse, GetTokenResponse,
+        TokenGrantListResponse, TokenGrantResponse, TokenListResponse,
+    },
 };
 
 use crate::socket::{
@@ -43,7 +46,7 @@ pub(crate) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
 
     let response = DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
-        data: to_response_data(tokens)?,
+        data: to_response_data(TokenListResponse { tokens })?,
     };
     Ok(response)
 }
@@ -78,7 +81,9 @@ pub(crate) async fn create_token_grant(
 
     Ok(DaemonResponse {
         message: "Token grant created successfully".to_string(),
-        data: to_response_data(GetTokenGrantResponse::from_grant(&grant))?,
+        data: to_response_data(TokenGrantResponse {
+            token_grant: GetTokenGrantResponse::from_grant(&grant),
+        })?,
     })
 }
 
@@ -96,7 +101,9 @@ pub(crate) async fn list_token_grants_by_token(
 
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
-        data: to_response_data(grants)?,
+        data: to_response_data(TokenGrantListResponse {
+            token_grants: grants,
+        })?,
     })
 }
 
@@ -115,7 +122,9 @@ pub(crate) async fn list_token_grants_by_zone(
 
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
-        data: to_response_data(grants)?,
+        data: to_response_data(TokenGrantListResponse {
+            token_grants: grants,
+        })?,
     })
 }
 

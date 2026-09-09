@@ -2,7 +2,10 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     tsig_key::{TsigKeyService, grant::TsigGrantService},
-    types::{CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse, TsigKeyResponse},
+    types::{
+        CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse, TsigGrantListResponse,
+        TsigGrantResponse, TsigKeyListResponse, TsigKeyResponse,
+    },
 };
 
 use crate::socket::{
@@ -41,7 +44,7 @@ pub(crate) async fn list_tsig_keys() -> Result<DaemonResponse, ServiceError> {
 
     Ok(DaemonResponse {
         message: "TSIG keys retrieved successfully".to_string(),
-        data: to_response_data(keys)?,
+        data: to_response_data(TsigKeyListResponse { tsig_keys: keys })?,
     })
 }
 
@@ -88,7 +91,9 @@ pub(crate) async fn create_tsig_grant(
 
     Ok(DaemonResponse {
         message: "TSIG grant created successfully".to_string(),
-        data: to_response_data(GetTsigGrantResponse::from_grant(&grant))?,
+        data: to_response_data(TsigGrantResponse {
+            tsig_grant: GetTsigGrantResponse::from_grant(&grant),
+        })?,
     })
 }
 
@@ -106,7 +111,9 @@ pub(crate) async fn list_tsig_grants_by_key(
 
     Ok(DaemonResponse {
         message: "TSIG grants retrieved successfully".to_string(),
-        data: to_response_data(grants)?,
+        data: to_response_data(TsigGrantListResponse {
+            tsig_grants: grants,
+        })?,
     })
 }
 
@@ -125,7 +132,9 @@ pub(crate) async fn list_tsig_grants_by_zone(
 
     Ok(DaemonResponse {
         message: "TSIG grants retrieved successfully".to_string(),
-        data: to_response_data(grants)?,
+        data: to_response_data(TsigGrantListResponse {
+            tsig_grants: grants,
+        })?,
     })
 }
 

@@ -7,9 +7,7 @@ use crate::{
     model::record::{Record, RecordWithZone},
     repository::{
         LockLevel, RecordFilter, RecordRepository, RepositoryTx,
-        sql::{
-            apex_owner_sql, like_pattern, lock_clause, name_like_types_sql, normalize_partial_value,
-        },
+        sql::{apex_owner_sql, like_pattern, lock_clause, name_like_types_sql, trim_partial_value},
     },
 };
 
@@ -158,19 +156,6 @@ impl RecordRepository for PostgresRecordRepository {
         Ok(record)
     }
 
-    async fn list(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError> {
-        let mut conn = self.pool.acquire().await?;
-
-        let records =
-            sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name")
-                .bind(zone_id)
-                .fetch_all(&mut *conn)
-                .await
-                ?;
-
-        Ok(records)
-    }
-
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -277,7 +262,7 @@ impl RecordRepository for PostgresRecordRepository {
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-        let value = filter.value.as_deref().map(normalize_partial_value);
+        let value = filter.value.as_deref().map(trim_partial_value);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
@@ -369,7 +354,7 @@ impl RecordRepository for PostgresRecordRepository {
 
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-        let value = filter.value.as_deref().map(normalize_partial_value);
+        let value = filter.value.as_deref().map(trim_partial_value);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();

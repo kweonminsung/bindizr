@@ -10,24 +10,28 @@ const MAX_EMAIL_LOCAL_LEN: usize = 64;
 const MIN_TTL: i32 = 60;
 const MAX_TTL: i32 = 604_800;
 
-pub(crate) struct ValidatedCreateZoneRequest {
+pub(crate) struct NormalizedCreateZoneRequest {
     pub(crate) name: ZoneName,
     pub(crate) mname: String,
     pub(crate) rname: String,
     pub(crate) ttl: i32,
 }
 
-pub(crate) fn validate_create_zone_request(
+pub(crate) fn normalize_create_zone_request(
     request: &CreateZoneRequest,
-) -> Result<ValidatedCreateZoneRequest, ServiceError> {
+) -> Result<NormalizedCreateZoneRequest, ServiceError> {
     let zone_name = normalize_zone_name(&request.name)?;
     let mname = normalize_domain_name(&request.mname, "mname")?.to_string();
     let rname = normalize_email(&request.rname)?;
     let ttl = validate_ttl(request.default_ttl)?;
 
-    validate_soa_wire_safety(&rname)?;
+    // `zone_name` and `mname` are wire-safe after `normalize_domain_name`
+    // (plain ASCII labels, each <= 63 bytes); the derived SOA RNAME's shifted
+    // label boundaries are checked by `SoaMailbox::from_email` itself.
+    SoaMailbox::from_email(&rname)
+        .map_err(|e| ServiceError::invalid_zone_field(format!("rname {}", e)))?;
 
-    Ok(ValidatedCreateZoneRequest {
+    Ok(NormalizedCreateZoneRequest {
         name: zone_name,
         mname,
         rname,
@@ -208,13 +212,4 @@ fn normalize_soa_interval(
         )));
     }
     Ok(resolved)
-}
-
-// `zone_name` and `mname` are already wire-safe after `normalize_domain_name`
-// (plain ASCII labels, each <= 63 bytes); the derived SOA RNAME's shifted
-// label boundaries are checked by `SoaMailbox::from_email` itself.
-fn validate_soa_wire_safety(rname: &str) -> Result<(), ServiceError> {
-    SoaMailbox::from_email(rname)
-        .map(|_| ())
-        .map_err(|e| ServiceError::invalid_zone_field(format!("rname {}", e)))
 }

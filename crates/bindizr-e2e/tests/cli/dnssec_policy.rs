@@ -26,6 +26,7 @@ async fn dnssec_policy_lifecycle_via_cli() {
         ])
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
+    let created = &created["dnssec_policy"];
     assert_eq!(created["name"], policy_name);
     assert_eq!(created["algorithm"], "ecdsap384sha384");
     assert_eq!(created["split_keys"], true);
@@ -55,6 +56,7 @@ async fn dnssec_policy_lifecycle_via_cli() {
         ])
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
+    let updated = &updated["dnssec_policy"];
     assert_eq!(updated["zsk_lifetime_days"], 60);
     // The untouched fields keep their values.
     assert_eq!(updated["signature_validity_days"], 21);

@@ -19,14 +19,13 @@ use crate::{
 };
 
 /// Core value validation with the error mapped to `INVALID_RECORD_VALUE`.
-fn validate_record_value(
-    record_type: &RecordType,
-    value: &str,
-    priority: Option<i32>,
-) -> Result<(), ServiceError> {
-    record_type
-        .validate_value(value, priority)
-        .map_err(ServiceError::invalid_record_value)
+/// A record TTL is non-negative (RFC 2181, Section 8); the zone's default
+/// stands in for an omitted one.
+pub(crate) fn validate_record_ttl(ttl: i32) -> Result<(), ServiceError> {
+    if ttl < 0 {
+        return Err(ServiceError::invalid_input("TTL must not be negative"));
+    }
+    Ok(())
 }
 
 pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
@@ -74,7 +73,9 @@ pub(crate) fn validate_record_add_constraints_normalized(
     priority: Option<i32>,
     except_record_id: Option<i32>,
 ) -> Result<(), ServiceError> {
-    validate_record_value(record_type, value, priority)?;
+    record_type
+        .validate_value(value, priority)
+        .map_err(ServiceError::invalid_record_value)?;
 
     if *record_type == RecordType::CNAME && stored_name.is_apex() {
         return Err(ServiceError::invalid_record_name(

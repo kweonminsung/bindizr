@@ -8,6 +8,7 @@ use super::{
     RecordService,
     validation::{
         normalize_record_owner_name, parse_record_type, validate_record_add_constraints_normalized,
+        validate_record_ttl,
     },
 };
 use crate::{
@@ -58,6 +59,9 @@ pub(crate) fn parse_record(
     priority: Option<i32>,
 ) -> Result<PreparedRecord, ServiceError> {
     let record_type = parse_record_type(record_type)?;
+    if let Some(ttl) = ttl {
+        validate_record_ttl(ttl)?;
+    }
     let value = value
         .to_encoded_value(&record_type, priority)
         .map_err(ServiceError::invalid_record_value)?;
@@ -74,7 +78,7 @@ pub(crate) fn parse_record(
 impl RecordService {
     /// Insert records with their ADD zone changes for IXFR. The caller has
     /// already validated the rows.
-    pub(crate) async fn insert_records_with_changes_tx(
+    pub(crate) async fn create_with_changes_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         new_serial: i32,
@@ -106,7 +110,7 @@ impl RecordService {
 
     /// Update one record with its DEL(old)+ADD(new) zone changes for IXFR. The
     /// caller has already validated the row.
-    pub(crate) async fn update_record_with_changes_tx(
+    pub(crate) async fn update_with_changes_tx(
         tx: &mut RepositoryTx<'_>,
         new_serial: i32,
         existing: &Record,
@@ -134,7 +138,7 @@ impl RecordService {
     }
 
     /// Delete records with their DEL zone changes for IXFR.
-    pub(crate) async fn delete_records_with_changes_tx(
+    pub(crate) async fn delete_with_changes_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         new_serial: i32,
@@ -360,10 +364,9 @@ impl RecordService {
             }
 
             let t = Instant::now();
-            let created_records = RecordService::insert_records_with_changes_tx(
-                &mut tx, zone.id, new_serial, &to_insert,
-            )
-            .await?;
+            let created_records =
+                RecordService::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert)
+                    .await?;
             timings.db_write_ms = elapsed_ms(t);
 
             // Advance the serial once so IXFR consumers detect the batch

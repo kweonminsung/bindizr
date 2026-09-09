@@ -1,15 +1,15 @@
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
-use crate::common::TestApp;
+use crate::common::{TestApp, TestAppOptions};
 
 /// Seed records directly in the DB via the bulk endpoint.
 async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
     let (status, _) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/records/bulk"),
-            Some(json!({ "records": records })),
+            "/records/bulk",
+            Some(json!({ "zone_name": zone_name, "records": records })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -68,6 +68,20 @@ async fn zone_create_read_update_delete() {
     assert_eq!(status, StatusCode::OK);
     let actual_updated_zone_name = body["zone"]["name"].as_str().unwrap();
     assert_eq!(actual_updated_zone_name, updated_zone_name);
+
+    // A partial update keeps every omitted field.
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{actual_updated_zone_name}"),
+            Some(json!({ "default_ttl": 300 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["zone"]["default_ttl"], 300);
+    assert_eq!(body["zone"]["mname"], "ns2.external-dns.net");
+    assert_eq!(body["zone"]["rname"], "admin@updated-test.com");
+    assert_eq!(body["zone"]["refresh"], 14400);
 
     let (status, _) = app
         .request(
@@ -408,8 +422,8 @@ async fn zone_import_zone_file_dry_run_then_apply() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
-            Some(json!({ "content": content, "dryRun": true })),
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content, "dry_run": true })),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -432,7 +446,7 @@ async fn zone_import_zone_file_dry_run_then_apply() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content })),
         )
         .await;
@@ -453,7 +467,7 @@ async fn zone_import_zone_file_dry_run_then_apply() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content })),
         )
         .await;
@@ -483,7 +497,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content })),
         )
         .await;
@@ -516,7 +530,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": exported })),
         )
         .await;
@@ -583,7 +597,7 @@ async fn zone_import_zone_file_replace_mode() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content, "mode": "replace" })),
         )
         .await;
@@ -638,7 +652,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content, "mode": "upsert" })),
         )
         .await;
@@ -715,7 +729,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content, "mode": "upsert" })),
         )
         .await;
@@ -740,7 +754,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
     let (_, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content, "mode": "upsert" })),
         )
         .await;
@@ -751,7 +765,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
     let (_, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": "www 900 IN A 192.0.2.1\n", "mode": "append" })),
         )
         .await;
@@ -780,7 +794,7 @@ async fn zone_import_zone_file_reports_validation_errors() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content })),
         )
         .await;
@@ -812,7 +826,7 @@ async fn zone_import_preview_shows_empty_diff_on_validation_error() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content, "dry_run": true })),
         )
         .await;
@@ -853,7 +867,7 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": "WWW IN CNAME target\n", "mode": "append" })),
         )
         .await;
@@ -895,7 +909,7 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": "alias IN A 192.0.2.9\n", "mode": "append" })),
         )
         .await;
@@ -935,7 +949,7 @@ async fn zone_import_append_dedups_against_existing_db_record() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": "www IN A 192.0.2.1\n", "mode": "append" })),
         )
         .await;
@@ -975,7 +989,7 @@ async fn zone_import_append_into_populated_zone_isolates_names() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/imports"),
+            &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": "c1 IN A 192.0.2.3\n", "mode": "append" })),
         )
         .await;
@@ -1209,8 +1223,8 @@ async fn zone_rollback_dry_run_then_apply() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/rollback"),
-            Some(json!({ "serial": target_serial, "dry_run": true })),
+            &format!("/zones/{zone_name}/versions/{target_serial}/rollback?dry_run=true"),
+            None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -1230,8 +1244,8 @@ async fn zone_rollback_dry_run_then_apply() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/rollback"),
-            Some(json!({ "serial": target_serial })),
+            &format!("/zones/{zone_name}/versions/{target_serial}/rollback"),
+            None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -1313,8 +1327,8 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/rollback"),
-            Some(json!({ "serial": target_serial })),
+            &format!("/zones/{zone_name}/versions/{target_serial}/rollback"),
+            None,
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1364,8 +1378,8 @@ async fn zone_rollback_rejects_bad_serials() {
         let (status, body) = app
             .request(
                 Method::POST,
-                &format!("/zones/{zone_name}/rollback"),
-                Some(json!({ "serial": serial })),
+                &format!("/zones/{zone_name}/versions/{serial}/rollback"),
+                None,
             )
             .await;
         assert_eq!(status, expected_status, "serial {serial}");
@@ -1518,5 +1532,57 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
             )
             .await;
         assert_eq!(status, StatusCode::OK, "{spelling}: {body}");
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_from_server_over_http() {
+    // The transfer ACL must admit the test's own loopback AXFR.
+    let app = TestApp::start_with_options(TestAppOptions {
+        secondary_addrs: "127.0.0.1".to_string(),
+        ..Default::default()
+    })
+    .await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, _) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": "www IN A 192.0.2.30\nmail 300 IN MX 10 mx.example.com.\n" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // A transfer of the zone's own content replaces it with itself.
+    let server = format!("127.0.0.1:{}", app.dns_port());
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "from_server": server, "mode": "replace" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["summary"]["parsed"], 3);
+    assert_eq!(body["summary"]["unchanged"], 3);
+    assert_eq!(body["summary"]["added"], 0);
+
+    // Exactly one source, and that source one server.
+    for request in [
+        json!({}),
+        json!({ "content": "www IN A 192.0.2.1\n", "from_server": server }),
+        json!({ "from_server": "127.0.0.1:1,127.0.0.1:2", "mode": "replace" }),
+    ] {
+        let (status, _) = app
+            .request(
+                Method::POST,
+                &format!("/zones/{zone_name}/import"),
+                Some(request),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }

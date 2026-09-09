@@ -143,8 +143,8 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     let (status, _) = app
         .request(
             Method::POST,
-            "/zones/notify",
-            Some(json!({ "zone_name": granted_zone, "bump_serial": true })),
+            &format!("/zones/{granted_zone}/notify?bump_serial=true"),
+            None,
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -302,8 +302,9 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
         let (status, body) = app
             .request(
                 Method::POST,
-                &format!("/zones/{zone_name}/records/bulk"),
+                "/records/bulk",
                 Some(json!({
+                    "zone_name": zone_name,
                     "records": [
                         { "name": "app", "record_type": "A", "value": "192.0.2.1" }
                     ],
@@ -341,8 +342,9 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
     let (status, body) = app
         .request(
             Method::POST,
-            &format!("/zones/{zone_name}/records/bulk"),
+            "/records/bulk",
             Some(json!({
+                "zone_name": zone_name,
                 "records": [
                     { "name": "bad name", "record_type": "A", "value": "192.0.2.1" }
                 ]

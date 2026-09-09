@@ -1,8 +1,8 @@
 //! The `zone version` subcommands: list, show, diff, and rollback.
 
 use bindizr_service::types::{
-    PaginatedResponse, RollbackZoneRequest, RollbackZoneResponse, VersionDetailResponse,
-    VersionDiffResponse, ZoneVersionResponse,
+    PaginatedResponse, RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse,
+    ZoneVersionResponse,
 };
 use clap::Subcommand;
 
@@ -40,7 +40,7 @@ pub(crate) enum ZoneVersionCommand {
         offset: Option<u64>,
         /// Include signer-only serials (DNSSEC re-signs and rollovers)
         #[arg(long)]
-        all: bool,
+        include_signer_serials: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -88,7 +88,7 @@ pub(crate) async fn handle_command(
             name,
             limit,
             offset,
-            all,
+            include_signer_serials,
             output,
         } => {
             let data = client
@@ -98,7 +98,7 @@ pub(crate) async fn handle_command(
                         name,
                         limit,
                         offset,
-                        all,
+                        include_signer_serials,
                     },
                 )
                 .await?
@@ -163,7 +163,8 @@ pub(crate) async fn handle_command(
                     DaemonCommandKind::RollbackZone,
                     RollbackZoneParams {
                         name,
-                        request: RollbackZoneRequest { serial, dry_run },
+                        serial,
+                        dry_run,
                     },
                 )
                 .await?;

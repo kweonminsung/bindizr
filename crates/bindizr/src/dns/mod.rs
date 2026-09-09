@@ -30,7 +30,7 @@ pub(crate) async fn initialize() {
         bindizr_config.dns.listen_port,
     );
 
-    let secondary_acl = server::acl::secondary_acl_from_config();
+    let secondary_acl = SecondaryAcl::from_config();
     let tcp_secondary_acl = secondary_acl.clone();
 
     tokio::spawn(async move {
@@ -189,8 +189,13 @@ async fn run_udp_server(
                 log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
             }
         } else if server::is_xfr_query_type(query.qtype) {
-            if let Err(e) = server::handle_udp_query(client_addr, &secondary_acl, &query).await {
-                log_warn!("Failed to handle XFR UDP query from {}: {}", client_addr, e);
+            match server::handle_udp_query(client_addr, &secondary_acl, &query).await {
+                Ok(response) => {
+                    if let Err(e) = socket.send_to(&response, client_addr).await {
+                        log_warn!("Failed to answer XFR UDP query from {}: {}", client_addr, e);
+                    }
+                }
+                Err(e) => log_warn!("Refused XFR UDP query from {}: {}", client_addr, e),
             }
         }
     }

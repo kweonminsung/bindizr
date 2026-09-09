@@ -13,7 +13,7 @@ secondary DNS servers.
 - Send DNS NOTIFY messages after zone changes.
 - Support RFC 2136 dynamic updates with TSIG keys and per-zone grants.
 - Sign zones with DNSSEC: key lifecycle, NSEC and NSEC3 denial, scheduled
-  re-signing, and key rollover.
+  re-signing, key rollover, and a parent-DS check before going insecure.
 - Scope API tokens to individual zones, optionally by record-name pattern and type.
 - Keep a version per SOA serial: list, diff, and roll a zone back.
 - Import and export BIND master-file text, and bulk-insert records.

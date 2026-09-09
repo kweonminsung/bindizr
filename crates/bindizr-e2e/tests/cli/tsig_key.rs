@@ -67,6 +67,7 @@ async fn tsig_key_grant_grants_revoke() {
         ])
         .await;
     let granted: Value = serde_json::from_str(&granted).expect("CLI did not return valid JSON");
+    let granted = &granted["tsig_grant"];
     assert_eq!(granted["tsig_key"], "cli-grant-key");
     assert_eq!(granted["zone_name"], zone_name);
     assert_eq!(granted["record_name_pattern"], "*.dyn");
@@ -83,7 +84,7 @@ async fn tsig_key_grant_grants_revoke() {
     assert!(by_key.contains("A,TXT"), "{by_key}");
 
     let by_zone = app
-        .run_cli_success(&["tsig-key", "grants", "--zone", &zone_name])
+        .run_cli_success(&["zone", "tsig-grants", &zone_name])
         .await;
     assert!(by_zone.contains("cli-grant-key"), "{by_zone}");
 

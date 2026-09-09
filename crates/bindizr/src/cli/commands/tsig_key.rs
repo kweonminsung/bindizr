@@ -1,9 +1,9 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
-    CreateTsigGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
-    TsigKeyResponse,
+    CreateTsigGrantRequest, CreateTsigKeyRequest, TsigGrantListResponse, TsigGrantResponse,
+    TsigKeyListResponse, TsigKeyResponse,
 };
-use clap::{ArgGroup, Subcommand};
+use clap::Subcommand;
 
 use crate::{
     cli::{
@@ -14,7 +14,6 @@ use crate::{
         client::DaemonSocketClient,
         types::{
             CreateTsigGrantParams, DaemonCommandKind, DeleteTsigGrantParams, TsigKeyNameParams,
-            ZoneNameParams,
         },
     },
 };
@@ -83,15 +82,11 @@ pub(crate) enum TsigKeyCommand {
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
-    /// List a key's grants, or every grant that applies to a zone
-    #[command(group(ArgGroup::new("scope").required(true).args(["name", "zone"])))]
+    /// List a key's grants (`zone tsig-grants` lists a zone's)
     Grants {
         /// Name of the key
         #[arg(value_name = "KEY_NAME")]
-        name: Option<String>,
-        /// List the grants that apply to this zone instead
-        #[arg(long, value_name = "ZONE_NAME")]
-        zone: Option<String>,
+        name: String,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -149,8 +144,8 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
 
             log_debug!("TSIG key list result: {:?}", res);
 
-            print_response(&res.data, output, |keys: &Vec<GetTsigKeyResponse>| {
-                keys.iter().map(TsigKeyRow::from).collect()
+            print_response(&res.data, output, |keys: &TsigKeyListResponse| {
+                keys.tsig_keys.iter().map(TsigKeyRow::from).collect()
             })?;
         }
         TsigKeyCommand::Get { name, output } => {
@@ -193,30 +188,19 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                     },
                 )
                 .await?;
-            print_response(&res.data, output, |grant: &GetTsigGrantResponse| {
-                vec![TsigGrantRow::from(grant)]
+            print_response(&res.data, output, |response: &TsigGrantResponse| {
+                vec![TsigGrantRow::from(&response.tsig_grant)]
             })?;
         }
-        TsigKeyCommand::Grants { name, zone, output } => {
-            let res = if let Some(zone) = zone {
-                client
-                    .send_command(
-                        DaemonCommandKind::TsigGrantListByZone,
-                        ZoneNameParams { name: zone },
-                    )
-                    .await?
-            } else {
-                // The `scope` group makes one of the two arguments mandatory.
-                let name = name.unwrap_or_default();
-                client
-                    .send_command(
-                        DaemonCommandKind::TsigGrantListByKey,
-                        TsigKeyNameParams { name },
-                    )
-                    .await?
-            };
-            print_response(&res.data, output, |grants: &Vec<GetTsigGrantResponse>| {
-                grants.iter().map(TsigGrantRow::from).collect()
+        TsigKeyCommand::Grants { name, output } => {
+            let res = client
+                .send_command(
+                    DaemonCommandKind::TsigGrantListByKey,
+                    TsigKeyNameParams { name },
+                )
+                .await?;
+            print_response(&res.data, output, |grants: &TsigGrantListResponse| {
+                grants.tsig_grants.iter().map(TsigGrantRow::from).collect()
             })?;
         }
         TsigKeyCommand::Revoke { name, id } => {

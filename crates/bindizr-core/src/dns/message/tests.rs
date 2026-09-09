@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
-use domain::base::{Name, iana::Rtype};
+use domain::base::{MessageBuilder, Name, iana::Rtype};
 
-use super::{DNS_TCP_MAX_SIZE, DnsMessageBuilder, encode_tcp_message};
+use super::{DNS_TCP_MAX_SIZE, DnsMessageBuilder, ParsedQuery, encode_tcp_message};
 use crate::model::record::RecordType;
 
 #[test]
@@ -53,4 +53,26 @@ fn overflowing_answers_split_into_multiple_frames() {
     assert_eq!(pos, wire.len());
     assert_eq!(answer_count, 4000);
     assert!(frame_count > 1);
+}
+
+#[test]
+fn truncated_response_echoes_the_question_with_tc_set() {
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(4242);
+    let mut question = builder.question();
+    question
+        .push((
+            Name::<Vec<u8>>::from_str("example.com").unwrap(),
+            Rtype::AXFR,
+        ))
+        .unwrap();
+    let query = ParsedQuery::parse(&question.finish()).unwrap();
+
+    let response = query.truncated_response();
+    assert_eq!(&response[0..2], &4242u16.to_be_bytes());
+    // QR, AA, and TC set; RCODE NOERROR; one question, no answers.
+    assert_eq!(response[2], 0x86);
+    assert_eq!(response[3] & 0x0f, 0);
+    assert_eq!(&response[4..6], &1u16.to_be_bytes());
+    assert_eq!(&response[6..8], &0u16.to_be_bytes());
 }

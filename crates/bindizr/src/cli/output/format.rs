@@ -1,5 +1,4 @@
-use bindizr_service::types::PaginatedResponse;
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::de::DeserializeOwned;
 use tabled::{Table, Tabled, settings::Style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,24 +27,6 @@ impl std::str::FromStr for OutputFormat {
 /// Read a daemon response payload as the type the command expects.
 pub(crate) fn parse_response<T: DeserializeOwned>(data: &serde_json::Value) -> Result<T, String> {
     serde_json::from_value(data.clone()).map_err(|e| format!("Unexpected daemon response: {}", e))
-}
-
-/// A listing answers with a page; `get` and `update` answer with the item
-/// alone. Both feed the same table.
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub(crate) enum ItemOrPage<T> {
-    Page(PaginatedResponse<T>),
-    One(T),
-}
-
-impl<T> ItemOrPage<T> {
-    pub(crate) fn items(&self) -> &[T] {
-        match self {
-            ItemOrPage::Page(page) => &page.items,
-            ItemOrPage::One(item) => std::slice::from_ref(item),
-        }
-    }
 }
 
 /// Print a daemon response: the payload verbatim for JSON and YAML, or a table

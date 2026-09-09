@@ -51,13 +51,13 @@ impl GetTokenGrantResponse {
 }
 
 /// A single token grant wrapped in a response envelope.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct TokenGrantResponse {
     pub token_grant: GetTokenGrantResponse,
 }
 
 /// Grants of one token, or every grant that applies to one zone.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct TokenGrantListResponse {
     pub token_grants: Vec<GetTokenGrantResponse>,
 }

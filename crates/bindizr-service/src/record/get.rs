@@ -8,7 +8,7 @@ use crate::{
     log_error,
     model::{
         dnssec_record::DnssecRecordType,
-        record::{Record, RecordType, RecordWithZone},
+        record::{RecordType, RecordWithZone},
     },
     repository::RepositoryService,
     types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse},
@@ -36,19 +36,6 @@ fn parse_type_filter(
 }
 
 impl RecordService {
-    /// List a zone's records for `caller`; a zone it cannot see reads as
-    /// `NotFound`.
-    pub async fn list_in_zone(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<Vec<Record>, ServiceError> {
-        let zone = ZoneService::get_by_name(caller, zone_name).await?;
-        RepositoryService::list_records(zone.id).await.map_err(|e| {
-            log_error!("Failed to fetch records for zone {}: {}", zone_name, e);
-            ServiceError::internal(format!("Failed to fetch records for zone {}", zone_name))
-        })
-    }
-
     /// Every record, for the unauthenticated metrics endpoint.
     pub async fn count_all() -> Result<u64, ServiceError> {
         RepositoryService::count_records_by_filter(RecordFilter::default()).await
@@ -90,7 +77,7 @@ impl RecordService {
             ZoneService::lookup_by_name(name.as_str()).await?;
         }
 
-        let name = to_record_name_filter(filter.name, zone_name.as_ref());
+        let name = build_record_name_filter(filter.name, zone_name.as_ref());
         let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
 
         let user_plane = derived_type.is_none();
@@ -201,7 +188,7 @@ impl RecordService {
     }
 }
 
-fn to_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) -> Option<String> {
+fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) -> Option<String> {
     name.and_then(|name| {
         let trimmed = name.trim();
         // An empty value is no filter. Left to fall through it would spell the

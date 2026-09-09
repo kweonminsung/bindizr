@@ -25,12 +25,12 @@ pub(crate) struct TokenApi;
 impl TokenApi {
     pub(crate) async fn routes() -> Router {
         Router::new()
-            .route("/tokens", routing::get(get_tokens))
+            .route("/tokens", routing::get(list_tokens))
             .route("/tokens", routing::post(create_token))
             .route("/tokens/self", routing::get(get_self_token))
-            .route("/tokens/self/grants", routing::get(get_self_token_grants))
+            .route("/tokens/self/grants", routing::get(list_self_token_grants))
             .route("/tokens/{name}", routing::delete(delete_token))
-            .route("/tokens/{name}/grants", routing::get(get_token_grants))
+            .route("/tokens/{name}/grants", routing::get(list_token_grants))
             .route("/tokens/{name}/grants", routing::post(create_token_grant))
             .route(
                 "/tokens/{name}/grants/{id}",
@@ -38,7 +38,7 @@ impl TokenApi {
             )
             .route(
                 "/zones/{name}/token-grants",
-                routing::get(get_zone_token_grants),
+                routing::get(list_zone_token_grants),
             )
     }
 }
@@ -62,7 +62,9 @@ pub(crate) struct TokenNameParam {
         )
 )]
 /// List all API tokens (secrets omitted).
-pub(crate) async fn get_tokens(RequestCaller(caller): RequestCaller) -> Result<Response, ApiError> {
+pub(crate) async fn list_tokens(
+    RequestCaller(caller): RequestCaller,
+) -> Result<Response, ApiError> {
     let tokens = TokenService::list(&caller).await?;
     let response = TokenListResponse {
         tokens: tokens.iter().map(GetTokenResponse::from_token).collect(),
@@ -142,7 +144,7 @@ pub(crate) async fn get_self_token(
         )
 )]
 /// List the grants of the token the request authenticated with.
-pub(crate) async fn get_self_token_grants(
+pub(crate) async fn list_self_token_grants(
     AuthenticatedToken(token): AuthenticatedToken,
 ) -> Result<Response, ApiError> {
     let grants = TokenGrantService::list_self(&token).await?;
@@ -201,7 +203,7 @@ pub(crate) async fn delete_token(
         )
 )]
 /// List an API token's grants.
-pub(crate) async fn get_token_grants(
+pub(crate) async fn list_token_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TokenNameParam>,
 ) -> Result<Response, ApiError> {
@@ -301,7 +303,7 @@ pub(crate) async fn delete_token_grant(
         )
 )]
 /// List the API token grants that apply to a zone.
-pub(crate) async fn get_zone_token_grants(
+pub(crate) async fn list_zone_token_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {

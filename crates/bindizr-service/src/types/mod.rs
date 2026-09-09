@@ -20,9 +20,10 @@ mod zone;
 
 pub use common::{ErrorResponse, HealthResponse, MessageResponse};
 pub use dnssec::{
-    DnssecDsInfo, DnssecDsListResponse, DnssecKeyInfo, DnssecKeyMaterial, DnssecStatusResponse,
-    EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse, ImportDnssecKeyPair,
-    ImportDnssecKeyRequest, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
+    DnssecDelegationInfo, DnssecDelegationKeyInfo, DnssecDsInfo, DnssecKeyInfo, DnssecKeyMaterial,
+    DnssecStatusResponse, EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse,
+    ImportDnssecKeyPair, ImportDnssecKeyRequest, RolloverDnssecRequest,
+    UpdateDnssecSettingsRequest,
 };
 pub use dnssec_policy::{
     CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse,
@@ -33,15 +34,12 @@ pub use external_dns::{
     ExternalDnsChangesResponse, ExternalDnsRecord, ExternalDnsRecordUpdate,
     ExternalDnsRecordsResponse, ExternalDnsZonesResponse,
 };
-pub use import::{
-    ImportMode, ImportSummary, ImportZoneFileRequest, ImportZoneFileResponse,
-    ImportZoneFromServerRequest,
-};
+pub use import::{ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse};
 pub use pagination::{PaginatedResponse, Pagination};
 pub(crate) use record::display_record_value_request;
 pub use record::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-    GetRecordsFilter, RecordItem, RecordResponse, RecordValueRequest, UpdateRecordPatch,
+    GetRecordsFilter, RecordItem, RecordResponse, RecordValueRequest, UpdateRecordRequest,
 };
 pub use token::{
     CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenListResponse, TokenResponse,
@@ -55,10 +53,11 @@ pub use tsig::{
 };
 pub use version::{
     RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,
-    RollbackZoneRequest, RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse,
-    VersionRecordResponse, ZoneVersionResponse,
+    RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse, VersionRecordResponse,
+    ZoneVersionResponse,
 };
 pub use zone::{
-    CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter, NotifyZoneRequest,
-    SecondaryStatusResponse, UpdateZonePatch, ZoneDetailResponse, ZoneResponse, ZoneStatusResponse,
+    CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
+    SecondaryStatusResponse, UpdateZoneRequest, ZoneDetailResponse, ZoneResponse,
+    ZoneStatusResponse, build_notify_message,
 };

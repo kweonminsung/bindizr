@@ -7,7 +7,7 @@ pub use domain::base::{
 };
 use domain::{
     base::{
-        Message, MessageBuilder, ToName, Ttl, UnknownRecordData, rdata::ComposeRecordData,
+        Header, Message, MessageBuilder, ToName, Ttl, UnknownRecordData, rdata::ComposeRecordData,
         record::ComposeRecord,
     },
     rdata::Soa,
@@ -434,13 +434,28 @@ impl ParsedQuery {
         })
     }
 
+    /// An empty authoritative answer with TC set, so a transfer client asks
+    /// again over TCP (RFC 1995, Section 2; RFC 5936, Section 4.1.1).
+    pub fn truncated_response(&self) -> Vec<u8> {
+        self.echo_question(|header| {
+            header.set_aa(true);
+            header.set_tc(true);
+        })
+    }
+
     /// A response echoing this query with only `rcode` set.
     pub fn error_response(&self, rcode: Rcode) -> Vec<u8> {
+        self.echo_question(|header| header.set_rcode(rcode))
+    }
+
+    /// A response carrying only this query's question, its header shaped by
+    /// `set` after the id and QR.
+    fn echo_question(&self, set: impl FnOnce(&mut Header)) -> Vec<u8> {
         let mut builder = MessageBuilder::new_vec();
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);
-        header.set_rcode(rcode);
+        set(header);
 
         let mut question = builder.question();
         question

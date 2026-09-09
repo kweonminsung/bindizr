@@ -1,13 +1,15 @@
-use crate::common::TestApp;
+use crate::common::{TestApp, assert_cli_failure_contains};
 
 /// The key tag of the zone's first signing key, read from `dnssec status`.
-async fn signing_key_tag(app: &TestApp, zone_name: &str) -> u64 {
+async fn dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
     let status = app
         .run_cli_success(&["dnssec", "status", zone_name, "--output", "json"])
         .await;
-    let status: serde_json::Value =
-        serde_json::from_str(&status).expect("CLI did not return valid JSON");
-    status["keys"][0]["key_tag"]
+    serde_json::from_str(&status).expect("CLI did not return valid JSON")
+}
+
+async fn signing_key_tag(app: &TestApp, zone_name: &str) -> u64 {
+    dnssec_status(app, zone_name).await["dnssec"]["keys"][0]["key_tag"]
         .as_u64()
         .expect("status lists the signing key")
 }
@@ -27,8 +29,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
     let key_tag = signing_key_tag(&app, &zone_name).await;
     assert!(key_tag > 0);
 
-    let ds = app.run_cli_success(&["dnssec", "ds", &zone_name]).await;
-    assert!(ds.contains(&format!("IN DS {key_tag} ")), "{ds}");
+    assert!(status.contains(&format!("IN DS {key_tag} ")), "{status}");
 
     // Same algorithm, denial, and key layout as `default`: the move only
     // changes the timing, so no rollover starts.
@@ -45,7 +46,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
     ])
     .await;
     let moved = app
-        .run_cli_success(&["dnssec", "set-policy", &zone_name, &policy_name])
+        .run_cli_success(&["dnssec", "set", &zone_name, "--policy", &policy_name])
         .await;
     // The policy row of the status output carries the new timing.
     assert!(
@@ -66,11 +67,23 @@ async fn zone_dnssec_lifecycle_via_cli() {
         "{signed_export}"
     );
 
+    let withdrawn = app
+        .run_cli_success(&["dnssec", "withdraw", "start", &zone_name])
+        .await;
+    assert!(withdrawn.contains("DS withdrawal published"), "{withdrawn}");
+    let cancelled = app
+        .run_cli_success(&["dnssec", "withdraw", "cancel", &zone_name])
+        .await;
+    assert!(
+        !cancelled.contains("DS withdrawal published"),
+        "{cancelled}"
+    );
+
     let signed = app.run_cli_success(&["dnssec", "sign", &zone_name]).await;
     assert!(signed.contains("Zone signed successfully"));
 
     let disabled = app
-        .run_cli_success(&["dnssec", "disable", &zone_name])
+        .run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
         .await;
     assert!(disabled.contains("DNSSEC disabled successfully"));
 
@@ -111,11 +124,35 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     assert!(status.contains("published"), "{status}");
     assert!(status.contains("active"), "{status}");
 
-    // The API test covers the far side of the hold-down wait.
+    // The API test covers the far side of the hold-down wait;
+    // `--skip-ds-check` skips only the parent check, never the hold-down.
     let ds_seen = app
         .run_cli(&["dnssec", "rollover", "ds-seen", &zone_name])
         .await;
     assert!(!ds_seen.status.success());
+    let unchecked = [
+        "dnssec",
+        "rollover",
+        "ds-seen",
+        &zone_name,
+        "--skip-ds-check",
+    ];
+    let ds_seen = app.run_cli(&unchecked).await;
+    assert_cli_failure_contains(&unchecked, &ds_seen, "must stay published");
+
+    // No parent stands in, so both skips promote at once.
+    let promoted = app
+        .run_cli_success(&[
+            "dnssec",
+            "rollover",
+            "ds-seen",
+            &zone_name,
+            "--skip-ds-check",
+            "--skip-holddown",
+        ])
+        .await;
+    assert!(promoted.contains("retired"), "{promoted}");
+    assert!(!promoted.contains("published"), "{promoted}");
 }
 
 #[tokio::test]
@@ -161,7 +198,7 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     let private_file = private_file.to_str().expect("utf-8 temp dir").to_string();
 
     // Disable drops the keys; the import must restore the same key.
-    app.run_cli_success(&["dnssec", "disable", &zone_name])
+    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
         .await;
 
     // Under a split-key policy the lone SEP key is a KSK with no ZSK, so the
@@ -264,7 +301,7 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     }
     pairs.sort(); // ksk before zsk
 
-    app.run_cli_success(&["dnssec", "disable", &zone_name])
+    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
         .await;
 
     // Both halves arrive in one call: a KSK alone could not sign, so the

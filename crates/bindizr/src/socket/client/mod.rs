@@ -1,3 +1,4 @@
+use bindizr_core::config::BindizrConfig;
 use bindizr_service::{error::ErrorCode, types::ErrorResponse};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -45,6 +46,13 @@ impl DaemonSocketClient {
         let res = self.send_control_command(DaemonCommandKind::Status).await?;
         serde_json::from_value(res.data)
             .map_err(|e| CliError::from(format!("Failed to parse status response: {}", e)))
+    }
+
+    /// The daemon's loaded configuration, which can differ from the file on disk.
+    pub(crate) async fn config(&self) -> Result<BindizrConfig, CliError> {
+        let res = self.send_control_command(DaemonCommandKind::Config).await?;
+        serde_json::from_value(res.data)
+            .map_err(|e| CliError::from(format!("Failed to parse config response: {}", e)))
     }
 
     /// Send a command the daemon answers from memory (status/lifecycle) under

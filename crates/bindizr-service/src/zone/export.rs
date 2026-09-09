@@ -20,7 +20,7 @@ impl ZoneService {
     /// appends the derived DNSSEC records as an inspection artifact, not an
     /// import input. Visibility is checked on the row this tx locked, so a
     /// same-name recreation cannot swap the zone in.
-    pub async fn export_zone_file(
+    pub async fn export(
         caller: &Caller,
         zone_name: &str,
         signed: bool,

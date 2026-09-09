@@ -1,9 +1,7 @@
-use bindizr_core::config::BindizrConfig;
 use bindizr_service::types::{
-    CreateBulkRecordsRequest, CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest,
-    ImportDnssecKeyRequest, ImportZoneFileRequest, ImportZoneFromServerRequest,
-    RollbackZoneRequest, RolloverDnssecRequest, SetZoneDnssecPolicyRequest,
-    UpdateDnssecPolicyRequest, UpdateRecordPatch, UpdateZonePatch,
+    CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest,
+    ImportZoneRequest, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
+    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateZoneRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DaemonCommandKind {
     Status,
+    Config,
     TokenCreate,
     TokenList,
     TokenDelete,
@@ -43,9 +42,9 @@ pub(crate) enum DaemonCommandKind {
     UpdateRecord,
     BulkCreateRecords,
     DeleteRecord,
+    NotifyAllZones,
     NotifyZone,
-    ImportZoneFile,
-    ImportZoneFromServer,
+    ImportZone,
     ExportZoneFile,
     ListZoneVersions,
     GetZoneVersion,
@@ -60,7 +59,8 @@ pub(crate) enum DaemonCommandKind {
     ZoneDnssecRolloverDsSeen,
     ZoneDnssecWithdraw,
     ZoneDnssecWithdrawCancel,
-    ZoneDnssecSetPolicy,
+    ZoneDnssecUpdateSettings,
+    ZoneDnssecCheckDs,
     ZoneDnssecKeysExport,
     ZoneDnssecKeysImport,
     Doctor,
@@ -152,45 +152,45 @@ pub(crate) struct ExportZoneFileParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct ImportZoneFileParams {
+pub(crate) struct ImportZoneParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
-    pub(crate) request: ImportZoneFileRequest,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct ImportZoneFromServerParams {
-    pub(crate) zone_name: String,
-    #[serde(flatten)]
-    pub(crate) request: ImportZoneFromServerRequest,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct BulkCreateRecordsParams {
-    pub(crate) zone_name: String,
-    #[serde(flatten)]
-    pub(crate) request: CreateBulkRecordsRequest,
+    pub(crate) request: ImportZoneRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct UpdateZoneParams {
-    pub(crate) name: String,
+    pub(crate) zone_name: String,
     #[serde(flatten)]
-    pub(crate) patch: UpdateZonePatch,
+    pub(crate) request: UpdateZoneRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct UpdateRecordParams {
     pub(crate) id: i32,
     #[serde(flatten)]
-    pub(crate) patch: UpdateRecordPatch,
+    pub(crate) request: UpdateRecordRequest,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct NotifyAllZonesParams {
+    #[serde(default)]
+    pub(crate) bump_serial: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct NotifyZoneParams {
+    pub(crate) zone_name: String,
+    #[serde(default)]
+    pub(crate) bump_serial: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct RollbackZoneParams {
     pub(crate) name: String,
-    #[serde(flatten)]
-    pub(crate) request: RollbackZoneRequest,
+    pub(crate) serial: i32,
+    #[serde(default)]
+    pub(crate) dry_run: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -199,7 +199,7 @@ pub(crate) struct ListZoneVersionsParams {
     pub(crate) limit: Option<u32>,
     pub(crate) offset: Option<u64>,
     #[serde(default)]
-    pub(crate) all: bool,
+    pub(crate) include_signer_serials: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -239,10 +239,23 @@ pub(crate) struct ImportZoneDnssecKeyParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct SetZoneDnssecPolicyParams {
+pub(crate) struct UpdateZoneDnssecSettingsParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
-    pub(crate) request: SetZoneDnssecPolicyRequest,
+    pub(crate) request: UpdateDnssecSettingsRequest,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct DisableZoneDnssecParams {
+    pub(crate) zone_name: String,
+    pub(crate) skip_ds_check: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct DsSeenZoneDnssecParams {
+    pub(crate) zone_name: String,
+    pub(crate) skip_ds_check: bool,
+    pub(crate) skip_holddown: bool,
 }
 
 /// Daemon status details returned by the `Status` command.
@@ -253,7 +266,6 @@ pub(crate) struct DaemonStatusResponse {
     /// Restart detection marker: exec keeps the PID, so a new start time is
     /// the only signal that the daemon was replaced.
     pub(crate) started_at_ms: u64,
-    pub(crate) config: BindizrConfig,
 }
 
 /// Daemon-side installation checks returned by the `Doctor` command.

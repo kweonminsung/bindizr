@@ -3,9 +3,8 @@ use bindizr_db::repository::LockLevel;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, parse_record},
     validation::{
-        normalize_record_owner_name, parse_record_type,
+        normalize_record_owner_name, parse_record_type, validate_record_ttl,
         validate_record_update_constraints_normalized,
     },
 };
@@ -20,13 +19,12 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::{RecordItem, UpdateRecordPatch},
+    types::UpdateRecordRequest,
     zone::ZoneService,
 };
 
-/// The record's fields after a full request or a patch has been resolved
-/// against the currently stored record. The owner is already normalized and
-/// `encoded_value` already in row form.
+/// The record's fields after the request has been resolved against the
+/// stored record: the owner normalized and `encoded_value` in row form.
 struct ResolvedRecordUpdate {
     owner_name: OwnerName,
     record_type: RecordType,
@@ -36,70 +34,53 @@ struct ResolvedRecordUpdate {
 }
 
 impl RecordService {
-    /// Full replacement (HTTP PUT): every field comes from the request. The
-    /// caller is authorized inside the update transaction.
+    /// Omitted fields keep the stored record's value; the merge runs inside
+    /// the transaction, against the row loaded there. The caller is
+    /// authorized there too.
     pub async fn update(
         caller: &Caller,
         record_id: i32,
-        request: &RecordItem,
-    ) -> Result<RecordWithZone, ServiceError> {
-        Self::update_locked(caller, record_id, |zone, _existing| {
-            let PreparedRecord {
-                owner_name,
-                record_type,
-                value: encoded_value,
-                ..
-            } = parse_record(
-                &request.name,
-                &request.record_type,
-                &request.value,
-                request.ttl,
-                request.priority,
-            )?;
-            Ok(ResolvedRecordUpdate {
-                owner_name: normalize_record_owner_name(&owner_name, &zone.name)?,
-                record_type,
-                encoded_value,
-                ttl: request.ttl.unwrap_or(zone.default_ttl),
-                priority: request.priority,
-            })
-        })
-        .await
-    }
-
-    /// Partial update (CLI): omitted fields keep the stored record's value. The
-    /// merge runs inside the transaction, against the row loaded there.
-    pub async fn patch(
-        caller: &Caller,
-        record_id: i32,
-        patch: &UpdateRecordPatch,
+        request: &UpdateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
         Self::update_locked(caller, record_id, |zone, existing| {
-            let record_type = match &patch.record_type {
+            let record_type = match &request.record_type {
                 Some(record_type) => parse_record_type(record_type)?,
                 None => existing.record_type.clone(),
             };
             // A stored value is encoded per record type (TXT keeps raw RDATA, others
             // plain), so it can't carry across a type change — require a fresh value.
-            if record_type != existing.record_type && patch.value.is_none() {
+            if record_type != existing.record_type && request.value.is_none() {
                 return Err(ServiceError::invalid_input(
                     "value is required when changing a record's type".to_string(),
                 ));
             }
-            // Only MX/SRV carry a priority, so retyping to any other type clears it.
+            // Only MX/SRV carry a priority: given for another type it is the
+            // error creation gives, and retyping to another type clears it.
             let priority = if matches!(record_type, RecordType::MX | RecordType::SRV) {
-                patch.priority.or(existing.priority)
+                request.priority.or(existing.priority)
+            } else if request.priority.is_some() {
+                return Err(ServiceError::invalid_record_value(format!(
+                    "{} records do not take a priority",
+                    record_type
+                )));
             } else {
                 None
             };
-            let encoded_value = match &patch.value {
+            let encoded_value = match &request.value {
                 Some(value) => value
                     .to_encoded_value(&record_type, priority)
                     .map_err(ServiceError::invalid_record_value)?,
                 None => existing.value.clone(),
             };
+            let ttl = match request.ttl {
+                Some(ttl) => {
+                    validate_record_ttl(ttl)?;
+                    ttl
+                }
+                None => existing.ttl,
+            };
             // An omitted name keeps the stored owner, which needs no reparse.
-            let owner_name = match &patch.name {
+            let owner_name = match &request.name {
                 Some(name) => normalize_record_owner_name(name, &zone.name)?,
                 None => existing.name.clone(),
             };
@@ -107,7 +88,7 @@ impl RecordService {
                 owner_name,
                 record_type,
                 encoded_value,
-                ttl: patch.ttl.unwrap_or(existing.ttl),
+                ttl,
                 priority,
             })
         })
@@ -230,7 +211,7 @@ impl RecordService {
             let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();
 
-            let updated_record = Self::update_record_with_changes_tx(
+            let updated_record = Self::update_with_changes_tx(
                 &mut tx,
                 new_serial,
                 &existing_record,

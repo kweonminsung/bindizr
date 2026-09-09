@@ -4,7 +4,10 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
-use super::{DnssecService, notify_zone, status::build_status_tx, to_key_layout};
+use super::{
+    DnssecService, notify_zone, parent_ns_addrs::normalize_parent_ns_addrs,
+    snapshot::ProbedSnapshot, status::build_status_tx, to_key_layout,
+};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -24,14 +27,19 @@ use crate::{
 
 impl DnssecService {
     /// Enable DNSSEC for a zone under `policy` (the built-in `default` when
-    /// omitted): generate its key(s) and sign the whole zone.
+    /// omitted): generate its key(s) and sign the whole zone. `parent_ns_addrs`
+    /// given (even empty) replaces the zone's parent servers.
     pub async fn enable(
         caller: &Caller,
         zone_name: &str,
         policy: Option<&str>,
+        parent_ns_addrs: Option<&str>,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
         let policy_name = normalize_policy_name(policy.unwrap_or(DEFAULT_DNSSEC_POLICY_NAME))?;
+        let parent_ns_addrs = parent_ns_addrs
+            .map(|raw| normalize_parent_ns_addrs(Some(raw)))
+            .transpose()?;
 
         let mut tx = RepositoryService::begin_tx("failed to enable DNSSEC").await?;
         let result = async {
@@ -42,6 +50,21 @@ impl DnssecService {
             if !existing.is_empty() {
                 return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
             }
+            let zone = match parent_ns_addrs {
+                Some(parent_ns_addrs) => {
+                    RepositoryService::update_zone_parent_ns_addrs_tx(
+                        &mut tx,
+                        zone.id,
+                        parent_ns_addrs.as_deref(),
+                    )
+                    .await?;
+                    Zone {
+                        parent_ns_addrs,
+                        ..zone
+                    }
+                }
+                None => zone,
+            };
             // Shared: a concurrent delete of the policy must wait for the FK
             // reference this transaction is about to write.
             let policy = RepositoryService::get_dnssec_policy_by_name_tx(
@@ -93,28 +116,63 @@ impl DnssecService {
         Ok(response)
     }
 
-    /// Move a signed zone to another policy. The denial mode and key layout
-    /// must match (they are fixed while signed); a different algorithm
-    /// starts an algorithm rollover under the new policy.
-    pub async fn set_policy(
+    /// Change a zone's signing settings in one transaction; an omitted field
+    /// keeps its value. A policy move needs a signed zone; `parent_ns_addrs`
+    /// given (even empty) replaces the parent nameservers, signed or not.
+    pub async fn update_settings(
         caller: &Caller,
         zone_name: &str,
-        policy_name: &str,
+        policy: Option<&str>,
+        parent_ns_addrs: Option<&str>,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
-        let policy_name = normalize_policy_name(policy_name)?;
+        if policy.is_none() && parent_ns_addrs.is_none() {
+            return Err(ServiceError::invalid_input(
+                "nothing to update: give a policy, parent nameserver addresses, or both",
+            ));
+        }
+        let policy_name = policy.map(normalize_policy_name).transpose()?;
+        let parent_ns_addrs = parent_ns_addrs
+            .map(|raw| normalize_parent_ns_addrs(Some(raw)))
+            .transpose()?;
 
-        let mut tx = RepositoryService::begin_tx("failed to change the DNSSEC policy").await?;
+        let mut tx = RepositoryService::begin_tx("failed to update DNSSEC settings").await?;
         let result = async {
-            let (zone, current, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            let zone =
+                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            let zone = match parent_ns_addrs {
+                Some(parent_ns_addrs) => {
+                    RepositoryService::update_zone_parent_ns_addrs_tx(
+                        &mut tx,
+                        zone.id,
+                        parent_ns_addrs.as_deref(),
+                    )
+                    .await?;
+                    Zone {
+                        parent_ns_addrs,
+                        ..zone
+                    }
+                }
+                None => zone,
+            };
+            let keys =
+                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
+            let Some(policy_name) = &policy_name else {
+                let policy = Self::find_zone_policy_tx(&mut tx, &zone).await?;
+                return build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await;
+            };
+
+            if keys.is_empty() {
+                return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
+            }
+            let current = Self::get_zone_policy_tx(&mut tx, &zone).await?;
             let target = RepositoryService::get_dnssec_policy_by_name_tx(
                 &mut tx,
-                &policy_name,
+                policy_name,
                 LockLevel::Shared,
             )
             .await?
-            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
+            .ok_or_else(|| ServiceError::dnssec_policy_not_found(policy_name))?;
             if target.id == current.id {
                 return build_status_tx(&mut tx, &zone, Some(&current), &keys, zone.serial).await;
             }
@@ -161,23 +219,57 @@ impl DnssecService {
         }
         .await;
         let response =
-            RepositoryService::finish_tx(tx, result, "failed to change the DNSSEC policy").await?;
+            RepositoryService::finish_tx(tx, result, "failed to update DNSSEC settings").await?;
 
-        crate::log_info!("event=dnssec_set_policy zone={}", response.zone_name);
-        notify_zone(&response.zone_name).await;
+        crate::log_info!("event=dnssec_update_settings zone={}", response.zone_name);
+        // Only a policy move changes zone data; parent nameservers are not served.
+        if policy_name.is_some() {
+            notify_zone(&response.zone_name).await;
+        }
         Ok(response)
     }
 
-    /// Disable DNSSEC for a zone. The caller is responsible for the
-    /// going-insecure order: remove the parent DS and wait out its TTL first,
-    /// or validating resolvers read the zone as bogus.
-    pub async fn disable(caller: &Caller, zone_name: &str) -> Result<(), ServiceError> {
+    /// Disable DNSSEC for a zone. Refused while the parent still serves the
+    /// zone's DS or cannot be asked, since signatures dropped under a DS make
+    /// the zone bogus; `skip_ds_check` skips that check.
+    pub async fn disable(
+        caller: &Caller,
+        zone_name: &str,
+        skip_ds_check: bool,
+    ) -> Result<(), ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
+
+        let mut snapshot = None;
+        if !skip_ds_check {
+            // Unlocked pre-read to learn which parent to ask; the network wait
+            // must not hold the zone row, which the deletion re-reads locked.
+            let (zone, keys) = {
+                let mut tx = RepositoryService::begin_read_tx("failed to disable DNSSEC").await?;
+                let result = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::None)
+                    .await
+                    .map(|(zone, _, keys)| (zone, keys));
+                RepositoryService::finish_tx(tx, result, "failed to disable DNSSEC").await?
+            };
+            let delegation = Self::probe_delegation(&zone, &keys).await?;
+            if !delegation.ds_key_tags.is_empty() {
+                return Err(ServiceError::dnssec_ds_published(
+                    zone.name.as_str(),
+                    &delegation.ds_key_tags,
+                ));
+            }
+            // The parent the probe asked; the locked zone must still name it.
+            snapshot = Some(ProbedSnapshot::take(&zone, &keys, |zone, _| {
+                Ok(zone.parent_ns_addrs.clone())
+            })?);
+        }
 
         let mut tx = RepositoryService::begin_tx("failed to disable DNSSEC").await?;
         let result = async {
-            let (zone, _, _) =
+            let (zone, _, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            if let Some(snapshot) = &snapshot {
+                snapshot.require_same(&zone, &keys)?;
+            }
 
             let derived =
                 RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)
@@ -214,81 +306,12 @@ impl DnssecService {
         let zone_name =
             RepositoryService::finish_tx(tx, result, "failed to disable DNSSEC").await?;
 
+        if skip_ds_check {
+            crate::log_warn!("event=dnssec_disable_ds_check_skipped zone={}", zone_name);
+        }
         crate::log_info!("event=dnssec_disable zone={}", zone_name);
         notify_zone(&zone_name).await;
         Ok(())
-    }
-
-    /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
-    /// parent to drop the zone's DS: the first step of going insecure.
-    pub async fn withdraw(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
-
-        let mut tx = RepositoryService::begin_tx("failed to withdraw the parent DS").await?;
-        let result = async {
-            let (zone, policy, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_some()
-            {
-                return Err(ServiceError::invalid_input(
-                    "the DS withdrawal is already published",
-                ));
-            }
-            RepositoryService::create_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
-
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-                .await?
-                .unwrap_or(zone.serial);
-
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
-        }
-        .await;
-        let response =
-            RepositoryService::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
-
-        crate::log_info!("event=dnssec_withdraw zone={}", response.zone_name);
-        notify_zone(&response.zone_name).await;
-        Ok(response)
-    }
-
-    /// Take back a published DS withdrawal: the per-key CDS/CDNSKEY set
-    /// returns on the next signing pass.
-    pub async fn withdraw_cancel(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
-
-        let mut tx = RepositoryService::begin_tx("failed to cancel the DS withdrawal").await?;
-        let result = async {
-            let (zone, policy, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
-                .await?
-                .is_none()
-            {
-                return Err(ServiceError::invalid_input("no DS withdrawal is published"));
-            }
-            RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
-
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-                .await?
-                .unwrap_or(zone.serial);
-
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
-        }
-        .await;
-        let response =
-            RepositoryService::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
-
-        crate::log_info!("event=dnssec_withdraw_cancel zone={}", response.zone_name);
-        notify_zone(&response.zone_name).await;
-        Ok(response)
     }
 
     /// Re-sign a zone from scratch, discarding stored signatures (recovery

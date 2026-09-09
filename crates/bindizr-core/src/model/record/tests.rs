@@ -167,3 +167,131 @@ fn display_value_leaves_wrong_field_count_unchanged() {
         );
     }
 }
+
+#[test]
+fn validate_cname_value_accepts_underscore_labels() {
+    assert!(
+        RecordType::CNAME
+            .validate_value("_acme-challenge.validation.example.", None)
+            .is_ok()
+    );
+}
+
+#[test]
+fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
+    for record_type in [RecordType::CNAME, RecordType::NS, RecordType::PTR] {
+        for value in [
+            "",
+            ".",
+            "bad target.example.com",
+            " leading.example.com",
+            "trailing.example.com ",
+            "bad..example.com",
+            "-bad.example.com",
+            "bad-.example.com",
+        ] {
+            assert!(
+                record_type.validate_value(value, None).is_err(),
+                "{record_type} value {value:?} should be rejected"
+            );
+        }
+    }
+}
+
+#[test]
+fn validate_mx_value_accepts_a_target_with_a_field_priority() {
+    assert!(
+        RecordType::MX
+            .validate_value("mail.example.com", Some(10))
+            .is_ok()
+    );
+    // An omitted priority defaults to 10.
+    assert!(
+        RecordType::MX
+            .validate_value("mail.example.com", None)
+            .is_ok()
+    );
+    assert!(RecordType::MX.validate_value(".", Some(0)).is_ok());
+}
+
+#[test]
+fn validate_mx_value_rejects_invalid_forms() {
+    for (value, priority) in [
+        ("", None),
+        // Priority belongs in the priority field, never inline in the value.
+        ("10 mail.example.com", None),
+        ("10 mail.example.com", Some(10)),
+        ("mail.example.com extra", None),
+        (".", None),
+        (".", Some(10)),
+        ("bad target.example.com", None),
+        ("bad..example.com", None),
+        ("mail.example.com", Some(-1)),
+        ("mail.example.com", Some(65_536)),
+    ] {
+        assert!(
+            RecordType::MX.validate_value(value, priority).is_err(),
+            "MX value {value:?} with priority {priority:?} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn validate_srv_value_accepts_weight_port_target_with_a_field_priority() {
+    assert!(
+        RecordType::SRV
+            .validate_value("5 5060 sip.example.com", Some(10))
+            .is_ok()
+    );
+    // An omitted priority defaults to 10.
+    assert!(
+        RecordType::SRV
+            .validate_value("5 5060 sip.example.com", None)
+            .is_ok()
+    );
+    assert!(RecordType::SRV.validate_value("0 443 .", Some(0)).is_ok());
+}
+
+#[test]
+fn validate_srv_value_rejects_invalid_forms() {
+    for (value, priority) in [
+        ("", None),
+        ("5060 sip.example.com", None),
+        // Priority belongs in the priority field, never inline in the value.
+        ("10 5 5060 sip.example.com", None),
+        ("10 5 5060 sip.example.com", Some(10)),
+        ("5 5060 sip.example.com extra", None),
+        ("not-a-weight 5060 sip.example.com", None),
+        ("5 not-a-port sip.example.com", None),
+        ("65536 5060 sip.example.com", None),
+        ("5 65536 sip.example.com", None),
+        ("5 5060 bad target.example.com", None),
+        ("5 5060 bad..example.com", None),
+        ("5 5060 sip.example.com", Some(-1)),
+        ("5 5060 sip.example.com", Some(65_536)),
+    ] {
+        assert!(
+            RecordType::SRV.validate_value(value, priority).is_err(),
+            "SRV value {value:?} with priority {priority:?} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn validate_value_rejects_priority_on_types_without_one() {
+    let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();
+    for (record_type, value) in [
+        (RecordType::A, "192.0.2.1"),
+        (RecordType::AAAA, "2001:db8::1"),
+        (RecordType::CNAME, "target.example.com"),
+        (RecordType::TXT, encoded_txt.as_str()),
+        (RecordType::NS, "ns1.example.com"),
+        (RecordType::PTR, "host.example.com"),
+    ] {
+        assert!(
+            record_type.validate_value(value, Some(10)).is_err(),
+            "{record_type} should reject a priority"
+        );
+        assert!(record_type.validate_value(value, None).is_ok());
+    }
+}

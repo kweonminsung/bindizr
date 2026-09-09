@@ -10,7 +10,7 @@ use super::TsigKeyService;
 use crate::{
     authorization::Caller,
     error::ServiceError,
-    grant_pattern::{normalize_pattern, normalize_types, pattern_matches_name, types_match},
+    grant_pattern::{matches_name, matches_types, normalize_pattern, normalize_types},
     model::{
         record::RecordType,
         tsig_grant::{TsigGrant, TsigGrantWithNames},
@@ -147,8 +147,8 @@ pub(crate) fn authorize_update(
     record_type: Option<&RecordType>,
 ) -> bool {
     grants.iter().any(|grant| {
-        pattern_matches_name(&grant.record_name_pattern, relative_name)
-            && types_match(&grant.record_types, record_type)
+        matches_name(&grant.record_name_pattern, relative_name)
+            && matches_types(&grant.record_types, record_type)
     })
 }
 

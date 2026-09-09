@@ -47,6 +47,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
         expire: 86400,
         minimum_ttl: 60,
         dnssec_policy_id: None,
+        parent_ns_addrs: None,
         created_at: Utc::now(),
     };
 

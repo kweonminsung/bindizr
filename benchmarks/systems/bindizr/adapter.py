@@ -191,10 +191,11 @@ class BindizrAdapter(DnsAdapter):
         """Bulk-insert via Bindizr's `/records/bulk` API in single-transaction
         chunks (each chunk bumps the serial once and sends one NOTIFY)."""
         self.bulk_errors = 0
-        url = self.base + f"/zones/{zone.rstrip('.')}/records/bulk"
+        url = self.base + "/records/bulk"
         for start in range(0, len(records), self.bulk_chunk):
             chunk = records[start:start + self.bulk_chunk]
-            body = {"records": [self._bulk_item(r) for r in chunk]}
+            body = {"zone_name": zone.rstrip("."),
+                    "records": [self._bulk_item(r) for r in chunk]}
             self.bulk_errors += await self._post_with_retry(url, body, len(chunk))
 
     def _zone_line(self, rec: dict) -> str:
@@ -207,10 +208,10 @@ class BindizrAdapter(DnsAdapter):
         return f'{rec["name"]} {ttl} IN {rec["type"]} {rdata}'
 
     async def import_zone_file(self, zone: str, records: list[dict]) -> None:
-        """Import records as BIND zone-file text via `/zones/{name}/imports`
+        """Import records as BIND zone-file text via `/zones/{name}/import`
         (append mode), chunked so large sets don't build one giant request."""
         self.import_errors = 0
-        url = self.base + f"/zones/{zone.rstrip('.')}/imports"
+        url = self.base + f"/zones/{zone.rstrip('.')}/import"
         for start in range(0, len(records), self.import_chunk):
             chunk = records[start:start + self.import_chunk]
             content = "\n".join(self._zone_line(r) for r in chunk) + "\n"

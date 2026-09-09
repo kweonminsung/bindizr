@@ -249,8 +249,8 @@ pub trait ZoneRepository: Send + Sync {
     /// Limit-1 probe of the zones table; health checks must stay cheap on
     /// large tables.
     async fn ping(&self) -> Result<(), DatabaseError>;
-    /// Full-row update, except the DNSSEC-owned `dnssec_policy_id`: ordinary
-    /// zone updates cannot clobber it.
+    /// Full-row update, except the DNSSEC-owned `dnssec_policy_id` and
+    /// `parent_ns_addrs`: ordinary zone updates cannot clobber them.
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
     /// Set only `dnssec_policy_id`, leaving the zone's other columns
@@ -260,6 +260,14 @@ pub trait ZoneRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         dnssec_policy_id: Option<i32>,
+    ) -> Result<(), DatabaseError>;
+    /// Set only `parent_ns_addrs`, leaving the zone's other columns
+    /// untouched; `None` returns the zone to parent discovery.
+    async fn update_parent_ns_addrs_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        parent_ns_addrs: Option<&str>,
     ) -> Result<(), DatabaseError>;
     /// Zones signed under the policy: the in-use check before a delete.
     async fn count_by_dnssec_policy_id(&self, dnssec_policy_id: i32) -> Result<u64, DatabaseError>;
@@ -371,7 +379,6 @@ pub trait RecordRepository: Send + Sync {
         id: i32,
         lock_level: LockLevel,
     ) -> Result<Option<Record>, DatabaseError>;
-    async fn list(&self, zone_id: i32) -> Result<Vec<Record>, DatabaseError>;
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

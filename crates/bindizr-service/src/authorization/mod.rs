@@ -18,7 +18,7 @@ use chrono::{Duration, Utc};
 use crate::{
     RepositoryTx,
     error::ServiceError,
-    grant_pattern::{pattern_matches_name, types_match},
+    grant_pattern::{matches_name, matches_types},
     log_error,
     model::{api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone},
     repository::RepositoryService,
@@ -50,7 +50,7 @@ impl Caller {
     /// scoped token's grants so the rest of the request decides against one
     /// read. The token row comes back too, since `Global` keeps no identity.
     pub async fn authenticate(bearer_token: &str) -> Result<(Caller, ApiToken), ServiceError> {
-        let token = validate_token(bearer_token).await?;
+        let token = authenticate_token(bearer_token).await?;
         if token.is_global {
             return Ok((Caller::Global, token));
         }
@@ -138,8 +138,8 @@ fn authorize_with_grants(
 ) -> Result<(), ServiceError> {
     for write in writes {
         let granted = grants.iter().any(|grant| {
-            pattern_matches_name(&grant.record_name_pattern, &write.relative_name)
-                && types_match(&grant.record_types, write.record_type)
+            matches_name(&grant.record_name_pattern, &write.relative_name)
+                && matches_types(&grant.record_types, write.record_type)
         });
         if !granted {
             return Err(ServiceError::forbidden(format!(
@@ -161,7 +161,7 @@ fn authorize_with_grants(
 const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
 
 /// Validate an API token, rejecting expired tokens and stamping `last_used_at`.
-async fn validate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
+async fn authenticate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
     let token_hash = hash_token(token_str);
     let stored_token = match RepositoryService::get_api_token_by_token(&token_hash).await {
         Ok(Some(token)) => token,

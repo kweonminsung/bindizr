@@ -8,8 +8,8 @@ use crate::dns::{
     name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{
         ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
-        DsRecordValue, MxRecordValue, NsRecordValue, PtrRecordValue, SrvRecordValue,
-        SshfpRecordValue, TlsaRecordValue, TxtContent, TxtRecordValue,
+        DsRrValue, MxRecordValue, NsRecordValue, PtrRecordValue, SrvRecordValue, SshfpRecordValue,
+        TlsaRecordValue, TxtContent, TxtRecordValue,
     },
 };
 
@@ -222,7 +222,7 @@ impl RecordType {
             RecordType::AAAA => AaaaRecordValue::parse(value).map(|_| ()),
             RecordType::CAA => CaaRecordValue::parse(value)?.validate(),
             RecordType::CNAME => CnameRecordValue::parse(value).map(|_| ()),
-            RecordType::DS => DsRecordValue::parse(value)?.validate(),
+            RecordType::DS => DsRrValue::parse(value)?.validate(),
             RecordType::MX => MxRecordValue::parse(value, priority)?.validate(),
             // Stored TXT is always the presentation form.
             RecordType::TXT => TxtRecordValue::from_presentation(value)
@@ -267,7 +267,7 @@ impl RecordType {
             RecordType::CNAME => CnameRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
-            RecordType::DS => DsRecordValue::parse(value)
+            RecordType::DS => DsRrValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
             RecordType::MX => MxRecordValue::parse(value, fallback_priority)
@@ -308,7 +308,7 @@ impl RecordType {
             }
             RecordType::CNAME => CnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::DS => {
-                let parsed = DsRecordValue::parse(trimmed)?;
+                let parsed = DsRrValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }

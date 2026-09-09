@@ -2,12 +2,15 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     record::RecordService,
-    types::{CreateRecordRequest, GetRecordResponse, GetRecordsFilter},
+    types::{
+        CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse, GetRecordsFilter,
+        RecordResponse,
+    },
 };
 
 use crate::socket::{
     server::{parse_params, to_response_data},
-    types::{BulkCreateRecordsParams, DaemonResponse, RecordIdParams, UpdateRecordParams},
+    types::{DaemonResponse, RecordIdParams, UpdateRecordParams},
 };
 
 /// Handle the `GetRecord` command by returning a record by ID.
@@ -17,7 +20,9 @@ pub(crate) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
     let record = RecordService::get_with_zone(&Caller::Global, params.id).await?;
     Ok(DaemonResponse {
         message: "Record retrieved successfully".to_string(),
-        data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+        data: to_response_data(RecordResponse {
+            record: GetRecordResponse::from_record_with_zone(&record),
+        })?,
     })
 }
 
@@ -46,20 +51,24 @@ pub(crate) async fn create_record(
     let record = RecordService::create(&Caller::Global, &request).await?;
     Ok(DaemonResponse {
         message: "Record created successfully".to_string(),
-        data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+        data: to_response_data(RecordResponse {
+            record: GetRecordResponse::from_record_with_zone(&record),
+        })?,
     })
 }
 
-/// Handle the `UpdateRecord` command by applying a partial-update patch.
+/// Handle the `UpdateRecord` command by applying a partial update.
 pub(crate) async fn update_record(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordParams = parse_params(data)?;
 
-    let record = RecordService::patch(&Caller::Global, params.id, &params.patch).await?;
+    let record = RecordService::update(&Caller::Global, params.id, &params.request).await?;
     Ok(DaemonResponse {
         message: "Record updated successfully".to_string(),
-        data: to_response_data(GetRecordResponse::from_record_with_zone(&record))?,
+        data: to_response_data(RecordResponse {
+            record: GetRecordResponse::from_record_with_zone(&record),
+        })?,
     })
 }
 
@@ -68,11 +77,11 @@ pub(crate) async fn update_record(
 pub(crate) async fn bulk_create_records(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let BulkCreateRecordsParams { zone_name, request } = parse_params(data)?;
+    let request: CreateBulkRecordsRequest = parse_params(data)?;
 
     let response = RecordService::create_bulk(
         &Caller::Global,
-        &zone_name,
+        &request.zone_name,
         &request.records,
         request.dry_run,
     )

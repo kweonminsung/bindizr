@@ -432,7 +432,7 @@ fn build_signing_input(
         if signer.key.wants_parent_ds() && !params.withdraw_parent_ds {
             let cds = UnknownRecordData::from_octets(
                 Rtype::CDS,
-                ds_rdata_for(signer.key, apex)?.into_bytes(),
+                ds_rdata_for(signer.key, apex, signer.key.algorithm.ds_digest_type())?.into_bytes(),
             )
             .map_err(|e| format!("invalid CDS rdata: {}", e))?;
             input.push(WireRecord::new(

@@ -28,6 +28,10 @@ pub struct Zone {
     /// The DNSSEC policy a signed zone signs under; owned by DNSSEC
     /// enable/disable, untouched by ordinary zone updates.
     pub dnssec_policy_id: Option<i32>,
+    /// The parent zone's nameservers asked for the zone's DS, as
+    /// comma-separated `host[:port]`; `None` discovers them. DNSSEC-owned
+    /// like `dnssec_policy_id`.
+    pub parent_ns_addrs: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

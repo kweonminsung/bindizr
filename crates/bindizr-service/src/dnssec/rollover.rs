@@ -5,7 +5,7 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::{Duration, Utc};
 
-use super::{DnssecService, notify_zone, status::build_status_tx};
+use super::{DnssecService, notify_zone, snapshot::ProbedSnapshot, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -122,57 +122,60 @@ impl DnssecService {
         Ok(keys)
     }
 
-    /// The operator's confirmation that the new DS is at the parent and its
-    /// TTL has passed: promotes the pre-published key(s) and retires the keys
-    /// they replace. ZSK rollovers are promoted by the scheduler instead.
+    /// Promote the pre-published SEP key(s) and retire the keys they replace
+    /// once the parent serves their DS and the hold-down has passed;
+    /// `skip_ds_check` takes the DS on the operator's word, `skip_holddown`
+    /// waives the wait.
     pub async fn rollover_ds_seen(
         caller: &Caller,
         zone_name: &str,
+        skip_ds_check: bool,
+        skip_holddown: bool,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
+
+        let mut snapshot = None;
+        if !skip_ds_check {
+            // Unlocked pre-read to learn which keys await the parent; the
+            // network wait must not hold the zone row.
+            let (zone, keys) = {
+                let mut tx =
+                    RepositoryService::begin_read_tx("failed to advance key rollover").await?;
+                let result = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::None)
+                    .await
+                    .map(|(zone, _, keys)| (zone, keys));
+                RepositoryService::finish_tx(tx, result, "failed to advance key rollover").await?
+            };
+            let awaiting = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
+            let delegation = Self::probe_delegation(&zone, &keys).await?;
+            let missing: Vec<u16> = delegation
+                .keys
+                .iter()
+                .filter(|key| awaiting.contains(&key.id) && !key.ds_published)
+                .map(|key| key.key_tag)
+                .collect();
+            if !missing.is_empty() {
+                return Err(ServiceError::dnssec_ds_not_published(
+                    zone.name.as_str(),
+                    &missing,
+                ));
+            }
+            // Promote exactly the keys the probe verified, at the parent it asked.
+            snapshot = Some(ProbedSnapshot::take(&zone, &keys, move |zone, keys| {
+                let mut promotable = promotable_sep_key_ids(zone, keys, skip_holddown)?;
+                promotable.sort_unstable();
+                Ok((zone.parent_ns_addrs.clone(), promotable))
+            })?);
+        }
 
         let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
         let result = async {
             let (zone, policy, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-
-            if !keys
-                .iter()
-                .any(|key| key.state == DnssecKeyState::Published)
-            {
-                return Err(ServiceError::dnssec_no_rollover_in_progress(
-                    zone.name.as_str(),
-                ));
+            if let Some(snapshot) = &snapshot {
+                snapshot.require_same(&zone, &keys)?;
             }
-            // ZSKs have no parent DS to confirm; the scheduler promotes them
-            // after the publish hold-down.
-            let ds_published: Vec<i32> = keys
-                .iter()
-                .filter(|key| key.awaits_parent_ds())
-                .map(|key| key.id)
-                .collect();
-            if ds_published.is_empty() {
-                return Err(ServiceError::invalid_input(
-                    "this rollover replaces the ZSK, which involves no parent DS; it is \
-                     promoted automatically after the publish hold-down",
-                ));
-            }
-
-            // The deadline stamped at publication is authoritative: later
-            // hold-down or TTL changes cannot shorten it (status reports it).
-            let promotable_at = keys
-                .iter()
-                .filter(|key| ds_published.contains(&key.id))
-                .map(|key| key.eligible_at)
-                .max()
-                .expect("ds_published names at least one key");
-            if promotable_at > Utc::now() {
-                return Err(ServiceError::invalid_input(format!(
-                    "the replacement key must stay published so resolvers holding the \
-                     previous DNSKEY RRset can learn it; retry after {}",
-                    promotable_at.format("%Y-%m-%dT%H:%M:%SZ"),
-                )));
-            }
+            let ds_published = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
             let keys =
                 Self::promote_published_keys_tx(&mut tx, &zone, &policy, keys, &ds_published)
                     .await?;
@@ -187,6 +190,18 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to advance key rollover").await?;
 
+        if skip_ds_check {
+            crate::log_warn!(
+                "event=dnssec_rollover_ds_seen_ds_check_skipped zone={}",
+                response.zone_name
+            );
+        }
+        if skip_holddown {
+            crate::log_warn!(
+                "event=dnssec_rollover_ds_seen_holddown_skipped zone={}",
+                response.zone_name
+            );
+        }
         crate::log_info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
@@ -285,4 +300,53 @@ impl DnssecService {
         );
         Ok(updated)
     }
+}
+
+/// The pre-published SEP keys `ds-seen` may promote; an error when no
+/// rollover is in progress, it replaces only the ZSK, or (unless
+/// `skip_holddown`) a hold-down runs.
+fn promotable_sep_key_ids(
+    zone: &Zone,
+    keys: &[DnssecKey],
+    skip_holddown: bool,
+) -> Result<Vec<i32>, ServiceError> {
+    if !keys
+        .iter()
+        .any(|key| key.state == DnssecKeyState::Published)
+    {
+        return Err(ServiceError::dnssec_no_rollover_in_progress(
+            zone.name.as_str(),
+        ));
+    }
+    // ZSKs have no parent DS to confirm; the scheduler promotes them after
+    // the publish hold-down.
+    let ds_published: Vec<i32> = keys
+        .iter()
+        .filter(|key| key.awaits_parent_ds())
+        .map(|key| key.id)
+        .collect();
+    if ds_published.is_empty() {
+        return Err(ServiceError::invalid_input(
+            "this rollover replaces the ZSK, which involves no parent DS; it is promoted \
+             automatically after the publish hold-down",
+        ));
+    }
+
+    // The deadline stamped at publication is authoritative: later hold-down
+    // or TTL changes cannot shorten it (status reports it).
+    let promotable_at = keys
+        .iter()
+        .filter(|key| ds_published.contains(&key.id))
+        .map(|key| key.eligible_at)
+        .max()
+        .expect("ds_published names at least one key");
+    if !skip_holddown && promotable_at > Utc::now() {
+        return Err(ServiceError::invalid_input(format!(
+            "the replacement key must stay published so resolvers holding the previous \
+             DNSKEY RRset can learn it; retry after {}, or skip the hold-down and accept \
+             validation failures until those caches expire",
+            promotable_at.format("%Y-%m-%dT%H:%M:%SZ"),
+        )));
+    }
+    Ok(ds_published)
 }

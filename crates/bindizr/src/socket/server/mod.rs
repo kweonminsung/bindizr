@@ -53,6 +53,7 @@ async fn handle_client(stream: UnixStream) {
         let raw_response = match parsed {
             Ok(cmd) => match cmd.command {
                 DaemonCommandKind::Status => status::status(),
+                DaemonCommandKind::Config => status::config(),
                 DaemonCommandKind::TokenCreate => token::create_token(&cmd.data).await,
                 DaemonCommandKind::TokenList => token::list_tokens().await,
                 DaemonCommandKind::TokenDelete => token::delete_token(&cmd.data).await,
@@ -102,11 +103,9 @@ async fn handle_client(stream: UnixStream) {
                     record::bulk_create_records(&cmd.data).await
                 }
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
+                DaemonCommandKind::NotifyAllZones => notify::notify_all_zones(&cmd.data).await,
                 DaemonCommandKind::NotifyZone => notify::notify_zone(&cmd.data).await,
-                DaemonCommandKind::ImportZoneFile => zone::import_zone(&cmd.data).await,
-                DaemonCommandKind::ImportZoneFromServer => {
-                    zone::import_zone_from_server(&cmd.data).await
-                }
+                DaemonCommandKind::ImportZone => zone::import_zone(&cmd.data).await,
                 DaemonCommandKind::ExportZoneFile => zone::export_zone(&cmd.data).await,
                 DaemonCommandKind::ListZoneVersions => zone::list_zone_versions(&cmd.data).await,
                 DaemonCommandKind::GetZoneVersion => zone::get_zone_version(&cmd.data).await,
@@ -124,9 +123,10 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ZoneDnssecWithdrawCancel => {
                     dnssec::cancel_dnssec_withdrawal(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneDnssecSetPolicy => {
-                    dnssec::set_dnssec_policy(&cmd.data).await
+                DaemonCommandKind::ZoneDnssecUpdateSettings => {
+                    dnssec::update_dnssec_settings(&cmd.data).await
                 }
+                DaemonCommandKind::ZoneDnssecCheckDs => dnssec::check_dnssec_ds(&cmd.data).await,
                 DaemonCommandKind::ZoneDnssecKeysExport => {
                     dnssec::export_dnssec_keys(&cmd.data).await
                 }
@@ -149,9 +149,9 @@ async fn handle_client(stream: UnixStream) {
 
         let response = match raw_response {
             Ok(res) => serde_json::to_string(&res).unwrap_or_else(|_| {
-                json_response_error(&ServiceError::internal("Failed to serialize response"))
+                error_response_json(&ServiceError::internal("Failed to serialize response"))
             }),
-            Err(e) => json_response_error(&e),
+            Err(e) => error_response_json(&e),
         };
 
         let mut stream = reader.into_inner().into_inner();
@@ -281,7 +281,7 @@ pub(crate) fn to_response_data<T: serde::Serialize>(
         .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))
 }
 
-fn json_response_error(err: &ServiceError) -> String {
+fn error_response_json(err: &ServiceError) -> String {
     serde_json::to_string(&ErrorResponse::new(err)).unwrap_or_else(|_| {
         r#"{"error":"Failed to serialize error response","code":"INTERNAL"}"#.to_string()
     })

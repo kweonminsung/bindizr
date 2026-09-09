@@ -163,7 +163,7 @@ async fn reconstruct_records_at_serial(
 
 /// The records at `serial`: the live records when it is the current serial,
 /// otherwise reconstructed from the journal.
-async fn records_at_serial(
+async fn list_records_at_serial(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
     serial: i32,
@@ -211,7 +211,8 @@ fn sort_records(records: &mut [ReconstructedRecord]) {
 
 impl ZoneService {
     /// List a zone's versions (serial history), newest serial first. Unless
-    /// `all`, signer-only serials (DNSSEC re-signs, rollovers) are skipped —
+    /// `include_signer_serials`, signer-only serials (DNSSEC re-signs,
+    /// rollovers) are skipped —
     /// they hold nothing rollback could restore. Visibility is checked on the
     /// row whose id the queries use, so a same-name recreation cannot swap
     /// the zone in.
@@ -220,15 +221,16 @@ impl ZoneService {
         zone_name: &str,
         limit: Option<u32>,
         offset: Option<u64>,
-        all: bool,
+        include_signer_serials: bool,
     ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
         let zone = Self::get_by_name(caller, zone_name).await?;
 
-        let total = RepositoryService::count_zone_versions(zone.id, !all).await?;
+        let total =
+            RepositoryService::count_zone_versions(zone.id, !include_signer_serials).await?;
         let effective_limit = limit.unwrap_or(50);
         let versions = RepositoryService::list_zone_versions(
             zone.id,
-            !all,
+            !include_signer_serials,
             effective_limit,
             offset.unwrap_or(0),
         )
@@ -269,7 +271,7 @@ impl ZoneService {
             .await?
             .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
 
-            let records = records_at_serial(&mut tx, zone.id, serial, zone.serial).await?;
+            let records = list_records_at_serial(&mut tx, zone.id, serial, zone.serial).await?;
 
             Ok::<_, ServiceError>((version, records))
         }
@@ -309,8 +311,9 @@ impl ZoneService {
             validate_serial_diffable(&mut tx, &zone, to_serial).await?;
 
             let from_records =
-                records_at_serial(&mut tx, zone.id, from_serial, zone.serial).await?;
-            let to_records = records_at_serial(&mut tx, zone.id, to_serial, zone.serial).await?;
+                list_records_at_serial(&mut tx, zone.id, from_serial, zone.serial).await?;
+            let to_records =
+                list_records_at_serial(&mut tx, zone.id, to_serial, zone.serial).await?;
 
             Ok::<_, ServiceError>(VersionDiffResponse {
                 from_serial,
@@ -377,6 +380,7 @@ impl ZoneService {
                 retry: version.retry,
                 expire: version.expire,
                 dnssec_policy_id: zone.dnssec_policy_id,
+                parent_ns_addrs: zone.parent_ns_addrs.clone(),
                 minimum_ttl: version.minimum_ttl,
                 created_at: zone.created_at,
             };
@@ -529,10 +533,8 @@ impl ZoneService {
                 RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
             }
 
-            RecordService::delete_records_with_changes_tx(&mut tx, zone.id, new_serial, &dels)
-                .await?;
-            RecordService::insert_records_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert)
-                .await?;
+            RecordService::delete_with_changes_tx(&mut tx, zone.id, new_serial, &dels).await?;
+            RecordService::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
             // The restored user plane gets fresh signatures; old RRSIGs are
             // never restored (derived journal rows are skipped on reconstruction).
             DnssecService::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;

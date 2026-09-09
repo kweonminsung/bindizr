@@ -15,14 +15,15 @@ package install, or a shell inside the container for Compose and Helm.
 | Commands | What they manage | Documented in |
 |---|---|---|
 | `start`, `stop`, `restart`, `status`, `doctor`, `config` | The daemon and its configuration | this page |
-| `zone`, `record` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | this page |
+| `zone`, `record`, `notify` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | this page |
 | `token` | API tokens and the zones each is granted over HTTP | [API Tokens](tokens.md) |
 | `tsig-key` | TSIG keys and the zones each is granted for nsupdate | [TSIG Keys](tsig-keys.md), [Dynamic Updates](nsupdate.md) |
 | `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec.md) |
 
 Every `create`, `list`, `get`, and `update` command prints a table and takes
-`-o json` or `-o yaml`; `delete` and the one-shot actions print a message.
-`zone export`, `dnssec ds`, and `dnssec keys export` print paste-ready text.
+`-o json` or `-o yaml`, whose payload is the same body the HTTP API returns;
+`delete` and the one-shot actions print a message.
+`zone export` and `dnssec keys export` print paste-ready text.
 
 ## Service
 
@@ -54,7 +55,8 @@ $ bindizr config get dns.secondary_addrs
 ## Zones and records
 
 ```bash
-# Create a zone (the SOA serial starts at 1 unless --serial is given)
+# Create a zone (the SOA serial starts at 1 unless --serial is given; --refresh,
+# --retry, --expire, and --minimum-ttl set the other SOA timers)
 $ bindizr zone create --name example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
 
 # List, inspect, and delete zones
@@ -67,6 +69,7 @@ $ bindizr zone update <ZONE_NAME> --refresh 300 --retry 60
 
 # Create, list, inspect, and delete records (TTL defaults to the zone's; one TTL per name and type)
 $ bindizr record create --zone example.com --name www --type A --value 192.0.2.1 --ttl 300
+$ bindizr record create --zone example.com --name @ --type TXT --value v=spf1 --value ~all  # repeat --value for TXT segments
 $ bindizr record list --zone example.com
 $ bindizr record get <RECORD_ID>
 $ bindizr record delete <RECORD_ID>
@@ -77,19 +80,24 @@ $ bindizr record update <RECORD_ID> --value 127.0.0.1
 # Export a zone as BIND master-file text (--signed appends the derived DNSSEC records)
 $ bindizr zone export example.com > db.example.com
 
-# Send NOTIFY to secondary DNS servers for a zone
+# Send NOTIFY to secondary DNS servers for a zone, or for every zone
 $ bindizr zone notify <ZONE_NAME>
+$ bindizr notify
 
 # Check how far each secondary has caught up with a zone
 $ bindizr zone status <ZONE_NAME>
+
+# List the API token and TSIG key grants that apply to a zone
+$ bindizr zone token-grants <ZONE_NAME>
+$ bindizr zone tsig-grants <ZONE_NAME>
 ```
 
-Bulk changes can be previewed before anything is written. `--preview` renders
-the change as a `+`/`-`/`~` diff and applies nothing:
+Bulk changes can be previewed before anything is written. `--dry-run` applies
+nothing and renders the change as a `+`/`-`/`~` diff:
 
 ```bash
-$ bindizr record bulk-create records.json --zone <ZONE_NAME> --preview
-$ bindizr zone import <ZONE_NAME> zone.txt --preview
+$ bindizr record bulk-create records.json --zone <ZONE_NAME> --dry-run
+$ bindizr zone import <ZONE_NAME> zone.txt --dry-run
 ```
 
 A zone served elsewhere imports without exporting a file first —
@@ -97,8 +105,11 @@ A zone served elsewhere imports without exporting a file first —
 transfer):
 
 ```bash
-$ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --preview
+$ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --dry-run
 ```
+
+Over HTTP, `POST /zones/{name}/import` takes either `content` (zone file
+text) or `from_server` the same way.
 
 ## Zone history
 

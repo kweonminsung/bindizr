@@ -59,15 +59,6 @@ impl DnssecService {
     ) -> Result<u64, ServiceError> {
         RepositoryService::count_rrsig_dnssec_records_expiring_within_refresh(now).await
     }
-
-    pub(crate) async fn earliest_expiry_tx(
-        tx: &mut RepositoryTx<'_>,
-        zone_id: i32,
-    ) -> Result<Option<DateTime<Utc>>, ServiceError> {
-        let derived =
-            RepositoryService::list_dnssec_records_tx(tx, zone_id, LockLevel::None).await?;
-        Ok(derived.iter().filter_map(|row| row.expires_at).min())
-    }
 }
 
 /// Assemble the zone's status on the caller's transaction: the earliest
@@ -79,7 +70,8 @@ pub(crate) async fn build_status_tx(
     keys: &[DnssecKey],
     serial: i32,
 ) -> Result<GetDnssecStatusResponse, ServiceError> {
-    let earliest_signature_expires_at = DnssecService::earliest_expiry_tx(tx, zone.id).await?;
+    let derived = RepositoryService::list_dnssec_records_tx(tx, zone.id, LockLevel::None).await?;
+    let earliest_signature_expires_at = derived.iter().filter_map(|row| row.expires_at).min();
     let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(tx, zone.id)
         .await?
         .is_some();
@@ -119,6 +111,8 @@ pub(crate) async fn build_status_tx(
         earliest_signature_expires_at,
         serial,
         withdrawing,
+        parent_ns_addrs: zone.parent_ns_addrs.clone(),
+        delegation: None,
     })
 }
 
@@ -126,7 +120,8 @@ pub(crate) async fn build_status_tx(
 pub(crate) fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
     let apex = to_wire_name(zone.name.to_wire())
         .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
-    let rdata = ds_rdata_for(key, &apex).map_err(ServiceError::dnssec_signing_failed)?;
+    let rdata = ds_rdata_for(key, &apex, key.algorithm.ds_digest_type())
+        .map_err(ServiceError::dnssec_signing_failed)?;
     let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
 
     Ok(DnssecDsInfo {

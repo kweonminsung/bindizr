@@ -26,7 +26,10 @@ pub fn has_whitespace_or_control(value: &str) -> bool {
 
 /// Classify one label's problem, if any: non-empty, at most 63 bytes, LDH
 /// charset (plus `_` when `allow_underscore`), no leading/trailing hyphen.
-fn classify_domain_label(label: &str, allow_underscore: bool) -> Result<(), ParseNameError> {
+pub(crate) fn classify_domain_label(
+    label: &str,
+    allow_underscore: bool,
+) -> Result<(), ParseNameError> {
     if label.is_empty() {
         return Err(ParseNameError::EmptyLabel);
     }

@@ -1,6 +1,7 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
-    CreateDnssecPolicyRequest, GetDnssecPolicyResponse, UpdateDnssecPolicyRequest,
+    CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse,
+    UpdateDnssecPolicyRequest,
 };
 use clap::Subcommand;
 
@@ -152,13 +153,13 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             log_debug!("DNSSEC policy list result: {:?}", res);
 
-            print_response(
-                &res.data,
-                output,
-                |policies: &Vec<GetDnssecPolicyResponse>| {
-                    policies.iter().map(DnssecPolicyRow::from).collect()
-                },
-            )?;
+            print_response(&res.data, output, |policies: &DnssecPolicyListResponse| {
+                policies
+                    .dnssec_policies
+                    .iter()
+                    .map(DnssecPolicyRow::from)
+                    .collect()
+            })?;
         }
         DnssecPolicyCommand::Get { name, output } => {
             let res = client
@@ -219,7 +220,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 }
 
 fn print_policy(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
-    print_response(data, output, |policy: &GetDnssecPolicyResponse| {
-        vec![DnssecPolicyRow::from(policy)]
+    print_response(data, output, |response: &DnssecPolicyResponse| {
+        vec![DnssecPolicyRow::from(&response.dnssec_policy)]
     })
 }

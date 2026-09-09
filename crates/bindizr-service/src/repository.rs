@@ -204,13 +204,6 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to update catalog state: {}", e)))
     }
 
-    pub(crate) async fn list_records(zone_id: i32) -> Result<Vec<Record>, ServiceError> {
-        get_record_repository()
-            .list(zone_id)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
-    }
-
     pub(crate) async fn list_records_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -609,6 +602,22 @@ impl RepositoryService {
             .await
             .map_err(|e| {
                 ServiceError::internal(format!("failed to update zone DNSSEC policy: {}", e))
+            })
+    }
+
+    pub(crate) async fn update_zone_parent_ns_addrs_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
+        parent_ns_addrs: Option<&str>,
+    ) -> Result<(), ServiceError> {
+        get_zone_repository()
+            .update_parent_ns_addrs_tx(tx, zone_id, parent_ns_addrs)
+            .await
+            .map_err(|e| {
+                ServiceError::internal(format!(
+                    "failed to update zone parent nameserver addresses: {}",
+                    e
+                ))
             })
     }
 

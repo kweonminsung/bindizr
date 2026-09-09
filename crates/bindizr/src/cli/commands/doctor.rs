@@ -11,7 +11,7 @@ use crate::{
     net::loopback_if_unspecified,
     socket::{
         client::DaemonSocketClient,
-        types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse},
+        types::{DaemonCommandKind, DaemonDoctorResponse},
     },
 };
 
@@ -51,14 +51,14 @@ pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), Cl
     }
 
     let client = DaemonSocketClient::new();
-    let status = check_daemon(&client, &mut report).await;
-
-    match &status {
-        Some(status) => {
-            check_api(&status.config, &mut report).await;
-            check_daemon_side(&client, &mut report).await;
+    if check_daemon(&client, &mut report).await {
+        match client.config().await {
+            Ok(config) => check_api(&config, &mut report).await,
+            Err(e) => report.fail(format!("Daemon config not readable: {}", e.message)),
         }
-        None => report.skip("API, database, and DNS checks skipped: daemon is not running"),
+        check_daemon_side(&client, &mut report).await;
+    } else {
+        report.skip("API, database, and DNS checks skipped: daemon is not running");
     }
 
     println!();
@@ -73,10 +73,7 @@ pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), Cl
     }
 }
 
-async fn check_daemon(
-    client: &DaemonSocketClient,
-    report: &mut Report,
-) -> Option<DaemonStatusResponse> {
+async fn check_daemon(client: &DaemonSocketClient, report: &mut Report) -> bool {
     match client.status().await {
         Ok(status) => {
             let pid = status
@@ -86,11 +83,11 @@ async fn check_daemon(
                 "Daemon running: pid {} (version {})",
                 pid, status.version
             ));
-            Some(status)
+            true
         }
         Err(e) => {
             report.fail(format!("Daemon not reachable: {}", e.message));
-            None
+            false
         }
     }
 }
@@ -101,7 +98,7 @@ async fn check_api(config: &bindizr_core::config::BindizrConfig, report: &mut Re
         config.api.listen_port,
     );
 
-    match http_get_status_line(addr).await {
+    match probe_http_status_line(addr).await {
         Ok(status_line) => report.ok(format!("API reachable: http://{} ({})", addr, status_line)),
         Err(e) => report.fail(format!("API not reachable: http://{} ({})", addr, e)),
     }
@@ -109,7 +106,7 @@ async fn check_api(config: &bindizr_core::config::BindizrConfig, report: &mut Re
 
 /// Minimal HTTP GET returning the status line; the API is plain HTTP on
 /// localhost, so a full HTTP client dependency is unnecessary.
-async fn http_get_status_line(addr: SocketAddr) -> Result<String, String> {
+async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
     let exchange = async {
         let mut stream = TcpStream::connect(addr).await.map_err(|e| e.to_string())?;
         let request = format!(

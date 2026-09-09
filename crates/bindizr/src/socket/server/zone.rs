@@ -4,7 +4,7 @@ use bindizr_service::{
     record::RecordService,
     types::{
         CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneFileResponse,
+        ZoneDetailResponse, ZoneResponse,
     },
     zone::ZoneService,
 };
@@ -12,9 +12,9 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, ImportZoneFileParams,
-        ImportZoneFromServerParams, ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams,
-        ZoneNameParams, ZoneVersionParams,
+        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, ImportZoneParams,
+        ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams, ZoneNameParams,
+        ZoneVersionParams,
     },
 };
 
@@ -25,7 +25,10 @@ pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse,
     let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
-        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+        data: to_response_data(ZoneDetailResponse {
+            zone: GetZoneResponse::from_zone(&zone),
+            records: vec![],
+        })?,
     })
 }
 
@@ -51,46 +54,32 @@ pub(crate) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
     let zone = ZoneService::create(&Caller::Global, &request).await?;
     Ok(DaemonResponse {
         message: "Zone created successfully".to_string(),
-        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+        data: to_response_data(ZoneResponse {
+            zone: GetZoneResponse::from_zone(&zone),
+        })?,
     })
 }
 
-/// Handle the `UpdateZone` command by applying a partial-update patch.
+/// Handle the `UpdateZone` command by applying a partial update.
 pub(crate) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateZoneParams = parse_params(data)?;
 
-    let zone = ZoneService::patch(&Caller::Global, &params.name, &params.patch).await?;
+    let zone = ZoneService::update(&Caller::Global, &params.zone_name, &params.request).await?;
     Ok(DaemonResponse {
         message: "Zone updated successfully".to_string(),
-        data: to_response_data(GetZoneResponse::from_zone(&zone))?,
+        data: to_response_data(ZoneResponse {
+            zone: GetZoneResponse::from_zone(&zone),
+        })?,
     })
 }
 
-/// Handle the `ImportZoneFile` command by reconciling BIND zone file text with
-/// a zone in a single transaction.
+/// Handle the `ImportZone` command by reconciling zone file text, or a
+/// transfer from a server, with a zone in a single transaction.
 pub(crate) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: ImportZoneFileParams = parse_params(data)?;
+    let params: ImportZoneParams = parse_params(data)?;
 
     let response =
-        RecordService::import_zone_file(&Caller::Global, &params.zone_name, &params.request)
-            .await?;
-    import_zone_response(response)
-}
-
-/// Handle the `ImportZoneFromServer` command by transferring the zone over
-/// AXFR and reconciling it like a file import.
-pub(crate) async fn import_zone_from_server(
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: ImportZoneFromServerParams = parse_params(data)?;
-
-    let response =
-        RecordService::import_zone_from_server(&Caller::Global, &params.zone_name, &params.request)
-            .await?;
-    import_zone_response(response)
-}
-
-fn import_zone_response(response: ImportZoneFileResponse) -> Result<DaemonResponse, ServiceError> {
+        RecordService::import_zone(&Caller::Global, &params.zone_name, &params.request).await?;
     let message = if !response.errors.is_empty() {
         format!(
             "Import validation failed with {} error(s); nothing applied",
@@ -99,7 +88,7 @@ fn import_zone_response(response: ImportZoneFileResponse) -> Result<DaemonRespon
     } else if response.dry_run {
         "Dry run completed; no changes applied".to_string()
     } else {
-        "Zone file imported successfully".to_string()
+        "Zone imported successfully".to_string()
     };
 
     Ok(DaemonResponse {
@@ -111,8 +100,7 @@ fn import_zone_response(response: ImportZoneFileResponse) -> Result<DaemonRespon
 /// Handle the `ExportZoneFile` command by rendering a zone as master-file text.
 pub(crate) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ExportZoneFileParams = parse_params(data)?;
-    let zone_file =
-        ZoneService::export_zone_file(&Caller::Global, &params.name, params.signed).await?;
+    let zone_file = ZoneService::export(&Caller::Global, &params.name, params.signed).await?;
     Ok(DaemonResponse {
         message: "Zone exported successfully".to_string(),
         data: to_response_data(ExportZoneFileResponse { zone_file })?,
@@ -130,7 +118,7 @@ pub(crate) async fn list_zone_versions(
         &params.name,
         params.limit,
         params.offset,
-        params.all,
+        params.include_signer_serials,
     )
     .await?;
 
@@ -188,13 +176,8 @@ pub(crate) async fn rollback_zone(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RollbackZoneParams = parse_params(data)?;
 
-    let response = ZoneService::rollback(
-        &Caller::Global,
-        &params.name,
-        params.request.serial,
-        params.request.dry_run,
-    )
-    .await?;
+    let response =
+        ZoneService::rollback(&Caller::Global, &params.name, params.serial, params.dry_run).await?;
     let message = if response.dry_run {
         format!(
             "Dry run: rollback to serial {} would add {} and delete {} record(s); nothing applied",

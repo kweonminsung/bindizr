@@ -132,7 +132,7 @@ impl DnssecKeyRole {
     }
 
     /// Whether the key is represented in the parent DS set (SEP keys).
-    pub(crate) fn is_sep(&self) -> bool {
+    pub fn is_sep(&self) -> bool {
         matches!(self, DnssecKeyRole::Csk | DnssecKeyRole::Ksk)
     }
 
