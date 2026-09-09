@@ -30,7 +30,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     service::dnssec::init_maintenance_scheduler();
 
-    dns::initialize().await;
+    dns::initialize().await?;
 
     if config::bindizr_config().dns.notify_on_startup {
         match service::notify::send_notify(None).await {

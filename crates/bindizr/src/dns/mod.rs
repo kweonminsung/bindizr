@@ -21,7 +21,7 @@ use tokio::{
 const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
-pub(crate) async fn initialize() {
+pub(crate) async fn initialize() -> Result<(), String> {
     server::initialize().await;
 
     let bindizr_config = config::bindizr_config();
@@ -33,29 +33,32 @@ pub(crate) async fn initialize() {
     let secondary_acl = SecondaryAcl::from_config();
     let tcp_secondary_acl = secondary_acl.clone();
 
+    let tcp_listener = TcpListener::bind(listen_addr)
+        .await
+        .map_err(|e| format!("Failed to bind DNS TCP listener on {}: {}", listen_addr, e))?;
+    let udp_socket = UdpSocket::bind(listen_addr)
+        .await
+        .map_err(|e| format!("Failed to bind DNS UDP socket on {}: {}", listen_addr, e))?;
+
+    log_info!("DNS TCP server listening on {}", listen_addr);
+    log_info!("DNS UDP server listening on {}", listen_addr);
+
     tokio::spawn(async move {
-        if let Err(e) = run_tcp_server(listen_addr, tcp_secondary_acl).await {
+        if let Err(e) = run_tcp_server(tcp_listener, tcp_secondary_acl).await {
             log_error!("DNS TCP server error: {}", e);
         }
     });
 
     tokio::spawn(async move {
-        if let Err(e) = run_udp_server(listen_addr, secondary_acl).await {
+        if let Err(e) = run_udp_server(udp_socket, secondary_acl).await {
             log_error!("DNS UDP server error: {}", e);
         }
     });
+
+    Ok(())
 }
 
-async fn run_tcp_server(
-    listen_addr: SocketAddr,
-    secondary_acl: SecondaryAcl,
-) -> Result<(), String> {
-    let listener = TcpListener::bind(listen_addr)
-        .await
-        .map_err(|e| format!("Failed to bind DNS TCP listener on {}: {}", listen_addr, e))?;
-
-    log_info!("DNS TCP server listening on {}", listen_addr);
-
+async fn run_tcp_server(listener: TcpListener, secondary_acl: SecondaryAcl) -> Result<(), String> {
     loop {
         match listener.accept().await {
             Ok((stream, client_addr)) => {
@@ -147,16 +150,7 @@ async fn dispatch_tcp_query(
     Ok(())
 }
 
-async fn run_udp_server(
-    listen_addr: SocketAddr,
-    secondary_acl: SecondaryAcl,
-) -> Result<(), String> {
-    let socket = UdpSocket::bind(listen_addr)
-        .await
-        .map_err(|e| format!("Failed to bind DNS UDP socket on {}: {}", listen_addr, e))?;
-
-    log_info!("DNS UDP server listening on {}", listen_addr);
-
+async fn run_udp_server(socket: UdpSocket, secondary_acl: SecondaryAcl) -> Result<(), String> {
     let mut buf = vec![0u8; 65535];
 
     loop {
