@@ -135,6 +135,11 @@ async fn dispatch_tcp_query(
     secondary_acl: &SecondaryAcl,
     query_data: &[u8],
 ) -> Result<(), String> {
+    if message::is_response(query_data) {
+        log_warn!("Ignoring a DNS TCP response from {}", client_addr);
+        return Ok(());
+    }
+
     // nsupdate owns its own parsing (including TSIG); everything else shares
     // one upfront parse.
     if server::nsupdate::is_nsupdate(query_data) {
@@ -211,6 +216,11 @@ async fn run_udp_server(
         };
 
         let query_data = &buf[..len];
+
+        if message::is_response(query_data) {
+            log_warn!("Ignoring a DNS UDP response from {}", client_addr);
+            continue;
+        }
 
         if server::nsupdate::is_nsupdate(query_data) {
             if let Err(e) =

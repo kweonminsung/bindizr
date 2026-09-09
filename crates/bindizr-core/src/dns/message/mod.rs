@@ -383,6 +383,12 @@ fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     Name::from_octets(wire).map_err(|e| format!("Invalid domain name '{}': {}", name, e))
 }
 
+/// Whether the message is itself a response (QR=1). Answering one lets a
+/// spoofed source aim the reply at a third party.
+pub fn is_response(message: &[u8]) -> bool {
+    Message::from_octets(message).is_ok_and(|message| message.header().qr())
+}
+
 /// A DNS query parsed once at the listener and handed to every handler.
 pub struct ParsedQuery {
     pub qname: Name<Vec<u8>>,
