@@ -1,7 +1,7 @@
 //! The parent side of a signed zone: asking its nameservers for the DS.
 
 use bindizr_core::dns::{
-    dnssec::{ds_rdata_for, to_wire_name},
+    dnssec::{DS_DIGEST_TYPES, ds_rdata_for, to_wire_name},
     query::DsRrset,
 };
 use chrono::{DateTime, Utc};
@@ -74,10 +74,19 @@ impl DnssecService {
             .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
         let mut delegation_keys = Vec::new();
         for key in keys.iter().filter(|key| key.role.is_sep()) {
-            // Whole RDATA, since keys can share a tag; either digest type,
-            // since the parent picks; every server, so a laggard cannot
-            // promote a key early.
-            let forms = [2u8, 4]
+            // Whole RDATA, since keys can share a tag; in the digest types
+            // the parent serves, since the parent picks; at every server, so
+            // a laggard cannot promote a key early.
+            let mut digest_types: Vec<u8> = served
+                .iter()
+                .flat_map(|rrset| rrset.records.iter())
+                .filter(|record| record.key_tag == key.key_tag as u16)
+                .map(|record| record.digest_type)
+                .filter(|digest_type| DS_DIGEST_TYPES.contains(digest_type))
+                .collect();
+            digest_types.sort_unstable();
+            digest_types.dedup();
+            let forms = digest_types
                 .iter()
                 .map(|digest_type| {
                     ds_rdata_for(key, &apex, *digest_type)

@@ -289,6 +289,7 @@ impl DsRrset {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DsRr {
     pub key_tag: u16,
+    pub digest_type: u8,
     /// The RDATA of RFC 4034, Section 5.1; matched whole, since keys can
     /// share a 16-bit tag.
     pub rdata: Vec<u8>,
@@ -326,6 +327,7 @@ pub fn extract_ds_rrset(
             .expect("composing into a Vec cannot run out of space");
         records.push(DsRr {
             key_tag: rr.data().key_tag(),
+            digest_type: rr.data().digest_type().to_int(),
             rdata,
         });
         ttl = Some(ttl.map_or(rr.ttl().as_secs(), |t| t.min(rr.ttl().as_secs())));

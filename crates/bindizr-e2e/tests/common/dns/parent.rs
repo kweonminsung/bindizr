@@ -3,10 +3,12 @@
 
 use std::{
     net::{SocketAddr, UdpSocket},
+    str::FromStr,
     sync::{Arc, Mutex},
     thread,
 };
 
+use base64::Engine;
 use domain::{
     base::{
         Message, MessageBuilder, Name, Rtype, Serial, ToName, Ttl,
@@ -15,6 +17,7 @@ use domain::{
     rdata::{Ds, Soa},
 };
 use serde_json::Value;
+use sha1::{Digest, Sha1};
 
 /// A DS record for the fake parent to serve.
 #[derive(Clone, Debug)]
@@ -44,6 +47,48 @@ impl ServedDs {
                 .step_by(2)
                 .map(|i| u8::from_str_radix(&digest[i..i + 2], 16).expect("hex digest"))
                 .collect(),
+            ttl,
+        }
+    }
+
+    /// The SHA-1 DS of key `key_tag`, digested from the status payload's
+    /// DNSKEY since bindizr renders none: what a parent digesting the
+    /// DNSKEY itself may register.
+    pub(crate) fn sha1_from_status(
+        dnssec: &Value,
+        zone_name: &str,
+        key_tag: u16,
+        ttl: u32,
+    ) -> Self {
+        let dnskey = dnssec["keys"]
+            .as_array()
+            .expect("status carries keys")
+            .iter()
+            .find(|key| key["key_tag"] == key_tag)
+            .unwrap_or_else(|| panic!("no key with tag {key_tag} in {dnssec}"))["dnskey"]
+            .as_str()
+            .expect("DNSKEY presentation");
+        let fields: Vec<&str> = dnskey.split(' ').collect();
+        let flags: u16 = fields[0].parse().expect("DNSKEY flags");
+        let algorithm: u8 = fields[2].parse().expect("DNSKEY algorithm");
+        let mut rdata = flags.to_be_bytes().to_vec();
+        rdata.extend_from_slice(&[3, algorithm]);
+        rdata.extend(
+            base64::engine::general_purpose::STANDARD
+                .decode(fields[3])
+                .expect("DNSKEY public key is base64"),
+        );
+        // RFC 4034, Section 5.1.4: the digest covers the wire owner name,
+        // then the DNSKEY RDATA.
+        let apex = Name::<Vec<u8>>::from_str(zone_name).expect("zone name");
+        let mut hasher = Sha1::new();
+        hasher.update(apex.as_slice());
+        hasher.update(&rdata);
+        Self {
+            key_tag,
+            algorithm,
+            digest_type: 1,
+            digest: hasher.finalize().to_vec(),
             ttl,
         }
     }

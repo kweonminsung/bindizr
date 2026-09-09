@@ -7,6 +7,7 @@ mod signed_view;
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use domain::base::{Name, iana::SecurityAlgorithm, rdata::ComposeRecordData};
+use sha1::Sha1;
 use sha2::{Digest, Sha256, Sha384};
 pub use signed_view::{SignedViewDiff, SignedViewParams};
 
@@ -63,9 +64,13 @@ fn dnskey_for(key: &DnssecKey) -> Result<domain::rdata::Dnskey<Vec<u8>>, String>
     .map_err(|e| format!("stored public key is invalid: {}", e))
 }
 
-/// The key's DS RDATA (RFC 4034, Section 5.1.4) with `digest_type` 2
-/// (SHA-256) or 4 (SHA-384). The zone publishes its algorithm's type
-/// (`ds_digest_type`); a parent may register either.
+/// The digest types `ds_rdata_for` computes. SHA-1 only matches a parent's
+/// existing DS: RFC 8624, Section 3.3 forbids it for new delegations, so
+/// `ds_digest_type` never picks it.
+pub const DS_DIGEST_TYPES: [u8; 3] = [1, 2, 4];
+
+/// The key's DS RDATA (RFC 4034, Section 5.1.4) in `digest_type`, one of
+/// `DS_DIGEST_TYPES`; the zone publishes its algorithm's (`ds_digest_type`).
 pub fn ds_rdata_for(key: &DnssecKey, apex: &WireName, digest_type: u8) -> Result<Rdata, String> {
     let dnskey = dnskey_for(key)?;
     let mut dnskey_rdata = Vec::new();
@@ -74,6 +79,12 @@ pub fn ds_rdata_for(key: &DnssecKey, apex: &WireName, digest_type: u8) -> Result
         .expect("composing into a Vec cannot run out of space");
 
     let digest: Vec<u8> = match digest_type {
+        1 => {
+            let mut hasher = Sha1::new();
+            hasher.update(apex.as_slice());
+            hasher.update(&dnskey_rdata);
+            hasher.finalize().to_vec()
+        }
         2 => {
             let mut hasher = Sha256::new();
             hasher.update(apex.as_slice());

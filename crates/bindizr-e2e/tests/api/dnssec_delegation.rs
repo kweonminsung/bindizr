@@ -450,3 +450,94 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
         "{body}"
     );
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
+    let app = TestApp::start_local().await;
+    let parent = FakeParent::start();
+    let zone_name = app.zone_name("ds-seen-sha1.example");
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "default_ttl": 60,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let zone_name = zone_name.as_str();
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": parent.addr() })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let old_key_tag = body["dnssec"]["keys"][0]["key_tag"].as_u64().unwrap() as u16;
+    let old_ds = ServedDs::from_status(&body["dnssec"], old_key_tag, 60);
+    parent.set_ds(vec![old_ds.clone()]);
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let new_key_tag = body["dnssec"]["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["state"] == "published")
+        .expect("rollover start pre-publishes the replacement key")["key_tag"]
+        .as_u64()
+        .unwrap() as u16;
+    // Only a SHA-1 DS, as a parent digesting the DNSKEY itself may
+    // register; status never renders one.
+    let new_ds = ServedDs::sha1_from_status(&body["dnssec"], zone_name, new_key_tag, 60);
+    parent.set_ds(vec![old_ds, new_ds]);
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/check-ds"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["dnssec"]["delegation"]["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|key| key["key_tag"] == new_key_tag)
+            .expect("the replacement key is a delegation key")["ds_published"],
+        true,
+        "{body}"
+    );
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_holddown=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body["dnssec"]["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|key| key["key_tag"] == new_key_tag && key["state"] == "active"),
+        "{body}"
+    );
+}

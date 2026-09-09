@@ -122,7 +122,11 @@ fn parsed_ds_rr(key_tag: u16) -> DsRr {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
-    DsRr { key_tag, rdata }
+    DsRr {
+        key_tag,
+        digest_type: 2,
+        rdata,
+    }
 }
 
 fn ns_rr(nsdname: &str) -> Vec<u8> {

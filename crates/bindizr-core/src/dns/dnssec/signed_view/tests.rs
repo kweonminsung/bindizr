@@ -887,7 +887,7 @@ fn p384_keys_advertise_a_sha384_ds_digest() {
 }
 
 #[test]
-fn ds_rdata_for_pairs_the_key_with_either_digest() {
+fn ds_rdata_for_pairs_the_key_with_each_supported_digest() {
     use crate::dns::dnssec::{ds_rdata_for, to_wire_name};
 
     let zone = test_zone();
@@ -908,7 +908,12 @@ fn ds_rdata_for_pairs_the_key_with_either_digest() {
     assert_eq!(&sha256.as_bytes()[..3], &sha384.as_bytes()[..3]);
     assert_eq!(sha256.as_bytes()[3], 2);
     assert_eq!(sha256.as_bytes().len(), 4 + 32);
-    assert!(ds_rdata_for(&key, &apex, 1).is_err());
+    // A SHA-1 DS a parent still serves must match too (RFC 8624, Section 3.3).
+    let sha1 = ds_rdata_for(&key, &apex, 1).unwrap();
+    assert_eq!(&sha1.as_bytes()[..3], &sha384.as_bytes()[..3]);
+    assert_eq!(sha1.as_bytes()[3], 1);
+    assert_eq!(sha1.as_bytes().len(), 4 + 20);
+    assert!(ds_rdata_for(&key, &apex, 3).is_err());
 }
 
 #[test]
