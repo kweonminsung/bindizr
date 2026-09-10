@@ -17,7 +17,7 @@ $ curl http://localhost:3000/metrics
 | `bindizr_zones_total`, `bindizr_records_total` | gauge | Zone / record counts, refreshed at scrape time |
 | `bindizr_http_requests_total{method, route, status}` | counter | HTTP API requests, labeled by route pattern |
 | `bindizr_http_request_duration_seconds{method, route}` | histogram | HTTP API request latency |
-| `bindizr_xfr_total{type, result}` | counter | AXFR/IXFR requests served, by query type and outcome |
+| `bindizr_xfr_total{type, result}` | counter | AXFR/IXFR requests served, by query type and outcome; a UDP request counts as `truncated`, since the transfer itself follows over TCP |
 | `bindizr_notify_sent_total{result}` | counter | NOTIFY delivery attempts to secondaries, by outcome |
 | `bindizr_nsupdate_requests_total{result}` | counter | RFC 2136 dynamic updates, by outcome |
 | `bindizr_zone_serial_bumps_total` | counter | Zone serial writes across every update path |

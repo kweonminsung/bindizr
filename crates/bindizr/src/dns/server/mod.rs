@@ -43,6 +43,19 @@ pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
     matches!(qtype, Rtype::AXFR | Rtype::IXFR)
 }
 
+/// Called at the dispatch, so an IXFR falling back to AXFR still counts as ixfr.
+fn track_xfr(qtype: Rtype, result: &str) {
+    let xfr_type = match qtype {
+        Rtype::AXFR => "axfr",
+        Rtype::IXFR => "ixfr",
+        _ => return,
+    };
+    metrics()
+        .xfr_total
+        .with_label_values(&[xfr_type, result])
+        .inc();
+}
+
 pub(crate) async fn handle_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
@@ -50,22 +63,7 @@ pub(crate) async fn handle_tcp_query(
     query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
-
-    // Counted at the dispatch so IXFR that internally falls back to AXFR
-    // still counts as ixfr; non-XFR qtypes are not transfer traffic.
-    let xfr_type = match query.qtype {
-        Rtype::AXFR => Some("axfr"),
-        Rtype::IXFR => Some("ixfr"),
-        _ => None,
-    };
-    let record_xfr_metric = |result: &str| {
-        if let Some(xfr_type) = xfr_type {
-            metrics()
-                .xfr_total
-                .with_label_values(&[xfr_type, result])
-                .inc();
-        }
-    };
+    let record_xfr_metric = |result: &str| track_xfr(query.qtype, result);
 
     if let Err(err) = validate_secondary_acl(client_ip, secondary_acl).await {
         record_xfr_metric("refused");
@@ -119,9 +117,12 @@ pub(crate) async fn handle_udp_query(
     query: &message::ParsedQuery,
 ) -> Vec<u8> {
     if let Err(err) = validate_secondary_acl(client_addr.ip(), secondary_acl).await {
+        track_xfr(query.qtype, "refused");
         log_warn!("Refused XFR UDP query from {}: {}", client_addr.ip(), err);
         return query.error_response(Rcode::REFUSED);
     }
+    // The transfer itself counts when the client returns over TCP.
+    track_xfr(query.qtype, "truncated");
     query.truncated_response()
 }
 
