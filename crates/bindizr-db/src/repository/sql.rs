@@ -2,9 +2,18 @@
 //! filter queries, rendered from the core types so no backend can drift.
 
 use bindizr_core::dns::name::OwnerName;
+use chrono::{DateTime, TimeDelta, Utc};
 
 use super::LockLevel;
 use crate::model::record::NAME_LIKE_RECORD_TYPES;
+
+/// The latest expiry any policy's re-sign window can reach: the constant a
+/// query seeks the index on. Saturates, which only makes that filter a no-op.
+pub(crate) fn refresh_bound(cutoff: DateTime<Utc>, max_refresh_days: i32) -> DateTime<Utc> {
+    TimeDelta::try_days(i64::from(max_refresh_days))
+        .and_then(|window| cutoff.checked_add_signed(window))
+        .unwrap_or(DateTime::<Utc>::MAX_UTC)
+}
 
 /// The locking clause for `lock_level`, as a suffix appended after any
 /// `ORDER BY`. SQLite locks the whole database instead, so it never calls this.

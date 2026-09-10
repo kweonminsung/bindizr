@@ -7,7 +7,7 @@ use crate::{
     model::dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     repository::{
         DnssecRecordFilter, DnssecRecordRepository, LockLevel, RepositoryTx,
-        sql::{apex_owner_sql, lock_clause},
+        sql::{apex_owner_sql, lock_clause, refresh_bound},
     },
 };
 
@@ -146,6 +146,18 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
     ) -> Result<Vec<i32>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
+        // The per-policy threshold is no constant, so nothing can seek the
+        // index; this widest-window bound is, and the comparison below refines it.
+        let Some(max_refresh_days) = sqlx::query_scalar::<_, Option<i32>>(
+            "SELECT MAX(signature_refresh_days) FROM dnssec_policies",
+        )
+        .fetch_one(&mut *conn)
+        .await?
+        else {
+            return Ok(Vec::new());
+        };
+        let bound = refresh_bound(cutoff, max_refresh_days);
+
         let zone_ids = sqlx::query_scalar::<_, i32>(
             r#"
             SELECT DISTINCT r.zone_id
@@ -153,9 +165,11 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
             JOIN zones z ON z.id = r.zone_id
             JOIN dnssec_policies p ON p.id = z.dnssec_policy_id
             WHERE r.expires_at IS NOT NULL
-              AND r.expires_at < $1 + make_interval(days => p.signature_refresh_days)
+              AND r.expires_at < $1
+              AND r.expires_at < $2 + make_interval(days => p.signature_refresh_days)
             "#,
         )
+        .bind(bound)
         .bind(cutoff)
         .fetch_all(&mut *conn)
         .await?;
@@ -169,6 +183,18 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
     ) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
+        // The per-policy threshold is no constant, so nothing can seek the
+        // index; this widest-window bound is, and the comparison below refines it.
+        let Some(max_refresh_days) = sqlx::query_scalar::<_, Option<i32>>(
+            "SELECT MAX(signature_refresh_days) FROM dnssec_policies",
+        )
+        .fetch_one(&mut *conn)
+        .await?
+        else {
+            return Ok(0);
+        };
+        let bound = refresh_bound(cutoff, max_refresh_days);
+
         let count = sqlx::query_scalar::<_, i64>(
             r#"
             SELECT COUNT(*)
@@ -176,9 +202,11 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
             JOIN zones z ON z.id = r.zone_id
             JOIN dnssec_policies p ON p.id = z.dnssec_policy_id
             WHERE r.expires_at IS NOT NULL
-              AND r.expires_at < $1 + make_interval(days => p.signature_refresh_days)
+              AND r.expires_at < $1
+              AND r.expires_at < $2 + make_interval(days => p.signature_refresh_days)
             "#,
         )
+        .bind(bound)
         .bind(cutoff)
         .fetch_one(&mut *conn)
         .await?;

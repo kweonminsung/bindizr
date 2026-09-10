@@ -192,7 +192,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             rrset_digest VARCHAR(64),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             INDEX idx_dnssec_records_zone (zone_id),
-            INDEX idx_dnssec_records_expires (expires_at)
+            INDEX idx_dnssec_records_expires (expires_at, zone_id)
         );
         "#,
     ]
@@ -411,7 +411,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_dnssec_records_zone ON dnssec_records(zone_id);
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_dnssec_records_expires ON dnssec_records(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_dnssec_records_expires ON dnssec_records(expires_at, zone_id);
         "#,
     ]
 }
@@ -629,7 +629,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_dnssec_records_zone ON dnssec_records(zone_id);
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_dnssec_records_expires ON dnssec_records(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_dnssec_records_expires ON dnssec_records(expires_at, zone_id);
         "#,
     ]
 }
