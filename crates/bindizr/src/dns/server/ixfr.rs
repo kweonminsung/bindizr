@@ -60,6 +60,10 @@ pub(crate) async fn handle_ixfr(
         return send_up_to_date_response(stream, query, &current_soa).await;
     }
 
+    // Plain comparison, not the RFC 1982 serial arithmetic RFC 1995 assumes:
+    // bindizr's serials stop at i32::MAX and never wrap, so mod-2^32 ordering
+    // could only matter for a client holding a larger serial from a previous
+    // primary, which needs a reload there rather than an IXFR.
     if client_serial > current_serial {
         log_warn!(
             "IXFR: Client serial {} > current serial {}, falling back to AXFR",
