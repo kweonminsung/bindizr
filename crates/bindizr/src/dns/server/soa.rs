@@ -44,7 +44,9 @@ pub(crate) async fn handle_udp_soa(
 
 /// `bindizr doctor` probes over the wire, reaching a concrete `listen_addr` from it.
 fn is_self_probe(client_ip: IpAddr) -> bool {
-    client_ip.is_loopback() || client_ip == config::bindizr_config().dns.listen_addr
+    // A v4 client on a `::` listener arrives mapped, so canonicalize first.
+    let client_ip = client_ip.to_canonical();
+    client_ip.is_loopback() || client_ip == config::bindizr_config().dns.listen_addr.to_canonical()
 }
 
 /// The response bytes, which TCP and UDP send alike.

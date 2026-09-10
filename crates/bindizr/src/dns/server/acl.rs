@@ -13,7 +13,7 @@ use bindizr_core::{
     dns::address::{ParsedAddress, parse_address_target},
     log_warn,
 };
-use tokio::{net::lookup_host, time::timeout};
+use tokio::{net::lookup_host, sync::Mutex as AsyncMutex, time::timeout};
 
 /// How long a resolved hostname is reused; an address changes rarely.
 const RESOLVED_TTL: Duration = Duration::from_secs(60);
@@ -68,6 +68,17 @@ struct CachedAddrs {
 
 static RESOLVED: OnceLock<Mutex<HashMap<String, CachedAddrs>>> = OnceLock::new();
 
+/// Held across a lookup so a cold cache costs one resolver request, not one per
+/// waiting query. Entries are few, so one gate for all of them is enough.
+static RESOLVING: OnceLock<AsyncMutex<()>> = OnceLock::new();
+
+fn cached_addrs(host_port: &str) -> Option<Vec<IpAddr>> {
+    locked_cache()
+        .get(host_port)
+        .filter(|cached| cached.expires_at > Instant::now())
+        .map(|cached| cached.addrs.clone())
+}
+
 fn locked_cache() -> std::sync::MutexGuard<'static, HashMap<String, CachedAddrs>> {
     RESOLVED
         .get_or_init(|| Mutex::new(HashMap::new()))
@@ -97,10 +108,15 @@ pub(crate) async fn is_client_allowed(client_ip: IpAddr, acl: &SecondaryAcl) -> 
 }
 
 async fn resolve_acl_host(host_port: &str) -> Vec<IpAddr> {
-    if let Some(cached) = locked_cache().get(host_port)
-        && cached.expires_at > Instant::now()
-    {
-        return cached.addrs.clone();
+    if let Some(addrs) = cached_addrs(host_port) {
+        return addrs;
+    }
+
+    let _resolving = RESOLVING.get_or_init(|| AsyncMutex::new(())).lock().await;
+
+    // Another waiter may have filled the entry while this one queued.
+    if let Some(addrs) = cached_addrs(host_port) {
+        return addrs;
     }
 
     let (addrs, ttl) = match timeout(RESOLVE_TIMEOUT, lookup_host(host_port)).await {

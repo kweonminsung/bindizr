@@ -136,7 +136,10 @@ async fn authenticate_request(
         Some(tsig) => tsig,
         None => {
             // An unsigned update carries no identity a remote sender could prove.
-            if config::bindizr_config().dns.nsupdate_allow_unsigned && client_ip.is_loopback() {
+            // A v4 client on a `::` listener arrives mapped, so canonicalize first.
+            if config::bindizr_config().dns.nsupdate_allow_unsigned
+                && client_ip.to_canonical().is_loopback()
+            {
                 return Ok(None);
             }
             return Err(UpdateError::Refused(
