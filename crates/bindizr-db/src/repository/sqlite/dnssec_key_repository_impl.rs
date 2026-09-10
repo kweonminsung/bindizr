@@ -81,12 +81,12 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
     ) -> Result<Vec<DnssecKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        // datetime(?) normalizes the bound value to the column's stored format.
+        // SQLite compares timestamps as text; sqlx's RFC 3339 sorts chronologically.
         let keys = sqlx::query_as::<_, DnssecKey>(
             r#"
             SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
             FROM dnssec_keys
-            WHERE state = ? AND eligible_at <= datetime(?)
+            WHERE state = ? AND eligible_at <= ?
             ORDER BY zone_id, id
             "#,
         )

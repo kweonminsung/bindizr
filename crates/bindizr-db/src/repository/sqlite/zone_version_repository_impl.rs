@@ -209,12 +209,12 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         let sqlite_tx = tx.as_sqlite()?;
 
         // Each zone's newest version survives regardless of age: the IXFR
-        // up-to-date response reads it. datetime(?) normalizes the bound value
-        // to the column's stored format.
+        // up-to-date response reads it. SQLite compares timestamps as text;
+        // sqlx's RFC 3339 sorts chronologically.
         let result = sqlx::query(
             r#"
             DELETE FROM zone_versions
-            WHERE created_at < datetime(?)
+            WHERE created_at < ?
               AND serial < (
                   SELECT MAX(newest.serial) FROM zone_versions newest
                   WHERE newest.zone_id = zone_versions.zone_id

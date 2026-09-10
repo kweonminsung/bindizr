@@ -122,7 +122,8 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
 
         // Delete whole serials only: everything up to the highest serial whose
         // newest row predates the cutoff, so remaining IXFR steps stay complete.
-        // datetime(?) normalizes the bound value to the column's stored format.
+        // SQLite compares timestamps as text; sqlx's RFC 3339 sorts
+        // chronologically.
         let result = sqlx::query(
             r#"
             DELETE FROM zone_journal
@@ -130,7 +131,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
                 SELECT 1 FROM (
                     SELECT zone_id AS cutoff_zone_id, MAX(serial) AS cutoff_serial
                     FROM zone_journal
-                    WHERE created_at < datetime(?)
+                    WHERE created_at < ?
                     GROUP BY zone_id
                 ) boundaries
                 WHERE boundaries.cutoff_zone_id = zone_journal.zone_id
