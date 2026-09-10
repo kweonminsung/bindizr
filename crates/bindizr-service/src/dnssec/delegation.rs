@@ -77,15 +77,22 @@ impl DnssecService {
             // Whole RDATA, since keys can share a tag; in the digest types
             // the parent serves, since the parent picks; at every server, so
             // a laggard cannot promote a key early.
-            let mut digest_types: Vec<u8> = served
+            let mut served_digest_types: Vec<u8> = served
                 .iter()
                 .flat_map(|rrset| rrset.records.iter())
                 .filter(|record| record.key_tag == key.key_tag as u16)
                 .map(|record| record.digest_type)
+                .collect();
+            served_digest_types.sort_unstable();
+            served_digest_types.dedup();
+            let digest_types: Vec<u8> = served_digest_types
+                .iter()
+                .copied()
                 .filter(|digest_type| DS_DIGEST_TYPES.contains(digest_type))
                 .collect();
-            digest_types.sort_unstable();
-            digest_types.dedup();
+            // A DS in a digest type bindizr cannot compute leaves the match
+            // undecided, which is not the same as the parent serving none.
+            let ds_digest_unsupported = digest_types.is_empty() && !served_digest_types.is_empty();
             let forms = digest_types
                 .iter()
                 .map(|digest_type| {
@@ -109,6 +116,7 @@ impl DnssecService {
                 role: key.role.to_string(),
                 state: key.state.to_string(),
                 ds_published,
+                ds_digest_unsupported,
                 eligible_at: (key.state == DnssecKeyState::Published).then_some(key.eligible_at),
             });
         }

@@ -3389,7 +3389,15 @@ components:
       - role
       - state
       - ds_published
+      - ds_digest_unsupported
       properties:
+        ds_digest_unsupported:
+          type: boolean
+          description: |-
+            Whether the parent serves a DS for this key tag only in digest types
+            bindizr cannot compute, leaving `ds_published` undecided rather than
+            answered.
+          example: false
         ds_published:
           type: boolean
           description: |-

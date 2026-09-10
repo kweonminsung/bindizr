@@ -54,6 +54,11 @@ pub struct DnssecDelegationKeyInfo {
     /// by key tag).
     #[schema(example = true)]
     pub ds_published: bool,
+    /// Whether the parent serves a DS for this key tag only in digest types
+    /// bindizr cannot compute, leaving `ds_published` undecided rather than
+    /// answered.
+    #[schema(example = false)]
+    pub ds_digest_unsupported: bool,
     /// When a `published` key's hold-down ends.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eligible_at: Option<DateTime<Utc>>,

@@ -393,6 +393,27 @@ impl ServiceError {
         )
     }
 
+    pub(crate) fn dnssec_ds_digest_unsupported(
+        zone_name: impl Into<String>,
+        key_tags: &[u16],
+    ) -> Self {
+        Self::new(
+            ErrorCode::DnssecDsUnverified,
+            format!(
+                "the parent zone serves a DS for key tag{} {} of zone '{}', but only in digest \
+                 types bindizr cannot compute, so the match cannot be confirmed; ask the parent \
+                 to publish SHA-256, or skip the DS check",
+                if key_tags.len() == 1 { "" } else { "s" },
+                key_tags
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                zone_name.into()
+            ),
+        )
+    }
+
     pub(crate) fn dnssec_ds_unverified(
         zone_name: impl Into<String>,
         reason: impl Into<String>,

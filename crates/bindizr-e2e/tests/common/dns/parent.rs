@@ -98,6 +98,13 @@ impl ServedDs {
         self.digest = vec![0xab; self.digest.len()];
         self
     }
+
+    /// The same DS relabelled as another digest type, to stand in for one
+    /// bindizr cannot compute.
+    pub(crate) fn with_digest_type(mut self, digest_type: u8) -> Self {
+        self.digest_type = digest_type;
+        self
+    }
 }
 
 pub(crate) struct FakeParent {

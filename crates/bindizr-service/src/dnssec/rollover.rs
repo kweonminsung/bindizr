@@ -17,7 +17,7 @@ use crate::{
         zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
-    types::GetDnssecStatusResponse,
+    types::{DnssecDelegationKeyInfo, GetDnssecStatusResponse},
 };
 
 impl DnssecService {
@@ -148,12 +148,23 @@ impl DnssecService {
             };
             let awaiting = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
             let delegation = Self::probe_delegation(&zone, &keys).await?;
-            let missing: Vec<u16> = delegation
+            let unconfirmed: Vec<&DnssecDelegationKeyInfo> = delegation
                 .keys
                 .iter()
                 .filter(|key| awaiting.contains(&key.id) && !key.ds_published)
+                .collect();
+            let unsupported: Vec<u16> = unconfirmed
+                .iter()
+                .filter(|key| key.ds_digest_unsupported)
                 .map(|key| key.key_tag)
                 .collect();
+            if !unsupported.is_empty() {
+                return Err(ServiceError::dnssec_ds_digest_unsupported(
+                    zone.name.as_str(),
+                    &unsupported,
+                ));
+            }
+            let missing: Vec<u16> = unconfirmed.iter().map(|key| key.key_tag).collect();
             if !missing.is_empty() {
                 return Err(ServiceError::dnssec_ds_not_published(
                     zone.name.as_str(),
