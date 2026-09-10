@@ -197,7 +197,6 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     assert_eq!(delegation["ds_key_tags"], json!([key_tag]));
     assert_eq!(delegation["ds_ttl"], 3600);
     assert_eq!(delegation["parent_ns_addrs"], json!([parent.addr()]));
-    assert_eq!(delegation["discovered"], false);
     let key_id = body["dnssec"]["keys"][0]["id"].clone();
     assert_eq!(
         delegation["keys"],
@@ -284,7 +283,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["dnssec"]["parent_ns_addrs"], parent.addr());
 
-    // An empty list returns the zone to parent discovery.
+    // An empty list would leave no server to ask.
     let (status, body) = app
         .request(
             Method::PUT,
@@ -292,8 +291,8 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
             Some(json!({ "parent_ns_addrs": "" })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body["dnssec"]["parent_ns_addrs"].is_null(), "{body}");
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "INVALID_INPUT");
 
     let (status, _) = app
         .request(

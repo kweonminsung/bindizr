@@ -7,18 +7,16 @@ use utoipa::ToSchema;
 use super::GetDnssecPolicyResponse;
 
 /// Request body for enabling DNSSEC on a zone.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct EnableDnssecRequest {
     /// Name of the DNSSEC policy to sign under; defaults to `default`.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "default")]
     pub policy: Option<String>,
-    /// The parent zone's nameservers (comma-separated `host[:port]`) asked
-    /// for the zone's DS before DNSSEC is disabled. Omitted, the zone keeps
-    /// its setting; a zone with none discovers its parent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The parent zone's nameservers (comma-separated `host[:port]`), asked
+    /// for the zone's DS by every later check.
     #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
-    pub parent_ns_addrs: Option<String>,
+    pub parent_ns_addrs: String,
 }
 
 /// Request body for changing a zone's signing settings; an omitted field
@@ -30,8 +28,8 @@ pub struct UpdateDnssecSettingsRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "strict")]
     pub policy: Option<String>,
-    /// The parent zone's nameservers (comma-separated `host[:port]`); empty
-    /// returns the zone to parent discovery.
+    /// The parent zone's nameservers (comma-separated `host[:port]`); must
+    /// name at least one server.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
     pub parent_ns_addrs: Option<String>,
@@ -67,11 +65,8 @@ pub struct DnssecDelegationKeyInfo {
 /// What the parent zone's servers answered when asked for the zone's DS.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecDelegationInfo {
-    /// The nameservers asked: the zone's setting, or the discovered parent's.
+    /// The nameservers asked, from the zone's setting.
     pub parent_ns_addrs: Vec<String>,
-    /// Whether the servers were discovered rather than configured on the zone.
-    #[schema(example = true)]
-    pub discovered: bool,
     /// `published` when the parent serves a DS for the zone, `hidden` when
     /// it serves none.
     #[schema(example = "published")]
@@ -162,8 +157,8 @@ pub struct GetDnssecStatusResponse {
     #[serde(default)]
     #[schema(example = false)]
     pub withdrawing: bool,
-    /// The parent nameservers configured on the zone; absent when the
-    /// parent is discovered.
+    /// The parent nameservers configured on the zone; absent until DNSSEC
+    /// is enabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
     pub parent_ns_addrs: Option<String>,

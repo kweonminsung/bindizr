@@ -80,7 +80,7 @@ pub(crate) async fn get_dnssec_status(
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Enable DNSSEC for a zone",
-        description = "Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` names the parent zone's nameservers that disabling DNSSEC later asks for the DS; omitted, the parent is discovered through the system resolver.",
+        description = "Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone's nameservers that every later DS check asks.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -106,7 +106,7 @@ pub(crate) async fn enable_dnssec(
         &caller,
         &params.name,
         body.policy.as_deref(),
-        body.parent_ns_addrs.as_deref(),
+        &body.parent_ns_addrs,
     )
     .await?;
     let response = DnssecStatusResponse { dnssec: status };
@@ -123,7 +123,7 @@ pub(crate) struct DisableDnssecQuery {
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Disable DNSSEC for a zone",
-        description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the parent's nameservers (`parent_ns_addrs`, or the discovered ones) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`), fails to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked (`DNSSEC_STATE_CHANGED`; retry). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller's.",
+        description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the zone's parent nameservers (`parent_ns_addrs`) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`), fails to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked (`DNSSEC_STATE_CHANGED`; retry). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller's.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
             ("skip_ds_check" = Option<bool>, Query, description = "Skip the parent DS check.")
@@ -223,7 +223,7 @@ pub(crate) struct DsSeenQuery {
         path = "/zones/{name}/dnssec/rollover/ds-seen",
         tag = "DNSSEC",
         summary = "Confirm the new DS is at the parent (ds-seen)",
-        description = "Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and every one of the parent zone's nameservers (`parent_ns_addrs`, or the discovered ones) serves the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, `DNSSEC_DS_UNVERIFIED` when they cannot be asked, or `DNSSEC_STATE_CHANGED` when the zone's keys or parent changed while they were being asked (retry). `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.",
+        description = "Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, `DNSSEC_DS_UNVERIFIED` when they cannot be asked, or `DNSSEC_STATE_CHANGED` when the zone's keys or parent changed while they were being asked (retry). `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
             ("skip_ds_check" = Option<bool>, Query, description = "Skip the parent DS check."),
@@ -319,7 +319,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
         path = "/zones/{name}/dnssec/check-ds",
         tag = "DNSSEC",
         summary = "Ask the parent zone whether it serves the zone's DS",
-        description = "Asks the parent zone's nameservers (`parent_ns_addrs`, or the discovered ones) for the zone's DS records and reports the answer in `delegation`: `published` with the key tags and TTL served, or `hidden`. The same check gates disabling DNSSEC.",
+        description = "Asks the zone's parent nameservers (`parent_ns_addrs`) for the zone's DS records and reports the answer in `delegation`: `published` with the key tags and TTL served, or `hidden`. The same check gates disabling DNSSEC.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -347,7 +347,7 @@ pub(crate) async fn check_dnssec_ds(
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Change a zone's DNSSEC settings",
-        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy's (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries (empty returns the zone to discovery), and applies to unsigned zones too.",
+        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy's (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),

@@ -58,13 +58,6 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
         "{checked}"
     );
 
-    let cleared = app
-        .run_cli_success(&["dnssec", "set", &zone_name, "--parent-ns-addrs", ""])
-        .await;
-    assert!(
-        cleared.contains("Parent nameservers: discovered through the system resolver"),
-        "{cleared}"
-    );
     let set = app
         .run_cli_success(&[
             "dnssec",

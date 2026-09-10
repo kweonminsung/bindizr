@@ -41,7 +41,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({})),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -130,7 +130,7 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name })),
+            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9" })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);

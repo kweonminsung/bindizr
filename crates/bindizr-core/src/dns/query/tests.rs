@@ -88,28 +88,6 @@ fn parsed_ds_rr(key_tag: u16) -> DsRr {
     }
 }
 
-fn build_ns_response(
-    query_id: u16,
-    rcode: Rcode,
-    qname: &Name<Vec<u8>>,
-    names: &[&str],
-) -> Vec<u8> {
-    let mut builder = MessageBuilder::new_vec();
-    let header = builder.header_mut();
-    header.set_id(query_id);
-    header.set_qr(true);
-    header.set_rcode(rcode);
-    let mut question = builder.question();
-    question.push((qname, Rtype::NS)).unwrap();
-    let mut answer = question.answer();
-    for ns in names {
-        answer
-            .push((qname, Class::IN, Ttl::from_secs(3600), Ns::new(name(ns))))
-            .unwrap();
-    }
-    answer.finish()
-}
-
 /// One AXFR response message with or without the echoed `question` and the
 /// `aa` flag, answering one IN A record for `apex`.
 fn build_transfer_message(id: u16, apex: &Name<Vec<u8>>, question: bool, aa: bool) -> Vec<u8> {
@@ -400,89 +378,4 @@ fn extract_ds_rrset_rejects_id_mismatch() {
             .unwrap_err()
             .contains("ID mismatch")
     );
-}
-
-#[test]
-fn extract_ns_names_reads_the_answer_names() {
-    let apex = name("com");
-    let response = build_ns_response(
-        9,
-        Rcode::NOERROR,
-        &apex,
-        &["a.gtld-servers.net", "b.gtld-servers.net"],
-    );
-    assert_eq!(
-        extract_ns_names(9, &apex, &response).unwrap(),
-        vec!["a.gtld-servers.net.", "b.gtld-servers.net."]
-    );
-}
-
-#[test]
-fn extract_ns_names_ignores_nameservers_of_another_owner() {
-    let alias = name("www.example.com");
-    let mut builder = MessageBuilder::new_vec();
-    builder.header_mut().set_id(9);
-    builder.header_mut().set_qr(true);
-    let mut question = builder.question();
-    question.push((&alias, Rtype::NS)).unwrap();
-    // A CNAME's answer: the target's NS records follow, owned by the target.
-    let mut answer = question.answer();
-    answer
-        .push((
-            &name("target.example"),
-            Class::IN,
-            Ttl::from_secs(3600),
-            Ns::new(name("ns1.target.example")),
-        ))
-        .unwrap();
-    let response = answer.finish();
-
-    assert!(extract_ns_names(9, &alias, &response).unwrap().is_empty());
-}
-
-#[test]
-fn extract_ns_names_reads_nxdomain_and_nodata_as_no_nameservers() {
-    let apex = name("nx.example");
-    let response = build_ns_response(9, Rcode::NXDOMAIN, &apex, &[]);
-    assert!(extract_ns_names(9, &apex, &response).unwrap().is_empty());
-    let response = build_ns_response(9, Rcode::NOERROR, &apex, &[]);
-    assert!(extract_ns_names(9, &apex, &response).unwrap().is_empty());
-}
-
-#[test]
-fn extract_ns_names_rejects_an_error_rcode() {
-    let apex = name("com");
-    let response = build_ns_response(9, Rcode::SERVFAIL, &apex, &[]);
-    assert_eq!(
-        extract_ns_names(9, &apex, &response).unwrap_err(),
-        "RCODE 2"
-    );
-}
-
-#[test]
-fn is_truncated_reads_the_tc_flag() {
-    let child = name("example.com");
-    let truncated = build_ds_response(
-        1,
-        true,
-        true,
-        true,
-        Rcode::NOERROR,
-        &child,
-        &[],
-        Some("com"),
-    );
-    let whole = build_ds_response(
-        1,
-        true,
-        true,
-        false,
-        Rcode::NOERROR,
-        &child,
-        &[],
-        Some("com"),
-    );
-    assert!(is_truncated(&truncated));
-    assert!(!is_truncated(&whole));
-    assert!(!is_truncated(b"not a message"));
 }
