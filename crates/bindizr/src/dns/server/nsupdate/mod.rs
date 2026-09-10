@@ -72,7 +72,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         .tsig
         .as_ref()
         .map_or(DEFAULT_FUDGE, |tsig| tsig.fudge);
-    let (result, signer) = update::apply_update(parsed, query_data).await;
+    let (result, signer) = update::apply_update(parsed, query_data, client_addr.ip()).await;
 
     let rcode = match result {
         Ok(changed) => {
