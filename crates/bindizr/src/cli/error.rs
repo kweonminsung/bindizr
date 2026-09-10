@@ -37,6 +37,9 @@ impl CliError {
             ErrorCode::VersionNotFound => {
                 Some("Run 'bindizr zone version list <NAME>' to see available serials.")
             }
+            ErrorCode::DnssecSigningFailed => Some(
+                "The zone is left unsigned; check the daemon logs and retry with 'bindizr dnssec sign <NAME>'.",
+            ),
             ErrorCode::Internal => Some("Check the daemon logs for details."),
             _ => None,
         }

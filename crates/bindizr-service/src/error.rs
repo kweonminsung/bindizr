@@ -33,6 +33,7 @@ pub enum ErrorCode {
     DnssecPolicyNotFound,
     DnssecPolicyConflict,
     DnssecPolicyInUse,
+    DnssecSigningFailed,
     Unauthorized,
     InvalidToken,
     Forbidden,
@@ -72,6 +73,7 @@ impl ErrorCode {
             ErrorCode::DnssecPolicyNotFound => "DNSSEC_POLICY_NOT_FOUND",
             ErrorCode::DnssecPolicyConflict => "DNSSEC_POLICY_CONFLICT",
             ErrorCode::DnssecPolicyInUse => "DNSSEC_POLICY_IN_USE",
+            ErrorCode::DnssecSigningFailed => "DNSSEC_SIGNING_FAILED",
             ErrorCode::Unauthorized => "UNAUTHORIZED",
             ErrorCode::InvalidToken => "INVALID_TOKEN",
             ErrorCode::Forbidden => "FORBIDDEN",
@@ -113,6 +115,7 @@ impl ErrorCode {
             "DNSSEC_POLICY_NOT_FOUND" => ErrorCode::DnssecPolicyNotFound,
             "DNSSEC_POLICY_CONFLICT" => ErrorCode::DnssecPolicyConflict,
             "DNSSEC_POLICY_IN_USE" => ErrorCode::DnssecPolicyInUse,
+            "DNSSEC_SIGNING_FAILED" => ErrorCode::DnssecSigningFailed,
             "UNAUTHORIZED" => ErrorCode::Unauthorized,
             "INVALID_TOKEN" => ErrorCode::InvalidToken,
             "FORBIDDEN" => ErrorCode::Forbidden,
@@ -157,7 +160,8 @@ impl ErrorCode {
             | ErrorCode::DnssecPolicyInUse => 409,
             ErrorCode::PayloadTooLarge => 413,
             ErrorCode::UnsupportedMediaType => 415,
-            ErrorCode::Internal => 500,
+            // Server-side like Internal, but nameable for alerting.
+            ErrorCode::DnssecSigningFailed | ErrorCode::Internal => 500,
         }
     }
 }
@@ -311,7 +315,7 @@ impl ServiceError {
 
     pub(crate) fn dnssec_signing_failed(message: impl Into<String>) -> Self {
         Self::new(
-            ErrorCode::Internal,
+            ErrorCode::DnssecSigningFailed,
             format!("DNSSEC signing failed: {}", message.into()),
         )
     }
@@ -431,5 +435,22 @@ impl ServiceError {
                 zone_name.into()
             ),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_signing_failure_is_not_an_internal_error() {
+        let err = ServiceError::dnssec_signing_failed("boom");
+        assert_eq!(err.code, ErrorCode::DnssecSigningFailed);
+        assert_eq!(err.code.http_status(), 500);
+        // The CLI parses the code back off the daemon socket.
+        assert_eq!(
+            ErrorCode::parse(err.code.as_str()),
+            Some(ErrorCode::DnssecSigningFailed)
+        );
     }
 }
