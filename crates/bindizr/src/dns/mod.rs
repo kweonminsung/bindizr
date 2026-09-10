@@ -5,7 +5,7 @@ pub(crate) mod error;
 pub(crate) mod server;
 pub(crate) mod wire;
 
-use std::{future::Future, io::ErrorKind, net::SocketAddr, time::Duration};
+use std::{future::Future, io::ErrorKind, net::SocketAddr, sync::Arc, time::Duration};
 
 use bindizr_core::{
     config,
@@ -15,12 +15,19 @@ use bindizr_core::{
 use server::acl::SecondaryAcl;
 use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
+    sync::Semaphore,
     time::timeout,
 };
 
 use crate::shutdown::Shutdown;
 
 const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Datagrams answered at once; past this the listener drops, since a caller retries.
+const MAX_UDP_IN_FLIGHT: usize = 256;
+
+/// Connections served at once; the accept backlog holds the rest.
+const MAX_TCP_CONNECTIONS: usize = 128;
 
 /// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
 pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
@@ -67,9 +74,19 @@ async fn run_tcp_server(
     secondary_acl: SecondaryAcl,
     stop: impl Future<Output = ()>,
 ) -> Result<(), String> {
+    let open = Arc::new(Semaphore::new(MAX_TCP_CONNECTIONS));
     tokio::pin!(stop);
 
     loop {
+        // The slot comes before the accept, so the backlog holds the excess.
+        let permit = tokio::select! {
+            permit = open.clone().acquire_owned() => permit.map_err(|e| e.to_string())?,
+            () = &mut stop => {
+                log_info!("DNS TCP server stopping");
+                return Ok(());
+            }
+        };
+
         let accepted = tokio::select! {
             accepted = listener.accept() => accepted,
             () = &mut stop => {
@@ -85,6 +102,7 @@ async fn run_tcp_server(
                     if let Err(e) = handle_tcp_connection(stream, client_addr, allowed).await {
                         log_error!("DNS TCP connection error from {}: {}", client_addr, e);
                     }
+                    drop(permit);
                 });
             }
             Err(e) => {
@@ -195,6 +213,8 @@ async fn run_udp_server(
     secondary_acl: SecondaryAcl,
     stop: impl Future<Output = ()>,
 ) -> Result<(), String> {
+    let socket = Arc::new(socket);
+    let in_flight = Arc::new(Semaphore::new(MAX_UDP_IN_FLIGHT));
     let mut buf = vec![0u8; 65535];
     tokio::pin!(stop);
 
@@ -215,61 +235,82 @@ async fn run_udp_server(
             }
         };
 
-        let query_data = &buf[..len];
-
-        if message::is_response(query_data) {
-            log_warn!("Ignoring a DNS UDP response from {}", client_addr);
+        let Ok(permit) = in_flight.clone().try_acquire_owned() else {
+            log_warn!(
+                "Dropping DNS UDP query from {}: {} already in flight",
+                client_addr,
+                MAX_UDP_IN_FLIGHT
+            );
             continue;
-        }
-
-        if server::nsupdate::is_nsupdate(query_data) {
-            if let Err(e) =
-                server::nsupdate::handle_udp_nsupdate(&socket, query_data, client_addr).await
-            {
-                log_error!("NSUPDATE UDP handler failed for {}: {}", client_addr, e);
-            }
-            continue;
-        }
-
-        let query = match message::ParsedQuery::parse(query_data) {
-            Ok(query) => query,
-            Err(_) => continue,
         };
 
-        if query.opcode != Opcode::QUERY {
-            log_info!(
-                "Refusing DNS UDP opcode {:?} from {}",
-                query.opcode,
-                client_addr
-            );
-            let response = query.error_response(Rcode::NOTIMP);
-            if let Err(e) = socket.send_to(&response, client_addr).await {
-                log_warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);
-            }
-            continue;
-        }
+        let query_data = buf[..len].to_vec();
+        let socket = socket.clone();
+        let secondary_acl = secondary_acl.clone();
+        tokio::spawn(async move {
+            dispatch_udp_query(&socket, client_addr, &secondary_acl, &query_data).await;
+            drop(permit);
+        });
+    }
+}
 
-        if query.qtype == Rtype::SOA {
-            if let Err(e) =
-                server::soa::handle_udp_soa(&socket, client_addr, &secondary_acl, &query).await
-            {
-                log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
-            }
-        } else {
-            let response = if server::is_xfr_query_type(query.qtype) {
-                server::handle_udp_query(client_addr, &secondary_acl, &query).await
-            } else {
-                log_info!(
-                    "Refusing out-of-scope DNS UDP query from {} (qtype={:?})",
-                    client_addr,
-                    query.qtype
-                );
-                query.error_response(Rcode::REFUSED)
-            };
+async fn dispatch_udp_query(
+    socket: &UdpSocket,
+    client_addr: SocketAddr,
+    secondary_acl: &SecondaryAcl,
+    query_data: &[u8],
+) {
+    if message::is_response(query_data) {
+        log_warn!("Ignoring a DNS UDP response from {}", client_addr);
+        return;
+    }
 
-            if let Err(e) = socket.send_to(&response, client_addr).await {
-                log_warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);
-            }
+    if server::nsupdate::is_nsupdate(query_data) {
+        if let Err(e) = server::nsupdate::handle_udp_nsupdate(socket, query_data, client_addr).await
+        {
+            log_error!("NSUPDATE UDP handler failed for {}: {}", client_addr, e);
         }
+        return;
+    }
+
+    let Ok(query) = message::ParsedQuery::parse(query_data) else {
+        return;
+    };
+
+    if query.opcode != Opcode::QUERY {
+        log_info!(
+            "Refusing DNS UDP opcode {:?} from {}",
+            query.opcode,
+            client_addr
+        );
+        send_udp_response(socket, client_addr, &query.error_response(Rcode::NOTIMP)).await;
+        return;
+    }
+
+    if query.qtype == Rtype::SOA {
+        if let Err(e) =
+            server::soa::handle_udp_soa(socket, client_addr, secondary_acl, &query).await
+        {
+            log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
+        }
+        return;
+    }
+
+    let response = if server::is_xfr_query_type(query.qtype) {
+        server::handle_udp_query(client_addr, secondary_acl, &query).await
+    } else {
+        log_info!(
+            "Refusing out-of-scope DNS UDP query from {} (qtype={:?})",
+            client_addr,
+            query.qtype
+        );
+        query.error_response(Rcode::REFUSED)
+    };
+    send_udp_response(socket, client_addr, &response).await;
+}
+
+async fn send_udp_response(socket: &UdpSocket, client_addr: SocketAddr, response: &[u8]) {
+    if let Err(e) = socket.send_to(response, client_addr).await {
+        log_warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);
     }
 }
