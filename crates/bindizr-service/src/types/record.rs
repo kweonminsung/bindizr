@@ -158,6 +158,7 @@ pub struct GetRecordsFilter {
     /// With true, the derived DNSSEC records page after the user records.
     #[schema(example = false)]
     pub signed: Option<bool>,
+    /// Defaults to 50 when omitted; 1000 is the largest page accepted.
     #[schema(example = 50)]
     pub limit: Option<u32>,
     #[schema(example = 0)]

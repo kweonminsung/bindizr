@@ -13,6 +13,8 @@ pub enum ErrorCode {
     ZoneConflict,
     RecordConflict,
     TokenConflict,
+    EndpointNotFound,
+    MethodNotAllowed,
     ZoneNotFound,
     RecordNotFound,
     TokenNotFound,
@@ -53,6 +55,8 @@ impl ErrorCode {
             ErrorCode::ZoneConflict => "ZONE_CONFLICT",
             ErrorCode::RecordConflict => "RECORD_CONFLICT",
             ErrorCode::TokenConflict => "TOKEN_CONFLICT",
+            ErrorCode::EndpointNotFound => "ENDPOINT_NOT_FOUND",
+            ErrorCode::MethodNotAllowed => "METHOD_NOT_ALLOWED",
             ErrorCode::ZoneNotFound => "ZONE_NOT_FOUND",
             ErrorCode::RecordNotFound => "RECORD_NOT_FOUND",
             ErrorCode::TokenNotFound => "TOKEN_NOT_FOUND",
@@ -95,6 +99,8 @@ impl ErrorCode {
             "ZONE_CONFLICT" => ErrorCode::ZoneConflict,
             "RECORD_CONFLICT" => ErrorCode::RecordConflict,
             "TOKEN_CONFLICT" => ErrorCode::TokenConflict,
+            "ENDPOINT_NOT_FOUND" => ErrorCode::EndpointNotFound,
+            "METHOD_NOT_ALLOWED" => ErrorCode::MethodNotAllowed,
             "ZONE_NOT_FOUND" => ErrorCode::ZoneNotFound,
             "RECORD_NOT_FOUND" => ErrorCode::RecordNotFound,
             "TOKEN_NOT_FOUND" => ErrorCode::TokenNotFound,
@@ -135,7 +141,8 @@ impl ErrorCode {
             | ErrorCode::InvalidJsonBody => 400,
             ErrorCode::Unauthorized | ErrorCode::InvalidToken => 401,
             ErrorCode::Forbidden => 403,
-            ErrorCode::ZoneNotFound
+            ErrorCode::EndpointNotFound
+            | ErrorCode::ZoneNotFound
             | ErrorCode::RecordNotFound
             | ErrorCode::TokenNotFound
             | ErrorCode::VersionNotFound
@@ -158,6 +165,7 @@ impl ErrorCode {
             | ErrorCode::DnssecStateChanged
             | ErrorCode::DnssecPolicyConflict
             | ErrorCode::DnssecPolicyInUse => 409,
+            ErrorCode::MethodNotAllowed => 405,
             ErrorCode::PayloadTooLarge => 413,
             ErrorCode::UnsupportedMediaType => 415,
             // Server-side like Internal, but nameable for alerting.

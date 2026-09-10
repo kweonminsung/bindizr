@@ -563,12 +563,13 @@ paths:
           type: boolean
       - name: limit
         in: query
-        description: Maximum number of records to return.
+        description: Records per page; defaults to 50.
         required: false
         schema:
           type: integer
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         description: Number of records to skip.
@@ -1636,12 +1637,13 @@ paths:
           type: string
       - name: limit
         in: query
-        description: Maximum number of zones to return.
+        description: Zones per page; defaults to 50.
         required: false
         schema:
           type: integer
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         description: Number of zones to skip.
@@ -2782,12 +2784,13 @@ paths:
           type: string
       - name: limit
         in: query
-        description: Maximum number of versions to return.
+        description: Versions per page; defaults to 50.
         required: false
         schema:
           type: integer
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         description: Number of versions to skip.

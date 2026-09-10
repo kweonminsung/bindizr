@@ -1,6 +1,5 @@
 use axum::{
     Json, Router,
-    extract::Path,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
@@ -16,7 +15,8 @@ use bindizr_service::{
 use serde::Deserialize;
 
 use crate::api::{
-    AuthenticatedToken, GrantIdParam, RequestCaller, ZoneNameParam, error::ApiError,
+    AuthenticatedToken, GrantIdParam, RequestCaller, ZoneNameParam,
+    error::{ApiError, Path},
     middleware::body_parser::JsonBody,
 };
 

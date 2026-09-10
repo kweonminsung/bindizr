@@ -1,7 +1,7 @@
 use axum::{
     Json,
-    extract::rejection::JsonRejection,
-    http::StatusCode,
+    extract::{FromRequestParts, rejection::JsonRejection},
+    http::{StatusCode, request::Parts},
     response::{IntoResponse, Response},
 };
 use bindizr_core::log_error;
@@ -9,6 +9,7 @@ use bindizr_service::{
     error::{ErrorCode, ServiceError},
     types::ErrorResponse,
 };
+use serde::de::DeserializeOwned;
 
 use crate::api::middleware::body_parser::MAX_UPLOAD_BODY_BYTES;
 
@@ -63,5 +64,41 @@ impl From<JsonRejection> for ApiError {
         };
 
         ApiError(error)
+    }
+}
+
+/// `axum::extract::Query` whose rejection renders as [`ErrorResponse`].
+pub(crate) struct Query<T>(pub(crate) T);
+
+impl<T, S> FromRequestParts<S> for Query<T>
+where
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
+        axum::extract::Query::from_request_parts(parts, state)
+            .await
+            .map(|axum::extract::Query(value)| Query(value))
+            .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
+    }
+}
+
+/// `axum::extract::Path` with the same treatment as [`Query`].
+pub(crate) struct Path<T>(pub(crate) T);
+
+impl<T, S> FromRequestParts<S> for Path<T>
+where
+    T: DeserializeOwned + Send,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
+        axum::extract::Path::from_request_parts(parts, state)
+            .await
+            .map(|axum::extract::Path(value)| Path(value))
+            .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
     }
 }

@@ -1,6 +1,5 @@
 use axum::{
     Json, Router,
-    extract::{Path, Query},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
@@ -15,7 +14,9 @@ use bindizr_service::{
 use serde::Deserialize;
 
 use crate::api::{
-    RequestCaller, ZoneNameParam, error::ApiError, middleware::body_parser::JsonBody,
+    RequestCaller, ZoneNameParam,
+    error::{ApiError, Path, Query},
+    middleware::body_parser::JsonBody,
 };
 
 pub(crate) struct DnssecApi;
