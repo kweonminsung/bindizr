@@ -126,6 +126,10 @@ pub struct DnsConfig {
     /// Cache each zone's records by serial so repeated AXFRs skip the DB read.
     #[serde(default = "default_zone_cache")]
     pub zone_cache: bool,
+    /// Megabytes of record data the zone cache may hold before evicting the
+    /// least recently used zone. A zone larger than this is served uncached.
+    #[serde(default = "default_zone_cache_max_mb")]
+    pub zone_cache_max_mb: u64,
     #[serde(default)]
     pub notify_on_startup: bool,
     #[serde(default = "default_notify_retries")]
@@ -160,6 +164,10 @@ fn default_notify_batch_ms() -> u64 {
 
 fn default_zone_cache() -> bool {
     true
+}
+
+fn default_zone_cache_max_mb() -> u64 {
+    64
 }
 
 /// When NOTIFY dispatch runs relative to the write request.
@@ -383,6 +391,9 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_ZONE_CACHE") {
             self.dns.zone_cache = parse_env_value("BINDIZR_ZONE_CACHE", &value)?;
         }
+        if let Some(value) = get_env("BINDIZR_ZONE_CACHE_MAX_MB") {
+            self.dns.zone_cache_max_mb = parse_env_value("BINDIZR_ZONE_CACHE_MAX_MB", &value)?;
+        }
         if let Some(value) = get_env("BINDIZR_NOTIFY_ON_STARTUP") {
             self.dns.notify_on_startup = parse_env_value("BINDIZR_NOTIFY_ON_STARTUP", &value)?;
         }
@@ -464,6 +475,13 @@ impl DnsConfig {
     fn validate(&self) -> Result<(), String> {
         if self.listen_port == 0 {
             return Err("dns.listen_port must not be 0".to_string());
+        }
+        // Zero would admit no zone at all, which zone_cache = false already says.
+        if self.zone_cache && self.zone_cache_max_mb == 0 {
+            return Err(
+                "dns.zone_cache_max_mb must not be 0; set dns.zone_cache = false to disable the cache"
+                    .to_string(),
+            );
         }
 
         let raw = &self.secondary_addrs;

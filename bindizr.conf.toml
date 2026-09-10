@@ -27,6 +27,7 @@ notify_after_update = true    # Send DNS NOTIFY after zone changes
 notify_mode = "sync"          # "sync": NOTIFY runs inline; "async": queued to a background worker
 notify_batch_ms = 50          # async only: window to batch NOTIFYs into one per zone (0 disables the wait)
 zone_cache = true             # Cache each zone's records by serial so repeated AXFRs skip the DB read
+zone_cache_max_mb = 64        # Megabytes of record data the cache may hold; a larger zone is served uncached
 notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
 notify_retries = 3            # Retry count after the initial NOTIFY attempt
 notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
