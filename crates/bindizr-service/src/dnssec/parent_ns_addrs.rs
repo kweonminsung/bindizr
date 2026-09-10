@@ -8,19 +8,19 @@ use crate::error::ServiceError;
 /// The width of the `zones.parent_ns_addrs` column.
 const MAX_PARENT_NS_ADDRS_LEN: usize = 1024;
 
-/// Trim a comma-separated `host[:port]` list into its stored form; `None` or
-/// an empty list clears the zone's parent nameservers.
-pub(crate) fn normalize_parent_ns_addrs(raw: Option<&str>) -> Result<Option<String>, ServiceError> {
-    let Some(raw) = raw else {
-        return Ok(None);
-    };
+/// Trim a comma-separated `host[:port]` list into its stored form. A zone's
+/// DS can only be asked at the servers it names, so an empty list is an
+/// error.
+pub(crate) fn normalize_parent_ns_addrs(raw: &str) -> Result<String, ServiceError> {
     let entries: Vec<&str> = raw
         .split(',')
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
         .collect();
     if entries.is_empty() {
-        return Ok(None);
+        return Err(ServiceError::invalid_input(
+            "give at least one parent nameserver as host[:port]",
+        ));
     }
     for entry in &entries {
         if has_whitespace_or_control(entry) || !is_address_target(entry) {
@@ -38,7 +38,7 @@ pub(crate) fn normalize_parent_ns_addrs(raw: Option<&str>) -> Result<Option<Stri
             MAX_PARENT_NS_ADDRS_LEN
         )));
     }
-    Ok(Some(joined))
+    Ok(joined)
 }
 
 #[cfg(test)]
@@ -47,20 +47,22 @@ mod tests {
     use crate::error::ErrorCode;
 
     #[test]
-    fn normalize_parent_ns_addrs_trims_entries_and_clears_on_an_empty_list() {
+    fn normalize_parent_ns_addrs_trims_entries() {
         assert_eq!(
-            normalize_parent_ns_addrs(Some(" ns1.parent.example , ns2.parent.example:5353 "))
-                .unwrap()
-                .as_deref(),
-            Some("ns1.parent.example,ns2.parent.example:5353")
+            normalize_parent_ns_addrs(" ns1.parent.example , ns2.parent.example:5353 ").unwrap(),
+            "ns1.parent.example,ns2.parent.example:5353"
         );
-        assert_eq!(normalize_parent_ns_addrs(Some(" , ")).unwrap(), None);
-        assert_eq!(normalize_parent_ns_addrs(None).unwrap(), None);
+    }
+
+    #[test]
+    fn normalize_parent_ns_addrs_rejects_an_empty_list() {
+        let err = normalize_parent_ns_addrs(" , ").unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput);
     }
 
     #[test]
     fn normalize_parent_ns_addrs_rejects_an_entry_that_is_not_an_address_target() {
-        let err = normalize_parent_ns_addrs(Some("ns.parent.example:not-a-port")).unwrap_err();
+        let err = normalize_parent_ns_addrs("ns.parent.example:not-a-port").unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
     }
 
@@ -68,7 +70,7 @@ mod tests {
     fn normalize_parent_ns_addrs_rejects_a_list_wider_than_the_column() {
         let entry = format!("{}.parent.example", "n".repeat(60));
         let raw = vec![entry.as_str(); 20].join(",");
-        let err = normalize_parent_ns_addrs(Some(&raw)).unwrap_err();
+        let err = normalize_parent_ns_addrs(&raw).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
     }
 }

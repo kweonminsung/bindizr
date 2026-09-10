@@ -129,3 +129,17 @@ $ bindizr zone version get <ZONE_NAME> <SERIAL>
 # Roll a zone back to a previous serial (the serial still advances)
 $ bindizr zone version rollback <ZONE_NAME> <SERIAL> [--dry-run]
 ```
+
+## Exit codes
+
+A failure exits with the class of the error, so a script can branch on it
+without parsing the message.
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `1` | Failure, including an unreachable daemon and invalid input |
+| `2` | Usage error, such as an unknown command or a missing argument |
+| `3` | Not found: no such zone, record, token, version, key, or policy |
+| `4` | Conflict: the name is taken, or the object is in use or in the wrong state |
+| `5` | Denied: the token is missing, invalid, or lacks a grant |

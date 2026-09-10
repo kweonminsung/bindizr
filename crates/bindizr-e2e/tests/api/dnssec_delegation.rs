@@ -197,11 +197,10 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     assert_eq!(delegation["ds_key_tags"], json!([key_tag]));
     assert_eq!(delegation["ds_ttl"], 3600);
     assert_eq!(delegation["parent_ns_addrs"], json!([parent.addr()]));
-    assert_eq!(delegation["discovered"], false);
     let key_id = body["dnssec"]["keys"][0]["id"].clone();
     assert_eq!(
         delegation["keys"],
-        json!([{ "id": key_id, "key_tag": key_tag, "role": "csk", "state": "active", "ds_published": true }])
+        json!([{ "id": key_id, "key_tag": key_tag, "role": "csk", "state": "active", "ds_published": true, "ds_digest_unsupported": false }])
     );
 
     // A status read asks no one; only the check does.
@@ -284,7 +283,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["dnssec"]["parent_ns_addrs"], parent.addr());
 
-    // An empty list returns the zone to parent discovery.
+    // An empty list would leave no server to ask.
     let (status, body) = app
         .request(
             Method::PUT,
@@ -292,8 +291,8 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
             Some(json!({ "parent_ns_addrs": "" })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body["dnssec"]["parent_ns_addrs"].is_null(), "{body}");
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "INVALID_INPUT");
 
     let (status, _) = app
         .request(
@@ -540,4 +539,142 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
             .any(|key| key["key_tag"] == new_key_tag && key["state"] == "active"),
         "{body}"
     );
+}
+
+#[tokio::test]
+async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds() {
+    let app = TestApp::start_local().await;
+    let parent = FakeParent::start();
+    let zone_name = app.zone_name("ds-seen-digest.example");
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "default_ttl": 60,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let zone_name = zone_name.as_str();
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": parent.addr() })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let old_key_tag = body["dnssec"]["keys"][0]["key_tag"].as_u64().unwrap() as u16;
+    let old_ds = ServedDs::from_status(&body["dnssec"], old_key_tag, 60);
+    parent.set_ds(vec![old_ds.clone()]);
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let new_key_tag = body["dnssec"]["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["state"] == "published")
+        .expect("rollover start pre-publishes the replacement key")["key_tag"]
+        .as_u64()
+        .unwrap() as u16;
+    // Digest type 3 is GOST R 34.11-94, which bindizr does not compute, so
+    // it cannot tell whether this DS matches the key.
+    let new_ds = ServedDs::from_status(&body["dnssec"], new_key_tag, 60).with_digest_type(3);
+    parent.set_ds(vec![old_ds, new_ds]);
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/check-ds"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let key = body["dnssec"]["delegation"]["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["key_tag"] == new_key_tag)
+        .expect("the replacement key is a delegation key")
+        .clone();
+    assert_eq!(key["ds_published"], false, "{body}");
+    assert_eq!(key["ds_digest_unsupported"], true, "{body}");
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_holddown=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED", "{body}");
+}
+
+#[tokio::test]
+async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server() {
+    let app = TestApp::start_local().await;
+    let first_parent = FakeParent::start();
+    let second_parent = FakeParent::start();
+    let zone_name = app.zone_name("ds-digest-servers.example");
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "default_ttl": 60,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let zone_name = zone_name.as_str();
+
+    let parent_ns_addrs = format!("{},{}", first_parent.addr(), second_parent.addr());
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": parent_ns_addrs })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let key_tag = body["dnssec"]["keys"][0]["key_tag"].as_u64().unwrap() as u16;
+    let ds = ServedDs::from_status(&body["dnssec"], key_tag, 60);
+    // One server answers in a digest type bindizr computes, the other only in
+    // one it cannot; flattening the two would hide the second.
+    first_parent.set_ds(vec![ds.clone()]);
+    second_parent.set_ds(vec![ds.with_digest_type(3)]);
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/check-ds"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let key = body["dnssec"]["delegation"]["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["key_tag"] == key_tag)
+        .expect("the signing key is a delegation key")
+        .clone();
+    assert_eq!(key["ds_published"], false, "{body}");
+    assert_eq!(key["ds_digest_unsupported"], true, "{body}");
 }

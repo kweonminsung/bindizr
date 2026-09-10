@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres};
 
 use crate::{
@@ -29,7 +30,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         const CHUNK: usize = 500;
         for chunk in changes.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived) VALUES ",
+                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES ",
             );
             let mut p = 1;
             for i in 0..chunk.len() {
@@ -37,7 +38,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
                     sql.push(',');
                 }
                 sql.push_str(&format!(
-                    "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                    "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
                     p,
                     p + 1,
                     p + 2,
@@ -47,11 +48,13 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
                     p + 6,
                     p + 7,
                     p + 8,
-                    p + 9
+                    p + 9,
+                    p + 10
                 ));
-                p += 10;
+                p += 11;
             }
 
+            let now = Utc::now();
             let mut query = sqlx::query(AssertSqlSafe(sql));
             for c in chunk {
                 query = query
@@ -64,7 +67,8 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
                     .bind(c.record_rdata.clone())
                     .bind(c.record_ttl)
                     .bind(c.record_priority)
-                    .bind(c.derived);
+                    .bind(c.derived)
+                    .bind(now);
             }
             query
                 .execute(&mut **postgres_tx)
@@ -95,6 +99,29 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
+    async fn count_between_serials(
+        &self,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<u64, DatabaseError> {
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM zone_journal
+            WHERE zone_id = $1 AND serial > $2 AND serial <= $3
+            "#,
+        )
+        .bind(zone_id)
+        .bind(from_serial)
+        .bind(to_serial)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as u64)
+    }
+
     async fn list_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

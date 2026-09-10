@@ -21,7 +21,15 @@ async fn zone_dnssec_lifecycle_via_cli() {
     let zone_name = app.zone_name("dnssec-cli.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
-    let enabled = app.run_cli_success(&["dnssec", "enable", &zone_name]).await;
+    let enabled = app
+        .run_cli_success(&[
+            "dnssec",
+            "enable",
+            &zone_name,
+            "--parent-ns-addrs",
+            "127.0.0.1:9",
+        ])
+        .await;
     assert!(enabled.contains("DNSSEC enabled"), "{enabled}");
 
     let status = app.run_cli_success(&["dnssec", "status", &zone_name]).await;
@@ -109,7 +117,15 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     ])
     .await;
     let enabled = app
-        .run_cli_success(&["dnssec", "enable", &zone_name, "--policy", &policy_name])
+        .run_cli_success(&[
+            "dnssec",
+            "enable",
+            &zone_name,
+            "--policy",
+            &policy_name,
+            "--parent-ns-addrs",
+            "127.0.0.1:9",
+        ])
         .await;
     assert!(enabled.contains("NSEC3 denial"), "{enabled}");
 
@@ -161,7 +177,14 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     let app = TestApp::start_local().await;
     let zone_name = app.zone_name("dnssec-keys.example");
     app.create_zone_cli(&zone_name, "3600").await;
-    app.run_cli_success(&["dnssec", "enable", &zone_name]).await;
+    app.run_cli_success(&[
+        "dnssec",
+        "enable",
+        &zone_name,
+        "--parent-ns-addrs",
+        "127.0.0.1:9",
+    ])
+    .await;
 
     let key_tag = signing_key_tag(&app, &zone_name).await;
 
@@ -260,8 +283,16 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
         "--split-keys",
     ])
     .await;
-    app.run_cli_success(&["dnssec", "enable", &zone_name, "--policy", &policy_name])
-        .await;
+    app.run_cli_success(&[
+        "dnssec",
+        "enable",
+        &zone_name,
+        "--policy",
+        &policy_name,
+        "--parent-ns-addrs",
+        "127.0.0.1:9",
+    ])
+    .await;
 
     let exported = app
         .run_cli_success(&["dnssec", "keys", "export", &zone_name])

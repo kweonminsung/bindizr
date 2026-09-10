@@ -4,6 +4,7 @@ use bindizr_core::{
     dns::{message, message::Rtype, name::ZoneName},
     log_info, log_warn,
     model::{
+        zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
         zone_version::ZoneVersion,
     },
@@ -13,6 +14,34 @@ use tokio::net::TcpStream;
 
 use super::{axfr, catalog};
 use crate::dns::error::XfrError;
+
+/// A delta this small never outweighs a zone worth transferring, so the
+/// zone is not counted for it.
+const SMALL_DELTA_ROWS: u64 = 4096;
+
+/// RFC 1995, Section 2: a server may answer with a full transfer when the
+/// incremental one would be larger. Counting first is also what keeps a
+/// long-absent secondary from pulling its whole absence into memory. Rows,
+/// not bytes: summing lengths would read the very rows this decides whether
+/// to read.
+async fn delta_outweighs_zone(
+    zone: &Zone,
+    client_serial: u32,
+    current_serial: u32,
+) -> Result<bool, XfrError> {
+    let delta_rows = ZoneService::count_journal_between_serials(
+        zone.id,
+        client_serial as i32,
+        current_serial as i32,
+    )
+    .await?;
+
+    if delta_rows <= SMALL_DELTA_ROWS {
+        return Ok(false);
+    }
+
+    Ok(delta_rows >= ZoneService::count_transfer_records(zone.name.as_str()).await?)
+}
 
 pub(crate) async fn handle_ixfr(
     stream: &mut TcpStream,
@@ -60,9 +89,22 @@ pub(crate) async fn handle_ixfr(
         return send_up_to_date_response(stream, query, &current_soa).await;
     }
 
+    // Plain comparison, not the RFC 1982 serial arithmetic RFC 1995 assumes:
+    // bindizr's serials stop at i32::MAX and never wrap, so mod-2^32 ordering
+    // could only matter for a client holding a larger serial from a previous
+    // primary, which needs a reload there rather than an IXFR.
     if client_serial > current_serial {
         log_warn!(
             "IXFR: Client serial {} > current serial {}, falling back to AXFR",
+            client_serial,
+            current_serial
+        );
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+    }
+
+    if delta_outweighs_zone(&zone, client_serial, current_serial).await? {
+        log_info!(
+            "IXFR: Delta from serial {} to {} is no smaller than the zone, falling back to AXFR",
             client_serial,
             current_serial
         );

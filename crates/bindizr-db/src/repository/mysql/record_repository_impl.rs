@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use bindizr_core::dns::name::OwnerName;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool};
 
 use crate::{
@@ -30,10 +31,11 @@ impl RecordRepository for MySqlRecordRepository {
     ) -> Result<Record, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&record.name)
@@ -43,10 +45,12 @@ impl RecordRepository for MySqlRecordRepository {
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
+        .bind(now)
         .execute(&mut **mysql_tx)
         .await?;
 
         record.id = result.last_insert_id() as i32;
+        record.created_at = now;
         Ok(record)
     }
 
@@ -70,16 +74,17 @@ impl RecordRepository for MySqlRecordRepository {
         let mut out = Vec::with_capacity(records.len());
         for chunk in records.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id) VALUES ",
+                "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ",
             );
             for i in 0..chunk.len() {
                 sql.push_str(if i == 0 {
-                    "(?, ?, ?, ?, ?, ?, ?)"
+                    "(?, ?, ?, ?, ?, ?, ?, ?)"
                 } else {
-                    ",(?, ?, ?, ?, ?, ?, ?)"
+                    ",(?, ?, ?, ?, ?, ?, ?, ?)"
                 });
             }
 
+            let now = Utc::now();
             let mut query = sqlx::query(AssertSqlSafe(sql));
             for r in chunk {
                 query = query
@@ -89,7 +94,8 @@ impl RecordRepository for MySqlRecordRepository {
                     .bind(r.record_type.display_value(&r.value))
                     .bind(r.ttl)
                     .bind(r.priority)
-                    .bind(r.zone_id);
+                    .bind(r.zone_id)
+                    .bind(now);
             }
             let result = query
                 .execute(&mut **mysql_tx)
@@ -103,6 +109,7 @@ impl RecordRepository for MySqlRecordRepository {
             for (offset, r) in chunk.iter().enumerate() {
                 let mut rec = r.clone();
                 rec.id = first + offset as i32 * increment;
+                rec.created_at = now;
                 out.push(rec);
             }
         }

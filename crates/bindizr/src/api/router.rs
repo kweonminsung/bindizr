@@ -5,7 +5,11 @@ use axum::{
     routing,
 };
 use bindizr_core::config;
-use bindizr_service::{authorization::Caller, error::ServiceError, types::MessageResponse};
+use bindizr_service::{
+    authorization::Caller,
+    error::{ErrorCode, ServiceError},
+    types::MessageResponse,
+};
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 
@@ -64,7 +68,9 @@ impl ApiRouter {
                 .route("/openapi.yaml", routing::get(ApiRouter::openapi_yaml));
         }
 
-        router = router.fallback(Self::not_found);
+        router = router
+            .fallback(Self::not_found)
+            .method_not_allowed_fallback(Self::method_not_allowed);
 
         // Layered after the fallback so every route, including 404s, is measured.
         if api_config.metrics_enabled {
@@ -106,7 +112,17 @@ impl ApiRouter {
         }
     }
 
+    async fn method_not_allowed() -> impl IntoResponse {
+        ApiError(ServiceError::new(
+            ErrorCode::MethodNotAllowed,
+            "this path does not take that method",
+        ))
+    }
+
     async fn not_found() -> impl IntoResponse {
-        (StatusCode::NOT_FOUND, "404 Not Found")
+        ApiError(ServiceError::new(
+            ErrorCode::EndpointNotFound,
+            "no route matches this path",
+        ))
     }
 }

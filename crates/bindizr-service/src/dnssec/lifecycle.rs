@@ -27,19 +27,17 @@ use crate::{
 
 impl DnssecService {
     /// Enable DNSSEC for a zone under `policy` (the built-in `default` when
-    /// omitted): generate its key(s) and sign the whole zone. `parent_ns_addrs`
-    /// given (even empty) replaces the zone's parent servers.
+    /// omitted): generate its key(s) and sign the whole zone. The parent
+    /// nameservers are required, since every later DS check asks them.
     pub async fn enable(
         caller: &Caller,
         zone_name: &str,
         policy: Option<&str>,
-        parent_ns_addrs: Option<&str>,
+        parent_ns_addrs: &str,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
         let policy_name = normalize_policy_name(policy.unwrap_or(DEFAULT_DNSSEC_POLICY_NAME))?;
-        let parent_ns_addrs = parent_ns_addrs
-            .map(|raw| normalize_parent_ns_addrs(Some(raw)))
-            .transpose()?;
+        let parent_ns_addrs = normalize_parent_ns_addrs(parent_ns_addrs)?;
 
         let mut tx = RepositoryService::begin_tx("failed to enable DNSSEC").await?;
         let result = async {
@@ -50,20 +48,15 @@ impl DnssecService {
             if !existing.is_empty() {
                 return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
             }
-            let zone = match parent_ns_addrs {
-                Some(parent_ns_addrs) => {
-                    RepositoryService::update_zone_parent_ns_addrs_tx(
-                        &mut tx,
-                        zone.id,
-                        parent_ns_addrs.as_deref(),
-                    )
-                    .await?;
-                    Zone {
-                        parent_ns_addrs,
-                        ..zone
-                    }
-                }
-                None => zone,
+            RepositoryService::update_zone_parent_ns_addrs_tx(
+                &mut tx,
+                zone.id,
+                Some(parent_ns_addrs.as_str()),
+            )
+            .await?;
+            let zone = Zone {
+                parent_ns_addrs: Some(parent_ns_addrs),
+                ..zone
             };
             // Shared: a concurrent delete of the policy must wait for the FK
             // reference this transaction is about to write.
@@ -118,7 +111,7 @@ impl DnssecService {
 
     /// Change a zone's signing settings in one transaction; an omitted field
     /// keeps its value. A policy move needs a signed zone; `parent_ns_addrs`
-    /// given (even empty) replaces the parent nameservers, signed or not.
+    /// replaces the parent nameservers, signed or not.
     pub async fn update_settings(
         caller: &Caller,
         zone_name: &str,
@@ -132,9 +125,7 @@ impl DnssecService {
             ));
         }
         let policy_name = policy.map(normalize_policy_name).transpose()?;
-        let parent_ns_addrs = parent_ns_addrs
-            .map(|raw| normalize_parent_ns_addrs(Some(raw)))
-            .transpose()?;
+        let parent_ns_addrs = parent_ns_addrs.map(normalize_parent_ns_addrs).transpose()?;
 
         let mut tx = RepositoryService::begin_tx("failed to update DNSSEC settings").await?;
         let result = async {
@@ -145,11 +136,11 @@ impl DnssecService {
                     RepositoryService::update_zone_parent_ns_addrs_tx(
                         &mut tx,
                         zone.id,
-                        parent_ns_addrs.as_deref(),
+                        Some(parent_ns_addrs.as_str()),
                     )
                     .await?;
                     Zone {
-                        parent_ns_addrs,
+                        parent_ns_addrs: Some(parent_ns_addrs),
                         ..zone
                     }
                 }

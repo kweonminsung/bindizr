@@ -38,10 +38,11 @@ pub(crate) enum DnssecCommand {
         /// policy; see `bindizr dnssec-policy list`)
         #[arg(long, value_name = "POLICY_NAME")]
         policy: Option<String>,
-        /// The parent zone's nameservers (comma-separated host[:port]) asked
-        /// for this zone's DS before DNSSEC is disabled (default: discovered)
+        /// The parent zone's nameservers (comma-separated host[:port]),
+        /// asked for this zone's DS by `check-ds`, `rollover ds-seen`, and
+        /// `disable`
         #[arg(long, value_name = "ADDRS")]
-        parent_ns_addrs: Option<String>,
+        parent_ns_addrs: String,
     },
     /// Change a zone's signing settings: the policy it signs under and/or
     /// the parent nameservers asked for its DS record
@@ -55,7 +56,7 @@ pub(crate) enum DnssecCommand {
         #[arg(long, value_name = "POLICY_NAME", group = "setting")]
         policy: Option<String>,
         /// Comma-separated host[:port] entries of the parent's nameservers;
-        /// empty returns the zone to parent discovery
+        /// must name at least one server
         #[arg(long, value_name = "ADDRS", group = "setting")]
         parent_ns_addrs: Option<String>,
     },
@@ -311,9 +312,8 @@ pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
             "DS withdrawal published (RFC 8078): the parent should drop this zone's DS records."
         );
     }
-    match status.parent_ns_addrs.as_deref() {
-        Some(addrs) => println!("Parent nameservers: {}", addrs),
-        None => println!("Parent nameservers: discovered through the system resolver"),
+    if let Some(addrs) = status.parent_ns_addrs.as_deref() {
+        println!("Parent nameservers: {}", addrs);
     }
     if let Some(delegation) = &status.delegation {
         let servers = delegation.parent_ns_addrs.join(", ");
@@ -343,10 +343,10 @@ pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
                 key.key_tag,
                 key.role,
                 key.state,
-                if key.ds_published {
-                    "at parent"
-                } else {
-                    "not at parent"
+                match (key.ds_published, key.ds_digest_unsupported) {
+                    (true, _) => "at parent",
+                    (false, true) => "at parent in a digest type bindizr cannot check",
+                    (false, false) => "not at parent",
                 }
             );
             if let Some(eligible_at) = key.eligible_at {

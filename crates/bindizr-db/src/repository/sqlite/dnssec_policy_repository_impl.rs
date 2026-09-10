@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{Pool, Sqlite};
 
 use crate::{
@@ -22,10 +23,11 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
     async fn create(&self, mut policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&policy.name)
@@ -37,10 +39,12 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         .bind(policy.zsk_lifetime_days)
         .bind(policy.rollover_publish_holddown_secs)
         .bind(policy.rollover_retire_holddown_secs)
+        .bind(now)
         .execute(&mut *conn)
         .await?;
 
         policy.id = result.last_insert_rowid() as i32;
+        policy.created_at = now;
         Ok(policy)
     }
 

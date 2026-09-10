@@ -27,10 +27,11 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
     ) -> Result<DnssecKey, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(key.zone_id)
@@ -43,10 +44,12 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         .bind(key.state_changed_at)
         .bind(key.eligible_at)
         .bind(key.max_signed_ttl)
+        .bind(now)
         .execute(&mut **sqlite_tx)
         .await?;
 
         key.id = result.last_insert_rowid() as i32;
+        key.created_at = now;
         Ok(key)
     }
 
@@ -80,12 +83,12 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
     ) -> Result<Vec<DnssecKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        // datetime(?) normalizes the bound value to the column's stored format.
+        // SQLite compares timestamps as text; sqlx's RFC 3339 sorts chronologically.
         let keys = sqlx::query_as::<_, DnssecKey>(
             r#"
             SELECT id, zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at
             FROM dnssec_keys
-            WHERE state = ? AND eligible_at <= datetime(?)
+            WHERE state = ? AND eligible_at <= ?
             ORDER BY zone_id, id
             "#,
         )

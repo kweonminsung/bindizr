@@ -11,7 +11,7 @@ use crate::{
         record::{RecordType, RecordWithZone},
     },
     repository::RepositoryService,
-    types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse},
+    types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse, normalize_page_limit},
     zone::{ZoneService, validation::normalize_zone_name},
 };
 
@@ -65,7 +65,7 @@ impl RecordService {
             .as_deref()
             .map(normalize_zone_name)
             .transpose()?;
-        let limit = filter.limit;
+        let limit = Some(normalize_page_limit(filter.limit)?);
         let offset = filter.offset;
         let signed = filter.signed.unwrap_or(false);
 

@@ -8,7 +8,7 @@ use domain::{
         iana::{Class, Opcode, Rcode, Rtype},
         rdata::ComposeRecordData,
     },
-    rdata::{Ds, Ns, Soa},
+    rdata::{Ds, Soa},
 };
 
 /// EDNS0 payload size advertised where the answer may outgrow 512 bytes (a
@@ -354,36 +354,6 @@ fn require_parent_soa(message: &Message<&[u8]>, qname: &Name<Vec<u8>>) -> Result
         }
     }
     Err("negative answer carries no SOA of a parent zone".to_string())
-}
-
-/// Read a resolver's NS answer as absolute names (trailing dot), so a later
-/// lookup skips search-list expansion; empty for NODATA or NXDOMAIN.
-pub fn extract_ns_names(
-    query_id: u16,
-    qname: &Name<Vec<u8>>,
-    response: &[u8],
-) -> Result<Vec<String>, String> {
-    let message = parse_answer(query_id, qname, Rtype::NS, response)?;
-    match message.header().rcode() {
-        Rcode::NOERROR => {}
-        Rcode::NXDOMAIN => return Ok(Vec::new()),
-        rcode => return Err(format!("RCODE {}", rcode.to_int())),
-    }
-
-    let answer = message
-        .answer()
-        .map_err(|e| format!("malformed answer section: {}", e))?;
-    let mut names = Vec::new();
-    for rr in answer.limit_to::<Ns<_>>() {
-        let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
-        // A CNAME answer carries the target's NS set too; only the name's own
-        // NS records say it is a zone apex.
-        if !rr.owner().name_eq(qname) {
-            continue;
-        }
-        names.push(rr.data().nsdname().fmt_with_dot().to_string());
-    }
-    Ok(names)
 }
 
 #[cfg(test)]

@@ -12,7 +12,6 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 const FLAG_AA: u16 = 0x0400;
 const FLAG_TC: u16 = 0x0200;
 const RCODE_NXDOMAIN: u16 = 3;
-const RTYPE_NS: u16 = 2;
 const RTYPE_DS: u16 = 43;
 const RTYPE_SOA: u16 = 6;
 
@@ -129,12 +128,6 @@ fn parsed_ds_rr(key_tag: u16) -> DsRr {
     }
 }
 
-fn ns_rr(nsdname: &str) -> Vec<u8> {
-    let mut rdata = Vec::new();
-    encode_name(nsdname, &mut rdata);
-    build_rr(RTYPE_NS, 3600, &rdata)
-}
-
 /// The whole answer to `query`, as TCP always carries it.
 fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
     let authority = [parent_soa_rr(query)];
@@ -220,33 +213,6 @@ async fn fake_server(answer: Answer) -> SocketAddr {
     addr
 }
 
-/// A resolver whose NS answers depend on the qname: `example.com` and `com`
-/// are zone apexes, every other name is NODATA.
-async fn fake_resolver() -> SocketAddr {
-    let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
-    let addr = socket.local_addr().unwrap();
-    tokio::spawn(async move {
-        let mut buf = [0u8; 4096];
-        loop {
-            let Ok((len, peer)) = socket.recv_from(&mut buf).await else {
-                return;
-            };
-            let query = &buf[..len];
-            let (qname, _) = decode_question(query);
-            let names: &[&str] = match qname.as_str() {
-                "example.com" => &["ns1.example.com", "ns2.example.com"],
-                "com" => &["a.gtld-servers.net"],
-                _ => &[],
-            };
-            let answers: Vec<Vec<u8>> = names.iter().map(|ns| ns_rr(ns)).collect();
-            let _ = socket
-                .send_to(&build_response(query, 0, 0, &answers, &[]), peer)
-                .await;
-        }
-    });
-    addr
-}
-
 fn zone_name(value: &str) -> ZoneName {
     ZoneName::parse(value).unwrap()
 }
@@ -256,19 +222,6 @@ fn servers(addrs: &[SocketAddr]) -> Vec<(String, Vec<SocketAddr>)> {
         .iter()
         .map(|addr| (addr.to_string(), vec![*addr]))
         .collect()
-}
-
-#[test]
-fn parse_resolv_conf_reads_nameserver_lines() {
-    let contents = "# generated\nsearch example.com\nnameserver 192.0.2.53 # primary\n\
-                    nameserver 2001:db8::53\nnameserver fe80::1%en0\noptions ndots:1\n";
-    assert_eq!(
-        parse_resolv_conf(contents),
-        vec![
-            "192.0.2.53:53".parse::<SocketAddr>().unwrap(),
-            "[2001:db8::53]:53".parse::<SocketAddr>().unwrap(),
-        ]
-    );
 }
 
 #[tokio::test]
@@ -413,59 +366,6 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
             .collect::<Vec<_>>(),
         vec![Some(vec![7])]
     );
-}
-
-#[tokio::test]
-async fn discover_parent_finds_the_closest_enclosing_zone() {
-    let resolver = fake_resolver().await;
-
-    // `child.example.com` is no zone apex, so the walk passes it and stops
-    // at `example.com`.
-    let (parent, nameservers) =
-        discover_parent(&zone_name("sub.child.example.com"), &[resolver], TIMEOUT)
-            .await
-            .unwrap();
-    assert_eq!(parent, "example.com");
-    assert_eq!(nameservers, vec!["ns1.example.com.", "ns2.example.com."]);
-
-    let (parent, nameservers) = discover_parent(&zone_name("example.com"), &[resolver], TIMEOUT)
-        .await
-        .unwrap();
-    assert_eq!(parent, "com");
-    assert_eq!(nameservers, vec!["a.gtld-servers.net."]);
-}
-
-#[tokio::test]
-async fn discover_parent_tries_the_next_resolver_when_one_is_silent() {
-    let silent = fake_server(Answer::Silence).await;
-    let resolver = fake_resolver().await;
-
-    let (parent, _) = discover_parent(
-        &zone_name("example.com"),
-        &[silent, resolver],
-        Duration::from_millis(200),
-    )
-    .await
-    .unwrap();
-    assert_eq!(parent, "com");
-
-    let err = discover_parent(
-        &zone_name("example.com"),
-        &[silent],
-        Duration::from_millis(200),
-    )
-    .await
-    .unwrap_err();
-    assert!(err.contains("timeout"), "{err}");
-}
-
-#[tokio::test]
-async fn discover_parent_fails_when_no_ancestor_has_nameservers() {
-    let resolver = fake_server(Answer::Nxdomain).await;
-    let err = discover_parent(&zone_name("example.org"), &[resolver], TIMEOUT)
-        .await
-        .unwrap_err();
-    assert!(err.contains("no parent zone found"), "{err}");
 }
 
 #[tokio::test]

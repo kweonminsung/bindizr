@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use bindizr_core::dns::name::OwnerName;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
@@ -30,10 +31,11 @@ impl RecordRepository for PostgresRecordRepository {
     ) -> Result<Record, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id
             "#,
         )
@@ -44,10 +46,12 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
+        .bind(now)
         .fetch_one(&mut **postgres_tx)
         .await?;
 
         record.id = result.get::<i32, _>(0);
+        record.created_at = now;
         Ok(record)
     }
 
@@ -62,7 +66,7 @@ impl RecordRepository for PostgresRecordRepository {
         let mut out = Vec::with_capacity(records.len());
         for chunk in records.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id) VALUES ",
+                "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ",
             );
             let mut p = 1;
             for i in 0..chunk.len() {
@@ -70,19 +74,21 @@ impl RecordRepository for PostgresRecordRepository {
                     sql.push(',');
                 }
                 sql.push_str(&format!(
-                    "(${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                    "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
                     p,
                     p + 1,
                     p + 2,
                     p + 3,
                     p + 4,
                     p + 5,
-                    p + 6
+                    p + 6,
+                    p + 7
                 ));
-                p += 7;
+                p += 8;
             }
             sql.push_str(" RETURNING id");
 
+            let now = Utc::now();
             let mut query = sqlx::query(AssertSqlSafe(sql));
             for r in chunk {
                 query = query
@@ -92,7 +98,8 @@ impl RecordRepository for PostgresRecordRepository {
                     .bind(r.record_type.display_value(&r.value))
                     .bind(r.ttl)
                     .bind(r.priority)
-                    .bind(r.zone_id);
+                    .bind(r.zone_id)
+                    .bind(now);
             }
             let rows = query
                 .fetch_all(&mut **postgres_tx)
@@ -103,6 +110,7 @@ impl RecordRepository for PostgresRecordRepository {
             for (r, row) in chunk.iter().zip(rows) {
                 let mut rec = r.clone();
                 rec.id = row.get::<i32, _>(0);
+                rec.created_at = now;
                 out.push(rec);
             }
         }

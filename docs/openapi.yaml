@@ -563,12 +563,13 @@ paths:
           type: boolean
       - name: limit
         in: query
-        description: Maximum number of records to return.
+        description: Records per page; defaults to 50.
         required: false
         schema:
           type: integer
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         description: Number of records to skip.
@@ -1636,12 +1637,13 @@ paths:
           type: string
       - name: limit
         in: query
-        description: Maximum number of zones to return.
+        description: Zones per page; defaults to 50.
         required: false
         schema:
           type: integer
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         description: Number of zones to skip.
@@ -1934,7 +1936,7 @@ paths:
       tags:
       - DNSSEC
       summary: Change a zone's DNSSEC settings
-      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy''s (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries (empty returns the zone to discovery), and applies to unsigned zones too.'
+      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy''s (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
       operationId: update_dnssec_settings
       parameters:
       - name: name
@@ -2002,7 +2004,7 @@ paths:
       tags:
       - DNSSEC
       summary: Enable DNSSEC for a zone
-      description: Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` names the parent zone's nameservers that disabling DNSSEC later asks for the DS; omitted, the parent is discovered through the system resolver.
+      description: 'Generates the zone''s signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone''s nameservers that every later DS check asks.'
       operationId: enable_dnssec
       parameters:
       - name: name
@@ -2070,7 +2072,7 @@ paths:
       tags:
       - DNSSEC
       summary: Disable DNSSEC for a zone
-      description: 'Deletes the zone''s signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the parent''s nameservers (`parent_ns_addrs`, or the discovered ones) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`), fails to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked (`DNSSEC_STATE_CHANGED`; retry). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller''s.'
+      description: 'Deletes the zone''s signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the zone''s parent nameservers (`parent_ns_addrs`) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`), fails to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked (`DNSSEC_STATE_CHANGED`; retry). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller''s.'
       operationId: disable_dnssec
       parameters:
       - name: name
@@ -2127,7 +2129,7 @@ paths:
       tags:
       - DNSSEC
       summary: Ask the parent zone whether it serves the zone's DS
-      description: 'Asks the parent zone''s nameservers (`parent_ns_addrs`, or the discovered ones) for the zone''s DS records and reports the answer in `delegation`: `published` with the key tags and TTL served, or `hidden`. The same check gates disabling DNSSEC.'
+      description: 'Asks the zone''s parent nameservers (`parent_ns_addrs`) for the zone''s DS records and reports the answer in `delegation`: `published` with the key tags and TTL served, or `hidden`. The same check gates disabling DNSSEC.'
       operationId: check_dnssec_ds
       parameters:
       - name: name
@@ -2247,7 +2249,7 @@ paths:
       tags:
       - DNSSEC
       summary: Confirm the new DS is at the parent (ds-seen)
-      description: Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and every one of the parent zone's nameservers (`parent_ns_addrs`, or the discovered ones) serves the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, `DNSSEC_DS_UNVERIFIED` when they cannot be asked, or `DNSSEC_STATE_CHANGED` when the zone's keys or parent changed while they were being asked (retry). `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.
+      description: Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute, or `DNSSEC_STATE_CHANGED` when the zone's keys or parent changed while they were being asked (retry). `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.
       operationId: ds_seen_dnssec_rollover
       parameters:
       - name: name
@@ -2782,12 +2784,13 @@ paths:
           type: string
       - name: limit
         in: query
-        description: Maximum number of versions to return.
+        description: Versions per page; defaults to 50.
         required: false
         schema:
           type: integer
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         description: Number of versions to skip.
@@ -3331,7 +3334,6 @@ components:
       description: What the parent zone's servers answered when asked for the zone's DS.
       required:
       - parent_ns_addrs
-      - discovered
       - ds_state
       - ds_key_tags
       - keys
@@ -3340,10 +3342,6 @@ components:
         checked_at:
           type: string
           format: date-time
-        discovered:
-          type: boolean
-          description: Whether the servers were discovered rather than configured on the zone.
-          example: true
         ds_key_tags:
           type: array
           items:
@@ -3376,7 +3374,7 @@ components:
           type: array
           items:
             type: string
-          description: 'The nameservers asked: the zone''s setting, or the discovered parent''s.'
+          description: The nameservers asked, from the zone's setting.
     DnssecDelegationKeyInfo:
       type: object
       description: One of the zone's SEP keys against the parent's DS records.
@@ -3386,7 +3384,15 @@ components:
       - role
       - state
       - ds_published
+      - ds_digest_unsupported
       properties:
+        ds_digest_unsupported:
+          type: boolean
+          description: |-
+            Whether the parent serves a DS for this key tag only in digest types
+            bindizr cannot compute, leaving `ds_published` undecided rather than
+            answered.
+          example: false
         ds_published:
           type: boolean
           description: |-
@@ -3527,15 +3533,14 @@ components:
     EnableDnssecRequest:
       type: object
       description: Request body for enabling DNSSEC on a zone.
+      required:
+      - parent_ns_addrs
       properties:
         parent_ns_addrs:
-          type:
-          - string
-          - 'null'
+          type: string
           description: |-
-            The parent zone's nameservers (comma-separated `host[:port]`) asked
-            for the zone's DS before DNSSEC is disabled. Omitted, the zone keeps
-            its setting; a zone with none discovers its parent.
+            The parent zone's nameservers (comma-separated `host[:port]`), asked
+            for the zone's DS by every later check.
           example: a.gtld-servers.net,b.gtld-servers.net
         policy:
           type:
@@ -3785,8 +3790,8 @@ components:
           - string
           - 'null'
           description: |-
-            The parent nameservers configured on the zone; absent when the
-            parent is discovered.
+            The parent nameservers configured on the zone; absent until DNSSEC
+            is enabled.
           example: a.gtld-servers.net,b.gtld-servers.net
         policy:
           oneOf:
@@ -4700,8 +4705,8 @@ components:
           - string
           - 'null'
           description: |-
-            The parent zone's nameservers (comma-separated `host[:port]`); empty
-            returns the zone to parent discovery.
+            The parent zone's nameservers (comma-separated `host[:port]`); must
+            name at least one server.
           example: a.gtld-servers.net,b.gtld-servers.net
         policy:
           type:

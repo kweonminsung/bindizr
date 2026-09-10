@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
 
 use crate::{
@@ -50,8 +51,8 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(zone_id, serial)
             DO UPDATE SET
                 mname = excluded.mname,
@@ -72,6 +73,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .bind(version.retry)
         .bind(version.expire)
         .bind(version.minimum_ttl)
+        .bind(Utc::now())
         .execute(&mut **sqlite_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
@@ -207,12 +209,12 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         let sqlite_tx = tx.as_sqlite()?;
 
         // Each zone's newest version survives regardless of age: the IXFR
-        // up-to-date response reads it. datetime(?) normalizes the bound value
-        // to the column's stored format.
+        // up-to-date response reads it. SQLite compares timestamps as text;
+        // sqlx's RFC 3339 sorts chronologically.
         let result = sqlx::query(
             r#"
             DELETE FROM zone_versions
-            WHERE created_at < datetime(?)
+            WHERE created_at < ?
               AND serial < (
                   SELECT MAX(newest.serial) FROM zone_versions newest
                   WHERE newest.zone_id = zone_versions.zone_id

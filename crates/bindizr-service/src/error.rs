@@ -13,6 +13,8 @@ pub enum ErrorCode {
     ZoneConflict,
     RecordConflict,
     TokenConflict,
+    EndpointNotFound,
+    MethodNotAllowed,
     ZoneNotFound,
     RecordNotFound,
     TokenNotFound,
@@ -33,6 +35,7 @@ pub enum ErrorCode {
     DnssecPolicyNotFound,
     DnssecPolicyConflict,
     DnssecPolicyInUse,
+    DnssecSigningFailed,
     Unauthorized,
     InvalidToken,
     Forbidden,
@@ -52,6 +55,8 @@ impl ErrorCode {
             ErrorCode::ZoneConflict => "ZONE_CONFLICT",
             ErrorCode::RecordConflict => "RECORD_CONFLICT",
             ErrorCode::TokenConflict => "TOKEN_CONFLICT",
+            ErrorCode::EndpointNotFound => "ENDPOINT_NOT_FOUND",
+            ErrorCode::MethodNotAllowed => "METHOD_NOT_ALLOWED",
             ErrorCode::ZoneNotFound => "ZONE_NOT_FOUND",
             ErrorCode::RecordNotFound => "RECORD_NOT_FOUND",
             ErrorCode::TokenNotFound => "TOKEN_NOT_FOUND",
@@ -72,6 +77,7 @@ impl ErrorCode {
             ErrorCode::DnssecPolicyNotFound => "DNSSEC_POLICY_NOT_FOUND",
             ErrorCode::DnssecPolicyConflict => "DNSSEC_POLICY_CONFLICT",
             ErrorCode::DnssecPolicyInUse => "DNSSEC_POLICY_IN_USE",
+            ErrorCode::DnssecSigningFailed => "DNSSEC_SIGNING_FAILED",
             ErrorCode::Unauthorized => "UNAUTHORIZED",
             ErrorCode::InvalidToken => "INVALID_TOKEN",
             ErrorCode::Forbidden => "FORBIDDEN",
@@ -93,6 +99,8 @@ impl ErrorCode {
             "ZONE_CONFLICT" => ErrorCode::ZoneConflict,
             "RECORD_CONFLICT" => ErrorCode::RecordConflict,
             "TOKEN_CONFLICT" => ErrorCode::TokenConflict,
+            "ENDPOINT_NOT_FOUND" => ErrorCode::EndpointNotFound,
+            "METHOD_NOT_ALLOWED" => ErrorCode::MethodNotAllowed,
             "ZONE_NOT_FOUND" => ErrorCode::ZoneNotFound,
             "RECORD_NOT_FOUND" => ErrorCode::RecordNotFound,
             "TOKEN_NOT_FOUND" => ErrorCode::TokenNotFound,
@@ -113,6 +121,7 @@ impl ErrorCode {
             "DNSSEC_POLICY_NOT_FOUND" => ErrorCode::DnssecPolicyNotFound,
             "DNSSEC_POLICY_CONFLICT" => ErrorCode::DnssecPolicyConflict,
             "DNSSEC_POLICY_IN_USE" => ErrorCode::DnssecPolicyInUse,
+            "DNSSEC_SIGNING_FAILED" => ErrorCode::DnssecSigningFailed,
             "UNAUTHORIZED" => ErrorCode::Unauthorized,
             "INVALID_TOKEN" => ErrorCode::InvalidToken,
             "FORBIDDEN" => ErrorCode::Forbidden,
@@ -132,7 +141,8 @@ impl ErrorCode {
             | ErrorCode::InvalidJsonBody => 400,
             ErrorCode::Unauthorized | ErrorCode::InvalidToken => 401,
             ErrorCode::Forbidden => 403,
-            ErrorCode::ZoneNotFound
+            ErrorCode::EndpointNotFound
+            | ErrorCode::ZoneNotFound
             | ErrorCode::RecordNotFound
             | ErrorCode::TokenNotFound
             | ErrorCode::VersionNotFound
@@ -155,9 +165,11 @@ impl ErrorCode {
             | ErrorCode::DnssecStateChanged
             | ErrorCode::DnssecPolicyConflict
             | ErrorCode::DnssecPolicyInUse => 409,
+            ErrorCode::MethodNotAllowed => 405,
             ErrorCode::PayloadTooLarge => 413,
             ErrorCode::UnsupportedMediaType => 415,
-            ErrorCode::Internal => 500,
+            // Server-side like Internal, but nameable for alerting.
+            ErrorCode::DnssecSigningFailed | ErrorCode::Internal => 500,
         }
     }
 }
@@ -311,7 +323,7 @@ impl ServiceError {
 
     pub(crate) fn dnssec_signing_failed(message: impl Into<String>) -> Self {
         Self::new(
-            ErrorCode::Internal,
+            ErrorCode::DnssecSigningFailed,
             format!("DNSSEC signing failed: {}", message.into()),
         )
     }
@@ -381,6 +393,27 @@ impl ServiceError {
         )
     }
 
+    pub(crate) fn dnssec_ds_digest_unsupported(
+        zone_name: impl Into<String>,
+        key_tags: &[u16],
+    ) -> Self {
+        Self::new(
+            ErrorCode::DnssecDsUnverified,
+            format!(
+                "the parent zone serves a DS for key tag{} {} of zone '{}', but only in digest \
+                 types bindizr cannot compute, so the match cannot be confirmed; ask the parent \
+                 to publish SHA-256, or skip the DS check",
+                if key_tags.len() == 1 { "" } else { "s" },
+                key_tags
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                zone_name.into()
+            ),
+        )
+    }
+
     pub(crate) fn dnssec_ds_unverified(
         zone_name: impl Into<String>,
         reason: impl Into<String>,
@@ -431,5 +464,22 @@ impl ServiceError {
                 zone_name.into()
             ),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_signing_failure_is_not_an_internal_error() {
+        let err = ServiceError::dnssec_signing_failed("boom");
+        assert_eq!(err.code, ErrorCode::DnssecSigningFailed);
+        assert_eq!(err.code.http_status(), 500);
+        // The CLI parses the code back off the daemon socket.
+        assert_eq!(
+            ErrorCode::parse(err.code.as_str()),
+            Some(ErrorCode::DnssecSigningFailed)
+        );
     }
 }

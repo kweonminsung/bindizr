@@ -25,3 +25,40 @@ pub(crate) use tsig_key_repository_impl::SqliteTsigKeyRepository;
 pub(crate) use zone_change_repository_impl::SqliteZoneChangeRepository;
 pub(crate) use zone_repository_impl::SqliteZoneRepository;
 pub(crate) use zone_version_repository_impl::SqliteZoneVersionRepository;
+
+#[cfg(test)]
+mod tests {
+    use chrono::{TimeDelta, Utc};
+    use sqlx::SqlitePool;
+
+    /// Wrapping only the bound side in `datetime()` renders the space form, so
+    /// a stored `T` sorted above any cutoff of the same date.
+    #[tokio::test]
+    async fn a_bound_timestamp_compares_chronologically_against_a_stored_one() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query("CREATE TABLE t (at TEXT NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let stored = Utc::now();
+        sqlx::query("INSERT INTO t (at) VALUES (?)")
+            .bind(stored)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        for (offset, expected) in [
+            (TimeDelta::minutes(1), 1),
+            (TimeDelta::days(1), 1),
+            (TimeDelta::minutes(-1), 0),
+            (TimeDelta::days(-1), 0),
+        ] {
+            let matched = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM t WHERE at < ?")
+                .bind(stored + offset)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(matched, expected, "cutoff offset {}", offset);
+        }
+    }
+}

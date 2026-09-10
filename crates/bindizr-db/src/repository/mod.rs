@@ -444,6 +444,14 @@ pub trait ZoneChangeRepository: Send + Sync {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
+    /// How many rows `list_between_serials` would return, so a caller can
+    /// weigh the delta before loading it.
+    async fn count_between_serials(
+        &self,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<u64, DatabaseError>;
     /// For reads that must be consistent with a mutation in the same
     /// transaction.
     async fn list_between_serials_tx(

@@ -65,8 +65,8 @@ installation's defaults.
 ## Enabling DNSSEC for a zone
 
 ```sh
-bindizr dnssec enable example.com                  # the default policy
-bindizr dnssec enable example.com --policy strict
+bindizr dnssec enable example.com --parent-ns-addrs a.gtld-servers.net,b.gtld-servers.net
+bindizr dnssec enable example.com --parent-ns-addrs ns1.parent.example --policy strict
 ```
 
 or over HTTP:
@@ -74,8 +74,13 @@ or over HTTP:
 ```sh
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:3000/zones/example.com/dnssec \
-  -H "Content-Type: application/json" -d '{"policy": "strict"}'
+  -H "Content-Type: application/json" \
+  -d '{"policy": "strict", "parent_ns_addrs": "ns1.parent.example"}'
 ```
+
+`--parent-ns-addrs` is required, and every later DS check asks exactly
+these servers. In a hidden primary layout the host resolver cannot see the
+zones bindizr serves, so there is nothing reliable to guess them from.
 
 This generates the key(s) the policy prescribes (under `default`, a single
 ECDSA P-256 CSK), signs the whole zone, and notifies the secondaries. The
@@ -216,20 +221,16 @@ to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked
 `--skip-ds-check` (`DELETE /zones/{name}/dnssec?skip_ds_check=true`) skips
 the check, for a host that cannot reach the parent at all.
 
-The parent is discovered by default: bindizr walks up the zone's name
-asking the system resolver (`/etc/resolv.conf`) for NS records, then
-queries every nameserver it finds directly. When the parent is private,
-unreachable, or the host has no resolver, name its nameservers on the zone
-instead:
+Every check asks the nameservers the zone names, set at enable and
+changed with:
 
 ```sh
-bindizr dnssec enable example.com --parent-ns-addrs ns1.parent.example,ns2.parent.example
 bindizr dnssec set example.com --parent-ns-addrs ns1.parent.example:5353
-bindizr dnssec set example.com --parent-ns-addrs ""      # back to discovery
 ```
 
 Also `parent_ns_addrs` in the enable body and in `PUT /zones/{name}/dnssec`;
-`dnssec status` shows the setting.
+`dnssec status` shows the setting. The list must always name at least one
+server.
 
 ## Behavior notes
 

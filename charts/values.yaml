@@ -40,6 +40,8 @@ bindizr:
     notifyBatchMs: 50
     # Cache each zone's records by serial so repeated AXFRs skip the DB read.
     zoneCache: true
+    # Records the cache may hold; a larger zone is served uncached.
+    zoneCacheMaxRecords: 500000
     # Days of IXFR journal/SOA history to keep (0 = unlimited).
     journalRetentionDays: 365
     service:

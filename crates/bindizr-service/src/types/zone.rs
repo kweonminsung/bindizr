@@ -93,6 +93,7 @@ pub struct GetZonesFilter {
     pub serial: Option<i32>,
     #[schema(example = "example")]
     pub search: Option<String>,
+    /// Defaults to 50 when omitted; 1000 is the largest page accepted.
     #[schema(example = 50)]
     pub limit: Option<u32>,
     #[schema(example = 0)]

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
 
 use crate::{
@@ -26,12 +27,12 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
     ) -> Result<(), DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // 10 columns per row; keep bind count under SQLite's conservative limit.
-        const CHUNK: usize = 100;
-        const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        // 11 columns per row; keep bind count under SQLite's conservative limit.
+        const CHUNK: usize = 90;
+        const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         for chunk in changes.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived) VALUES ",
+                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES ",
             );
             for i in 0..chunk.len() {
                 if i > 0 {
@@ -40,6 +41,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
                 sql.push_str(ROW);
             }
 
+            let now = Utc::now();
             let mut query = sqlx::query(AssertSqlSafe(sql));
             for c in chunk {
                 query = query
@@ -52,7 +54,8 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
                     .bind(c.record_rdata.clone())
                     .bind(c.record_ttl)
                     .bind(c.record_priority)
-                    .bind(c.derived);
+                    .bind(c.derived)
+                    .bind(now);
             }
             query
                 .execute(&mut **sqlite_tx)
@@ -82,6 +85,29 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         .fetch_all(&self.pool)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    }
+
+    async fn count_between_serials(
+        &self,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<u64, DatabaseError> {
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM zone_journal
+            WHERE zone_id = ? AND serial > ? AND serial <= ?
+            "#,
+        )
+        .bind(zone_id)
+        .bind(from_serial)
+        .bind(to_serial)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as u64)
     }
 
     async fn list_between_serials_tx(
@@ -119,7 +145,8 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
 
         // Delete whole serials only: everything up to the highest serial whose
         // newest row predates the cutoff, so remaining IXFR steps stay complete.
-        // datetime(?) normalizes the bound value to the column's stored format.
+        // SQLite compares timestamps as text; sqlx's RFC 3339 sorts
+        // chronologically.
         let result = sqlx::query(
             r#"
             DELETE FROM zone_journal
@@ -127,7 +154,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
                 SELECT 1 FROM (
                     SELECT zone_id AS cutoff_zone_id, MAX(serial) AS cutoff_serial
                     FROM zone_journal
-                    WHERE created_at < datetime(?)
+                    WHERE created_at < ?
                     GROUP BY zone_id
                 ) boundaries
                 WHERE boundaries.cutoff_zone_id = zone_journal.zone_id

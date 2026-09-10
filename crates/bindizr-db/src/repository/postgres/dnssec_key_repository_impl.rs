@@ -27,10 +27,11 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
     ) -> Result<DnssecKey, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id
             "#,
         )
@@ -44,10 +45,12 @@ impl DnssecKeyRepository for PostgresDnssecKeyRepository {
         .bind(key.state_changed_at)
         .bind(key.eligible_at)
         .bind(key.max_signed_ttl)
+        .bind(now)
         .fetch_one(&mut **postgres_tx)
         .await?;
 
         key.id = result.get::<i32, _>(0);
+        key.created_at = now;
         Ok(key)
     }
 

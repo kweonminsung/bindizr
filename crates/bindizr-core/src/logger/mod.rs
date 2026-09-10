@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 
+use chrono::Local;
 use log::{Level, Metadata, Record};
 
 use crate::config;
@@ -53,15 +54,18 @@ impl log::Log for Logger {
 
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
+            // The offset keeps lines from replicas in other zones comparable.
+            let at = Local::now().format("%Y-%m-%dT%H:%M:%S%.3f%:z");
             let log_message = if self.log_level >= Level::Debug {
                 format!(
-                    "{} - {}: {}\n",
+                    "{} {} - {}: {}\n",
+                    at,
                     record.level(),
                     record.target(),
                     record.args()
                 )
             } else {
-                format!("{}: {}\n", record.level(), record.args())
+                format!("{} {}: {}\n", at, record.level(), record.args())
             };
 
             // Use stderr for logging to avoid interfering with stdout

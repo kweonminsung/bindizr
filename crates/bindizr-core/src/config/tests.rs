@@ -15,6 +15,8 @@ struct TestConfigToml {
     secondary_addrs: &'static str,
     /// Extra `[dns]` lines (newline-separated, no trailing newline).
     dns_notify: &'static str,
+    api_listen_port: u16,
+    dns_listen_port: u16,
 }
 
 impl Default for TestConfigToml {
@@ -26,6 +28,8 @@ impl Default for TestConfigToml {
             unselected_databases: true,
             secondary_addrs: "",
             dns_notify: "",
+            api_listen_port: 3000,
+            dns_listen_port: 53,
         }
     }
 }
@@ -41,7 +45,7 @@ impl TestConfigToml {
             r#"
 [api]
 listen_addr = "{api_listen_addr}"
-listen_port = 3000
+listen_port = {api_listen_port}
 require_authentication = {require_authentication}
 
 [database]
@@ -52,7 +56,7 @@ file_path = "file::memory:?cache=shared"
 {unselected_databases}
 [dns]
 listen_addr = "127.0.0.1"
-listen_port = 53
+listen_port = {dns_listen_port}
 secondary_addrs = "{secondary_addrs}"
 {dns_notify}
 [logging]
@@ -63,6 +67,8 @@ log_level = "debug"
             database_type = self.database_type,
             secondary_addrs = self.secondary_addrs,
             dns_notify = self.dns_notify,
+            api_listen_port = self.api_listen_port,
+            dns_listen_port = self.dns_listen_port,
         )
     }
 }
@@ -251,4 +257,45 @@ fn from_raw_rejects_entryless_secondary_addrs() {
     .unwrap_err();
 
     assert!(err.contains("dns.secondary_addrs contains no addresses"));
+}
+
+#[test]
+fn from_raw_rejects_port_zero() {
+    // Port 0 binds an ephemeral one, somewhere no client could find.
+    let err = parse_config(&TestConfigToml {
+        dns_listen_port: 0,
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(err.contains("dns.listen_port must not be 0"), "{}", err);
+
+    let err = parse_config(&TestConfigToml {
+        api_listen_port: 0,
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(err.contains("api.listen_port must not be 0"), "{}", err);
+}
+
+#[test]
+fn from_raw_rejects_listeners_sharing_a_port() {
+    let err = parse_config(&TestConfigToml {
+        api_listen_port: 5353,
+        dns_listen_port: 5353,
+        ..Default::default()
+    })
+    .unwrap_err();
+
+    assert!(err.contains("cannot share port 5353"), "{}", err);
+}
+
+#[test]
+fn from_raw_rejects_an_unparseable_secondary_address() {
+    let err = parse_config(&TestConfigToml {
+        secondary_addrs: "192.0.2.1, not a host",
+        ..Default::default()
+    })
+    .unwrap_err();
+
+    assert!(err.contains("is not a host[:port] address"), "{}", err);
 }

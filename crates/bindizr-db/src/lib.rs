@@ -1,11 +1,14 @@
 //! Database layer: connection-pool setup and repository implementations for
 //! the MySQL, PostgreSQL, and SQLite backends.
 
-use std::sync::OnceLock;
+use std::{str::FromStr, sync::OnceLock};
 
+use chrono::Utc;
 use sqlx::{
-    MySql, Pool, Postgres, Sqlite, mysql::MySqlPoolOptions, postgres::PgPoolOptions,
-    sqlite::SqlitePoolOptions,
+    MySql, Pool, Postgres, Sqlite,
+    mysql::MySqlPoolOptions,
+    postgres::PgPoolOptions,
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
 
 pub mod error;
@@ -160,6 +163,11 @@ impl DatabasePool {
     }
     /// Connect to SQLite, create tables, and return the pool.
     pub(crate) async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
+        // A clean install points at a database file that does not exist yet.
+        let connect_options = SqliteConnectOptions::from_str(url)
+            .map_err(|e| DatabaseError::PoolError(format!("Invalid SQLite file path: {}", e)))?
+            .create_if_missing(true);
+
         let pool = SqlitePoolOptions::new()
             .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
@@ -189,7 +197,7 @@ impl DatabasePool {
                     Ok(())
                 })
             })
-            .connect(url)
+            .connect_with(connect_options)
             .await
             .map_err(|e| {
                 DatabaseError::PoolError(format!("Failed to create SQLite database pool: {}", e))
@@ -217,6 +225,15 @@ impl DatabasePool {
                         e.to_string()
                     })?;
                 }
+                let seed = schema::mysql_default_policy_seed();
+                sqlx::query(seed)
+                    .bind(Utc::now())
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log_error!("Failed to execute query '{}': {}", seed, e);
+                        e.to_string()
+                    })?;
             }
             DatabasePool::PostgreSQL(pool) => {
                 let mut conn = pool.acquire().await.map_err(|e| {
@@ -229,6 +246,15 @@ impl DatabasePool {
                         e.to_string()
                     })?;
                 }
+                let seed = schema::postgres_default_policy_seed();
+                sqlx::query(seed)
+                    .bind(Utc::now())
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log_error!("Failed to execute query '{}': {}", seed, e);
+                        e.to_string()
+                    })?;
             }
             DatabasePool::SQLite(pool) => {
                 let mut conn = pool.acquire().await.map_err(|e| {
@@ -241,6 +267,15 @@ impl DatabasePool {
                         e.to_string()
                     })?;
                 }
+                let seed = schema::sqlite_default_policy_seed();
+                sqlx::query(seed)
+                    .bind(Utc::now())
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log_error!("Failed to execute query '{}': {}", seed, e);
+                        e.to_string()
+                    })?;
             }
         }
         Ok(())

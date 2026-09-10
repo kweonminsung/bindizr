@@ -35,6 +35,7 @@ data:
     notify_mode = "{{ .Values.bindizr.dns.notifyMode }}"
     notify_batch_ms = {{ .Values.bindizr.dns.notifyBatchMs }}
     zone_cache = {{ .Values.bindizr.dns.zoneCache }}
+    zone_cache_max_records = {{ .Values.bindizr.dns.zoneCacheMaxRecords }}
     journal_retention_days = {{ .Values.bindizr.dns.journalRetentionDays }}
 
     [logging]

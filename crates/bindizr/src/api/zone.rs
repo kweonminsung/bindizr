@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Path, Query},
+    extract::DefaultBodyLimit,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
@@ -8,8 +8,8 @@ use axum::{
 use bindizr_service::{
     record::RecordService,
     types::{
-        CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneRequest, ImportZoneResponse, MessageResponse, PaginatedResponse,
+        CreateZoneRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetRecordResponse, GetZoneResponse,
+        GetZonesFilter, ImportZoneRequest, ImportZoneResponse, MessageResponse, PaginatedResponse,
         RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
         ZoneDetailResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
     },
@@ -19,7 +19,7 @@ use serde::Deserialize;
 
 use crate::api::{
     RequestCaller, ZoneNameParam,
-    error::ApiError,
+    error::{ApiError, Path, Query},
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
 
@@ -126,7 +126,7 @@ pub(crate) async fn export_zone(
         description = "Every zone mutation records a version of the zone's SOA metadata keyed by serial. Versions are returned newest serial first.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("limit" = Option<u32>, Query, description = "Maximum number of versions to return."),
+            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Versions per page; defaults to 50."),
             ("offset" = Option<u64>, Query, description = "Number of versions to skip."),
             ("include_signer_serials" = Option<bool>, Query, description = "Include signer-only serials (DNSSEC re-signs and rollovers); by default only serials with user changes, plus the current serial, are listed.")
         ),
@@ -146,7 +146,7 @@ pub(crate) async fn list_zone_versions(
     let response = ZoneService::list_versions(
         &caller,
         &params.name,
-        query.limit,
+        query.limit.or(Some(DEFAULT_PAGE_LIMIT)),
         query.offset,
         query.include_signer_serials,
     )
@@ -285,7 +285,7 @@ pub(crate) async fn diff_zone_versions(
             ("max_default_ttl" = Option<i32>, Query, description = "Filter by maximum default TTL."),
             ("serial" = Option<i32>, Query, description = "Filter by serial."),
             ("search" = Option<String>, Query, description = "Partially search zones."),
-            ("limit" = Option<u32>, Query, description = "Maximum number of zones to return."),
+            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Zones per page; defaults to 50."),
             ("offset" = Option<u64>, Query, description = "Number of zones to skip.")
         ),
         responses(
@@ -298,8 +298,9 @@ pub(crate) async fn diff_zone_versions(
 /// List DNS zones, optionally filtered and paginated.
 pub(crate) async fn list_zones(
     RequestCaller(caller): RequestCaller,
-    Query(query): Query<GetZonesFilter>,
+    Query(mut query): Query<GetZonesFilter>,
 ) -> Result<Response, ApiError> {
+    query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = ZoneService::list_by_filter(&caller, query).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

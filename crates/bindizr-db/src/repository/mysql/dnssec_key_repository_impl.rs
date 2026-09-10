@@ -27,10 +27,11 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
     ) -> Result<DnssecKey, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(key.zone_id)
@@ -43,10 +44,12 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
         .bind(key.state_changed_at)
         .bind(key.eligible_at)
         .bind(key.max_signed_ttl)
+        .bind(now)
         .execute(&mut **mysql_tx)
         .await?;
 
         key.id = result.last_insert_id() as i32;
+        key.created_at = now;
         Ok(key)
     }
 

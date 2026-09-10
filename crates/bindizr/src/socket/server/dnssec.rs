@@ -21,7 +21,7 @@ pub(crate) async fn enable_dnssec(
         &Caller::Global,
         &params.zone_name,
         params.request.policy.as_deref(),
-        params.request.parent_ns_addrs.as_deref(),
+        &params.request.parent_ns_addrs,
     )
     .await?;
 

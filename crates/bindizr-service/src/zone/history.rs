@@ -29,7 +29,7 @@ use crate::{
     serial::generate_serial,
     types::{
         PaginatedResponse, RollbackSummary, RollbackZoneResponse, VersionDetailResponse,
-        VersionDiffResponse, VersionRecordResponse, ZoneVersionResponse,
+        VersionDiffResponse, VersionRecordResponse, ZoneVersionResponse, normalize_page_limit,
     },
 };
 
@@ -227,7 +227,7 @@ impl ZoneService {
 
         let total =
             RepositoryService::count_zone_versions(zone.id, !include_signer_serials).await?;
-        let effective_limit = limit.unwrap_or(50);
+        let effective_limit = normalize_page_limit(limit)?;
         let versions = RepositoryService::list_zone_versions(
             zone.id,
             !include_signer_serials,

@@ -26,6 +26,7 @@ notify_after_update = true
 notify_mode = "sync"
 notify_batch_ms = 50
 zone_cache = true
+zone_cache_max_records = 500000
 notify_on_startup = false
 notify_retries = 3
 notify_timeout_secs = 3
