@@ -4,6 +4,7 @@
 use std::net::{IpAddr, SocketAddr};
 
 use bindizr_core::{
+    config,
     dns::{
         message,
         message::{Rcode, Rtype},
@@ -41,6 +42,11 @@ pub(crate) async fn handle_udp_soa(
     Ok(())
 }
 
+/// `bindizr doctor` probes over the wire, reaching a concrete `listen_addr` from it.
+fn is_self_probe(client_ip: IpAddr) -> bool {
+    client_ip.is_loopback() || client_ip == config::bindizr_config().dns.listen_addr
+}
+
 /// The response bytes, which TCP and UDP send alike.
 async fn build_soa_response(
     query: &message::ParsedQuery,
@@ -49,8 +55,7 @@ async fn build_soa_response(
 ) -> Result<Vec<u8>, XfrError> {
     let zone_name_str = query.zone_name.as_str();
 
-    // `bindizr doctor` probes this listener over the wire, so loopback is exempt.
-    if !client_ip.is_loopback()
+    if !is_self_probe(client_ip)
         && validate_secondary_acl(client_ip, secondary_acl)
             .await
             .is_err()
