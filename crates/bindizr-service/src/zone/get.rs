@@ -8,7 +8,7 @@ use crate::{
     log_error,
     model::{dnssec_record::DnssecRecord, record::Record, zone::Zone, zone_change::ZoneChange},
     repository::RepositoryService,
-    types::{GetZoneResponse, GetZonesFilter, PaginatedResponse},
+    types::{GetZoneResponse, GetZonesFilter, PaginatedResponse, normalize_page_limit},
 };
 
 impl ZoneService {
@@ -69,7 +69,7 @@ impl ZoneService {
         filter: GetZonesFilter,
     ) -> Result<PaginatedResponse<GetZoneResponse>, ServiceError> {
         let scope_token_id = caller.scope_token_id();
-        let limit = filter.limit;
+        let limit = Some(normalize_page_limit(filter.limit)?);
         let offset = filter.offset;
 
         let zone_filter = ZoneFilter {

@@ -3,6 +3,24 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::error::ServiceError;
+
+pub(crate) const DEFAULT_PAGE_LIMIT: u32 = 50;
+
+/// Bounds one call to a page rather than a whole table.
+pub(crate) const MAX_PAGE_LIMIT: u32 = 1000;
+
+/// The page size to query with, rejecting one past [`MAX_PAGE_LIMIT`].
+pub(crate) fn normalize_page_limit(limit: Option<u32>) -> Result<u32, ServiceError> {
+    match limit {
+        None => Ok(DEFAULT_PAGE_LIMIT),
+        Some(limit) if limit == 0 || limit > MAX_PAGE_LIMIT => Err(ServiceError::invalid_input(
+            format!("limit must be between 1 and {}", MAX_PAGE_LIMIT),
+        )),
+        Some(limit) => Ok(limit),
+    }
+}
+
 /// A page of items together with its pagination metadata.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct PaginatedResponse<T> {
@@ -39,4 +57,22 @@ pub struct Pagination {
     pub offset: u64,
     #[schema(example = 125)]
     pub total: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_limit_defaults_and_rejects_out_of_range() {
+        assert_eq!(normalize_page_limit(None).unwrap(), DEFAULT_PAGE_LIMIT);
+        assert_eq!(normalize_page_limit(Some(1)).unwrap(), 1);
+        assert_eq!(
+            normalize_page_limit(Some(MAX_PAGE_LIMIT)).unwrap(),
+            MAX_PAGE_LIMIT
+        );
+        // Zero would page forever without advancing.
+        assert!(normalize_page_limit(Some(0)).is_err());
+        assert!(normalize_page_limit(Some(MAX_PAGE_LIMIT + 1)).is_err());
+    }
 }
