@@ -30,7 +30,7 @@ pub struct Metrics {
     pub dnssec_maintenance_runs_total: IntCounterVec,
     pub zone_cache_lookups_total: IntCounterVec,
     pub zone_cache_evictions_total: IntCounter,
-    pub zone_cache_bytes: IntGauge,
+    pub zone_cache_records: IntGauge,
 }
 
 static METRICS: OnceLock<Metrics> = OnceLock::new();
@@ -201,17 +201,17 @@ impl Metrics {
         let zone_cache_evictions_total = IntCounter::new(
             "bindizr_zone_cache_evictions_total",
             "Zones dropped to make room; a rising count beside a low hit ratio \
-             means dns.zone_cache_max_mb is too small for the working set.",
+             means dns.zone_cache_max_records is too small for the working set.",
         )
         .expect("valid metric definition");
         register(&registry, &zone_cache_evictions_total);
 
-        let zone_cache_bytes = IntGauge::new(
-            "bindizr_zone_cache_bytes",
-            "Record bytes the zone cache holds, against dns.zone_cache_max_mb.",
+        let zone_cache_records = IntGauge::new(
+            "bindizr_zone_cache_records",
+            "Records the zone cache holds, against dns.zone_cache_max_records.",
         )
         .expect("valid metric definition");
-        register(&registry, &zone_cache_bytes);
+        register(&registry, &zone_cache_records);
 
         Self {
             registry,
@@ -230,7 +230,7 @@ impl Metrics {
             dnssec_maintenance_runs_total,
             zone_cache_lookups_total,
             zone_cache_evictions_total,
-            zone_cache_bytes,
+            zone_cache_records,
         }
     }
 

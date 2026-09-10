@@ -26,8 +26,8 @@ $ curl http://localhost:3000/metrics
 | `bindizr_dnssec_rrsigs_expiring_total` | gauge | Signatures inside the refresh window; persisting across scrapes means re-signing is falling behind |
 | `bindizr_dnssec_maintenance_runs_total{result}` | counter | Hourly DNSSEC maintenance passes, by outcome |
 | `bindizr_zone_cache_lookups_total{result}` | counter | Zone-cache reads by outcome; a low hit ratio means transfers reach the database anyway |
-| `bindizr_zone_cache_evictions_total` | counter | Zones dropped to make room; rising beside a low hit ratio means `dns.zone_cache_max_mb` is too small |
-| `bindizr_zone_cache_bytes` | gauge | Record bytes the zone cache holds, against `dns.zone_cache_max_mb` |
+| `bindizr_zone_cache_evictions_total` | counter | Zones dropped to make room; rising beside a low hit ratio means `dns.zone_cache_max_records` is too small |
+| `bindizr_zone_cache_records` | gauge | Records the zone cache holds, against `dns.zone_cache_max_records` |
 
 Example Prometheus scrape configuration:
 

@@ -49,7 +49,7 @@ notify_after_update = true    # Send DNS NOTIFY after zone changes
 notify_mode = "sync"          # "sync": NOTIFY runs inline; "async": queued to a background worker
 notify_batch_ms = 50          # async only: window to batch NOTIFYs into one per zone (0 disables the wait)
 zone_cache = true             # Cache each zone's records by serial so repeated AXFRs skip the DB read
-zone_cache_max_mb = 64        # Megabytes of record data the cache may hold; a larger zone is served uncached
+zone_cache_max_records = 500000 # Records the cache may hold; a larger zone is served uncached (a record costs roughly 130-900 bytes)
 notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
 notify_retries = 3            # Retry count after the initial NOTIFY attempt
 notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
@@ -90,7 +90,7 @@ the API or CLI — see [DNSSEC](dnssec.md).
 | `BINDIZR_NOTIFY_MODE` | `dns.notify_mode` | `sync` or `async` |
 | `BINDIZR_NOTIFY_BATCH_MS` | `dns.notify_batch_ms` | `async` mode only |
 | `BINDIZR_ZONE_CACHE` | `dns.zone_cache` | |
-| `BINDIZR_ZONE_CACHE_MAX_MB` | `dns.zone_cache_max_mb` | |
+| `BINDIZR_ZONE_CACHE_MAX_RECORDS` | `dns.zone_cache_max_records` | see [Sizing the zone cache](#sizing-the-zone-cache) |
 | `BINDIZR_NSUPDATE_ALLOW_UNSIGNED` | `dns.nsupdate_allow_unsigned` | |
 | `BINDIZR_JOURNAL_RETENTION_DAYS` | `dns.journal_retention_days` | `0` keeps history forever |
 | `BINDIZR_LOG_LEVEL` | `logging.log_level` | |
@@ -112,3 +112,20 @@ backend `BINDIZR_DATABASE_TYPE` selected.
 :   The change is committed and the reload/NOTIFY is queued to a background
     worker. Writes return sooner, and `notify_batch_ms` collapses NOTIFYs for the
     same zone into one per window — worth it when many records change at once.
+
+## Sizing the zone cache
+
+`dns.zone_cache_max_records` counts records, not bytes, so converting a memory
+budget takes one step. A cached record costs roughly:
+
+| Record | Cost |
+| --- | --- |
+| `A` with a short name | 130 bytes |
+| `TXT` with a 255-byte value | 375 bytes |
+| `TXT` carrying a DKIM key | 860 bytes |
+
+The default of 500,000 records is about 64 MiB of plain address records, more
+where large `TXT` values or a signed zone's derived records dominate. Watch
+`bindizr_zone_cache_records` against the limit and
+`bindizr_zone_cache_evictions_total`: evictions rising beside a low hit ratio in
+`bindizr_zone_cache_lookups_total` mean the working set does not fit.

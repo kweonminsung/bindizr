@@ -105,7 +105,7 @@ fn print_config(config: &BindizrConfig) {
     print_value("notify_mode", config.dns.notify_mode);
     print_value("notify_batch_ms", config.dns.notify_batch_ms);
     print_value("zone_cache", config.dns.zone_cache);
-    print_value("zone_cache_max_mb", config.dns.zone_cache_max_mb);
+    print_value("zone_cache_max_records", config.dns.zone_cache_max_records);
     print_value("notify_on_startup", config.dns.notify_on_startup);
     print_value("notify_retries", config.dns.notify_retries);
     print_value("notify_timeout_secs", config.dns.notify_timeout_secs);
