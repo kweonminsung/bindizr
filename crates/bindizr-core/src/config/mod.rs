@@ -7,6 +7,8 @@ use config::{Config, File, FileFormat};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
+use crate::dns::address::is_address_target;
+
 pub(crate) const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
@@ -305,8 +307,10 @@ impl BindizrConfig {
             .map_err(|e| format!("Invalid Bindizr configuration: {}", e))?;
 
         bindizr_config.apply_env_overrides(get_env)?;
+        bindizr_config.api.validate()?;
         bindizr_config.database.validate()?;
         bindizr_config.dns.validate()?;
+        bindizr_config.validate_listeners()?;
 
         Ok(bindizr_config)
     }
@@ -430,16 +434,57 @@ impl DatabaseConfig {
     }
 }
 
-impl DnsConfig {
-    /// Reject separators-only `secondary_addrs` (e.g. ","), which would otherwise
-    /// read as "no secondaries configured".
+impl ApiConfig {
     fn validate(&self) -> Result<(), String> {
+        if self.listen_port == 0 {
+            return Err("api.listen_port must not be 0".to_string());
+        }
+        Ok(())
+    }
+}
+
+impl BindizrConfig {
+    /// Both bind at startup, so sharing one leaves the second failing.
+    fn validate_listeners(&self) -> Result<(), String> {
+        if self.api.listen_port == self.dns.listen_port
+            && (self.api.listen_addr == self.dns.listen_addr
+                || self.api.listen_addr.is_unspecified()
+                || self.dns.listen_addr.is_unspecified())
+        {
+            return Err(format!(
+                "api and dns cannot share port {}",
+                self.api.listen_port
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl DnsConfig {
+    fn validate(&self) -> Result<(), String> {
+        if self.listen_port == 0 {
+            return Err("dns.listen_port must not be 0".to_string());
+        }
+
         let raw = &self.secondary_addrs;
-        if !raw.trim().is_empty() && raw.split(',').all(|entry| entry.trim().is_empty()) {
+        if raw.trim().is_empty() {
+            return Ok(());
+        }
+        // Separators only (e.g. ",") would otherwise read as "no secondaries".
+        if raw.split(',').all(|entry| entry.trim().is_empty()) {
             return Err(
                 "dns.secondary_addrs contains no addresses; use \"\" when there are no secondaries"
                     .to_string(),
             );
+        }
+        for entry in raw.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+            // An unparseable entry silently notifies nobody and admits nobody.
+            if !is_address_target(entry) {
+                return Err(format!(
+                    "dns.secondary_addrs entry '{}' is not a host[:port] address",
+                    entry
+                ));
+            }
         }
         Ok(())
     }
