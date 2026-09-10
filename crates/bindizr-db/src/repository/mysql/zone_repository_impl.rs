@@ -30,6 +30,7 @@ impl ZoneRepository for MySqlZoneRepository {
     ) -> Result<Zone, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, created_at)
@@ -46,11 +47,12 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
         .bind(&zone.parent_ns_addrs)
-        .bind(Utc::now())
+        .bind(now)
         .execute(&mut **mysql_tx)
         .await?;
 
         zone.id = result.last_insert_id() as i32;
+        zone.created_at = now;
         Ok(zone)
     }
 

@@ -23,6 +23,7 @@ impl TokenGrantRepository for PostgresTokenGrantRepository {
     async fn create(&self, mut grant: TokenGrant) -> Result<TokenGrant, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO token_grants (zone_id, api_token_id, record_name_pattern, record_types, created_at)
@@ -34,11 +35,12 @@ impl TokenGrantRepository for PostgresTokenGrantRepository {
         .bind(grant.api_token_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
-        .bind(Utc::now())
+        .bind(now)
         .fetch_one(&mut *conn)
         .await?;
 
         grant.id = result.get::<i32, _>(0);
+        grant.created_at = now;
 
         Ok(grant)
     }

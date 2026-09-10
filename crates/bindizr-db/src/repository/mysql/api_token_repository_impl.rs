@@ -19,6 +19,7 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
     async fn create(&self, mut token: ApiToken) -> Result<ApiToken, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO api_tokens (name, token, description, is_global, expires_at, created_at)
@@ -30,11 +31,12 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         .bind(&token.description)
         .bind(token.is_global)
         .bind(token.expires_at)
-        .bind(Utc::now())
+        .bind(now)
         .execute(&mut *conn)
         .await?;
 
         token.id = result.last_insert_id() as i32;
+        token.created_at = now;
 
         Ok(token)
     }

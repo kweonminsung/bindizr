@@ -622,3 +622,59 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED", "{body}");
 }
+
+#[tokio::test]
+async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server() {
+    let app = TestApp::start_local().await;
+    let first_parent = FakeParent::start();
+    let second_parent = FakeParent::start();
+    let zone_name = app.zone_name("ds-digest-servers.example");
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "default_ttl": 60,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let zone_name = zone_name.as_str();
+
+    let parent_ns_addrs = format!("{},{}", first_parent.addr(), second_parent.addr());
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": parent_ns_addrs })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let key_tag = body["dnssec"]["keys"][0]["key_tag"].as_u64().unwrap() as u16;
+    let ds = ServedDs::from_status(&body["dnssec"], key_tag, 60);
+    // One server answers in a digest type bindizr computes, the other only in
+    // one it cannot; flattening the two would hide the second.
+    first_parent.set_ds(vec![ds.clone()]);
+    second_parent.set_ds(vec![ds.with_digest_type(3)]);
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/check-ds"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let key = body["dnssec"]["delegation"]["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["key_tag"] == key_tag)
+        .expect("the signing key is a delegation key")
+        .clone();
+    assert_eq!(key["ds_published"], false, "{body}");
+    assert_eq!(key["ds_digest_unsupported"], true, "{body}");
+}

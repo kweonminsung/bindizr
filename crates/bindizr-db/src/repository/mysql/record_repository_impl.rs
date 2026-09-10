@@ -31,6 +31,7 @@ impl RecordRepository for MySqlRecordRepository {
     ) -> Result<Record, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at)
@@ -44,11 +45,12 @@ impl RecordRepository for MySqlRecordRepository {
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
-        .bind(Utc::now())
+        .bind(now)
         .execute(&mut **mysql_tx)
         .await?;
 
         record.id = result.last_insert_id() as i32;
+        record.created_at = now;
         Ok(record)
     }
 
@@ -107,6 +109,7 @@ impl RecordRepository for MySqlRecordRepository {
             for (offset, r) in chunk.iter().enumerate() {
                 let mut rec = r.clone();
                 rec.id = first + offset as i32 * increment;
+                rec.created_at = now;
                 out.push(rec);
             }
         }

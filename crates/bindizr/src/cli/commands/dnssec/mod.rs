@@ -343,10 +343,10 @@ pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
                 key.key_tag,
                 key.role,
                 key.state,
-                if key.ds_published {
-                    "at parent"
-                } else {
-                    "not at parent"
+                match (key.ds_published, key.ds_digest_unsupported) {
+                    (true, _) => "at parent",
+                    (false, true) => "at parent in a digest type bindizr cannot check",
+                    (false, false) => "not at parent",
                 }
             );
             if let Some(eligible_at) = key.eligible_at {

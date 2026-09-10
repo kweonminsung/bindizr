@@ -66,33 +66,44 @@ impl DnssecService {
         let parent = probe_parent_ds(zone)
             .await
             .map_err(|e| ServiceError::dnssec_ds_unverified(zone.name.as_str(), e))?;
+
         let served: Vec<&DsRrset> = parent.answers.iter().flatten().collect();
         let mut ds_key_tags: Vec<u16> = served.iter().flat_map(|rrset| rrset.key_tags()).collect();
         ds_key_tags.sort_unstable();
         ds_key_tags.dedup();
+
         let apex = to_wire_name(zone.name.to_wire())
             .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
+
         let mut delegation_keys = Vec::new();
         for key in keys.iter().filter(|key| key.role.is_sep()) {
             // Whole RDATA, since keys can share a tag; in the digest types
             // the parent serves, since the parent picks; at every server, so
             // a laggard cannot promote a key early.
-            let mut served_digest_types: Vec<u8> = served
+            let mut digest_types: Vec<u8> = served
                 .iter()
                 .flat_map(|rrset| rrset.records.iter())
                 .filter(|record| record.key_tag == key.key_tag as u16)
                 .map(|record| record.digest_type)
-                .collect();
-            served_digest_types.sort_unstable();
-            served_digest_types.dedup();
-            let digest_types: Vec<u8> = served_digest_types
-                .iter()
-                .copied()
                 .filter(|digest_type| DS_DIGEST_TYPES.contains(digest_type))
                 .collect();
-            // A DS in a digest type bindizr cannot compute leaves the match
-            // undecided, which is not the same as the parent serving none.
-            let ds_digest_unsupported = digest_types.is_empty() && !served_digest_types.is_empty();
+            digest_types.sort_unstable();
+            digest_types.dedup();
+
+            // A digest bindizr cannot compute leaves the match undecided, not
+            // absent. Per server, so one computable answer cannot mask another.
+            let ds_digest_unsupported = parent.answers.iter().any(|answer| {
+                answer.as_ref().is_some_and(|rrset| {
+                    let mut for_key = rrset
+                        .records
+                        .iter()
+                        .filter(|record| record.key_tag == key.key_tag as u16)
+                        .peekable();
+                    for_key.peek().is_some()
+                        && !for_key.any(|record| DS_DIGEST_TYPES.contains(&record.digest_type))
+                })
+            });
+
             let forms = digest_types
                 .iter()
                 .map(|digest_type| {
@@ -101,6 +112,7 @@ impl DnssecService {
                         .map_err(ServiceError::dnssec_signing_failed)
                 })
                 .collect::<Result<Vec<Vec<u8>>, ServiceError>>()?;
+
             let ds_published = !parent.answers.is_empty()
                 && parent.answers.iter().all(|answer| {
                     answer.as_ref().is_some_and(|rrset| {
@@ -110,6 +122,7 @@ impl DnssecService {
                             .any(|record| forms.contains(&record.rdata))
                     })
                 });
+
             delegation_keys.push(DnssecDelegationKeyInfo {
                 id: key.id,
                 key_tag: key.key_tag as u16,
@@ -120,6 +133,7 @@ impl DnssecService {
                 eligible_at: (key.state == DnssecKeyState::Published).then_some(key.eligible_at),
             });
         }
+
         Ok(DnssecDelegationInfo {
             parent_ns_addrs: parent.ns_addrs,
             ds_state: if served.is_empty() {

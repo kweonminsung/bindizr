@@ -9,7 +9,7 @@ use bindizr_core::{
         zone_version::ZoneVersion,
     },
 };
-use bindizr_service::{record::RecordService, zone::ZoneService};
+use bindizr_service::zone::ZoneService;
 use tokio::net::TcpStream;
 
 use super::{axfr, catalog};
@@ -21,7 +21,9 @@ const SMALL_DELTA_ROWS: u64 = 4096;
 
 /// RFC 1995, Section 2: a server may answer with a full transfer when the
 /// incremental one would be larger. Counting first is also what keeps a
-/// long-absent secondary from pulling its whole absence into memory.
+/// long-absent secondary from pulling its whole absence into memory. Rows,
+/// not bytes: summing lengths would read the very rows this decides whether
+/// to read.
 async fn delta_outweighs_zone(
     zone: &Zone,
     client_serial: u32,
@@ -33,10 +35,12 @@ async fn delta_outweighs_zone(
         current_serial as i32,
     )
     .await?;
+
     if delta_rows <= SMALL_DELTA_ROWS {
         return Ok(false);
     }
-    Ok(delta_rows >= RecordService::count_by_zone(zone.name.as_str()).await?)
+
+    Ok(delta_rows >= ZoneService::count_transfer_records(zone.name.as_str()).await?)
 }
 
 pub(crate) async fn handle_ixfr(

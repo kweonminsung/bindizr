@@ -23,6 +23,7 @@ impl DnssecPolicyRepository for MySqlDnssecPolicyRepository {
     async fn create(&self, mut policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at)
@@ -38,11 +39,12 @@ impl DnssecPolicyRepository for MySqlDnssecPolicyRepository {
         .bind(policy.zsk_lifetime_days)
         .bind(policy.rollover_publish_holddown_secs)
         .bind(policy.rollover_retire_holddown_secs)
-        .bind(Utc::now())
+        .bind(now)
         .execute(&mut *conn)
         .await?;
 
         policy.id = result.last_insert_id() as i32;
+        policy.created_at = now;
         Ok(policy)
     }
 

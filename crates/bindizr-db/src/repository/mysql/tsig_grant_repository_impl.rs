@@ -23,6 +23,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
     async fn create(&self, mut grant: TsigGrant) -> Result<TsigGrant, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, created_at)
@@ -33,11 +34,12 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         .bind(grant.tsig_key_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
-        .bind(Utc::now())
+        .bind(now)
         .execute(&mut *conn)
         .await?;
 
         grant.id = result.last_insert_id() as i32;
+        grant.created_at = now;
 
         Ok(grant)
     }

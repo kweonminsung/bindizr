@@ -71,13 +71,13 @@ impl CliError {
                 Some("Run 'bindizr dnssec enable <NAME>' to sign the zone first.")
             }
             ErrorCode::DnssecRolloverInProgress => Some(
-                "Finish it with 'bindizr dnssec rollover ds-seen <NAME>' once the parent serves the new DS.",
+                "Run 'bindizr dnssec status <NAME>' to see which key is rolling and what it waits on.",
             ),
             ErrorCode::DnssecNoRolloverInProgress => {
                 Some("Start one with 'bindizr dnssec rollover start <NAME>'.")
             }
             ErrorCode::DnssecSigningFailed => Some(
-                "The zone is left unsigned; check the daemon logs and retry with 'bindizr dnssec sign <NAME>'.",
+                "Check the daemon logs; 'bindizr dnssec status <NAME>' shows whether the zone is still signed.",
             ),
             ErrorCode::Internal => Some("Check the daemon logs for details."),
             ErrorCode::TsigGrantNotFound => {

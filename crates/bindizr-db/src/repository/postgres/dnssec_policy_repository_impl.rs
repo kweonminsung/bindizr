@@ -23,6 +23,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
     async fn create(&self, mut policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at)
@@ -39,11 +40,12 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         .bind(policy.zsk_lifetime_days)
         .bind(policy.rollover_publish_holddown_secs)
         .bind(policy.rollover_retire_holddown_secs)
-        .bind(Utc::now())
+        .bind(now)
         .fetch_one(&mut *conn)
         .await?;
 
         policy.id = result.get::<i32, _>(0);
+        policy.created_at = now;
         Ok(policy)
     }
 

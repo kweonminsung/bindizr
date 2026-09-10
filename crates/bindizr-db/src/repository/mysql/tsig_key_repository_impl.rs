@@ -19,6 +19,7 @@ impl TsigKeyRepository for MySqlTsigKeyRepository {
     async fn create(&self, mut key: TsigKey) -> Result<TsigKey, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO tsig_keys (name, algorithm, secret, is_global, created_at)
@@ -29,11 +30,12 @@ impl TsigKeyRepository for MySqlTsigKeyRepository {
         .bind(key.algorithm.as_str())
         .bind(&key.secret)
         .bind(key.is_global)
-        .bind(Utc::now())
+        .bind(now)
         .execute(&mut *conn)
         .await?;
 
         key.id = result.last_insert_id() as i32;
+        key.created_at = now;
 
         Ok(key)
     }

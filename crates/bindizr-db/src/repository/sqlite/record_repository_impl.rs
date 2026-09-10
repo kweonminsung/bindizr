@@ -31,6 +31,7 @@ impl RecordRepository for SqliteRecordRepository {
     ) -> Result<Record, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at)
@@ -44,11 +45,12 @@ impl RecordRepository for SqliteRecordRepository {
         .bind(record.ttl)
         .bind(record.priority)
         .bind(record.zone_id)
-        .bind(Utc::now())
+        .bind(now)
         .execute(&mut **sqlite_tx)
         .await?;
 
         record.id = result.last_insert_rowid() as i32;
+        record.created_at = now;
         Ok(record)
     }
 
@@ -99,6 +101,7 @@ impl RecordRepository for SqliteRecordRepository {
             for (offset, r) in chunk.iter().enumerate() {
                 let mut rec = r.clone();
                 rec.id = first + offset as i32;
+                rec.created_at = now;
                 out.push(rec);
             }
         }

@@ -27,6 +27,7 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
     ) -> Result<DnssecKey, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO dnssec_keys (zone_id, role, algorithm, key_tag, public_key, private_key, state, state_changed_at, eligible_at, max_signed_ttl, created_at)
@@ -43,11 +44,12 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         .bind(key.state_changed_at)
         .bind(key.eligible_at)
         .bind(key.max_signed_ttl)
-        .bind(Utc::now())
+        .bind(now)
         .execute(&mut **sqlite_tx)
         .await?;
 
         key.id = result.last_insert_rowid() as i32;
+        key.created_at = now;
         Ok(key)
     }
 

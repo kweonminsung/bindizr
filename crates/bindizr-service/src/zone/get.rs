@@ -1,4 +1,4 @@
-use bindizr_db::repository::{LockLevel, ZoneFilter};
+use bindizr_db::repository::{DnssecRecordFilter, LockLevel, RecordFilter, ZoneFilter};
 
 use super::{ZoneService, validation::normalize_zone_name};
 use crate::{
@@ -167,6 +167,25 @@ impl ZoneService {
     /// A zone row and both record planes read under one shared zone lock, so
     /// a transfer never serves records and signatures from different serials.
     /// Takes no caller: DNS-plane reads are authorized by the transfer ACL.
+    /// Records an AXFR of the zone would send: the user plane and the derived
+    /// one, which is what [`ZoneService::find_transfer_content`] returns.
+    pub async fn count_transfer_records(zone_name: &str) -> Result<u64, ServiceError> {
+        let records = RepositoryService::count_records_by_filter(RecordFilter {
+            zone_name: Some(zone_name.to_string()),
+            ..RecordFilter::default()
+        })
+        .await?;
+
+        let dnssec_records =
+            RepositoryService::count_dnssec_records_by_filter(DnssecRecordFilter {
+                zone_name: Some(zone_name.to_string()),
+                ..DnssecRecordFilter::default()
+            })
+            .await?;
+
+        Ok(records + dnssec_records)
+    }
+
     pub async fn find_transfer_content(
         zone_id: i32,
     ) -> Result<Option<(Zone, Vec<Record>, Vec<DnssecRecord>)>, ServiceError> {

@@ -27,6 +27,7 @@ impl ZoneRepository for SqliteZoneRepository {
     ) -> Result<Zone, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, created_at)
@@ -43,11 +44,12 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
         .bind(&zone.parent_ns_addrs)
-        .bind(Utc::now())
+        .bind(now)
         .execute(&mut **sqlite_tx)
         .await?;
 
         zone.id = result.last_insert_rowid() as i32;
+        zone.created_at = now;
         Ok(zone)
     }
 

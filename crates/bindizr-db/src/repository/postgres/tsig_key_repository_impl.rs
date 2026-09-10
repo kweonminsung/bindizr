@@ -19,6 +19,7 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
     async fn create(&self, mut key: TsigKey) -> Result<TsigKey, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO tsig_keys (name, algorithm, secret, is_global, created_at)
@@ -30,11 +31,12 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         .bind(key.algorithm.as_str())
         .bind(&key.secret)
         .bind(key.is_global)
-        .bind(Utc::now())
+        .bind(now)
         .fetch_one(&mut *conn)
         .await?;
 
         key.id = result.get::<i32, _>(0);
+        key.created_at = now;
 
         Ok(key)
     }

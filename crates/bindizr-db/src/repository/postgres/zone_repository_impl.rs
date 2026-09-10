@@ -30,6 +30,7 @@ impl ZoneRepository for PostgresZoneRepository {
     ) -> Result<Zone, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
+        let now = Utc::now();
         let result = sqlx::query(
             r#"
             INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, created_at)
@@ -47,11 +48,12 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
         .bind(&zone.parent_ns_addrs)
-        .bind(Utc::now())
+        .bind(now)
         .fetch_one(&mut **postgres_tx)
         .await?;
 
         zone.id = result.get::<i32, _>(0);
+        zone.created_at = now;
         Ok(zone)
     }
 
