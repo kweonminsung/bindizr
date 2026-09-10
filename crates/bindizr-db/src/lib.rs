@@ -1,11 +1,13 @@
 //! Database layer: connection-pool setup and repository implementations for
 //! the MySQL, PostgreSQL, and SQLite backends.
 
-use std::sync::OnceLock;
+use std::{str::FromStr, sync::OnceLock};
 
 use sqlx::{
-    MySql, Pool, Postgres, Sqlite, mysql::MySqlPoolOptions, postgres::PgPoolOptions,
-    sqlite::SqlitePoolOptions,
+    MySql, Pool, Postgres, Sqlite,
+    mysql::MySqlPoolOptions,
+    postgres::PgPoolOptions,
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
 
 pub mod error;
@@ -160,6 +162,11 @@ impl DatabasePool {
     }
     /// Connect to SQLite, create tables, and return the pool.
     pub(crate) async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
+        // A clean install points at a database file that does not exist yet.
+        let connect_options = SqliteConnectOptions::from_str(url)
+            .map_err(|e| DatabaseError::PoolError(format!("Invalid SQLite file path: {}", e)))?
+            .create_if_missing(true);
+
         let pool = SqlitePoolOptions::new()
             .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
@@ -189,7 +196,7 @@ impl DatabasePool {
                     Ok(())
                 })
             })
-            .connect(url)
+            .connect_with(connect_options)
             .await
             .map_err(|e| {
                 DatabaseError::PoolError(format!("Failed to create SQLite database pool: {}", e))

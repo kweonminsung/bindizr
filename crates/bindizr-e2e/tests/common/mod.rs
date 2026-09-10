@@ -82,7 +82,6 @@ impl TestApp {
     pub(crate) async fn start_with_options(options: TestAppOptions) -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("bindizr.sqlite");
-        fs::File::create(&db_path).expect("failed to create sqlite file");
         let config_path = temp_dir.path().join("bindizr.conf.toml");
         let client = Client::new();
 
