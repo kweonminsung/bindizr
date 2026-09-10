@@ -36,7 +36,7 @@ pub use external_dns::{
 };
 pub use import::{ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse};
 pub(crate) use pagination::normalize_page_limit;
-pub use pagination::{PaginatedResponse, Pagination};
+pub use pagination::{DEFAULT_PAGE_LIMIT, PaginatedResponse, Pagination};
 pub(crate) use record::display_record_value_request;
 pub use record::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,

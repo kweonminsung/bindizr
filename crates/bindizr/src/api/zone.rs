@@ -8,8 +8,8 @@ use axum::{
 use bindizr_service::{
     record::RecordService,
     types::{
-        CreateZoneRequest, ErrorResponse, GetRecordResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneRequest, ImportZoneResponse, MessageResponse, PaginatedResponse,
+        CreateZoneRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetRecordResponse, GetZoneResponse,
+        GetZonesFilter, ImportZoneRequest, ImportZoneResponse, MessageResponse, PaginatedResponse,
         RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
         ZoneDetailResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
     },
@@ -146,7 +146,7 @@ pub(crate) async fn list_zone_versions(
     let response = ZoneService::list_versions(
         &caller,
         &params.name,
-        query.limit,
+        query.limit.or(Some(DEFAULT_PAGE_LIMIT)),
         query.offset,
         query.include_signer_serials,
     )
@@ -298,8 +298,9 @@ pub(crate) async fn diff_zone_versions(
 /// List DNS zones, optionally filtered and paginated.
 pub(crate) async fn list_zones(
     RequestCaller(caller): RequestCaller,
-    Query(query): Query<GetZonesFilter>,
+    Query(mut query): Query<GetZonesFilter>,
 ) -> Result<Response, ApiError> {
+    query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = ZoneService::list_by_filter(&caller, query).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

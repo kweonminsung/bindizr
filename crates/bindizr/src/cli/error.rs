@@ -67,9 +67,9 @@ impl CliError {
             ErrorCode::DnssecPolicyInUse => Some(
                 "Move those zones onto another policy with 'bindizr dnssec set --policy', or disable DNSSEC on them.",
             ),
-            ErrorCode::DnssecNotEnabled => {
-                Some("Run 'bindizr dnssec enable <NAME>' to sign the zone first.")
-            }
+            ErrorCode::DnssecNotEnabled => Some(
+                "Run 'bindizr dnssec enable <NAME> --parent-ns-addrs <ADDRS>' to sign the zone first.",
+            ),
             ErrorCode::DnssecRolloverInProgress => Some(
                 "Run 'bindizr dnssec status <NAME>' to see which key is rolling and what it waits on.",
             ),

@@ -8,9 +8,9 @@ use axum::{
 use bindizr_service::{
     record::RecordService,
     types::{
-        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, ErrorResponse,
-        GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse, RecordResponse,
-        UpdateRecordRequest,
+        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
+        ErrorResponse, GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse,
+        RecordResponse, UpdateRecordRequest,
     },
 };
 use serde::Deserialize;
@@ -70,8 +70,9 @@ impl RecordApi {
 /// List DNS records, optionally filtered and paginated.
 pub(crate) async fn list_records(
     RequestCaller(caller): RequestCaller,
-    Query(query): Query<GetRecordsFilter>,
+    Query(mut query): Query<GetRecordsFilter>,
 ) -> Result<Response, ApiError> {
+    query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = RecordService::list_with_zone_by_filter(&caller, query).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

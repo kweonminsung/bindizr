@@ -42,10 +42,32 @@ where
     U: Tabled,
 {
     match format {
-        OutputFormat::Table => print_table(to_table_rows(&parse_response(data)?)),
+        OutputFormat::Table => {
+            print_table(to_table_rows(&parse_response(data)?));
+            print_page_remainder(data);
+        }
         _ => print_payload(data, format)?,
     }
     Ok(())
+}
+
+/// A table shows no pagination, so a short page reads as the whole listing
+/// unless it says otherwise.
+fn print_page_remainder(data: &serde_json::Value) {
+    let (Some(total), Some(shown)) = (
+        data["pagination"]["total"].as_u64(),
+        data["items"].as_array().map(|items| items.len() as u64),
+    ) else {
+        return;
+    };
+
+    let seen = data["pagination"]["offset"].as_u64().unwrap_or(0) + shown;
+    if seen < total {
+        println!(
+            "Showing {} of {}; page the rest with --limit and --offset.",
+            seen, total
+        );
+    }
 }
 
 /// Print the payload as JSON or YAML, for a command that renders its own table.
