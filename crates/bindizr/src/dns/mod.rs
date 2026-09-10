@@ -167,7 +167,7 @@ async fn dispatch_tcp_query(
     }
 
     if query.qtype == Rtype::SOA {
-        server::soa::handle_tcp_soa(stream, client_addr, &query)
+        server::soa::handle_tcp_soa(stream, client_addr, secondary_acl, &query)
             .await
             .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
     } else if server::is_xfr_query_type(query.qtype) {
@@ -250,7 +250,9 @@ async fn run_udp_server(
         }
 
         if query.qtype == Rtype::SOA {
-            if let Err(e) = server::soa::handle_udp_soa(&socket, client_addr, &query).await {
+            if let Err(e) =
+                server::soa::handle_udp_soa(&socket, client_addr, &secondary_acl, &query).await
+            {
                 log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
             }
         } else {

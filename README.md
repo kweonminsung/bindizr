@@ -41,6 +41,15 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
 - **Observability** — health probe, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
 
+## Roadmap
+
+- **Per-zone ACLs** — transfer and SOA access is one server-wide list today.
+  Scoping it per zone lets one deployment serve secondaries that each hold
+  part of the catalog.
+- **Secondaries managed at runtime** — the secondary list is a config field, so
+  adding one takes a restart. Moving it into the database puts it behind the
+  API and CLI, like zones, tokens, and signing policies already are.
+
 ## Quick Start
 
 Pick one. Each is walked through in full on the
