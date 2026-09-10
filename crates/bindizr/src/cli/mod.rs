@@ -117,6 +117,6 @@ pub async fn execute() {
         if let Some(hint) = e.hint() {
             eprintln!("Hint: {}", hint);
         }
-        std::process::exit(1);
+        std::process::exit(e.exit_code());
     }
 }
