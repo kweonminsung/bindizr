@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{Pool, Postgres, Row};
 
 use crate::{error::DatabaseError, model::api_token::ApiToken, repository::ApiTokenRepository};
@@ -20,8 +21,8 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO api_tokens (name, token, description, is_global, expires_at)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO api_tokens (name, token, description, is_global, expires_at, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id
         "#,
         )
@@ -30,6 +31,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         .bind(&token.description)
         .bind(token.is_global)
         .bind(token.expires_at)
+        .bind(Utc::now())
         .fetch_one(&mut *conn)
         .await?;
 

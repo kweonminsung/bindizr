@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{MySql, Pool};
 
 use crate::{error::DatabaseError, model::api_token::ApiToken, repository::ApiTokenRepository};
@@ -20,8 +21,8 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO api_tokens (name, token, description, is_global, expires_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO api_tokens (name, token, description, is_global, expires_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
         "#,
         )
         .bind(&token.name)
@@ -29,6 +30,7 @@ impl ApiTokenRepository for MySqlApiTokenRepository {
         .bind(&token.description)
         .bind(token.is_global)
         .bind(token.expires_at)
+        .bind(Utc::now())
         .execute(&mut *conn)
         .await?;
 

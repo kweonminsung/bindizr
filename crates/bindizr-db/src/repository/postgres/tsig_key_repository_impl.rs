@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{Pool, Postgres, Row};
 
 use crate::{error::DatabaseError, model::tsig_key::TsigKey, repository::TsigKeyRepository};
@@ -20,8 +21,8 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO tsig_keys (name, algorithm, secret, is_global)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO tsig_keys (name, algorithm, secret, is_global, created_at)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id
             "#,
         )
@@ -29,6 +30,7 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         .bind(key.algorithm.as_str())
         .bind(&key.secret)
         .bind(key.is_global)
+        .bind(Utc::now())
         .fetch_one(&mut *conn)
         .await?;
 

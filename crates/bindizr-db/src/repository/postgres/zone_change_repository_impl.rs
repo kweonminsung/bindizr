@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres};
 
 use crate::{
@@ -29,7 +30,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         const CHUNK: usize = 500;
         for chunk in changes.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived) VALUES ",
+                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES ",
             );
             let mut p = 1;
             for i in 0..chunk.len() {
@@ -37,7 +38,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
                     sql.push(',');
                 }
                 sql.push_str(&format!(
-                    "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                    "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
                     p,
                     p + 1,
                     p + 2,
@@ -47,11 +48,13 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
                     p + 6,
                     p + 7,
                     p + 8,
-                    p + 9
+                    p + 9,
+                    p + 10
                 ));
-                p += 10;
+                p += 11;
             }
 
+            let now = Utc::now();
             let mut query = sqlx::query(AssertSqlSafe(sql));
             for c in chunk {
                 query = query
@@ -64,7 +67,8 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
                     .bind(c.record_rdata.clone())
                     .bind(c.record_ttl)
                     .bind(c.record_priority)
-                    .bind(c.derived);
+                    .bind(c.derived)
+                    .bind(now);
             }
             query
                 .execute(&mut **postgres_tx)

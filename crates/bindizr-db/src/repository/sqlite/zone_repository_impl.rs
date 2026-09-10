@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{Pool, Sqlite};
 
 use crate::{
@@ -28,8 +29,8 @@ impl ZoneRepository for SqliteZoneRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(zone.name.as_str())
@@ -42,6 +43,7 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
         .bind(&zone.parent_ns_addrs)
+        .bind(Utc::now())
         .execute(&mut **sqlite_tx)
         .await?;
 

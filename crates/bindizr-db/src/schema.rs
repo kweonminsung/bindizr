@@ -2,6 +2,9 @@
 //!
 //! Name columns are `VARCHAR(512)`, not 255: rows hold the escaped presentation
 //! form, whose `\` escapes can nearly double the 253-byte wire limit.
+//!
+//! No timestamp column carries a `DEFAULT CURRENT_TIMESTAMP`: an insert that
+//! forgets to bind one must fail rather than take the database server's clock.
 
 pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
     vec![
@@ -17,15 +20,8 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             zsk_lifetime_days INT NOT NULL DEFAULT 0,
             rollover_publish_holddown_secs BIGINT NOT NULL,
             rollover_retire_holddown_secs BIGINT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME NOT NULL
         );
-        "#,
-        r#"
-        INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
-            signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
-            rollover_retire_holddown_secs)
-        SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800 FROM DUAL
-        WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS zones (
@@ -41,7 +37,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             minimum_ttl INT NOT NULL DEFAULT 86400,
             dnssec_policy_id INT NULL,
             parent_ns_addrs VARCHAR(1024) NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             FOREIGN KEY (dnssec_policy_id) REFERENCES dnssec_policies(id),
             INDEX idx_zones_dnssec_policy (dnssec_policy_id)
         );
@@ -55,7 +51,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             display_value TEXT NOT NULL,
             ttl INT NOT NULL,
             priority INT,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             zone_id INT NOT NULL,
             CHECK ((record_type IN ('MX', 'SRV')) = (priority IS NOT NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
@@ -76,7 +72,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             record_ttl INT NOT NULL,
             record_priority INT,
             derived BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             CHECK ((derived = TRUE AND record_value IS NULL AND record_rdata IS NOT NULL)
                 OR (derived = FALSE AND record_value IS NOT NULL AND record_rdata IS NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
@@ -96,7 +92,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             retry INT NOT NULL,
             expire INT NOT NULL,
             minimum_ttl INT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             UNIQUE KEY uq_zone_serial (zone_id, serial),
             INDEX idx_zone_versions_created (created_at),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
@@ -109,7 +105,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             token VARCHAR(64) UNIQUE NOT NULL,
             description VARCHAR(255),
             is_global BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             expires_at DATETIME,
             last_used_at DATETIME
         );
@@ -134,7 +130,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             algorithm VARCHAR(32) NOT NULL,
             secret VARCHAR(255) NOT NULL,
             is_global BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME NOT NULL
         );
         "#,
         r#"
@@ -144,7 +140,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             tsig_key_id INT NOT NULL,
             record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id),
             INDEX idx_tsig_grants_zone (zone_id),
@@ -158,7 +154,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             api_token_id INT NOT NULL,
             record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE,
             INDEX idx_token_grants_zone (zone_id),
@@ -175,10 +171,10 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             public_key TEXT NOT NULL,
             private_key TEXT NOT NULL,
             state VARCHAR(16) NOT NULL,
-            state_changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            eligible_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            state_changed_at DATETIME NOT NULL,
+            eligible_at DATETIME NOT NULL,
             max_signed_ttl INT NOT NULL DEFAULT 0,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             INDEX idx_dnssec_keys_zone (zone_id)
         );
@@ -216,15 +212,8 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             zsk_lifetime_days INTEGER NOT NULL DEFAULT 0,
             rollover_publish_holddown_secs BIGINT NOT NULL,
             rollover_retire_holddown_secs BIGINT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ NOT NULL
         );
-        "#,
-        r#"
-        INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
-            signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
-            rollover_retire_holddown_secs)
-        SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800
-        WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS zones (
@@ -240,7 +229,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
             dnssec_policy_id INTEGER NULL,
             parent_ns_addrs VARCHAR(1024) NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
             FOREIGN KEY (dnssec_policy_id) REFERENCES dnssec_policies(id)
         );
         "#,
@@ -256,7 +245,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             display_value TEXT NOT NULL,
             ttl INTEGER NOT NULL,
             priority INTEGER,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
             zone_id INTEGER NOT NULL,
             CHECK ((record_type IN ('MX', 'SRV')) = (priority IS NOT NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
@@ -281,7 +270,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             record_ttl INTEGER NOT NULL,
             record_priority INTEGER,
             derived BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
             CHECK ((derived = TRUE AND record_value IS NULL AND record_rdata IS NOT NULL)
                 OR (derived = FALSE AND record_value IS NOT NULL AND record_rdata IS NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
@@ -305,7 +294,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             retry INTEGER NOT NULL,
             expire INTEGER NOT NULL,
             minimum_ttl INTEGER NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
             UNIQUE(zone_id, serial),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
@@ -320,7 +309,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             token VARCHAR(64) UNIQUE NOT NULL,
             description VARCHAR(255),
             is_global BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
             expires_at TIMESTAMPTZ,
             last_used_at TIMESTAMPTZ
         );
@@ -345,7 +334,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             algorithm VARCHAR(32) NOT NULL,
             secret VARCHAR(255) NOT NULL,
             is_global BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ NOT NULL
         );
         "#,
         r#"
@@ -355,7 +344,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             tsig_key_id INTEGER NOT NULL,
             record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id)
         );
@@ -373,7 +362,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             api_token_id INTEGER NOT NULL,
             record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE
         );
@@ -394,10 +383,10 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             public_key TEXT NOT NULL,
             private_key TEXT NOT NULL,
             state VARCHAR(16) NOT NULL,
-            state_changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            eligible_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            state_changed_at TIMESTAMPTZ NOT NULL,
+            eligible_at TIMESTAMPTZ NOT NULL,
             max_signed_ttl INTEGER NOT NULL DEFAULT 0,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -441,15 +430,8 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             zsk_lifetime_days INTEGER NOT NULL DEFAULT 0,
             rollover_publish_holddown_secs BIGINT NOT NULL,
             rollover_retire_holddown_secs BIGINT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME NOT NULL
         );
-        "#,
-        r#"
-        INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
-            signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
-            rollover_retire_holddown_secs)
-        SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800
-        WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS zones (
@@ -465,7 +447,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             minimum_ttl INTEGER NOT NULL DEFAULT 86400,
             dnssec_policy_id INTEGER NULL,
             parent_ns_addrs TEXT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             FOREIGN KEY (dnssec_policy_id) REFERENCES dnssec_policies(id)
         );
         "#,
@@ -481,7 +463,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             display_value TEXT NOT NULL,
             ttl INTEGER NOT NULL,
             priority INTEGER,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             zone_id INTEGER NOT NULL,
             CHECK ((record_type IN ('MX', 'SRV')) = (priority IS NOT NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
@@ -506,7 +488,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             record_ttl INTEGER NOT NULL,
             record_priority INTEGER,
             derived BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             CHECK ((derived = TRUE AND record_value IS NULL AND record_rdata IS NOT NULL)
                 OR (derived = FALSE AND record_value IS NOT NULL AND record_rdata IS NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
@@ -530,7 +512,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             retry INTEGER NOT NULL,
             expire INTEGER NOT NULL,
             minimum_ttl INTEGER NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             UNIQUE(zone_id, serial),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
@@ -545,7 +527,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             token TEXT UNIQUE NOT NULL,
             description TEXT,
             is_global BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             expires_at DATETIME,
             last_used_at DATETIME
         );
@@ -570,7 +552,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             algorithm TEXT NOT NULL,
             secret TEXT NOT NULL,
             is_global BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME NOT NULL
         );
         "#,
         r#"
@@ -580,7 +562,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             tsig_key_id INTEGER NOT NULL,
             record_name_pattern TEXT NOT NULL,
             record_types TEXT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id)
         );
@@ -598,7 +580,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             api_token_id INTEGER NOT NULL,
             record_name_pattern TEXT NOT NULL,
             record_types TEXT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE
         );
@@ -619,10 +601,10 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             public_key TEXT NOT NULL,
             private_key TEXT NOT NULL,
             state TEXT NOT NULL,
-            state_changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            eligible_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            state_changed_at DATETIME NOT NULL,
+            eligible_at DATETIME NOT NULL,
             max_signed_ttl INTEGER NOT NULL DEFAULT 0,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
@@ -650,4 +632,36 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_dnssec_records_expires ON dnssec_records(expires_at);
         "#,
     ]
+}
+
+/// The built-in `default` policy, seeded at startup. Separate from the table
+/// statements so its `created_at` can be bound like every other timestamp.
+pub(crate) fn mysql_default_policy_seed() -> &'static str {
+    r#"
+    INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
+        signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
+        rollover_retire_holddown_secs, created_at)
+    SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800, ? FROM DUAL
+    WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
+    "#
+}
+
+pub(crate) fn postgres_default_policy_seed() -> &'static str {
+    r#"
+    INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
+        signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
+        rollover_retire_holddown_secs, created_at)
+    SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800, $1::timestamptz
+    WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
+    "#
+}
+
+pub(crate) fn sqlite_default_policy_seed() -> &'static str {
+    r#"
+    INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
+        signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
+        rollover_retire_holddown_secs, created_at)
+    SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800, ?
+    WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
+    "#
 }

@@ -3,6 +3,7 @@
 
 use std::{str::FromStr, sync::OnceLock};
 
+use chrono::Utc;
 use sqlx::{
     MySql, Pool, Postgres, Sqlite,
     mysql::MySqlPoolOptions,
@@ -224,6 +225,15 @@ impl DatabasePool {
                         e.to_string()
                     })?;
                 }
+                let seed = schema::mysql_default_policy_seed();
+                sqlx::query(seed)
+                    .bind(Utc::now())
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log_error!("Failed to execute query '{}': {}", seed, e);
+                        e.to_string()
+                    })?;
             }
             DatabasePool::PostgreSQL(pool) => {
                 let mut conn = pool.acquire().await.map_err(|e| {
@@ -236,6 +246,15 @@ impl DatabasePool {
                         e.to_string()
                     })?;
                 }
+                let seed = schema::postgres_default_policy_seed();
+                sqlx::query(seed)
+                    .bind(Utc::now())
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log_error!("Failed to execute query '{}': {}", seed, e);
+                        e.to_string()
+                    })?;
             }
             DatabasePool::SQLite(pool) => {
                 let mut conn = pool.acquire().await.map_err(|e| {
@@ -248,6 +267,15 @@ impl DatabasePool {
                         e.to_string()
                     })?;
                 }
+                let seed = schema::sqlite_default_policy_seed();
+                sqlx::query(seed)
+                    .bind(Utc::now())
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log_error!("Failed to execute query '{}': {}", seed, e);
+                        e.to_string()
+                    })?;
             }
         }
         Ok(())

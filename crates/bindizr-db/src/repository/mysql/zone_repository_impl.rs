@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool};
 
 use crate::{
@@ -31,8 +32,8 @@ impl ZoneRepository for MySqlZoneRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(zone.name.as_str())
@@ -45,6 +46,7 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
         .bind(&zone.parent_ns_addrs)
+        .bind(Utc::now())
         .execute(&mut **mysql_tx)
         .await?;
 

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool};
 
 use crate::{
@@ -50,8 +51,8 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 mname = VALUES(mname),
                 rname = VALUES(rname),
@@ -71,6 +72,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         .bind(version.retry)
         .bind(version.expire)
         .bind(version.minimum_ttl)
+        .bind(Utc::now())
         .execute(&mut **mysql_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;

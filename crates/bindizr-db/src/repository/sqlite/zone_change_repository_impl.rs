@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
 
 use crate::{
@@ -26,12 +27,12 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
     ) -> Result<(), DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // 10 columns per row; keep bind count under SQLite's conservative limit.
-        const CHUNK: usize = 100;
-        const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        // 11 columns per row; keep bind count under SQLite's conservative limit.
+        const CHUNK: usize = 90;
+        const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         for chunk in changes.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived) VALUES ",
+                "INSERT INTO zone_journal (zone_id, serial, operation, record_name, record_type, record_value, record_rdata, record_ttl, record_priority, derived, created_at) VALUES ",
             );
             for i in 0..chunk.len() {
                 if i > 0 {
@@ -40,6 +41,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
                 sql.push_str(ROW);
             }
 
+            let now = Utc::now();
             let mut query = sqlx::query(AssertSqlSafe(sql));
             for c in chunk {
                 query = query
@@ -52,7 +54,8 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
                     .bind(c.record_rdata.clone())
                     .bind(c.record_ttl)
                     .bind(c.record_priority)
-                    .bind(c.derived);
+                    .bind(c.derived)
+                    .bind(now);
             }
             query
                 .execute(&mut **sqlite_tx)

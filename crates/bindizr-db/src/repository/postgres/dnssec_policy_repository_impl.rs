@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
@@ -24,8 +25,8 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id
             "#,
         )
@@ -38,6 +39,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         .bind(policy.zsk_lifetime_days)
         .bind(policy.rollover_publish_holddown_secs)
         .bind(policy.rollover_retire_holddown_secs)
+        .bind(Utc::now())
         .fetch_one(&mut *conn)
         .await?;
 

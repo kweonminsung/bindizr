@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
@@ -24,8 +25,8 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, created_at)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id
             "#,
         )
@@ -33,6 +34,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         .bind(grant.tsig_key_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
+        .bind(Utc::now())
         .fetch_one(&mut *conn)
         .await?;
 

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
@@ -24,8 +25,8 @@ impl TokenGrantRepository for PostgresTokenGrantRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO token_grants (zone_id, api_token_id, record_name_pattern, record_types)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO token_grants (zone_id, api_token_id, record_name_pattern, record_types, created_at)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id
             "#,
         )
@@ -33,6 +34,7 @@ impl TokenGrantRepository for PostgresTokenGrantRepository {
         .bind(grant.api_token_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
+        .bind(Utc::now())
         .fetch_one(&mut *conn)
         .await?;
 

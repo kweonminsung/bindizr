@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 
 use crate::{
@@ -31,8 +32,8 @@ impl ZoneRepository for PostgresZoneRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id
             "#,
         )
@@ -46,6 +47,7 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
         .bind(&zone.parent_ns_addrs)
+        .bind(Utc::now())
         .fetch_one(&mut **postgres_tx)
         .await?;
 

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres};
 
 use crate::{
@@ -50,8 +51,8 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
 
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (zone_id, serial)
             DO UPDATE SET
                 mname = EXCLUDED.mname,
@@ -73,6 +74,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         .bind(version.retry)
         .bind(version.expire)
         .bind(version.minimum_ttl)
+        .bind(Utc::now())
         .fetch_one(&mut **postgres_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{MySql, Pool};
 
 use crate::{error::DatabaseError, model::tsig_key::TsigKey, repository::TsigKeyRepository};
@@ -20,14 +21,15 @@ impl TsigKeyRepository for MySqlTsigKeyRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO tsig_keys (name, algorithm, secret, is_global)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO tsig_keys (name, algorithm, secret, is_global, created_at)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(&key.name)
         .bind(key.algorithm.as_str())
         .bind(&key.secret)
         .bind(key.is_global)
+        .bind(Utc::now())
         .execute(&mut *conn)
         .await?;
 

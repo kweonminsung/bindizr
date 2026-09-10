@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool};
 
 use crate::{
@@ -24,14 +25,15 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, created_at)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(grant.zone_id)
         .bind(grant.tsig_key_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
+        .bind(Utc::now())
         .execute(&mut *conn)
         .await?;
 
