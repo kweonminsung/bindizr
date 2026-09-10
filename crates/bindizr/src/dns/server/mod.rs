@@ -130,12 +130,8 @@ async fn validate_secondary_acl(
     secondary_acl: &acl::SecondaryAcl,
 ) -> Result<(), XfrError> {
     if !acl::is_client_allowed(client_ip, secondary_acl).await {
-        log_warn!(
-            "XFR request denied from {} (not a configured secondary server)",
-            client_ip
-        );
         return Err(XfrError::AccessDenied(format!(
-            "IP {} not allowed",
+            "IP {} is not a configured secondary",
             client_ip
         )));
     }
