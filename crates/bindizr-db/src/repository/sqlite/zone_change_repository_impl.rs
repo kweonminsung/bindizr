@@ -87,6 +87,29 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    async fn count_between_serials(
+        &self,
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<u64, DatabaseError> {
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM zone_journal
+            WHERE zone_id = ? AND serial > ? AND serial <= ?
+            "#,
+        )
+        .bind(zone_id)
+        .bind(from_serial)
+        .bind(to_serial)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+        Ok(count as u64)
+    }
+
     async fn list_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

@@ -37,6 +37,15 @@ fn parse_type_filter(
 
 impl RecordService {
     /// Every record, for the unauthenticated metrics endpoint.
+    /// Records in one zone, for the transfer path weighing an IXFR delta.
+    pub async fn count_by_zone(zone_name: &str) -> Result<u64, ServiceError> {
+        RepositoryService::count_records_by_filter(RecordFilter {
+            zone_name: Some(zone_name.to_string()),
+            ..RecordFilter::default()
+        })
+        .await
+    }
+
     pub async fn count_all() -> Result<u64, ServiceError> {
         RepositoryService::count_records_by_filter(RecordFilter::default()).await
     }

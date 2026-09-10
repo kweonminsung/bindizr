@@ -4,15 +4,40 @@ use bindizr_core::{
     dns::{message, message::Rtype, name::ZoneName},
     log_info, log_warn,
     model::{
+        zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
         zone_version::ZoneVersion,
     },
 };
-use bindizr_service::zone::ZoneService;
+use bindizr_service::{record::RecordService, zone::ZoneService};
 use tokio::net::TcpStream;
 
 use super::{axfr, catalog};
 use crate::dns::error::XfrError;
+
+/// A delta this small never outweighs a zone worth transferring, so the
+/// zone is not counted for it.
+const SMALL_DELTA_ROWS: u64 = 4096;
+
+/// RFC 1995, Section 2: a server may answer with a full transfer when the
+/// incremental one would be larger. Counting first is also what keeps a
+/// long-absent secondary from pulling its whole absence into memory.
+async fn delta_outweighs_zone(
+    zone: &Zone,
+    client_serial: u32,
+    current_serial: u32,
+) -> Result<bool, XfrError> {
+    let delta_rows = ZoneService::count_journal_between_serials(
+        zone.id,
+        client_serial as i32,
+        current_serial as i32,
+    )
+    .await?;
+    if delta_rows <= SMALL_DELTA_ROWS {
+        return Ok(false);
+    }
+    Ok(delta_rows >= RecordService::count_by_zone(zone.name.as_str()).await?)
+}
 
 pub(crate) async fn handle_ixfr(
     stream: &mut TcpStream,
@@ -67,6 +92,15 @@ pub(crate) async fn handle_ixfr(
     if client_serial > current_serial {
         log_warn!(
             "IXFR: Client serial {} > current serial {}, falling back to AXFR",
+            client_serial,
+            current_serial
+        );
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+    }
+
+    if delta_outweighs_zone(&zone, client_serial, current_serial).await? {
+        log_info!(
+            "IXFR: Delta from serial {} to {} is no smaller than the zone, falling back to AXFR",
             client_serial,
             current_serial
         );

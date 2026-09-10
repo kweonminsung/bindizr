@@ -342,6 +342,17 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to create zone changes: {}", e)))
     }
 
+    pub(crate) async fn count_zone_changes_between_serials(
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<u64, ServiceError> {
+        get_zone_change_repository()
+            .count_between_serials(zone_id, from_serial, to_serial)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count zone changes: {}", e)))
+    }
+
     pub(crate) async fn list_zone_changes_between_serials(
         zone_id: i32,
         from_serial: i32,

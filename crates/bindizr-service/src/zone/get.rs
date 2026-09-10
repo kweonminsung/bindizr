@@ -28,6 +28,14 @@ impl ZoneService {
     }
 
     /// List the recorded zone changes between two serials, for building an IXFR.
+    pub async fn count_journal_between_serials(
+        zone_id: i32,
+        from_serial: i32,
+        to_serial: i32,
+    ) -> Result<u64, ServiceError> {
+        RepositoryService::count_zone_changes_between_serials(zone_id, from_serial, to_serial).await
+    }
+
     pub async fn list_journal_between_serials(
         zone_id: i32,
         from_serial: i32,
