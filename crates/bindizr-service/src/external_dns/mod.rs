@@ -4,6 +4,7 @@
 //! is decided by its token's grants, like every other endpoint.
 
 mod apply;
+mod change_set;
 mod policy;
 #[cfg(test)]
 mod tests;
@@ -33,7 +34,7 @@ impl ExternalDnsService {
         let records = request
             .records
             .iter()
-            .map(apply::adjust_rrset)
+            .map(change_set::adjust_rrset)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(ExternalDnsAdjustResponse { records })
     }

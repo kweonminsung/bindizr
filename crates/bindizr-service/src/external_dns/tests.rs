@@ -2,7 +2,7 @@ use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
-    apply::{
+    change_set::{
         ZoneOps, adjust_rrset, compute_zone_change_set, group_ops_by_zone, parse_changes_request,
         parse_rrset_op,
     },
