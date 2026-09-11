@@ -3758,6 +3758,8 @@ components:
       - enabled
       - keys
       - ds_records
+      - signatures
+      - expired_signatures
       - serial
       properties:
         delegation:
@@ -3781,10 +3783,26 @@ components:
         enabled:
           type: boolean
           example: true
+        expired_signatures:
+          type: integer
+          format: int64
+          description: |-
+            Signatures already past their expiration. Any at all means resolvers
+            are failing to validate part of the zone.
+          example: 0
+          minimum: 0
         keys:
           type: array
           items:
             $ref: '#/components/schemas/DnssecKeyInfo'
+        next_resign_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: |-
+            When the re-signer next has work, from the earliest expiration and the
+            policy's refresh window; absent for an unsigned zone.
         parent_ns_addrs:
           type:
           - string
@@ -3802,6 +3820,12 @@ components:
           type: integer
           format: int32
           example: 7
+        signatures:
+          type: integer
+          format: int64
+          description: Signatures the zone serves.
+          example: 42
+          minimum: 0
         withdrawing:
           type: boolean
           description: |-
@@ -4146,9 +4170,7 @@ components:
           type: array
           items:
             type: string
-          description: |-
-            Records passed over under `skip_unsupported`, so an operator can see
-            what the zone carries that bindizr does not store.
+          description: Records passed over under `skip_unsupported`.
         summary:
           $ref: '#/components/schemas/ImportSummary'
     MessageResponse:

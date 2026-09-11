@@ -169,6 +169,16 @@ pub struct GetDnssecStatusResponse {
     /// Earliest stored signature expiration; the re-signer renews before it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub earliest_signature_expires_at: Option<DateTime<Utc>>,
+    /// Signatures the zone serves.
+    #[schema(example = 42)]
+    pub signatures: u64,
+    /// Signatures already past their expiration; any at all mean resolvers
+    /// are failing part of the zone.
+    #[schema(example = 0)]
+    pub expired_signatures: u64,
+    /// When the re-signer next has work; absent for an unsigned zone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_resign_at: Option<DateTime<Utc>>,
     #[schema(example = 7)]
     pub serial: i32,
 }

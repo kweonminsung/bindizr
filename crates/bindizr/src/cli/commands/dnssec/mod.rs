@@ -364,6 +364,18 @@ pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
             expires_at.format("%Y-%m-%d %H:%M:%S")
         );
     }
+    if let Some(resign_at) = status.next_resign_at {
+        println!("Next re-signing: {}", resign_at.format("%Y-%m-%d %H:%M:%S"));
+    }
+    if status.expired_signatures == 0 {
+        println!("Signatures: {}", status.signatures);
+    } else {
+        // Resolvers are already failing this much of the zone.
+        println!(
+            "Signatures: {} ({} EXPIRED)",
+            status.signatures, status.expired_signatures
+        );
+    }
     println!("Policy:");
     print_table(vec![DnssecPolicyRow::from(policy)]);
     println!("Keys:");

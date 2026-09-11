@@ -44,6 +44,15 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     // Signing changes the zone content, so it rides the serial/IXFR mechanics.
     assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 1);
 
+    // The healthy case status has to be able to show.
+    assert!(dnssec["signatures"].as_u64().unwrap() > 0, "{dnssec}");
+    assert_eq!(dnssec["expired_signatures"], 0, "{dnssec}");
+    assert!(
+        dnssec["next_resign_at"].as_str().unwrap()
+            < dnssec["earliest_signature_expires_at"].as_str().unwrap(),
+        "{dnssec}"
+    );
+
     let (status, body) = app
         .request(
             Method::POST,

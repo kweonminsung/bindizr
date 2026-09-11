@@ -2,7 +2,7 @@
 //! and the DS records the parent needs.
 
 use bindizr_core::dns::dnssec::{ds_rdata_for, to_wire_name};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use super::DnssecService;
 use crate::{
@@ -72,6 +72,23 @@ pub(crate) async fn build_status_tx(
 ) -> Result<GetDnssecStatusResponse, ServiceError> {
     let derived = RepositoryService::list_dnssec_records_tx(tx, zone.id, LockLevel::None).await?;
     let earliest_signature_expires_at = derived.iter().filter_map(|row| row.expires_at).min();
+
+    // Only RRSIG rows carry an expiration, so counting those counts signatures.
+    let now = Utc::now();
+    let signatures = derived
+        .iter()
+        .filter(|row| row.expires_at.is_some())
+        .count() as u64;
+    let expired_signatures = derived
+        .iter()
+        .filter(|row| row.expires_at.is_some_and(|expires| expires <= now))
+        .count() as u64;
+    let next_resign_at = earliest_signature_expires_at
+        .zip(policy)
+        .map(|(expires, policy)| {
+            expires - Duration::days(i64::from(policy.signature_refresh_days))
+        });
+
     let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(tx, zone.id)
         .await?
         .is_some();
@@ -109,6 +126,9 @@ pub(crate) async fn build_status_tx(
             .collect(),
         ds_records,
         earliest_signature_expires_at,
+        signatures,
+        expired_signatures,
+        next_resign_at,
         serial,
         withdrawing,
         parent_ns_addrs: zone.parent_ns_addrs.clone(),
