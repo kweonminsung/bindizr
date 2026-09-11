@@ -3,7 +3,7 @@
 //! helpers they share. The wire format itself stays in core.
 
 pub(crate) mod axfr;
-pub mod ds;
+pub(crate) mod ds;
 pub mod notify;
 pub mod probe;
 

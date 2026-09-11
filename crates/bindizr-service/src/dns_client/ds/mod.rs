@@ -15,20 +15,20 @@ use bindizr_core::{
 
 /// What the parent zone's servers said about the zone's DS.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParentDs {
+pub(crate) struct ParentDs {
     /// The nameservers asked, as `host[:port]` entries from the zone's
     /// `parent_ns_addrs`.
-    pub ns_addrs: Vec<String>,
+    pub(crate) ns_addrs: Vec<String>,
     /// Each server's answer in `ns_addrs` order: its DS RRset, or `None` when
     /// it serves none. Kept apart because dropping trust is unsafe while any
     /// server still serves a DS, and promoting a key until every server does.
-    pub answers: Vec<Option<DsRrset>>,
+    pub(crate) answers: Vec<Option<DsRrset>>,
 }
 
 /// Ask every parent server for the zone's DS RRset. `Err` when the zone
 /// names no parent or any server fails to answer: silence never reads as
 /// absence.
-pub async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
+pub(crate) async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
     let dns_config = &config::bindizr_config().dns;
     let timeout = Duration::from_secs(dns_config.notify_timeout_secs);
 
