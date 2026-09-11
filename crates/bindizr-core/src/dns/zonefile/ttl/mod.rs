@@ -50,7 +50,7 @@ fn scan_line(line: &str) -> ScannedLine {
 /// BIND writes TTLs as `1h` or `2d30m` and every serving implementation takes
 /// them, but one such token fails the whole file here. Rewrite them in place,
 /// touching only the slots a TTL may occupy.
-pub(super) fn to_decimal_ttls(content: &str) -> String {
+pub(crate) fn to_decimal_ttls(content: &str) -> String {
     let mut out = String::with_capacity(content.len());
     let mut depth = 0usize;
 
