@@ -52,7 +52,8 @@ pub(crate) enum RecordCommand {
 Input format (JSON or YAML): an array of records, or an object with a
 'records' array. Fields per record:
   name         owner name relative to the zone, or '@' for the apex (required)
-  record_type  A, AAAA, CNAME, MX, NS, PTR, SRV, TXT (required)
+  record_type  A, AAAA, CAA, CNAME, DNAME, DS, MX, NAPTR, NS, PTR, SRV,
+               SSHFP, TLSA, TXT (required)
   value        record value; TXT also accepts an array of strings (required)
   ttl          seconds (optional; defaults to the zone TTL)
   priority     MX/SRV priority (optional)

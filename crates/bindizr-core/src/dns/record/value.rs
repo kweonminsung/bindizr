@@ -73,6 +73,67 @@ pub(crate) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, St
         .map_err(|_| format!("{field} must be an unsigned 16-bit integer: {value}"))
 }
 
+/// One leading quoted character-string and what follows it, for the rdata
+/// grammars that mix them with other fields. `\\` escapes a byte and `\\DDD`
+/// a decimal one, as RFC 1035, Section 5.1 spells them.
+pub(crate) fn parse_char_string<'a>(
+    field: &str,
+    input: &'a str,
+) -> Result<(String, &'a str), String> {
+    let rest = input
+        .strip_prefix('"')
+        .ok_or_else(|| format!("{field} must be a quoted character-string: {input}"))?;
+
+    let mut out = Vec::new();
+    let mut bytes = rest.bytes().enumerate();
+    while let Some((index, byte)) = bytes.next() {
+        match byte {
+            b'"' => {
+                if out.len() > 255 {
+                    return Err(format!("{field} must be 255 bytes or less"));
+                }
+                let consumed = &rest[index + 1..];
+                let text =
+                    String::from_utf8(out).map_err(|_| format!("{field} must be valid UTF-8"))?;
+                return Ok((text, consumed.trim_start()));
+            }
+            b'\\' => match bytes.next() {
+                Some((_, d @ b'0'..=b'9')) => {
+                    let d2 = bytes.next().map(|(_, b)| b).filter(u8::is_ascii_digit);
+                    let d3 = bytes.next().map(|(_, b)| b).filter(u8::is_ascii_digit);
+                    let (Some(d2), Some(d3)) = (d2, d3) else {
+                        return Err(format!("{field} contains an invalid \\DDD escape"));
+                    };
+                    let code = u16::from(d - b'0') * 100
+                        + u16::from(d2 - b'0') * 10
+                        + u16::from(d3 - b'0');
+                    let byte = u8::try_from(code)
+                        .map_err(|_| format!("{field} contains an invalid \\DDD escape"))?;
+                    out.push(byte);
+                }
+                Some((_, escaped)) => out.push(escaped),
+                None => return Err(format!("{field} ends in a dangling escape")),
+            },
+            other => out.push(other),
+        }
+    }
+
+    Err(format!("{field} has an unterminated quote"))
+}
+
+/// A character-string in the quoted form the rdata grammars store.
+pub(crate) fn to_char_string(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        if c == '"' || c == '\\' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
+    out
+}
+
 /// Escapes are refused below, so every `.` here is a label boundary.
 pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(), String> {
     let trimmed = value.trim();

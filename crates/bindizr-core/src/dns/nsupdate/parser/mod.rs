@@ -11,7 +11,10 @@ use domain::{
 };
 
 use crate::{
-    dns::{name::join_labels, record::TxtRecordValue},
+    dns::{
+        name::join_labels,
+        record::{TxtRecordValue, to_naptr_presentation},
+    },
     model::record::RecordType,
 };
 
@@ -259,7 +262,8 @@ pub fn rr_to_record_value(
             let data = parse_rdata(message, rr, "AAAA", |parser| Aaaa::parse(parser).ok())?;
             Ok((RecordType::AAAA, data.addr().to_string(), None))
         }
-        record_type @ (RecordType::CNAME | RecordType::NS | RecordType::PTR) => {
+        record_type
+        @ (RecordType::CNAME | RecordType::DNAME | RecordType::NS | RecordType::PTR) => {
             let name = parse_rdata(message, rr, record_type.as_str(), |parser| {
                 ParsedName::parse(parser).ok()
             })?;
@@ -293,6 +297,22 @@ pub fn rr_to_record_value(
                 domain::rdata::Ds::parse(parser).ok()
             })?;
             Ok((RecordType::DS, data.to_string(), None))
+        }
+        RecordType::NAPTR => {
+            let data = parse_rdata(message, rr, "NAPTR", |parser| {
+                domain::rdata::Naptr::parse(parser).ok()
+            })?;
+            let replacement = to_presentation_name(data.replacement())
+                .map_err(|e| format!("invalid NAPTR rdata: {}", e))?;
+            let value = to_naptr_presentation(
+                data.order(),
+                data.preference(),
+                data.flags().as_slice(),
+                data.services().as_slice(),
+                data.regexp().as_slice(),
+                &replacement,
+            )?;
+            Ok((RecordType::NAPTR, value, None))
         }
         RecordType::SSHFP => {
             let data = parse_rdata(message, rr, "SSHFP", |parser| {

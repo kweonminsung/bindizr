@@ -784,14 +784,57 @@ async fn zone_import_zone_file_reconciles_ttl() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let content = concat!(
+        "tel IN NAPTR 200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" .\n",
+        "sip IN NAPTR 100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.example.com.\n",
+        "alias IN DNAME target.example.com.\n",
+    );
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["applied"], true, "{body}");
+    assert_eq!(body["summary"]["added"], 3, "{body}");
+
+    let (status, body) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // The rdata comes back as written, the root replacement included.
+    let exported = body.as_str().expect("zone file text");
+    assert!(
+        exported.contains("200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" ."),
+        "{exported}"
+    );
+    assert!(
+        exported.contains("100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.example.com."),
+        "{exported}"
+    );
+    assert!(
+        exported.contains("DNAME\ttarget.example.com."),
+        "{exported}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_import_passes_over_unsupported_types_only_when_asked() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
     // A real BIND zone file carries types bindizr does not store.
-    let content =
-        "www IN A 192.0.2.1\nsip IN NAPTR 100 10 \"U\" \"E2U+sip\" \"!^.*$!sip:x@y!\" .\n";
+    let content = "www IN A 192.0.2.1\nbox IN HINFO \"amd64\" \"linux\"\n";
 
     let (status, body) = app
         .request(
@@ -807,7 +850,7 @@ async fn zone_import_passes_over_unsupported_types_only_when_asked() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|error| error.as_str().unwrap().contains("NAPTR")),
+            .any(|error| error.as_str().unwrap().contains("HINFO")),
         "{body}"
     );
 
@@ -826,7 +869,7 @@ async fn zone_import_passes_over_unsupported_types_only_when_asked() {
         body["skipped_records"][0]
             .as_str()
             .unwrap()
-            .contains("NAPTR"),
+            .contains("HINFO"),
         "{body}"
     );
 

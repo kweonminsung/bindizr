@@ -6,7 +6,10 @@ use domain::{
     zonefile::inplace::{Entry, Error as ZoneFileError, Zonefile},
 };
 
-use crate::{dns::name::to_fqdn_lowercase, model::record::RecordType};
+use crate::{
+    dns::{name::to_fqdn_lowercase, record::to_naptr_presentation},
+    model::record::RecordType,
+};
 
 /// An RR's value as the zone file spells it.
 #[derive(Debug, PartialEq, Eq)]
@@ -101,9 +104,27 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
                 let ttl = ttl_secs as i32;
 
                 let (value, priority) = match rr.data() {
+                    // Rendered from the parsed fields: `domain` appends the
+                    // absolute dot to a name it already renders as `.`, so its
+                    // form spells a root replacement `..`.
+                    ZoneRecordData::Naptr(naptr) => match to_naptr_presentation(
+                        naptr.order(),
+                        naptr.preference(),
+                        naptr.flags().as_slice(),
+                        naptr.services().as_slice(),
+                        naptr.regexp().as_slice(),
+                        &naptr.replacement().to_string(),
+                    ) {
+                        Ok(text) => (ZoneFileValue::Rdata(text), None),
+                        Err(e) => {
+                            errors.push(format!("NAPTR value for '{}': {}", rr.owner(), e));
+                            continue;
+                        }
+                    },
                     ZoneRecordData::Txt(txt) => {
-                        // TXT values must be valid UTF-8; reject non-UTF-8 octets
-                        // (e.g. BIND `\DDD` escapes) rather than storing them.
+                        // TXT values must be valid UTF-8; reject non-UTF-8
+                        // octets (e.g. BIND `\DDD` escapes) rather than
+                        // storing them.
                         let mut segments = Vec::new();
                         let mut non_utf8 = false;
                         for segment in txt.iter() {
@@ -124,8 +145,9 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
                     }
                     other => {
                         let raw = other.to_string();
-                        // Move the MX/SRV priority (first field) into the priority
-                        // column like the JSON API; both forms canonicalize equal.
+                        // Move the MX/SRV priority (first field) into the
+                        // priority column like the JSON API; both forms
+                        // canonicalize equal.
                         match record_type {
                             RecordType::MX | RecordType::SRV => {
                                 let mut fields = raw.split_whitespace();

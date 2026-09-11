@@ -8,8 +8,9 @@ use crate::dns::{
     name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{
         ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
-        DsRrValue, MxRecordValue, NsRecordValue, PtrRecordValue, SrvRecordValue, SshfpRecordValue,
-        TlsaRecordValue, TxtContent, TxtRecordValue,
+        DnameRecordValue, DsRrValue, MxRecordValue, NaptrRecordValue, NsRecordValue,
+        PtrRecordValue, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtContent,
+        TxtRecordValue,
     },
 };
 
@@ -82,8 +83,10 @@ pub enum RecordType {
     AAAA,
     CAA,
     CNAME,
+    DNAME,
     DS,
     MX,
+    NAPTR,
     TXT,
     NS,
     SRV,
@@ -139,8 +142,10 @@ impl std::str::FromStr for RecordType {
             "AAAA" => Ok(RecordType::AAAA),
             "CAA" => Ok(RecordType::CAA),
             "CNAME" => Ok(RecordType::CNAME),
+            "DNAME" => Ok(RecordType::DNAME),
             "DS" => Ok(RecordType::DS),
             "MX" => Ok(RecordType::MX),
+            "NAPTR" => Ok(RecordType::NAPTR),
             "TXT" => Ok(RecordType::TXT),
             "NS" => Ok(RecordType::NS),
             "SRV" => Ok(RecordType::SRV),
@@ -160,8 +165,10 @@ impl RecordType {
             RecordType::AAAA => "AAAA",
             RecordType::CAA => "CAA",
             RecordType::CNAME => "CNAME",
+            RecordType::DNAME => "DNAME",
             RecordType::DS => "DS",
             RecordType::MX => "MX",
+            RecordType::NAPTR => "NAPTR",
             RecordType::TXT => "TXT",
             RecordType::NS => "NS",
             RecordType::SRV => "SRV",
@@ -178,12 +185,14 @@ impl RecordType {
             Rtype::A => Ok(RecordType::A),
             Rtype::NS => Ok(RecordType::NS),
             Rtype::CNAME => Ok(RecordType::CNAME),
+            Rtype::DNAME => Ok(RecordType::DNAME),
             Rtype::PTR => Ok(RecordType::PTR),
             Rtype::CAA => Ok(RecordType::CAA),
             Rtype::DS => Ok(RecordType::DS),
             Rtype::SSHFP => Ok(RecordType::SSHFP),
             Rtype::TLSA => Ok(RecordType::TLSA),
             Rtype::MX => Ok(RecordType::MX),
+            Rtype::NAPTR => Ok(RecordType::NAPTR),
             Rtype::TXT => Ok(RecordType::TXT),
             Rtype::AAAA => Ok(RecordType::AAAA),
             Rtype::SRV => Ok(RecordType::SRV),
@@ -197,9 +206,11 @@ impl RecordType {
             RecordType::A => 1,
             RecordType::NS => 2,
             RecordType::CNAME => 5,
+            RecordType::DNAME => 39,
             RecordType::DS => 43,
             RecordType::PTR => 12,
             RecordType::MX => 15,
+            RecordType::NAPTR => 35,
             RecordType::TXT => 16,
             RecordType::AAAA => 28,
             RecordType::SRV => 33,
@@ -222,8 +233,10 @@ impl RecordType {
             RecordType::AAAA => AaaaRecordValue::parse(value).map(|_| ()),
             RecordType::CAA => CaaRecordValue::parse(value)?.validate(),
             RecordType::CNAME => CnameRecordValue::parse(value).map(|_| ()),
+            RecordType::DNAME => DnameRecordValue::parse(value).map(|_| ()),
             RecordType::DS => DsRrValue::parse(value)?.validate(),
             RecordType::MX => MxRecordValue::parse(value, priority)?.validate(),
+            RecordType::NAPTR => NaptrRecordValue::parse(value)?.validate(),
             // Stored TXT is always the presentation form.
             RecordType::TXT => TxtRecordValue::from_presentation(value)
                 .ok_or_else(|| format!("stored TXT value is not in presentation form: {value}"))?
@@ -278,10 +291,16 @@ impl RecordType {
             RecordType::CNAME => CnameRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
+            RecordType::DNAME => DnameRecordValue::parse(value)
+                .map(|parsed| Cow::Owned(parsed.canonical()))
+                .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
             RecordType::DS => DsRrValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
             RecordType::MX => MxRecordValue::parse(value, fallback_priority)
+                .map(|parsed| Cow::Owned(parsed.canonical()))
+                .unwrap_or(Cow::Borrowed(value)),
+            RecordType::NAPTR => NaptrRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
             RecordType::TXT => Cow::Borrowed(value),
@@ -318,6 +337,7 @@ impl RecordType {
                 Ok(parsed.canonical())
             }
             RecordType::CNAME => CnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::DNAME => DnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::DS => {
                 let parsed = DsRrValue::parse(trimmed)?;
                 parsed.validate()?;
@@ -327,6 +347,11 @@ impl RecordType {
                 let parsed = MxRecordValue::parse(trimmed, priority)?;
                 parsed.validate()?;
                 Ok(parsed.encoded())
+            }
+            RecordType::NAPTR => {
+                let parsed = NaptrRecordValue::parse(trimmed)?;
+                parsed.validate()?;
+                Ok(parsed.canonical())
             }
             RecordType::TXT => TxtRecordValue::parse(value).map(|parsed| parsed.to_presentation()),
             RecordType::NS => NsRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
@@ -404,6 +429,7 @@ impl RecordType {
 /// backend.
 pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
     RecordType::CNAME,
+    RecordType::DNAME,
     RecordType::NS,
     RecordType::PTR,
     RecordType::MX,
