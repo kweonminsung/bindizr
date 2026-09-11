@@ -190,6 +190,10 @@ $INCLUDE is not supported.")]
         /// as a +/-/~ diff
         #[arg(long)]
         dry_run: bool,
+        /// Pass over record types bindizr does not store instead of failing
+        /// the whole file
+        #[arg(long)]
+        skip_unsupported: bool,
     },
 
     /// Export a zone as BIND master-file text
@@ -439,6 +443,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             from_server,
             mode,
             dry_run,
+            skip_unsupported,
         } => {
             let content = file.map(|file| super::read_input(&file)).transpose()?;
             let response = client
@@ -451,6 +456,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                             from_server,
                             mode: mode.into(),
                             dry_run,
+                            skip_unsupported,
                         },
                     },
                 )
@@ -465,6 +471,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 for error in &import.errors {
                     eprintln!("  - {}", error);
                 }
+            }
+
+            // Also stderr: a warning about the zone, not part of the summary.
+            for skipped in &import.skipped_records {
+                eprintln!("  ~ {}", skipped);
             }
 
             print_table(vec![ImportSummaryRow::from(&import.summary)]);

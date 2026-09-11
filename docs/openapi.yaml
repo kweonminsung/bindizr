@@ -2527,7 +2527,7 @@ paths:
       tags:
       - Zone
       summary: Import records into a zone
-      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.
+      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. A record type bindizr does not store fails the file the same way unless `skip_unsupported` is set, which passes over those records and lists them in `skipped_records`.
       operationId: import_zone
       parameters:
       - name: name
@@ -4113,6 +4113,11 @@ components:
           example: 192.0.2.1:53
         mode:
           $ref: '#/components/schemas/ImportMode'
+        skip_unsupported:
+          type: boolean
+          description: |-
+            Pass over records bindizr has no type for instead of failing the whole
+            file; they are counted as skipped and listed in `skipped_records`.
     ImportZoneResponse:
       type: object
       description: Result of a zone import, including a summary and any validation errors.
@@ -4137,6 +4142,13 @@ components:
           items:
             type: string
           description: Per-record validation errors. When non-empty nothing is applied.
+        skipped_records:
+          type: array
+          items:
+            type: string
+          description: |-
+            Records passed over under `skip_unsupported`, so an operator can see
+            what the zone carries that bindizr does not store.
         summary:
           $ref: '#/components/schemas/ImportSummary'
     MessageResponse:

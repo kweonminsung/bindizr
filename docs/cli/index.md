@@ -108,8 +108,16 @@ transfer):
 $ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --dry-run
 ```
 
+A zone file written for BIND often carries record types bindizr does not
+store, and one of them fails the whole import. `--skip-unsupported` passes
+over those lines instead, reporting each one:
+
+```bash
+$ bindizr zone import <ZONE_NAME> zone.txt --skip-unsupported
+```
+
 Over HTTP, `POST /zones/{name}/import` takes either `content` (zone file
-text) or `from_server` the same way.
+text) or `from_server` the same way, and `skip_unsupported` alongside them.
 
 ## Zone history
 

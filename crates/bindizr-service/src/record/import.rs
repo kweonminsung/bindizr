@@ -126,7 +126,14 @@ impl RecordService {
                 return Err(ServiceError::invalid_input("give content or from_server"));
             }
         };
-        Self::reconcile_zone_file(zone_name, &content, request.mode, request.dry_run).await
+        Self::reconcile_zone_file(
+            zone_name,
+            &content,
+            request.mode,
+            request.dry_run,
+            request.skip_unsupported,
+        )
+        .await
     }
 
     async fn reconcile_zone_file(
@@ -134,6 +141,7 @@ impl RecordService {
         content: &str,
         mode: ImportMode,
         dry_run: bool,
+        skip_unsupported: bool,
     ) -> Result<ImportZoneResponse, ServiceError> {
         let t_total = Instant::now();
 
@@ -152,6 +160,16 @@ impl RecordService {
             timings.parse_ms = elapsed_ms(t);
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
+
+            // Refusing a whole file over one line it cannot store leaves a
+            // zone served elsewhere no way in.
+            let skipped_records = if skip_unsupported {
+                skipped += parsed.unsupported.len();
+                parsed.unsupported
+            } else {
+                errors.extend(parsed.unsupported);
+                Vec::new()
+            };
 
             // Normalize parsed RRs and drop duplicates within the file,
             // indexed by owner name so the dedup check scans only same-name entries.
@@ -464,6 +482,7 @@ impl RecordService {
                 summary,
                 diff,
                 errors,
+                skipped_records,
             };
 
             Ok(AppliedImport {

@@ -440,7 +440,7 @@ pub(crate) async fn delete_zone(
         path = "/zones/{name}/import",
         tag = "Zone",
         summary = "Import records into a zone",
-        description = "Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.",
+        description = "Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. A record type bindizr does not store fails the file the same way unless `skip_unsupported` is set, which passes over those records and lists them in `skipped_records`.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to import records into.")
         ),

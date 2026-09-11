@@ -784,6 +784,65 @@ async fn zone_import_zone_file_reconciles_ttl() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn zone_import_passes_over_unsupported_types_only_when_asked() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // A real BIND zone file carries types bindizr does not store.
+    let content =
+        "www IN A 192.0.2.1\nsip IN NAPTR 100 10 \"U\" \"E2U+sip\" \"!^.*$!sip:x@y!\" .\n";
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], false, "{body}");
+    assert!(
+        body["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|error| error.as_str().unwrap().contains("NAPTR")),
+        "{body}"
+    );
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content, "skip_unsupported": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], true, "{body}");
+    assert!(body["errors"].as_array().unwrap().is_empty(), "{body}");
+    assert_eq!(body["summary"]["skipped"], 1, "{body}");
+    assert!(
+        body["skipped_records"][0]
+            .as_str()
+            .unwrap()
+            .contains("NAPTR"),
+        "{body}"
+    );
+
+    // The supported line still landed.
+    let (_, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&name=www"),
+            None,
+        )
+        .await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_reports_validation_errors() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;

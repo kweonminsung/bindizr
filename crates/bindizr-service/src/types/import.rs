@@ -37,6 +37,10 @@ pub struct ImportZoneRequest {
     /// When true, parse and validate without applying any change.
     #[serde(default)]
     pub dry_run: bool,
+    /// Pass over records bindizr has no type for instead of failing the whole
+    /// file; they are counted as skipped and listed in `skipped_records`.
+    #[serde(default)]
+    pub skip_unsupported: bool,
 }
 
 /// Result of a zone import, including a summary and any validation errors.
@@ -51,6 +55,9 @@ pub struct ImportZoneResponse {
     pub diff: RecordDiff,
     /// Per-record validation errors. When non-empty nothing is applied.
     pub errors: Vec<String>,
+    /// Records passed over under `skip_unsupported`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_records: Vec<String>,
 }
 
 /// Counts of records parsed, added, deleted, updated, unchanged, and skipped

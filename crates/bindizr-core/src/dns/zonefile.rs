@@ -29,8 +29,12 @@ pub struct ZoneFileRr {
 
 pub struct ParsedZoneFile {
     pub rrs: Vec<ZoneFileRr>,
-    /// Human-readable problems (unsupported type, non-IN class, parse failure).
+    /// Human-readable problems (parse failure, out-of-range TTL, unsupported
+    /// directive).
     pub errors: Vec<String>,
+    /// Records bindizr has no type or class for, apart from `errors` so an
+    /// import can pass over them.
+    pub unsupported: Vec<String>,
 }
 
 /// Parse BIND zone file text relative to `zone_name`. Relative names resolve
@@ -53,12 +57,13 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
 
     let mut rrs = Vec::new();
     let mut errors = Vec::new();
+    let mut unsupported = Vec::new();
 
     loop {
         match zonefile.next_entry() {
             Ok(Some(Entry::Record(rr))) => {
                 if rr.class() != Class::IN {
-                    errors.push(format!(
+                    unsupported.push(format!(
                         "unsupported record class '{}' for '{}'",
                         rr.class(),
                         rr.owner()
@@ -71,7 +76,7 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
                     other => match RecordType::from_rtype(other) {
                         Ok(record_type) => record_type,
                         Err(_) => {
-                            errors.push(format!(
+                            unsupported.push(format!(
                                 "unsupported record type '{}' for '{}'",
                                 other,
                                 rr.owner()
@@ -160,7 +165,11 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
         }
     }
 
-    ParsedZoneFile { rrs, errors }
+    ParsedZoneFile {
+        rrs,
+        errors,
+        unsupported,
+    }
 }
 
 /// Directives `parse_zone_file` prepends before handing the text to the parser.
