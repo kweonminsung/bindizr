@@ -15,15 +15,10 @@ use tokio::net::TcpStream;
 use super::{axfr, catalog};
 use crate::dns::error::XfrError;
 
-/// A delta this small never outweighs a zone worth transferring, so the
-/// zone is not counted for it.
-const SMALL_DELTA_ROWS: u64 = 4096;
-
 /// RFC 1995, Section 2: a server may answer with a full transfer when the
-/// incremental one would be larger. Counting first is also what keeps a
-/// long-absent secondary from pulling its whole absence into memory. Rows,
-/// not bytes: summing lengths would read the very rows this decides whether
-/// to read.
+/// incremental one would be larger. Counting first also keeps a long-absent
+/// secondary from pulling its whole absence into memory. Rows, not bytes:
+/// summing lengths would read the rows this decides whether to read.
 async fn delta_outweighs_zone(
     zone: &Zone,
     client_serial: u32,
@@ -35,10 +30,6 @@ async fn delta_outweighs_zone(
         current_serial as i32,
     )
     .await?;
-
-    if delta_rows <= SMALL_DELTA_ROWS {
-        return Ok(false);
-    }
 
     Ok(delta_rows >= ZoneService::count_transfer_records(zone.name.as_str()).await?)
 }
