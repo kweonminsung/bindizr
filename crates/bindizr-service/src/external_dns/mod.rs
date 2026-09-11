@@ -20,6 +20,11 @@ use crate::{
     types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecord},
 };
 
+/// Rows per round trip: enough that an ordinary zone takes one or two, few
+/// enough that the rows in flight stay under the group they fold into. Only
+/// the read is paged; the protocol wants every endpoint in one answer.
+const RECORD_READ_PAGE: u32 = 5_000;
+
 /// Business logic for the ExternalDNS provider API.
 pub struct ExternalDnsService;
 
@@ -56,29 +61,42 @@ impl ExternalDnsService {
     /// ExternalDNS-supported record types: one per name and type, with absolute
     /// owner names and sorted presentation-form values.
     pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecord>, ServiceError> {
-        // One query, joined against the caller's grants in SQL.
-        let rows = RepositoryService::list_records_by_filter_with_zone(RecordFilter {
-            scope_token_id: caller.scope_token_id(),
-            ..RecordFilter::default()
-        })
-        .await?;
-
         // TTL is part of the key: one zone's rows of a name and type share it,
         // but an overlapping parent and child zone may not.
         let mut grouped: BTreeMap<(String, String, i32), Vec<String>> = BTreeMap::new();
-        for row in rows {
-            let record = row.record();
-            if !record.record_type.is_external_dns_supported() {
-                continue;
+        let mut offset = 0u64;
+
+        loop {
+            // Folded as they arrive, so the rows never sit beside the group
+            // they build. The query's name-and-id order is total, so pages tile.
+            let rows = RepositoryService::list_records_by_filter_with_zone(RecordFilter {
+                scope_token_id: caller.scope_token_id(),
+                limit: Some(RECORD_READ_PAGE),
+                offset: Some(offset),
+                ..RecordFilter::default()
+            })
+            .await?;
+            let read = rows.len();
+
+            for row in rows {
+                let record = row.record();
+                if !record.record_type.is_external_dns_supported() {
+                    continue;
+                }
+                let name = policy::normalize_lookup_name(&record.name.to_fqdn(&row.zone_name))?;
+                let value = record
+                    .record_type
+                    .presentation_rdata(&record.value, record.priority);
+                grouped
+                    .entry((name, record.record_type.to_string(), record.ttl))
+                    .or_default()
+                    .push(value);
             }
-            let name = policy::normalize_lookup_name(&record.name.to_fqdn(&row.zone_name))?;
-            let value = record
-                .record_type
-                .presentation_rdata(&record.value, record.priority);
-            grouped
-                .entry((name, record.record_type.to_string(), record.ttl))
-                .or_default()
-                .push(value);
+
+            if read < RECORD_READ_PAGE as usize {
+                break;
+            }
+            offset += read as u64;
         }
 
         // Sorted values so an unchanged state never reads as a diff.

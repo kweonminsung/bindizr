@@ -447,3 +447,55 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .unwrap();
     assert_eq!(response.status().as_u16(), 401);
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn external_dns_record_listing_spans_read_pages() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let zone_name = app.zone_name("paged.com");
+    create_zone(&app, &zone_name).await;
+
+    // Past the read page, so the listing has to tile without dropping a row.
+    const RECORDS: usize = 5_100;
+    let zone_file: String = (0..RECORDS)
+        .map(|i| {
+            format!(
+                "r{i} 3600 IN A 10.{}.{}.{}\n",
+                i / 65536,
+                (i / 256) % 256,
+                i % 256
+            )
+        })
+        .collect();
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": zone_file, "mode": "upsert" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["applied"], true, "{body}");
+
+    let (status, body) = app
+        .request(Method::GET, "/external-dns/records", None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let listed = body["records"].as_array().expect("records array");
+    let a_records = listed
+        .iter()
+        .filter(|record| record["record_type"] == "A")
+        .count();
+    assert_eq!(a_records, RECORDS, "{}", listed.len());
+
+    let names: std::collections::HashSet<&str> = listed
+        .iter()
+        .filter_map(|record| record["name"].as_str())
+        .collect();
+    assert_eq!(names.len(), listed.len(), "a row was listed twice");
+}
