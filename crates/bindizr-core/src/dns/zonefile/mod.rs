@@ -46,7 +46,7 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
     // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and
     // TTLs. PRELUDE_LINES counts them.
     let mut buffer = format!("$ORIGIN {origin_fqdn}\n$TTL {default_ttl}\n");
-    buffer.push_str(content);
+    buffer.push_str(&ttl::to_decimal_ttls(content));
     if !buffer.ends_with('\n') {
         buffer.push('\n');
     }
@@ -188,60 +188,7 @@ fn to_input_line_message(err: &ZoneFileError) -> String {
     }
 }
 
+mod ttl;
+
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn txt_rejects_non_utf8_octets() {
-        // `\255\254` decode to bytes 0xFF 0xFE, which are not valid UTF-8.
-        let parsed = parse_zone_file("weird IN TXT \"\\255\\254\"\n", "example.com", 3600);
-        assert!(
-            parsed.errors.iter().any(|e| e.contains("not valid UTF-8")),
-            "expected a UTF-8 error, got: {:?}",
-            parsed.errors
-        );
-        assert!(
-            !parsed
-                .rrs
-                .iter()
-                .any(|rr| rr.record_type == RecordType::TXT),
-            "the non-UTF-8 TXT record should not have been stored"
-        );
-    }
-
-    #[test]
-    fn parse_error_names_the_line_of_the_submitted_text() {
-        // An unknown rtype is caught where it sits; an rdata error is reported
-        // at the end of the entry, which would blur what this pins down.
-        let parsed = parse_zone_file(
-            "ok IN A 192.0.2.1\nbad !!! IN A 192.0.2.2\n",
-            "example.com",
-            3600,
-        );
-        assert!(
-            parsed.errors.iter().any(|e| e.contains(": 2:")),
-            "expected the error to name line 2, got: {:?}",
-            parsed.errors
-        );
-    }
-
-    #[test]
-    fn txt_utf8_multi_segment_parses_as_segments() {
-        let parsed = parse_zone_file("multi IN TXT \"foo\" \"bar\"\n", "example.com", 3600);
-        assert!(
-            parsed.errors.is_empty(),
-            "unexpected errors: {:?}",
-            parsed.errors
-        );
-        let rr = parsed
-            .rrs
-            .iter()
-            .find(|rr| rr.record_type == RecordType::TXT)
-            .expect("a TXT record");
-        match &rr.value {
-            ZoneFileValue::CharacterStrings(segments) => assert_eq!(segments, &["foo", "bar"]),
-            other => panic!("expected segments, got {other:?}"),
-        }
-    }
-}
+mod tests;
