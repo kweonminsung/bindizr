@@ -471,6 +471,15 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
     }
 
+    pub(crate) async fn count_rrsig_dnssec_records_expired(
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, ServiceError> {
+        get_dnssec_record_repository()
+            .count_expired(cutoff)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
+    }
+
     pub(crate) async fn update_dnssec_key_state_tx(
         tx: &mut RepositoryTx<'_>,
         id: i32,

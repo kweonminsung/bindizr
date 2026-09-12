@@ -217,6 +217,24 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(count as u64)
     }
 
+    async fn count_expired(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM dnssec_records
+            WHERE expires_at IS NOT NULL
+              AND expires_at <= ?
+            "#,
+        )
+        .bind(cutoff)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        Ok(count as u64)
+    }
+
     async fn list_by_filter_with_zone(
         &self,
         filter: DnssecRecordFilter,

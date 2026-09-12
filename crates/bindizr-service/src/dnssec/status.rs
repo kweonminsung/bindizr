@@ -59,6 +59,12 @@ impl DnssecService {
     ) -> Result<u64, ServiceError> {
         RepositoryService::count_rrsig_dnssec_records_expiring_within_refresh(now).await
     }
+
+    /// Signatures already past their expiration across every zone; any at all
+    /// mean resolvers are failing part of one right now.
+    pub async fn count_rrsigs_expired(now: DateTime<Utc>) -> Result<u64, ServiceError> {
+        RepositoryService::count_rrsig_dnssec_records_expired(now).await
+    }
 }
 
 /// Assemble the zone's status on the caller's transaction: the earliest

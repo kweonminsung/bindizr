@@ -484,6 +484,9 @@ pub trait DnssecRecordRepository: Send + Sync {
         &self,
         cutoff: DateTime<Utc>,
     ) -> Result<u64, DatabaseError>;
+    /// Rows whose expiration has already passed `cutoff`: signatures no
+    /// resolver will accept any more.
+    async fn count_expired(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
     async fn list_by_filter_with_zone(
         &self,
         filter: DnssecRecordFilter,

@@ -27,6 +27,7 @@ pub struct Metrics {
     pub dnssec_zones_total: IntGauge,
     pub dnssec_keys_total: IntGaugeVec,
     pub dnssec_rrsigs_expiring_total: IntGauge,
+    pub dnssec_rrsigs_expired_total: IntGauge,
     pub dnssec_maintenance_runs_total: IntCounterVec,
     pub zone_cache_lookups_total: IntCounterVec,
     pub zone_cache_evictions_total: IntCounter,
@@ -177,6 +178,14 @@ impl Metrics {
         .expect("valid metric definition");
         register(&registry, &dnssec_rrsigs_expiring_total);
 
+        let dnssec_rrsigs_expired_total = IntGauge::new(
+            "bindizr_dnssec_rrsigs_expired_total",
+            "Signatures already past their expiration; any at all mean resolvers are failing \
+             part of a zone",
+        )
+        .expect("valid metric definition");
+        register(&registry, &dnssec_rrsigs_expired_total);
+
         let dnssec_maintenance_runs_total = IntCounterVec::new(
             Opts::new(
                 "bindizr_dnssec_maintenance_runs_total",
@@ -227,6 +236,7 @@ impl Metrics {
             dnssec_zones_total,
             dnssec_keys_total,
             dnssec_rrsigs_expiring_total,
+            dnssec_rrsigs_expired_total,
             dnssec_maintenance_runs_total,
             zone_cache_lookups_total,
             zone_cache_evictions_total,

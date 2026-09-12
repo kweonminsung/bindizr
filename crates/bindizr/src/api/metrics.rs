@@ -41,8 +41,8 @@ async fn refresh_db_gauges() -> Result<(), ServiceError> {
 
     // The same per-policy window as the scheduler's re-sign scan, so a
     // persistent nonzero value means that scan is not keeping up.
-    // Concurrent, so the probe timeout budgets one round trip, not seven.
-    let (zones, records, dnssec_zones, published, active, retired, expiring) = tokio::try_join!(
+    // Concurrent, so the probe timeout budgets one round trip, not one per query.
+    let (zones, records, dnssec_zones, published, active, retired, expiring, expired) = tokio::try_join!(
         ZoneService::count_all(),
         RecordService::count_all(),
         DnssecService::count_signed_zones(),
@@ -50,6 +50,7 @@ async fn refresh_db_gauges() -> Result<(), ServiceError> {
         DnssecService::count_keys_by_state(DnssecKeyState::Active),
         DnssecService::count_keys_by_state(DnssecKeyState::Retired),
         DnssecService::count_rrsigs_expiring_within_refresh(Utc::now()),
+        DnssecService::count_rrsigs_expired(Utc::now()),
     )?;
 
     metrics.zones_total.set(zones as i64);
@@ -66,6 +67,7 @@ async fn refresh_db_gauges() -> Result<(), ServiceError> {
             .set(count as i64);
     }
     metrics.dnssec_rrsigs_expiring_total.set(expiring as i64);
+    metrics.dnssec_rrsigs_expired_total.set(expired as i64);
 
     Ok(())
 }
