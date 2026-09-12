@@ -14,6 +14,8 @@ $ curl http://localhost:3000/metrics
 | `bindizr_build_info{version}` | gauge | Build metadata; the value is always 1 |
 | `bindizr_started_at_seconds` | gauge | Unix time the process started |
 | `bindizr_database_up` | gauge | Whether this scrape's database probe succeeded (3 s timeout) |
+| `bindizr_db_connections{state}` | gauge | Pooled database connections by state (`idle`/`in_use`); `in_use` reaching the max is the saturation every request then queues behind |
+| `bindizr_db_connections_max` | gauge | Connection ceiling the pool was built with, scaled to the host's cores |
 | `bindizr_zones_total`, `bindizr_records_total` | gauge | Zone / record counts, refreshed at scrape time |
 | `bindizr_http_requests_total{method, route, status}` | counter | HTTP API requests, labeled by route pattern |
 | `bindizr_http_request_duration_seconds{method, route}` | histogram | HTTP API request latency |

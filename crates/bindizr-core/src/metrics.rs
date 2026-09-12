@@ -18,6 +18,8 @@ pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
 pub struct Metrics {
     registry: Registry,
     pub database_up: IntGauge,
+    pub db_connections: IntGaugeVec,
+    pub db_connections_max: IntGauge,
     pub zones_total: IntGauge,
     pub records_total: IntGauge,
     pub http_requests_total: IntCounterVec,
@@ -87,6 +89,24 @@ impl Metrics {
         )
         .expect("valid metric definition");
         register(&registry, &database_up);
+
+        let db_connections = IntGaugeVec::new(
+            Opts::new(
+                "bindizr_db_connections",
+                "Pooled database connections by state; `in_use` reaching \
+                 `bindizr_db_connections_max` is the saturation every request then queues behind",
+            ),
+            &["state"],
+        )
+        .expect("valid metric definition");
+        register(&registry, &db_connections);
+
+        let db_connections_max = IntGauge::new(
+            "bindizr_db_connections_max",
+            "Connection ceiling the pool was built with, scaled to the host's cores",
+        )
+        .expect("valid metric definition");
+        register(&registry, &db_connections_max);
 
         let zones_total = IntGauge::new(
             "bindizr_zones_total",
@@ -239,6 +259,8 @@ impl Metrics {
         Self {
             registry,
             database_up,
+            db_connections,
+            db_connections_max,
             zones_total,
             records_total,
             http_requests_total,
@@ -419,6 +441,20 @@ pub fn track_dnssec_maintenance(result: MaintenanceResult) {
         .dnssec_maintenance_runs_total
         .with_label_values(&[result.as_str()])
         .inc();
+}
+
+/// The pool's occupancy at scrape time.
+pub fn track_db_pool(connections: u32, idle: u32, max: u32) {
+    let metrics = metrics();
+    metrics
+        .db_connections
+        .with_label_values(&["idle"])
+        .set(i64::from(idle));
+    metrics
+        .db_connections
+        .with_label_values(&["in_use"])
+        .set(i64::from(connections.saturating_sub(idle)));
+    metrics.db_connections_max.set(i64::from(max));
 }
 
 pub fn track_zone_cache_lookup(hit: bool) {

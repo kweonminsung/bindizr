@@ -89,6 +89,31 @@ pub(crate) fn get_pool() -> &'static DatabasePool {
     DATABASE_POOL.get().expect("Database pool not initialized")
 }
 
+/// How full the connection pool is. sqlx counts what it holds, not what waits
+/// on it, so saturation shows as `in_use` reaching `max` rather than as a
+/// queue depth.
+pub struct PoolStats {
+    /// Connections the pool holds, idle and handed out alike.
+    pub connections: u32,
+    pub idle: u32,
+    pub max: u32,
+}
+
+/// The pool's occupancy, or `None` before [`initialize`].
+pub fn pool_stats() -> Option<PoolStats> {
+    let (connections, idle) = match DATABASE_POOL.get()? {
+        DatabasePool::MySQL(pool) => (pool.size(), pool.num_idle()),
+        DatabasePool::PostgreSQL(pool) => (pool.size(), pool.num_idle()),
+        DatabasePool::SQLite(pool) => (pool.size(), pool.num_idle()),
+    };
+
+    Some(PoolStats {
+        connections,
+        idle: idle as u32,
+        max: pool_max_connections(),
+    })
+}
+
 /// Max pooled connections, scaled to the host; sqlx's default is a flat 10.
 /// SQLite shares it: under WAL the pool bounds read concurrency rather than
 /// contention for the writer slot.

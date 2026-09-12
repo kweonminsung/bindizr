@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bindizr_core::{
-    metrics::{TEXT_CONTENT_TYPE, metrics},
+    metrics::{TEXT_CONTENT_TYPE, metrics, track_db_pool},
     model::dnssec_key::DnssecKeyState,
 };
 use bindizr_service::{
@@ -68,6 +68,10 @@ async fn refresh_db_gauges() -> Result<(), ServiceError> {
     }
     metrics.dnssec_rrsigs_expiring_total.set(expiring as i64);
     metrics.dnssec_rrsigs_expired_total.set(expired as i64);
+
+    if let Some(pool) = bindizr_db::pool_stats() {
+        track_db_pool(pool.connections, pool.idle, pool.max);
+    }
 
     Ok(())
 }
