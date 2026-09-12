@@ -3,13 +3,13 @@
 
 use super::{
     Rdata,
-    value::{MAX_RECORD_RDATA, parse_u8_record_field},
+    value::{MAX_RECORD_RDATA, parse_quoted_string, parse_u8_record_field, to_quoted_string},
 };
 
 pub struct CaaRecordValue<'a> {
     flags: u8,
     tag: &'a str,
-    value: &'a str,
+    value: String,
 }
 
 impl<'a> CaaRecordValue<'a> {
@@ -26,11 +26,24 @@ impl<'a> CaaRecordValue<'a> {
             .trim_start()
             .split_once(char::is_whitespace)
             .ok_or_else(err)?;
+        let rest = rest.trim();
+
+        // A quoted value resolves its escapes; a bare one has none, and keeps
+        // the whitespace an unquoted value may carry.
+        let value = if rest.starts_with('"') {
+            let (text, trailing) = parse_quoted_string("CAA value", rest)?;
+            if !trailing.is_empty() {
+                return Err(err());
+            }
+            text
+        } else {
+            rest.to_string()
+        };
 
         Ok(Self {
             flags: parse_u8_record_field("CAA flags", flags)?,
             tag,
-            value: unquote(rest.trim()),
+            value,
         })
     }
 
@@ -47,11 +60,6 @@ impl<'a> CaaRecordValue<'a> {
         }
         if self.value.is_empty() {
             return Err("CAA value must not be empty".to_string());
-        }
-        // These need the RFC 1035, Section 5.1 escapes the exporter never
-        // emits, so a stored value carrying them breaks the import round trip.
-        if self.value.contains('"') || self.value.contains('\\') {
-            return Err("CAA value must not contain quotes or backslashes".to_string());
         }
         if self.value.chars().any(|c| c.is_control()) {
             return Err("CAA value must not contain control characters".to_string());
@@ -71,10 +79,10 @@ impl<'a> CaaRecordValue<'a> {
 
     pub fn canonical(&self) -> String {
         format!(
-            "{} {} \"{}\"",
+            "{} {} {}",
             self.flags,
             self.tag.to_lowercase(),
-            self.value
+            to_quoted_string(&self.value)
         )
     }
 
@@ -89,15 +97,6 @@ impl<'a> CaaRecordValue<'a> {
         rdata.extend_from_slice(self.value.as_bytes());
         Rdata::new(rdata)
     }
-}
-
-/// Strip one pair of surrounding quotes; inner quotes are rejected by
-/// `validate`, so no escape handling is needed.
-fn unquote(value: &str) -> &str {
-    value
-        .strip_prefix('"')
-        .and_then(|v| v.strip_suffix('"'))
-        .unwrap_or(value)
 }
 
 #[cfg(test)]
@@ -119,19 +118,39 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_bad_tags_and_embedded_quotes() {
+    fn a_quoted_value_resolves_its_escapes_and_renders_them_back() {
+        // An export and a zone file both spell a quote or backslash with the
+        // RFC 1035, Section 5.1 escaping.
+        let parsed = CaaRecordValue::parse(r#"0 issue "a\"b\\c""#).unwrap();
+        parsed.validate().unwrap();
+
+        assert_eq!(parsed.canonical(), r#"0 issue "a\"b\\c""#);
+        assert_eq!(
+            parsed.to_rdata().unwrap().as_bytes(),
+            b"\x00\x05issuea\"b\\c"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_a_bad_tag_or_a_missing_value() {
         let long_tag = CaaRecordValue::parse("0 averyveryverylongtag x").unwrap();
         assert!(long_tag.validate().is_err());
-        let inner_quote = CaaRecordValue::parse("0 issue a\"b").unwrap();
-        assert!(inner_quote.validate().is_err());
         assert!(CaaRecordValue::parse("0 issue").is_err());
     }
 
     #[test]
-    fn validate_rejects_escapes_the_exporter_never_emits() {
-        for value in ["0 issue a\\b", "0 issue a\tb"] {
-            let parsed = CaaRecordValue::parse(value).unwrap();
-            assert!(parsed.validate().is_err(), "{value} was accepted");
+    fn rejects_a_quoted_value_that_does_not_close_or_stand_alone() {
+        for value in [r#"0 issue "unterminated"#, r#"0 issue "a" trailing"#] {
+            assert!(
+                CaaRecordValue::parse(value).is_err(),
+                "{value} was accepted"
+            );
         }
+    }
+
+    #[test]
+    fn validate_rejects_control_characters_no_value_can_spell_back() {
+        let parsed = CaaRecordValue::parse("0 issue a\tb").unwrap();
+        assert!(parsed.validate().is_err());
     }
 }

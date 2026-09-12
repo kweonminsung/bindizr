@@ -1,7 +1,7 @@
 use super::{
     Rdata,
     value::{
-        parse_char_string, parse_u16_record_field, to_char_string, validate_domain_record_value,
+        parse_char_string, parse_u16_record_field, to_quoted_string, validate_domain_record_value,
     },
 };
 use crate::dns::name::{encode_name, to_fqdn_lowercase};
@@ -77,9 +77,9 @@ impl<'a> NaptrRecordValue<'a> {
             "{} {} {} {} {} {}",
             self.order,
             self.preference,
-            to_char_string(&self.flags),
-            to_char_string(&self.services),
-            to_char_string(&self.regexp),
+            to_quoted_string(&self.flags),
+            to_quoted_string(&self.services),
+            to_quoted_string(&self.regexp),
             to_fqdn_lowercase(self.replacement)
         )
     }

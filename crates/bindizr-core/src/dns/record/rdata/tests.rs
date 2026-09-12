@@ -114,3 +114,19 @@ fn rdata_rejects_bytes_beyond_the_rdlength_limit() {
     assert!(Rdata::new(vec![0; u16::MAX as usize]).is_ok());
     assert!(Rdata::new(vec![0; u16::MAX as usize + 1]).is_err());
 }
+
+#[test]
+fn encode_cname_rdata_reads_an_escaped_dot_as_label_data() {
+    // RFC 1035, Section 5.1: `a\.b` is one label of four octets, not two
+    // labels, so the length octet covers the dot.
+    let encoded =
+        EncodedRdata::from_columns(&RecordType::CNAME, r"a\.b.example.com.", None).unwrap();
+
+    assert_eq!(
+        encoded.rdata.as_bytes(),
+        [
+            3, b'a', b'.', b'b', 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm',
+            0,
+        ]
+    );
+}

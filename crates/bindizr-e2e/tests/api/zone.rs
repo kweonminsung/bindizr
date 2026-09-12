@@ -828,6 +828,44 @@ async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
+async fn escaped_labels_and_values_survive_an_import_and_export_round_trip() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let content = concat!(
+        "0/25 IN NS    ns.example.com.\n",
+        "1    IN CNAME 1.0/25.2.0.192.in-addr.arpa.\n",
+        "@    IN CAA   0 issue \"a\\\"b\\\\c\"\n",
+    );
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["applied"], true, "{body}");
+    assert_eq!(body["summary"]["added"], 3, "{body}");
+
+    let (status, body) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // RFC 2317, Section 4 delegates through a label carrying a slash, and the
+    // CAA value keeps the escapes it was written with.
+    let exported = body.as_str().expect("zone file text");
+    assert!(
+        exported.contains("1.0/25.2.0.192.in-addr.arpa."),
+        "{exported}"
+    );
+    assert!(exported.contains(r#"0 issue "a\"b\\c""#), "{exported}");
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
 async fn zone_import_passes_over_unsupported_types_only_when_asked() {
     let app = TestApp::start().await;
     let zone = app.create_test_zone().await;

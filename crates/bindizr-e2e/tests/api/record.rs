@@ -141,11 +141,7 @@ async fn record_reject_invalid_values() {
             "bad target.example.com",
             "must not contain whitespace",
         ),
-        (
-            "CNAME",
-            "-bad.example.com",
-            "must not start or end with hyphens",
-        ),
+        ("CNAME", "bad..example.com", "must not contain empty labels"),
     ] {
         let request = json!({
             "name": format!("bad-{}", record_type.to_ascii_lowercase()),

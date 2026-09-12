@@ -2,7 +2,7 @@
 
 use crate::dns::{
     DNS_TCP_MAX_SIZE,
-    name::{MAX_DOMAIN_LEN, has_whitespace_or_control, validate_domain_label},
+    name::{MAX_DOMAIN_LEN, decode_name_labels, has_whitespace_or_control},
 };
 
 /// Priority an MX or SRV row takes when its priority column is NULL; served
@@ -73,25 +73,22 @@ pub(crate) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, St
         .map_err(|_| format!("{field} must be an unsigned 16-bit integer: {value}"))
 }
 
-/// One leading quoted character-string and what follows it, for the rdata
-/// grammars that mix them with other fields. `\\` escapes a byte and `\\DDD`
-/// a decimal one, as RFC 1035, Section 5.1 spells them.
-pub(crate) fn parse_char_string<'a>(
+/// One leading quoted string and what follows it, for the rdata grammars that
+/// mix them with other fields. `\\` escapes a byte and `\\DDD` a decimal one, as
+/// RFC 1035, Section 5.1 spells them. The caller bounds its own field.
+pub(crate) fn parse_quoted_string<'a>(
     field: &str,
     input: &'a str,
 ) -> Result<(String, &'a str), String> {
     let rest = input
         .strip_prefix('"')
-        .ok_or_else(|| format!("{field} must be a quoted character-string: {input}"))?;
+        .ok_or_else(|| format!("{field} must be a quoted string: {input}"))?;
 
     let mut out = Vec::new();
     let mut bytes = rest.bytes().enumerate();
     while let Some((index, byte)) = bytes.next() {
         match byte {
             b'"' => {
-                if out.len() > 255 {
-                    return Err(format!("{field} must be 255 bytes or less"));
-                }
                 let consumed = &rest[index + 1..];
                 let text =
                     String::from_utf8(out).map_err(|_| format!("{field} must be valid UTF-8"))?;
@@ -121,8 +118,22 @@ pub(crate) fn parse_char_string<'a>(
     Err(format!("{field} has an unterminated quote"))
 }
 
-/// A character-string in the quoted form the rdata grammars store.
-pub(crate) fn to_char_string(text: &str) -> String {
+/// A character-string: [`parse_quoted_string`] under the 255-byte limit
+/// RFC 1035, Section 3.3 puts on one.
+pub(crate) fn parse_char_string<'a>(
+    field: &str,
+    input: &'a str,
+) -> Result<(String, &'a str), String> {
+    let (text, rest) = parse_quoted_string(field, input)?;
+    if text.len() > 255 {
+        return Err(format!("{field} must be 255 bytes or less"));
+    }
+
+    Ok((text, rest))
+}
+
+/// A string in the quoted form the rdata grammars store.
+pub(crate) fn to_quoted_string(text: &str) -> String {
     let mut out = String::from("\"");
     for c in text.chars() {
         if c == '"' || c == '\\' {
@@ -134,7 +145,9 @@ pub(crate) fn to_char_string(text: &str) -> String {
     out
 }
 
-/// Escapes are refused below, so every `.` here is a label boundary.
+/// An rdata name carries whatever labels an owner name may, so it is decoded
+/// into them rather than split on `.`: RFC 2317, Section 4 delegates through
+/// a `0/25` label, and a `\.` inside a label is data, not a boundary.
 pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(), String> {
     let trimmed = value.trim();
 
@@ -142,6 +155,8 @@ pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
         return Err(format!("{} must not be empty", field));
     }
 
+    // Escapes reach the labels below; this catches the raw octets, which no
+    // presentation form can spell back.
     if has_whitespace_or_control(value) {
         return Err(format!(
             "{} must not contain whitespace or control characters",
@@ -149,18 +164,11 @@ pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
         ));
     }
 
-    let without_trailing_dot = trimmed.strip_suffix('.').unwrap_or(trimmed);
-    if without_trailing_dot.is_empty() {
+    if trimmed == "." {
         return Err(format!("{} must not be the root zone", field));
     }
 
-    if without_trailing_dot.len() > MAX_DOMAIN_LEN {
-        return Err(format!("{} must be 253 bytes or fewer", field));
-    }
-
-    for label in without_trailing_dot.split('.') {
-        validate_domain_label(label, field, true)?;
-    }
+    decode_name_labels(trimmed).map_err(|e| format!("{} {}", field, e))?;
 
     Ok(())
 }
@@ -169,31 +177,40 @@ pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
 mod tests {
     use super::validate_domain_record_value;
 
-    // RFC 1035, Section 5.1 lets presentation form quote any character; bindizr
-    // refuses it so that no label can hide a `.` that reads as a boundary.
+    // RFC 2181, Section 11: a label is any octet string, so an rdata name takes
+    // what an owner name does. Nothing downstream reads one as text — the wire
+    // encoder and the canonical form both decode labels first.
     #[test]
-    fn rejects_escaped_name_values() {
+    fn accepts_the_labels_an_owner_name_may_carry() {
         for value in [
-            r"host\-name.example.com.", // decodes to a valid name, still refused
-            r"evil\.example.com",       // the impersonation the rule exists for
+            r"evil\.example.com", // one label `evil.example`, not a subdomain
             r"a\\b.example.com",
             r"host\065.example.com",
+            "1.0/25.2.0.192.in-addr.arpa.", // RFC 2317, Section 4 delegation
+            "_dmarc.example.com.",
+            "host-name.example.com",
+        ] {
+            validate_domain_record_value("CNAME record value", value)
+                .unwrap_or_else(|e| panic!("{value} was rejected: {e}"));
+        }
+    }
+
+    #[test]
+    fn rejects_what_no_presentation_form_spells_back() {
+        for value in [
+            "",
+            ".",
+            "bad target.example.com",
+            " leading.example.com",
+            "trailing.example.com ",
+            "bad..example.com",
+            r"dangling\",
+            r"short\09.example.com",
         ] {
             assert!(
                 validate_domain_record_value("CNAME record value", value).is_err(),
                 "{value} was accepted"
             );
-        }
-    }
-
-    #[test]
-    fn accepts_plain_names_with_or_without_a_trailing_dot() {
-        for value in [
-            "host-name.example.com.",
-            "host-name.example.com",
-            "_dmarc.example.com.",
-        ] {
-            validate_domain_record_value("CNAME record value", value).unwrap();
         }
     }
 }

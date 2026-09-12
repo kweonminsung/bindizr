@@ -177,6 +177,8 @@ fn validate_cname_value_accepts_underscore_labels() {
     );
 }
 
+/// Hyphen-edge and non-LDH labels are not here: an rdata name takes the labels
+/// an owner name does, so only what no presentation form spells back is left.
 #[test]
 fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
     for record_type in [RecordType::CNAME, RecordType::NS, RecordType::PTR] {
@@ -187,8 +189,6 @@ fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
             " leading.example.com",
             "trailing.example.com ",
             "bad..example.com",
-            "-bad.example.com",
-            "bad-.example.com",
         ] {
             assert!(
                 record_type.validate_value(value, None).is_err(),
