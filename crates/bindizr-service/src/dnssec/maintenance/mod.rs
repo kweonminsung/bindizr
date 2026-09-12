@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 use bindizr_core::{
     config::bindizr_config,
-    metrics::{MaintenanceResult, track_dnssec_maintenance},
+    metrics::{MaintenanceResult, track_dnssec_maintenance, track_pruned_rows},
 };
 use chrono::{Duration, Utc};
 
@@ -59,14 +59,16 @@ async fn run_maintenance_pass() {
     if retention_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(retention_days));
         match prune_zone_history(cutoff).await {
-            Ok((journal_rows, version_rows)) if journal_rows > 0 || version_rows > 0 => {
-                log_info!(
-                    "Pruned {} journal and {} version rows",
-                    journal_rows,
-                    version_rows
-                )
+            Ok((journal_rows, version_rows)) => {
+                track_pruned_rows(journal_rows, version_rows);
+                if journal_rows > 0 || version_rows > 0 {
+                    log_info!(
+                        "Pruned {} journal and {} version rows",
+                        journal_rows,
+                        version_rows
+                    );
+                }
             }
-            Ok(_) => {}
             Err(e) => {
                 failed = true;
                 log_error!("Zone history pruning failed: {}", e)

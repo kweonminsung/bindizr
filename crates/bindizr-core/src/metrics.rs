@@ -29,6 +29,7 @@ pub struct Metrics {
     pub notify_sent_total: IntCounterVec,
     pub nsupdate_requests_total: IntCounterVec,
     pub zone_serial_bumps_total: IntCounter,
+    pub pruned_rows_total: IntCounterVec,
     pub dnssec_zones_total: IntGauge,
     pub dnssec_keys_total: IntGaugeVec,
     pub dnssec_rrsigs_expiring_total: IntGauge,
@@ -187,6 +188,17 @@ impl Metrics {
         .expect("valid metric definition");
         register(&registry, &zone_serial_bumps_total);
 
+        let pruned_rows_total = IntCounterVec::new(
+            Opts::new(
+                "bindizr_pruned_rows_total",
+                "Rows the retention pass deleted, by table; a rate of zero while zones keep \
+                 changing means the journal is growing without bound",
+            ),
+            &["table"],
+        )
+        .expect("valid metric definition");
+        register(&registry, &pruned_rows_total);
+
         let dnssec_zones_total = IntGauge::new(
             "bindizr_dnssec_zones_total",
             "Number of DNSSEC-signed zones, refreshed at scrape time.",
@@ -256,6 +268,33 @@ impl Metrics {
         .expect("valid metric definition");
         register(&registry, &zone_cache_records);
 
+        // Prometheus emits a labelled series only once it is touched, so an
+        // alert on a counter staying at zero reads "no data" until the first
+        // event. Every label set here is small and fully known.
+        for result in XfrResult::ALL {
+            for xfr_type in ["axfr", "ixfr"] {
+                xfr_total.with_label_values(&[xfr_type, result.as_str()]);
+            }
+        }
+        for result in SoaResult::ALL {
+            soa_queries_total.with_label_values(&[result.as_str()]);
+        }
+        for result in NsupdateResult::ALL {
+            nsupdate_requests_total.with_label_values(&[result.as_str()]);
+        }
+        for result in NotifyResult::ALL {
+            notify_sent_total.with_label_values(&[result.as_str()]);
+        }
+        for result in MaintenanceResult::ALL {
+            dnssec_maintenance_runs_total.with_label_values(&[result.as_str()]);
+        }
+        for table in ["journal", "version"] {
+            pruned_rows_total.with_label_values(&[table]);
+        }
+        for result in ["hit", "miss"] {
+            zone_cache_lookups_total.with_label_values(&[result]);
+        }
+
         Self {
             registry,
             database_up,
@@ -270,6 +309,7 @@ impl Metrics {
             notify_sent_total,
             nsupdate_requests_total,
             zone_serial_bumps_total,
+            pruned_rows_total,
             dnssec_zones_total,
             dnssec_keys_total,
             dnssec_rrsigs_expiring_total,
@@ -299,6 +339,14 @@ pub enum XfrResult {
 }
 
 impl XfrResult {
+    const ALL: [Self; 5] = [
+        Self::Ok,
+        Self::Refused,
+        Self::NotAuth,
+        Self::Truncated,
+        Self::Error,
+    ];
+
     fn as_str(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -332,6 +380,8 @@ pub enum SoaResult {
 }
 
 impl SoaResult {
+    const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Error];
+
     fn as_str(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -361,6 +411,20 @@ pub enum NsupdateResult {
 }
 
 impl NsupdateResult {
+    const ALL: [Self; 11] = [
+        Self::TsigFailed,
+        Self::Rcode(Rcode::NOERROR),
+        Self::Rcode(Rcode::FORMERR),
+        Self::Rcode(Rcode::REFUSED),
+        Self::Rcode(Rcode::YXDOMAIN),
+        Self::Rcode(Rcode::YXRRSET),
+        Self::Rcode(Rcode::NXDOMAIN),
+        Self::Rcode(Rcode::NXRRSET),
+        Self::Rcode(Rcode::NOTZONE),
+        Self::Rcode(Rcode::SERVFAIL),
+        Self::Rcode(Rcode::NOTIMP),
+    ];
+
     fn as_str(&self) -> &'static str {
         let rcode = match self {
             Self::TsigFailed => return "tsig_failed",
@@ -397,6 +461,8 @@ pub enum NotifyResult {
 }
 
 impl NotifyResult {
+    const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::ResolveError];
+
     fn as_str(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -415,6 +481,20 @@ pub fn track_notify(result: NotifyResult) {
 
 /// One serial advance. Counted before commit, so a later rollback overcounts
 /// — acceptable for a monitoring counter.
+/// The two tables are counted apart: a serial pruned from one but not the
+/// other is the gap an IXFR client reads as a broken journal.
+pub fn track_pruned_rows(journal_rows: u64, version_rows: u64) {
+    let metrics = metrics();
+    metrics
+        .pruned_rows_total
+        .with_label_values(&["journal"])
+        .inc_by(journal_rows);
+    metrics
+        .pruned_rows_total
+        .with_label_values(&["version"])
+        .inc_by(version_rows);
+}
+
 pub fn track_serial_bump() {
     metrics().zone_serial_bumps_total.inc();
 }
@@ -427,6 +507,8 @@ pub enum MaintenanceResult {
 }
 
 impl MaintenanceResult {
+    const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::Panic];
+
     fn as_str(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
