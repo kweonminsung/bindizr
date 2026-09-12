@@ -2,10 +2,7 @@
 //! the 2-byte length prefix of DNS over TCP (RFC 1035, Section 4.2.2) and the
 //! size-driven flushing a zone transfer streams with.
 
-use bindizr_core::dns::{
-    DNS_TCP_MAX_SIZE,
-    message::{DnsMessageBuilder, encode_tcp_message},
-};
+use bindizr_core::dns::message::{DnsMessageBuilder, encode_tcp_message};
 
 use crate::dns::error::XfrError;
 
@@ -85,15 +82,9 @@ pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
         }
     })?;
 
+    // No size check: the two-octet prefix cannot name more than the limit
+    // RFC 1035, Section 4.2.2 sets, so the allocation is bounded by the wire.
     let len = u16::from_be_bytes(len_buf) as usize;
-
-    if len > DNS_TCP_MAX_SIZE {
-        return Err(XfrError::ProtocolError(format!(
-            "Message too large: {} bytes",
-            len
-        )));
-    }
-
     let mut message_buf = vec![0u8; len];
     reader.read_exact(&mut message_buf).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -115,4 +106,60 @@ pub(crate) async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
 ) -> Result<(), XfrError> {
     let encoded = encode_tcp_message(message)?;
     write_frame(writer, &encoded).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn read(bytes: &[u8]) -> Result<Vec<u8>, XfrError> {
+        read_tcp_message(&mut &bytes[..]).await
+    }
+
+    #[tokio::test]
+    async fn a_written_message_reads_back_whole() {
+        let mut framed = Vec::new();
+        write_tcp_message(&mut framed, b"payload").await.unwrap();
+
+        assert_eq!(framed[..2], 7u16.to_be_bytes());
+        assert_eq!(read(&framed).await.unwrap(), b"payload");
+    }
+
+    #[tokio::test]
+    async fn a_connection_closed_between_messages_is_not_a_protocol_error() {
+        // The first byte is read on its own so a secondary hanging up between
+        // transfers reads as EOF rather than a malformed length prefix.
+        let error = read(b"").await.unwrap_err();
+
+        assert!(matches!(error, XfrError::IoError(_)), "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn a_truncated_length_prefix_is_a_protocol_error() {
+        let error = read(&[0x00]).await.unwrap_err();
+
+        assert!(
+            matches!(&error, XfrError::ProtocolError(m) if m.contains("length prefix")),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_body_shorter_than_its_prefix_names_the_length_it_expected() {
+        let error = read(&[0x00, 0x04, b'a', b'b']).await.unwrap_err();
+
+        assert!(
+            matches!(&error, XfrError::ProtocolError(m) if m.contains("expected 4 bytes")),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_largest_prefix_a_frame_can_carry_is_accepted() {
+        // Two octets of prefix make this the largest frame there is.
+        let mut framed = u16::MAX.to_be_bytes().to_vec();
+        framed.extend(std::iter::repeat_n(0u8, usize::from(u16::MAX)));
+
+        assert_eq!(read(&framed).await.unwrap().len(), usize::from(u16::MAX));
+    }
 }

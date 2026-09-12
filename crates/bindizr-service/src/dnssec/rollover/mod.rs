@@ -361,3 +361,6 @@ fn promotable_sep_key_ids(
     }
     Ok(ds_published)
 }
+
+#[cfg(test)]
+mod tests;

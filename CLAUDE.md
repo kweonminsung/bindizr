@@ -413,8 +413,12 @@ A module with submodules is a directory containing `mod.rs`
 next to `wire/`). The community leans the other way, so the uniformity is
 deliberate — do not "modernize" it.
 
-Unit tests usually drive this: small ones stay inline as `#[cfg(test)] mod
-tests { … }`, larger ones move to `<module>/tests.rs` declared from `mod.rs`.
+Unit tests usually drive this: a `#[cfg(test)] mod tests` stays inline while
+it is under **100 lines**, counting the module's own braces, and moves to
+`<module>/tests.rs` once it reaches that — making the module a directory if it
+was not one. The number is the rule, so a module that crosses it moves rather
+than being argued over; `mod.rs` then declares it as `#[cfg(test)] mod tests;`
+and the file opens with `use super::*;`.
 
 ### Visibility records usage
 
