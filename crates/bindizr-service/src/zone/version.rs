@@ -5,7 +5,7 @@ use crate::{
     RepositoryTx,
     error::ServiceError,
     log_error,
-    metrics::metrics,
+    metrics::track_serial_bump,
     model::{zone::Zone, zone_version::ZoneVersion},
     repository::RepositoryService,
 };
@@ -79,10 +79,8 @@ impl ZoneService {
             ServiceError::internal("Failed to save SOA version")
         })?;
 
-        // Every serial-advancing path funnels through this version write; count
-        // bumps here. Incremented pre-commit: a later rollback overcounts, which
-        // is acceptable for a monitoring counter.
-        metrics().zone_serial_bumps_total.inc();
+        // Every serial-advancing path funnels through this version write.
+        track_serial_bump();
 
         Ok(())
     }

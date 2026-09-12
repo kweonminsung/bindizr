@@ -20,7 +20,7 @@ use std::{
 
 use bindizr_core::{
     config,
-    metrics::metrics,
+    metrics::{track_zone_cache_lookup, track_zone_cache_store},
     model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
 };
 use bindizr_service::{error::ServiceError, zone::ZoneService};
@@ -117,20 +117,14 @@ fn locked_cache() -> std::sync::MutexGuard<'static, Cache> {
 
 fn lookup(zone_id: i32, serial: i32) -> Option<ZoneContent> {
     let content = locked_cache().lookup(zone_id, serial);
-    let result = if content.is_some() { "hit" } else { "miss" };
-    metrics()
-        .zone_cache_lookups_total
-        .with_label_values(&[result])
-        .inc();
+    track_zone_cache_lookup(content.is_some());
     content
 }
 
 fn store(zone_id: i32, serial: i32, content: ZoneContent) {
     let mut cache = locked_cache();
     let evicted = cache.store(zone_id, serial, content, max_records());
-    let metrics = metrics();
-    metrics.zone_cache_records.set(cache.records as i64);
-    metrics.zone_cache_evictions_total.inc_by(evicted as u64);
+    track_zone_cache_store(cache.records, evicted);
 }
 
 impl Cache {

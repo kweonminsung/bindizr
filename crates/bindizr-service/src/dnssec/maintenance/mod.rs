@@ -5,7 +5,7 @@ mod steps;
 
 use std::sync::OnceLock;
 
-use bindizr_core::{config::bindizr_config, metrics::metrics};
+use bindizr_core::{config::bindizr_config, metrics::track_dnssec_maintenance};
 use chrono::{Duration, Utc};
 
 use self::steps::{
@@ -40,10 +40,7 @@ pub fn init_maintenance_scheduler() {
             // A panic in the pass would otherwise unwind the scheduler itself.
             if let Err(e) = tokio::spawn(run_maintenance_pass()).await {
                 log_error!("DNSSEC maintenance pass did not finish: {}", e);
-                metrics()
-                    .dnssec_maintenance_runs_total
-                    .with_label_values(&["panic"])
-                    .inc();
+                track_dnssec_maintenance("panic");
             }
         }
     });
@@ -195,8 +192,5 @@ async fn run_maintenance_pass() {
         }
     }
 
-    metrics()
-        .dnssec_maintenance_runs_total
-        .with_label_values(&[if failed { "error" } else { "ok" }])
-        .inc();
+    track_dnssec_maintenance(if failed { "error" } else { "ok" });
 }

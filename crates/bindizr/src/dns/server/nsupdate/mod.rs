@@ -12,7 +12,7 @@ use bindizr_core::{
         nsupdate::{DEFAULT_FUDGE, build_response},
     },
     log_info, log_warn,
-    metrics::metrics,
+    metrics::{rcode_label, track_nsupdate},
 };
 use tokio::net::{TcpStream, UdpSocket};
 
@@ -122,27 +122,4 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
 
     track_nsupdate(rcode_label(rcode));
     build_response(query_data, rcode, signer, fudge)
-}
-
-fn track_nsupdate(result: &str) {
-    metrics()
-        .nsupdate_requests_total
-        .with_label_values(&[result])
-        .inc();
-}
-
-// Bounded label values from the response code, never the free-form message.
-fn rcode_label(rcode: Rcode) -> &'static str {
-    match rcode {
-        Rcode::NOERROR => "noerror",
-        Rcode::FORMERR => "formerr",
-        Rcode::REFUSED => "refused",
-        Rcode::YXDOMAIN => "yxdomain",
-        Rcode::YXRRSET => "yxrrset",
-        Rcode::NXDOMAIN => "nxdomain",
-        Rcode::NXRRSET => "nxrrset",
-        Rcode::NOTZONE => "notzone",
-        Rcode::SERVFAIL => "servfail",
-        _ => "other",
-    }
 }

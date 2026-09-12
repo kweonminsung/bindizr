@@ -16,7 +16,7 @@ use std::net::{IpAddr, SocketAddr};
 use bindizr_core::{
     dns::message::{Rcode, Rtype},
     log_info, log_warn,
-    metrics::metrics,
+    metrics::track_xfr,
 };
 use catalog::generate_catalog_zone;
 use tokio::net::TcpStream;
@@ -44,18 +44,6 @@ pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
 }
 
 /// Called at the dispatch, so an IXFR falling back to AXFR still counts as ixfr.
-fn track_xfr(qtype: Rtype, result: &str) {
-    let xfr_type = match qtype {
-        Rtype::AXFR => "axfr",
-        Rtype::IXFR => "ixfr",
-        _ => return,
-    };
-    metrics()
-        .xfr_total
-        .with_label_values(&[xfr_type, result])
-        .inc();
-}
-
 pub(crate) async fn handle_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,

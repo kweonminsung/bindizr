@@ -10,6 +10,8 @@ use prometheus::{
     Registry, TextEncoder, core::Collector,
 };
 
+use crate::dns::message::{Rcode, Rtype};
+
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
 
@@ -21,6 +23,7 @@ pub struct Metrics {
     pub http_requests_total: IntCounterVec,
     pub http_request_duration_seconds: HistogramVec,
     pub xfr_total: IntCounterVec,
+    pub soa_queries_total: IntCounterVec,
     pub notify_sent_total: IntCounterVec,
     pub nsupdate_requests_total: IntCounterVec,
     pub zone_serial_bumps_total: IntCounter,
@@ -126,6 +129,17 @@ impl Metrics {
         .expect("valid metric definition");
         register(&registry, &xfr_total);
 
+        let soa_queries_total = IntCounterVec::new(
+            Opts::new(
+                "bindizr_soa_queries_total",
+                "SOA queries answered, by outcome; secondaries poll these on their refresh \
+                 timer, so a rise in `refused` means one stopped being a configured secondary",
+            ),
+            &["result"],
+        )
+        .expect("valid metric definition");
+        register(&registry, &soa_queries_total);
+
         let notify_sent_total = IntCounterVec::new(
             Opts::new(
                 "bindizr_notify_sent_total",
@@ -230,6 +244,7 @@ impl Metrics {
             http_requests_total,
             http_request_duration_seconds,
             xfr_total,
+            soa_queries_total,
             notify_sent_total,
             nsupdate_requests_total,
             zone_serial_bumps_total,
@@ -250,6 +265,88 @@ impl Metrics {
             .encode_to_string(&self.registry.gather())
             .unwrap_or_default()
     }
+}
+
+/// A zone transfer's outcome, by query type. Non-transfer types are not
+/// counted here, so the caller may pass whatever it was asked for.
+pub fn track_xfr(qtype: Rtype, result: &str) {
+    let xfr_type = match qtype {
+        Rtype::AXFR => "axfr",
+        Rtype::IXFR => "ixfr",
+        _ => return,
+    };
+    metrics()
+        .xfr_total
+        .with_label_values(&[xfr_type, result])
+        .inc();
+}
+
+/// Secondaries poll SOA on their refresh timer, so this is the question
+/// bindizr answers most; the result says whether they are getting a serial.
+pub fn track_soa(result: &str) {
+    metrics()
+        .soa_queries_total
+        .with_label_values(&[result])
+        .inc();
+}
+
+pub fn track_nsupdate(result: &str) {
+    metrics()
+        .nsupdate_requests_total
+        .with_label_values(&[result])
+        .inc();
+}
+
+/// Bounded label values from the response code, never the free-form message.
+pub fn rcode_label(rcode: Rcode) -> &'static str {
+    match rcode {
+        Rcode::NOERROR => "noerror",
+        Rcode::FORMERR => "formerr",
+        Rcode::REFUSED => "refused",
+        Rcode::YXDOMAIN => "yxdomain",
+        Rcode::YXRRSET => "yxrrset",
+        Rcode::NXDOMAIN => "nxdomain",
+        Rcode::NXRRSET => "nxrrset",
+        Rcode::NOTZONE => "notzone",
+        Rcode::SERVFAIL => "servfail",
+        _ => "other",
+    }
+}
+
+/// One NOTIFY attempt's outcome. A `resolve_error` sent nothing, so it is
+/// kept apart from the send failures it would otherwise inflate.
+pub fn track_notify(result: &str) {
+    metrics()
+        .notify_sent_total
+        .with_label_values(&[result])
+        .inc();
+}
+
+/// One serial advance. Counted before commit, so a later rollback overcounts
+/// — acceptable for a monitoring counter.
+pub fn track_serial_bump() {
+    metrics().zone_serial_bumps_total.inc();
+}
+
+pub fn track_dnssec_maintenance(result: &str) {
+    metrics()
+        .dnssec_maintenance_runs_total
+        .with_label_values(&[result])
+        .inc();
+}
+
+pub fn track_zone_cache_lookup(hit: bool) {
+    metrics()
+        .zone_cache_lookups_total
+        .with_label_values(&[if hit { "hit" } else { "miss" }])
+        .inc();
+}
+
+/// What the cache holds after a store, and what it dropped to fit.
+pub fn track_zone_cache_store(records: usize, evicted: usize) {
+    let metrics = metrics();
+    metrics.zone_cache_records.set(records as i64);
+    metrics.zone_cache_evictions_total.inc_by(evicted as u64);
 }
 
 #[cfg(test)]
