@@ -147,7 +147,12 @@ $ sudo systemctl restart named  # For Red Hat-based systems
 
 Create `/etc/bindizr/bindizr.conf.toml` using the
 [Configuration](../configuration.md) reference, adjusting values to match your
-environment.
+environment. The package installs it `0640 root:bindizr`, since it carries
+database credentials and the service reads it as the unprivileged `bindizr`
+user the install created.
+
+A relative `database.sqlite.file_path` resolves against `/var/lib/bindizr`,
+the state directory systemd creates for the service.
 
 ## 5. Start the Bindizr service
 
@@ -156,8 +161,8 @@ environment.
 $ sudo systemctl enable bindizr
 $ sudo systemctl start bindizr
 
-# Create an admin API token for authentication. The daemon runs as root and
-# its control socket is owner-only, so the CLI needs sudo.
+# Create an admin API token for authentication. The control socket belongs to
+# the service user and is owner-only, so the CLI needs sudo.
 $ sudo bindizr token create --name admin --global
 ```
 
