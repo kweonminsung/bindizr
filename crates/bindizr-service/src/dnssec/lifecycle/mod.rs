@@ -15,7 +15,7 @@ use crate::{
     error::ServiceError,
     model::{
         dnssec_key::{DnssecKeyRole, DnssecKeyState},
-        dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME,
+        dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecPolicy},
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
@@ -24,6 +24,39 @@ use crate::{
     types::GetDnssecStatusResponse,
     zone::ZoneService,
 };
+
+/// Whether a signed zone can move onto `target` without going insecure first.
+/// The denial chain and the key layout have no safe in-place transition: a
+/// resolver following the old chain would fail on the new one. The algorithm
+/// does, through a rollover, so it is not refused here.
+fn validate_policy_move(
+    zone: &Zone,
+    current: &DnssecPolicy,
+    target: &DnssecPolicy,
+) -> Result<(), ServiceError> {
+    if target.denial != current.denial {
+        return Err(ServiceError::invalid_input(format!(
+            "policy '{}' uses {} denial but zone '{}' signs with {}; the denial mode is fixed \
+             while signed, so disable DNSSEC and re-enable under the new policy",
+            target.name,
+            target.denial,
+            zone.name.as_str(),
+            current.denial
+        )));
+    }
+    if target.split_keys != current.split_keys {
+        return Err(ServiceError::invalid_input(format!(
+            "policy '{}' uses {} but zone '{}' signs with {}; the key layout is fixed while \
+             signed, so disable DNSSEC and re-enable under the new policy",
+            target.name,
+            to_key_layout(target.split_keys),
+            zone.name.as_str(),
+            to_key_layout(current.split_keys)
+        )));
+    }
+
+    Ok(())
+}
 
 impl DnssecService {
     /// Enable DNSSEC for a zone under `policy` (the built-in `default` when
@@ -167,28 +200,7 @@ impl DnssecService {
             if target.id == current.id {
                 return build_status_tx(&mut tx, &zone, Some(&current), &keys, zone.serial).await;
             }
-            // Switching the denial chain or splitting a CSK in place has no
-            // safe transition; the zone goes insecure and re-enables instead.
-            if target.denial != current.denial {
-                return Err(ServiceError::invalid_input(format!(
-                    "policy '{}' uses {} denial but zone '{}' signs with {}; the denial mode \
-                     is fixed while signed, so disable DNSSEC and re-enable under the new policy",
-                    target.name,
-                    target.denial,
-                    zone.name.as_str(),
-                    current.denial
-                )));
-            }
-            if target.split_keys != current.split_keys {
-                return Err(ServiceError::invalid_input(format!(
-                    "policy '{}' uses {} but zone '{}' signs with {}; the key layout is fixed \
-                     while signed, so disable DNSSEC and re-enable under the new policy",
-                    target.name,
-                    to_key_layout(target.split_keys),
-                    zone.name.as_str(),
-                    to_key_layout(current.split_keys)
-                )));
-            }
+            validate_policy_move(&zone, &current, &target)?;
 
             let keys = if keys.iter().any(|key| key.algorithm != target.algorithm) {
                 Self::start_algorithm_rollover_tx(&mut tx, &zone, &target, keys).await?
@@ -325,3 +337,6 @@ impl DnssecService {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;
