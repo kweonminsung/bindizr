@@ -267,9 +267,30 @@ impl Metrics {
     }
 }
 
+pub enum XfrResult {
+    Ok,
+    Refused,
+    NotAuth,
+    /// Answered over UDP with TC set; the transfer follows over TCP.
+    Truncated,
+    Error,
+}
+
+impl XfrResult {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Refused => "refused",
+            Self::NotAuth => "notauth",
+            Self::Truncated => "truncated",
+            Self::Error => "error",
+        }
+    }
+}
+
 /// A zone transfer's outcome, by query type. Non-transfer types are not
 /// counted here, so the caller may pass whatever it was asked for.
-pub fn track_xfr(qtype: Rtype, result: &str) {
+pub fn track_xfr(qtype: Rtype, result: XfrResult) {
     let xfr_type = match qtype {
         Rtype::AXFR => "axfr",
         Rtype::IXFR => "ixfr",
@@ -277,48 +298,96 @@ pub fn track_xfr(qtype: Rtype, result: &str) {
     };
     metrics()
         .xfr_total
-        .with_label_values(&[xfr_type, result])
+        .with_label_values(&[xfr_type, result.as_str()])
         .inc();
+}
+
+pub enum SoaResult {
+    Ok,
+    Refused,
+    NotAuth,
+    Error,
+}
+
+impl SoaResult {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Refused => "refused",
+            Self::NotAuth => "notauth",
+            Self::Error => "error",
+        }
+    }
 }
 
 /// Secondaries poll SOA on their refresh timer, so this is the question
 /// bindizr answers most; the result says whether they are getting a serial.
-pub fn track_soa(result: &str) {
+pub fn track_soa(result: SoaResult) {
     metrics()
         .soa_queries_total
-        .with_label_values(&[result])
+        .with_label_values(&[result.as_str()])
         .inc();
 }
 
-pub fn track_nsupdate(result: &str) {
-    metrics()
-        .nsupdate_requests_total
-        .with_label_values(&[result])
-        .inc();
+pub enum NsupdateResult {
+    /// A TSIG failure answers with its own NOTAUTH, so it is kept apart from
+    /// the NOTAUTH an update refused on its merits gets.
+    TsigFailed,
+    /// Every other outcome is named by the response code, a bounded set,
+    /// never the free-form message.
+    Rcode(Rcode),
 }
 
-/// Bounded label values from the response code, never the free-form message.
-pub fn rcode_label(rcode: Rcode) -> &'static str {
-    match rcode {
-        Rcode::NOERROR => "noerror",
-        Rcode::FORMERR => "formerr",
-        Rcode::REFUSED => "refused",
-        Rcode::YXDOMAIN => "yxdomain",
-        Rcode::YXRRSET => "yxrrset",
-        Rcode::NXDOMAIN => "nxdomain",
-        Rcode::NXRRSET => "nxrrset",
-        Rcode::NOTZONE => "notzone",
-        Rcode::SERVFAIL => "servfail",
-        _ => "other",
+impl NsupdateResult {
+    fn as_str(&self) -> &'static str {
+        let rcode = match self {
+            Self::TsigFailed => return "tsig_failed",
+            Self::Rcode(rcode) => *rcode,
+        };
+        match rcode {
+            Rcode::NOERROR => "noerror",
+            Rcode::FORMERR => "formerr",
+            Rcode::REFUSED => "refused",
+            Rcode::YXDOMAIN => "yxdomain",
+            Rcode::YXRRSET => "yxrrset",
+            Rcode::NXDOMAIN => "nxdomain",
+            Rcode::NXRRSET => "nxrrset",
+            Rcode::NOTZONE => "notzone",
+            Rcode::SERVFAIL => "servfail",
+            _ => "other",
+        }
     }
 }
 
-/// One NOTIFY attempt's outcome. A `resolve_error` sent nothing, so it is
-/// kept apart from the send failures it would otherwise inflate.
-pub fn track_notify(result: &str) {
+pub fn track_nsupdate(result: NsupdateResult) {
+    metrics()
+        .nsupdate_requests_total
+        .with_label_values(&[result.as_str()])
+        .inc();
+}
+
+pub enum NotifyResult {
+    Ok,
+    Error,
+    /// Nothing was sent, so it is kept apart from the send failures it would
+    /// otherwise inflate.
+    ResolveError,
+}
+
+impl NotifyResult {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Error => "error",
+            Self::ResolveError => "resolve_error",
+        }
+    }
+}
+
+pub fn track_notify(result: NotifyResult) {
     metrics()
         .notify_sent_total
-        .with_label_values(&[result])
+        .with_label_values(&[result.as_str()])
         .inc();
 }
 
@@ -328,10 +397,27 @@ pub fn track_serial_bump() {
     metrics().zone_serial_bumps_total.inc();
 }
 
-pub fn track_dnssec_maintenance(result: &str) {
+pub enum MaintenanceResult {
+    Ok,
+    Error,
+    /// The pass unwound; the scheduler itself survived.
+    Panic,
+}
+
+impl MaintenanceResult {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Error => "error",
+            Self::Panic => "panic",
+        }
+    }
+}
+
+pub fn track_dnssec_maintenance(result: MaintenanceResult) {
     metrics()
         .dnssec_maintenance_runs_total
-        .with_label_values(&[result])
+        .with_label_values(&[result.as_str()])
         .inc();
 }
 

@@ -7,7 +7,7 @@ use bindizr_core::{
         query::validate_notify_response,
     },
     log_error, log_info,
-    metrics::track_notify,
+    metrics::{NotifyResult, track_notify},
 };
 
 /// Sends DNS NOTIFY to all configured secondary servers for one zone. Which
@@ -69,7 +69,7 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, St
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {
-                track_notify("resolve_error");
+                track_notify(NotifyResult::ResolveError);
                 reports.push(NotifyReport {
                     address: entry,
                     result: Err(format!("failed to resolve: {}", e)),
@@ -82,12 +82,12 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, St
             let result = match send_notify_to_server(&qname, addr, timeout, retries).await {
                 Ok(()) => {
                     log_info!("NOTIFY sent successfully to {}", addr);
-                    track_notify("ok");
+                    track_notify(NotifyResult::Ok);
                     Ok(())
                 }
                 Err(e) => {
                     log_error!("Failed to send NOTIFY to {}: {}", addr, e);
-                    track_notify("error");
+                    track_notify(NotifyResult::Error);
                     Err(e)
                 }
             };

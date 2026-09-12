@@ -10,7 +10,7 @@ use bindizr_core::{
         message::{Rcode, Rtype},
     },
     log_info, log_warn,
-    metrics::track_soa,
+    metrics::{SoaResult, track_soa},
 };
 use bindizr_service::zone::ZoneService;
 use tokio::net::{TcpStream, UdpSocket};
@@ -29,7 +29,7 @@ pub(crate) async fn handle_tcp_soa(
 ) -> Result<(), XfrError> {
     let response = build_soa_response(query, client_addr.ip(), secondary_acl)
         .await
-        .inspect_err(|_| track_soa("error"))?;
+        .inspect_err(|_| track_soa(SoaResult::Error))?;
     wire::write_tcp_message(stream, &response).await?;
     Ok(())
 }
@@ -42,7 +42,7 @@ pub(crate) async fn handle_udp_soa(
 ) -> Result<(), XfrError> {
     let response = build_soa_response(query, client_addr.ip(), secondary_acl)
         .await
-        .inspect_err(|_| track_soa("error"))?;
+        .inspect_err(|_| track_soa(SoaResult::Error))?;
     socket.send_to(&response, client_addr).await?;
     Ok(())
 }
@@ -72,7 +72,7 @@ async fn build_soa_response(
             zone_name_str,
             client_ip
         );
-        track_soa("refused");
+        track_soa(SoaResult::Refused);
         return Ok(query.error_response(Rcode::REFUSED));
     }
 
@@ -87,12 +87,12 @@ async fn build_soa_response(
             &catalog_zone,
             bindizr_core::dns::serial_to_u32(catalog_zone.serial)?,
         )?;
-        track_soa("ok");
+        track_soa(SoaResult::Ok);
         return Ok(builder.build());
     }
 
     let Some(zone) = ZoneService::find_by_name(zone_name_str).await? else {
-        track_soa("notauth");
+        track_soa(SoaResult::NotAuth);
         return Ok(query.error_response(Rcode::NOTAUTH));
     };
 
@@ -104,6 +104,6 @@ async fn build_soa_response(
 
     builder.add_soa(&zone, bindizr_core::dns::serial_to_u32(zone.serial)?)?;
 
-    track_soa("ok");
+    track_soa(SoaResult::Ok);
     Ok(builder.build())
 }

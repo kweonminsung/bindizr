@@ -16,7 +16,7 @@ use std::net::{IpAddr, SocketAddr};
 use bindizr_core::{
     dns::message::{Rcode, Rtype},
     log_info, log_warn,
-    metrics::track_xfr,
+    metrics::{XfrResult, track_xfr},
 };
 use catalog::generate_catalog_zone;
 use tokio::net::TcpStream;
@@ -51,10 +51,10 @@ pub(crate) async fn handle_tcp_query(
     query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
-    let record_xfr_metric = |result: &str| track_xfr(query.qtype, result);
+    let record_xfr_metric = |result| track_xfr(query.qtype, result);
 
     if let Err(err) = validate_secondary_acl(client_ip, secondary_acl).await {
-        record_xfr_metric("refused");
+        record_xfr_metric(XfrResult::Refused);
         log_warn!("Refused XFR TCP query from {}: {}", client_ip, err);
         // RFC 5936, Section 2.2.1: refuse with an RCODE, not a dropped connection.
         let response = query.error_response(Rcode::REFUSED);
@@ -83,17 +83,17 @@ pub(crate) async fn handle_tcp_query(
 
     if let Err(err) = result {
         if matches!(err, XfrError::ZoneNotFound(_)) {
-            record_xfr_metric("notauth");
+            record_xfr_metric(XfrResult::NotAuth);
             let response = query.error_response(Rcode::NOTAUTH);
             wire::write_tcp_message(stream, &response).await?;
             return Ok(());
         }
 
-        record_xfr_metric("error");
+        record_xfr_metric(XfrResult::Error);
         return Err(err);
     }
 
-    record_xfr_metric("ok");
+    record_xfr_metric(XfrResult::Ok);
     Ok(())
 }
 
@@ -105,12 +105,12 @@ pub(crate) async fn handle_udp_query(
     query: &message::ParsedQuery,
 ) -> Vec<u8> {
     if let Err(err) = validate_secondary_acl(client_addr.ip(), secondary_acl).await {
-        track_xfr(query.qtype, "refused");
+        track_xfr(query.qtype, XfrResult::Refused);
         log_warn!("Refused XFR UDP query from {}: {}", client_addr.ip(), err);
         return query.error_response(Rcode::REFUSED);
     }
     // The transfer itself counts when the client returns over TCP.
-    track_xfr(query.qtype, "truncated");
+    track_xfr(query.qtype, XfrResult::Truncated);
     query.truncated_response()
 }
 
