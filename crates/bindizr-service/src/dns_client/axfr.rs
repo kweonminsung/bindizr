@@ -151,3 +151,63 @@ fn render_zone_file(rrs: &[TransferRr]) -> Result<String, String> {
     }
     Ok(lines)
 }
+
+#[cfg(test)]
+mod tests {
+    use bindizr_core::dns::zonefile::{ZoneFileValue, parse_zone_file};
+
+    use super::{Rtype, TransferRr, render_zone_file};
+
+    /// The fetch goes structured RR -> text -> parsed record, so the render and
+    /// the parser must agree on RFC 1035, Section 5.1 escaping or a label splits.
+    #[test]
+    fn a_rendered_transfer_parses_back_into_the_names_it_carried() {
+        let rrs = [
+            (r"a\.b.example.com.", Rtype::CNAME, "target.example.com."),
+            (r"0/25.example.com.", Rtype::NS, "ns.example.com."),
+            (
+                "rfc.example.com.",
+                Rtype::CNAME,
+                "1.0/25.2.0.192.in-addr.arpa.",
+            ),
+            ("example.com.", Rtype::CAA, r#"0 issue "a\"b\\c""#),
+        ]
+        .map(|(name, rtype, rdata)| TransferRr {
+            name: name.to_string(),
+            rtype,
+            ttl: 300,
+            rdata: rdata.to_string(),
+        });
+
+        let parsed = parse_zone_file(&render_zone_file(&rrs).unwrap(), "example.com", 300);
+
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        assert!(parsed.unsupported.is_empty(), "{:?}", parsed.unsupported);
+        let carried: Vec<_> = parsed
+            .rrs
+            .iter()
+            .map(|rr| (rr.owner_fqdn.as_str(), &rr.value))
+            .collect();
+        assert_eq!(
+            carried,
+            [
+                (
+                    r"a\.b.example.com.",
+                    &ZoneFileValue::Rdata("target.example.com.".to_string())
+                ),
+                (
+                    "0/25.example.com.",
+                    &ZoneFileValue::Rdata("ns.example.com.".to_string())
+                ),
+                (
+                    "rfc.example.com.",
+                    &ZoneFileValue::Rdata("1.0/25.2.0.192.in-addr.arpa.".to_string())
+                ),
+                (
+                    "example.com.",
+                    &ZoneFileValue::Rdata(r#"0 issue "a\"b\\c""#.to_string())
+                ),
+            ]
+        );
+    }
+}
