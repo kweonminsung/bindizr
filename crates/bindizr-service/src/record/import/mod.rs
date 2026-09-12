@@ -64,6 +64,115 @@ fn is_protected(zone: &Zone, record: &Record) -> bool {
     validate_delete_constraints(zone, std::slice::from_ref(record)).is_err()
 }
 
+/// What an import will change, decided before anything is written.
+struct ImportPlan<'a> {
+    dels: Vec<Record>,
+    ttl_dels: Vec<Record>,
+    adds: Vec<&'a DesiredRecord>,
+    unchanged: usize,
+    updated: usize,
+}
+
+/// Reconcile the file against the zone under `mode`. Records are indexed by
+/// owner name so each one is compared only against same-name rows, and a
+/// record the zone's own SOA or apex NS depends on is never deleted.
+fn compute_import_plan<'a>(
+    mode: ImportMode,
+    zone: &Zone,
+    existing_records: &[Record],
+    desired: &'a [DesiredRecord],
+) -> ImportPlan<'a> {
+    let mut existing_by_name: HashMap<&OwnerName, Vec<&Record>> =
+        HashMap::with_capacity(existing_records.len());
+    for record in existing_records {
+        existing_by_name
+            .entry(&record.name)
+            .or_default()
+            .push(record);
+    }
+    let mut desired_by_name: HashMap<&OwnerName, Vec<&DesiredRecord>> =
+        HashMap::with_capacity(desired.len());
+    for record in desired {
+        desired_by_name
+            .entry(&record.stored_name)
+            .or_default()
+            .push(record);
+    }
+
+    let desired_matches_existing = |existing: &Record| {
+        desired_by_name
+            .get(&existing.name)
+            .is_some_and(|ds| ds.iter().any(|d| matches_desired(existing, d)))
+    };
+    // Upsert only touches the names and types the file speaks about.
+    let desired_key_matches_existing = |existing: &Record| {
+        desired_by_name.get(&existing.name).is_some_and(|ds| {
+            ds.iter()
+                .any(|d| d.prepared.record_type == existing.record_type)
+        })
+    };
+    let dels: Vec<Record> = match mode {
+        ImportMode::Append => Vec::new(),
+        ImportMode::Replace => existing_records
+            .iter()
+            .filter(|e| !is_protected(zone, e) && !desired_matches_existing(e))
+            .cloned()
+            .collect(),
+        ImportMode::Upsert => existing_records
+            .iter()
+            .filter(|e| {
+                desired_key_matches_existing(e)
+                    && !is_protected(zone, e)
+                    && !desired_matches_existing(e)
+            })
+            .cloned()
+            .collect(),
+    };
+
+    // Append leaves what it finds, so a TTL it disagrees with stays.
+    let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
+
+    let mut ttl_dels = Vec::new();
+    let mut adds = Vec::new();
+    let mut unchanged = 0;
+    let mut updated = 0;
+    for d in desired {
+        let desired_ttl = d.prepared.ttl.unwrap_or(zone.default_ttl);
+        let mut present = false;
+        let mut stale = false;
+        if let Some(es) = existing_by_name.get(&d.stored_name) {
+            for e in es {
+                if matches_desired(e, d) {
+                    present = true;
+                    // Records sharing a name and type share one TTL, so the
+                    // row is rewritten rather than edited in place.
+                    if reconcile_ttl && e.ttl != desired_ttl {
+                        ttl_dels.push((*e).clone());
+                        stale = true;
+                    }
+                }
+            }
+        }
+
+        if !present {
+            adds.push(d);
+        } else if stale {
+            updated += 1;
+            adds.push(d);
+        } else {
+            unchanged += 1;
+        }
+    }
+
+    ImportPlan {
+        dels,
+        ttl_dels,
+        adds,
+        unchanged,
+        updated,
+    }
+}
+
 /// Outcome of the transactional part of a zone-file import.
 struct AppliedImport {
     response: ImportZoneResponse,
@@ -79,7 +188,6 @@ struct ImportTimings {
     load_existing_ms: f64,
     parse_ms: f64,
     normalize_ms: f64,
-    build_index_ms: f64,
     reconcile_ms: f64,
     validate_ms: f64,
     db_write_ms: f64,
@@ -278,82 +386,16 @@ impl RecordService {
             })?;
             timings.load_existing_ms = elapsed_ms(t);
 
-            // Index existing records by owner name so each existing/desired
-            // record is reconciled against only same-name rows.
-            let t = Instant::now();
-            let mut existing_by_name: HashMap<OwnerName, Vec<&Record>> =
-                HashMap::with_capacity(existing_records.len());
-            for record in existing_records.iter() {
-                existing_by_name
-                    .entry(record.name.clone())
-                    .or_default()
-                    .push(record);
-            }
-            timings.build_index_ms = elapsed_ms(t);
-
-            let t = Instant::now();
-            let desired_matches_existing = |existing: &Record| {
-                desired_by_name
-                    .get(&existing.name)
-                    .is_some_and(|idxs| idxs.iter().any(|&i| matches_desired(existing, &desired[i])))
-            };
-            let desired_key_matches_existing = |existing: &Record| {
-                desired_by_name.get(&existing.name).is_some_and(|idxs| {
-                    idxs.iter()
-                        .any(|&i| desired[i].prepared.record_type == existing.record_type)
-                })
-            };
-
-            let dels: Vec<Record> = match mode {
-                ImportMode::Append => Vec::new(),
-                ImportMode::Replace => existing_records
-                    .iter()
-                    .filter(|e| !is_protected(&zone, e) && !desired_matches_existing(e))
-                    .cloned()
-                    .collect(),
-                ImportMode::Upsert => existing_records
-                    .iter()
-                    .filter(|e| {
-                        desired_key_matches_existing(e)
-                            && !is_protected(&zone, e)
-                            && !desired_matches_existing(e)
-                    })
-                    .cloned()
-                    .collect(),
-            };
-
-            let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
             let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(zone.default_ttl);
 
-            let mut unchanged = 0usize;
-            let mut updated = 0usize;
-            let mut ttl_dels: Vec<Record> = Vec::new();
-            let mut adds: Vec<&DesiredRecord> = Vec::new();
-            for d in &desired {
-                let desired_ttl = effective_ttl(d.prepared.ttl);
-                let mut present = false;
-                let mut stale = false;
-                if let Some(es) = existing_by_name.get(&d.stored_name) {
-                    for &e in es {
-                        if matches_desired(e, d) {
-                            present = true;
-                            if reconcile_ttl && e.ttl != desired_ttl {
-                                ttl_dels.push(e.clone());
-                                stale = true;
-                            }
-                        }
-                    }
-                }
-
-                if !present {
-                    adds.push(d);
-                } else if stale {
-                    updated += 1;
-                    adds.push(d);
-                } else {
-                    unchanged += 1;
-                }
-            }
+            let t = Instant::now();
+            let ImportPlan {
+                dels,
+                ttl_dels,
+                adds,
+                unchanged,
+                updated,
+            } = compute_import_plan(mode, &zone, &existing_records, &desired);
             timings.reconcile_ms = elapsed_ms(t);
 
             // Validate additions against an in-memory copy so constraint
@@ -524,7 +566,7 @@ impl RecordService {
         // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
         log_debug!(
             "event=zone_import_timing zone={} mode={:?} parsed={} applied={} parse_ms={:.1} \
-             load_zone_ms={:.1} load_existing_ms={:.1} normalize_ms={:.1} build_index_ms={:.1} \
+             load_zone_ms={:.1} load_existing_ms={:.1} normalize_ms={:.1} \
              reconcile_ms={:.1} validate_ms={:.1} db_write_ms={:.1} serial_ms={:.1} notify_ms={:.1} \
              total_ms={:.1}",
             zone_name,
@@ -535,7 +577,6 @@ impl RecordService {
             timings.load_zone_ms,
             timings.load_existing_ms,
             timings.normalize_ms,
-            timings.build_index_ms,
             timings.reconcile_ms,
             timings.validate_ms,
             timings.db_write_ms,
@@ -580,3 +621,6 @@ fn build_import_diff(
 
     build_record_diff(zone, &before, &after)
 }
+
+#[cfg(test)]
+mod tests;
