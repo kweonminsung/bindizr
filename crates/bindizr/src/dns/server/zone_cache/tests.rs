@@ -6,7 +6,7 @@ use bindizr_core::{
 };
 use chrono::Utc;
 
-use super::{Cache, ZoneContent, content_records};
+use super::{Cache, ZoneContent, record_count};
 
 const MAX_RECORDS: usize = 500_000;
 
@@ -80,7 +80,7 @@ fn eviction_drops_the_least_recently_used_zone() {
 fn restoring_a_zone_replaces_its_records_rather_than_adding_them() {
     let mut cache = Cache::default();
     let content = zone_content(4);
-    let records = content_records(&content);
+    let records = record_count(&content);
 
     cache.store(1, 1, content.clone(), MAX_RECORDS);
     cache.store(1, 2, content, MAX_RECORDS);

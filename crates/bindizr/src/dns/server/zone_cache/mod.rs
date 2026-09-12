@@ -155,7 +155,7 @@ impl Cache {
         // its old serial, which no lookup can satisfy any more.
         self.remove(zone_id);
 
-        let records = content_records(&content);
+        let records = record_count(&content);
         if records > max_records {
             return 0;
         }
@@ -196,7 +196,7 @@ impl Cache {
 }
 
 /// Both planes, since a transfer serves both.
-fn content_records(content: &ZoneContent) -> usize {
+fn record_count(content: &ZoneContent) -> usize {
     content.records.len() + content.dnssec_records.len()
 }
 
