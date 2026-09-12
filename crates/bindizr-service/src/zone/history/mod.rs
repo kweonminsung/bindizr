@@ -20,7 +20,7 @@ use crate::{
     model::{
         record::{Record, RecordType},
         zone::Zone,
-        zone_change::{ChangeOperation, JournalRecordType},
+        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     record::{
         RecordService, validate_delete_constraints, validate_record_add_constraints_normalized,
@@ -91,14 +91,7 @@ async fn reconstruct_records_at_serial(
     target_serial: i32,
     current_serial: i32,
 ) -> Result<Vec<ReconstructedRecord>, ServiceError> {
-    let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
-    for record in RepositoryService::list_records_tx(tx, zone_id, LockLevel::None).await? {
-        state
-            .entry(to_record_match_key(&record))
-            .or_default()
-            .push(record.into());
-    }
-
+    let records = RepositoryService::list_records_tx(tx, zone_id, LockLevel::None).await?;
     let changes = RepositoryService::list_zone_changes_between_serials_tx(
         tx,
         zone_id,
@@ -108,7 +101,22 @@ async fn reconstruct_records_at_serial(
     )
     .await?;
 
-    // Changes arrive ordered by (serial, id) ascending; undo them newest-first.
+    Ok(undo_changes(records, &changes))
+}
+
+/// Undo `changes` — ordered by (serial, id) ascending — newest-first over
+/// `records`, yielding the zone as it stood before them. A change the live
+/// rows cannot explain is logged and passed over: a history that no longer
+/// adds up must not block a rollback.
+fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<ReconstructedRecord> {
+    let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
+    for record in records {
+        state
+            .entry(to_record_match_key(&record))
+            .or_default()
+            .push(record.into());
+    }
+
     for change in changes.iter().rev() {
         // Derived DNSSEC rows are not user data (rollback re-signs the
         // restored plane), and SOA markers are zone metadata the version row
@@ -158,7 +166,7 @@ async fn reconstruct_records_at_serial(
 
     let mut records: Vec<ReconstructedRecord> = state.into_values().flatten().collect();
     sort_records(&mut records);
-    Ok(records)
+    records
 }
 
 /// The records at `serial`: the live records when it is the current serial,
@@ -575,3 +583,6 @@ impl ZoneService {
         Ok(response)
     }
 }
+
+#[cfg(test)]
+mod tests;
