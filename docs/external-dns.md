@@ -108,6 +108,7 @@ metadata:
 | `--bindizr-url` | `BINDIZR_URL` | required |
 | `--token` | `BINDIZR_API_TOKEN` | none |
 | `--token-file` | `BINDIZR_API_TOKEN_FILE` | none (takes precedence over `--token`) |
+| `--ca-file` | `BINDIZR_CA_FILE` | none (added to the system roots; needed for a private or self-signed bindizr certificate) |
 | `--listen-addr` | `BINDIZR_EXTERNAL_DNS_LISTEN_ADDR` | `127.0.0.1:8888` |
 | `--health-listen-addr` | `BINDIZR_EXTERNAL_DNS_HEALTH_ADDR` | `0.0.0.0:8080` |
 | `--timeout-secs` | `BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS` | `8` (keep under external-dns's 10s webhook write timeout) |

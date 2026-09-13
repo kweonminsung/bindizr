@@ -34,9 +34,21 @@ impl UpstreamClient {
         base_url: String,
         token: Option<String>,
         timeout_secs: u64,
+        ca_file: Option<&str>,
     ) -> Result<Self, String> {
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(timeout_secs))
+        let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs));
+        // Added to the system roots rather than replacing them, so one private
+        // CA does not cut off a publicly issued certificate beside it.
+        if let Some(path) = ca_file {
+            let pem = std::fs::read(path)
+                .map_err(|e| format!("Failed to read the CA certificate '{}': {}", path, e))?;
+            for certificate in reqwest::Certificate::from_pem_bundle(&pem)
+                .map_err(|e| format!("Invalid CA certificate '{}': {}", path, e))?
+            {
+                builder = builder.add_root_certificate(certificate);
+            }
+        }
+        let http = builder
             .build()
             .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
         Ok(UpstreamClient {

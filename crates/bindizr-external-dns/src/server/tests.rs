@@ -119,6 +119,7 @@ async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>)
         format!("http://{}", upstream_addr),
         token.map(str::to_string),
         2,
+        None,
     )
     .unwrap();
     let state = Arc::new(AppState { upstream });
@@ -422,7 +423,7 @@ async fn healthz_reflects_bindizr_reachability() {
     let (domains, records, changes) = ok_mock_bodies();
     let mock = spawn_mock(domains, records, changes).await;
 
-    let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2).unwrap();
+    let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
     let state = Arc::new(AppState { upstream });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

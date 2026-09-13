@@ -49,6 +49,13 @@ pub struct ApiConfig {
     /// (unauthenticated). Off by default: it describes the whole API surface.
     #[serde(default)]
     pub openapi_enabled: bool,
+    /// PEM certificate chain and private key. Set both to serve HTTPS;
+    /// without them the API is plain HTTP and its bearer tokens travel in
+    /// the clear.
+    #[serde(default)]
+    pub tls_cert_file: Option<String>,
+    #[serde(default)]
+    pub tls_key_file: Option<String>,
 }
 
 fn default_metrics_enabled() -> bool {
@@ -486,6 +493,12 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_API_OPENAPI_ENABLED") {
             self.api.openapi_enabled = parse_env_value("BINDIZR_API_OPENAPI_ENABLED", &value)?;
         }
+        if let Some(value) = get_env("BINDIZR_API_TLS_CERT_FILE") {
+            self.api.tls_cert_file = to_optional_path(value);
+        }
+        if let Some(value) = get_env("BINDIZR_API_TLS_KEY_FILE") {
+            self.api.tls_key_file = to_optional_path(value);
+        }
         if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
             self.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;
         }
@@ -575,6 +588,12 @@ impl BindizrConfig {
     }
 }
 
+/// An empty environment value clears the path, so a container image can leave
+/// the variable set and unfilled.
+fn to_optional_path(value: String) -> Option<String> {
+    Some(value.trim().to_string()).filter(|path| !path.is_empty())
+}
+
 fn parse_env_value<T>(name: &str, value: &str) -> Result<T, String>
 where
     T: std::str::FromStr,
@@ -606,11 +625,25 @@ impl DatabaseConfig {
 }
 
 impl ApiConfig {
+    /// The certificate and key to serve HTTPS with, or `None` for plain HTTP.
+    pub fn tls_files(&self) -> Option<(&str, &str)> {
+        Some((
+            self.tls_cert_file.as_deref()?,
+            self.tls_key_file.as_deref()?,
+        ))
+    }
+
     fn validate(&self) -> Result<(), String> {
         if self.listen_port == 0 {
             return Err("api.listen_port must not be 0".to_string());
         }
-        Ok(())
+        // Half a pair would serve plain HTTP on a port the operator means to
+        // be HTTPS, which no later error would reveal.
+        match (self.tls_cert_file.as_deref(), self.tls_key_file.as_deref()) {
+            (Some(_), None) => Err("api.tls_cert_file needs api.tls_key_file".to_string()),
+            (None, Some(_)) => Err("api.tls_key_file needs api.tls_cert_file".to_string()),
+            _ => Ok(()),
+        }
     }
 }
 

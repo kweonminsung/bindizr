@@ -20,6 +20,11 @@ bindizr:
     # Serve the OpenAPI document at GET /openapi.json and /openapi.yaml
     # (unauthenticated; describes the whole API surface).
     openapiEnabled: false
+    tls:
+      # Serve the API over HTTPS from an existing Secret holding tls.crt and
+      # tls.key (a cert-manager Certificate makes one). Leave empty to serve
+      # plain HTTP, which is what an Ingress terminating TLS in front expects.
+      existingSecret: ""
     service:
       type: ClusterIP
       port: 8000

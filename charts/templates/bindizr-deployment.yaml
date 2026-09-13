@@ -90,7 +90,13 @@ spec:
           {{- end }}
           {{- with .Values.bindizr.readinessProbe }}
           readinessProbe:
+            {{- /* An HTTP probe against a TLS API never passes; an explicit
+                   scheme is left alone. */}}
+            {{- if and $.Values.bindizr.api.tls.existingSecret .httpGet (not .httpGet.scheme) }}
+            {{- toYaml (mergeOverwrite (deepCopy .) (dict "httpGet" (dict "scheme" "HTTPS"))) | nindent 12 }}
+            {{- else }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
           {{- with .Values.bindizr.resources }}
           resources:
@@ -100,6 +106,11 @@ spec:
             - name: config-template
               mountPath: /etc/bindizr-template
               readOnly: true
+            {{- with .Values.bindizr.api.tls.existingSecret }}
+            - name: api-tls
+              mountPath: /etc/bindizr/tls
+              readOnly: true
+            {{- end }}
             # The daemon's control socket: the only path a read-only root
             # filesystem has to open.
             - name: runtime
@@ -108,6 +119,11 @@ spec:
         - name: config-template
           configMap:
             name: {{ include "bindizr-chart.fullname" . }}-config
+        {{- with .Values.bindizr.api.tls.existingSecret }}
+        - name: api-tls
+          secret:
+            secretName: {{ . }}
+        {{- end }}
         - name: runtime
           emptyDir: {}
       {{- with .Values.bindizr.nodeSelector }}

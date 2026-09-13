@@ -9,6 +9,29 @@ The reference is generated from the OpenAPI spec, which is also served directly
 at [`openapi.yaml`](../openapi.yaml) if you want to feed it to a client
 generator.
 
+## TLS
+
+Requests carry their API token in an `Authorization` header, so the API is
+loopback-only out of the box. Anything reachable off the host needs TLS —
+point `api.tls_cert_file` and `api.tls_key_file` at a PEM certificate chain
+and private key and bindizr serves HTTPS on the same port:
+
+```toml
+[api]
+listen_addr = "0.0.0.0"
+tls_cert_file = "/etc/bindizr/tls/tls.crt"
+tls_key_file = "/etc/bindizr/tls/tls.key"
+```
+
+Both or neither: half a pair is refused at startup rather than quietly
+serving plain HTTP on a port meant to be HTTPS. The files are read once at
+startup, so a renewed certificate needs a restart, and `[api]` is fixed while
+running — a `config reload` that changes them is refused whole.
+
+A TLS-terminating proxy or Ingress in front is the other way, and the one to
+use where certificates are already managed there. Terminating in front leaves
+bindizr's own port plain, so keep it on loopback or a private network.
+
 ## Listings
 
 Every listing answers the same shape — `items` beside a `pagination` object of

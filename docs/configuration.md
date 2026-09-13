@@ -44,6 +44,9 @@ require_authentication = true # Enable API authentication (true/false)
 metrics_enabled = true        # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only)
 external_dns_enabled = false  # Register the ExternalDNS provider API at /external-dns
 openapi_enabled = false       # Serve the OpenAPI document at GET /openapi.json and /openapi.yaml (unauthenticated)
+# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # PEM certificate chain; set with tls_key_file to serve HTTPS
+# tls_key_file = "/etc/bindizr/tls/tls.key"   # PEM private key. Without both, the API is plain HTTP and its
+                                              # bearer tokens travel in the clear
 
 [database]
 type = "mysql"                # Database type: mysql, sqlite, postgresql
@@ -100,6 +103,8 @@ the API or CLI — see [DNSSEC](dnssec.md).
 | `BINDIZR_API_METRICS_ENABLED` | `api.metrics_enabled` | |
 | `BINDIZR_API_EXTERNAL_DNS_ENABLED` | `api.external_dns_enabled` | See [ExternalDNS](external-dns.md) |
 | `BINDIZR_API_OPENAPI_ENABLED` | `api.openapi_enabled` | Describes the whole API surface; off by default |
+| `BINDIZR_API_TLS_CERT_FILE` | `api.tls_cert_file` | Empty clears it |
+| `BINDIZR_API_TLS_KEY_FILE` | `api.tls_key_file` | Empty clears it |
 | `BINDIZR_DATABASE_TYPE` | `database.type` | `mysql`, `postgresql`, or `sqlite` |
 | `BINDIZR_DATABASE_URL` | the URL for the selected backend | Ignored when the type is `sqlite` |
 | `BINDIZR_MYSQL_SERVER_URL` | `database.mysql.server_url` | |

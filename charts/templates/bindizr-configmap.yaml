@@ -13,6 +13,10 @@ data:
     metrics_enabled = {{ .Values.bindizr.api.metricsEnabled }}
     external_dns_enabled = {{ .Values.bindizr.api.externalDnsEnabled }}
     openapi_enabled = {{ .Values.bindizr.api.openapiEnabled }}
+    {{- with .Values.bindizr.api.tls.existingSecret }}
+    tls_cert_file = "/etc/bindizr/tls/tls.crt"
+    tls_key_file = "/etc/bindizr/tls/tls.key"
+    {{- end }}
 
     [database]
     type = "{{ .Values.bindizr.database.type }}"

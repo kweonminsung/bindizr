@@ -26,6 +26,11 @@ pub(crate) struct Cli {
     #[arg(long, env = "BINDIZR_API_TOKEN_FILE", value_name = "FILE")]
     pub(crate) token_file: Option<String>,
 
+    /// PEM CA certificate to trust on top of the system roots, for a bindizr
+    /// serving a private or self-signed certificate
+    #[arg(long, env = "BINDIZR_CA_FILE", value_name = "FILE")]
+    pub(crate) ca_file: Option<String>,
+
     /// Webhook listener address; keep it on localhost so only the
     /// external-dns container in the same pod can reach it
     #[arg(
@@ -59,6 +64,7 @@ pub(crate) struct AdapterConfig {
     /// Normalized base URL without a trailing slash.
     pub(crate) bindizr_url: String,
     pub(crate) token: Option<String>,
+    pub(crate) ca_file: Option<String>,
     pub(crate) listen_addr: SocketAddr,
     pub(crate) health_listen_addr: SocketAddr,
     pub(crate) timeout_secs: u64,
@@ -104,6 +110,7 @@ impl AdapterConfig {
         Ok(AdapterConfig {
             bindizr_url,
             token,
+            ca_file: cli.ca_file,
             listen_addr: cli.listen_addr,
             health_listen_addr: cli.health_listen_addr,
             timeout_secs: cli.timeout_secs,

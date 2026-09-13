@@ -55,6 +55,8 @@ pub(crate) struct TestAppOptions {
     pub(crate) openapi_enabled: bool,
     /// Also the zone-transfer ACL; NOTIFY stays off in tests.
     pub(crate) secondary_addrs: String,
+    /// Serve the API over HTTPS with a certificate generated for this run.
+    pub(crate) tls: bool,
 }
 
 enum TestRuntime {
@@ -83,7 +85,10 @@ impl TestApp {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("bindizr.sqlite");
         let config_path = temp_dir.path().join("bindizr.conf.toml");
-        let client = Client::new();
+        let (scheme, client) = match options.tls {
+            true => ("https", tls_client(write_test_certificate(temp_dir.path()))),
+            false => ("http", Client::new()),
+        };
 
         // A reserved port is released before the daemon binds it, so another
         // socket can take it in between; fresh ports and a retry cover that.
@@ -103,7 +108,7 @@ impl TestApp {
                 .spawn()
                 .expect("failed to start bindizr binary");
 
-            let base_url = format!("http://127.0.0.1:{api_port}");
+            let base_url = format!("{scheme}://127.0.0.1:{api_port}");
             match wait_for_api(&client, &base_url, &mut child).await {
                 Ok(()) => {
                     return Self {
@@ -658,6 +663,28 @@ fn reserve_dns_port() -> u16 {
     panic!("failed to reserve a DNS port available for both TCP and UDP");
 }
 
+/// A self-signed certificate for `127.0.0.1`, written beside the config as
+/// `tls.crt`/`tls.key`; returns the PEM a client must trust to reach it.
+fn write_test_certificate(dir: &Path) -> String {
+    let certified = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()])
+        .expect("generate a test certificate");
+    let cert_pem = certified.cert.pem();
+    std::fs::write(dir.join("tls.crt"), &cert_pem).expect("write tls.crt");
+    std::fs::write(dir.join("tls.key"), certified.signing_key.serialize_pem())
+        .expect("write tls.key");
+    cert_pem
+}
+
+fn tls_client(cert_pem: String) -> Client {
+    Client::builder()
+        .add_root_certificate(
+            reqwest::Certificate::from_pem(cert_pem.as_bytes())
+                .expect("parse the test certificate"),
+        )
+        .build()
+        .expect("build the TLS client")
+}
+
 fn write_config(
     config_path: &Path,
     api_port: u16,
@@ -673,7 +700,7 @@ listen_port = {api_port}
 require_authentication = {require_authentication}
 external_dns_enabled = {external_dns_enabled}
 openapi_enabled = {openapi_enabled}
-
+{tls}
 [database]
 type = "sqlite"
 
@@ -704,6 +731,16 @@ log_level = "error"
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_allow_unsigned = options.nsupdate_allow_unsigned,
         openapi_enabled = options.openapi_enabled,
+        tls = match options.tls {
+            true => {
+                let dir = config_path
+                    .parent()
+                    .expect("config has a directory")
+                    .display();
+                format!("tls_cert_file = \"{dir}/tls.crt\"\ntls_key_file = \"{dir}/tls.key\"\n")
+            }
+            false => String::new(),
+        },
         secondary_addrs = options.secondary_addrs,
     );
 

@@ -34,6 +34,7 @@ pub async fn execute() {
         adapter_config.bindizr_url.clone(),
         adapter_config.token,
         adapter_config.timeout_secs,
+        adapter_config.ca_file.as_deref(),
     )
     .unwrap_or_else(|e| {
         eprintln!("{}", e);
