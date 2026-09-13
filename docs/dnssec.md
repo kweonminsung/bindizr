@@ -4,9 +4,10 @@ bindizr signs zones itself: enabling DNSSEC generates the zone's key(s),
 derives the `DNSKEY`, `CDS`/`CDNSKEY`, denial-of-existence, and `RRSIG`
 records, and serves them over the same AXFR/IXFR path — secondaries need
 **no configuration changes**. Every record change re-signs exactly what
-changed in the same transaction, and an hourly scheduler renews signatures
-before they expire and carries key rollovers through — asking the parent
-about the DS when one is waiting on it.
+changed in the same transaction, and a maintenance pass — hourly by default,
+set by `dns.maintenance_interval_secs` — renews signatures before they expire
+and carries key rollovers through, asking the parent about the DS when one is
+waiting on it.
 
 How a zone is signed is described by a **DNSSEC policy**, a named bundle of
 signing parameters that zones reference — the same shape as BIND's
@@ -175,7 +176,10 @@ algorithms cover all data — until the old keys leave together after
 
 Signatures are valid for the policy's `signature_validity_days` (default 14)
 and renewed once fewer than `signature_refresh_days` (default 5) remain; the
-hourly scheduler handles this with no operator action. `bindizr dnssec
+maintenance pass handles this with no operator action. Every instance runs the
+whole pass, so a deployment of several can set
+`dns.maintenance_interval_secs = 0` on all but one — at least one must keep
+it, or signatures expire. `bindizr dnssec
 sign example.com` forces a full re-sign if stored signatures are ever
 doubted.
 

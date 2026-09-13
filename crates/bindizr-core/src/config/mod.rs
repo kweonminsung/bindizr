@@ -144,6 +144,12 @@ pub struct DnsConfig {
     /// for pruned serials fall back to AXFR; rollback reaches only kept serials.
     #[serde(default = "default_journal_retention_days")]
     pub journal_retention_days: u32,
+    /// Seconds between maintenance passes: signature refresh, journal
+    /// retention, and the rollover steps that advance on a deadline or the
+    /// parent's DS. `0` runs no pass on this instance — every instance runs
+    /// the whole pass, so all but one may turn it off, but not all.
+    #[serde(default = "default_maintenance_interval_secs")]
+    pub maintenance_interval_secs: u64,
     #[serde(default)]
     pub zone_defaults: ZoneDefaultsConfig,
 }
@@ -201,6 +207,11 @@ fn default_zone_minimum_ttl() -> i32 {
 
 fn default_journal_retention_days() -> u32 {
     365
+}
+
+/// Plenty next to the day-scale windows a pass enforces.
+fn default_maintenance_interval_secs() -> u64 {
+    3_600
 }
 
 fn default_notify_after_update() -> bool {
@@ -460,6 +471,10 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_JOURNAL_RETENTION_DAYS") {
             self.dns.journal_retention_days =
                 parse_env_value("BINDIZR_JOURNAL_RETENTION_DAYS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_MAINTENANCE_INTERVAL_SECS") {
+            self.dns.maintenance_interval_secs =
+                parse_env_value("BINDIZR_MAINTENANCE_INTERVAL_SECS", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_ZONE_DEFAULT_TTL") {
             self.dns.zone_defaults.ttl = parse_env_value("BINDIZR_ZONE_DEFAULT_TTL", &value)?;

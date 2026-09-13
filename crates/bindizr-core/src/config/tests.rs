@@ -116,6 +116,7 @@ fn from_raw_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.notify_timeout_secs, 3);
     assert!(!parsed.dns.nsupdate_allow_unsigned);
     assert_eq!(parsed.dns.journal_retention_days, 365);
+    assert_eq!(parsed.dns.maintenance_interval_secs, 3600);
 }
 
 #[test]
@@ -182,6 +183,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_NOTIFY_RETRIES" => Some("7".to_string()),
             "BINDIZR_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
             "BINDIZR_JOURNAL_RETENTION_DAYS" => Some("0".to_string()),
+            "BINDIZR_MAINTENANCE_INTERVAL_SECS" => Some("0".to_string()),
             "BINDIZR_LOG_LEVEL" => Some("info".to_string()),
             _ => None,
         })
@@ -212,6 +214,8 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.dns.notify_retries, 7);
     assert_eq!(overridden.dns.notify_timeout_secs, 11);
     assert_eq!(overridden.dns.journal_retention_days, 0);
+    // 0 is the off switch, not a rejected value.
+    assert_eq!(overridden.dns.maintenance_interval_secs, 0);
     assert!(matches!(overridden.logging.log_level, LogLevel::Info));
 }
 

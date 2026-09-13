@@ -44,6 +44,7 @@ bindizr:
     zoneCacheMaxRecords: 500000
     # Days of IXFR journal/SOA history to keep (0 = unlimited).
     journalRetentionDays: 365
+    maintenanceIntervalSecs: 3600
     service:
       port: 53
 

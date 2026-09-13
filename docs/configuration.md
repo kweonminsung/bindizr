@@ -55,6 +55,7 @@ notify_retries = 3            # Retry count after the initial NOTIFY attempt
 notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
 nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from this host only (TSIG keys/grants are managed via CLI or HTTP API)
 journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
+maintenance_interval_secs = 3600 # Seconds between maintenance passes: signature refresh, journal retention, rollover steps (0 = no pass on this instance)
 
 [dns.zone_defaults]             # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)
@@ -100,6 +101,7 @@ the API or CLI — see [DNSSEC](dnssec.md).
 | `BINDIZR_ZONE_CACHE_MAX_RECORDS` | `dns.zone_cache_max_records` | see [Sizing the zone cache](#sizing-the-zone-cache) |
 | `BINDIZR_NSUPDATE_ALLOW_UNSIGNED` | `dns.nsupdate_allow_unsigned` | |
 | `BINDIZR_JOURNAL_RETENTION_DAYS` | `dns.journal_retention_days` | `0` keeps history forever |
+| `BINDIZR_MAINTENANCE_INTERVAL_SECS` | `dns.maintenance_interval_secs` | `0` runs no maintenance pass on this instance |
 | `BINDIZR_ZONE_DEFAULT_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
 | `BINDIZR_ZONE_REFRESH` | `dns.zone_defaults.refresh` | |
 | `BINDIZR_ZONE_RETRY` | `dns.zone_defaults.retry` | |

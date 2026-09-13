@@ -37,6 +37,7 @@ data:
     zone_cache = {{ .Values.bindizr.dns.zoneCache }}
     zone_cache_max_records = {{ .Values.bindizr.dns.zoneCacheMaxRecords }}
     journal_retention_days = {{ .Values.bindizr.dns.journalRetentionDays }}
+    maintenance_interval_secs = {{ .Values.bindizr.dns.maintenanceIntervalSecs }}
 
     [dns.zone_defaults]
     ttl = {{ .Values.bindizr.zoneDefaults.ttl }}

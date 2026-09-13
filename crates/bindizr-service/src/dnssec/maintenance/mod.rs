@@ -22,21 +22,23 @@ use crate::{
     repository::RepositoryService,
 };
 
-/// Scheduler tick; plenty next to the day-scale windows it enforces.
-const MAINTENANCE_INTERVAL_SECS: u64 = 3600;
-
 static MAINTENANCE_SCHEDULER: OnceLock<()> = OnceLock::new();
 
 /// Start the periodic maintenance task. Called once from the daemon after
-/// the database is initialized; later calls are no-ops.
+/// the database is initialized; later calls are no-ops. A zero
+/// `dns.maintenance_interval_secs` leaves this instance without one.
 pub fn init_maintenance_scheduler() {
+    let interval_secs = bindizr_config().dns.maintenance_interval_secs;
+    if interval_secs == 0 {
+        log_info!("Maintenance scheduler disabled by dns.maintenance_interval_secs = 0");
+        return;
+    }
     if MAINTENANCE_SCHEDULER.set(()).is_err() {
         return;
     }
 
     tokio::spawn(async move {
-        let mut interval =
-            tokio::time::interval(std::time::Duration::from_secs(MAINTENANCE_INTERVAL_SECS));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
