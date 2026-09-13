@@ -3,8 +3,8 @@ use bindizr_service::{
     error::ServiceError,
     record::RecordService,
     types::{
-        CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse, GetRecordsFilter,
-        RecordResponse,
+        CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter, GetRecordResponse,
+        GetRecordsFilter, RecordResponse,
     },
 };
 
@@ -111,5 +111,21 @@ pub(crate) async fn delete_record(
     Ok(DaemonResponse {
         message: format!("Record '{}' deleted successfully", params.id),
         data: serde_json::Value::Null,
+    })
+}
+
+pub(crate) async fn delete_records_matching(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let filter: DeleteRecordsFilter = parse_params(data)?;
+    let response = RecordService::delete_matching(&Caller::Global, &filter).await?;
+
+    Ok(DaemonResponse {
+        message: if response.dry_run {
+            format!("{} record(s) would be deleted", response.deleted)
+        } else {
+            format!("{} record(s) deleted", response.deleted)
+        },
+        data: to_response_data(response)?,
     })
 }

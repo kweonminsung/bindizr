@@ -663,6 +663,90 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - Records
+      summary: Delete records by name
+      description: 'Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type takes one RRset, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.'
+      operationId: delete_records_matching
+      parameters:
+      - name: zone_name
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: name
+        in: query
+        description: Owner name relative to the zone, or `@` for the apex.
+        required: true
+        schema:
+          type: string
+      - name: record_type
+        in: query
+        description: Narrows to one RRset; omitted, every type at the name goes.
+        required: false
+        schema:
+          type: string
+      - name: value
+        in: query
+        description: |-
+          Narrows to one record; compared canonically, so a value spelled
+          another way still matches. Requires `record_type`.
+        required: false
+        schema:
+          type: string
+      - name: priority
+        in: query
+        description: |-
+          MX and SRV keep their preference in its own column, so it narrows
+          there rather than being part of `value`.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: dry_run
+        in: query
+        description: When true, report what would go without removing anything.
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Records deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteRecordsResponse'
+        '400':
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /records/bulk:
     post:
       tags:
@@ -3333,6 +3417,36 @@ components:
           example: k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu
         token:
           $ref: '#/components/schemas/GetTokenResponse'
+    DeleteRecordsResponse:
+      type: object
+      description: |-
+        What a conditional delete removed, or would have. Matching nothing is not
+        an error: the zone already reads the way the request asked for, so the
+        serial does not move and no NOTIFY goes out.
+      required:
+      - applied
+      - dry_run
+      - deleted
+      - records
+      - diff
+      properties:
+        applied:
+          type: boolean
+          example: true
+        deleted:
+          type: integer
+          example: 3
+          minimum: 0
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+          description: The removal as a record diff, for previewing the change.
+        dry_run:
+          type: boolean
+          example: false
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetRecordResponse'
     DnssecDelegationInfo:
       type: object
       description: What the parent zone's servers answered when asked for the zone's DS.

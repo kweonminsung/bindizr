@@ -22,7 +22,7 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    record::{AddOutcome, RecordService, validate_delete_constraints},
+    record::{AddOutcome, RecordService, matches_record, validate_delete_constraints},
     repository::RepositoryService,
     serial::generate_serial,
     tsig_key::grant::authorize_update,
@@ -358,31 +358,11 @@ async fn delete_matching(
         RepositoryService::list_records_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive)
             .await?;
 
-    let mut matched: Vec<Record> = Vec::new();
-    for record in &owner_records {
-        if let Some(record_type) = record_type
-            && &record.record_type != record_type
-        {
-            continue;
-        }
-
-        // Priority is filtered separately, so compare rdata alone.
-        if let Some(value) = value
-            && !record
-                .record_type
-                .values_equal(&record.value, None, value, None)
-        {
-            continue;
-        }
-
-        if let Some(priority) = priority
-            && record.priority != Some(priority)
-        {
-            continue;
-        }
-
-        matched.push(record.clone());
-    }
+    let matched: Vec<Record> = owner_records
+        .iter()
+        .filter(|record| matches_record(record, record_type, value, priority))
+        .cloned()
+        .collect();
 
     if matched.is_empty() {
         return Ok(false);

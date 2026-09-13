@@ -39,8 +39,9 @@ pub(crate) use pagination::normalize_page_limit;
 pub use pagination::{DEFAULT_PAGE_LIMIT, PaginatedResponse, Pagination};
 pub(crate) use record::display_record_value_request;
 pub use record::{
-    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-    GetRecordsFilter, RecordItem, RecordResponse, RecordValueRequest, UpdateRecordRequest,
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
+    DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, RecordItem, RecordResponse,
+    RecordValueRequest, UpdateRecordRequest,
 };
 pub use token::{
     CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenListResponse, TokenResponse,

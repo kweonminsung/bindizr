@@ -9,8 +9,8 @@ use bindizr_service::{
     record::RecordService,
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
-        ErrorResponse, GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse,
-        RecordResponse, UpdateRecordRequest,
+        DeleteRecordsFilter, DeleteRecordsResponse, ErrorResponse, GetRecordResponse,
+        GetRecordsFilter, MessageResponse, PaginatedResponse, RecordResponse, UpdateRecordRequest,
     },
 };
 use serde::Deserialize;
@@ -31,6 +31,7 @@ impl RecordApi {
             .route("/records", routing::post(create_record))
             .route("/records/{record_id}", routing::put(update_record))
             .route("/records/{record_id}", routing::delete(delete_record))
+            .route("/records", routing::delete(delete_records_matching))
             .route(
                 "/records/bulk",
                 routing::post(create_records_bulk)
@@ -197,6 +198,31 @@ pub(crate) async fn delete_record(
     let response = MessageResponse {
         message: "Record deleted successfully".to_string(),
     };
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[utoipa::path(
+        delete,
+        path = "/records",
+        tag = "Records",
+        summary = "Delete records by name",
+        description = "Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type takes one RRset, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.",
+        params(DeleteRecordsFilter),
+        responses(
+            (status = 200, description = "Records deleted", body = DeleteRecordsResponse),
+            (status = 400, description = "Invalid filter", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "Forbidden", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+/// Delete every record matching the filter.
+pub(crate) async fn delete_records_matching(
+    RequestCaller(caller): RequestCaller,
+    Query(filter): Query<DeleteRecordsFilter>,
+) -> Result<Response, ApiError> {
+    let response = RecordService::delete_matching(&caller, &filter).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

@@ -3,10 +3,12 @@ mod create;
 mod delete;
 mod get;
 mod import;
+mod matching;
 mod update;
 mod validation;
 
 use bindizr_core::dns::dnssec::rdata_presentation;
+pub(crate) use matching::matches_record;
 pub(crate) use validation::{AddOutcome, validate_delete_constraints, validate_record_ttl};
 
 use crate::{

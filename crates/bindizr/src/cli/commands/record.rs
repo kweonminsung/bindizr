@@ -1,7 +1,7 @@
 use bindizr_service::types::{
-    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-    GetRecordsFilter, PaginatedResponse, RecordItem, RecordResponse, RecordValueRequest,
-    UpdateRecordRequest,
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
+    GetRecordResponse, GetRecordsFilter, PaginatedResponse, RecordItem, RecordResponse,
+    RecordValueRequest, UpdateRecordRequest,
 };
 use clap::Subcommand;
 
@@ -171,6 +171,36 @@ YAML example:
         /// The record ID
         #[arg(value_name = "RECORD_ID")]
         id: i32,
+    },
+
+    /// Delete every record at a name in one change
+    #[command(after_help = "\
+Narrowing follows RFC 2136, Section 2.5.2:
+  --name only                 every record type at the name
+  --name --type               one RRset
+  --name --type --value       one record
+
+The whole set goes in one transaction, so the zone advances by a single
+serial and the secondaries transfer once.")]
+    DeleteMatching {
+        /// Zone the records belong to
+        #[arg(long)]
+        zone: String,
+        /// Owner name relative to the zone, or '@' for the apex
+        #[arg(long)]
+        name: String,
+        /// Narrow to one record type
+        #[arg(long = "type")]
+        record_type: Option<String>,
+        /// Narrow to one value (requires --type)
+        #[arg(long)]
+        value: Option<String>,
+        /// Narrow to one MX/SRV priority
+        #[arg(long)]
+        priority: Option<i32>,
+        /// Report what would go without removing anything
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -352,6 +382,29 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         RecordCommand::Delete { id } => {
             let response = client
                 .send_command(DaemonCommandKind::DeleteRecord, RecordIdParams { id })
+                .await?;
+            println!("{}", response.message);
+        }
+        RecordCommand::DeleteMatching {
+            zone,
+            name,
+            record_type,
+            value,
+            priority,
+            dry_run,
+        } => {
+            let response = client
+                .send_command(
+                    DaemonCommandKind::DeleteRecordsMatching,
+                    DeleteRecordsFilter {
+                        zone_name: zone,
+                        name,
+                        record_type,
+                        value,
+                        priority,
+                        dry_run,
+                    },
+                )
                 .await?;
             println!("{}", response.message);
         }
