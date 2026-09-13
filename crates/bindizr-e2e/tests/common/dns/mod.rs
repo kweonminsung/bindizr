@@ -56,6 +56,8 @@ pub(super) fn dns_record_type(record_type: &str) -> Option<u16> {
         "TXT" => Some(16),
         "AAAA" => Some(28),
         "SRV" => Some(33),
+        "NAPTR" => Some(35),
+        "DNAME" => Some(39),
         "DS" => Some(43),
         "SSHFP" => Some(44),
         "TLSA" => Some(52),
@@ -296,6 +298,18 @@ fn decode_dns_value(
         AllRecordData::Ns(ns) => Value::String(to_presentation_name(ns.nsdname())),
         AllRecordData::Cname(cname) => Value::String(to_presentation_name(cname.cname())),
         AllRecordData::Ptr(ptr) => Value::String(to_presentation_name(ptr.ptrdname())),
+        AllRecordData::Dname(dname) => Value::String(to_presentation_name(dname.dname())),
+        // `domain` renders a root replacement as `..`, so the name is composed
+        // the way the record types do rather than taken from its Display.
+        AllRecordData::Naptr(naptr) => Value::String(format!(
+            "{} {} {} {} {} {}",
+            naptr.order(),
+            naptr.preference(),
+            to_quoted_string(&String::from_utf8_lossy(naptr.flags().as_slice())),
+            to_quoted_string(&String::from_utf8_lossy(naptr.services().as_slice())),
+            to_quoted_string(&String::from_utf8_lossy(naptr.regexp().as_slice())),
+            to_presentation_name(naptr.replacement())
+        )),
         AllRecordData::Mx(mx) => Value::String(format!(
             "{} {}",
             mx.preference(),
@@ -339,11 +353,14 @@ fn decode_dns_value(
             u8::from(tlsa.matching_type()),
             hex_upper(tlsa.data())
         )),
+        // The stored form re-escapes `"` and `\` inside the quoted value
+        // (RFC 8659, Section 4), so the wire bytes have to be escaped back
+        // before they compare.
         AllRecordData::Caa(caa) => Value::String(format!(
-            "{} {} \"{}\"",
+            "{} {} {}",
             caa.flags(),
             caa.tag(),
-            String::from_utf8_lossy(caa.value())
+            to_quoted_string(&String::from_utf8_lossy(caa.value()))
         )),
         AllRecordData::Soa(_) => return Ok(None),
         _ => return Err(format!("unsupported DNS answer type {record_type}")),
@@ -373,5 +390,19 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
     if out.is_empty() {
         out.push('.');
     }
+    out
+}
+
+/// Quote a CAA value the way the record types render it, so a value carrying
+/// `"` or `\` still matches what the API reports.
+fn to_quoted_string(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        if c == '"' || c == '\\' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
     out
 }

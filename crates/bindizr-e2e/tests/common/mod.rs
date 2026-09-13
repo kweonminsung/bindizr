@@ -447,7 +447,7 @@ impl TestApp {
         let (status, body) = self
             .send_request(
                 Method::GET,
-                &format!("/records?search={}&limit=10000", self.namespace),
+                &format!("/records?search={}&limit=1000", self.namespace),
                 None,
             )
             .await;
