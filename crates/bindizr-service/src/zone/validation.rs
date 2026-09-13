@@ -18,6 +18,30 @@ pub(crate) struct NormalizedCreateZoneRequest {
     pub(crate) mname: String,
     pub(crate) rname: String,
     pub(crate) ttl: i32,
+    pub(crate) description: Option<String>,
+}
+
+/// Empty clears the note. The length and NUL checks are 400s rather than a
+/// backend-dependent insert failure: VARCHAR(255) counts characters, and
+/// PostgreSQL text cannot hold NUL.
+fn normalize_description(description: Option<&str>) -> Result<Option<String>, ServiceError> {
+    let Some(description) = description.map(str::trim) else {
+        return Ok(None);
+    };
+    if description.is_empty() {
+        return Ok(None);
+    }
+    if description.chars().count() > 255 {
+        return Err(ServiceError::invalid_zone_field(
+            "description must be 255 characters or fewer",
+        ));
+    }
+    if description.contains('\0') {
+        return Err(ServiceError::invalid_zone_field(
+            "description must not contain NUL characters",
+        ));
+    }
+    Ok(Some(description.to_string()))
 }
 
 pub(crate) fn normalize_create_zone_request(
@@ -43,6 +67,7 @@ pub(crate) fn normalize_create_zone_request(
         mname,
         rname,
         ttl,
+        description: normalize_description(request.description.as_deref())?,
     })
 }
 

@@ -61,6 +61,9 @@ pub(crate) enum ZoneCommand {
         /// SOA minimum TTL (seconds)
         #[arg(long)]
         minimum_ttl: Option<i32>,
+        /// Free-text note for operators
+        #[arg(long, value_name = "TEXT")]
+        description: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -108,6 +111,9 @@ pub(crate) enum ZoneCommand {
         /// Keep only zones signing under a DNSSEC policy
         #[arg(long)]
         signed: bool,
+        /// Keep the zones the DNS plane serves, or the disabled ones
+        #[arg(long, value_name = "true|false")]
+        enabled: Option<bool>,
         /// Search zones by partial text
         #[arg(short = 'q', long)]
         search: Option<String>,
@@ -167,6 +173,12 @@ pub(crate) enum ZoneCommand {
         /// SOA minimum TTL (seconds)
         #[arg(long)]
         minimum_ttl: Option<i32>,
+        /// Serve the zone or stop serving it without deleting it
+        #[arg(long, value_name = "true|false")]
+        enabled: Option<bool>,
+        /// Free-text note for operators; empty clears it
+        #[arg(long, value_name = "TEXT")]
+        description: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -315,6 +327,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             retry,
             expire,
             minimum_ttl,
+            description,
             output,
         } => {
             let data = client
@@ -326,6 +339,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         rname,
                         default_ttl,
                         serial,
+                        description,
                         refresh,
                         retry,
                         expire,
@@ -353,6 +367,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             created_after,
             created_before,
             signed,
+            enabled,
             search,
             sort,
             order,
@@ -373,6 +388,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 || created_after.is_some()
                 || created_before.is_some()
                 || signed
+                || enabled.is_some()
                 || search.is_some()
                 || sort.is_some()
                 || order.is_some()
@@ -392,6 +408,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 created_after,
                 created_before,
                 signed: signed.then_some(true),
+                enabled,
                 search,
                 sort,
                 order,
@@ -434,6 +451,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             retry,
             expire,
             minimum_ttl,
+            enabled,
+            description,
             output,
         } => {
             let data = client
@@ -452,6 +471,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                             expire,
                             minimum_ttl,
                             serial: None,
+                            enabled,
+                            description,
                         },
                     },
                 )

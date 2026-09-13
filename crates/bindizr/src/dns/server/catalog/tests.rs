@@ -18,6 +18,8 @@ fn catalog_digest_changes_when_members_change() {
             minimum_ttl: 3600,
             dnssec_policy_id: None,
             parent_ns_addrs: None,
+            enabled: true,
+            description: None,
             created_at: Utc::now(),
         },
         Zone {
@@ -33,6 +35,8 @@ fn catalog_digest_changes_when_members_change() {
             minimum_ttl: 3600,
             dnssec_policy_id: None,
             parent_ns_addrs: None,
+            enabled: true,
+            description: None,
             created_at: Utc::now(),
         },
     ];

@@ -60,6 +60,10 @@ pub(crate) struct ZoneRow {
     pub(crate) expire: i32,
     #[tabled(rename = "MINIMUM-TTL")]
     pub(crate) minimum_ttl: i32,
+    #[tabled(rename = "SERVED")]
+    pub(crate) served: String,
+    #[tabled(rename = "DESCRIPTION")]
+    pub(crate) description: String,
 }
 
 impl From<&GetZoneResponse> for ZoneRow {
@@ -75,6 +79,8 @@ impl From<&GetZoneResponse> for ZoneRow {
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: zone.minimum_ttl,
+            served: yes_no(zone.enabled),
+            description: display_option_text(&zone.description),
         }
     }
 }

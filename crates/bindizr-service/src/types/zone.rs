@@ -30,6 +30,11 @@ pub struct GetZoneResponse {
     pub expire: i32,
     #[schema(example = 3600)]
     pub minimum_ttl: i32,
+    /// Whether the DNS plane serves the zone. A disabled one stays editable but
+    /// leaves the catalog and answers no transfer, so secondaries drop it.
+    #[schema(example = true)]
+    pub enabled: bool,
+    pub description: Option<String>,
 }
 
 impl GetZoneResponse {
@@ -45,6 +50,8 @@ impl GetZoneResponse {
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: zone.minimum_ttl,
+            enabled: zone.enabled,
+            description: zone.description.clone(),
         }
     }
 }
@@ -73,6 +80,9 @@ pub struct CreateZoneRequest {
     pub expire: Option<i32>,
     #[schema(example = 3600)]
     pub minimum_ttl: Option<i32>,
+    /// Free-text note for operators, at most 255 characters.
+    #[schema(example = "customer A, migrated 2026-01")]
+    pub description: Option<String>,
 }
 
 /// Query filters and pagination for listing zones.
@@ -103,6 +113,9 @@ pub struct GetZonesFilter {
     /// `true` keeps the zones signing under a DNSSEC policy, `false` the rest.
     #[schema(example = true)]
     pub signed: Option<bool>,
+    /// `true` keeps the zones the DNS plane serves, `false` the disabled ones.
+    #[schema(example = true)]
+    pub enabled: Option<bool>,
     #[schema(example = "example")]
     pub search: Option<String>,
     /// `name` (the default), `serial`, `default_ttl`, or `created_at`.
@@ -151,6 +164,14 @@ pub struct UpdateZoneRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 42)]
     pub serial: Option<i32>,
+    /// `false` stops the DNS plane serving the zone without deleting it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = true)]
+    pub enabled: Option<bool>,
+    /// Empty clears the note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "customer A, migrated 2026-01")]
+    pub description: Option<String>,
 }
 
 /// The success message every front end serves for a manual NOTIFY.

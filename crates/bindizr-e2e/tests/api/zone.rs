@@ -1,7 +1,7 @@
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
-use crate::common::{TestApp, TestAppOptions};
+use crate::common::{TestApp, TestAppOptions, probe_zone_soa};
 
 /// Seed records directly in the DB via the bulk endpoint.
 async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
@@ -1841,5 +1841,100 @@ async fn zone_listing_sorts_and_filters_on_more_than_the_name() {
             .unwrap()
             .contains("unknown sort field"),
         "{body}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {
+    // The transfer ACL must admit the test's own loopback AXFR.
+    let app = TestApp::start_with_options(TestAppOptions {
+        secondary_addrs: "127.0.0.1".to_string(),
+        ..Default::default()
+    })
+    .await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let server = format!("127.0.0.1:{}", app.dns_port());
+    assert!(
+        probe_zone_soa(app.dns_port(), zone_name),
+        "a served zone answers its SOA"
+    );
+
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(json!({ "enabled": false, "description": "paused for migration" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["zone"]["enabled"], false, "{body}");
+    assert_eq!(
+        body["zone"]["description"], "paused for migration",
+        "{body}"
+    );
+
+    // Unknown to the DNS plane, so a secondary drops the zone instead of
+    // serving a copy nothing refreshes.
+    assert!(
+        !probe_zone_soa(app.dns_port(), zone_name),
+        "a disabled zone must not answer its SOA"
+    );
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "from_server": server, "mode": "replace" })),
+        )
+        .await;
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "a disabled zone must refuse the transfer: {body}"
+    );
+
+    // The management plane still holds it: listable under the filter, and
+    // editable.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/zones?enabled=false&search={zone_name}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let names: Vec<&str> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|zone| zone["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, [zone_name], "{body}");
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "www", "record_type": "A", "value": "192.0.2.31",
+                "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(json!({ "enabled": true, "description": "" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["zone"]["description"].is_null(), "{body}");
+    assert!(
+        probe_zone_soa(app.dns_port(), zone_name),
+        "re-enabling serves the zone again"
     );
 }

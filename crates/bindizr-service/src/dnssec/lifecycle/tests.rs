@@ -19,6 +19,8 @@ fn zone() -> Zone {
         minimum_ttl: 900,
         dnssec_policy_id: Some(1),
         parent_ns_addrs: None,
+        enabled: true,
+        description: None,
         created_at: Utc::now(),
     }
 }

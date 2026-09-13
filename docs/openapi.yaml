@@ -1837,6 +1837,12 @@ paths:
         required: false
         schema:
           type: boolean
+      - name: enabled
+        in: query
+        description: true keeps the zones the DNS plane serves, false the disabled ones.
+        required: false
+        schema:
+          type: boolean
       - name: search
         in: query
         description: Partially search zones.
@@ -3491,6 +3497,12 @@ components:
             Record TTL the zone hands out when a record names none; defaults to
             `dns.zone_defaults.ttl`.
           example: 3600
+        description:
+          type:
+          - string
+          - 'null'
+          description: Free-text note for operators, at most 255 characters.
+          example: customer A, migrated 2026-01
         expire:
           type:
           - integer
@@ -4242,11 +4254,22 @@ components:
       - retry
       - expire
       - minimum_ttl
+      - enabled
       properties:
         default_ttl:
           type: integer
           format: int32
           example: 3600
+        description:
+          type:
+          - string
+          - 'null'
+        enabled:
+          type: boolean
+          description: |-
+            Whether the DNS plane serves the zone. A disabled one stays editable but
+            leaves the catalog and answers no transfer, so secondaries drop it.
+          example: true
         expire:
           type: integer
           format: int32
@@ -4718,11 +4741,22 @@ components:
             - retry
             - expire
             - minimum_ttl
+            - enabled
             properties:
               default_ttl:
                 type: integer
                 format: int32
                 example: 3600
+              description:
+                type:
+                - string
+                - 'null'
+              enabled:
+                type: boolean
+                description: |-
+                  Whether the DNS plane serves the zone. A disabled one stays editable but
+                  leaves the catalog and answers no transfer, so secondaries drop it.
+                example: true
               expire:
                 type: integer
                 format: int32
@@ -5218,6 +5252,18 @@ components:
           - 'null'
           format: int32
           example: 3600
+        description:
+          type:
+          - string
+          - 'null'
+          description: Empty clears the note.
+          example: customer A, migrated 2026-01
+        enabled:
+          type:
+          - boolean
+          - 'null'
+          description: '`false` stops the DNS plane serving the zone without deleting it.'
+          example: true
         expire:
           type:
           - integer

@@ -45,6 +45,9 @@ pub struct ZoneFilter {
     /// `Some(true)` keeps the zones signing under a policy, `Some(false)`
     /// the rest.
     pub signed: Option<bool>,
+    /// `Some(true)` keeps the zones the DNS plane serves, `Some(false)` the
+    /// disabled ones.
+    pub enabled: Option<bool>,
     pub search: Option<String>,
     /// Restrict to zones granted to this token, joined against
     /// `token_grants` in SQL so the bind count stays fixed; `None` is

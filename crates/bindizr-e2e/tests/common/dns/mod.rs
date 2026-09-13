@@ -164,6 +164,12 @@ pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: 
     panic!("no type {record_type} record for {name} appeared on 127.0.0.1:{port}");
 }
 
+/// Whether the DNS plane serves `zone_name`: a zone it does not know answers
+/// REFUSED, which `check_response_header` reports as an error.
+pub(crate) fn probe_zone_soa(port: u16, zone_name: &str) -> bool {
+    matches!(query_dns_record(port, zone_name, 6), Ok(answers) if !answers.is_empty())
+}
+
 fn query_dns_record(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsAnswer>, String> {
     let (query_id, response) = exchange_dns_query(port, name, record_type)?;
     parse_dns_response(query_id, &response)

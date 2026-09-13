@@ -33,8 +33,8 @@ impl ZoneRepository for SqliteZoneRepository {
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, enabled, description, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(zone.name.as_str())
@@ -47,6 +47,8 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
         .bind(&zone.parent_ns_addrs)
+        .bind(zone.enabled)
+        .bind(&zone.description)
         .bind(now)
         .execute(&mut **sqlite_tx)
         .await?;
@@ -64,7 +66,7 @@ impl ZoneRepository for SqliteZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE id = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE id = ?")
             .bind(id)
             .fetch_optional(&mut **sqlite_tx)
             .await?;
@@ -75,7 +77,7 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE name = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?")
             .bind(name)
             .fetch_optional(&mut *conn)
             .await?;
@@ -91,7 +93,7 @@ impl ZoneRepository for SqliteZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE name = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?")
             .bind(name)
             .fetch_optional(&mut **sqlite_tx)
             .await?;
@@ -102,7 +104,7 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
             .await?;
 
@@ -116,7 +118,7 @@ impl ZoneRepository for SqliteZoneRepository {
     ) -> Result<Vec<Zone>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name")
             .fetch_all(&mut **sqlite_tx)
             .await?;
 
@@ -130,7 +132,7 @@ impl ZoneRepository for SqliteZoneRepository {
         let order_by = zone_order_by_sql(filter.sort, filter.order);
         let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
             r#"
-            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at
+            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at
             FROM zones
             WHERE (? IS NULL OR LOWER(name) = LOWER(?))
               AND (? IS NULL OR id = ?)
@@ -145,6 +147,7 @@ impl ZoneRepository for SqliteZoneRepository {
               AND (? IS NULL OR created_at >= ?)
               AND (? IS NULL OR created_at <= ?)
               AND (? IS NULL OR (dnssec_policy_id IS NOT NULL) = ?)
+              AND (? IS NULL OR enabled = ?)
               AND (
                     ? IS NULL
                     OR LOWER(name) LIKE LOWER(?) ESCAPE '\'
@@ -186,6 +189,8 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(filter.created_before)
         .bind(filter.signed)
         .bind(filter.signed)
+        .bind(filter.enabled)
+        .bind(filter.enabled)
         .bind(&search)
         .bind(&search)
         .bind(&search)
@@ -234,6 +239,7 @@ impl ZoneRepository for SqliteZoneRepository {
               AND (? IS NULL OR created_at >= ?)
               AND (? IS NULL OR created_at <= ?)
               AND (? IS NULL OR (dnssec_policy_id IS NOT NULL) = ?)
+              AND (? IS NULL OR enabled = ?)
               AND (
                     ? IS NULL
                     OR LOWER(name) LIKE LOWER(?) ESCAPE '\'
@@ -273,6 +279,8 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(filter.created_before)
         .bind(filter.signed)
         .bind(filter.signed)
+        .bind(filter.enabled)
+        .bind(filter.enabled)
         .bind(&search)
         .bind(&search)
         .bind(&search)
@@ -296,7 +304,8 @@ impl ZoneRepository for SqliteZoneRepository {
             r#"
             UPDATE zones 
             SET name = ?, mname = ?, rname = ?,
-                default_ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ?
+                default_ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ?,
+                enabled = ?, description = ?
             WHERE id = ?
             "#,
         )
@@ -309,6 +318,8 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(zone.retry)
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
+        .bind(zone.enabled)
+        .bind(&zone.description)
         .bind(zone.id)
         .execute(&mut **sqlite_tx)
         .await?;

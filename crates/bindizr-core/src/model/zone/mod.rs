@@ -32,6 +32,11 @@ pub struct Zone {
     /// comma-separated `host[:port]`; `None` discovers them. DNSSEC-owned
     /// like `dnssec_policy_id`.
     pub parent_ns_addrs: Option<String>,
+    /// Whether the DNS plane knows the zone. A disabled one stays editable but
+    /// leaves the catalog and answers no transfer, so secondaries drop it.
+    pub enabled: bool,
+    /// Free-text note for operators; bindizr never reads it.
+    pub description: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

@@ -14,19 +14,27 @@ use crate::{
 };
 
 impl ZoneService {
-    /// Look up a zone by name, returning `None` if it does not exist.
+    /// The DNS plane's view of a zone: transfers and SOA answers read it, so
+    /// a disabled zone is absent rather than served.
     pub async fn find_by_name(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        RepositoryService::get_zone_by_name(lookup_name.as_str()).await
+        Ok(RepositoryService::get_zone_by_name(lookup_name.as_str())
+            .await?
+            .filter(|zone| zone.enabled))
     }
 
+    /// The same view inside a transaction, for the nsupdate apply.
     pub(crate) async fn find_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
         lock_level: LockLevel,
     ) -> Result<Option<Zone>, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str(), lock_level).await
+        Ok(
+            RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str(), lock_level)
+                .await?
+                .filter(|zone| zone.enabled),
+        )
     }
 
     /// List the recorded zone changes between two serials, for building an IXFR.
@@ -51,11 +59,14 @@ impl ZoneService {
         RepositoryService::ping_zones().await
     }
 
+    /// The zones the DNS plane serves: the catalog's membership and the NOTIFY
+    /// fan-out read it.
     pub async fn list() -> Result<Vec<Zone>, ServiceError> {
-        RepositoryService::list_zones().await.map_err(|e| {
+        let zones = RepositoryService::list_zones().await.map_err(|e| {
             log_error!("Failed to fetch zones: {}", e);
             ServiceError::internal("Failed to fetch zones")
-        })
+        })?;
+        Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
     }
 
     /// Every zone, for the unauthenticated metrics endpoint.
@@ -96,6 +107,7 @@ impl ZoneService {
             created_after: filter.created_after,
             created_before: filter.created_before,
             signed: filter.signed,
+            enabled: filter.enabled,
             search: filter.search,
             scope_token_id,
             sort: parse_setting(filter.sort.as_deref())?,

@@ -289,6 +289,7 @@ pub(crate) async fn diff_zone_versions(
             ("created_after" = Option<String>, Query, description = "Keep zones created at or after this RFC 3339 timestamp."),
             ("created_before" = Option<String>, Query, description = "Keep zones created at or before this RFC 3339 timestamp."),
             ("signed" = Option<bool>, Query, description = "true keeps the zones signing under a DNSSEC policy, false the rest."),
+            ("enabled" = Option<bool>, Query, description = "true keeps the zones the DNS plane serves, false the disabled ones."),
             ("search" = Option<String>, Query, description = "Partially search zones."),
             ("sort" = Option<String>, Query, description = "Sort by name (the default), serial, default_ttl, or created_at."),
             ("order" = Option<String>, Query, description = "asc (the default) or desc."),

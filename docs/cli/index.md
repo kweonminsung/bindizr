@@ -70,6 +70,12 @@ $ bindizr zone delete example.com
 # Update a zone, changing only the fields you pass
 $ bindizr zone update <ZONE_NAME> --refresh 300 --retry 60
 
+# Stop serving a zone without deleting it: it leaves the catalog and answers no
+# transfer, so secondaries drop it, while its records stay editable here
+$ bindizr zone update example.com --enabled false --description "paused for migration"
+$ bindizr zone list --enabled false
+$ bindizr zone update example.com --enabled true
+
 # Create, list, inspect, and delete records (TTL defaults to the zone's; one TTL per name and type)
 $ bindizr record create --zone example.com --name www --type A --value 192.0.2.1 --ttl 300
 $ bindizr record create --zone example.com --name @ --type TXT --value v=spf1 --value ~all  # repeat --value for TXT segments

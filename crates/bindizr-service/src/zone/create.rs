@@ -67,6 +67,8 @@ impl ZoneService {
                     rname: validated.rname,
                     dnssec_policy_id: None,
                     parent_ns_addrs: None,
+                    enabled: true,
+                    description: validated.description.clone(),
                     default_ttl: validated.ttl,
                     serial,
                     refresh: timers.refresh,

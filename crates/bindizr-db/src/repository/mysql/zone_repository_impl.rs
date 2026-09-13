@@ -33,8 +33,8 @@ impl ZoneRepository for MySqlZoneRepository {
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, enabled, description, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(zone.name.as_str())
@@ -47,6 +47,8 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
         .bind(&zone.parent_ns_addrs)
+        .bind(zone.enabled)
+        .bind(&zone.description)
         .bind(now)
         .execute(&mut **mysql_tx)
         .await?;
@@ -64,7 +66,7 @@ impl ZoneRepository for MySqlZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE id = ?{}",lock_clause(lock_level))))
+        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE id = ?{}",lock_clause(lock_level))))
             .bind(id)
             .fetch_optional(&mut **mysql_tx)
             .await?;
@@ -75,7 +77,7 @@ impl ZoneRepository for MySqlZoneRepository {
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE name = ?")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?")
             .bind(name)
             .fetch_optional(&mut *conn)
             .await
@@ -93,7 +95,7 @@ impl ZoneRepository for MySqlZoneRepository {
         let mysql_tx = tx.as_mysql()?;
 
         let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(
-            format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE name = ?{}",
+            format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?{}",
             lock_clause(lock_level),
         )))
         .bind(name)
@@ -106,7 +108,7 @@ impl ZoneRepository for MySqlZoneRepository {
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
             .await
             ?;
@@ -121,7 +123,7 @@ impl ZoneRepository for MySqlZoneRepository {
     ) -> Result<Vec<Zone>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
+        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
             .fetch_all(&mut **mysql_tx)
             .await?;
 
@@ -134,7 +136,7 @@ impl ZoneRepository for MySqlZoneRepository {
         let order_by = zone_order_by_sql(filter.sort, filter.order);
         let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
             r#"
-            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at
+            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at
             FROM zones
             WHERE (? IS NULL OR LOWER(name) = LOWER(?))
               AND (? IS NULL OR id = ?)
@@ -149,6 +151,7 @@ impl ZoneRepository for MySqlZoneRepository {
               AND (? IS NULL OR created_at >= ?)
               AND (? IS NULL OR created_at <= ?)
               AND (? IS NULL OR (dnssec_policy_id IS NOT NULL) = ?)
+              AND (? IS NULL OR enabled = ?)
               AND (
                     ? IS NULL
                     OR LOWER(name) LIKE LOWER(?) ESCAPE '\\'
@@ -190,6 +193,8 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(filter.created_before)
         .bind(filter.signed)
         .bind(filter.signed)
+        .bind(filter.enabled)
+        .bind(filter.enabled)
         .bind(&search)
         .bind(&search)
         .bind(&search)
@@ -237,6 +242,7 @@ impl ZoneRepository for MySqlZoneRepository {
               AND (? IS NULL OR created_at >= ?)
               AND (? IS NULL OR created_at <= ?)
               AND (? IS NULL OR (dnssec_policy_id IS NOT NULL) = ?)
+              AND (? IS NULL OR enabled = ?)
               AND (
                     ? IS NULL
                     OR LOWER(name) LIKE LOWER(?) ESCAPE '\\'
@@ -276,6 +282,8 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(filter.created_before)
         .bind(filter.signed)
         .bind(filter.signed)
+        .bind(filter.enabled)
+        .bind(filter.enabled)
         .bind(&search)
         .bind(&search)
         .bind(&search)
@@ -298,7 +306,8 @@ impl ZoneRepository for MySqlZoneRepository {
         sqlx::query(
             r#"
             UPDATE zones 
-            SET name = ?, mname = ?, rname = ?, default_ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ?
+            SET name = ?, mname = ?, rname = ?, default_ttl = ?, serial = ?, refresh = ?, retry = ?, expire = ?, minimum_ttl = ?,
+                enabled = ?, description = ?
             WHERE id = ?
             "#,
         )
@@ -311,6 +320,8 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(zone.retry)
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
+        .bind(zone.enabled)
+        .bind(&zone.description)
         .bind(zone.id)
         .execute(&mut **mysql_tx)
         .await?;

@@ -48,6 +48,8 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
         minimum_ttl: 60,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
+        enabled: true,
+        description: None,
         created_at: Utc::now(),
     };
 
