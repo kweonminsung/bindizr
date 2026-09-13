@@ -143,6 +143,14 @@ $ sudo systemctl restart bind9  # For Debian-based systems
 $ sudo systemctl restart named  # For Red Hat-based systems
 ```
 
+!!! tip "Signing the transfers"
+
+    The setup above authorizes the secondary by address, which is all a
+    loopback pair needs. Where the secondary is elsewhere, name a TSIG key on
+    each `primaries` line and paste the same key into BIND — see
+    [TSIG Keys](../cli/tsig-keys.md#signing-zone-transfers). Bindizr then
+    answers under that key instead of trusting the source address.
+
 ## 4. Configure Bindizr options
 
 Create `/etc/bindizr/bindizr.conf.toml` using the

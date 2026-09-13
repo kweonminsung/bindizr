@@ -3435,6 +3435,12 @@ components:
       required:
       - zone_name
       properties:
+        can_write:
+          type: boolean
+          description: |-
+            Whether the grant carries nsupdate rights. A read-only grant over the
+            whole zone still transfers it. Defaults to true.
+          example: true
         record_name_pattern:
           type:
           - string
@@ -4194,8 +4200,12 @@ components:
       - zone_name
       - record_name_pattern
       - record_types
+      - can_write
       - created_at
       properties:
+        can_write:
+          type: boolean
+          example: true
         created_at:
           type: string
           format: date-time
@@ -4659,8 +4669,12 @@ components:
             - zone_name
             - record_name_pattern
             - record_types
+            - can_write
             - created_at
             properties:
+              can_write:
+                type: boolean
+                example: true
               created_at:
                 type: string
                 format: date-time

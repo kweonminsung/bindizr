@@ -26,8 +26,8 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, created_at)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id
             "#,
         )
@@ -35,6 +35,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         .bind(grant.tsig_key_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
+        .bind(grant.can_write)
         .bind(now)
         .fetch_one(&mut *conn)
         .await?;
@@ -49,7 +50,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         let mut conn = self.pool.acquire().await?;
 
         let grant = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE id = $1",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE id = $1",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -62,7 +63,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE zone_id = $1 ORDER BY id",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE zone_id = $1 ORDER BY id",
         )
         .bind(zone_id)
         .fetch_all(&mut *conn)
@@ -81,7 +82,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         let postgres_tx = tx.as_postgres()?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(AssertSqlSafe(
-            format!("SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE zone_id = $1 AND tsig_key_id = $2 ORDER BY id{}",
+            format!("SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE zone_id = $1 AND tsig_key_id = $2 ORDER BY id{}",
             lock_clause(lock_level),
         )))
         .bind(zone_id)
@@ -96,7 +97,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE tsig_key_id = $1 ORDER BY id",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE tsig_key_id = $1 ORDER BY id",
         )
         .bind(tsig_key_id)
         .fetch_all(&mut *conn)

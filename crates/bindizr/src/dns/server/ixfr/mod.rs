@@ -7,7 +7,7 @@ mod send;
 use std::{collections::HashMap, net::IpAddr};
 
 use bindizr_core::{
-    dns::{message, message::Rtype},
+    dns::{message, message::Rtype, tsig::TransferSigner},
     log_info, log_warn,
     model::zone_version::ZoneVersion,
 };
@@ -25,6 +25,7 @@ pub(crate) async fn handle_ixfr(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
+    signer: Option<TransferSigner>,
 ) -> Result<(), XfrError> {
     let zone_name_str = query.zone_name.as_str();
 
@@ -37,7 +38,7 @@ pub(crate) async fn handle_ixfr(
 
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("IXFR: Catalog zone requested, falling back to AXFR");
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
     }
 
     let zone = ZoneService::find_by_name(zone_name_str)
@@ -50,7 +51,7 @@ pub(crate) async fn handle_ixfr(
         Some(s) => s,
         None => {
             log_warn!("IXFR: No client serial provided, falling back to AXFR");
-            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
         }
     };
 
@@ -61,10 +62,10 @@ pub(crate) async fn handle_ixfr(
                 Some(version) => version,
                 None => {
                     log_warn!("IXFR: Missing SOA version, falling back to AXFR");
-                    return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+                    return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
                 }
             };
-        return send_soa_response(stream, query, &current_soa).await;
+        return send_soa_response(stream, query, &current_soa, signer).await;
     }
 
     // Plain comparison, not the RFC 1982 serial arithmetic RFC 1995 assumes:
@@ -77,7 +78,7 @@ pub(crate) async fn handle_ixfr(
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
     }
 
     if is_delta_no_smaller_than_zone(&zone, client_serial, current_serial).await? {
@@ -86,7 +87,7 @@ pub(crate) async fn handle_ixfr(
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
     }
 
     let changes = ZoneService::list_journal_between_serials(
@@ -102,7 +103,7 @@ pub(crate) async fn handle_ixfr(
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
     }
 
     let mut journal_serials: Vec<u32> = changes
@@ -135,7 +136,7 @@ pub(crate) async fn handle_ixfr(
         &version_serials,
     ) {
         log_warn!("IXFR: {}, falling back to AXFR", gap);
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
     }
 
     log_info!(
@@ -153,17 +154,19 @@ pub(crate) async fn handle_ixfr(
         client_serial,
         &changes,
         &versions_by_serial,
+        signer,
     )
     .await
     {
         Ok(()) => {}
         // Nothing was written yet, so a full AXFR is still a valid response.
-        Err(IxfrSendError::NotStarted(err)) => {
+        Err(IxfrSendError::NotStarted { error, signer }) => {
             log_warn!(
                 "IXFR: Failed to build incremental response ({}), falling back to AXFR",
-                err
+                error
             );
-            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR).await;
+            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer.map(|s| *s))
+                .await;
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
         Err(IxfrSendError::Partial(err)) => {

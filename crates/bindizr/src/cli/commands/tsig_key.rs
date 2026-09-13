@@ -57,6 +57,13 @@ pub(crate) enum TsigKeyCommand {
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
     },
+    /// Print the key as a BIND `key` block, ready to paste into a
+    /// secondary's named.conf — it carries the secret
+    Export {
+        /// Name of the key
+        #[arg(value_name = "KEY_NAME")]
+        name: String,
+    },
     /// Delete a TSIG key (refused while it still holds grants)
     #[command(alias = "rm")]
     Delete {
@@ -64,7 +71,8 @@ pub(crate) enum TsigKeyCommand {
         #[arg(value_name = "KEY_NAME")]
         name: String,
     },
-    /// Grant a TSIG key nsupdate rights in a zone
+    /// Grant a TSIG key rights in a zone: nsupdate, and — over the whole
+    /// zone — transfers
     Grant {
         /// Name of an existing non-global key (global keys already cover every zone)
         #[arg(value_name = "KEY_NAME")]
@@ -78,6 +86,9 @@ pub(crate) enum TsigKeyCommand {
         /// Allowed record types: '*' or a comma-separated list, e.g. 'A,AAAA,TXT' (default: '*')
         #[arg(long, value_name = "TYPES")]
         types: Option<String>,
+        /// Grant transfers only; the key may pull the zone but not change it
+        #[arg(long)]
+        read_only: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -163,6 +174,13 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 vec![TsigKeyRow::from(key)]
             })?;
         }
+        TsigKeyCommand::Export { name } => {
+            let res = client
+                .send_command(DaemonCommandKind::TsigKeyGet, TsigKeyNameParams { name })
+                .await?;
+            let key: TsigKeyResponse = parse_response(&res.data).map_err(CliError::from)?;
+            print_bind_key(&key);
+        }
         TsigKeyCommand::Delete { name } => {
             let res = client
                 .send_command(DaemonCommandKind::TsigKeyDelete, TsigKeyNameParams { name })
@@ -177,6 +195,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             zone,
             pattern,
             types,
+            read_only,
             output,
         } => {
             let res = client
@@ -188,6 +207,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                             zone_name: zone,
                             record_name_pattern: pattern,
                             record_types: types,
+                            can_write: !read_only,
                         },
                     },
                 )
@@ -223,4 +243,13 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
     }
 
     Ok(())
+}
+
+/// The `key` statement BIND, Knot and NSD all read a TSIG key from, so the
+/// secret reaches a secondary as something to paste rather than reformat.
+fn print_bind_key(key: &TsigKeyResponse) {
+    println!("key \"{}\" {{", key.tsig_key.name);
+    println!("    algorithm {};", key.tsig_key.algorithm);
+    println!("    secret \"{}\";", key.secret);
+    println!("}};");
 }

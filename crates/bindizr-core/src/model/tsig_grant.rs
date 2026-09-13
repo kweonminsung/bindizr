@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-/// Grants one TSIG key nsupdate rights over part of one zone, in the spirit of
-/// BIND's `update-policy`. Global keys bypass grants and hold no rows here.
+/// Grants one TSIG key rights over part of one zone, in the spirit of BIND's
+/// `update-policy` and `allow-transfer`. Global keys bypass grants and hold no
+/// rows here.
 ///
 /// `record_name_pattern` matches the owner name relative to the zone — `*`,
 /// `@`, `*.sub`, or an exact relative name — and `record_types` is `*` or a
@@ -14,6 +15,9 @@ pub struct TsigGrant {
     pub tsig_key_id: i32,
     pub record_name_pattern: String,
     pub record_types: String,
+    /// Whether the key may change records as well as transfer the zone. A
+    /// read-only grant still authorizes a transfer, narrowed the same way.
+    pub can_write: bool,
     pub created_at: DateTime<Utc>,
 }
 

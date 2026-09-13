@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use bindizr_core::{
-    dns::{message, message::Rtype, name::ZoneName},
+    dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
     log_info,
     model::{
         zone::Zone,
@@ -22,8 +22,12 @@ pub(crate) async fn send_soa_response(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     current_soa: &ZoneVersion,
+    signer: Option<TransferSigner>,
 ) -> Result<(), XfrError> {
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
+    if let Some(signer) = signer {
+        builder = builder.sign_with(signer);
+    }
 
     builder.add_version_soa(current_soa)?;
     crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
@@ -33,8 +37,13 @@ pub(crate) async fn send_soa_response(
 
 /// Outcome of a failed IXFR stream: whether any bytes reached the client yet.
 pub(crate) enum IxfrSendError {
-    /// Failed before writing anything — safe to fall back to AXFR.
-    NotStarted(XfrError),
+    /// Failed before writing anything — safe to fall back to AXFR, which
+    /// answers under the same signer since nothing has been signed yet.
+    NotStarted {
+        error: XfrError,
+        /// Boxed: a signing context dwarfs the error beside it.
+        signer: Option<Box<TransferSigner>>,
+    },
     /// Failed mid-stream; falling back to AXFR would corrupt the partial IXFR.
     Partial(XfrError),
 }
@@ -49,8 +58,12 @@ pub(crate) async fn send_ixfr_response(
     client_serial: u32,
     changes: &[ZoneChange],
     versions_by_serial: &HashMap<u32, ZoneVersion>,
+    signer: Option<TransferSigner>,
 ) -> Result<(), IxfrSendError> {
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
+    if let Some(signer) = signer {
+        builder = builder.sign_with(signer);
+    }
     let mut messages_sent = 0usize;
 
     let result = async {
@@ -162,7 +175,10 @@ pub(crate) async fn send_ixfr_response(
         }
         // A failure after the first flush leaves the stream mid-transfer.
         Err(err) if messages_sent > 0 => Err(IxfrSendError::Partial(err)),
-        Err(err) => Err(IxfrSendError::NotStarted(err)),
+        Err(error) => Err(IxfrSendError::NotStarted {
+            error,
+            signer: builder.take_signer().map(Box::new),
+        }),
     }
 }
 

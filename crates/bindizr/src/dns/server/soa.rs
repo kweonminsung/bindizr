@@ -8,6 +8,7 @@ use bindizr_core::{
     dns::{
         message,
         message::{Rcode, Rtype},
+        tsig::TransferSigner,
     },
     log_info, log_warn,
     metrics::{SoaResult, track_soa},
@@ -17,7 +18,10 @@ use tokio::net::{TcpStream, UdpSocket};
 
 use crate::dns::{
     error::XfrError,
-    server::{catalog, validate_secondary_acl},
+    server::{
+        auth::{TransferRefusal, authorize_transfer},
+        catalog,
+    },
     wire,
 };
 
@@ -25,8 +29,9 @@ pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
+    query_data: &[u8],
 ) -> Result<(), XfrError> {
-    let response = build_soa_response(query, client_addr.ip())
+    let response = build_soa_response(query, client_addr.ip(), query_data)
         .await
         .inspect_err(|_| track_soa(SoaResult::Error))?;
     wire::write_tcp_message(stream, &response).await?;
@@ -37,8 +42,9 @@ pub(crate) async fn handle_udp_soa(
     socket: &UdpSocket,
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
+    query_data: &[u8],
 ) -> Result<(), XfrError> {
-    let response = build_soa_response(query, client_addr.ip())
+    let response = build_soa_response(query, client_addr.ip(), query_data)
         .await
         .inspect_err(|_| track_soa(SoaResult::Error))?;
     socket.send_to(&response, client_addr).await?;
@@ -52,26 +58,35 @@ fn is_self_probe(client_ip: IpAddr) -> bool {
     client_ip.is_loopback() || client_ip == config::bindizr_config().dns.listen_addr.to_canonical()
 }
 
-/// The response bytes, which TCP and UDP send alike.
+/// The response bytes, which TCP and UDP send alike. A secondary polls the
+/// serial with the key it transfers under, so one gate answers both.
 async fn build_soa_response(
     query: &message::ParsedQuery,
     client_ip: IpAddr,
+    query_data: &[u8],
 ) -> Result<Vec<u8>, XfrError> {
     let zone_name_str = query.zone_name.as_str();
 
-    if !is_self_probe(client_ip) && validate_secondary_acl(client_ip).await.is_err() {
-        log_warn!(
-            "Refused SOA query for {:?} from {}",
-            zone_name_str,
-            client_ip
-        );
-        track_soa(SoaResult::Refused);
-        return Ok(query.error_response(Rcode::REFUSED));
-    }
+    let signer = match authorize_soa(query, client_ip, query_data).await {
+        Ok(signer) => signer,
+        Err(refusal) => {
+            log_warn!(
+                "Refused SOA query for {:?} from {}: {}",
+                zone_name_str,
+                client_ip,
+                refusal.reason
+            );
+            track_soa(SoaResult::Refused);
+            return refusal.into_response(query);
+        }
+    };
 
     log_info!("SOA query for zone {:?} from {}", zone_name_str, client_ip);
 
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
+    if let Some(signer) = signer {
+        builder = builder.sign_with(signer);
+    }
 
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("SOA query for catalog zone: {}", catalog::CATALOG_ZONE_NAME);
@@ -81,7 +96,7 @@ async fn build_soa_response(
             bindizr_core::dns::serial_to_u32(catalog_zone.serial)?,
         )?;
         track_soa(SoaResult::Ok);
-        return Ok(builder.build());
+        return Ok(builder.build()?);
     }
 
     let Some(zone) = ZoneService::find_by_name(zone_name_str).await? else {
@@ -98,5 +113,18 @@ async fn build_soa_response(
     builder.add_soa(&zone, bindizr_core::dns::serial_to_u32(zone.serial)?)?;
 
     track_soa(SoaResult::Ok);
-    Ok(builder.build())
+    Ok(builder.build()?)
+}
+
+/// `bindizr doctor`'s own probe carries no key and is not a secondary, so it
+/// passes ahead of both gates.
+async fn authorize_soa(
+    query: &message::ParsedQuery,
+    client_ip: IpAddr,
+    query_data: &[u8],
+) -> Result<Option<TransferSigner>, TransferRefusal> {
+    if is_self_probe(client_ip) {
+        return Ok(None);
+    }
+    authorize_transfer(query_data, client_ip, &query.zone_name).await
 }

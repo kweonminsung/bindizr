@@ -8,10 +8,8 @@ use bindizr_core::{
     config,
     dns::{
         message::{Class, Rtype},
-        nsupdate::{
-            auth::{ResponseSigner, TsigError},
-            parser::{UpdateRequest, UpdateRr, rr_to_record_value},
-        },
+        nsupdate::parser::{UpdateRequest, UpdateRr, rr_to_record_value},
+        tsig::{ResponseSigner, TsigError},
     },
     model::{record::RecordType, tsig_key::TsigKey},
 };
@@ -156,9 +154,9 @@ async fn authenticate_request(
     // produce the BADKEY error response.
     let domain_key = key
         .as_ref()
-        .map(bindizr_core::dns::nsupdate::auth::to_domain_key)
+        .map(bindizr_core::dns::tsig::to_domain_key)
         .transpose()?;
-    *signer = Some(bindizr_core::dns::nsupdate::auth::verify_tsig(
+    *signer = Some(bindizr_core::dns::tsig::verify_tsig(
         query_data, domain_key,
     )?);
 

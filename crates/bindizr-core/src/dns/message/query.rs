@@ -5,9 +5,12 @@ use domain::{
     base::{
         Header, Message, MessageBuilder, Name, Rtype, ToName,
         iana::{Opcode, Rcode},
+        message_builder::QuestionBuilder,
     },
-    rdata::Soa,
+    rdata::{Soa, tsig::Time48},
 };
+
+use crate::dns::tsig::TransferSigner;
 
 /// Whether the message is itself a response (QR=1). Answering one lets a
 /// spoofed source aim the reply at a third party.
@@ -76,16 +79,33 @@ impl ParsedQuery {
             header.set_aa(true);
             header.set_tc(true);
         })
+        .finish()
     }
 
     /// A response echoing this query with only `rcode` set.
     pub fn error_response(&self, rcode: Rcode) -> Vec<u8> {
         self.echo_question(|header| header.set_rcode(rcode))
+            .finish()
+    }
+
+    /// The same, signed by the key that signed the request: an accepted key
+    /// answers under itself, error or not (RFC 8945, Section 5.3).
+    pub fn signed_error_response(
+        &self,
+        rcode: Rcode,
+        signer: &mut TransferSigner,
+    ) -> Result<Vec<u8>, String> {
+        let question = self.echo_question(|header| header.set_rcode(rcode));
+        let mut additional = question.additional();
+        signer
+            .answer(&mut additional, Time48::now())
+            .map_err(|e| format!("Failed to sign the response: {}", e))?;
+        Ok(additional.finish())
     }
 
     /// A response carrying only this query's question, its header shaped by
     /// `set` after the id and QR.
-    fn echo_question(&self, set: impl FnOnce(&mut Header)) -> Vec<u8> {
+    fn echo_question(&self, set: impl FnOnce(&mut Header)) -> QuestionBuilder<Vec<u8>> {
         let mut builder = MessageBuilder::new_vec();
         let header = builder.header_mut();
         header.set_id(self.query_id);
@@ -99,7 +119,7 @@ impl ParsedQuery {
             .push((&self.qname, self.qtype))
             .expect("composing into a Vec cannot run out of space");
 
-        question.finish()
+        question
     }
 }
 

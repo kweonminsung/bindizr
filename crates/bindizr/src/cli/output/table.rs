@@ -515,6 +515,8 @@ pub(crate) struct TsigGrantRow {
     pub(crate) record_name_pattern: String,
     #[tabled(rename = "RECORD-TYPES")]
     pub(crate) record_types: String,
+    #[tabled(rename = "ACCESS")]
+    pub(crate) access: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
@@ -527,6 +529,12 @@ impl From<&GetTsigGrantResponse> for TsigGrantRow {
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.record_name_pattern.clone(),
             record_types: grant.record_types.clone(),
+            access: if grant.can_write {
+                "transfer+update"
+            } else {
+                "transfer-only"
+            }
+            .to_string(),
             created_at: grant.created_at.to_rfc3339(),
         }
     }

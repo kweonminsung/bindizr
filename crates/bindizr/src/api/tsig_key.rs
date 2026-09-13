@@ -222,6 +222,7 @@ pub(crate) async fn create_tsig_grant(
         &body.zone_name,
         body.record_name_pattern.as_deref(),
         body.record_types.as_deref(),
+        body.can_write,
     )
     .await?;
     let response = TsigGrantResponse {

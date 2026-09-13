@@ -18,9 +18,6 @@ pub(crate) enum XfrError {
 
     #[error("Invalid query: {0}")]
     InvalidQuery(String),
-
-    #[error("Access denied: {0}")]
-    AccessDenied(String),
 }
 
 /// Protocol failures reported by the wire codec in `bindizr-core`.

@@ -21,6 +21,7 @@ mod dns {
     mod dnssec;
     mod harness;
     mod nsupdate;
+    mod transfer;
 }
 
 mod cli {

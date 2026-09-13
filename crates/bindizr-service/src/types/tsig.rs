@@ -64,6 +64,15 @@ pub struct CreateTsigGrantRequest {
     /// `*` or a comma-separated list of record types. Defaults to `*`.
     #[schema(example = "A,AAAA,TXT")]
     pub record_types: Option<String>,
+    /// Whether the grant carries nsupdate rights. A read-only grant over the
+    /// whole zone still transfers it. Defaults to true.
+    #[serde(default = "default_can_write")]
+    #[schema(example = true)]
+    pub can_write: bool,
+}
+
+fn default_can_write() -> bool {
+    true
 }
 
 /// API representation of a TSIG grant.
@@ -79,6 +88,8 @@ pub struct GetTsigGrantResponse {
     pub record_name_pattern: String,
     #[schema(example = "A,AAAA,TXT")]
     pub record_types: String,
+    #[schema(example = true)]
+    pub can_write: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -90,6 +101,7 @@ impl GetTsigGrantResponse {
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.grant.record_name_pattern.clone(),
             record_types: grant.grant.record_types.clone(),
+            can_write: grant.grant.can_write,
             created_at: grant.grant.created_at,
         }
     }

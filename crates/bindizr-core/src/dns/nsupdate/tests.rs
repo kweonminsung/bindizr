@@ -6,13 +6,14 @@ use domain::{
     rdata::tsig::Tsig,
 };
 
-use super::{
-    auth,
-    auth::tests::{encode_name, encode_u48, hmac_sign, now_secs, signed_update, test_key},
-    build_response,
-    parser::tests::minimal_update_with_ztype,
+use super::{build_response, parser::tests::minimal_update_with_ztype};
+use crate::{
+    dns::tsig::{
+        self,
+        tests::{encode_name, encode_u48, hmac_sign, now_secs, signed_update, test_key},
+    },
+    model::tsig_key::TsigAlgorithm,
 };
-use crate::model::tsig_key::TsigAlgorithm;
 
 #[test]
 fn build_response_echoes_request_header_and_question() {
@@ -33,8 +34,8 @@ fn build_response_echoes_request_header_and_question() {
 #[test]
 fn build_response_signs_with_request_mac_chain() {
     let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
-    let key = auth::to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
-    let signer = auth::verify_tsig(&query, Some(key)).unwrap();
+    let key = tsig::to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
+    let signer = tsig::verify_tsig(&query, Some(key)).unwrap();
 
     let response = build_response(&query, Rcode::NOERROR, Some(signer), 300).unwrap();
 

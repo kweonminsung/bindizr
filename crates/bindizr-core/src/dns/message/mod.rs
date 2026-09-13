@@ -5,8 +5,12 @@ pub use domain::base::{
     Name,
     iana::{Class, Opcode, Rcode, Rtype},
 };
-use domain::base::{
-    ToName, Ttl, UnknownRecordData, rdata::ComposeRecordData, record::ComposeRecord,
+use domain::{
+    base::{
+        MessageBuilder, ToName, Ttl, UnknownRecordData, rdata::ComposeRecordData,
+        record::ComposeRecord, wire::Composer,
+    },
+    rdata::tsig::Time48,
 };
 
 use crate::{
@@ -15,6 +19,7 @@ use crate::{
         dnssec::to_wire_name,
         name::{OwnerName, ParseNameError, ZoneName, encode_name, to_fqdn},
         record::{EncodedRdata, Rdata, SoaRecordValue, TxtRecordValue},
+        tsig::{TransferSigner, signature_len},
     },
     model::{
         dnssec_record::DnssecRecord,
@@ -62,6 +67,19 @@ impl IntoOwner for Result<Vec<u8>, ParseNameError> {
     }
 }
 
+/// An answer already composed into wire bytes, pushed back through `domain`'s
+/// builder so a message can carry a section it did not compose.
+struct ComposedRecord<'a>(&'a [u8]);
+
+impl ComposeRecord for ComposedRecord<'_> {
+    fn compose_record<Target: Composer + ?Sized>(
+        &self,
+        target: &mut Target,
+    ) -> Result<(), Target::AppendError> {
+        target.append_slice(self.0)
+    }
+}
+
 pub struct DnsMessageBuilder {
     query_id: u16,
     qname: Name<Vec<u8>>,
@@ -69,6 +87,9 @@ pub struct DnsMessageBuilder {
     answers: Vec<Vec<u8>>,
     /// Total byte length of `answers`, maintained incrementally for `message_len`.
     answers_len: usize,
+    /// Signs every message this builder produces, carrying one MAC chain
+    /// across the envelopes of a transfer.
+    signer: Option<TransferSigner>,
 }
 
 impl DnsMessageBuilder {
@@ -79,7 +100,21 @@ impl DnsMessageBuilder {
             qtype: qtype.to_int(),
             answers: Vec::new(),
             answers_len: 0,
+            signer: None,
         }
+    }
+
+    /// Sign what this builder produces, for a request that arrived signed. The
+    /// TSIG record's own bytes count against the message size limit.
+    pub fn sign_with(mut self, signer: TransferSigner) -> Self {
+        self.signer = Some(signer);
+        self
+    }
+
+    /// Hand the signer back to a caller answering the request another way.
+    /// Only sound before the first frame: a MAC chain cannot be rewound.
+    pub fn take_signer(&mut self) -> Option<TransferSigner> {
+        self.signer.take()
     }
 
     pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), String> {
@@ -260,7 +295,8 @@ impl DnsMessageBuilder {
     }
 
     fn message_len(&self) -> usize {
-        12 + self.qname.len() + 4 + self.answers_len
+        let signature = self.signer.as_ref().map_or(0, signature_len);
+        12 + self.qname.len() + 4 + self.answers_len + signature
     }
 
     fn pop_last_answer(&mut self) -> Option<Vec<u8>> {
@@ -334,42 +370,45 @@ impl DnsMessageBuilder {
         )
     }
 
-    fn build_message_into(&self, message: &mut Vec<u8>) {
-        message.extend_from_slice(&self.query_id.to_be_bytes()); // ID
-        message.push(0x84); // QR=1, Opcode=0, AA=1, TC=0, RD=0
-        message.push(0x00); // RA=0, Z=0, RCODE=0 (NOERROR)
-        message.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT=1
-        message.extend_from_slice(&(self.answers.len() as u16).to_be_bytes()); // ANCOUNT
-        message.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT=0
-        message.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT=0
+    /// Compose the buffered answers into one authoritative response, signed
+    /// when the request was. Built through `domain`, which composes the
+    /// additional section a TSIG record needs.
+    fn build_message(&mut self) -> Result<Vec<u8>, String> {
+        let mut builder = MessageBuilder::new_vec();
+        let header = builder.header_mut();
+        header.set_id(self.query_id);
+        header.set_qr(true);
+        header.set_aa(true);
 
-        message.extend_from_slice(self.qname.as_slice());
-        message.extend_from_slice(&self.qtype.to_be_bytes()); // QTYPE
-        message.extend_from_slice(&1u16.to_be_bytes()); // QCLASS (IN)
+        let mut question = builder.question();
+        question
+            .push((&self.qname, Rtype::from_int(self.qtype), Class::IN))
+            .map_err(|e| format!("Failed to compose the question: {}", e))?;
 
-        for answer in &self.answers {
-            message.extend_from_slice(answer);
-        }
-    }
-
-    /// Serializes into a length-prefixed TCP frame in one buffer, with no
-    /// intermediate message copy.
-    fn build_tcp_frame(&self) -> Result<Vec<u8>, String> {
-        let len = self.message_len();
-        if len > DNS_TCP_MAX_SIZE {
-            return Err(format!("Message too large: {} bytes", len));
+        let mut answer = question.answer();
+        for composed in &self.answers {
+            answer
+                .push(ComposedRecord(composed))
+                .map_err(|e| format!("Failed to compose an answer: {}", e))?;
         }
 
-        let mut frame = Vec::with_capacity(2 + len);
-        frame.extend_from_slice(&(len as u16).to_be_bytes());
-        self.build_message_into(&mut frame);
-        Ok(frame)
+        let mut additional = answer.additional();
+        if let Some(signer) = self.signer.as_mut() {
+            signer
+                .answer(&mut additional, Time48::now())
+                .map_err(|e| format!("Failed to sign the response: {}", e))?;
+        }
+        Ok(additional.finish())
     }
 
-    pub fn build(self) -> Vec<u8> {
-        let mut message = Vec::with_capacity(self.message_len());
-        self.build_message_into(&mut message);
-        message
+    /// Serializes into a length-prefixed TCP frame.
+    fn build_tcp_frame(&mut self) -> Result<Vec<u8>, String> {
+        let message = self.build_message()?;
+        encode_tcp_message(&message)
+    }
+
+    pub fn build(mut self) -> Result<Vec<u8>, String> {
+        self.build_message()
     }
 }
 

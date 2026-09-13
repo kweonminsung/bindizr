@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 pub(crate) use bindizr_core::dns::{CATALOG_ZONE_NAME, is_catalog_zone};
 use bindizr_core::{
-    dns::{message, message::Rtype, name::ZoneName},
+    dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
     log_info,
     model::zone::Zone,
 };
@@ -87,12 +87,16 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     response_qtype: Rtype,
+    signer: Option<TransferSigner>,
 ) -> Result<(), XfrError> {
     log_info!("AXFR request for catalog zone: {}", CATALOG_ZONE_NAME);
 
     let (catalog_zone, member_zones) = generate_catalog_zone().await?;
 
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
+    if let Some(signer) = signer {
+        builder = builder.sign_with(signer);
+    }
     let mut messages_sent = 0usize;
     let serial = bindizr_core::dns::serial_to_u32(catalog_zone.serial)?;
 

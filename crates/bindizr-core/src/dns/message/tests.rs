@@ -1,9 +1,16 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
-use domain::base::{MessageBuilder, Name, iana::Rtype};
+use domain::{
+    base::{Message, MessageBuilder, Name, iana::Rtype},
+    rdata::tsig::Time48,
+    tsig::{ClientSequence, Key},
+};
 
 use super::{DNS_TCP_MAX_SIZE, DnsMessageBuilder, ParsedQuery, encode_tcp_message, is_response};
-use crate::model::record::RecordType;
+use crate::{
+    dns::tsig::{to_domain_key, verify_tsig_sequence},
+    model::{record::RecordType, tsig_key::TsigAlgorithm},
+};
 
 #[test]
 fn encode_tcp_message_rejects_oversized_payload() {
@@ -91,4 +98,89 @@ fn is_response_separates_a_reply_from_a_query() {
     let parsed = ParsedQuery::parse(&query).expect("a question-only query parses");
     let reply = parsed.error_response(super::Rcode::REFUSED);
     assert!(is_response(&reply));
+}
+
+/// A signed AXFR query for `example.com.`, and the client sequence that
+/// verifies what answers it — `domain`'s own client, so the check is
+/// independent of the server code under test.
+fn signed_axfr_query(key: Arc<Key>) -> (Vec<u8>, ClientSequence<Arc<Key>>) {
+    let mut builder = MessageBuilder::new_vec();
+    builder.header_mut().set_id(1234);
+    let mut question = builder.question();
+    question
+        .push((
+            &Name::<Vec<u8>>::from_str("example.com.").unwrap(),
+            Rtype::AXFR,
+        ))
+        .unwrap();
+
+    let mut additional = question.additional();
+    let client = ClientSequence::request(key, &mut additional, Time48::now()).unwrap();
+    (additional.finish(), client)
+}
+
+/// Strip the 2-byte length prefix a TCP frame carries.
+fn frame_message(frame: Vec<u8>) -> Vec<u8> {
+    frame[2..].to_vec()
+}
+
+#[test]
+fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
+    let key = to_domain_key(&crate::dns::tsig::tests::test_key(
+        TsigAlgorithm::HmacSha256,
+    ))
+    .unwrap();
+    let (query, mut client) = signed_axfr_query(key.clone());
+
+    let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
+    let mut builder = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR)
+        .sign_with(verify_tsig_sequence(&query, Some(key)).unwrap());
+
+    // Two envelopes, so the second is checked against the MAC chain the first
+    // started rather than against the request alone (RFC 8945, Section 5.3.1).
+    let mut frames = Vec::new();
+    for index in 0..4000 {
+        let frame = builder
+            .add_answer_or_overflow(|builder| {
+                builder.add_text_rdata(
+                    &format!("host-{}.example.com.", index),
+                    3600,
+                    &RecordType::A,
+                    &format!("192.0.2.{}", index % 255),
+                    None,
+                )
+            })
+            .unwrap_or_else(|e| panic!("{}", e.message));
+        if let Some(frame) = frame {
+            frames.push(frame);
+        }
+    }
+    frames.push(builder.take_frame().unwrap().unwrap());
+    assert!(frames.len() >= 2, "expected a multi-message transfer");
+
+    for frame in frames {
+        let mut message = Message::from_octets(frame_message(frame)).unwrap();
+        client
+            .answer(&mut message, Time48::now())
+            .expect("envelope did not verify against the request's key");
+    }
+    client.done().expect("the sequence did not close cleanly");
+}
+
+#[test]
+fn a_signed_message_reserves_room_for_its_tsig_record() {
+    let key = to_domain_key(&crate::dns::tsig::tests::test_key(
+        TsigAlgorithm::HmacSha256,
+    ))
+    .unwrap();
+    let (query, _) = signed_axfr_query(key.clone());
+    let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
+
+    let unsigned = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR);
+    let signed = DnsMessageBuilder::new(1234, &qname, Rtype::AXFR)
+        .sign_with(verify_tsig_sequence(&query, Some(key)).unwrap());
+
+    // Without the reservation an envelope could fill to the wire limit and
+    // then overflow it once the TSIG record is appended.
+    assert!(signed.message_len() > unsigned.message_len());
 }

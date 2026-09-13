@@ -142,6 +142,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             tsig_key_id INT NOT NULL,
             record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
+            can_write BOOLEAN NOT NULL,
             created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id),
@@ -349,6 +350,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             tsig_key_id INTEGER NOT NULL,
             record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
+            can_write BOOLEAN NOT NULL,
             created_at TIMESTAMPTZ NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id)
@@ -570,6 +572,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             tsig_key_id INTEGER NOT NULL,
             record_name_pattern TEXT NOT NULL,
             record_types TEXT NOT NULL,
+            can_write BOOLEAN NOT NULL,
             created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id)

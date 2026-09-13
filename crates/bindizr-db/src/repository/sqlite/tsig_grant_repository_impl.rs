@@ -26,14 +26,15 @@ impl TsigGrantRepository for SqliteTsigGrantRepository {
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(grant.zone_id)
         .bind(grant.tsig_key_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
+        .bind(grant.can_write)
         .bind(now)
         .execute(&mut *conn)
         .await?;
@@ -47,7 +48,7 @@ impl TsigGrantRepository for SqliteTsigGrantRepository {
         let mut conn = self.pool.acquire().await?;
 
         let grant = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE id = ?",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -60,7 +61,7 @@ impl TsigGrantRepository for SqliteTsigGrantRepository {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE zone_id = ? ORDER BY id",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE zone_id = ? ORDER BY id",
         )
         .bind(zone_id)
         .fetch_all(&mut *conn)
@@ -79,7 +80,7 @@ impl TsigGrantRepository for SqliteTsigGrantRepository {
         let sqlite_tx = tx.as_sqlite()?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE zone_id = ? AND tsig_key_id = ? ORDER BY id",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE zone_id = ? AND tsig_key_id = ? ORDER BY id",
         )
         .bind(zone_id)
         .bind(tsig_key_id)
@@ -93,7 +94,7 @@ impl TsigGrantRepository for SqliteTsigGrantRepository {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE tsig_key_id = ? ORDER BY id",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE tsig_key_id = ? ORDER BY id",
         )
         .bind(tsig_key_id)
         .fetch_all(&mut *conn)

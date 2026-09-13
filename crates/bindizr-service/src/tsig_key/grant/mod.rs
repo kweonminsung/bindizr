@@ -10,10 +10,11 @@ use super::TsigKeyService;
 use crate::{
     authorization::Caller,
     error::ServiceError,
-    grant_pattern::{matches_name, matches_types, normalize_pattern, normalize_types},
+    grant_pattern::{MATCH_ANY, matches_name, matches_types, normalize_pattern, normalize_types},
     model::{
         record::RecordType,
         tsig_grant::{TsigGrant, TsigGrantWithNames},
+        tsig_key::TsigKey,
     },
     repository::RepositoryService,
     types::{GetTsigGrantResponse, PageFilter, PaginatedResponse},
@@ -24,15 +25,16 @@ use crate::{
 pub struct TsigGrantService;
 
 impl TsigGrantService {
-    /// Grant `key_name` nsupdate rights in `zone_name`, optionally restricted
-    /// to a record name pattern and/or record types. Global keys are rejected:
-    /// they already cover every zone and never carry grants.
+    /// Grant `key_name` rights in `zone_name`, optionally restricted to a
+    /// record name pattern and/or record types, and to transfers alone. Global
+    /// keys are rejected: they already cover every zone and never carry grants.
     pub async fn grant(
         caller: &Caller,
         key_name: &str,
         zone_name: &str,
         record_name_pattern: Option<&str>,
         record_types: Option<&str>,
+        can_write: bool,
     ) -> Result<TsigGrantWithNames, ServiceError> {
         caller.require_global("manage TSIG keys and grants")?;
 
@@ -54,6 +56,7 @@ impl TsigGrantService {
             tsig_key_id: key.id,
             record_name_pattern,
             record_types,
+            can_write,
             created_at: Utc::now(),
         })
         .await?;
@@ -134,6 +137,25 @@ impl TsigGrantService {
         )
     }
 
+    /// Whether `key` may transfer `zone_name`. A global key covers every zone;
+    /// a scoped one needs a grant over the whole zone, read-only or not.
+    pub async fn authorize_transfer(key: &TsigKey, zone_name: &str) -> Result<bool, ServiceError> {
+        if key.is_global {
+            return Ok(true);
+        }
+        // The catalog zone is virtual, so it holds no grants and only a global
+        // key reaches it.
+        let Some(zone) = ZoneService::find_by_name(zone_name).await? else {
+            return Ok(false);
+        };
+        let grants: Vec<TsigGrant> = RepositoryService::list_tsig_grants_by_key_id(key.id)
+            .await?
+            .into_iter()
+            .filter(|grant| grant.zone_id == zone.id)
+            .collect();
+        Ok(covers_whole_zone(&grants))
+    }
+
     /// Revoke one of `key_name`'s grants by id. An id that belongs to another
     /// key reads as not found.
     pub async fn revoke(
@@ -162,9 +184,18 @@ pub(crate) fn authorize_update(
     record_type: Option<&RecordType>,
 ) -> bool {
     grants.iter().any(|grant| {
-        matches_name(&grant.record_name_pattern, relative_name)
+        grant.can_write
+            && matches_name(&grant.record_name_pattern, relative_name)
             && matches_types(&grant.record_types, record_type)
     })
+}
+
+/// Whether any grant covers the zone whole. A transfer hands the zone over
+/// whole, so a grant narrowed to part of it authorizes none.
+fn covers_whole_zone(grants: &[TsigGrant]) -> bool {
+    grants
+        .iter()
+        .any(|grant| grant.record_name_pattern == MATCH_ANY && grant.record_types == MATCH_ANY)
 }
 
 #[cfg(test)]

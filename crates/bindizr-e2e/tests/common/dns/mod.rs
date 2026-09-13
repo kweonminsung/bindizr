@@ -1,4 +1,5 @@
 mod parent;
+mod transfer;
 
 use std::{net::UdpSocket, str::FromStr, time::Duration};
 
@@ -8,6 +9,7 @@ use domain::{
 };
 pub(crate) use parent::{FakeParent, ServedDs};
 use serde_json::{Value, json};
+pub(crate) use transfer::{TransferOutcome, axfr};
 
 pub(super) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
     let value = record["value"].clone();
