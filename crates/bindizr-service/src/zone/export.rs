@@ -32,6 +32,7 @@ impl ZoneService {
             let zone =
                 ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
                     .await?;
+            caller.ensure_zone_unrestricted(&zone)?;
             let records =
                 RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
             let derived = if signed {

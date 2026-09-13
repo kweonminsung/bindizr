@@ -154,6 +154,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             api_token_id INT NOT NULL,
             record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
+            can_write BOOLEAN NOT NULL,
             created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE,
@@ -362,6 +363,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             api_token_id INTEGER NOT NULL,
             record_name_pattern VARCHAR(512) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
+            can_write BOOLEAN NOT NULL,
             created_at TIMESTAMPTZ NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE
@@ -580,6 +582,7 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             api_token_id INTEGER NOT NULL,
             record_name_pattern TEXT NOT NULL,
             record_types TEXT NOT NULL,
+            can_write BOOLEAN NOT NULL,
             created_at DATETIME NOT NULL,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE

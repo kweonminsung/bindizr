@@ -18,7 +18,7 @@ use chrono::{Duration, Utc};
 use crate::{
     RepositoryTx,
     error::ServiceError,
-    grant_pattern::{matches_name, matches_types},
+    grant_pattern::{MATCH_ANY, matches_name, matches_types},
     log_error,
     model::{api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone},
     repository::RepositoryService,
@@ -129,6 +129,47 @@ impl Caller {
             }
         }
     }
+
+    /// Whether the caller may read a record of this name and type: a grant
+    /// narrows reads the same way it narrows writes.
+    pub(crate) fn record_visible(
+        &self,
+        zone_id: i32,
+        name: &OwnerName,
+        record_type: Option<&RecordType>,
+    ) -> bool {
+        match self {
+            Caller::Global => true,
+            Caller::Token { grants, .. } => grants.iter().any(|grant| {
+                grant.zone_id == zone_id
+                    && matches_name(&grant.record_name_pattern, name)
+                    && matches_types(&grant.record_types, record_type)
+            }),
+        }
+    }
+
+    /// Whether the caller sees the zone whole. A view the zone is rebuilt
+    /// from — its export, a stored version, a version diff — cannot be
+    /// narrowed: half a zone re-applied deletes what it left out.
+    pub(crate) fn ensure_zone_unrestricted(&self, zone: &Zone) -> Result<(), ServiceError> {
+        let unrestricted = match self {
+            Caller::Global => true,
+            Caller::Token { grants, .. } => grants.iter().any(|grant| {
+                grant.zone_id == zone.id
+                    && grant.record_name_pattern == MATCH_ANY
+                    && grant.record_types == MATCH_ANY
+            }),
+        };
+        if unrestricted {
+            return Ok(());
+        }
+
+        self.ensure_zone_visible(zone)?;
+        Err(ServiceError::forbidden(format!(
+            "API token is scoped to part of zone '{}', so it cannot read the zone whole",
+            zone.name
+        )))
+    }
 }
 
 fn authorize_with_grants(
@@ -138,7 +179,8 @@ fn authorize_with_grants(
 ) -> Result<(), ServiceError> {
     for write in writes {
         let granted = grants.iter().any(|grant| {
-            matches_name(&grant.record_name_pattern, &write.relative_name)
+            grant.can_write
+                && matches_name(&grant.record_name_pattern, &write.relative_name)
                 && matches_types(&grant.record_types, write.record_type)
         });
         if !granted {

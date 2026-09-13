@@ -3250,6 +3250,12 @@ components:
       required:
       - zone_name
       properties:
+        can_write:
+          type: boolean
+          description: |-
+            Whether the grant carries write rights. A read-only grant still makes
+            the zone visible, narrowed the same way. Defaults to true.
+          example: true
         record_name_pattern:
           type:
           - string
@@ -4005,11 +4011,15 @@ components:
       - zone_name
       - record_name_pattern
       - record_types
+      - can_write
       - created_at
       properties:
         api_token:
           type: string
           example: external-dns
+        can_write:
+          type: boolean
+          example: true
         created_at:
           type: string
           format: date-time

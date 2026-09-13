@@ -39,6 +39,9 @@ $ bindizr token grant external-dns example.com
 # Allow only A/TXT records under *.dyn
 $ bindizr token grant external-dns example.com --pattern '*.dyn' --types A,TXT
 
+# Allow reading example.com without changing anything in it
+$ bindizr token grant monitoring example.com --read-only
+
 # List a token's grants, or every token grant that applies to a zone
 $ bindizr token grants external-dns
 $ bindizr zone token-grants example.com
@@ -55,12 +58,17 @@ scoped ones included, may read itself: `GET /tokens/self` describes the
 calling token and `GET /tokens/self/grants` lists the grants it holds.
 
 A scoped token sees only its granted zones: other zones read as 404, on
-writes as on reads. The name pattern and type list restrict **writes** only —
-within a granted zone the token reads every record, and a write outside them
-returns 403.
-Creating, updating, or deleting zones —
-and managing tokens, keys, or grants over HTTP — always requires a global
-token. The CLI talks to the daemon over its local socket and is not subject
+writes as on reads. The name pattern and type list narrow reads the same way
+they narrow writes, so a token scoped to `*.dyn` never reads `www`: a record
+outside the grant reads as 404 and a write to it returns 403. `--read-only`
+drops the write rights and keeps the reads.
+
+A view the zone is rebuilt from — its export, a stored version, a version
+diff — needs a grant restricting neither name nor type: half a zone re-applied
+deletes what it left out.
+
+Creating, updating, or deleting zones — and managing tokens, keys, or grants
+over HTTP — always requires a global token. The CLI talks to the daemon over its local socket and is not subject
 to token scoping.
 
 See [HTTP API](../http-api/index.md#authentication) for how to present a token

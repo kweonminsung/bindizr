@@ -41,18 +41,10 @@ impl RecordService {
         RepositoryService::count_records_by_filter(RecordFilter::default()).await
     }
 
-    /// Count the records visible to `caller`.
-    pub async fn count(caller: &Caller) -> Result<u64, ServiceError> {
-        RepositoryService::count_records_by_filter(RecordFilter {
-            scope_token_id: caller.scope_token_id(),
-            ..RecordFilter::default()
-        })
-        .await
-    }
-
     /// List records with their zone name matching `filter`, restricted to the
-    /// caller's visible zones in SQL so pagination stays database-side. A
-    /// filter naming an unknown or invisible zone reads as an empty page.
+    /// caller's visible zones in SQL so pagination stays database-side, then
+    /// to the names and types its grants carry. A filter naming an unknown or
+    /// invisible zone reads as an empty page.
     /// With `signed`, the derived DNSSEC plane pages after the user records;
     /// value, search, and priority filters keep the listing user-plane only.
     pub async fn list_with_zone_by_filter(
@@ -157,7 +149,14 @@ impl RecordService {
             );
         }
 
-        let items = items.iter().map(ListedRecord::to_response).collect();
+        // The SQL narrows to the zones the caller sees; a grant narrowed
+        // further is applied here, where names compare as labels. The page
+        // shortens, the total does not.
+        let items = items
+            .iter()
+            .filter(|record| record.visible_to(caller))
+            .map(ListedRecord::to_response)
+            .collect();
         Ok(PaginatedResponse::from_page(
             items,
             limit,
@@ -166,8 +165,8 @@ impl RecordService {
         ))
     }
 
-    /// Fetch a record with its zone name by id. A record in a zone the caller
-    /// cannot see reads as `NotFound`, so ids cannot be probed.
+    /// Fetch a record with its zone name by id. A record the caller's grants
+    /// do not reach reads as `NotFound`, so ids cannot be probed.
     pub async fn get_with_zone(
         caller: &Caller,
         record_id: i32,
@@ -181,7 +180,7 @@ impl RecordService {
             }
         };
 
-        if !caller.zone_visible(record.zone_id) {
+        if !caller.record_visible(record.zone_id, &record.name, Some(&record.record_type)) {
             return Err(ServiceError::record_not_found(record_id));
         }
         Ok(record)

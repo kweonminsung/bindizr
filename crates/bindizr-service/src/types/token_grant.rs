@@ -19,6 +19,15 @@ pub struct CreateTokenGrantRequest {
     /// `*` or a comma-separated list of record types. Defaults to `*`.
     #[schema(example = "A,AAAA,TXT")]
     pub record_types: Option<String>,
+    /// Whether the grant carries write rights. A read-only grant still makes
+    /// the zone visible, narrowed the same way. Defaults to true.
+    #[serde(default = "default_can_write")]
+    #[schema(example = true)]
+    pub can_write: bool,
+}
+
+fn default_can_write() -> bool {
+    true
 }
 
 /// API representation of a token grant.
@@ -34,6 +43,8 @@ pub struct GetTokenGrantResponse {
     pub record_name_pattern: String,
     #[schema(example = "A,AAAA,TXT")]
     pub record_types: String,
+    #[schema(example = true)]
+    pub can_write: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -45,6 +56,7 @@ impl GetTokenGrantResponse {
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.grant.record_name_pattern.clone(),
             record_types: grant.grant.record_types.clone(),
+            can_write: grant.grant.can_write,
             created_at: grant.grant.created_at,
         }
     }

@@ -285,6 +285,7 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
             api_token_id: 7,
             record_name_pattern: "*".to_string(),
             record_types: "*".to_string(),
+            can_write: true,
             created_at: Utc::now(),
         }]
         .into(),

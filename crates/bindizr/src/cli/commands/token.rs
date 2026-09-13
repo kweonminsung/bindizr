@@ -68,6 +68,9 @@ pub(crate) enum TokenCommand {
         /// Allowed record types: '*' or a comma-separated list, e.g. 'A,AAAA,TXT' (default: '*')
         #[arg(long, value_name = "TYPES")]
         types: Option<String>,
+        /// Grant read access only; the zone stays visible, narrowed the same way
+        #[arg(long)]
+        read_only: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -147,6 +150,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             zone,
             pattern,
             types,
+            read_only,
             output,
         } => {
             let res = client
@@ -158,6 +162,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                             zone_name: zone,
                             record_name_pattern: pattern,
                             record_types: types,
+                            can_write: !read_only,
                         },
                     },
                 )

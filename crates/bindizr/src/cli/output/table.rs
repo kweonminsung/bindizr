@@ -472,6 +472,8 @@ pub(crate) struct TokenGrantRow {
     pub(crate) record_name_pattern: String,
     #[tabled(rename = "RECORD-TYPES")]
     pub(crate) record_types: String,
+    #[tabled(rename = "ACCESS")]
+    pub(crate) access: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
@@ -484,6 +486,12 @@ impl From<&GetTokenGrantResponse> for TokenGrantRow {
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.record_name_pattern.clone(),
             record_types: grant.record_types.clone(),
+            access: if grant.can_write {
+                "read-write"
+            } else {
+                "read-only"
+            }
+            .to_string(),
             created_at: grant.created_at.to_rfc3339(),
         }
     }

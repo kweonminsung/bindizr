@@ -76,6 +76,7 @@ pub(crate) async fn create_token_grant(
         &params.request.zone_name,
         params.request.record_name_pattern.as_deref(),
         params.request.record_types.as_deref(),
+        params.request.can_write,
     )
     .await?;
 

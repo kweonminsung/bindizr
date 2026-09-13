@@ -26,14 +26,15 @@ impl TokenGrantRepository for MySqlTokenGrantRepository {
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO token_grants (zone_id, api_token_id, record_name_pattern, record_types, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO token_grants (zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(grant.zone_id)
         .bind(grant.api_token_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
+        .bind(grant.can_write)
         .bind(now)
         .execute(&mut *conn)
         .await?;
@@ -48,7 +49,7 @@ impl TokenGrantRepository for MySqlTokenGrantRepository {
         let mut conn = self.pool.acquire().await?;
 
         let grant = sqlx::query_as::<_, TokenGrant>(
-            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM token_grants WHERE id = ?",
+            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at FROM token_grants WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -61,7 +62,7 @@ impl TokenGrantRepository for MySqlTokenGrantRepository {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TokenGrant>(
-            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM token_grants WHERE zone_id = ? ORDER BY id",
+            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at FROM token_grants WHERE zone_id = ? ORDER BY id",
         )
         .bind(zone_id)
         .fetch_all(&mut *conn)
@@ -80,7 +81,7 @@ impl TokenGrantRepository for MySqlTokenGrantRepository {
         let mysql_tx = tx.as_mysql()?;
 
         let grants = sqlx::query_as::<_, TokenGrant>(AssertSqlSafe(
-            format!("SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM token_grants WHERE zone_id = ? AND api_token_id = ? ORDER BY id{}",
+            format!("SELECT id, zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at FROM token_grants WHERE zone_id = ? AND api_token_id = ? ORDER BY id{}",
             lock_clause(lock_level),
         )))
         .bind(zone_id)
@@ -95,7 +96,7 @@ impl TokenGrantRepository for MySqlTokenGrantRepository {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TokenGrant>(
-            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM token_grants WHERE api_token_id = ? ORDER BY id",
+            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at FROM token_grants WHERE api_token_id = ? ORDER BY id",
         )
         .bind(api_token_id)
         .fetch_all(&mut *conn)

@@ -534,3 +534,142 @@ async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
         assert_eq!(body["error"], expected, "{body}");
     }
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_narrowed_grant_reads_only_what_it_may_write() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let zone_name = app.zone_name("example.com");
+    create_zone(&app, &zone_name).await;
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "host.dyn", "A", "192.0.2.1")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let granted_id = body["record"]["id"].as_i64().unwrap();
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "www", "A", "192.0.2.2")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let outside_id = body["record"]["id"].as_i64().unwrap();
+
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&[
+        "token",
+        "grant",
+        &scoped_name,
+        &zone_name,
+        "--pattern",
+        "*.dyn",
+    ])
+    .await;
+    app.set_auth_token(scoped_token);
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&limit=1000"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let listed_ids: Vec<i64> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_i64().unwrap())
+        .collect();
+    assert!(listed_ids.contains(&granted_id));
+    assert!(!listed_ids.contains(&outside_id));
+
+    let (status, _) = app
+        .request(Method::GET, &format!("/records/{granted_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = app
+        .request(Method::GET, &format!("/records/{outside_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A view the zone is rebuilt from cannot be handed over half-written.
+    let (status, _) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{zone_name}/versions/diff?from=1&to=2"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let zone_name = app.zone_name("example.com");
+    create_zone(&app, &zone_name).await;
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "app", "A", "192.0.2.1")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let record_id = body["record"]["id"].as_i64().unwrap();
+
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&["token", "grant", &scoped_name, &zone_name, "--read-only"])
+        .await;
+    app.set_auth_token(scoped_token);
+
+    let (status, _) = app
+        .request(Method::GET, &format!("/records/{record_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "other", "A", "192.0.2.2")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = app
+        .request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

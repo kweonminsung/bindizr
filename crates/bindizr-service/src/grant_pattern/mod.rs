@@ -6,7 +6,7 @@ use bindizr_core::dns::name::{OwnerName, decode_name_labels, join_labels};
 use crate::{error::ServiceError, model::record::RecordType};
 
 /// Pattern/type values granting unrestricted rights.
-const MATCH_ANY: &str = "*";
+pub(crate) const MATCH_ANY: &str = "*";
 
 /// Match a relative owner name (`@`, `www`, `a.b`, ...) against a grant
 /// pattern: `*` (any name), `@` (apex only), `*.sub` (sub and everything under

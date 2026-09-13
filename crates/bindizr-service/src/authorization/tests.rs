@@ -34,6 +34,7 @@ fn grant(pattern: &str, types: &str) -> TokenGrant {
         api_token_id: 3,
         record_name_pattern: pattern.to_string(),
         record_types: types.to_string(),
+        can_write: true,
         created_at: Utc::now(),
     }
 }
@@ -120,4 +121,75 @@ fn authorize_rejects_when_any_single_write_is_denied() {
     .unwrap_err();
     assert_eq!(err.code, ErrorCode::Forbidden);
     assert!(err.message.contains("other"));
+}
+
+#[test]
+fn authorize_rejects_a_read_only_grant() {
+    let mut read_only = grant("*", "*");
+    read_only.can_write = false;
+
+    let err = authorize(&[read_only], &[write("app", Some(&RecordType::A))]).unwrap_err();
+    assert_eq!(err.code, ErrorCode::Forbidden);
+}
+
+fn token(grants: Vec<TokenGrant>) -> Caller {
+    Caller::Token {
+        id: 3,
+        grants: Arc::from(grants),
+    }
+}
+
+fn visible(caller: &Caller, name: &str, record_type: Option<&RecordType>) -> bool {
+    caller.record_visible(1, &OwnerName::from_row(name), record_type)
+}
+
+#[test]
+fn record_visible_narrows_reads_the_way_writes_are_narrowed() {
+    let caller = token(vec![grant("*.dyn", "A,TXT")]);
+
+    assert!(visible(&caller, "host.dyn", Some(&RecordType::A)));
+    assert!(!visible(&caller, "www", Some(&RecordType::A)));
+    assert!(!visible(&caller, "host.dyn", Some(&RecordType::CNAME)));
+
+    // The derived DNSSEC plane carries no type of the grant's vocabulary, so
+    // it reaches only a grant restricting neither name nor type.
+    assert!(!visible(&caller, "host.dyn", None));
+    assert!(visible(&token(vec![grant("*", "*")]), "host.dyn", None));
+}
+
+#[test]
+fn record_visible_survives_a_read_only_grant() {
+    let mut read_only = grant("*", "*");
+    read_only.can_write = false;
+
+    assert!(visible(
+        &token(vec![read_only]),
+        "app",
+        Some(&RecordType::A)
+    ));
+}
+
+#[test]
+fn ensure_zone_unrestricted_rejects_a_scoped_grant() {
+    assert!(
+        Caller::Global
+            .ensure_zone_unrestricted(&test_zone())
+            .is_ok()
+    );
+    assert!(
+        token(vec![grant("*", "*")])
+            .ensure_zone_unrestricted(&test_zone())
+            .is_ok()
+    );
+
+    let err = token(vec![grant("*.dyn", "*")])
+        .ensure_zone_unrestricted(&test_zone())
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::Forbidden);
+
+    // A zone with no grant at all keeps reading as absent.
+    let err = token(vec![])
+        .ensure_zone_unrestricted(&test_zone())
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::ZoneNotFound);
 }

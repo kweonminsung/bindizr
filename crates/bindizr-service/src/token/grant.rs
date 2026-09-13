@@ -33,6 +33,7 @@ impl TokenGrantService {
         zone_name: &str,
         record_name_pattern: Option<&str>,
         record_types: Option<&str>,
+        can_write: bool,
     ) -> Result<TokenGrantWithNames, ServiceError> {
         caller.require_global("manage token grants")?;
 
@@ -54,6 +55,7 @@ impl TokenGrantService {
             api_token_id: token.id,
             record_name_pattern,
             record_types,
+            can_write,
             created_at: Utc::now(),
         })
         .await?;

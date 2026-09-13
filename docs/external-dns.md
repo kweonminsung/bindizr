@@ -39,8 +39,9 @@ global token covers every zone. See [API Tokens](cli/tokens.md).
 
 Grant whole zones, as above. The domain filter only carries zone names, so
 a grant restricted by record name pattern or type is invisible to
-ExternalDNS and makes it plan changes bindizr will reject — and TXT must
-stay granted or ownership records (`--registry=txt`) fail.
+ExternalDNS: it also hides the records outside it, so ExternalDNS plans
+against half a zone and bindizr rejects what it plans — and TXT must stay
+granted or ownership records (`--registry=txt`) fail.
 
 **3. Add the adapter** as a second container in the external-dns Deployment.
 The default webhook URL (`http://localhost:8888`) already points at it:

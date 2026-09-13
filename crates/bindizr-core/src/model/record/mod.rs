@@ -34,9 +34,9 @@ pub struct Record {
 pub struct RecordWithZone {
     pub(crate) id: i32,
     #[sqlx(try_from = "String")]
-    pub(crate) name: OwnerName,
+    pub name: OwnerName,
     #[sqlx(try_from = "String")]
-    pub(crate) record_type: RecordType,
+    pub record_type: RecordType,
     pub(crate) value: String,
     pub(crate) ttl: i32,
     pub(crate) priority: Option<i32>,

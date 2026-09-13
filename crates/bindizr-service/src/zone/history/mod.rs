@@ -270,6 +270,7 @@ impl ZoneService {
             let zone =
                 ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
                     .await?;
+            caller.ensure_zone_unrestricted(&zone)?;
             let version = RepositoryService::get_zone_version_by_serial_tx(
                 &mut tx,
                 zone.id,
@@ -313,6 +314,7 @@ impl ZoneService {
             let zone =
                 ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
                     .await?;
+            caller.ensure_zone_unrestricted(&zone)?;
             let to_serial = to_serial.unwrap_or(zone.serial);
 
             validate_serial_diffable(&mut tx, &zone, from_serial).await?;
