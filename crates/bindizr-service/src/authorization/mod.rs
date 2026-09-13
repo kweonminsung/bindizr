@@ -112,6 +112,14 @@ impl Caller {
         }
     }
 
+    /// The grants that bound the caller, or `None` when nothing does.
+    pub(crate) fn grants(&self) -> Option<&[TokenGrant]> {
+        match self {
+            Caller::Global | Caller::GlobalToken { .. } => None,
+            Caller::Token { grants, .. } => Some(grants),
+        }
+    }
+
     /// Whether the caller may see `zone_id`.
     pub(crate) fn zone_visible(&self, zone_id: i32) -> bool {
         match self {

@@ -1,7 +1,7 @@
 //! Record-name-pattern and record-type matching, shared by TSIG grants
 //! (nsupdate) and token grants (HTTP API).
 
-use bindizr_core::dns::name::{OwnerName, decode_name_labels, join_labels};
+use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, join_labels};
 
 use crate::{error::ServiceError, model::record::RecordType};
 
@@ -26,6 +26,17 @@ pub(crate) fn matches_name(pattern: &str, name: &OwnerName) -> bool {
     }
 
     *name == OwnerName::from_row(pattern)
+}
+
+/// The absolute name a pattern covers, for a filter that matches a name and
+/// everything under it — all an ExternalDNS domain filter can say. `@` and an
+/// exact name have no such spelling, so they widen to what contains them.
+pub(crate) fn pattern_domain(pattern: &str, zone_name: &ZoneName) -> String {
+    if pattern == MATCH_ANY || pattern == OwnerName::APEX {
+        return zone_name.to_fqdn();
+    }
+    let name = pattern.strip_prefix("*.").unwrap_or(pattern);
+    OwnerName::from_row(name).to_fqdn(zone_name)
 }
 
 pub(crate) fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {

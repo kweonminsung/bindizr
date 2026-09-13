@@ -384,6 +384,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /external-dns/domains:
+    get:
+      tags:
+      - ExternalDNS
+      summary: List the names ExternalDNS may manage
+      description: 'The ExternalDNS domain filter the calling token''s grants come to: every zone name for a global token, otherwise one name per writable grant — the zone where the grant covers every name, the granted subtree where it does not. Each entry covers itself and everything under it, so a grant narrowed by record type or to one exact name reads wider here than it is.'
+      operationId: list_external_dns_domains
+      responses:
+        '200':
+          description: Manageable names
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalDnsDomainsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /external-dns/records:
     get:
       tags:
@@ -398,32 +424,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExternalDnsRecordsResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /external-dns/zones:
-    get:
-      tags:
-      - ExternalDNS
-      summary: List the zones ExternalDNS may manage
-      description: 'Zones the calling token may manage: every zone for a global token, otherwise the zones its grants cover.'
-      operationId: list_external_dns_zones
-      responses:
-        '200':
-          description: Allowed zones
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExternalDnsZonesResponse'
         '401':
           description: Unauthorized
           content:
@@ -3870,6 +3870,20 @@ components:
           description: Counted one per value removed, not per name and type.
           example: 1
           minimum: 0
+    ExternalDnsDomainsResponse:
+      type: object
+      description: |-
+        The names the ExternalDNS caller may manage under its grants, each
+        covering itself and everything under it.
+      required:
+      - domains
+      properties:
+        domains:
+          type: array
+          items:
+            type: string
+          example:
+          - example.com
     ExternalDnsRecord:
       type: object
       description: |-
@@ -3922,18 +3936,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ExternalDnsRecord'
-    ExternalDnsZonesResponse:
-      type: object
-      description: Zones the ExternalDNS caller may manage under its grants.
-      required:
-      - zones
-      properties:
-        zones:
-          type: array
-          items:
-            type: string
-          example:
-          - example.com
     GetDnssecPolicyResponse:
       type: object
       description: API representation of a DNSSEC policy.

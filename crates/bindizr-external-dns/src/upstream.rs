@@ -46,13 +46,13 @@ impl UpstreamClient {
         })
     }
 
-    pub(crate) async fn list_zones(&self) -> Result<Vec<String>, UpstreamError> {
+    pub(crate) async fn list_domains(&self) -> Result<Vec<String>, UpstreamError> {
         #[derive(Deserialize)]
-        struct ZonesBody {
-            zones: Vec<String>,
+        struct DomainsBody {
+            domains: Vec<String>,
         }
-        let body: ZonesBody = self.fetch_json("/external-dns/zones").await?;
-        Ok(body.zones)
+        let body: DomainsBody = self.fetch_json("/external-dns/domains").await?;
+        Ok(body.domains)
     }
 
     pub(crate) async fn list_records(&self) -> Result<Vec<BindizrRecord>, UpstreamError> {

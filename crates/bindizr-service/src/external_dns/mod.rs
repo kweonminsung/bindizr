@@ -9,13 +9,14 @@ mod policy;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bindizr_db::repository::{RecordFilter, ZoneFilter};
 
 use crate::{
     authorization::Caller,
     error::ServiceError,
+    grant_pattern::pattern_domain,
     repository::RepositoryService,
     types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecord},
 };
@@ -44,17 +45,40 @@ impl ExternalDnsService {
         Ok(ExternalDnsAdjustResponse { records })
     }
 
-    /// Names of the zones the caller may manage.
-    pub async fn list_zone_names(caller: &Caller) -> Result<Vec<String>, ServiceError> {
+    /// The names the caller may manage, as an ExternalDNS domain filter spells
+    /// them: a name, and everything under it. A grant narrowed to a subtree
+    /// contributes that subtree, not its zone, so ExternalDNS plans inside what
+    /// the apply accepts rather than failing the whole sync on the first record
+    /// outside it.
+    pub async fn list_managed_domains(caller: &Caller) -> Result<Vec<String>, ServiceError> {
         let zones = RepositoryService::list_zones_by_filter(ZoneFilter {
             scope_token_id: caller.scope_token_id(),
             ..ZoneFilter::default()
         })
         .await?;
-        Ok(zones
-            .into_iter()
-            .map(|zone| zone.name.to_string())
-            .collect())
+
+        let Some(grants) = caller.grants() else {
+            return Ok(zones
+                .into_iter()
+                .map(|zone| zone.name.to_string())
+                .collect());
+        };
+
+        // Deduplicated and ordered: two grants can name one domain. A
+        // read-only grant leaves ExternalDNS nothing to do, so it stays out.
+        let mut domains = BTreeSet::new();
+        for zone in &zones {
+            for grant in grants
+                .iter()
+                .filter(|grant| grant.zone_id == zone.id && grant.can_write)
+            {
+                domains.insert(policy::normalize_lookup_name(&pattern_domain(
+                    &grant.record_name_pattern,
+                    &zone.name,
+                ))?);
+            }
+        }
+        Ok(domains.into_iter().collect())
     }
 
     /// Records of every zone the caller may manage, restricted to the

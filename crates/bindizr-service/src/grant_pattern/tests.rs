@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 
 use super::*;
 use crate::error::ErrorCode;
@@ -107,4 +107,18 @@ fn an_escaped_dot_is_label_data_not_a_root_marker() {
         normalize_pattern(Some("sub.")).unwrap_err().code,
         ErrorCode::InvalidInput
     );
+}
+
+#[test]
+fn a_pattern_becomes_the_name_a_domain_filter_can_spell() {
+    let zone = ZoneName::parse("example.com").unwrap();
+
+    assert_eq!(pattern_domain("*", &zone), "example.com.");
+    assert_eq!(pattern_domain("*.k8s", &zone), "k8s.example.com.");
+    assert_eq!(pattern_domain("a.b", &zone), "a.b.example.com.");
+
+    // Both widen: a filter entry always carries everything under it, so the
+    // apex reads as the zone and an exact name as its subtree.
+    assert_eq!(pattern_domain("@", &zone), "example.com.");
+    assert_eq!(pattern_domain("www", &zone), "www.example.com.");
 }

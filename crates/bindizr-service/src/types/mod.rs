@@ -31,8 +31,8 @@ pub use dnssec_policy::{
 };
 pub use external_dns::{
     ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsChangesRequest,
-    ExternalDnsChangesResponse, ExternalDnsRecord, ExternalDnsRecordUpdate,
-    ExternalDnsRecordsResponse, ExternalDnsZonesResponse,
+    ExternalDnsChangesResponse, ExternalDnsDomainsResponse, ExternalDnsRecord,
+    ExternalDnsRecordUpdate, ExternalDnsRecordsResponse,
 };
 pub use import::{ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse};
 pub use pagination::{DEFAULT_PAGE_LIMIT, PageFilter, PaginatedResponse, Pagination};

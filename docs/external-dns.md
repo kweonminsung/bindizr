@@ -37,11 +37,14 @@ $ kubectl -n external-dns create secret generic bindizr-external-dns \
 The token's grants become the ExternalDNS domain filter automatically; a
 global token covers every zone. See [API Tokens](cli/tokens.md).
 
-Grant whole zones, as above. The domain filter only carries zone names, so
-a grant restricted by record name pattern or type is invisible to
-ExternalDNS: it also hides the records outside it, so ExternalDNS plans
-against half a zone and bindizr rejects what it plans — and TXT must stay
-granted or ownership records (`--registry=txt`) fail.
+A grant narrowed to a subtree (`--pattern '*.k8s'`) filters to that subtree
+rather than its zone, so ExternalDNS plans inside it. A filter entry always
+covers the name and everything under it, which is all ExternalDNS can express:
+a grant narrowed by record type, to the apex, or to one exact name reads wider
+there than it is, and ExternalDNS will plan changes bindizr rejects. Keep the
+type list covering what your sources produce, TXT included, or ownership
+records (`--registry=txt`) fail. A read-only grant is left out of the filter
+entirely.
 
 **3. Add the adapter** as a second container in the external-dns Deployment.
 The default webhook URL (`http://localhost:8888`) already points at it:
@@ -129,9 +132,9 @@ recommended default.
 | Symptom | Cause / fix |
 | --- | --- |
 | `401` in the adapter log | Token missing, expired, or wrong |
-| `403` every sync; allowed changes never apply | The grant is restricted by name pattern or type, which ExternalDNS cannot see, and a sync is all-or-nothing. Grant the whole zone (the `token grant` default), or narrow external-dns's `--domain-filter` to the granted names |
+| `403` every sync; allowed changes never apply | The grant is restricted by record type, to the apex, or to one exact name — narrowings the domain filter cannot express — and a sync is all-or-nothing. Widen the grant, or narrow external-dns's own `--domain-filter` to what it covers |
 | `404 No zone is authoritative for '<name>'` | Either no zone covers the name, or the zone that does is not granted to the token; the two read alike so a token cannot probe for zones. Create the zone if it is missing (ExternalDNS never creates zones), otherwise grant it: `bindizr token grant <TOKEN_NAME> <zone>` |
 | `502` from the adapter | Bindizr unreachable or 5xx; external-dns retries automatically |
-| `503 no manageable zones` at startup | The token has no zone grants (or no zones exist yet). Grant one: `bindizr token grant <TOKEN_NAME> <zone>`; negotiation recovers on its own |
+| `503 no manageable names` at startup | The token has no writable zone grants (or no zones exist yet). Grant one: `bindizr token grant <TOKEN_NAME> <zone>`; negotiation recovers on its own |
 | `502` although the records were applied | With `notify_mode = "sync"`, NOTIFY retries to an unreachable secondary can outlast the adapter's timeout after the change already committed. Set `[dns] notify_mode = "async"` or raise `--timeout-secs`; the retried sync is a no-op |
 | external-dns exits over a content-type error | The webhook URL does not point at the adapter |

@@ -42,7 +42,9 @@ fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
 async fn external_dns_routes_are_not_registered_when_disabled() {
     let app = TestApp::start_local().await;
 
-    let (status, _) = app.request(Method::GET, "/external-dns/zones", None).await;
+    let (status, _) = app
+        .request(Method::GET, "/external-dns/domains", None)
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (status, _) = app
@@ -53,7 +55,7 @@ async fn external_dns_routes_are_not_registered_when_disabled() {
 
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn external_dns_zone_listing_reflects_token_grants() {
+async fn external_dns_domain_listing_reflects_token_grants() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         require_authentication: true,
         external_dns_enabled: true,
@@ -72,17 +74,82 @@ async fn external_dns_zone_listing_reflects_token_grants() {
     grant_zone(&app, &granted_zone, &scoped_name).await;
 
     // A global token sees every zone.
-    let (status, body) = app.request(Method::GET, "/external-dns/zones", None).await;
+    let (status, body) = app
+        .request(Method::GET, "/external-dns/domains", None)
+        .await;
     assert_eq!(status, StatusCode::OK);
-    let zones = body["zones"].as_array().expect("zones array");
-    assert!(zones.contains(&json!(granted_zone)));
-    assert!(zones.contains(&json!(other_zone)));
+    let domains = body["domains"].as_array().expect("domains array");
+    assert!(domains.contains(&json!(granted_zone)));
+    assert!(domains.contains(&json!(other_zone)));
 
     // A scoped token sees only its grants (this feeds the DomainFilter).
     app.set_auth_token(scoped_token);
-    let (status, body) = app.request(Method::GET, "/external-dns/zones", None).await;
+    let (status, body) = app
+        .request(Method::GET, "/external-dns/domains", None)
+        .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["zones"], json!([granted_zone]));
+    assert_eq!(body["domains"], json!([granted_zone]));
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let zone_name = app.zone_name("narrowed.com");
+    create_zone(&app, &zone_name).await;
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&[
+        "token",
+        "grant",
+        &scoped_name,
+        &zone_name,
+        "--pattern",
+        "*.k8s",
+    ])
+    .await;
+
+    // The filter carries the granted subtree, not the zone: ExternalDNS plans
+    // inside what the apply accepts instead of failing the whole sync on the
+    // first record outside the grant.
+    app.set_auth_token(scoped_token);
+    let (status, body) = app
+        .request(Method::GET, "/external-dns/domains", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["domains"],
+        json!([format!("k8s.{zone_name}")]),
+        "{body}"
+    );
+
+    // A read-only grant leaves ExternalDNS nothing to write, so it stays out.
+    app.run_cli_success(&[
+        "token",
+        "grant",
+        &scoped_name,
+        &zone_name,
+        "--pattern",
+        "*.readonly",
+        "--read-only",
+    ])
+    .await;
+    let (status, body) = app
+        .request(Method::GET, "/external-dns/domains", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["domains"],
+        json!([format!("k8s.{zone_name}")]),
+        "{body}"
+    );
 }
 
 #[tokio::test]
@@ -355,7 +422,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
 
     // Without a token, the provider API itself rejects the request.
     let unauthenticated = reqwest::Client::new()
-        .get(format!("{}/external-dns/zones", app.base_url()))
+        .get(format!("{}/external-dns/domains", app.base_url()))
         .send()
         .await
         .unwrap();
