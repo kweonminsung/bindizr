@@ -87,7 +87,7 @@ impl ZoneService {
                 .rname
                 .clone()
                 .unwrap_or_else(|| existing.rname.clone()),
-            default_ttl: request.default_ttl.unwrap_or(existing.default_ttl),
+            default_ttl: Some(request.default_ttl.unwrap_or(existing.default_ttl)),
             serial: None,
             // Omitted timers fall back to the existing zone in normalize_soa_timers.
             refresh: request.refresh,

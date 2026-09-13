@@ -77,6 +77,15 @@ bindizr:
       add:
         - NET_BIND_SERVICE
 
+  # Applied when a zone-creation request omits the field; afterwards the
+  # values are the zone's own columns.
+  zoneDefaults:
+    ttl: 3600
+    refresh: 300
+    retry: 60
+    expire: 3600000
+    minimumTtl: 86400
+
   # Readiness runs /health, a database round trip, so a pod that cannot reach
   # the database stops taking traffic. Liveness deliberately does not: a
   # restart cannot fix a database outage, only spread it into a restart loop.

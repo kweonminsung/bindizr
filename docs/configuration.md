@@ -56,6 +56,13 @@ notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response
 nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from this host only (TSIG keys/grants are managed via CLI or HTTP API)
 journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
 
+[dns.zone_defaults]             # Applied when a zone-creation request omits the field
+ttl = 3600                    # Default record TTL (seconds)
+refresh = 300                 # SOA refresh; NOTIFY drives propagation, so this only bounds a lost one
+retry = 60                    # SOA retry
+expire = 3600000              # SOA expire
+minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
+
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace
 ```
@@ -93,6 +100,11 @@ the API or CLI — see [DNSSEC](dnssec.md).
 | `BINDIZR_ZONE_CACHE_MAX_RECORDS` | `dns.zone_cache_max_records` | see [Sizing the zone cache](#sizing-the-zone-cache) |
 | `BINDIZR_NSUPDATE_ALLOW_UNSIGNED` | `dns.nsupdate_allow_unsigned` | |
 | `BINDIZR_JOURNAL_RETENTION_DAYS` | `dns.journal_retention_days` | `0` keeps history forever |
+| `BINDIZR_ZONE_DEFAULT_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
+| `BINDIZR_ZONE_REFRESH` | `dns.zone_defaults.refresh` | |
+| `BINDIZR_ZONE_RETRY` | `dns.zone_defaults.retry` | |
+| `BINDIZR_ZONE_EXPIRE` | `dns.zone_defaults.expire` | |
+| `BINDIZR_ZONE_MINIMUM_TTL` | `dns.zone_defaults.minimum_ttl` | |
 | `BINDIZR_LOG_LEVEL` | `logging.log_level` | |
 
 `BINDIZR_DATABASE_URL` is a convenience for container deployments where the URL

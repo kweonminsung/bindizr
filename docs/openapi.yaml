@@ -3271,11 +3271,15 @@ components:
       - name
       - mname
       - rname
-      - default_ttl
       properties:
         default_ttl:
-          type: integer
+          type:
+          - integer
+          - 'null'
           format: int32
+          description: |-
+            Record TTL the zone hands out when a record names none; defaults to
+            `dns.zone_defaults.ttl`.
           example: 3600
         expire:
           type:

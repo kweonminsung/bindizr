@@ -1,6 +1,9 @@
-use bindizr_core::dns::{
-    name::{ZoneName, has_whitespace_or_control},
-    record::SoaMailbox,
+use bindizr_core::{
+    config::bindizr_config,
+    dns::{
+        name::{ZoneName, has_whitespace_or_control},
+        record::SoaMailbox,
+    },
 };
 
 use crate::{error::ServiceError, types::CreateZoneRequest};
@@ -23,7 +26,11 @@ pub(crate) fn normalize_create_zone_request(
     let zone_name = normalize_zone_name(&request.name)?;
     let mname = normalize_domain_name(&request.mname, "mname")?.to_string();
     let rname = normalize_email(&request.rname)?;
-    let ttl = validate_ttl(request.default_ttl)?;
+    let ttl = validate_ttl(
+        request
+            .default_ttl
+            .unwrap_or(bindizr_config().dns.zone_defaults.ttl),
+    )?;
 
     // `zone_name` and `mname` are wire-safe after `normalize_domain_name`
     // (plain ASCII labels, each <= 63 bytes); the derived SOA RNAME's shifted

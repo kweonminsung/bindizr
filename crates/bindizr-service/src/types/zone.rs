@@ -57,8 +57,10 @@ pub struct CreateZoneRequest {
     pub mname: String,
     #[schema(example = "admin@example.com")]
     pub rname: String,
+    /// Record TTL the zone hands out when a record names none; defaults to
+    /// `dns.zone_defaults.ttl`.
     #[schema(example = 3600)]
-    pub default_ttl: i32,
+    pub default_ttl: Option<i32>,
     /// Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
     #[schema(example = 42)]
     pub serial: Option<i32>,

@@ -43,9 +43,9 @@ pub(crate) enum ZoneCommand {
         /// SOA RNAME, as an email address
         #[arg(long)]
         rname: String,
-        /// Default record TTL (seconds)
+        /// Default record TTL (seconds; defaults to dns.zone_defaults.ttl)
         #[arg(long)]
-        default_ttl: i32,
+        default_ttl: Option<i32>,
         /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
         serial: Option<i32>,

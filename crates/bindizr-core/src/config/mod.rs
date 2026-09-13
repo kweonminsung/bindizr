@@ -144,6 +144,59 @@ pub struct DnsConfig {
     /// for pruned serials fall back to AXFR; rollback reaches only kept serials.
     #[serde(default = "default_journal_retention_days")]
     pub journal_retention_days: u32,
+    #[serde(default)]
+    pub zone_defaults: ZoneDefaultsConfig,
+}
+
+/// What a zone takes when its creation request leaves a field out. Only the
+/// creation reads these: afterwards the values are the zone's own columns.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ZoneDefaultsConfig {
+    #[serde(default = "default_zone_ttl")]
+    pub ttl: i32,
+    /// Bindizr drives propagation with NOTIFY, so refresh and retry stay
+    /// short: they bound how long a secondary stays stale when a NOTIFY is
+    /// lost, not the happy-path latency.
+    #[serde(default = "default_zone_refresh")]
+    pub refresh: i32,
+    #[serde(default = "default_zone_retry")]
+    pub retry: i32,
+    #[serde(default = "default_zone_expire")]
+    pub expire: i32,
+    #[serde(default = "default_zone_minimum_ttl")]
+    pub minimum_ttl: i32,
+}
+
+impl Default for ZoneDefaultsConfig {
+    fn default() -> Self {
+        Self {
+            ttl: default_zone_ttl(),
+            refresh: default_zone_refresh(),
+            retry: default_zone_retry(),
+            expire: default_zone_expire(),
+            minimum_ttl: default_zone_minimum_ttl(),
+        }
+    }
+}
+
+fn default_zone_ttl() -> i32 {
+    3_600
+}
+
+fn default_zone_refresh() -> i32 {
+    300
+}
+
+fn default_zone_retry() -> i32 {
+    60
+}
+
+fn default_zone_expire() -> i32 {
+    3_600_000
+}
+
+fn default_zone_minimum_ttl() -> i32 {
+    86_400
 }
 
 fn default_journal_retention_days() -> u32 {
@@ -407,6 +460,22 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_JOURNAL_RETENTION_DAYS") {
             self.dns.journal_retention_days =
                 parse_env_value("BINDIZR_JOURNAL_RETENTION_DAYS", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_ZONE_DEFAULT_TTL") {
+            self.dns.zone_defaults.ttl = parse_env_value("BINDIZR_ZONE_DEFAULT_TTL", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_ZONE_REFRESH") {
+            self.dns.zone_defaults.refresh = parse_env_value("BINDIZR_ZONE_REFRESH", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_ZONE_RETRY") {
+            self.dns.zone_defaults.retry = parse_env_value("BINDIZR_ZONE_RETRY", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_ZONE_EXPIRE") {
+            self.dns.zone_defaults.expire = parse_env_value("BINDIZR_ZONE_EXPIRE", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_ZONE_MINIMUM_TTL") {
+            self.dns.zone_defaults.minimum_ttl =
+                parse_env_value("BINDIZR_ZONE_MINIMUM_TTL", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
             self.logging.log_level = parse_env_value("BINDIZR_LOG_LEVEL", &value)?;
