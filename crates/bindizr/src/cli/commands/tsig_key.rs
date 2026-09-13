@@ -1,7 +1,7 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
-    CreateTsigGrantRequest, CreateTsigKeyRequest, TsigGrantListResponse, TsigGrantResponse,
-    TsigKeyListResponse, TsigKeyResponse,
+    CreateTsigGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
+    PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
 };
 use clap::Subcommand;
 
@@ -144,9 +144,13 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
 
             log_debug!("TSIG key list result: {:?}", res);
 
-            print_response(&res.data, output, |keys: &TsigKeyListResponse| {
-                keys.tsig_keys.iter().map(TsigKeyRow::from).collect()
-            })?;
+            print_response(
+                &res.data,
+                output,
+                |keys: &PaginatedResponse<GetTsigKeyResponse>| {
+                    keys.items.iter().map(TsigKeyRow::from).collect()
+                },
+            )?;
         }
         TsigKeyCommand::Get { name, output } => {
             let res = client
@@ -199,9 +203,13 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                     TsigKeyNameParams { name },
                 )
                 .await?;
-            print_response(&res.data, output, |grants: &TsigGrantListResponse| {
-                grants.tsig_grants.iter().map(TsigGrantRow::from).collect()
-            })?;
+            print_response(
+                &res.data,
+                output,
+                |grants: &PaginatedResponse<GetTsigGrantResponse>| {
+                    grants.items.iter().map(TsigGrantRow::from).collect()
+                },
+            )?;
         }
         TsigKeyCommand::Revoke { name, id } => {
             let res = client

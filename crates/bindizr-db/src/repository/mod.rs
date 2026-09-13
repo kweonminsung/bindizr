@@ -10,6 +10,7 @@ mod tx;
 use async_trait::async_trait;
 use bindizr_core::dns::name::OwnerName;
 use chrono::{DateTime, Utc};
+pub use sql::{RecordSort, SortOrder, ZoneSort};
 pub use tx::{LockLevel, RepositoryTx, begin_read_tx, begin_tx};
 
 use super::model::{
@@ -37,11 +38,20 @@ pub struct ZoneFilter {
     pub min_default_ttl: Option<i32>,
     pub max_default_ttl: Option<i32>,
     pub serial: Option<i32>,
+    pub min_serial: Option<i32>,
+    pub max_serial: Option<i32>,
+    pub created_after: Option<DateTime<Utc>>,
+    pub created_before: Option<DateTime<Utc>>,
+    /// `Some(true)` keeps the zones signing under a policy, `Some(false)`
+    /// the rest.
+    pub signed: Option<bool>,
     pub search: Option<String>,
     /// Restrict to zones granted to this token, joined against
     /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
     pub scope_token_id: Option<i32>,
+    pub sort: ZoneSort,
+    pub order: SortOrder,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }
@@ -66,12 +76,14 @@ pub struct RecordFilter {
     /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
     pub scope_token_id: Option<i32>,
+    pub sort: RecordSort,
+    pub order: SortOrder,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }
 
-/// Value, search, and priority have no derived-plane meaning, so the derived
-/// filter has no slot for them.
+/// A derived row's rdata is wire bytes and its type a number, so only the
+/// name half of a search reaches it, and value and priority not at all.
 #[derive(Clone, Debug, Default)]
 pub struct DnssecRecordFilter {
     /// Matched as in `RecordFilter`.
@@ -82,6 +94,9 @@ pub struct DnssecRecordFilter {
     pub ttl: Option<i32>,
     pub min_ttl: Option<i32>,
     pub max_ttl: Option<i32>,
+    /// Partial match against the zone name, the owner name, and the FQDN —
+    /// the name forms a derived row shares with a user one.
+    pub search: Option<String>,
     /// Restrict to zones granted to this token, joined against
     /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.

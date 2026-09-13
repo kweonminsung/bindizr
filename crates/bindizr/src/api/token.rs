@@ -7,16 +7,16 @@ use axum::{
 use bindizr_service::{
     token::{TokenService, grant::TokenGrantService},
     types::{
-        CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, ErrorResponse,
-        GetTokenGrantResponse, GetTokenResponse, MessageResponse, TokenGrantListResponse,
-        TokenGrantResponse, TokenListResponse, TokenResponse,
+        CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, DEFAULT_PAGE_LIMIT,
+        ErrorResponse, GetTokenGrantResponse, GetTokenResponse, MessageResponse, PageFilter,
+        PaginatedResponse, TokenGrantResponse, TokenResponse,
     },
 };
 use serde::Deserialize;
 
 use crate::api::{
     AuthenticatedToken, GrantIdParam, RequestCaller, ZoneNameParam,
-    error::{ApiError, Path},
+    error::{ApiError, Path, Query},
     middleware::body_parser::JsonBody,
 };
 
@@ -53,9 +53,10 @@ pub(crate) struct TokenNameParam {
         path = "/tokens",
         tag = "Token",
         summary = "List all API tokens",
+        params(PageFilter),
         description = "Lists every API token without its secret; a secret is shown once, in the create response.",
         responses(
-            (status = 200, description = "All API tokens", body = TokenListResponse),
+            (status = 200, description = "All API tokens", body = PaginatedResponse<GetTokenResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -64,11 +65,10 @@ pub(crate) struct TokenNameParam {
 /// List all API tokens (secrets omitted).
 pub(crate) async fn list_tokens(
     RequestCaller(caller): RequestCaller,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let tokens = TokenService::list(&caller).await?;
-    let response = TokenListResponse {
-        tokens: tokens.iter().map(GetTokenResponse::from_token).collect(),
-    };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = TokenService::list(&caller, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -136,9 +136,10 @@ pub(crate) async fn get_self_token(
         path = "/tokens/self/grants",
         tag = "Token",
         summary = "List the grants of the API token making the request",
+        params(PageFilter),
         description = "The calling token's grants; any token may read its own. A global token holds none, so its list is empty. With authentication disabled no token is presented, so this answers 401.",
         responses(
-            (status = 200, description = "The calling token's grants", body = TokenGrantListResponse),
+            (status = 200, description = "The calling token's grants", body = PaginatedResponse<GetTokenGrantResponse>),
             (status = 401, description = "Unauthorized, or no token presented", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -146,14 +147,10 @@ pub(crate) async fn get_self_token(
 /// List the grants of the token the request authenticated with.
 pub(crate) async fn list_self_token_grants(
     AuthenticatedToken(token): AuthenticatedToken,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let grants = TokenGrantService::list_self(&token).await?;
-    let response = TokenGrantListResponse {
-        token_grants: grants
-            .iter()
-            .map(GetTokenGrantResponse::from_grant)
-            .collect(),
-    };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = TokenGrantService::list_self(&token, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -191,11 +188,12 @@ pub(crate) async fn delete_token(
         path = "/tokens/{name}/grants",
         tag = "Token",
         summary = "List an API token's grants",
+        params(PageFilter),
         params(
             ("name" = String, Path, description = "The name of the API token.")
         ),
         responses(
-            (status = 200, description = "The token's grants", body = TokenGrantListResponse),
+            (status = 200, description = "The token's grants", body = PaginatedResponse<GetTokenGrantResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Token not found", body = ErrorResponse),
@@ -206,14 +204,10 @@ pub(crate) async fn delete_token(
 pub(crate) async fn list_token_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TokenNameParam>,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let grants = TokenGrantService::list_by_token(&caller, &params.name).await?;
-    let response = TokenGrantListResponse {
-        token_grants: grants
-            .iter()
-            .map(GetTokenGrantResponse::from_grant)
-            .collect(),
-    };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = TokenGrantService::list_by_token(&caller, &params.name, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -292,11 +286,12 @@ pub(crate) async fn delete_token_grant(
         path = "/zones/{name}/token-grants",
         tag = "Token",
         summary = "List the API token grants that apply to a zone",
+        params(PageFilter),
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
         responses(
-            (status = 200, description = "Grants covering the zone", body = TokenGrantListResponse),
+            (status = 200, description = "Grants covering the zone", body = PaginatedResponse<GetTokenGrantResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
@@ -307,13 +302,9 @@ pub(crate) async fn delete_token_grant(
 pub(crate) async fn list_zone_token_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let grants = TokenGrantService::list_by_zone(&caller, &params.name).await?;
-    let response = TokenGrantListResponse {
-        token_grants: grants
-            .iter()
-            .map(GetTokenGrantResponse::from_grant)
-            .collect(),
-    };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = TokenGrantService::list_by_zone(&caller, &params.name, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

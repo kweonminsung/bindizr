@@ -79,7 +79,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     app.set_auth_token(bootstrap_token.clone());
     let (status, body) = app.request(Method::GET, "/tokens", None).await;
     assert_eq!(status, StatusCode::OK);
-    let tokens = body["tokens"].as_array().unwrap();
+    let tokens = body["items"].as_array().unwrap();
     for name in [&bootstrap_name, &scoped_name, &global_name] {
         assert!(
             tokens.iter().any(|token| token["name"] == json!(name)),
@@ -90,6 +90,18 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         tokens.iter().all(|token| token.get("secret").is_none()),
         "a listing must never carry a secret: {body}"
     );
+    // Every listing pages the same way, management tables included.
+    let total = body["pagination"]["total"].as_u64().unwrap();
+    assert!(total >= 3, "{body}");
+
+    let (status, body) = app
+        .request(Method::GET, "/tokens?limit=1&offset=1", None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
+    assert_eq!(body["pagination"]["limit"], 1, "{body}");
+    assert_eq!(body["pagination"]["offset"], 1, "{body}");
+    assert_eq!(body["pagination"]["total"], total, "{body}");
 
     let (status, _) = app
         .request(

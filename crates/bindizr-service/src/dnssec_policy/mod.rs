@@ -13,7 +13,10 @@ use crate::{
         dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
     },
     repository::RepositoryService,
-    types::{CreateDnssecPolicyRequest, UpdateDnssecPolicyRequest},
+    types::{
+        CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageFilter, PaginatedResponse,
+        UpdateDnssecPolicyRequest,
+    },
 };
 
 /// RFC 1982 serial arithmetic is only unambiguous while expiration -
@@ -80,10 +83,21 @@ impl DnssecPolicyService {
         .await
     }
 
-    pub async fn list(caller: &Caller) -> Result<Vec<DnssecPolicy>, ServiceError> {
+    pub async fn list(
+        caller: &Caller,
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetDnssecPolicyResponse>, ServiceError> {
         caller.require_global("manage DNSSEC policies")?;
 
-        RepositoryService::list_dnssec_policies().await
+        let policies = RepositoryService::list_dnssec_policies().await?;
+        PaginatedResponse::from_collection(
+            policies
+                .iter()
+                .map(GetDnssecPolicyResponse::from_policy)
+                .collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
     pub async fn get(caller: &Caller, name: &str) -> Result<DnssecPolicy, ServiceError> {

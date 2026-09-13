@@ -11,7 +11,9 @@ use crate::{
         record::{RecordType, RecordWithZone},
     },
     repository::RepositoryService,
-    types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse, normalize_page_limit},
+    types::{
+        GetRecordResponse, GetRecordsFilter, PaginatedResponse, normalize_page_limit, parse_setting,
+    },
     zone::{ZoneService, validation::normalize_zone_name},
 };
 
@@ -72,13 +74,19 @@ impl RecordService {
         let name = build_record_name_filter(filter.name, zone_name.as_ref());
         let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
 
+        // A derived row's rdata is wire bytes, so no `LIKE` reaches it; asking
+        // for both would answer a narrower question than the one put.
+        if signed && filter.value.is_some() {
+            return Err(ServiceError::invalid_input(
+                "value cannot narrow the derived DNSSEC records; drop value, or drop signed",
+            ));
+        }
+
         let user_plane = derived_type.is_none();
-        // Derived rows carry no value, priority, or search text, so those
-        // filters leave only the user plane in the listing.
+        // A derived row carries no priority, so a priority filter answers
+        // "none of them" — which is what leaving the plane out returns.
         let derived_plane = signed
             && user_type.is_none()
-            && filter.value.is_none()
-            && filter.search.is_none()
             && filter.priority.is_none()
             && filter.min_priority.is_none()
             && filter.max_priority.is_none();
@@ -95,8 +103,10 @@ impl RecordService {
             priority: filter.priority,
             min_priority: filter.min_priority,
             max_priority: filter.max_priority,
-            search: filter.search,
+            search: filter.search.clone(),
             scope_token_id,
+            sort: parse_setting(filter.sort.as_deref())?,
+            order: parse_setting(filter.order.as_deref())?,
             limit,
             offset,
         };
@@ -107,6 +117,7 @@ impl RecordService {
             ttl: filter.ttl,
             min_ttl: filter.min_ttl,
             max_ttl: filter.max_ttl,
+            search: filter.search.clone(),
             scope_token_id,
             limit: None,
             offset: None,

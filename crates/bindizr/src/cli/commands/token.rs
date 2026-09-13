@@ -1,7 +1,7 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
-    CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, TokenGrantListResponse,
-    TokenGrantResponse, TokenListResponse,
+    CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
+    GetTokenResponse, PaginatedResponse, TokenGrantResponse,
 };
 use clap::Subcommand;
 
@@ -132,9 +132,13 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
 
             log_debug!("Token list result: {:?}", res);
 
-            print_response(&res.data, output, |tokens: &TokenListResponse| {
-                tokens.tokens.iter().map(TokenRow::from).collect()
-            })?;
+            print_response(
+                &res.data,
+                output,
+                |tokens: &PaginatedResponse<GetTokenResponse>| {
+                    tokens.items.iter().map(TokenRow::from).collect()
+                },
+            )?;
         }
         TokenCommand::Delete { name } => {
             let res = client
@@ -178,13 +182,13 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                     TokenNameParams { name },
                 )
                 .await?;
-            print_response(&res.data, output, |grants: &TokenGrantListResponse| {
-                grants
-                    .token_grants
-                    .iter()
-                    .map(TokenGrantRow::from)
-                    .collect()
-            })?;
+            print_response(
+                &res.data,
+                output,
+                |grants: &PaginatedResponse<GetTokenGrantResponse>| {
+                    grants.items.iter().map(TokenGrantRow::from).collect()
+                },
+            )?;
         }
         TokenCommand::Revoke { name, id } => {
             let res = client

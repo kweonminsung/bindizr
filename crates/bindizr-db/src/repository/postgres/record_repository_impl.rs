@@ -10,7 +10,7 @@ use crate::{
         LockLevel, RecordFilter, RecordRepository, RepositoryTx,
         sql::{
             apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern, lock_clause,
-            name_like_types_sql, trim_partial_value,
+            name_like_types_sql, record_order_by_sql, trim_partial_value,
         },
     },
 };
@@ -176,7 +176,7 @@ impl RecordRepository for PostgresRecordRepository {
         let postgres_tx = tx.as_postgres()?;
 
         let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
-            format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name{}",
+            format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name, id{}",
             lock_clause(lock_level),
         )))
         .bind(zone_id)
@@ -198,7 +198,7 @@ impl RecordRepository for PostgresRecordRepository {
         // Bind the canonical stored form as given: re-folding it here would miss
         // its own row, and the bare column lets idx_records_zone_name apply.
         let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
-            format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name{}",
+            format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name, id{}",
             lock_clause(lock_level),
         )))
         .bind(zone_id)
@@ -279,6 +279,7 @@ impl RecordRepository for PostgresRecordRepository {
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
 
+        let order_by = record_order_by_sql(filter.sort, filter.order);
         let grant_match = grant_record_match_sql("r", Some("record_type"), concat_pipes);
         let records = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
@@ -317,9 +318,7 @@ impl RecordRepository for PostgresRecordRepository {
                                WHERE p.api_token_id = $30 AND p.zone_id = r.zone_id
                                  AND {grant_match})
               )
-            -- every type at one name shares r.name, so without r.id a plan change
-            -- between two pages could drop or repeat a row.
-            ORDER BY r.name, r.id
+            {order_by}
             LIMIT $28 OFFSET $29
             "#
         )))

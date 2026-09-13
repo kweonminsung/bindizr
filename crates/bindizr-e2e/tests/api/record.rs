@@ -1386,3 +1386,65 @@ async fn record_delete_matching_refuses_what_would_widen_it() {
         );
     }
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_listing_sorts_by_the_field_asked_for() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for (name, ttl) in [("c-rec", 300), ("a-rec", 900), ("b-rec", 60)] {
+        let (status, body) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name, "record_type": "A", "value": "192.0.2.1",
+                    "ttl": ttl, "zone_name": zone_name
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+
+    let listed = async |app: &TestApp, query: &str| -> Vec<String> {
+        let (status, body) = app
+            .request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&record_type=A&limit=1000&{query}"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|record| record["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    let by_ttl = listed(&app, "sort=ttl").await;
+    assert!(by_ttl[0].starts_with("b-rec"), "{by_ttl:?}");
+    assert!(by_ttl[2].starts_with("a-rec"), "{by_ttl:?}");
+    assert_eq!(
+        listed(&app, "sort=ttl&order=desc").await,
+        by_ttl.iter().rev().cloned().collect::<Vec<_>>()
+    );
+
+    let by_name = listed(&app, "").await;
+    assert!(by_name[0].starts_with("a-rec"), "{by_name:?}");
+
+    let (status, body) = app
+        .request(Method::GET, "/records?order=sideways", None)
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("unknown sort order"),
+        "{body}"
+    );
+}

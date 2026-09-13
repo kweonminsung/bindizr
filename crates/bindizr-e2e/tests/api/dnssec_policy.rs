@@ -56,7 +56,7 @@ async fn dnssec_policy_create_read_update_delete() {
     // The seeded `default` policy is always listed alongside.
     let (status, body) = app.request(Method::GET, "/dnssec-policies", None).await;
     assert_eq!(status, StatusCode::OK);
-    let names: Vec<&str> = body["dnssec_policies"]
+    let names: Vec<&str> = body["items"]
         .as_array()
         .unwrap()
         .iter()

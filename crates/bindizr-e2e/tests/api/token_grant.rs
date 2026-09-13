@@ -390,7 +390,7 @@ async fn global_token_grant_management_over_http() {
         .request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["token_grants"].as_array().unwrap().len(), 1);
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
 
     let (status, body) = app
         .request(
@@ -400,7 +400,7 @@ async fn global_token_grant_management_over_http() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["token_grants"][0]["api_token"], json!(scoped_name));
+    assert_eq!(body["items"][0]["api_token"], json!(scoped_name));
 
     // A global token already covers every zone, so it cannot be granted one.
     let (status, _) = app
@@ -435,7 +435,7 @@ async fn global_token_grant_management_over_http() {
         .request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body["token_grants"].as_array().unwrap().is_empty());
+    assert!(body["items"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -468,7 +468,7 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
     app.set_auth_token(scoped_token);
     let (status, body) = app.request(Method::GET, "/tokens/self/grants", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let grants = body["token_grants"].as_array().unwrap();
+    let grants = body["items"].as_array().unwrap();
     assert_eq!(grants.len(), 1, "{body}");
     assert_eq!(grants[0]["api_token"], json!(scoped_name));
     assert_eq!(grants[0]["zone_name"], json!(granted_zone));
@@ -485,10 +485,7 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
     app.set_auth_token(global_token);
     let (status, body) = app.request(Method::GET, "/tokens/self/grants", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        body["token_grants"].as_array().unwrap().is_empty(),
-        "{body}"
-    );
+    assert!(body["items"].as_array().unwrap().is_empty(), "{body}");
 }
 
 #[tokio::test]

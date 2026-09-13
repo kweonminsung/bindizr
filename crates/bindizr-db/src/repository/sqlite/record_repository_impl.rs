@@ -10,7 +10,7 @@ use crate::{
         LockLevel, RecordFilter, RecordRepository, RepositoryTx,
         sql::{
             apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern,
-            name_like_types_sql, trim_partial_value,
+            name_like_types_sql, record_order_by_sql, trim_partial_value,
         },
     },
 };
@@ -167,7 +167,7 @@ impl RecordRepository for SqliteRecordRepository {
         let sqlite_tx = tx.as_sqlite()?;
 
         let records = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name",
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name, id",
         )
         .bind(zone_id)
         .fetch_all(&mut **sqlite_tx)
@@ -188,7 +188,7 @@ impl RecordRepository for SqliteRecordRepository {
         // Bind the canonical stored form as given: re-folding it here would miss
         // its own row, and the bare column lets idx_records_zone_name apply.
         let records = sqlx::query_as::<_, Record>(
-            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name",
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name, id",
         )
         .bind(zone_id)
         .bind(name)
@@ -263,6 +263,7 @@ impl RecordRepository for SqliteRecordRepository {
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
+        let order_by = record_order_by_sql(filter.sort, filter.order);
         let grant_match = grant_record_match_sql("r", Some("record_type"), concat_pipes);
         let query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
@@ -301,9 +302,7 @@ impl RecordRepository for SqliteRecordRepository {
                                WHERE p.api_token_id = ? AND p.zone_id = r.zone_id
                                  AND {grant_match})
               )
-            -- every type at one name shares r.name, so without r.id a plan change
-            -- between two pages could drop or repeat a row.
-            ORDER BY r.name, r.id
+            {order_by}
             LIMIT ? OFFSET ?
             "#
         )))

@@ -7,16 +7,16 @@ use axum::{
 use bindizr_service::{
     tsig_key::{TsigKeyService, grant::TsigGrantService},
     types::{
-        CreateTsigGrantRequest, CreateTsigKeyRequest, ErrorResponse, GetTsigGrantResponse,
-        GetTsigKeyResponse, MessageResponse, TsigGrantListResponse, TsigGrantResponse,
-        TsigKeyListResponse, TsigKeyResponse,
+        CreateTsigGrantRequest, CreateTsigKeyRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
+        GetTsigGrantResponse, GetTsigKeyResponse, MessageResponse, PageFilter, PaginatedResponse,
+        TsigGrantResponse, TsigKeyResponse,
     },
 };
 use serde::Deserialize;
 
 use crate::api::{
     GrantIdParam, RequestCaller, ZoneNameParam,
-    error::{ApiError, Path},
+    error::{ApiError, Path, Query},
     middleware::body_parser::JsonBody,
 };
 
@@ -52,9 +52,10 @@ pub(crate) struct TsigKeyNameParam {
         path = "/tsig-keys",
         tag = "TSIG",
         summary = "List all TSIG keys",
+        params(PageFilter),
         description = "Lists every TSIG key without its secret. Fetch a single key to read the secret.",
         responses(
-            (status = 200, description = "All TSIG keys", body = TsigKeyListResponse),
+            (status = 200, description = "All TSIG keys", body = PaginatedResponse<GetTsigKeyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -63,10 +64,10 @@ pub(crate) struct TsigKeyNameParam {
 /// List all TSIG keys (secrets omitted).
 pub(crate) async fn list_tsig_keys(
     RequestCaller(caller): RequestCaller,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let keys = TsigKeyService::list(&caller).await?;
-    let keys: Vec<GetTsigKeyResponse> = keys.iter().map(GetTsigKeyResponse::from_key).collect();
-    let response = TsigKeyListResponse { tsig_keys: keys };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = TsigKeyService::list(&caller, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -166,11 +167,12 @@ pub(crate) async fn delete_tsig_key(
         path = "/tsig-keys/{name}/grants",
         tag = "TSIG",
         summary = "List a TSIG key's grants",
+        params(PageFilter),
         params(
             ("name" = String, Path, description = "The name of the TSIG key.")
         ),
         responses(
-            (status = 200, description = "The key's grants", body = TsigGrantListResponse),
+            (status = 200, description = "The key's grants", body = PaginatedResponse<GetTsigGrantResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "TSIG key not found", body = ErrorResponse),
@@ -181,14 +183,10 @@ pub(crate) async fn delete_tsig_key(
 pub(crate) async fn list_tsig_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let grants = TsigGrantService::list_by_key(&caller, &params.name).await?;
-    let response = TsigGrantListResponse {
-        tsig_grants: grants
-            .iter()
-            .map(GetTsigGrantResponse::from_grant)
-            .collect(),
-    };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = TsigGrantService::list_by_key(&caller, &params.name, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -266,11 +264,12 @@ pub(crate) async fn delete_tsig_grant(
         path = "/zones/{name}/tsig-grants",
         tag = "TSIG",
         summary = "List the TSIG grants that apply to a zone",
+        params(PageFilter),
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
         responses(
-            (status = 200, description = "Grants covering the zone", body = TsigGrantListResponse),
+            (status = 200, description = "Grants covering the zone", body = PaginatedResponse<GetTsigGrantResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
@@ -281,13 +280,9 @@ pub(crate) async fn delete_tsig_grant(
 pub(crate) async fn list_zone_tsig_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let grants = TsigGrantService::list_by_zone(&caller, &params.name).await?;
-    let response = TsigGrantListResponse {
-        tsig_grants: grants
-            .iter()
-            .map(GetTsigGrantResponse::from_grant)
-            .collect(),
-    };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = TsigGrantService::list_by_zone(&caller, &params.name, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

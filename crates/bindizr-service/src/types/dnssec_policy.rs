@@ -99,9 +99,3 @@ impl GetDnssecPolicyResponse {
 pub struct DnssecPolicyResponse {
     pub dnssec_policy: GetDnssecPolicyResponse,
 }
-
-/// Every DNSSEC policy.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct DnssecPolicyListResponse {
-    pub dnssec_policies: Vec<GetDnssecPolicyResponse>,
-}

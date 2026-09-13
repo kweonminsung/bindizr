@@ -572,3 +572,66 @@ async fn dnssec_enable_requires_a_global_token() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["code"], "FORBIDDEN");
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_signed_listing_searches_the_derived_plane_by_name() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "searchable", "record_type": "A", "value": "192.0.2.1",
+                "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // A search used to leave the derived rows out entirely.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&search=searchable&signed=true&limit=1000"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let types: Vec<&str> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| record["record_type"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"A"), "{body}");
+    assert!(types.contains(&"RRSIG"), "{body}");
+
+    // Refused rather than quietly answered without the rows it cannot narrow.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&value=192.0.2.1&signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("value cannot narrow the derived"),
+        "{body}"
+    );
+}

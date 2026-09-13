@@ -68,9 +68,3 @@ pub struct CreatedTokenResponse {
     #[schema(example = "k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu")]
     pub secret: String,
 }
-
-/// List of API tokens (secrets omitted).
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct TokenListResponse {
-    pub tokens: Vec<GetTokenResponse>,
-}

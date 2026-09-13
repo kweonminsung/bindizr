@@ -2,10 +2,7 @@ use bindizr_service::{
     authorization::Caller,
     dnssec_policy::DnssecPolicyService,
     error::ServiceError,
-    types::{
-        CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse,
-        GetDnssecPolicyResponse,
-    },
+    types::{CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, PageFilter},
 };
 
 use crate::socket::{
@@ -31,17 +28,11 @@ pub(crate) async fn create_dnssec_policy(
 
 /// Handle the `DnssecPolicyList` command by returning every policy.
 pub(crate) async fn list_dnssec_policies() -> Result<DaemonResponse, ServiceError> {
-    let policies = DnssecPolicyService::list(&Caller::Global).await?;
-    let policies: Vec<GetDnssecPolicyResponse> = policies
-        .iter()
-        .map(GetDnssecPolicyResponse::from_policy)
-        .collect();
+    let response = DnssecPolicyService::list(&Caller::Global, PageFilter::default()).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policies retrieved successfully".to_string(),
-        data: to_response_data(DnssecPolicyListResponse {
-            dnssec_policies: policies,
-        })?,
+        data: to_response_data(response)?,
     })
 }
 

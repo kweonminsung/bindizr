@@ -3,7 +3,11 @@ use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
 use super::{error::ServiceError, repository::RepositoryService};
-use crate::{authorization::Caller, model::api_token::ApiToken};
+use crate::{
+    authorization::Caller,
+    model::api_token::ApiToken,
+    types::{GetTokenResponse, PageFilter, PaginatedResponse},
+};
 
 const MAX_TOKEN_NAME_LEN: usize = 255;
 /// `api_tokens.description` is VARCHAR(255) on MySQL and PostgreSQL.
@@ -67,10 +71,18 @@ impl TokenService {
     }
 
     /// List all API tokens.
-    pub async fn list(caller: &Caller) -> Result<Vec<ApiToken>, ServiceError> {
+    pub async fn list(
+        caller: &Caller,
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
         caller.require_global("manage API tokens")?;
 
-        RepositoryService::list_api_tokens().await
+        let tokens = RepositoryService::list_api_tokens().await?;
+        PaginatedResponse::from_collection(
+            tokens.iter().map(GetTokenResponse::from_token).collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
     /// Delete the API token with the given name, returning `NotFound` if it

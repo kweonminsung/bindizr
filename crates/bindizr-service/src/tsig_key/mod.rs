@@ -8,6 +8,7 @@ use crate::{
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
     repository::RepositoryService,
+    types::{GetTsigKeyResponse, PageFilter, PaginatedResponse},
 };
 
 /// Byte length of generated secrets; matches `tsig-keygen`'s default for
@@ -59,10 +60,18 @@ impl TsigKeyService {
     }
 
     /// List all TSIG keys.
-    pub async fn list(caller: &Caller) -> Result<Vec<TsigKey>, ServiceError> {
+    pub async fn list(
+        caller: &Caller,
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
         caller.require_global("manage TSIG keys and grants")?;
 
-        RepositoryService::list_tsig_keys().await
+        let keys = RepositoryService::list_tsig_keys().await?;
+        PaginatedResponse::from_collection(
+            keys.iter().map(GetTsigKeyResponse::from_key).collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
     /// Fetch one TSIG key by name, including its secret.

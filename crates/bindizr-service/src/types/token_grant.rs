@@ -67,9 +67,3 @@ impl GetTokenGrantResponse {
 pub struct TokenGrantResponse {
     pub token_grant: GetTokenGrantResponse,
 }
-
-/// Grants of one token, or every grant that applies to one zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct TokenGrantListResponse {
-    pub token_grants: Vec<GetTokenGrantResponse>,
-}

@@ -7,15 +7,16 @@ use axum::{
 use bindizr_service::{
     dnssec_policy::DnssecPolicyService,
     types::{
-        CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse, ErrorResponse,
-        GetDnssecPolicyResponse, MessageResponse, UpdateDnssecPolicyRequest,
+        CreateDnssecPolicyRequest, DEFAULT_PAGE_LIMIT, DnssecPolicyResponse, ErrorResponse,
+        GetDnssecPolicyResponse, MessageResponse, PageFilter, PaginatedResponse,
+        UpdateDnssecPolicyRequest,
     },
 };
 use serde::Deserialize;
 
 use crate::api::{
     RequestCaller,
-    error::{ApiError, Path},
+    error::{ApiError, Path, Query},
     middleware::body_parser::JsonBody,
 };
 
@@ -48,9 +49,10 @@ pub(crate) struct DnssecPolicyNameParam {
         path = "/dnssec-policies",
         tag = "DNSSEC",
         summary = "List all DNSSEC policies",
+        params(PageFilter),
         description = "Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC, 14-day signatures re-signed with 5 days left) is seeded at startup.",
         responses(
-            (status = 200, description = "All DNSSEC policies", body = DnssecPolicyListResponse),
+            (status = 200, description = "All DNSSEC policies", body = PaginatedResponse<GetDnssecPolicyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -59,14 +61,10 @@ pub(crate) struct DnssecPolicyNameParam {
 /// List all DNSSEC policies.
 pub(crate) async fn list_dnssec_policies(
     RequestCaller(caller): RequestCaller,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let policies = DnssecPolicyService::list(&caller).await?;
-    let response = DnssecPolicyListResponse {
-        dnssec_policies: policies
-            .iter()
-            .map(GetDnssecPolicyResponse::from_policy)
-            .collect(),
-    };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = DnssecPolicyService::list(&caller, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

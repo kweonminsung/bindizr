@@ -7,7 +7,10 @@ use crate::{
     model::dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     repository::{
         DnssecRecordFilter, DnssecRecordRepository, LockLevel, RepositoryTx,
-        sql::{apex_owner_sql, concat_pipes, grant_record_match_sql, lock_clause, refresh_bound},
+        sql::{
+            apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern, lock_clause,
+            refresh_bound,
+        },
     },
 };
 
@@ -238,6 +241,7 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
     ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();
+        let search = like_pattern(filter.search.as_deref());
         let grant_match = grant_record_match_sql("d", None, concat_pipes);
         let records = sqlx::query_as::<_, DnssecRecordWithZone>(AssertSqlSafe(format!(
             r#"
@@ -255,15 +259,21 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
               AND ($10::INT4 IS NULL OR d.ttl >= $11)
               AND ($12::INT4 IS NULL OR d.ttl <= $13)
               AND (
-                    $14::INT4 IS NULL
+                    $14::TEXT IS NULL
+                    OR LOWER(z.name) LIKE LOWER($15) ESCAPE '\'
+                    OR LOWER(d.name) LIKE LOWER($16) ESCAPE '\'
+                    OR LOWER(CASE WHEN d.name = {apex_owner} THEN z.name || '.' ELSE d.name || '.' || z.name || '.' END) LIKE LOWER($17) ESCAPE '\'
+              )
+              AND (
+                    $18::INT4 IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = $14 AND p.zone_id = d.zone_id
+                               WHERE p.api_token_id = $18 AND p.zone_id = d.zone_id
                                  AND {grant_match})
               )
             -- every type at one name shares d.name, so without d.id a plan change
             -- between two pages could drop or repeat a row.
             ORDER BY d.name, d.id
-            LIMIT $15 OFFSET $16
+            LIMIT $19 OFFSET $20
             "#
         )))
         .bind(&filter.zone_name)
@@ -279,6 +289,10 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
         .bind(filter.min_ttl)
         .bind(filter.max_ttl)
         .bind(filter.max_ttl)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
         .bind(filter.scope_token_id)
         .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
         .bind(
@@ -296,6 +310,7 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
     async fn count_by_filter(&self, filter: DnssecRecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();
+        let search = like_pattern(filter.search.as_deref());
         let grant_match = grant_record_match_sql("d", None, concat_pipes);
         let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
@@ -313,9 +328,15 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
               AND ($10::INT4 IS NULL OR d.ttl >= $11)
               AND ($12::INT4 IS NULL OR d.ttl <= $13)
               AND (
-                    $14::INT4 IS NULL
+                    $14::TEXT IS NULL
+                    OR LOWER(z.name) LIKE LOWER($15) ESCAPE '\'
+                    OR LOWER(d.name) LIKE LOWER($16) ESCAPE '\'
+                    OR LOWER(CASE WHEN d.name = {apex_owner} THEN z.name || '.' ELSE d.name || '.' || z.name || '.' END) LIKE LOWER($17) ESCAPE '\'
+              )
+              AND (
+                    $18::INT4 IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = $14 AND p.zone_id = d.zone_id
+                               WHERE p.api_token_id = $18 AND p.zone_id = d.zone_id
                                  AND {grant_match})
               )
             "#
@@ -333,6 +354,10 @@ impl DnssecRecordRepository for PostgresDnssecRecordRepository {
         .bind(filter.min_ttl)
         .bind(filter.max_ttl)
         .bind(filter.max_ttl)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
         .bind(filter.scope_token_id)
         .fetch_one(&mut *conn)
         .await?;

@@ -8,7 +8,9 @@ use crate::{
     log_error,
     model::{dnssec_record::DnssecRecord, record::Record, zone::Zone, zone_change::ZoneChange},
     repository::RepositoryService,
-    types::{GetZoneResponse, GetZonesFilter, PaginatedResponse, normalize_page_limit},
+    types::{
+        GetZoneResponse, GetZonesFilter, PaginatedResponse, normalize_page_limit, parse_setting,
+    },
 };
 
 impl ZoneService {
@@ -89,8 +91,15 @@ impl ZoneService {
             min_default_ttl: filter.min_default_ttl,
             max_default_ttl: filter.max_default_ttl,
             serial: filter.serial,
+            min_serial: filter.min_serial,
+            max_serial: filter.max_serial,
+            created_after: filter.created_after,
+            created_before: filter.created_before,
+            signed: filter.signed,
             search: filter.search,
             scope_token_id,
+            sort: parse_setting(filter.sort.as_deref())?,
+            order: parse_setting(filter.order.as_deref())?,
             limit,
             offset,
         };

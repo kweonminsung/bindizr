@@ -3,8 +3,7 @@ use bindizr_service::{
     error::ServiceError,
     tsig_key::{TsigKeyService, grant::TsigGrantService},
     types::{
-        CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse, TsigGrantListResponse,
-        TsigGrantResponse, TsigKeyListResponse, TsigKeyResponse,
+        CreateTsigKeyRequest, GetTsigGrantResponse, PageFilter, TsigGrantResponse, TsigKeyResponse,
     },
 };
 
@@ -39,12 +38,11 @@ pub(crate) async fn create_tsig_key(
 
 /// Handle the `TsigKeyList` command by returning all TSIG keys without secrets.
 pub(crate) async fn list_tsig_keys() -> Result<DaemonResponse, ServiceError> {
-    let keys = TsigKeyService::list(&Caller::Global).await?;
-    let keys: Vec<GetTsigKeyResponse> = keys.iter().map(GetTsigKeyResponse::from_key).collect();
+    let response = TsigKeyService::list(&Caller::Global, PageFilter::default()).await?;
 
     Ok(DaemonResponse {
         message: "TSIG keys retrieved successfully".to_string(),
-        data: to_response_data(TsigKeyListResponse { tsig_keys: keys })?,
+        data: to_response_data(response)?,
     })
 }
 
@@ -103,17 +101,12 @@ pub(crate) async fn list_tsig_grants_by_key(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: TsigKeyNameParams = parse_params(data)?;
 
-    let grants = TsigGrantService::list_by_key(&Caller::Global, &params.name).await?;
-    let grants: Vec<GetTsigGrantResponse> = grants
-        .iter()
-        .map(GetTsigGrantResponse::from_grant)
-        .collect();
+    let response =
+        TsigGrantService::list_by_key(&Caller::Global, &params.name, PageFilter::default()).await?;
 
     Ok(DaemonResponse {
         message: "TSIG grants retrieved successfully".to_string(),
-        data: to_response_data(TsigGrantListResponse {
-            tsig_grants: grants,
-        })?,
+        data: to_response_data(response)?,
     })
 }
 
@@ -124,17 +117,13 @@ pub(crate) async fn list_tsig_grants_by_zone(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    let grants = TsigGrantService::list_by_zone(&Caller::Global, &params.name).await?;
-    let grants: Vec<GetTsigGrantResponse> = grants
-        .iter()
-        .map(GetTsigGrantResponse::from_grant)
-        .collect();
+    let response =
+        TsigGrantService::list_by_zone(&Caller::Global, &params.name, PageFilter::default())
+            .await?;
 
     Ok(DaemonResponse {
         message: "TSIG grants retrieved successfully".to_string(),
-        data: to_response_data(TsigGrantListResponse {
-            tsig_grants: grants,
-        })?,
+        data: to_response_data(response)?,
     })
 }
 

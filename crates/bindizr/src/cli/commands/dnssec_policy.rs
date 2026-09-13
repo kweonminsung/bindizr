@@ -1,6 +1,6 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
-    CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse,
+    CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, PaginatedResponse,
     UpdateDnssecPolicyRequest,
 };
 use clap::Subcommand;
@@ -137,13 +137,13 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             log_debug!("DNSSEC policy list result: {:?}", res);
 
-            print_response(&res.data, output, |policies: &DnssecPolicyListResponse| {
-                policies
-                    .dnssec_policies
-                    .iter()
-                    .map(DnssecPolicyRow::from)
-                    .collect()
-            })?;
+            print_response(
+                &res.data,
+                output,
+                |policies: &PaginatedResponse<GetDnssecPolicyResponse>| {
+                    policies.items.iter().map(DnssecPolicyRow::from).collect()
+                },
+            )?;
         }
         DnssecPolicyCommand::Get { name, output } => {
             let res = client

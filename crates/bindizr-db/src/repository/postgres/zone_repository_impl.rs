@@ -7,7 +7,7 @@ use crate::{
     model::zone::Zone,
     repository::{
         LockLevel, RepositoryTx, ZoneFilter, ZoneRepository,
-        sql::{like_pattern, lock_clause},
+        sql::{like_pattern, lock_clause, zone_order_by_sql},
     },
 };
 
@@ -131,7 +131,8 @@ impl ZoneRepository for PostgresZoneRepository {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
 
-        let zones = sqlx::query_as::<_, Zone>(
+        let order_by = zone_order_by_sql(filter.sort, filter.order);
+        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
             r#"
             SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at
             FROM zones
@@ -143,21 +144,26 @@ impl ZoneRepository for PostgresZoneRepository {
               AND ($11::INT4 IS NULL OR default_ttl >= $12)
               AND ($13::INT4 IS NULL OR default_ttl <= $14)
               AND ($15::INT4 IS NULL OR serial = $16)
+              AND ($17::INT4 IS NULL OR serial >= $18)
+              AND ($19::INT4 IS NULL OR serial <= $20)
+              AND ($21::TIMESTAMPTZ IS NULL OR created_at >= $22)
+              AND ($23::TIMESTAMPTZ IS NULL OR created_at <= $24)
+              AND ($25::BOOL IS NULL OR (dnssec_policy_id IS NOT NULL) = $26)
               AND (
-                    $17::TEXT IS NULL
-                    OR LOWER(name) LIKE LOWER($18) ESCAPE '\'
-                    OR LOWER(mname) LIKE LOWER($19) ESCAPE '\'
-                    OR LOWER(rname) LIKE LOWER($20) ESCAPE '\'
+                    $27::TEXT IS NULL
+                    OR LOWER(name) LIKE LOWER($28) ESCAPE '\'
+                    OR LOWER(mname) LIKE LOWER($29) ESCAPE '\'
+                    OR LOWER(rname) LIKE LOWER($30) ESCAPE '\'
               )
               AND (
-                    $23::INT4 IS NULL
+                    $33::INT4 IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = $23 AND p.zone_id = zones.id)
+                               WHERE p.api_token_id = $33 AND p.zone_id = zones.id)
               )
-            ORDER BY name
-            LIMIT $21 OFFSET $22
-            "#,
-        )
+            {order_by}
+            LIMIT $31 OFFSET $32
+            "#
+        )))
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(filter.id)
@@ -174,6 +180,16 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(filter.max_default_ttl)
         .bind(filter.serial)
         .bind(filter.serial)
+        .bind(filter.min_serial)
+        .bind(filter.min_serial)
+        .bind(filter.max_serial)
+        .bind(filter.max_serial)
+        .bind(filter.created_after)
+        .bind(filter.created_after)
+        .bind(filter.created_before)
+        .bind(filter.created_before)
+        .bind(filter.signed)
+        .bind(filter.signed)
         .bind(&search)
         .bind(&search)
         .bind(&search)
@@ -216,16 +232,21 @@ impl ZoneRepository for PostgresZoneRepository {
               AND ($11::INT4 IS NULL OR default_ttl >= $12)
               AND ($13::INT4 IS NULL OR default_ttl <= $14)
               AND ($15::INT4 IS NULL OR serial = $16)
+              AND ($17::INT4 IS NULL OR serial >= $18)
+              AND ($19::INT4 IS NULL OR serial <= $20)
+              AND ($21::TIMESTAMPTZ IS NULL OR created_at >= $22)
+              AND ($23::TIMESTAMPTZ IS NULL OR created_at <= $24)
+              AND ($25::BOOL IS NULL OR (dnssec_policy_id IS NOT NULL) = $26)
               AND (
-                    $17::TEXT IS NULL
-                    OR LOWER(name) LIKE LOWER($18) ESCAPE '\'
-                    OR LOWER(mname) LIKE LOWER($19) ESCAPE '\'
-                    OR LOWER(rname) LIKE LOWER($20) ESCAPE '\'
+                    $27::TEXT IS NULL
+                    OR LOWER(name) LIKE LOWER($28) ESCAPE '\'
+                    OR LOWER(mname) LIKE LOWER($29) ESCAPE '\'
+                    OR LOWER(rname) LIKE LOWER($30) ESCAPE '\'
               )
               AND (
-                    $21::INT4 IS NULL
+                    $31::INT4 IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = $21 AND p.zone_id = zones.id)
+                               WHERE p.api_token_id = $31 AND p.zone_id = zones.id)
               )
             "#,
         )
@@ -245,6 +266,16 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(filter.max_default_ttl)
         .bind(filter.serial)
         .bind(filter.serial)
+        .bind(filter.min_serial)
+        .bind(filter.min_serial)
+        .bind(filter.max_serial)
+        .bind(filter.max_serial)
+        .bind(filter.created_after)
+        .bind(filter.created_after)
+        .bind(filter.created_before)
+        .bind(filter.created_before)
+        .bind(filter.signed)
+        .bind(filter.signed)
         .bind(&search)
         .bind(&search)
         .bind(&search)

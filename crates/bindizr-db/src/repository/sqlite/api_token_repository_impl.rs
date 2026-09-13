@@ -72,7 +72,7 @@ impl ApiTokenRepository for SqliteApiTokenRepository {
         let mut conn = self.pool.acquire().await?;
 
         let rows = sqlx::query_as::<_, ApiToken>(
-            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC"
+            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC, id DESC"
         )
         .fetch_all(&mut *conn)
         .await

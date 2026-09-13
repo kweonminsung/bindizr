@@ -16,6 +16,7 @@ use crate::{
         tsig_grant::{TsigGrant, TsigGrantWithNames},
     },
     repository::RepositoryService,
+    types::{GetTsigGrantResponse, PageFilter, PaginatedResponse},
     zone::ZoneService,
 };
 
@@ -68,7 +69,8 @@ impl TsigGrantService {
     pub async fn list_by_key(
         caller: &Caller,
         key_name: &str,
-    ) -> Result<Vec<TsigGrantWithNames>, ServiceError> {
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
         caller.require_global("manage TSIG keys and grants")?;
 
         let key = TsigKeyService::lookup_by_name(key_name).await?;
@@ -80,21 +82,28 @@ impl TsigGrantService {
             .map(|zone| (zone.id, zone.name.to_string()))
             .collect();
 
-        Ok(grants
-            .into_iter()
-            .map(|grant| TsigGrantWithNames {
-                zone_name: zone_names.get(&grant.zone_id).cloned().unwrap_or_default(),
-                tsig_key_name: key.name.clone(),
-                grant,
-            })
-            .collect())
+        PaginatedResponse::from_collection(
+            grants
+                .into_iter()
+                .map(|grant| {
+                    GetTsigGrantResponse::from_grant(&TsigGrantWithNames {
+                        zone_name: zone_names.get(&grant.zone_id).cloned().unwrap_or_default(),
+                        tsig_key_name: key.name.clone(),
+                        grant,
+                    })
+                })
+                .collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
     /// Every grant that applies to `zone_name`, with the key each belongs to.
     pub async fn list_by_zone(
         caller: &Caller,
         zone_name: &str,
-    ) -> Result<Vec<TsigGrantWithNames>, ServiceError> {
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
         caller.require_global("manage TSIG keys and grants")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
@@ -106,17 +115,23 @@ impl TsigGrantService {
             .map(|key| (key.id, key.name))
             .collect();
 
-        Ok(grants
-            .into_iter()
-            .map(|grant| TsigGrantWithNames {
-                tsig_key_name: key_names
-                    .get(&grant.tsig_key_id)
-                    .cloned()
-                    .unwrap_or_default(),
-                zone_name: zone.name.to_string(),
-                grant,
-            })
-            .collect())
+        PaginatedResponse::from_collection(
+            grants
+                .into_iter()
+                .map(|grant| {
+                    GetTsigGrantResponse::from_grant(&TsigGrantWithNames {
+                        tsig_key_name: key_names
+                            .get(&grant.tsig_key_id)
+                            .cloned()
+                            .unwrap_or_default(),
+                        zone_name: zone.name.to_string(),
+                        grant,
+                    })
+                })
+                .collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
     /// Revoke one of `key_name`'s grants by id. An id that belongs to another

@@ -7,7 +7,7 @@ use crate::{
     model::zone::Zone,
     repository::{
         LockLevel, RepositoryTx, ZoneFilter, ZoneRepository,
-        sql::{like_pattern, lock_clause},
+        sql::{like_pattern, lock_clause, zone_order_by_sql},
     },
 };
 
@@ -131,7 +131,8 @@ impl ZoneRepository for MySqlZoneRepository {
     async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
-        let zones = sqlx::query_as::<_, Zone>(
+        let order_by = zone_order_by_sql(filter.sort, filter.order);
+        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
             r#"
             SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at
             FROM zones
@@ -143,6 +144,11 @@ impl ZoneRepository for MySqlZoneRepository {
               AND (? IS NULL OR default_ttl >= ?)
               AND (? IS NULL OR default_ttl <= ?)
               AND (? IS NULL OR serial = ?)
+              AND (? IS NULL OR serial >= ?)
+              AND (? IS NULL OR serial <= ?)
+              AND (? IS NULL OR created_at >= ?)
+              AND (? IS NULL OR created_at <= ?)
+              AND (? IS NULL OR (dnssec_policy_id IS NOT NULL) = ?)
               AND (
                     ? IS NULL
                     OR LOWER(name) LIKE LOWER(?) ESCAPE '\\'
@@ -154,10 +160,10 @@ impl ZoneRepository for MySqlZoneRepository {
                     OR EXISTS (SELECT 1 FROM token_grants p
                                WHERE p.api_token_id = ? AND p.zone_id = zones.id)
               )
-            ORDER BY name
+            {order_by}
             LIMIT ? OFFSET ?
-            "#,
-        )
+            "#
+        )))
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(filter.id)
@@ -174,6 +180,16 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(filter.max_default_ttl)
         .bind(filter.serial)
         .bind(filter.serial)
+        .bind(filter.min_serial)
+        .bind(filter.min_serial)
+        .bind(filter.max_serial)
+        .bind(filter.max_serial)
+        .bind(filter.created_after)
+        .bind(filter.created_after)
+        .bind(filter.created_before)
+        .bind(filter.created_before)
+        .bind(filter.signed)
+        .bind(filter.signed)
         .bind(&search)
         .bind(&search)
         .bind(&search)
@@ -216,6 +232,11 @@ impl ZoneRepository for MySqlZoneRepository {
               AND (? IS NULL OR default_ttl >= ?)
               AND (? IS NULL OR default_ttl <= ?)
               AND (? IS NULL OR serial = ?)
+              AND (? IS NULL OR serial >= ?)
+              AND (? IS NULL OR serial <= ?)
+              AND (? IS NULL OR created_at >= ?)
+              AND (? IS NULL OR created_at <= ?)
+              AND (? IS NULL OR (dnssec_policy_id IS NOT NULL) = ?)
               AND (
                     ? IS NULL
                     OR LOWER(name) LIKE LOWER(?) ESCAPE '\\'
@@ -245,6 +266,16 @@ impl ZoneRepository for MySqlZoneRepository {
         .bind(filter.max_default_ttl)
         .bind(filter.serial)
         .bind(filter.serial)
+        .bind(filter.min_serial)
+        .bind(filter.min_serial)
+        .bind(filter.max_serial)
+        .bind(filter.max_serial)
+        .bind(filter.created_after)
+        .bind(filter.created_after)
+        .bind(filter.created_before)
+        .bind(filter.created_before)
+        .bind(filter.signed)
+        .bind(filter.signed)
         .bind(&search)
         .bind(&search)
         .bind(&search)

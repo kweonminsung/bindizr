@@ -9,6 +9,29 @@ The reference is generated from the OpenAPI spec, which is also served directly
 at [`openapi.yaml`](../openapi.yaml) if you want to feed it to a client
 generator.
 
+## Listings
+
+Every listing answers the same shape — `items` beside a `pagination` object of
+`limit`, `offset`, and `total` — and takes `limit` and `offset` as query
+parameters. An omitted `limit` pages at 50; 1000 is the most one call returns.
+
+```bash
+$ curl -H "Authorization: Bearer $TOKEN" \
+    'http://localhost:3000/tokens?limit=20&offset=40'
+```
+
+The CLI reads whole tables instead: it talks to the daemon over its local
+socket, which applies no page limit.
+
+`/zones` and `/records` also take `sort` and `order`. The row id follows the
+sort column, so paging stays stable even where the column has ties.
+
+`/records?signed=true` pages the zone's derived DNSSEC records after its user
+records. They are narrowed by the same name, type, and TTL filters; a `search`
+reaches them by name only, since their type is stored as a number and their
+rdata as wire bytes, a `priority` filter leaves them out because none carries
+one, and a `value` filter is refused rather than answered without them.
+
 ## Authentication
 
 Bootstrap the first token with the CLI:

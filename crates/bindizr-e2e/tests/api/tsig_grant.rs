@@ -69,7 +69,7 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
         .request(Method::GET, "/tsig-keys/grant-key/grants", None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["tsig_grants"].as_array().unwrap().len(), 2);
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
 
     let (status, body) = app
         .request(
@@ -79,7 +79,7 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["tsig_grants"].as_array().unwrap().len(), 2);
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
 
     let (status, _) = app
         .request(

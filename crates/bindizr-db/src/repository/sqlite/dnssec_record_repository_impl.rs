@@ -7,7 +7,7 @@ use crate::{
     model::dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     repository::{
         DnssecRecordFilter, DnssecRecordRepository, LockLevel, RepositoryTx,
-        sql::{apex_owner_sql, concat_pipes, grant_record_match_sql, refresh_bound},
+        sql::{apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern, refresh_bound},
     },
 };
 
@@ -237,6 +237,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
     ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();
+        let search = like_pattern(filter.search.as_deref());
         let grant_match = grant_record_match_sql("d", None, concat_pipes);
         let records = sqlx::query_as::<_, DnssecRecordWithZone>(AssertSqlSafe(format!(
             r#"
@@ -253,6 +254,12 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
               AND (? IS NULL OR d.ttl = ?)
               AND (? IS NULL OR d.ttl >= ?)
               AND (? IS NULL OR d.ttl <= ?)
+              AND (
+                    ? IS NULL
+                    OR LOWER(z.name) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(d.name) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(CASE WHEN d.name = {apex_owner} THEN z.name || '.' ELSE d.name || '.' || z.name || '.' END) LIKE LOWER(?) ESCAPE '\'
+              )
               AND (
                     ? IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
@@ -278,6 +285,10 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
         .bind(filter.min_ttl)
         .bind(filter.max_ttl)
         .bind(filter.max_ttl)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
         .bind(filter.scope_token_id)
         .bind(filter.scope_token_id)
         .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
@@ -296,6 +307,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
     async fn count_by_filter(&self, filter: DnssecRecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();
+        let search = like_pattern(filter.search.as_deref());
         let grant_match = grant_record_match_sql("d", None, concat_pipes);
         let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
@@ -312,6 +324,12 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
               AND (? IS NULL OR d.ttl = ?)
               AND (? IS NULL OR d.ttl >= ?)
               AND (? IS NULL OR d.ttl <= ?)
+              AND (
+                    ? IS NULL
+                    OR LOWER(z.name) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(d.name) LIKE LOWER(?) ESCAPE '\'
+                    OR LOWER(CASE WHEN d.name = {apex_owner} THEN z.name || '.' ELSE d.name || '.' || z.name || '.' END) LIKE LOWER(?) ESCAPE '\'
+              )
               AND (
                     ? IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
@@ -333,6 +351,10 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
         .bind(filter.min_ttl)
         .bind(filter.max_ttl)
         .bind(filter.max_ttl)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
         .bind(filter.scope_token_id)
         .bind(filter.scope_token_id)
         .fetch_one(&mut *conn)

@@ -16,13 +16,33 @@ paths:
       summary: List all DNSSEC policies
       description: 'Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC, 14-day signatures re-signed with 5 days left) is seeded at startup.'
       operationId: list_dnssec_policies
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: All DNSSEC policies
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DnssecPolicyListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetDnssecPolicyResponse'
         '401':
           description: Unauthorized
           content:
@@ -555,9 +575,21 @@ paths:
         required: false
         schema:
           type: string
+      - name: sort
+        in: query
+        description: Sort by name (the default), record_type, ttl, priority, or created_at.
+        required: false
+        schema:
+          type: string
+      - name: order
+        in: query
+        description: asc (the default) or desc.
+        required: false
+        schema:
+          type: string
       - name: signed
         in: query
-        description: Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id; record_type also accepts a derived type, while value, search, and priority filters keep the listing user-only.
+        description: Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and record_type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them.
         required: false
         schema:
           type: boolean
@@ -980,13 +1012,33 @@ paths:
       summary: List all API tokens
       description: Lists every API token without its secret; a secret is shown once, in the create response.
       operationId: list_tokens
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: All API tokens
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTokenResponse'
         '401':
           description: Unauthorized
           content:
@@ -1093,13 +1145,33 @@ paths:
       summary: List the grants of the API token making the request
       description: The calling token's grants; any token may read its own. A global token holds none, so its list is empty. With authentication disabled no token is presented, so this answers 401.
       operationId: list_self_token_grants
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: The calling token's grants
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenGrantListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTokenGrantResponse'
         '401':
           description: Unauthorized, or no token presented
           content:
@@ -1176,7 +1248,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenGrantListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTokenGrantResponse'
         '401':
           description: Unauthorized
           content:
@@ -1321,13 +1393,33 @@ paths:
       summary: List all TSIG keys
       description: Lists every TSIG key without its secret. Fetch a single key to read the secret.
       operationId: list_tsig_keys
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: All TSIG keys
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TsigKeyListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTsigKeyResponse'
         '401':
           description: Unauthorized
           content:
@@ -1515,7 +1607,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TsigGrantListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTsigGrantResponse'
         '401':
           description: Unauthorized
           content:
@@ -1713,9 +1805,53 @@ paths:
         schema:
           type: integer
           format: int32
+      - name: min_serial
+        in: query
+        description: Filter by minimum serial.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: max_serial
+        in: query
+        description: Filter by maximum serial.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: created_after
+        in: query
+        description: Keep zones created at or after this RFC 3339 timestamp.
+        required: false
+        schema:
+          type: string
+      - name: created_before
+        in: query
+        description: Keep zones created at or before this RFC 3339 timestamp.
+        required: false
+        schema:
+          type: string
+      - name: signed
+        in: query
+        description: true keeps the zones signing under a DNSSEC policy, false the rest.
+        required: false
+        schema:
+          type: boolean
       - name: search
         in: query
         description: Partially search zones.
+        required: false
+        schema:
+          type: string
+      - name: sort
+        in: query
+        description: Sort by name (the default), serial, default_ttl, or created_at.
+        required: false
+        schema:
+          type: string
+      - name: order
+        in: query
+        description: asc (the default) or desc.
         required: false
         schema:
           type: string
@@ -2783,7 +2919,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenGrantListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTokenGrantResponse'
         '401':
           description: Unauthorized
           content:
@@ -2827,7 +2963,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TsigGrantListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTsigGrantResponse'
         '401':
           description: Unauthorized
           content:
@@ -3612,16 +3748,6 @@ components:
         state_changed_at:
           type: string
           format: date-time
-    DnssecPolicyListResponse:
-      type: object
-      description: Every DNSSEC policy.
-      required:
-      - dnssec_policies
-      properties:
-        dnssec_policies:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetDnssecPolicyResponse'
     DnssecPolicyResponse:
       type: object
       description: A DNSSEC policy wrapped in a response envelope.
@@ -4280,6 +4406,67 @@ components:
         message:
           type: string
           example: Deleted successfully
+    PaginatedResponse_GetDnssecPolicyResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a DNSSEC policy.
+            required:
+            - id
+            - name
+            - algorithm
+            - denial
+            - split_keys
+            - signature_validity_days
+            - signature_refresh_days
+            - zsk_lifetime_days
+            - created_at
+            properties:
+              algorithm:
+                type: string
+                example: ecdsap256sha256
+              created_at:
+                type: string
+                format: date-time
+              denial:
+                type: string
+                description: '`nsec` or `nsec3`.'
+                example: nsec3
+              id:
+                type: integer
+                format: int32
+                example: 1
+              name:
+                type: string
+                example: default
+              signature_refresh_days:
+                type: integer
+                format: int32
+                example: 5
+                minimum: 0
+              signature_validity_days:
+                type: integer
+                format: int32
+                example: 14
+                minimum: 0
+              split_keys:
+                type: boolean
+                example: false
+              zsk_lifetime_days:
+                type: integer
+                format: int32
+                description: 0 disables scheduled ZSK rollovers.
+                example: 0
+                minimum: 0
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetRecordResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -4334,6 +4521,178 @@ components:
               zone_name:
                 type: string
                 example: example.com
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetTokenGrantResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a token grant.
+            required:
+            - id
+            - api_token
+            - zone_name
+            - record_name_pattern
+            - record_types
+            - can_write
+            - created_at
+            properties:
+              api_token:
+                type: string
+                example: external-dns
+              can_write:
+                type: boolean
+                example: true
+              created_at:
+                type: string
+                format: date-time
+              id:
+                type: integer
+                format: int32
+                example: 1
+              record_name_pattern:
+                type: string
+                example: '*.dyn'
+              record_types:
+                type: string
+                example: A,AAAA,TXT
+              zone_name:
+                type: string
+                example: example.com
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetTokenResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of an API token; never carries the secret.
+            required:
+            - id
+            - name
+            - global
+            - created_at
+            properties:
+              created_at:
+                type: string
+                format: date-time
+              description:
+                type:
+                - string
+                - 'null'
+              expires_at:
+                type:
+                - string
+                - 'null'
+                format: date-time
+              global:
+                type: boolean
+                description: Whether the token may manage every zone and the zone plane.
+                example: false
+              id:
+                type: integer
+                format: int32
+                example: 1
+              last_used_at:
+                type:
+                - string
+                - 'null'
+                format: date-time
+              name:
+                type: string
+                example: external-dns
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetTsigGrantResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a TSIG grant.
+            required:
+            - id
+            - tsig_key
+            - zone_name
+            - record_name_pattern
+            - record_types
+            - created_at
+            properties:
+              created_at:
+                type: string
+                format: date-time
+              id:
+                type: integer
+                format: int32
+                example: 1
+              record_name_pattern:
+                type: string
+                example: '*.dyn'
+              record_types:
+                type: string
+                example: A,AAAA,TXT
+              tsig_key:
+                type: string
+                example: update-key
+              zone_name:
+                type: string
+                example: example.com
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetTsigKeyResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a TSIG key; never carries the secret.
+            required:
+            - id
+            - name
+            - algorithm
+            - global
+            - created_at
+            properties:
+              algorithm:
+                type: string
+                example: hmac-sha256
+              created_at:
+                type: string
+                format: date-time
+              global:
+                type: boolean
+                description: Whether the key may update every zone without any grant.
+                example: false
+              id:
+                type: integer
+                format: int32
+                example: 1
+              name:
+                type: string
+                example: update-key
         pagination:
           $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetZoneResponse:
@@ -4725,16 +5084,6 @@ components:
           - 'null'
           format: int64
           example: 42
-    TokenGrantListResponse:
-      type: object
-      description: Grants of one token, or every grant that applies to one zone.
-      required:
-      - token_grants
-      properties:
-        token_grants:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetTokenGrantResponse'
     TokenGrantResponse:
       type: object
       description: A single token grant wrapped in a response envelope.
@@ -4743,16 +5092,6 @@ components:
       properties:
         token_grant:
           $ref: '#/components/schemas/GetTokenGrantResponse'
-    TokenListResponse:
-      type: object
-      description: List of API tokens (secrets omitted).
-      required:
-      - tokens
-      properties:
-        tokens:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetTokenResponse'
     TokenResponse:
       type: object
       description: 'One token without its secret: the self lookup.'
@@ -4761,16 +5100,6 @@ components:
       properties:
         token:
           $ref: '#/components/schemas/GetTokenResponse'
-    TsigGrantListResponse:
-      type: object
-      description: Grants of one key, or every grant that applies to one zone.
-      required:
-      - tsig_grants
-      properties:
-        tsig_grants:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetTsigGrantResponse'
     TsigGrantResponse:
       type: object
       description: A single TSIG grant wrapped in a response envelope.
@@ -4779,16 +5108,6 @@ components:
       properties:
         tsig_grant:
           $ref: '#/components/schemas/GetTsigGrantResponse'
-    TsigKeyListResponse:
-      type: object
-      description: List of TSIG keys (secrets omitted).
-      required:
-      - tsig_keys
-      properties:
-        tsig_keys:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetTsigKeyResponse'
     TsigKeyResponse:
       type: object
       description: 'A key with its secret: the create and get responses.'

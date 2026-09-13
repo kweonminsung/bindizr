@@ -1,5 +1,6 @@
 //! Zone request, patch, filter, and response payloads.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -93,8 +94,23 @@ pub struct GetZonesFilter {
     pub max_default_ttl: Option<i32>,
     #[schema(example = 42)]
     pub serial: Option<i32>,
+    #[schema(example = 1)]
+    pub min_serial: Option<i32>,
+    #[schema(example = 99)]
+    pub max_serial: Option<i32>,
+    pub created_after: Option<DateTime<Utc>>,
+    pub created_before: Option<DateTime<Utc>>,
+    /// `true` keeps the zones signing under a DNSSEC policy, `false` the rest.
+    #[schema(example = true)]
+    pub signed: Option<bool>,
     #[schema(example = "example")]
     pub search: Option<String>,
+    /// `name` (the default), `serial`, `default_ttl`, or `created_at`.
+    #[schema(example = "name")]
+    pub sort: Option<String>,
+    /// `asc` (the default) or `desc`.
+    #[schema(example = "asc")]
+    pub order: Option<String>,
     /// Defaults to 50 when omitted; 1000 is the largest page accepted.
     #[schema(example = 50)]
     pub limit: Option<u32>,

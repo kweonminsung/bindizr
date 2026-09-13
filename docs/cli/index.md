@@ -74,6 +74,8 @@ $ bindizr zone update <ZONE_NAME> --refresh 300 --retry 60
 $ bindizr record create --zone example.com --name www --type A --value 192.0.2.1 --ttl 300
 $ bindizr record create --zone example.com --name @ --type TXT --value v=spf1 --value ~all  # repeat --value for TXT segments
 $ bindizr record list --zone example.com
+$ bindizr record list --zone example.com --sort ttl --order desc
+$ bindizr zone list --min-serial 100 --signed --sort created_at
 $ bindizr record get <RECORD_ID>
 $ bindizr record delete <RECORD_ID>
 

@@ -202,6 +202,12 @@ pub struct GetRecordsFilter {
     pub max_priority: Option<i32>,
     #[schema(example = "api")]
     pub search: Option<String>,
+    /// `name` (the default), `record_type`, `ttl`, `priority`, or `created_at`.
+    #[schema(example = "name")]
+    pub sort: Option<String>,
+    /// `asc` (the default) or `desc`.
+    #[schema(example = "asc")]
+    pub order: Option<String>,
     /// With true, the derived DNSSEC records page after the user records.
     #[schema(example = false)]
     pub signed: Option<bool>,

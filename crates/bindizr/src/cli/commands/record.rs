@@ -116,6 +116,12 @@ YAML example:
         /// Search records by partial text
         #[arg(short = 'q', long)]
         search: Option<String>,
+        /// Sort by: name (default), record_type, ttl, priority, created_at
+        #[arg(long, value_name = "FIELD")]
+        sort: Option<String>,
+        /// Sort order: asc (default) or desc
+        #[arg(long, value_name = "asc|desc")]
+        order: Option<String>,
         /// Append the derived DNSSEC records (RRSIG, DNSKEY, NSEC, ...)
         #[arg(long)]
         signed: bool,
@@ -250,6 +256,8 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             max_priority,
             search,
             signed,
+            sort,
+            order,
             limit,
             offset,
             output,
@@ -266,6 +274,8 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 || max_priority.is_some()
                 || search.is_some()
                 || signed
+                || sort.is_some()
+                || order.is_some()
                 || limit.is_some()
                 || offset.is_some();
             let filter = has_filters.then_some(GetRecordsFilter {
@@ -281,6 +291,8 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 max_priority,
                 search,
                 signed: signed.then_some(true),
+                sort,
+                order,
                 limit,
                 offset,
             });

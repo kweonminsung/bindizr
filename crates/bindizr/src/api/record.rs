@@ -57,7 +57,9 @@ impl RecordApi {
             ("min_priority" = Option<i32>, Query, description = "Filter by minimum priority."),
             ("max_priority" = Option<i32>, Query, description = "Filter by maximum priority."),
             ("search" = Option<String>, Query, description = "Partially search records."),
-            ("signed" = Option<bool>, Query, description = "Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id; record_type also accepts a derived type, while value, search, and priority filters keep the listing user-only."),
+            ("sort" = Option<String>, Query, description = "Sort by name (the default), record_type, ttl, priority, or created_at."),
+            ("order" = Option<String>, Query, description = "asc (the default) or desc."),
+            ("signed" = Option<bool>, Query, description = "Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and record_type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them."),
             ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Records per page; defaults to 50."),
             ("offset" = Option<u64>, Query, description = "Number of records to skip.")
         ),

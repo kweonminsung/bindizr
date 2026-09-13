@@ -4,7 +4,7 @@ use bindizr_service::{
     token::{TokenService, grant::TokenGrantService},
     types::{
         CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse, GetTokenResponse,
-        TokenGrantListResponse, TokenGrantResponse, TokenListResponse,
+        PageFilter, TokenGrantResponse,
     },
 };
 
@@ -41,14 +41,12 @@ pub(crate) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
 
 /// Handle the `TokenList` command by returning all API tokens.
 pub(crate) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
-    let tokens = TokenService::list(&Caller::Global).await?;
-    let tokens: Vec<GetTokenResponse> = tokens.iter().map(GetTokenResponse::from_token).collect();
+    let response = TokenService::list(&Caller::Global, PageFilter::default()).await?;
 
-    let response = DaemonResponse {
+    Ok(DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
-        data: to_response_data(TokenListResponse { tokens })?,
-    };
-    Ok(response)
+        data: to_response_data(response)?,
+    })
 }
 
 /// Handle the `TokenDelete` command by deleting an API token by name.
@@ -94,17 +92,13 @@ pub(crate) async fn list_token_grants_by_token(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: TokenNameParams = parse_params(data)?;
 
-    let grants = TokenGrantService::list_by_token(&Caller::Global, &params.name).await?;
-    let grants: Vec<GetTokenGrantResponse> = grants
-        .iter()
-        .map(GetTokenGrantResponse::from_grant)
-        .collect();
+    let response =
+        TokenGrantService::list_by_token(&Caller::Global, &params.name, PageFilter::default())
+            .await?;
 
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
-        data: to_response_data(TokenGrantListResponse {
-            token_grants: grants,
-        })?,
+        data: to_response_data(response)?,
     })
 }
 
@@ -115,17 +109,13 @@ pub(crate) async fn list_token_grants_by_zone(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    let grants = TokenGrantService::list_by_zone(&Caller::Global, &params.name).await?;
-    let grants: Vec<GetTokenGrantResponse> = grants
-        .iter()
-        .map(GetTokenGrantResponse::from_grant)
-        .collect();
+    let response =
+        TokenGrantService::list_by_zone(&Caller::Global, &params.name, PageFilter::default())
+            .await?;
 
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
-        data: to_response_data(TokenGrantListResponse {
-            token_grants: grants,
-        })?,
+        data: to_response_data(response)?,
     })
 }
 

@@ -47,7 +47,7 @@ async fn tsig_key_create_read_delete() {
     // ...but omitted from the list response.
     let (status, body) = app.request(Method::GET, "/tsig-keys", None).await;
     assert_eq!(status, StatusCode::OK);
-    let keys = body["tsig_keys"].as_array().unwrap();
+    let keys = body["items"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
     assert!(keys[0].get("secret").is_none());
 
@@ -152,7 +152,7 @@ async fn global_tsig_key_lifecycle() {
 
     let (status, body) = app.request(Method::GET, "/tsig-keys", None).await;
     assert_eq!(status, StatusCode::OK);
-    let keys = body["tsig_keys"].as_array().unwrap();
+    let keys = body["items"].as_array().unwrap();
     let global = keys.iter().find(|k| k["name"] == "global-key").unwrap();
     assert_eq!(global["global"], true);
 
