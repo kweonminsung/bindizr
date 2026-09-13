@@ -21,6 +21,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      {{- with .Values.bindizr.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       serviceAccountName: {{ include "bindizr-chart.serviceAccountName" . }}
       {{- with .Values.bindizr.podSecurityContext }}
       securityContext:
@@ -77,6 +80,18 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with .Values.bindizr.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.bindizr.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.bindizr.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with .Values.bindizr.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -85,10 +100,16 @@ spec:
             - name: config-template
               mountPath: /etc/bindizr-template
               readOnly: true
+            # The daemon's control socket: the only path a read-only root
+            # filesystem has to open.
+            - name: runtime
+              mountPath: /run/bindizr
       volumes:
         - name: config-template
           configMap:
             name: {{ include "bindizr-chart.fullname" . }}-config
+        - name: runtime
+          emptyDir: {}
       {{- with .Values.bindizr.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
