@@ -92,6 +92,8 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             retry INT NOT NULL,
             expire INT NOT NULL,
             minimum_ttl INT NOT NULL,
+            change_source VARCHAR(16) NOT NULL,
+            changed_by VARCHAR(255),
             created_at DATETIME NOT NULL,
             UNIQUE KEY uq_zone_serial (zone_id, serial),
             INDEX idx_zone_versions_created (created_at),
@@ -295,6 +297,8 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
             retry INTEGER NOT NULL,
             expire INTEGER NOT NULL,
             minimum_ttl INTEGER NOT NULL,
+            change_source VARCHAR(16) NOT NULL,
+            changed_by VARCHAR(255),
             created_at TIMESTAMPTZ NOT NULL,
             UNIQUE(zone_id, serial),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
@@ -514,6 +518,8 @@ pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
             retry INTEGER NOT NULL,
             expire INTEGER NOT NULL,
             minimum_ttl INTEGER NOT NULL,
+            change_source TEXT NOT NULL,
+            changed_by TEXT,
             created_at DATETIME NOT NULL,
             UNIQUE(zone_id, serial),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE

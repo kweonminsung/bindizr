@@ -1726,3 +1726,45 @@ async fn zone_import_from_server_over_http() {
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_versions_record_who_made_each_change() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (token_name, token) = app.create_api_token().await;
+
+    // Over the daemon socket, whose peer is the local daemon owner: no
+    // credential stands behind it.
+    let zone_name = app.zone_name("audit.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    app.set_auth_token(token);
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "www", "record_type": "A", "value": "192.0.2.7",
+                "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let (status, body) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let items = body["items"].as_array().unwrap();
+
+    assert_eq!(items[0]["change_source"], "token", "{body}");
+    assert_eq!(items[0]["changed_by"], token_name, "{body}");
+
+    let created = items.last().unwrap();
+    assert_eq!(created["change_source"], "local", "{body}");
+    assert!(created["changed_by"].is_null(), "{body}");
+}

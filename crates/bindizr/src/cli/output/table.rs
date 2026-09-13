@@ -218,6 +218,10 @@ pub(crate) struct VersionRow {
     pub(crate) expire: i32,
     #[tabled(rename = "MINIMUM-TTL")]
     pub(crate) minimum_ttl: i32,
+    #[tabled(rename = "SOURCE")]
+    pub(crate) change_source: String,
+    #[tabled(rename = "CHANGED-BY")]
+    pub(crate) changed_by: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
@@ -233,6 +237,8 @@ impl From<&ZoneVersionResponse> for VersionRow {
             retry: version.retry,
             expire: version.expire,
             minimum_ttl: version.minimum_ttl,
+            change_source: version.change_source.clone(),
+            changed_by: display_option_text(&version.changed_by),
             created_at: version.created_at.to_rfc3339(),
         }
     }

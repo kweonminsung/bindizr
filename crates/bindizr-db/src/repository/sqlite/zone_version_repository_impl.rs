@@ -51,8 +51,8 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(zone_id, serial)
             DO UPDATE SET
                 mname = excluded.mname,
@@ -61,7 +61,9 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
                 refresh = excluded.refresh,
                 retry = excluded.retry,
                 expire = excluded.expire,
-                minimum_ttl = excluded.minimum_ttl
+                minimum_ttl = excluded.minimum_ttl,
+                change_source = excluded.change_source,
+                changed_by = excluded.changed_by
             "#,
         )
         .bind(version.zone_id)
@@ -73,6 +75,8 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .bind(version.retry)
         .bind(version.expire)
         .bind(version.minimum_ttl)
+        .bind(version.change_source.as_str())
+        .bind(&version.changed_by)
         .bind(Utc::now())
         .execute(&mut **sqlite_tx)
         .await
@@ -92,7 +96,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
     ) -> Result<Option<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial = ?
             "#,
@@ -112,7 +116,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
     ) -> Result<Vec<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial >= ? AND serial <= ?
             "#,
@@ -139,7 +143,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         };
         let mut query = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ?{filter}
             ORDER BY serial DESC
@@ -189,7 +193,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
 
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial = ?
             "#,

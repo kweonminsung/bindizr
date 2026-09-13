@@ -36,7 +36,9 @@ use crate::{
         ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, RecordDiff,
         RecordValueRequest,
     },
-    zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
+    zone::{
+        ZoneService, diff::build_record_diff, history::ReconstructedRecord, version::ChangeSubject,
+    },
 };
 
 /// A record the import wants present, with its owner name already normalized so
@@ -240,6 +242,7 @@ impl RecordService {
             request.mode,
             request.dry_run,
             request.skip_unsupported,
+            &caller.change_subject(),
         )
         .await
     }
@@ -250,6 +253,7 @@ impl RecordService {
         mode: ImportMode,
         dry_run: bool,
         skip_unsupported: bool,
+        subject: &ChangeSubject,
     ) -> Result<ImportZoneResponse, ServiceError> {
         let t_total = Instant::now();
 
@@ -514,7 +518,7 @@ impl RecordService {
                 let t = Instant::now();
                 // Advance the serial once so IXFR consumers detect the import
                 DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
-                ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+                ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, subject).await?;
                 timings.serial_ms = elapsed_ms(t);
             }
 

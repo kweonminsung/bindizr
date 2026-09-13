@@ -20,18 +20,30 @@ use crate::{
     error::ServiceError,
     grant_pattern::{MATCH_ANY, matches_name, matches_types},
     log_error,
-    model::{api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone},
+    model::{
+        api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone,
+        zone_version::ChangeSource,
+    },
     repository::RepositoryService,
     token::hash_token,
+    zone::version::ChangeSubject,
 };
 
 /// The identity a request acts as. The daemon socket and disabled
-/// authentication act as `Global`; scoped tokens carry their grants,
+/// authentication act as `Global`, behind no credential at all; a token
+/// carries the name a change is recorded under, and a scoped one its grants,
 /// preloaded once per request by the auth middleware.
 #[derive(Debug, Clone)]
 pub enum Caller {
     Global,
-    Token { id: i32, grants: Arc<[TokenGrant]> },
+    GlobalToken {
+        name: Arc<str>,
+    },
+    Token {
+        id: i32,
+        name: Arc<str>,
+        grants: Arc<[TokenGrant]>,
+    },
 }
 
 /// One record-plane write to authorize: the owner name relative to the zone
@@ -43,7 +55,21 @@ pub(crate) struct RecordWrite<'a> {
 
 impl Caller {
     fn is_global(&self) -> bool {
-        matches!(self, Caller::Global)
+        matches!(self, Caller::Global | Caller::GlobalToken { .. })
+    }
+
+    /// The credential name a change made by this caller is recorded under.
+    pub(crate) fn change_subject(&self) -> ChangeSubject {
+        match self {
+            Caller::Global => ChangeSubject {
+                source: ChangeSource::Local,
+                actor: None,
+            },
+            Caller::GlobalToken { name } | Caller::Token { name, .. } => ChangeSubject {
+                source: ChangeSource::Token,
+                actor: Some(name.to_string()),
+            },
+        }
     }
 
     /// Resolve who a Bearer token acts as: validate the token, then preload a
@@ -52,11 +78,15 @@ impl Caller {
     pub async fn authenticate(bearer_token: &str) -> Result<(Caller, ApiToken), ServiceError> {
         let token = authenticate_token(bearer_token).await?;
         if token.is_global {
-            return Ok((Caller::Global, token));
+            let caller = Caller::GlobalToken {
+                name: token.name.as_str().into(),
+            };
+            return Ok((caller, token));
         }
         let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
         let caller = Caller::Token {
             id: token.id,
+            name: token.name.as_str().into(),
             grants: grants.into(),
         };
         Ok((caller, token))
@@ -77,7 +107,7 @@ impl Caller {
     /// unrestricted. List queries join it against the grants in SQL.
     pub(crate) fn scope_token_id(&self) -> Option<i32> {
         match self {
-            Caller::Global => None,
+            Caller::Global | Caller::GlobalToken { .. } => None,
             Caller::Token { id, .. } => Some(*id),
         }
     }
@@ -85,7 +115,7 @@ impl Caller {
     /// Whether the caller may see `zone_id`.
     pub(crate) fn zone_visible(&self, zone_id: i32) -> bool {
         match self {
-            Caller::Global => true,
+            Caller::Global | Caller::GlobalToken { .. } => true,
             Caller::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
         }
     }
@@ -111,7 +141,7 @@ impl Caller {
         writes: &[RecordWrite<'_>],
     ) -> Result<(), ServiceError> {
         match self {
-            Caller::Global => Ok(()),
+            Caller::Global | Caller::GlobalToken { .. } => Ok(()),
             Caller::Token { id, .. } => {
                 let grants = RepositoryService::list_token_grants_by_zone_id_and_token_id_tx(
                     tx,
@@ -139,7 +169,7 @@ impl Caller {
         record_type: Option<&RecordType>,
     ) -> bool {
         match self {
-            Caller::Global => true,
+            Caller::Global | Caller::GlobalToken { .. } => true,
             Caller::Token { grants, .. } => grants.iter().any(|grant| {
                 grant.zone_id == zone_id
                     && matches_name(&grant.record_name_pattern, name)
@@ -153,7 +183,7 @@ impl Caller {
     /// narrowed: half a zone re-applied deletes what it left out.
     pub(crate) fn ensure_zone_unrestricted(&self, zone: &Zone) -> Result<(), ServiceError> {
         let unrestricted = match self {
-            Caller::Global => true,
+            Caller::Global | Caller::GlobalToken { .. } => true,
             Caller::Token { grants, .. } => grants.iter().any(|grant| {
                 grant.zone_id == zone.id
                     && grant.record_name_pattern == MATCH_ANY

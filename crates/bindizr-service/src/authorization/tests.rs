@@ -59,6 +59,7 @@ fn require_global_rejects_scoped_tokens() {
 
     let scoped = Caller::Token {
         id: 3,
+        name: "scoped".into(),
         grants: Arc::from(vec![]),
     };
     let err = scoped.require_global("create zones").unwrap_err();
@@ -135,6 +136,7 @@ fn authorize_rejects_a_read_only_grant() {
 fn token(grants: Vec<TokenGrant>) -> Caller {
     Caller::Token {
         id: 3,
+        name: "scoped".into(),
         grants: Arc::from(grants),
     }
 }

@@ -51,8 +51,8 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
 
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             ON CONFLICT (zone_id, serial)
             DO UPDATE SET
                 mname = EXCLUDED.mname,
@@ -61,8 +61,10 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
                 refresh = EXCLUDED.refresh,
                 retry = EXCLUDED.retry,
                 expire = EXCLUDED.expire,
-                minimum_ttl = EXCLUDED.minimum_ttl
-            RETURNING id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+                minimum_ttl = EXCLUDED.minimum_ttl,
+                change_source = EXCLUDED.change_source,
+                changed_by = EXCLUDED.changed_by
+            RETURNING id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             "#,
         )
         .bind(version.zone_id)
@@ -74,6 +76,8 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         .bind(version.retry)
         .bind(version.expire)
         .bind(version.minimum_ttl)
+        .bind(version.change_source.as_str())
+        .bind(&version.changed_by)
         .bind(Utc::now())
         .fetch_one(&mut **postgres_tx)
         .await
@@ -87,7 +91,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
     ) -> Result<Option<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = $1 AND serial = $2
             "#,
@@ -107,7 +111,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
     ) -> Result<Vec<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = $1 AND serial >= $2 AND serial <= $3
             "#,
@@ -133,7 +137,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         };
         sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = $1{filter}
             ORDER BY serial DESC
@@ -175,7 +179,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
 
         sqlx::query_as::<_, ZoneVersion>(
             AssertSqlSafe(format!("{}{}", r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = $1 AND serial = $2
             "#, lock_clause(lock_level))),

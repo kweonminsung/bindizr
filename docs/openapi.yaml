@@ -4450,8 +4450,24 @@ components:
             - retry
             - expire
             - minimum_ttl
+            - change_source
             - created_at
             properties:
+              change_source:
+                type: string
+                description: |-
+                  Which plane asked for this version: `token`, `nsupdate`, `system`
+                  (the DNSSEC maintenance scheduler), or `local` (the daemon socket, or
+                  any request while authentication is disabled).
+                example: token
+              changed_by:
+                type:
+                - string
+                - 'null'
+                description: |-
+                  The API token or TSIG key the change was made under, absent where no
+                  credential stood behind it.
+                example: admin
               created_at:
                 type: string
                 format: date-time
@@ -5086,8 +5102,24 @@ components:
       - retry
       - expire
       - minimum_ttl
+      - change_source
       - created_at
       properties:
+        change_source:
+          type: string
+          description: |-
+            Which plane asked for this version: `token`, `nsupdate`, `system`
+            (the DNSSEC maintenance scheduler), or `local` (the daemon socket, or
+            any request while authentication is disabled).
+          example: token
+        changed_by:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The API token or TSIG key the change was made under, absent where no
+            credential stood behind it.
+          example: admin
         created_at:
           type: string
           format: date-time

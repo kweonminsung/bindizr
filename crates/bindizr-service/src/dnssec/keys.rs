@@ -150,9 +150,16 @@ impl DnssecService {
                 stored.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
             }
 
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &stored, false)
-                .await?
-                .unwrap_or(zone.serial);
+            let new_serial = Self::resign_zone_tx(
+                &mut tx,
+                &zone,
+                &policy,
+                &stored,
+                false,
+                &caller.change_subject(),
+            )
+            .await?
+            .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, Some(&policy), &stored, new_serial).await
         }

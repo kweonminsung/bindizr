@@ -111,7 +111,8 @@ impl RecordService {
 
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the change
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
+                .await?;
 
             Ok(DeletedRecord {
                 zone_name: zone.name,
@@ -243,7 +244,8 @@ impl RecordService {
             Self::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Once for the whole set, so IXFR consumers see one step.
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
+                .await?;
 
             Ok(response)
         }

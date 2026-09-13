@@ -3,17 +3,18 @@ use bindizr_db::repository::LockLevel;
 use super::ZoneService;
 use crate::{
     dnssec::DnssecService, error::ServiceError, log_error, log_info, model::zone::Zone,
-    repository::RepositoryService, serial::generate_serial,
+    repository::RepositoryService, serial::generate_serial, zone::version::ChangeSubject,
 };
 
 impl ZoneService {
     /// Force-increment the serial of one zone by name, or of every zone when `None`.
     pub(crate) async fn force_increment_serial(
         zone_name: Option<&str>,
+        subject: &ChangeSubject,
     ) -> Result<Vec<Zone>, ServiceError> {
         match zone_name {
             Some(name) => {
-                let zone = Self::force_increment_serial_by_name(name).await?;
+                let zone = Self::force_increment_serial_by_name(name, subject).await?;
                 Ok(vec![zone])
             }
             None => {
@@ -24,8 +25,9 @@ impl ZoneService {
                     // Bump each zone in its own transaction so the new serial
                     // derives from the current row and a concurrent edit to other
                     // fields is not clobbered.
-                    bumped_zones
-                        .push(Self::force_increment_serial_by_name(zone.name.as_str()).await?);
+                    bumped_zones.push(
+                        Self::force_increment_serial_by_name(zone.name.as_str(), subject).await?,
+                    );
                 }
 
                 Ok(bumped_zones)
@@ -33,7 +35,10 @@ impl ZoneService {
         }
     }
 
-    async fn force_increment_serial_by_name(zone_name: &str) -> Result<Zone, ServiceError> {
+    async fn force_increment_serial_by_name(
+        zone_name: &str,
+        subject: &ChangeSubject,
+    ) -> Result<Zone, ServiceError> {
         let mut tx = RepositoryService::begin_tx("Failed to force increment zone serial").await?;
 
         let apply_result = async {
@@ -57,7 +62,7 @@ impl ZoneService {
             // The SOA rdata carries the serial, so its signature must follow
             // every bump — forced ones included.
             DnssecService::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-            ZoneService::save_version_tx(&mut tx, &updated_zone, new_serial).await?;
+            ZoneService::save_version_tx(&mut tx, &updated_zone, new_serial, subject).await?;
 
             Ok::<Zone, ServiceError>(updated_zone)
         }

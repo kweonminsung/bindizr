@@ -79,9 +79,16 @@ impl DnssecService {
             .await?;
             keys.push(new_key);
 
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-                .await?
-                .unwrap_or(zone.serial);
+            let new_serial = Self::resign_zone_tx(
+                &mut tx,
+                &zone,
+                &policy,
+                &keys,
+                false,
+                &caller.change_subject(),
+            )
+            .await?
+            .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
         }
@@ -191,9 +198,16 @@ impl DnssecService {
                 Self::promote_published_keys_tx(&mut tx, &zone, &policy, keys, &ds_published)
                     .await?;
 
-            let new_serial = DnssecService::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-                .await?
-                .unwrap_or(zone.serial);
+            let new_serial = DnssecService::resign_zone_tx(
+                &mut tx,
+                &zone,
+                &policy,
+                &keys,
+                false,
+                &caller.change_subject(),
+            )
+            .await?
+            .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
         }

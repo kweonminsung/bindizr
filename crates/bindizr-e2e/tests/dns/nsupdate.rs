@@ -305,6 +305,19 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
             .any(|record| record["name"] == format!("a.{zone_name}.")),
         "granted update was not applied"
     );
+
+    // The DNS plane has no API token, so the key that signed the update is
+    // the name the change is recorded under.
+    let (status, body) = app
+        .request(
+            reqwest::Method::GET,
+            &format!("/zones/{zone_name}/versions"),
+            None,
+        )
+        .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{body}");
+    assert_eq!(body["items"][0]["change_source"], "nsupdate", "{body}");
+    assert_eq!(body["items"][0]["changed_by"], key.name, "{body}");
 }
 
 // The apex is the empty owner in a row but `@` to the input parser, so an

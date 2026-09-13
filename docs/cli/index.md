@@ -122,7 +122,10 @@ text) or `from_server` the same way, and `skip_unsupported` alongside them.
 ## Zone history
 
 Every SOA serial has a version behind it, so a zone can be diffed and rolled
-back.
+back, and each version records who made the change: the API token or TSIG key
+it was made under (`system` for the DNSSEC maintenance scheduler, `local` for
+the daemon socket or a request made while authentication is disabled). The
+name is copied into the version, so it still answers after the token is gone.
 
 ```bash
 # List a zone's versions (SOA serials are a plain counter starting at 1)

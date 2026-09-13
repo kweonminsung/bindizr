@@ -51,8 +51,8 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 mname = VALUES(mname),
                 rname = VALUES(rname),
@@ -60,7 +60,9 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
                 refresh = VALUES(refresh),
                 retry = VALUES(retry),
                 expire = VALUES(expire),
-                minimum_ttl = VALUES(minimum_ttl)
+                minimum_ttl = VALUES(minimum_ttl),
+                change_source = VALUES(change_source),
+                changed_by = VALUES(changed_by)
             "#,
         )
         .bind(version.zone_id)
@@ -72,6 +74,8 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         .bind(version.retry)
         .bind(version.expire)
         .bind(version.minimum_ttl)
+        .bind(version.change_source.as_str())
+        .bind(&version.changed_by)
         .bind(Utc::now())
         .execute(&mut **mysql_tx)
         .await
@@ -91,7 +95,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
     ) -> Result<Option<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial = ?
             "#,
@@ -111,7 +115,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
     ) -> Result<Vec<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial >= ? AND serial <= ?
             "#,
@@ -137,7 +141,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         };
         let mut query = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ?{filter}
             ORDER BY serial DESC
@@ -187,7 +191,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
 
         sqlx::query_as::<_, ZoneVersion>(
             AssertSqlSafe(format!("{}{}", r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial = ?
             "#, lock_clause(lock_level))),

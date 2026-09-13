@@ -548,7 +548,13 @@ impl ZoneService {
             // The restored user plane gets fresh signatures; old RRSIGs are
             // never restored (derived journal rows are skipped on reconstruction).
             DnssecService::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
-            ZoneService::save_version_tx(&mut tx, &restored_zone, new_serial).await?;
+            ZoneService::save_version_tx(
+                &mut tx,
+                &restored_zone,
+                new_serial,
+                &caller.change_subject(),
+            )
+            .await?;
 
             Ok((
                 RollbackZoneResponse {

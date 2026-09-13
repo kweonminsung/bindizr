@@ -33,7 +33,7 @@ use crate::{
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::{RepositoryService, RepositoryTx},
-    zone::ZoneService,
+    zone::{ZoneService, version::ChangeSubject},
 };
 
 /// Backdated inception absorbs validator clock skew; one hour covers any
@@ -82,12 +82,13 @@ impl DnssecService {
         policy: &DnssecPolicy,
         keys: &[DnssecKey],
         force: bool,
+        subject: &ChangeSubject,
     ) -> Result<Option<i32>, ServiceError> {
         let new_serial = crate::serial::generate_serial(Some(zone.serial))?;
         if !Self::sign_zone_locked(tx, zone, policy, new_serial, keys, force).await? {
             return Ok(None);
         }
-        ZoneService::advance_serial_tx(tx, zone, new_serial).await?;
+        ZoneService::advance_serial_tx(tx, zone, new_serial, subject).await?;
         Ok(Some(new_serial))
     }
 

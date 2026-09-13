@@ -373,7 +373,8 @@ impl RecordService {
             // Advance the serial once so IXFR consumers detect the batch
             let t = Instant::now();
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
+                .await?;
             timings.serial_ms = elapsed_ms(t);
 
             Ok::<(Vec<Record>, ZoneName, RecordDiff), ServiceError>((

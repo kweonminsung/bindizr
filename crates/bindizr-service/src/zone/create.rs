@@ -100,7 +100,13 @@ impl ZoneService {
                 ServiceError::internal("Failed to create mname NS record")
             })?;
 
-            ZoneService::save_version_tx(&mut tx, &created_zone, created_zone.serial).await?;
+            ZoneService::save_version_tx(
+                &mut tx,
+                &created_zone,
+                created_zone.serial,
+                &caller.change_subject(),
+            )
+            .await?;
 
             Ok::<Zone, ServiceError>(created_zone)
         }

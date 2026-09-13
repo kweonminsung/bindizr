@@ -10,7 +10,7 @@ mod notify;
 mod status;
 mod update;
 pub(crate) mod validation;
-mod version;
+pub(crate) mod version;
 
 /// Business logic for creating, updating, and querying DNS zones.
 #[derive(Clone)]

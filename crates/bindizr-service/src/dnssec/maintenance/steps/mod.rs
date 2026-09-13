@@ -6,7 +6,7 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::{
     database::repository::LockLevel, dnssec::DnssecService, error::ServiceError,
-    repository::RepositoryService,
+    repository::RepositoryService, zone::version::ChangeSubject,
 };
 
 /// Prune journal and version rows older than `cutoff` in one transaction: a
@@ -38,9 +38,16 @@ pub(crate) async fn sign_zone_by_zone_id(zone_id: i32) -> Result<Option<String>,
             return Ok(None);
         };
 
-        if DnssecService::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-            .await?
-            .is_none()
+        if DnssecService::resign_zone_tx(
+            &mut tx,
+            &zone,
+            &policy,
+            &keys,
+            false,
+            &ChangeSubject::system(),
+        )
+        .await?
+        .is_none()
         {
             return Ok(None);
         }
@@ -87,7 +94,15 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
         .await?;
         let mut keys = keys;
         keys.push(new_key);
-        DnssecService::resign_zone_tx(&mut tx, &zone, &policy, &keys, false).await?;
+        DnssecService::resign_zone_tx(
+            &mut tx,
+            &zone,
+            &policy,
+            &keys,
+            false,
+            &ChangeSubject::system(),
+        )
+        .await?;
         Ok(Some(zone.name.as_str().to_string()))
     }
     .await;
@@ -123,7 +138,15 @@ pub(crate) async fn promote_zsks_by_zone_id(zone_id: i32) -> Result<Option<Strin
         let keys =
             DnssecService::promote_published_keys_tx(&mut tx, &zone, &policy, keys, &due).await?;
 
-        DnssecService::resign_zone_tx(&mut tx, &zone, &policy, &keys, false).await?;
+        DnssecService::resign_zone_tx(
+            &mut tx,
+            &zone,
+            &policy,
+            &keys,
+            false,
+            &ChangeSubject::system(),
+        )
+        .await?;
         Ok(Some(zone.name.as_str().to_string()))
     }
     .await;
@@ -187,7 +210,15 @@ pub(crate) async fn remove_retired_keys_by_zone_id(
             }
         }
 
-        DnssecService::resign_zone_tx(&mut tx, &zone, &policy, &remaining, false).await?;
+        DnssecService::resign_zone_tx(
+            &mut tx,
+            &zone,
+            &policy,
+            &remaining,
+            false,
+            &ChangeSubject::system(),
+        )
+        .await?;
         Ok(Some(zone.name.as_str().to_string()))
     }
     .await;

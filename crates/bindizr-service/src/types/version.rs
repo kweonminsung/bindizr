@@ -30,6 +30,15 @@ pub struct ZoneVersionResponse {
     pub expire: i32,
     #[schema(example = 3600)]
     pub minimum_ttl: i32,
+    /// Which plane asked for this version: `token`, `nsupdate`, `system`
+    /// (the DNSSEC maintenance scheduler), or `local` (the daemon socket, or
+    /// any request while authentication is disabled).
+    #[schema(example = "token")]
+    pub change_source: String,
+    /// The API token or TSIG key the change was made under, absent where no
+    /// credential stood behind it.
+    #[schema(example = "admin")]
+    pub changed_by: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -49,6 +58,8 @@ impl ZoneVersionResponse {
             retry: version.retry,
             expire: version.expire,
             minimum_ttl: version.minimum_ttl,
+            change_source: version.change_source.as_str().to_string(),
+            changed_by: version.changed_by.clone(),
             created_at: version.created_at,
         })
     }

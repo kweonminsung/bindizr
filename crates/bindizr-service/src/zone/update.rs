@@ -18,7 +18,10 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::{CreateZoneRequest, UpdateZoneRequest},
-    zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
+    zone::{
+        validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
+        version::ChangeSubject,
+    },
 };
 
 /// Outcome of the transactional part of a zone update.
@@ -74,26 +77,28 @@ impl ZoneService {
                 "serial is managed automatically and cannot be set on update",
             ));
         }
-        Self::update_locked(zone_name, |existing| CreateZoneRequest {
-            name: request
-                .name
-                .clone()
-                .unwrap_or_else(|| existing.name.to_string()),
-            mname: request
-                .mname
-                .clone()
-                .unwrap_or_else(|| existing.mname.clone()),
-            rname: request
-                .rname
-                .clone()
-                .unwrap_or_else(|| existing.rname.clone()),
-            default_ttl: Some(request.default_ttl.unwrap_or(existing.default_ttl)),
-            serial: None,
-            // Omitted timers fall back to the existing zone in normalize_soa_timers.
-            refresh: request.refresh,
-            retry: request.retry,
-            expire: request.expire,
-            minimum_ttl: request.minimum_ttl,
+        Self::update_locked(zone_name, &caller.change_subject(), |existing| {
+            CreateZoneRequest {
+                name: request
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| existing.name.to_string()),
+                mname: request
+                    .mname
+                    .clone()
+                    .unwrap_or_else(|| existing.mname.clone()),
+                rname: request
+                    .rname
+                    .clone()
+                    .unwrap_or_else(|| existing.rname.clone()),
+                default_ttl: Some(request.default_ttl.unwrap_or(existing.default_ttl)),
+                serial: None,
+                // Omitted timers fall back to the existing zone in normalize_soa_timers.
+                refresh: request.refresh,
+                retry: request.retry,
+                expire: request.expire,
+                minimum_ttl: request.minimum_ttl,
+            }
         })
         .await
     }
@@ -102,6 +107,7 @@ impl ZoneService {
     /// bump the serial and record SOA/NS changes for IXFR.
     async fn update_locked(
         zone_name: &str,
+        subject: &ChangeSubject,
         build: impl FnOnce(&Zone) -> CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;
@@ -227,7 +233,7 @@ impl ZoneService {
                 })?;
 
             DnssecService::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-            ZoneService::save_version_tx(&mut tx, &updated_zone, new_serial).await?;
+            ZoneService::save_version_tx(&mut tx, &updated_zone, new_serial, subject).await?;
 
             Ok(AppliedZoneUpdate {
                 zone: updated_zone,

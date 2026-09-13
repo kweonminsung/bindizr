@@ -279,6 +279,7 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
     ];
     let caller = Caller::Token {
         id: 7,
+        name: "scoped".into(),
         grants: vec![TokenGrant {
             id: 1,
             zone_id: 1,

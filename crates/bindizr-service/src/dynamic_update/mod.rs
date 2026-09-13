@@ -26,7 +26,7 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     tsig_key::grant::authorize_update,
-    zone::ZoneService,
+    zone::{ZoneService, version::ChangeSubject},
 };
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
@@ -174,7 +174,13 @@ impl DynamicUpdateService {
                 DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
                 // Bump the serial and version it so secondaries detect the change via
                 // SOA/NOTIFY and can serve it as an IXFR delta.
-                ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+                ZoneService::advance_serial_tx(
+                    &mut tx,
+                    &zone,
+                    new_serial,
+                    &ChangeSubject::nsupdate(update.key.as_ref().map(|key| key.name.as_str())),
+                )
+                .await?;
             }
 
             Ok((changed, zone, new_serial))

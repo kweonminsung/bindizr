@@ -121,7 +121,8 @@ impl RecordService {
 
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the change
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
+                .await?;
 
             Ok::<(Record, ZoneName), ServiceError>((created_record, zone.name))
         }

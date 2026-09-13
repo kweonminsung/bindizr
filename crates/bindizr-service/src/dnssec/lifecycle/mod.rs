@@ -128,9 +128,16 @@ impl DnssecService {
                 keys.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
             }
 
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-                .await?
-                .unwrap_or(zone.serial);
+            let new_serial = Self::resign_zone_tx(
+                &mut tx,
+                &zone,
+                &policy,
+                &keys,
+                false,
+                &caller.change_subject(),
+            )
+            .await?
+            .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
         }
@@ -214,9 +221,16 @@ impl DnssecService {
                 ..zone
             };
 
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &target, &keys, false)
-                .await?
-                .unwrap_or(zone.serial);
+            let new_serial = Self::resign_zone_tx(
+                &mut tx,
+                &zone,
+                &target,
+                &keys,
+                false,
+                &caller.change_subject(),
+            )
+            .await?
+            .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, Some(&target), &keys, new_serial).await
         }
@@ -301,7 +315,8 @@ impl DnssecService {
             RepositoryService::delete_dnssec_keys_by_zone_id_tx(&mut tx, zone.id).await?;
             RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
             RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, None).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
+                .await?;
 
             Ok(zone.name.as_str().to_string())
         }
@@ -326,7 +341,15 @@ impl DnssecService {
         let result = async {
             let (zone, policy, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, true).await?;
+            Self::resign_zone_tx(
+                &mut tx,
+                &zone,
+                &policy,
+                &keys,
+                true,
+                &caller.change_subject(),
+            )
+            .await?;
             Ok(zone.name.as_str().to_string())
         }
         .await;
