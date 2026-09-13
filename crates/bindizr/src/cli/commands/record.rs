@@ -183,7 +183,7 @@ YAML example:
     #[command(after_help = "\
 Narrowing follows RFC 2136, Section 2.5.2:
   --name only                 every record type at the name
-  --name --type               one RRset
+  --name --type               every record of that type at the name
   --name --type --value       one record
 
 The whole set goes in one transaction, so the zone advances by a single

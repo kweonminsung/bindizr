@@ -208,7 +208,7 @@ pub(crate) async fn delete_record(
         path = "/records",
         tag = "Records",
         summary = "Delete records by name",
-        description = "Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type takes one RRset, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.",
+        description = "Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.",
         params(DeleteRecordsFilter),
         responses(
             (status = 200, description = "Records deleted", body = DeleteRecordsResponse),

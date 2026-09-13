@@ -699,7 +699,7 @@ paths:
       tags:
       - Records
       summary: Delete records by name
-      description: 'Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type takes one RRset, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.'
+      description: 'Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.'
       operationId: delete_records_matching
       parameters:
       - name: zone_name
@@ -715,7 +715,7 @@ paths:
           type: string
       - name: record_type
         in: query
-        description: Narrows to one RRset; omitted, every type at the name goes.
+        description: Narrows to one type; omitted, every type at the name goes.
         required: false
         schema:
           type: string

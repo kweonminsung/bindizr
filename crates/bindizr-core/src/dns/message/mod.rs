@@ -67,11 +67,11 @@ impl IntoOwner for Result<Vec<u8>, ParseNameError> {
     }
 }
 
-/// An answer already composed into wire bytes, pushed back through `domain`'s
+/// An RR already composed into wire bytes, pushed back through `domain`'s
 /// builder so a message can carry a section it did not compose.
-struct ComposedRecord<'a>(&'a [u8]);
+struct ComposedRr<'a>(&'a [u8]);
 
-impl ComposeRecord for ComposedRecord<'_> {
+impl ComposeRecord for ComposedRr<'_> {
     fn compose_record<Target: Composer + ?Sized>(
         &self,
         target: &mut Target,
@@ -388,7 +388,7 @@ impl DnsMessageBuilder {
         let mut answer = question.answer();
         for composed in &self.answers {
             answer
-                .push(ComposedRecord(composed))
+                .push(ComposedRr(composed))
                 .map_err(|e| format!("Failed to compose an answer: {}", e))?;
         }
 

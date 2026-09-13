@@ -142,7 +142,7 @@ pub struct DeleteRecordsFilter {
     /// Owner name relative to the zone, or `@` for the apex.
     #[schema(example = "www")]
     pub name: String,
-    /// Narrows to one RRset; omitted, every type at the name goes.
+    /// Narrows to one type; omitted, every type at the name goes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "A")]
     pub record_type: Option<String>,
