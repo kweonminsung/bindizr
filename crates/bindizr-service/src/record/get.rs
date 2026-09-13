@@ -41,9 +41,9 @@ impl RecordService {
         RepositoryService::count_records_by_filter(RecordFilter::default()).await
     }
 
-    /// List records with their zone name matching `filter`, restricted to the
-    /// caller's visible zones in SQL so pagination stays database-side, then
-    /// to the names and types its grants carry. A filter naming an unknown or
+    /// List records with their zone name matching `filter`, restricted to what
+    /// the caller's grants carry in SQL so pagination stays database-side, and
+    /// again here where names compare as labels. A filter naming an unknown or
     /// invisible zone reads as an empty page.
     /// With `signed`, the derived DNSSEC plane pages after the user records;
     /// value, search, and priority filters keep the listing user-plane only.
@@ -149,9 +149,8 @@ impl RecordService {
             );
         }
 
-        // The SQL narrows to the zones the caller sees; a grant narrowed
-        // further is applied here, where names compare as labels. The page
-        // shortens, the total does not.
+        // The SQL narrows by the same grants but by text, so this is where
+        // `a\.sub` stops passing as inside `sub`.
         let items = items
             .iter()
             .filter(|record| record.visible_to(caller))

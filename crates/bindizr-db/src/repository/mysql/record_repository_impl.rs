@@ -8,7 +8,10 @@ use crate::{
     model::record::{Record, RecordWithZone},
     repository::{
         LockLevel, RecordFilter, RecordRepository, RepositoryTx,
-        sql::{apex_owner_sql, like_pattern, lock_clause, name_like_types_sql, trim_partial_value},
+        sql::{
+            apex_owner_sql, concat_fn, grant_record_match_sql, like_pattern, lock_clause,
+            name_like_types_sql, trim_partial_value,
+        },
     },
 };
 
@@ -271,6 +274,7 @@ impl RecordRepository for MySqlRecordRepository {
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
+        let grant_match = grant_record_match_sql("r", Some("record_type"), concat_fn);
         let query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
             SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
@@ -305,7 +309,8 @@ impl RecordRepository for MySqlRecordRepository {
               AND (
                     ? IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = ? AND p.zone_id = r.zone_id)
+                               WHERE p.api_token_id = ? AND p.zone_id = r.zone_id
+                                 AND {grant_match})
               )
             -- every type at one name shares r.name, so without r.id a plan change
             -- between two pages could drop or repeat a row.
@@ -364,6 +369,7 @@ impl RecordRepository for MySqlRecordRepository {
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
+        let grant_match = grant_record_match_sql("r", Some("record_type"), concat_fn);
         let query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
@@ -397,7 +403,8 @@ impl RecordRepository for MySqlRecordRepository {
               AND (
                     ? IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = ? AND p.zone_id = r.zone_id)
+                               WHERE p.api_token_id = ? AND p.zone_id = r.zone_id
+                                 AND {grant_match})
               )
             "#
         )))

@@ -7,7 +7,7 @@ use crate::{
     model::dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     repository::{
         DnssecRecordFilter, DnssecRecordRepository, LockLevel, RepositoryTx,
-        sql::{apex_owner_sql, refresh_bound},
+        sql::{apex_owner_sql, concat_pipes, grant_record_match_sql, refresh_bound},
     },
 };
 
@@ -237,6 +237,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
     ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();
+        let grant_match = grant_record_match_sql("d", None, concat_pipes);
         let records = sqlx::query_as::<_, DnssecRecordWithZone>(AssertSqlSafe(format!(
             r#"
             SELECT d.name, d.record_type, d.ttl, d.rdata, d.zone_id, z.name AS zone_name
@@ -255,7 +256,8 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
               AND (
                     ? IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = ? AND p.zone_id = d.zone_id)
+                               WHERE p.api_token_id = ? AND p.zone_id = d.zone_id
+                                 AND {grant_match})
               )
             -- every type at one name shares d.name, so without d.id a plan change
             -- between two pages could drop or repeat a row.
@@ -294,6 +296,7 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
     async fn count_by_filter(&self, filter: DnssecRecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();
+        let grant_match = grant_record_match_sql("d", None, concat_pipes);
         let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
@@ -312,7 +315,8 @@ impl DnssecRecordRepository for SqliteDnssecRecordRepository {
               AND (
                     ? IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = ? AND p.zone_id = d.zone_id)
+                               WHERE p.api_token_id = ? AND p.zone_id = d.zone_id
+                                 AND {grant_match})
               )
             "#
         )))

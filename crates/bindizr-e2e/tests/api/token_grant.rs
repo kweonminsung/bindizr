@@ -597,6 +597,9 @@ async fn a_narrowed_grant_reads_only_what_it_may_write() {
         .collect();
     assert!(listed_ids.contains(&granted_id));
     assert!(!listed_ids.contains(&outside_id));
+    // The count is narrowed in SQL beside the page, so a scoped listing does
+    // not advertise rows it will never hand over.
+    assert_eq!(body["pagination"]["total"], 1, "{body}");
 
     let (status, _) = app
         .request(Method::GET, &format!("/records/{granted_id}"), None)
@@ -672,4 +675,77 @@ async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
         .request(Method::DELETE, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_grants_pattern_and_types_narrow_the_count_too() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let zone_name = app.zone_name("example.com");
+    create_zone(&app, &zone_name).await;
+    for (name, record_type, value) in [
+        ("@", "TXT", "apex"),
+        ("host.dyn", "A", "192.0.2.1"),
+        ("host.dyn", "TXT", "text"),
+        ("www", "A", "192.0.2.2"),
+        // One label that happens to contain a dot: matching by text reads it
+        // as under `dyn`, matching by label does not.
+        (r"a\.dyn", "A", "192.0.2.3"),
+    ] {
+        let (status, body) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(record_body(&zone_name, name, record_type, value)),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+
+    // Granting runs over the daemon socket, which carries no token.
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&["token", "grant", &scoped_name, &zone_name, "--pattern", "@"])
+        .await;
+    app.set_auth_token(scoped_token);
+
+    let listed = async |app: &TestApp| -> (usize, u64) {
+        let (status, body) = app
+            .request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&limit=1000"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        (
+            body["items"].as_array().unwrap().len(),
+            body["pagination"]["total"].as_u64().unwrap(),
+        )
+    };
+
+    // The apex holds the TXT above and the NS the zone was created with.
+    assert_eq!(listed(&app).await, (2, 2));
+
+    app.run_cli_success(&[
+        "token",
+        "grant",
+        &scoped_name,
+        &zone_name,
+        "--pattern",
+        "*.dyn",
+        "--types",
+        "A",
+    ])
+    .await;
+    // The apex grant still stands, so its two rows come with the one A record
+    // under `dyn`. SQL counts the dotted label too and the service drops it:
+    // the one case where the count and the page disagree.
+    assert_eq!(listed(&app).await, (3, 4));
 }
