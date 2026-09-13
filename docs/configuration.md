@@ -5,9 +5,10 @@ option can also be set with an environment variable. Container deployments use
 the environment form; the Docker and Helm files in this repository set the same
 options that way.
 
-The file path can be overridden with `bindizr start -c <FILE>` or the
-`BINDIZR_CONFIG_PATH` environment variable. Environment variables are applied
-**after** the file is parsed, so they win over anything the file sets.
+The file path can be overridden with `-c <FILE>` on `start`, `doctor`, and
+`config check`, or with the `BINDIZR_CONFIG_PATH` environment variable.
+Environment variables are applied **after** the file is parsed, so they win
+over anything the file sets.
 
 ```bash
 $ bindizr config check            # validate a file without starting

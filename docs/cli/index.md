@@ -31,7 +31,8 @@ Every `create`, `list`, `get`, and `update` command prints a table and takes
 # Start bindizr on foreground
 $ bindizr start
 
-# Start with a custom configuration file
+# Start with a custom configuration file. `start`, `doctor`, and `config check`
+# all take `-c` and fall back to $BINDIZR_CONFIG_PATH
 $ bindizr start -c <FILE>
 
 # Stop the running daemon, or restart it in place
@@ -45,7 +46,7 @@ $ bindizr status
 $ bindizr doctor
 
 # Validate a configuration file without starting bindizr (defaults to /etc/bindizr/bindizr.conf.toml)
-$ bindizr config check [<FILE>]
+$ bindizr config check [-c <FILE>]
 
 # Show the configuration loaded by the running daemon, or one value by dotted key
 $ bindizr config list
@@ -160,8 +161,9 @@ without parsing the message.
 | Code | Meaning |
 | --- | --- |
 | `0` | Success |
-| `1` | Failure, including an unreachable daemon and invalid input |
+| `1` | Failure, including invalid input |
 | `2` | Usage error, such as an unknown command or a missing argument |
 | `3` | Not found: no such zone, record, token, version, key, or policy |
 | `4` | Conflict: the name is taken, or the object is in use or in the wrong state |
 | `5` | Denied: the token is missing, invalid, or lacks a grant |
+| `6` | Unavailable: the daemon is not running, so the command never reached it |

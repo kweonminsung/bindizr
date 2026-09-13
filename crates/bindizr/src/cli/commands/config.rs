@@ -12,7 +12,8 @@ pub(crate) enum ConfigCommand {
     /// Validate a configuration file without starting bindizr
     Check {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
-        file: Option<String>,
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<String>,
     },
     /// Show the configuration loaded by the running daemon
     #[command(alias = "ls")]
@@ -34,7 +35,7 @@ running configuration always describes the running process.")]
 /// Handle the `config` subcommand.
 pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliError> {
     match subcommand {
-        ConfigCommand::Check { file } => check_config(file.as_deref()),
+        ConfigCommand::Check { config } => check_config(config.as_deref()),
         ConfigCommand::List => print_config_list().await,
         ConfigCommand::Reload => reload_config().await,
         ConfigCommand::Get { key } => print_config_value(&key).await,

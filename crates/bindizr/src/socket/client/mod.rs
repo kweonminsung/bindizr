@@ -110,10 +110,10 @@ impl DaemonSocketClient {
         // An error reply is an `ErrorResponse` instead of a `DaemonResponse`,
         // so only a failed command parses here.
         if let Ok(error) = serde_json::from_str::<ErrorResponse>(&response) {
-            return Err(CliError {
-                code: ErrorCode::parse(&error.code),
-                message: error.error,
-            });
+            return Err(CliError::from_daemon(
+                ErrorCode::parse(&error.code),
+                error.error,
+            ));
         }
 
         Ok(serde_json::from_str(&response)
@@ -132,11 +132,11 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
                  bindizr ...`).",
                 SOCKET_FILE_PATH
             )),
-            Some(fallback_err) => CliError::from(format!(
+            Some(fallback_err) => CliError::daemon_unreachable(format!(
                 "Could not connect to the daemon socket at '{}' or fallback '{}': {}; fallback error: {}\nIs the bindizr daemon running?",
                 SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH, err, fallback_err
             )),
-            None => CliError::from(format!(
+            None => CliError::daemon_unreachable(format!(
                 "Could not connect to the daemon socket at '{}': {}\nIs the bindizr daemon running?",
                 SOCKET_FILE_PATH, err
             )),
