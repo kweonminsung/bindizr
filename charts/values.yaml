@@ -97,6 +97,13 @@ bindizr:
     periodSeconds: 5
     failureThreshold: 30
   terminationGracePeriodSeconds: 30
+
+  # Keeps a node drain from taking every replica at once. Ignored below two
+  # replicas, where one budget or the other would block the drain outright.
+  podDisruptionBudget:
+    enabled: true
+    spec:
+      maxUnavailable: 1
   resources: {}
   nodeSelector: {}
   tolerations: []
