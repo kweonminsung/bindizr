@@ -32,7 +32,11 @@ use domain::{
 };
 use sha2::{Digest, Sha256};
 
-use super::{WireName, dnskey_for, ds_rdata_for, to_wire_name};
+use super::{
+    WireName,
+    rdata::{dnskey_for, ds_rdata_for},
+    to_wire_name,
+};
 use crate::{
     dns::{
         name::{OwnerName, ZoneName},

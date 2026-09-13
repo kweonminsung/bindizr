@@ -374,3 +374,105 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
         "{signed_export}"
     );
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_zone_exported_mid_rollover_imports_still_mid_rollover() {
+    let app = TestApp::start_local().await;
+    let zone_name = app.zone_name("dnssec-rolling.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    app.run_cli_success(&[
+        "dnssec",
+        "enable",
+        &zone_name,
+        "--parent-ns-addrs",
+        "127.0.0.1:9",
+    ])
+    .await;
+    app.run_cli_success(&["dnssec", "rollover", "start", &zone_name])
+        .await;
+
+    let before = key_states(&app, &zone_name).await;
+    assert_eq!(before.len(), 2, "{before:?}");
+    assert!(
+        before.iter().any(|(_, state)| state == "active"),
+        "{before:?}"
+    );
+    assert!(
+        before.iter().any(|(_, state)| state == "published"),
+        "{before:?}"
+    );
+
+    let dir = tempfile::tempdir().expect("create key dir");
+    let pairs = write_exported_pairs(&app, &zone_name, dir.path()).await;
+    assert_eq!(pairs.len(), 2, "a rollover exports both keys");
+
+    app.run_cli_success(&["dnssec", "disable", &zone_name, "--skip-ds-check"])
+        .await;
+    let mut args = vec!["dnssec", "keys", "import", zone_name.as_str()];
+    for (key_file, private_file) in &pairs {
+        args.extend(["--key", key_file, "--private", private_file]);
+    }
+    app.run_cli_success(&args).await;
+
+    // Without the timing BIND writes into the private files, both keys would
+    // land active and the rollover would be gone.
+    assert_eq!(key_states(&app, &zone_name).await, before);
+    let refused = app
+        .run_cli(&["dnssec", "rollover", "start", &zone_name])
+        .await;
+    assert!(!refused.status.success());
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(stderr.contains("rollover"), "{stderr}");
+}
+
+/// Each key's `(tag, state)` from `dnssec status`, sorted so two runs compare.
+async fn key_states(app: &TestApp, zone_name: &str) -> Vec<(u64, String)> {
+    let mut states: Vec<(u64, String)> = dnssec_status(app, zone_name).await["dnssec"]["keys"]
+        .as_array()
+        .expect("status lists the keys")
+        .iter()
+        .map(|key| {
+            (
+                key["key_tag"].as_u64().expect("key tag"),
+                key["state"].as_str().expect("key state").to_string(),
+            )
+        })
+        .collect();
+    states.sort();
+    states
+}
+
+/// Split `dnssec keys export` into the `K*.key`/`K*.private` file pairs on
+/// disk that the import takes.
+async fn write_exported_pairs(
+    app: &TestApp,
+    zone_name: &str,
+    dir: &std::path::Path,
+) -> Vec<(String, String)> {
+    let exported = app
+        .run_cli_success(&["dnssec", "keys", "export", zone_name])
+        .await;
+    let mut blocks: Vec<String> = Vec::new();
+    for line in exported.lines() {
+        if line.starts_with("; K") {
+            blocks.push(String::new());
+        } else if let Some(body) = blocks.last_mut() {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+
+    let mut pairs = Vec::new();
+    for (index, chunk) in blocks.chunks(2).enumerate() {
+        let key_file = dir.join(format!("{index}.key"));
+        let private_file = dir.join(format!("{index}.private"));
+        std::fs::write(&key_file, &chunk[0]).expect("write .key");
+        std::fs::write(&private_file, &chunk[1]).expect("write .private");
+        pairs.push((
+            key_file.to_str().expect("utf-8 temp dir").to_string(),
+            private_file.to_str().expect("utf-8 temp dir").to_string(),
+        ));
+    }
+    pairs
+}

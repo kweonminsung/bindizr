@@ -1,7 +1,7 @@
 //! Importing and exporting raw key material in BIND key-file form. Reached
 //! only over the daemon socket: private keys never transit the HTTP API.
 
-use bindizr_core::dns::dnssec::import_key;
+use bindizr_core::dns::dnssec::{import_key, to_bind_private_file};
 use chrono::Utc;
 
 use super::{DnssecService, notify_zone, status::build_status_tx, to_key_layout};
@@ -11,7 +11,7 @@ use crate::{
     dnssec_policy::normalize_policy_name,
     error::ServiceError,
     model::{
-        dnssec_key::{DnssecKey, DnssecKeyRole},
+        dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
         dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME,
         zone::Zone,
     },
@@ -52,7 +52,7 @@ impl DnssecService {
                             key.algorithm.to_int(),
                             key.public_key
                         ),
-                        private_key: key.private_key.clone(),
+                        private_key: to_bind_private_file(key),
                     })
                     .collect(),
             })
@@ -126,14 +126,22 @@ impl DnssecService {
                 }
                 keys.push(key);
             }
-            // The layout typed each SEP key; a split set still needs both halves.
-            if policy.split_keys
-                && !(keys.iter().any(|key| key.role == DnssecKeyRole::Ksk)
-                    && keys.iter().any(|key| key.role == DnssecKeyRole::Zsk))
-            {
+            // The timing placed each key in its rollover; every role the
+            // layout names still needs the active key that signs for it.
+            let has_active = |role: DnssecKeyRole| {
+                keys.iter()
+                    .any(|key| key.role == role && key.state == DnssecKeyState::Active)
+            };
+            let signed = if policy.split_keys {
+                has_active(DnssecKeyRole::Ksk) && has_active(DnssecKeyRole::Zsk)
+            } else {
+                has_active(DnssecKeyRole::Csk)
+            };
+            if !signed {
                 return Err(ServiceError::invalid_input(format!(
-                    "key set does not match policy '{}' ({}); import a KSK pair and a ZSK \
-                     pair together",
+                    "key set does not match policy '{}' ({}); import an active pair for \
+                     every role it names, together with any published or retired pairs the \
+                     rollover still holds",
                     policy.name,
                     to_key_layout(policy.split_keys)
                 )));

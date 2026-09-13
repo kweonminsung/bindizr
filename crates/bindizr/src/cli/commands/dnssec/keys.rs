@@ -25,8 +25,10 @@ pub(crate) enum DnssecKeysCommand {
         name: String,
     },
     /// Import the zone's key set as BIND key pairs and sign it: one CSK
-    /// pair, or a KSK pair and a ZSK pair for a split-key policy. The
-    /// migration path for a zone signed elsewhere; the zone must be unsigned
+    /// pair, or a KSK pair and a ZSK pair for a split-key policy, plus any
+    /// key a rollover still holds — each private file's timing places it.
+    /// The migration path for a zone signed elsewhere; the zone must be
+    /// unsigned
     Import {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]

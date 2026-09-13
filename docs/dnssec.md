@@ -199,7 +199,7 @@ signer using that format) migrates without breaking its chain of trust:
 # block per file
 bindizr dnssec keys export example.com
 
-# Bring an existing key set in as active keys and sign with it
+# Bring an existing key set in and sign with it
 bindizr dnssec keys import example.com \
     --key Kexample.com.+013+12345.key --private Kexample.com.+013+12345.private
 ```
@@ -214,6 +214,21 @@ layout (`--policy`, or `default`), and the zone must be unsigned; a signed
 zone changes keys through
 [rollover](#key-rollover) instead. Both commands run only over the
 CLI/daemon socket — private keys never transit the HTTP API.
+
+### Handing over a zone mid-rollover
+
+A private key file carries the schedule `dnssec-keygen` and `dnssec-settime`
+wrote into it, and import reads each key's place in the rollover from it:
+published before its `Activate`, active after, retired after `Inactive`, and
+removed at `Delete`. So a zone handed over between signers keeps the rollover
+it was in — pass every key the rollover holds, not only the one signing.
+bindizr writes the same fields on export, so its own key files re-import where
+they left off. A file without them, and a key set that is simply settled,
+imports as active.
+
+An active key is still what signs, so the set needs one for every role the
+policy names; a key whose `Publish` has not come, or whose `Delete` has
+passed, is refused rather than stored in a state BIND is not serving.
 
 ## Disabling DNSSEC
 
