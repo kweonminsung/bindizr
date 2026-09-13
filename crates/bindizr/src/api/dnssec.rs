@@ -80,7 +80,7 @@ pub(crate) async fn get_dnssec_status(
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Enable DNSSEC for a zone",
-        description = "Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone's nameservers that every later DS check asks.",
+        description = "Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC3 denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone's nameservers that every later DS check asks.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -347,14 +347,14 @@ pub(crate) async fn check_dnssec_ds(
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Change a zone's DNSSEC settings",
-        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy's (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.",
+        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy's (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
         request_body = UpdateDnssecSettingsRequest,
         responses(
             (status = 200, description = "Settings changed", body = DnssecStatusResponse),
-            (status = 400, description = "Bad request: no field given, an invalid parent address, or a policy whose denial mode or key layout differs from the zone's", body = ErrorResponse),
+            (status = 400, description = "Bad request: no field given, an invalid parent address, or a policy whose key layout differs from the zone's", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone or DNSSEC policy not found", body = ErrorResponse),

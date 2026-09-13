@@ -17,8 +17,8 @@ pub struct CreateDnssecPolicyRequest {
     /// `ed25519`, `ed448`, `rsasha256`, and `rsasha512`.
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: Option<String>,
-    /// Denial-of-existence mode: `nsec` (default) or `nsec3` (RFC 9276
-    /// parameters).
+    /// Denial-of-existence mode: `nsec3` (default, RFC 9276 parameters) or
+    /// `nsec`, which leaves the zone's names walkable.
     #[schema(example = "nsec3")]
     pub denial: Option<String>,
     /// A KSK/ZSK pair instead of one CSK, so the ZSK rolls without touching
@@ -76,7 +76,7 @@ pub struct GetDnssecPolicyResponse {
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: String,
     /// `nsec` or `nsec3`.
-    #[schema(example = "nsec")]
+    #[schema(example = "nsec3")]
     pub denial: String,
     #[schema(example = false)]
     pub split_keys: bool,

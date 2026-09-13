@@ -650,7 +650,7 @@ pub(crate) fn mysql_default_policy_seed() -> &'static str {
     INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
         signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
         rollover_retire_holddown_secs, created_at)
-    SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800, ? FROM DUAL
+    SELECT 'default', 13, 'nsec3', FALSE, 14, 5, 0, 86400, 172800, ? FROM DUAL
     WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
     "#
 }
@@ -660,7 +660,7 @@ pub(crate) fn postgres_default_policy_seed() -> &'static str {
     INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
         signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
         rollover_retire_holddown_secs, created_at)
-    SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800, $1::timestamptz
+    SELECT 'default', 13, 'nsec3', FALSE, 14, 5, 0, 86400, 172800, $1::timestamptz
     WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
     "#
 }
@@ -670,7 +670,7 @@ pub(crate) fn sqlite_default_policy_seed() -> &'static str {
     INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
         signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs,
         rollover_retire_holddown_secs, created_at)
-    SELECT 'default', 13, 'nsec', FALSE, 14, 5, 0, 86400, 172800, ?
+    SELECT 'default', 13, 'nsec3', FALSE, 14, 5, 0, 86400, 172800, ?
     WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
     "#
 }

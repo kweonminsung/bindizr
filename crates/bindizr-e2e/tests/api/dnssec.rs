@@ -24,7 +24,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(dnssec["enabled"], true);
     // Enabling without a policy signs under the seeded `default` policy.
     assert_eq!(dnssec["policy"]["name"], "default");
-    assert_eq!(dnssec["policy"]["denial"], "nsec");
+    assert_eq!(dnssec["policy"]["denial"], "nsec3");
 
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
@@ -174,7 +174,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         signed_export.contains("\tIN\tRRSIG\tSOA "),
         "{signed_export}"
     );
-    assert!(signed_export.contains("\tIN\tNSEC\t"), "{signed_export}");
+    assert!(signed_export.contains("\tIN\tNSEC3\t"), "{signed_export}");
     // The delegation: DS signed as the parent's data, its NS served unsigned.
     assert!(
         signed_export.contains("sub\t3600\tIN\tDS\t12345 13 2 "),
@@ -507,7 +507,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
     );
     assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
     let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
-    for record_type in ["DNSKEY", "NSEC", "RRSIG"] {
+    for record_type in ["DNSKEY", "NSEC3", "RRSIG"] {
         assert!(
             derived
                 .iter()

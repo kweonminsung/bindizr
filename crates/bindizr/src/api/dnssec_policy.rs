@@ -75,7 +75,7 @@ pub(crate) async fn list_dnssec_policies(
         path = "/dnssec-policies",
         tag = "DNSSEC",
         summary = "Create a DNSSEC policy",
-        description = "Creates a DNSSEC policy. The algorithm (`ecdsap256sha256` by default; also `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, `rsasha512`), denial mode (`nsec` or `nsec3`), and key layout (`split_keys`) are fixed once created; the timing fields can be edited later. Omitted fields take the built-in defaults.",
+        description = "Creates a DNSSEC policy. The algorithm (`ecdsap256sha256` by default; also `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, `rsasha512`), denial mode (`nsec3` by default, or `nsec`), and key layout (`split_keys`) are fixed once created; the timing fields can be edited later. Omitted fields take the built-in defaults.",
         request_body = CreateDnssecPolicyRequest,
         responses(
             (status = 201, description = "DNSSEC policy created successfully", body = DnssecPolicyResponse),

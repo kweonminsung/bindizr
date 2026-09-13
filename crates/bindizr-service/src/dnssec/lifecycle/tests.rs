@@ -59,15 +59,16 @@ fn a_move_that_only_changes_the_algorithm_is_left_to_the_rollover() {
 }
 
 #[test]
-fn the_denial_chain_cannot_change_under_a_signed_zone() {
+fn a_move_that_changes_the_denial_chain_is_allowed_in_place() {
+    // No key roll stands between the two chains: every algorithm bindizr
+    // signs with is NSEC3-capable (RFC 5155, Section 2).
     let current = policy(1, "default");
     let mut target = policy(2, "nsec3");
     target.denial = DnssecDenial::Nsec3;
 
-    let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
+    validate_policy_move(&zone(), &current, &target).unwrap();
 
-    assert!(error.message.contains("denial mode"), "{}", error.message);
-    assert!(error.message.contains("nsec3"), "{}", error.message);
+    validate_policy_move(&zone(), &target, &current).unwrap();
 }
 
 #[test]
@@ -87,9 +88,7 @@ fn the_key_layout_cannot_change_under_a_signed_zone() {
 }
 
 #[test]
-fn the_denial_chain_is_refused_before_the_key_layout() {
-    // Both differ; the message names the denial mode, so an operator
-    // fixing one thing at a time is not told the wrong one first.
+fn the_key_layout_is_still_refused_when_the_denial_chain_moves_with_it() {
     let current = policy(1, "default");
     let mut target = policy(2, "other");
     target.denial = DnssecDenial::Nsec3;
@@ -97,5 +96,5 @@ fn the_denial_chain_is_refused_before_the_key_layout() {
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 
-    assert!(error.message.contains("denial mode"), "{}", error.message);
+    assert!(error.message.contains("key layout"), "{}", error.message);
 }

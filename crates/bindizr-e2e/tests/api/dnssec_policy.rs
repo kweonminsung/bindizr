@@ -250,27 +250,6 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     assert_eq!(active["algorithm"], "ecdsap256sha256");
     assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 1);
 
-    // The denial chain has no in-place transition, so a policy with the
-    // other mode is refused.
-    let nsec3_policy = format!("{}-nsec3", app.namespace());
-    let (status, _) = app
-        .request(
-            Method::POST,
-            "/dnssec-policies",
-            Some(json!({ "name": nsec3_policy, "denial": "nsec3" })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-    let (status, body) = app
-        .request(
-            Method::PUT,
-            &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": nsec3_policy })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["code"], "INVALID_INPUT");
-
     // Moving to the same policy is a no-op that reports the current state.
     let (status, body) = app
         .request(
@@ -284,4 +263,91 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
         body["dnssec"]["serial"].as_i64().unwrap(),
         serial_before + 1
     );
+}
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_moves_between_denial_chains_without_going_insecure() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let nsec_policy = format!("{}-nsec", app.namespace());
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/dnssec-policies",
+            Some(json!({ "name": nsec_policy, "denial": "nsec" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "policy": nsec_policy, "parent_ns_addrs": "127.0.0.1:9" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let mut serial = body["dnssec"]["serial"].as_i64().unwrap();
+
+    let denial_types = async |app: &TestApp| -> Vec<String> {
+        let (status, body) = app
+            .request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&signed=true&limit=1000"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let mut types: Vec<String> = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|record| record["record_type"].as_str().unwrap().to_string())
+            .filter(|record_type| record_type.starts_with("NSEC"))
+            .collect();
+        types.sort();
+        types.dedup();
+        types
+    };
+    assert_eq!(denial_types(&app).await, ["NSEC"]);
+
+    // The zone signs with ECDSA P-256, which is NSEC3-capable (RFC 5155,
+    // Section 2), so the chain is replaced under one serial with no key roll.
+    let nsec3_policy = format!("{}-nsec3", app.namespace());
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/dnssec-policies",
+            Some(json!({ "name": nsec3_policy, "denial": "nsec3" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "policy": nsec3_policy })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["dnssec"]["keys"].as_array().unwrap().len(), 1);
+    assert_eq!(body["dnssec"]["serial"].as_i64().unwrap(), serial + 1);
+    serial += 1;
+    assert_eq!(denial_types(&app).await, ["NSEC3", "NSEC3PARAM"]);
+
+    // And back: neither direction needs a key roll.
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "policy": nsec_policy })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["dnssec"]["serial"].as_i64().unwrap(), serial + 1);
+    assert_eq!(denial_types(&app).await, ["NSEC"]);
 }

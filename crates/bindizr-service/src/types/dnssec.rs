@@ -23,8 +23,9 @@ pub struct EnableDnssecRequest {
 /// keeps its value.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct UpdateDnssecSettingsRequest {
-    /// Policy to move the signed zone to; it must share the zone's denial
-    /// mode and key layout, and a new algorithm starts a rollover.
+    /// Policy to move the signed zone to; it must share the zone's key
+    /// layout. A new denial mode replaces the chain under one serial, and a
+    /// new algorithm starts a rollover.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "strict")]
     pub policy: Option<String>,

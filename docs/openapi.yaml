@@ -45,7 +45,7 @@ paths:
       tags:
       - DNSSEC
       summary: Create a DNSSEC policy
-      description: Creates a DNSSEC policy. The algorithm (`ecdsap256sha256` by default; also `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, `rsasha512`), denial mode (`nsec` or `nsec3`), and key layout (`split_keys`) are fixed once created; the timing fields can be edited later. Omitted fields take the built-in defaults.
+      description: Creates a DNSSEC policy. The algorithm (`ecdsap256sha256` by default; also `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, `rsasha512`), denial mode (`nsec3` by default, or `nsec`), and key layout (`split_keys`) are fixed once created; the timing fields can be edited later. Omitted fields take the built-in defaults.
       operationId: create_dnssec_policy
       requestBody:
         content:
@@ -2020,7 +2020,7 @@ paths:
       tags:
       - DNSSEC
       summary: Change a zone's DNSSEC settings
-      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy''s (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
+      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy''s (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
       operationId: update_dnssec_settings
       parameters:
       - name: name
@@ -2043,7 +2043,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DnssecStatusResponse'
         '400':
-          description: 'Bad request: no field given, an invalid parent address, or a policy whose denial mode or key layout differs from the zone''s'
+          description: 'Bad request: no field given, an invalid parent address, or a policy whose key layout differs from the zone''s'
           content:
             application/json:
               schema:
@@ -2088,7 +2088,7 @@ paths:
       tags:
       - DNSSEC
       summary: Enable DNSSEC for a zone
-      description: 'Generates the zone''s signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone''s nameservers that every later DS check asks.'
+      description: 'Generates the zone''s signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC3 denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone''s nameservers that every later DS check asks.'
       operationId: enable_dnssec
       parameters:
       - name: name
@@ -3154,8 +3154,8 @@ components:
           - string
           - 'null'
           description: |-
-            Denial-of-existence mode: `nsec` (default) or `nsec3` (RFC 9276
-            parameters).
+            Denial-of-existence mode: `nsec3` (default, RFC 9276 parameters) or
+            `nsec`, which leaves the zone's names walkable.
           example: nsec3
         name:
           type: string
@@ -3837,7 +3837,7 @@ components:
         denial:
           type: string
           description: '`nsec` or `nsec3`.'
-          example: nsec
+          example: nsec3
         id:
           type: integer
           format: int32
@@ -4889,8 +4889,9 @@ components:
           - string
           - 'null'
           description: |-
-            Policy to move the signed zone to; it must share the zone's denial
-            mode and key layout, and a new algorithm starts a rollover.
+            Policy to move the signed zone to; it must share the zone's key
+            layout. A new denial mode replaces the chain under one serial, and a
+            new algorithm starts a rollover.
           example: strict
     UpdateRecordRequest:
       type: object

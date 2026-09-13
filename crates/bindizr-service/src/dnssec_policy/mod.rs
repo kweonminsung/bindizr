@@ -45,7 +45,9 @@ impl DnssecPolicyService {
             Some(raw) => raw
                 .parse::<DnssecDenial>()
                 .map_err(ServiceError::invalid_input)?,
-            None => DnssecDenial::Nsec,
+            // NSEC leaves the zone walkable, so a policy that did not
+            // choose is not opted into it.
+            None => DnssecDenial::Nsec3,
         };
         let signature_validity_days = request.signature_validity_days.unwrap_or(14);
         let signature_refresh_days = request.signature_refresh_days.unwrap_or(5);

@@ -26,24 +26,15 @@ use crate::{
 };
 
 /// Whether a signed zone can move onto `target` without going insecure first.
-/// The denial chain and the key layout have no safe in-place transition: a
-/// resolver following the old chain would fail on the new one. The algorithm
-/// does, through a rollover, so it is not refused here.
+/// The key layout has no safe in-place transition. The algorithm does, through
+/// a rollover; so does the denial chain, since every algorithm bindizr signs
+/// with is NSEC3-capable (RFC 5155, Section 2) and the whole chain is replaced
+/// under one serial.
 fn validate_policy_move(
     zone: &Zone,
     current: &DnssecPolicy,
     target: &DnssecPolicy,
 ) -> Result<(), ServiceError> {
-    if target.denial != current.denial {
-        return Err(ServiceError::invalid_input(format!(
-            "policy '{}' uses {} denial but zone '{}' signs with {}; the denial mode is fixed \
-             while signed, so disable DNSSEC and re-enable under the new policy",
-            target.name,
-            target.denial,
-            zone.name.as_str(),
-            current.denial
-        )));
-    }
     if target.split_keys != current.split_keys {
         return Err(ServiceError::invalid_input(format!(
             "policy '{}' uses {} but zone '{}' signs with {}; the key layout is fixed while \

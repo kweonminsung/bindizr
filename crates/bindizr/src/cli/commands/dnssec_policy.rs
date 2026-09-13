@@ -28,7 +28,7 @@ pub(crate) enum DnssecPolicyCommand {
         /// Signing algorithm: ecdsap256sha256 (default), ecdsap384sha384, ed25519, ed448, rsasha256, or rsasha512. Fixed at creation
         #[arg(long, value_name = "ALG")]
         algorithm: Option<String>,
-        /// Denial-of-existence mode: nsec (default) or nsec3. Fixed at creation
+        /// Denial-of-existence mode: nsec3 (default) or nsec. Fixed at creation
         #[arg(long, value_name = "nsec|nsec3")]
         denial: Option<String>,
         /// Generate split KSK/ZSK keys instead of one CSK, so the ZSK rolls

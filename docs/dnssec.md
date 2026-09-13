@@ -33,7 +33,7 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
     signing.
 
 `denial`
-:   `nsec` (default) or `nsec3` (RFC 9276 parameters). NSEC lets anyone walk
+:   `nsec3` (default, RFC 9276 parameters) or `nsec`. NSEC lets anyone walk
     the zone's names; NSEC3 hashes them.
 
 `split_keys`
@@ -56,7 +56,8 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
     (default two days). Neither ever drops below the TTLs involved; see
     [Key rollover](#key-rollover).
 
-The algorithm, denial mode, and key layout are fixed once a policy exists;
+The algorithm, denial mode, and key layout are fixed once a policy exists
+(move a zone to another policy to change them);
 the timing fields can be edited in place and apply to every zone under the
 policy from its next signing pass or maintenance scan. A policy in use
 cannot be deleted, and neither can `default`: edit it to change the
@@ -93,11 +94,13 @@ bindizr dnssec set example.com --policy strict
 ```
 
 Also `policy` in `PUT /zones/{name}/dnssec`. The target must share the zone's
-denial mode and key layout — those have no safe in-place transition, so to
-change them disable DNSSEC and re-enable under the new policy, going
-insecure in between. A different algorithm starts an
-[algorithm rollover](#key-rollover); different timing simply applies from
-the next signing pass.
+key layout — that has no safe in-place transition, so to change it disable
+DNSSEC and re-enable under the new policy, going insecure in between. A
+different denial mode is replaced in place under one serial: every algorithm
+bindizr signs with is NSEC3-capable (RFC 5155, Section 2), so a resolver that
+could follow the old chain already understands the new one. A different
+algorithm starts an [algorithm rollover](#key-rollover); different timing
+simply applies from the next signing pass.
 
 ## Completing the chain of trust
 
