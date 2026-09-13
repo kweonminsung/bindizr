@@ -5,8 +5,12 @@ use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
 use chrono::{DateTime, Duration, Utc};
 
 use crate::{
-    database::repository::LockLevel, dnssec::DnssecService, error::ServiceError,
-    repository::RepositoryService, zone::version::ChangeSubject,
+    database::repository::LockLevel,
+    dnssec::{DnssecService, rollover::promotable_sep_key_ids, snapshot::ProbedSnapshot},
+    error::ServiceError,
+    log_warn,
+    repository::RepositoryService,
+    zone::version::ChangeSubject,
 };
 
 /// Prune journal and version rows older than `cutoff` in one transaction: a
@@ -84,14 +88,9 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
             return Ok(None);
         };
 
-        let new_key = DnssecService::publish_replacement_key_tx(
-            &mut tx,
-            &zone,
-            &policy,
-            template,
-            template.algorithm,
-        )
-        .await?;
+        let new_key =
+            DnssecService::publish_replacement_key_tx(&mut tx, &zone, template, template.algorithm)
+                .await?;
         let mut keys = keys;
         keys.push(new_key);
         DnssecService::resign_zone_tx(
@@ -135,9 +134,98 @@ pub(crate) async fn promote_zsks_by_zone_id(zone_id: i32) -> Result<Option<Strin
             return Ok(None);
         }
 
+        // ZSKs carry no DS at the parent, so nothing outside the zone gates them.
         let keys =
-            DnssecService::promote_published_keys_tx(&mut tx, &zone, &policy, keys, &due).await?;
+            DnssecService::promote_published_keys_tx(&mut tx, &zone, keys, &due, None).await?;
 
+        DnssecService::resign_zone_tx(
+            &mut tx,
+            &zone,
+            &policy,
+            &keys,
+            false,
+            &ChangeSubject::system(),
+        )
+        .await?;
+        Ok(Some(zone.name.as_str().to_string()))
+    }
+    .await;
+    RepositoryService::finish_tx(tx, result, "failed to advance key rollover").await
+}
+
+/// Advance a zone's KSK/CSK rollover once the parent serves the new key's DS
+/// — what `ds-seen` otherwise waits for an operator to assert. `None` when
+/// the parent does not serve it yet, cannot be asked, or the state moved on:
+/// waiting states, not failures.
+pub(crate) async fn promote_sep_keys_by_zone_id(
+    zone_id: i32,
+) -> Result<Option<String>, ServiceError> {
+    // Unlocked pre-read, then the probe: the network wait must not hold the
+    // zone row. The snapshot catches a rollover that moved meanwhile.
+    let Some((zone, keys)) = ({
+        let mut tx = RepositoryService::begin_read_tx("failed to advance key rollover").await?;
+        let result = DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::None)
+            .await
+            .map(|found| found.map(|(zone, _, keys)| (zone, keys)));
+        RepositoryService::finish_tx(tx, result, "failed to advance key rollover").await?
+    }) else {
+        return Ok(None);
+    };
+    // The same rule `ds-seen` applies, minus the errors it reports.
+    let Ok(awaiting) = promotable_sep_key_ids(&zone, &keys, false) else {
+        return Ok(None);
+    };
+    let snapshot = ProbedSnapshot::take(&zone, &keys, |zone, keys| {
+        let mut promotable = promotable_sep_key_ids(zone, keys, false)?;
+        promotable.sort_unstable();
+        Ok((zone.parent_ns_addrs.clone(), promotable))
+    })?;
+
+    let delegation = match DnssecService::probe_delegation(&zone, &keys).await {
+        Ok(delegation) => delegation,
+        Err(e) => {
+            log_warn!(
+                "Parent of zone {} could not be asked for its DS, so the rollover waits: {}",
+                zone.name.as_str(),
+                e.message
+            );
+            return Ok(None);
+        }
+    };
+    // Every awaiting key, like `ds-seen`: a parent still propagating the
+    // change must not move the rollover on a partial answer.
+    let confirmed = delegation
+        .keys
+        .iter()
+        .filter(|key| awaiting.contains(&key.id));
+    if !confirmed.clone().all(|key| key.ds_published) {
+        if confirmed.clone().any(|key| key.ds_digest_unsupported) {
+            log_warn!(
+                "Parent of zone {} answers only in a DS digest bindizr cannot compute, so the \
+                 rollover waits",
+                zone.name.as_str()
+            );
+        }
+        return Ok(None);
+    }
+    let parent_ds_ttl = delegation.ds_ttl;
+
+    let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
+    let result = async {
+        let Some((zone, policy, keys)) =
+            DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
+                .await?
+        else {
+            return Ok(None);
+        };
+        if snapshot.require_same(&zone, &keys).is_err() {
+            return Ok(None);
+        }
+        let due = promotable_sep_key_ids(&zone, &keys, false)?;
+
+        let keys =
+            DnssecService::promote_published_keys_tx(&mut tx, &zone, keys, &due, parent_ds_ttl)
+                .await?;
         DnssecService::resign_zone_tx(
             &mut tx,
             &zone,

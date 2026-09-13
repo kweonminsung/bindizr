@@ -75,12 +75,6 @@ impl DnssecPolicyService {
             signature_validity_days: signature_validity_days as i32,
             signature_refresh_days: signature_refresh_days as i32,
             zsk_lifetime_days: zsk_lifetime_days as i32,
-            rollover_publish_holddown_secs: i64::from(
-                request.rollover_publish_holddown_secs.unwrap_or(86_400),
-            ),
-            rollover_retire_holddown_secs: i64::from(
-                request.rollover_retire_holddown_secs.unwrap_or(172_800),
-            ),
             created_at: Utc::now(),
         })
         .await
@@ -150,12 +144,6 @@ impl DnssecPolicyService {
                     signature_validity_days: signature_validity_days as i32,
                     signature_refresh_days: signature_refresh_days as i32,
                     zsk_lifetime_days: zsk_lifetime_days as i32,
-                    rollover_publish_holddown_secs: request
-                        .rollover_publish_holddown_secs
-                        .map_or(policy.rollover_publish_holddown_secs, i64::from),
-                    rollover_retire_holddown_secs: request
-                        .rollover_retire_holddown_secs
-                        .map_or(policy.rollover_retire_holddown_secs, i64::from),
                     ..policy
                 },
             )

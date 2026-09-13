@@ -109,3 +109,30 @@ fn the_latest_deadline_among_the_published_keys_gates_them_all() {
 
     assert_eq!(error.code, ErrorCode::InvalidInput);
 }
+
+#[test]
+fn a_retiring_key_waits_out_the_signatures_it_made() {
+    let mut zsk = key(1, DnssecKeyRole::Zsk, DnssecKeyState::Active, 0);
+    zsk.max_signed_ttl = 900;
+
+    // A ZSK has no DS at the parent, so only its signatures hold it back.
+    assert_eq!(retirement_interval_secs(&zsk, Some(86_400)), 900);
+}
+
+#[test]
+fn a_retiring_sep_key_also_waits_out_the_parents_ds() {
+    // Resolvers that cached the parent's DS RRset before the replacement was
+    // added hold it for its TTL, and it names only the key being removed.
+    let mut csk = key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, 0);
+    csk.max_signed_ttl = 900;
+
+    assert_eq!(retirement_interval_secs(&csk, Some(86_400)), 86_400);
+
+    // A zone signed with a longer TTL than the parent's outlasts it.
+    csk.max_signed_ttl = 604_800;
+    assert_eq!(retirement_interval_secs(&csk, Some(86_400)), 604_800);
+
+    // Nothing observed the parent, so only the signatures are known.
+    csk.max_signed_ttl = 900;
+    assert_eq!(retirement_interval_secs(&csk, None), 900);
+}

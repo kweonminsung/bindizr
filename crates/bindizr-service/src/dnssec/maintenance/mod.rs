@@ -12,8 +12,8 @@ use bindizr_core::{
 use chrono::{Duration, Utc};
 
 use self::steps::{
-    promote_zsks_by_zone_id, prune_zone_history, remove_retired_keys_by_zone_id,
-    sign_zone_by_zone_id, start_zsk_rollover_by_zone_id,
+    promote_sep_keys_by_zone_id, promote_zsks_by_zone_id, prune_zone_history,
+    remove_retired_keys_by_zone_id, sign_zone_by_zone_id, start_zsk_rollover_by_zone_id,
 };
 use super::notify_zone;
 use crate::{
@@ -157,6 +157,32 @@ async fn run_maintenance_pass() {
                     Err(e) => {
                         failed = true;
                         log_error!("ZSK promotion for zone id {} failed: {}", zone_id, e)
+                    }
+                }
+            }
+
+            // A SEP key also needs its DS at the parent, so this asks. A
+            // parent that consumes the CDS bindizr publishes installs it
+            // itself.
+            let mut zone_ids: Vec<i32> = keys
+                .iter()
+                .filter(|key| key.role.is_sep())
+                .map(|key| key.zone_id)
+                .collect();
+            zone_ids.dedup();
+            for zone_id in zone_ids {
+                match promote_sep_keys_by_zone_id(zone_id).await {
+                    Ok(Some(zone_name)) => {
+                        log_info!(
+                            "Promoted pre-published SEP key for zone {}: the parent serves its DS",
+                            zone_name
+                        );
+                        notify_zone(&zone_name).await;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        failed = true;
+                        log_error!("SEP key promotion for zone id {} failed: {}", zone_id, e)
                     }
                 }
             }

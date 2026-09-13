@@ -76,12 +76,5 @@ pub struct DnssecPolicy {
     /// Days an active ZSK may sign before the scheduler rolls it; 0 disables
     /// scheduled rolls.
     pub zsk_lifetime_days: i32,
-    /// How long a pre-published key stays visible before it may start
-    /// signing (caches must have learned the DNSKEY). ZSKs auto-advance
-    /// after this; for CSK/KSK it is the least wait before `rollover ds-seen`.
-    pub rollover_publish_holddown_secs: i64,
-    /// How long a retired key stays published before removal (caches must
-    /// have drained its signatures and the parent its DS).
-    pub rollover_retire_holddown_secs: i64,
     pub created_at: DateTime<Utc>,
 }

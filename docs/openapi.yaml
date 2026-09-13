@@ -144,7 +144,7 @@ paths:
       tags:
       - DNSSEC
       summary: Edit a DNSSEC policy's timing
-      description: 'Edits the policy''s signature validity, re-sign threshold, scheduled ZSK lifetime, and rollover hold-downs; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or maintenance scan.'
+      description: 'Edits the policy''s signature validity, re-sign threshold, and scheduled ZSK lifetime; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or maintenance scan.'
       operationId: update_dnssec_policy
       parameters:
       - name: name
@@ -2333,7 +2333,7 @@ paths:
       tags:
       - DNSSEC
       summary: Confirm the new DS is at the parent (ds-seen)
-      description: Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute, or `DNSSEC_STATE_CHANGED` when the zone's keys or parent changed while they were being asked (retry). `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.
+      description: Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The maintenance scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute, or `DNSSEC_STATE_CHANGED` when the zone's keys or parent changed while they were being asked (retry). `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.
       operationId: ds_seen_dnssec_rollover
       parameters:
       - name: name
@@ -3160,22 +3160,6 @@ components:
         name:
           type: string
           example: strict
-        rollover_publish_holddown_secs:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Wait before a pre-published key may start signing (default one day).
-          example: 86400
-          minimum: 0
-        rollover_retire_holddown_secs:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Wait before a retired key is removed from the zone (default two days).
-          example: 172800
-          minimum: 0
         signature_refresh_days:
           type:
           - integer
@@ -3824,8 +3808,6 @@ components:
       - signature_validity_days
       - signature_refresh_days
       - zsk_lifetime_days
-      - rollover_publish_holddown_secs
-      - rollover_retire_holddown_secs
       - created_at
       properties:
         algorithm:
@@ -3845,16 +3827,6 @@ components:
         name:
           type: string
           example: default
-        rollover_publish_holddown_secs:
-          type: integer
-          format: int32
-          example: 86400
-          minimum: 0
-        rollover_retire_holddown_secs:
-          type: integer
-          format: int32
-          example: 172800
-          minimum: 0
         signature_refresh_days:
           type: integer
           format: int32
@@ -4835,20 +4807,6 @@ components:
         Request body for editing a DNSSEC policy's timing; an omitted field keeps
         its value. Takes effect on the next signing pass or maintenance scan.
       properties:
-        rollover_publish_holddown_secs:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          example: 86400
-          minimum: 0
-        rollover_retire_holddown_secs:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          example: 172800
-          minimum: 0
         signature_refresh_days:
           type:
           - integer

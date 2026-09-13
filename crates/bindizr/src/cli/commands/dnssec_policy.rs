@@ -45,12 +45,6 @@ pub(crate) enum DnssecPolicyCommand {
         /// default, disables scheduled rolls)
         #[arg(long, value_name = "DAYS")]
         zsk_lifetime_days: Option<u32>,
-        /// Wait before a pre-published key may start signing (default 86400)
-        #[arg(long, value_name = "SECS")]
-        rollover_publish_holddown_secs: Option<u32>,
-        /// Wait before a retired key is removed from the zone (default 172800)
-        #[arg(long, value_name = "SECS")]
-        rollover_retire_holddown_secs: Option<u32>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -87,12 +81,6 @@ pub(crate) enum DnssecPolicyCommand {
         /// disables scheduled rolls)
         #[arg(long, value_name = "DAYS")]
         zsk_lifetime_days: Option<u32>,
-        /// Wait before a pre-published key may start signing
-        #[arg(long, value_name = "SECS")]
-        rollover_publish_holddown_secs: Option<u32>,
-        /// Wait before a retired key is removed from the zone
-        #[arg(long, value_name = "SECS")]
-        rollover_retire_holddown_secs: Option<u32>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -121,8 +109,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             signature_validity_days,
             signature_refresh_days,
             zsk_lifetime_days,
-            rollover_publish_holddown_secs,
-            rollover_retire_holddown_secs,
             output,
         } => {
             let res = client
@@ -136,8 +122,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                         signature_validity_days,
                         signature_refresh_days,
                         zsk_lifetime_days,
-                        rollover_publish_holddown_secs,
-                        rollover_retire_holddown_secs,
                     },
                 )
                 .await?;
@@ -178,8 +162,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             signature_validity_days,
             signature_refresh_days,
             zsk_lifetime_days,
-            rollover_publish_holddown_secs,
-            rollover_retire_holddown_secs,
             output,
         } => {
             let res = client
@@ -191,8 +173,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                             signature_validity_days,
                             signature_refresh_days,
                             zsk_lifetime_days,
-                            rollover_publish_holddown_secs,
-                            rollover_retire_holddown_secs,
                         },
                     },
                 )

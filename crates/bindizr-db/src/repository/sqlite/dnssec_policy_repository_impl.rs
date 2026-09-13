@@ -26,8 +26,8 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&policy.name)
@@ -37,8 +37,6 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         .bind(policy.signature_validity_days)
         .bind(policy.signature_refresh_days)
         .bind(policy.zsk_lifetime_days)
-        .bind(policy.rollover_publish_holddown_secs)
-        .bind(policy.rollover_retire_holddown_secs)
         .bind(now)
         .execute(&mut *conn)
         .await?;
@@ -57,7 +55,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         let sqlite_tx = tx.as_sqlite()?;
 
         let policy = sqlx::query_as::<_, DnssecPolicy>(
-            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at FROM dnssec_policies WHERE id = ?",
+            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&mut **sqlite_tx)
@@ -70,7 +68,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         let mut conn = self.pool.acquire().await?;
 
         let policy = sqlx::query_as::<_, DnssecPolicy>(
-            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at FROM dnssec_policies WHERE name = ?",
+            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = ?",
         )
         .bind(name)
         .fetch_optional(&mut *conn)
@@ -88,7 +86,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         let sqlite_tx = tx.as_sqlite()?;
 
         let policy = sqlx::query_as::<_, DnssecPolicy>(
-            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at FROM dnssec_policies WHERE name = ?",
+            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = ?",
         )
         .bind(name)
         .fetch_optional(&mut **sqlite_tx)
@@ -101,7 +99,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         let mut conn = self.pool.acquire().await?;
 
         let policies = sqlx::query_as::<_, DnssecPolicy>(
-            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at FROM dnssec_policies ORDER BY name",
+            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies ORDER BY name",
         )
         .fetch_all(&mut *conn)
         .await?;
@@ -119,16 +117,13 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         sqlx::query(
             r#"
             UPDATE dnssec_policies
-            SET signature_validity_days = ?, signature_refresh_days = ?, zsk_lifetime_days = ?,
-                rollover_publish_holddown_secs = ?, rollover_retire_holddown_secs = ?
+            SET signature_validity_days = ?, signature_refresh_days = ?, zsk_lifetime_days = ?
             WHERE id = ?
             "#,
         )
         .bind(policy.signature_validity_days)
         .bind(policy.signature_refresh_days)
         .bind(policy.zsk_lifetime_days)
-        .bind(policy.rollover_publish_holddown_secs)
-        .bind(policy.rollover_retire_holddown_secs)
         .bind(policy.id)
         .execute(&mut **sqlite_tx)
         .await?;

@@ -32,9 +32,6 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(policy["signature_validity_days"], 21);
     assert_eq!(policy["signature_refresh_days"], 7);
     assert_eq!(policy["zsk_lifetime_days"], 90);
-    // Omitted hold-downs take the built-in defaults.
-    assert_eq!(policy["rollover_publish_holddown_secs"], 86400);
-    assert_eq!(policy["rollover_retire_holddown_secs"], 172800);
 
     let (status, body) = app
         .request(
@@ -73,14 +70,13 @@ async fn dnssec_policy_create_read_update_delete() {
         .request(
             Method::PUT,
             &format!("/dnssec-policies/{policy_name}"),
-            Some(json!({ "signature_validity_days": 30, "rollover_retire_holddown_secs": 3600 })),
+            Some(json!({ "signature_validity_days": 30 })),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
     let policy = &body["dnssec_policy"];
     assert_eq!(policy["signature_validity_days"], 30);
     assert_eq!(policy["signature_refresh_days"], 7);
-    assert_eq!(policy["rollover_retire_holddown_secs"], 3600);
     assert_eq!(policy["algorithm"], "ed25519");
 
     // A refresh window at least as long as the validity would re-sign on
@@ -152,7 +148,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": format!("{}-missing", app.namespace()) , "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "policy": format!("{}-missing", app.namespace()) , "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -162,7 +158,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -208,7 +204,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -286,7 +282,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": nsec_policy, "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "policy": nsec_policy, "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");

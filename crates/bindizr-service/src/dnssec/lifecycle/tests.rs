@@ -33,8 +33,6 @@ fn policy(id: i32, name: &str) -> DnssecPolicy {
         signature_validity_days: 14,
         signature_refresh_days: 5,
         zsk_lifetime_days: 0,
-        rollover_publish_holddown_secs: 86_400,
-        rollover_retire_holddown_secs: 172_800,
         created_at: Utc::now(),
     }
 }

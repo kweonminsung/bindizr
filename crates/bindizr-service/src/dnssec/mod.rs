@@ -292,8 +292,6 @@ mod tests {
             signature_validity_days,
             signature_refresh_days,
             zsk_lifetime_days: 0,
-            rollover_publish_holddown_secs: 86_400,
-            rollover_retire_holddown_secs: 172_800,
             created_at: Utc::now(),
         }
     }

@@ -170,10 +170,6 @@ pub(crate) struct DnssecPolicyRow {
     pub(crate) refresh: String,
     #[tabled(rename = "ZSK-LIFETIME")]
     pub(crate) zsk_lifetime: String,
-    #[tabled(rename = "PUBLISH-WAIT")]
-    pub(crate) publish_wait: String,
-    #[tabled(rename = "RETIRE-WAIT")]
-    pub(crate) retire_wait: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
@@ -193,8 +189,6 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
             } else {
                 format!("{}d", policy.zsk_lifetime_days)
             },
-            publish_wait: format!("{}s", policy.rollover_publish_holddown_secs),
-            retire_wait: format!("{}s", policy.rollover_retire_holddown_secs),
             created_at: policy.created_at.to_rfc3339(),
         }
     }

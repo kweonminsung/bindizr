@@ -4,8 +4,9 @@ bindizr signs zones itself: enabling DNSSEC generates the zone's key(s),
 derives the `DNSKEY`, `CDS`/`CDNSKEY`, denial-of-existence, and `RRSIG`
 records, and serves them over the same AXFR/IXFR path — secondaries need
 **no configuration changes**. Every record change re-signs exactly what
-changed in the same transaction, and a background scheduler renews
-signatures before they expire.
+changed in the same transaction, and an hourly scheduler renews signatures
+before they expire and carries key rollovers through — asking the parent
+about the DS when one is waiting on it.
 
 How a zone is signed is described by a **DNSSEC policy**, a named bundle of
 signing parameters that zones reference — the same shape as BIND's
@@ -50,12 +51,6 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
 :   Roll the ZSK of split-key zones automatically once it has signed this
     long; 0 (the default) disables scheduled rolls.
 
-`rollover_publish_holddown_secs` / `rollover_retire_holddown_secs`
-:   How long a pre-published key stays visible before it may sign (default
-    one day) and how long a retired key stays published before removal
-    (default two days). Neither ever drops below the TTLs involved; see
-    [Key rollover](#key-rollover).
-
 The algorithm, denial mode, and key layout are fixed once a policy exists
 (move a zone to another policy to change them);
 the timing fields can be edited in place and apply to every zone under the
@@ -66,8 +61,10 @@ installation's defaults.
 ## Enabling DNSSEC for a zone
 
 ```sh
-bindizr dnssec enable example.com --parent-ns-addrs a.gtld-servers.net,b.gtld-servers.net
-bindizr dnssec enable example.com --parent-ns-addrs ns1.parent.example --policy strict
+bindizr dnssec enable example.com \
+  --parent-ns-addrs a.gtld-servers.net,b.gtld-servers.net --parent-ds-ttl 86400
+bindizr dnssec enable example.com \
+  --parent-ns-addrs ns1.parent.example --parent-ds-ttl 3600 --policy strict
 ```
 
 or over HTTP:
@@ -76,12 +73,16 @@ or over HTTP:
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:3000/zones/example.com/dnssec \
   -H "Content-Type: application/json" \
-  -d '{"policy": "strict", "parent_ns_addrs": "ns1.parent.example"}'
+  -d '{"policy": "strict", "parent_ns_addrs": "ns1.parent.example", "parent_ds_ttl": 3600}'
 ```
 
-`--parent-ns-addrs` is required, and every later DS check asks exactly
-these servers. In a hidden primary layout the host resolver cannot see the
-zones bindizr serves, so there is nothing reliable to guess them from.
+Both parent settings are required. `--parent-ns-addrs` names the servers
+every later DS check asks — in a hidden primary layout the host resolver
+cannot see the zones bindizr serves, so there is nothing reliable to guess
+them from. `--parent-ds-ttl` is the TTL those servers hand out with the
+zone's DS; bindizr does not read it from them, because a retired key has to
+wait it out *after* the parent stopped serving that DS, which is a moment
+bindizr never sees. Your registrar publishes the value (86400 is common).
 
 This generates the key(s) the policy prescribes (under `default`, a single
 ECDSA P-256 CSK), signs the whole zone, and notifies the secondaries. The
@@ -129,33 +130,40 @@ bindizr dnssec rollover start example.com --role zsk # split-key zones
 
 `start` pre-publishes a replacement with the same algorithm: it joins the
 `DNSKEY` records (and, for CSK/KSK, the CDS/CDNSKEY records) but signs nothing
-yet, giving resolver caches the policy's `rollover_publish_holddown_secs`
-to learn it. Then:
+yet, for as long as a resolver can still hold a `DNSKEY` answer without it —
+the zone's TTL. Then:
 
 - **ZSK** — no parent involvement: the scheduler promotes it automatically
   after the wait. With the policy's `zsk_lifetime_days` set (0, the default,
   disables it), the scheduler also *starts* ZSK rollovers on its own once the
   active ZSK outlives that many days, making split-key ZSK rotation fully
-  hands-off. CSKs are never auto-rolled — their rollover needs the parent DS
-  swap below.
-- **CSK / KSK** — publish the new DS at the parent (or let it consume the
-  CDS), wait out the parent's DS TTL, then confirm:
+  hands-off. CSKs are never auto-*started* — a new DS has to reach the parent
+  first — but the scheduler finishes them, as below.
+- **CSK / KSK** — the new DS has to reach the parent. Publish it there, or
+  let a parent that consumes CDS install it itself; either way the scheduler
+  asks the zone's parent nameservers on every pass and promotes the key once
+  all of them serve its DS. Nothing to run.
+
+  To finish it now instead of waiting for the next pass:
 
   ```sh
   bindizr dnssec rollover ds-seen example.com
   ```
 
-  The confirmation is refused before the hold-down passes and while the
-  parent's nameservers do not serve the new key's DS; `--skip-ds-check`
-  takes your word on the DS instead. The TTL wait itself is yours.
-  `bindizr dnssec check-ds` shows which keys' DS the parent serves and when
-  the hold-down ends. For a compromised key, `--skip-holddown` promotes
-  before the hold-down ends; resolvers still caching the previous keys fail
-  validation until their copy expires.
+  It refuses before the publish wait passes and while the parent's
+  nameservers do not serve the new key's DS — the same two conditions the
+  scheduler applies. The overrides are what the scheduler has no way to
+  express: `--skip-ds-check` takes your word on the DS, for a host that
+  cannot reach the parent at all, and `--skip-holddown` promotes a
+  compromised key before the wait ends, at the cost of validation failures
+  at resolvers still caching the previous keys. `bindizr dnssec check-ds`
+  shows which keys' DS the parent serves and when the wait ends.
 
-A retired key stays published for the policy's
-`rollover_retire_holddown_secs`, then the scheduler removes it. `status`
-shows every key's state (`published`/`active`/`retired`) throughout.
+A retired key stays published until what points at it has drained from
+caches: the longest TTL it signed, and for a KSK or CSK the parent's DS TTL,
+read from the same answer that confirmed the promotion. Then the scheduler
+removes it. `status` shows every key's state
+(`published`/`active`/`retired`) throughout.
 
 An **algorithm rollover** (RFC 6840, Section 5.11) is started by moving the
 zone to a policy of the new algorithm (`dnssec set --policy`): every key is
@@ -224,16 +232,18 @@ to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked
 `--skip-ds-check` (`DELETE /zones/{name}/dnssec?skip_ds_check=true`) skips
 the check, for a host that cannot reach the parent at all.
 
-Every check asks the nameservers the zone names, set at enable and
+Every check asks the nameservers the zone names — including the scheduler's,
+so a host running bindizr needs outbound DNS to them. Set at enable and
 changed with:
 
 ```sh
 bindizr dnssec set example.com --parent-ns-addrs ns1.parent.example:5353
+bindizr dnssec set example.com --parent-ds-ttl 3600
 ```
 
-Also `parent_ns_addrs` in the enable body and in `PUT /zones/{name}/dnssec`;
-`dnssec status` shows the setting. The list must always name at least one
-server.
+Also `parent_ns_addrs` and `parent_ds_ttl` in the enable body and in
+`PUT /zones/{name}/dnssec`; `dnssec status` shows both. The list must always
+name at least one server.
 
 ## Behavior notes
 

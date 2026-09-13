@@ -20,6 +20,18 @@ use crate::{
     types::{DnssecDelegationKeyInfo, GetDnssecStatusResponse},
 };
 
+/// The wait before a retired key may be removed: the retire interval of RFC
+/// 7583, Section 3.3.4. The key outlives the signatures it made, cached for
+/// their RRset's TTL, and — for a key a DS names — the parent's DS RRset,
+/// cached for the TTL the confirming probe saw.
+fn retirement_interval_secs(key: &DnssecKey, parent_ds_ttl: Option<u32>) -> i64 {
+    let signatures = i64::from(key.max_signed_ttl);
+    if !key.role.is_sep() {
+        return signatures;
+    }
+    signatures.max(i64::from(parent_ds_ttl.unwrap_or(0)))
+}
+
 impl DnssecService {
     /// Start a key rollover: pre-publish a same-algorithm replacement for
     /// the CSK, or for the `role` named in a split-key zone.
@@ -69,14 +81,9 @@ impl DnssecService {
                 .iter()
                 .find(|key| key.role == target_role)
                 .expect("validated above that the role exists");
-            let new_key = Self::publish_replacement_key_tx(
-                &mut tx,
-                &zone,
-                &policy,
-                template,
-                template.algorithm,
-            )
-            .await?;
+            let new_key =
+                Self::publish_replacement_key_tx(&mut tx, &zone, template, template.algorithm)
+                    .await?;
             keys.push(new_key);
 
             let new_serial = Self::resign_zone_tx(
@@ -122,8 +129,7 @@ impl DnssecService {
         let templates = keys.clone();
         for template in &templates {
             let new_key =
-                Self::publish_replacement_key_tx(tx, zone, policy, template, policy.algorithm)
-                    .await?;
+                Self::publish_replacement_key_tx(tx, zone, template, policy.algorithm).await?;
             keys.push(new_key);
         }
         Ok(keys)
@@ -142,6 +148,9 @@ impl DnssecService {
         caller.require_global("manage DNSSEC signing")?;
 
         let mut snapshot = None;
+        // The answer that confirms the DS also says how long resolvers cache
+        // it — the wait the key it replaces must outlive.
+        let mut parent_ds_ttl = None;
         if !skip_ds_check {
             // Unlocked pre-read to learn which keys await the parent; the
             // network wait must not hold the zone row.
@@ -155,6 +164,7 @@ impl DnssecService {
             };
             let awaiting = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
             let delegation = Self::probe_delegation(&zone, &keys).await?;
+            parent_ds_ttl = delegation.ds_ttl;
             let unconfirmed: Vec<&DnssecDelegationKeyInfo> = delegation
                 .keys
                 .iter()
@@ -195,7 +205,7 @@ impl DnssecService {
             }
             let ds_published = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
             let keys =
-                Self::promote_published_keys_tx(&mut tx, &zone, &policy, keys, &ds_published)
+                Self::promote_published_keys_tx(&mut tx, &zone, keys, &ds_published, parent_ds_ttl)
                     .await?;
 
             let new_serial = DnssecService::resign_zone_tx(
@@ -233,21 +243,17 @@ impl DnssecService {
     }
 
     /// Generate and persist a pre-published replacement for `template` with
-    /// `algorithm`; the policy's hold-down covers the served DNSKEY TTL (RFC
+    /// `algorithm`. It may sign once no resolver can still hold a DNSKEY
+    /// answer without it, which is the TTL that answer is served with (RFC
     /// 7583, Section 3.3.1).
     pub(crate) async fn publish_replacement_key_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
-        policy: &DnssecPolicy,
         template: &DnssecKey,
         algorithm: DnssecAlgorithm,
     ) -> Result<DnssecKey, ServiceError> {
         let now = Utc::now();
-        let publish_wait = Duration::seconds(
-            policy
-                .rollover_publish_holddown_secs
-                .max(i64::from(zone.default_ttl)),
-        );
+        let publish_wait = Duration::seconds(i64::from(zone.default_ttl));
         let new_key = generate_key(
             zone,
             algorithm,
@@ -265,14 +271,11 @@ impl DnssecService {
     pub(crate) async fn promote_published_keys_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
-        policy: &DnssecPolicy,
         keys: Vec<DnssecKey>,
         promoted: &[i32],
+        parent_ds_ttl: Option<u32>,
     ) -> Result<Vec<DnssecKey>, ServiceError> {
         let now = Utc::now();
-        // The retiring key outlives the signatures it made, which resolvers
-        // cache for their RRset's TTL (RFC 7583, Section 3.3.4).
-        let retire_wait_floor = policy.rollover_retire_holddown_secs;
         let promoted_roles: Vec<DnssecKeyRole> = keys
             .iter()
             .filter(|key| promoted.contains(&key.id))
@@ -283,9 +286,9 @@ impl DnssecService {
         let retire_wait = keys
             .iter()
             .filter(|key| key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role))
-            .map(|key| retire_wait_floor.max(i64::from(key.max_signed_ttl)))
+            .map(|key| retirement_interval_secs(key, parent_ds_ttl))
             .max()
-            .unwrap_or(retire_wait_floor);
+            .unwrap_or(0);
 
         let mut updated = Vec::with_capacity(keys.len());
         for mut key in keys {
@@ -327,10 +330,11 @@ impl DnssecService {
     }
 }
 
-/// The pre-published SEP keys `ds-seen` may promote; an error when no
+/// The pre-published SEP keys a promotion may take; an error when no
 /// rollover is in progress, it replaces only the ZSK, or (unless
-/// `skip_holddown`) a hold-down runs.
-fn promotable_sep_key_ids(
+/// `skip_holddown`) a wait runs. `ds-seen` reports those errors; the
+/// scheduler reads them as nothing to do.
+pub(crate) fn promotable_sep_key_ids(
     zone: &Zone,
     keys: &[DnssecKey],
     skip_holddown: bool,
@@ -343,8 +347,7 @@ fn promotable_sep_key_ids(
             zone.name.as_str(),
         ));
     }
-    // ZSKs have no parent DS to confirm; the scheduler promotes them after
-    // the publish hold-down.
+    // ZSKs have no parent DS to confirm; their own step promotes them.
     let ds_published: Vec<i32> = keys
         .iter()
         .filter(|key| key.awaits_parent_ds())
@@ -357,8 +360,8 @@ fn promotable_sep_key_ids(
         ));
     }
 
-    // The deadline stamped at publication is authoritative: later hold-down
-    // or TTL changes cannot shorten it (status reports it).
+    // The deadline stamped at publication is authoritative: a later TTL
+    // change cannot shorten it (status reports it).
     let promotable_at = keys
         .iter()
         .filter(|key| ds_published.contains(&key.id))

@@ -37,12 +37,6 @@ pub struct CreateDnssecPolicyRequest {
     /// default) disables scheduled rolls.
     #[schema(example = 90)]
     pub zsk_lifetime_days: Option<u32>,
-    /// Wait before a pre-published key may start signing (default one day).
-    #[schema(example = 86400)]
-    pub rollover_publish_holddown_secs: Option<u32>,
-    /// Wait before a retired key is removed from the zone (default two days).
-    #[schema(example = 172800)]
-    pub rollover_retire_holddown_secs: Option<u32>,
 }
 
 /// Request body for editing a DNSSEC policy's timing; an omitted field keeps
@@ -58,12 +52,6 @@ pub struct UpdateDnssecPolicyRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = 90)]
     pub zsk_lifetime_days: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = 86400)]
-    pub rollover_publish_holddown_secs: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = 172800)]
-    pub rollover_retire_holddown_secs: Option<u32>,
 }
 
 /// API representation of a DNSSEC policy.
@@ -87,10 +75,6 @@ pub struct GetDnssecPolicyResponse {
     /// 0 disables scheduled ZSK rollovers.
     #[schema(example = 0)]
     pub zsk_lifetime_days: u32,
-    #[schema(example = 86400)]
-    pub rollover_publish_holddown_secs: u32,
-    #[schema(example = 172800)]
-    pub rollover_retire_holddown_secs: u32,
     pub created_at: DateTime<Utc>,
 }
 
@@ -105,8 +89,6 @@ impl GetDnssecPolicyResponse {
             signature_validity_days: policy.signature_validity_days.max(0) as u32,
             signature_refresh_days: policy.signature_refresh_days.max(0) as u32,
             zsk_lifetime_days: policy.zsk_lifetime_days.max(0) as u32,
-            rollover_publish_holddown_secs: policy.rollover_publish_holddown_secs.max(0) as u32,
-            rollover_retire_holddown_secs: policy.rollover_retire_holddown_secs.max(0) as u32,
             created_at: policy.created_at,
         }
     }

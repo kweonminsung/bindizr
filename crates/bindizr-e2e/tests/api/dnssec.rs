@@ -15,7 +15,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -57,7 +57,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -219,18 +219,8 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_csk_rollover_lifecycle() {
     let app = TestApp::start().await;
-    // A zero publish hold-down lets the rollover be confirmed as soon as the
-    // zone's DNSKEY TTL allows; the hold-down never drops below that TTL, so
-    // the minimum TTL is the shortest wait that still reaches promotion.
-    let policy_name = format!("{}-fast", app.namespace());
-    let (status, _) = app
-        .request(
-            Method::POST,
-            "/dnssec-policies",
-            Some(json!({ "name": policy_name, "rollover_publish_holddown_secs": 0 })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
+    // A short zone TTL is the whole publish wait, so the rollover reaches
+    // promotion inside the test.
     let zone_name = app.zone_name("rollover.example");
     let (status, body) = app
         .request(
@@ -253,12 +243,11 @@ async fn dnssec_csk_rollover_lifecycle() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let dnssec = &body["dnssec"];
-    assert_eq!(dnssec["policy"]["name"], policy_name);
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
     assert_eq!(keys[0]["role"], "csk");
@@ -383,7 +372,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -469,7 +458,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -577,7 +566,7 @@ async fn dnssec_enable_requires_a_global_token() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
