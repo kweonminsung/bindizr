@@ -17,17 +17,16 @@ use tokio::net::{TcpStream, UdpSocket};
 
 use crate::dns::{
     error::XfrError,
-    server::{acl::SecondaryAcl, catalog, validate_secondary_acl},
+    server::{catalog, validate_secondary_acl},
     wire,
 };
 
 pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
-    secondary_acl: &SecondaryAcl,
     query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
-    let response = build_soa_response(query, client_addr.ip(), secondary_acl)
+    let response = build_soa_response(query, client_addr.ip())
         .await
         .inspect_err(|_| track_soa(SoaResult::Error))?;
     wire::write_tcp_message(stream, &response).await?;
@@ -37,10 +36,9 @@ pub(crate) async fn handle_tcp_soa(
 pub(crate) async fn handle_udp_soa(
     socket: &UdpSocket,
     client_addr: SocketAddr,
-    secondary_acl: &SecondaryAcl,
     query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
-    let response = build_soa_response(query, client_addr.ip(), secondary_acl)
+    let response = build_soa_response(query, client_addr.ip())
         .await
         .inspect_err(|_| track_soa(SoaResult::Error))?;
     socket.send_to(&response, client_addr).await?;
@@ -58,15 +56,10 @@ fn is_self_probe(client_ip: IpAddr) -> bool {
 async fn build_soa_response(
     query: &message::ParsedQuery,
     client_ip: IpAddr,
-    secondary_acl: &SecondaryAcl,
 ) -> Result<Vec<u8>, XfrError> {
     let zone_name_str = query.zone_name.as_str();
 
-    if !is_self_probe(client_ip)
-        && validate_secondary_acl(client_ip, secondary_acl)
-            .await
-            .is_err()
-    {
+    if !is_self_probe(client_ip) && validate_secondary_acl(client_ip).await.is_err() {
         log_warn!(
             "Refused SOA query for {:?} from {}",
             zone_name_str,

@@ -12,7 +12,23 @@ The file path can be overridden with `bindizr start -c <FILE>` or the
 ```bash
 $ bindizr config check            # validate a file without starting
 $ bindizr config list             # show what the running daemon loaded
+$ bindizr config reload           # re-read the file in the running daemon
 ```
+
+## Reloading
+
+`bindizr config reload`, or `SIGHUP` to the daemon, re-reads the file and
+applies it without a restart. What a running process cannot adopt is refused
+**whole** — the file is not partly applied — so the running configuration
+always describes the running process:
+
+| | |
+| --- | --- |
+| Reloadable | the whole `[dns]` section (including `secondary_addrs`, read per transfer) and `[logging]` |
+| Fixed while running | the `[api]` and `[database]` sections, `dns.listen_addr`, `dns.listen_port` |
+
+A reload names the sections it changed; a refusal names the settings that
+would need a restart and leaves the running configuration alone.
 
 ## Configuration file
 

@@ -24,14 +24,30 @@ const RESOLVE_FAILURE_TTL: Duration = Duration::from_secs(5);
 /// A resolver that never answers must not hold a DNS request open.
 const RESOLVE_TIMEOUT: Duration = Duration::from_secs(2);
 
-#[derive(Clone)]
-pub(crate) struct SecondaryAcl {
+struct SecondaryAcl {
     entries: Vec<SecondaryAclEntry>,
 }
 
 impl SecondaryAcl {
-    pub(crate) fn from_config() -> Self {
-        Self::parse(&config::bindizr_config().dns.secondary_addrs)
+    async fn allows(&self, client_ip: IpAddr) -> bool {
+        // Literals first: a match there answers without reaching the resolver.
+        if self
+            .entries
+            .iter()
+            .any(|entry| matches!(entry, SecondaryAclEntry::Ip(ip) if *ip == client_ip))
+        {
+            return true;
+        }
+
+        for entry in &self.entries {
+            if let SecondaryAclEntry::HostPort(host_port) = entry
+                && resolve_acl_host(host_port).await.contains(&client_ip)
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn parse(raw: &str) -> Self {
@@ -86,25 +102,14 @@ fn locked_cache() -> std::sync::MutexGuard<'static, HashMap<String, CachedAddrs>
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-pub(crate) async fn is_client_allowed(client_ip: IpAddr, acl: &SecondaryAcl) -> bool {
-    // Literals first: a match there answers without reaching the resolver.
-    if acl
-        .entries
-        .iter()
-        .any(|entry| matches!(entry, SecondaryAclEntry::Ip(ip) if *ip == client_ip))
-    {
-        return true;
-    }
-
-    for entry in &acl.entries {
-        if let SecondaryAclEntry::HostPort(host_port) = entry
-            && resolve_acl_host(host_port).await.contains(&client_ip)
-        {
-            return true;
-        }
-    }
-
-    false
+/// Whether `client_ip` is one of the configured secondaries. The list is
+/// read per check rather than captured at startup, so a reload takes effect
+/// on the next transfer; parsing a short list costs nothing next to the
+/// hostname resolution it may avoid.
+pub(crate) async fn is_client_allowed(client_ip: IpAddr) -> bool {
+    SecondaryAcl::parse(&config::bindizr_config().dns.secondary_addrs)
+        .allows(client_ip)
+        .await
 }
 
 async fn resolve_acl_host(host_port: &str) -> Vec<IpAddr> {
@@ -168,7 +173,7 @@ mod tests {
         // The unresolvable entry proves no lookup happened.
         let acl = SecondaryAcl::parse("192.0.2.10, no-such-host.invalid:53");
 
-        assert!(is_client_allowed("192.0.2.10".parse().unwrap(), &acl).await);
+        assert!(acl.allows("192.0.2.10".parse().unwrap()).await);
         assert!(locked_cache().is_empty());
     }
 

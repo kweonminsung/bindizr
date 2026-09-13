@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use bindizr_core::config;
+use bindizr_core::{config, log_info};
 use bindizr_service::error::ServiceError;
 
 use crate::socket::{
@@ -39,6 +39,22 @@ pub(crate) fn status() -> Result<DaemonResponse, ServiceError> {
         data: to_response_data(status)?,
     };
     Ok(response)
+}
+
+/// Handle the `ConfigReload` command by re-reading the configuration file.
+pub(crate) fn reload_config() -> Result<DaemonResponse, ServiceError> {
+    let changed = crate::daemon::reload_config().map_err(ServiceError::invalid_input)?;
+
+    let message = if changed.is_empty() {
+        "Configuration reloaded; nothing changed".to_string()
+    } else {
+        format!("Configuration reloaded: {} changed", changed.join(", "))
+    };
+    log_info!("event=config_reload changed={}", changed.join(","));
+    Ok(DaemonResponse {
+        message,
+        data: serde_json::Value::Null,
+    })
 }
 
 /// Handle the `Config` command by returning the loaded configuration.

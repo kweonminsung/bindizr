@@ -119,3 +119,56 @@ async fn config_list_and_get_show_loaded_config() {
     let missing = app.run_cli(&args).await;
     assert_cli_failure_contains(&args, &missing, "Unknown configuration key");
 }
+
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
+    let app = TestApp::start_local().await;
+    let path = app.config_path();
+    let original = std::fs::read_to_string(&path).expect("config file");
+
+    assert_eq!(
+        app.run_cli_success(&["config", "get", "logging.log_level"])
+            .await
+            .trim(),
+        "error"
+    );
+
+    std::fs::write(
+        &path,
+        original.replace(r#"log_level = "error""#, r#"log_level = "warn""#),
+    )
+    .expect("rewrite config");
+    let reloaded = app.run_cli_success(&["config", "reload"]).await;
+    assert!(reloaded.contains("logging"), "{reloaded}");
+    assert_eq!(
+        app.run_cli_success(&["config", "get", "logging.log_level"])
+            .await
+            .trim(),
+        "warn"
+    );
+
+    // Bound to a listening socket, so the file is refused whole and the
+    // running configuration is left describing the running process.
+    let port = app
+        .run_cli_success(&["config", "get", "api.listen_port"])
+        .await
+        .trim()
+        .to_string();
+    std::fs::write(
+        &path,
+        original.replace(&format!("listen_port = {port}"), "listen_port = 1"),
+    )
+    .expect("rewrite config");
+    let args = ["config", "reload"];
+    let refused = app.run_cli(&args).await;
+    assert_cli_failure_contains(&args, &refused, "fixed while bindizr runs");
+    assert_eq!(
+        app.run_cli_success(&["config", "get", "api.listen_port"])
+            .await
+            .trim(),
+        port
+    );
+
+    std::fs::write(&path, original).expect("restore config");
+}

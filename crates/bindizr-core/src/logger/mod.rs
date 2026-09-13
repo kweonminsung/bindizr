@@ -1,4 +1,7 @@
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use chrono::Local;
 use log::{Level, Metadata, Record};
@@ -42,21 +45,29 @@ macro_rules! log_debug_enabled {
     };
 }
 
-/// Simple `log` implementation that writes to stderr.
-struct Logger {
-    log_level: Level,
+/// The level in force, read per record so a config reload changes it without
+/// replacing the installed logger — `log` allows only one.
+static LOG_LEVEL: AtomicUsize = AtomicUsize::new(Level::Info as usize);
+
+fn log_level() -> Level {
+    Level::iter()
+        .find(|level| *level as usize == LOG_LEVEL.load(Ordering::Relaxed))
+        .unwrap_or(Level::Info)
 }
+
+/// Simple `log` implementation that writes to stderr.
+struct Logger;
 
 impl log::Log for Logger {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        metadata.level() <= self.log_level
+        metadata.level() <= log_level()
     }
 
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
             // The offset keeps lines from replicas in other zones comparable.
             let at = Local::now().format("%Y-%m-%dT%H:%M:%S%.3f%:z");
-            let log_message = if self.log_level >= Level::Debug {
+            let log_message = if log_level() >= Level::Debug {
                 format!(
                     "{} {} - {}: {}\n",
                     at,
@@ -78,6 +89,16 @@ impl log::Log for Logger {
     }
 }
 
+fn to_log_level(level: config::LogLevel) -> Level {
+    match level {
+        config::LogLevel::Error => Level::Error,
+        config::LogLevel::Warn => Level::Warn,
+        config::LogLevel::Debug => Level::Debug,
+        config::LogLevel::Trace => Level::Trace,
+        config::LogLevel::Info => Level::Info,
+    }
+}
+
 /// Install the global logger using the configured log level.
 pub fn initialize() {
     initialize_with_level(config::bindizr_config().logging.log_level);
@@ -86,21 +107,20 @@ pub fn initialize() {
 /// Install the global logger at an explicit level, for binaries that do not
 /// load the bindizr configuration file (e.g. the ExternalDNS adapter).
 pub fn initialize_with_level(level: config::LogLevel) {
-    let log_level = match level {
-        config::LogLevel::Error => Level::Error,
-        config::LogLevel::Warn => Level::Warn,
-        config::LogLevel::Debug => Level::Debug,
-        config::LogLevel::Trace => Level::Trace,
-        config::LogLevel::Info => Level::Info,
-    };
+    let log_level = to_log_level(level);
 
-    let logger = Logger { log_level };
-
-    if let Err(e) = log::set_boxed_logger(Box::new(logger)) {
+    if let Err(e) = log::set_boxed_logger(Box::new(Logger)) {
         eprintln!("Failed to set logger: {}", e);
         return;
     }
-    log::set_max_level(log_level.to_level_filter());
+    set_level(level);
 
     log::info!("Console logging level: {}", log_level);
+}
+
+/// Change the level of the installed logger, for a configuration reload.
+pub fn set_level(level: config::LogLevel) {
+    let level = to_log_level(level);
+    LOG_LEVEL.store(level as usize, Ordering::Relaxed);
+    log::set_max_level(level.to_level_filter());
 }

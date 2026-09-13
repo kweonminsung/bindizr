@@ -203,6 +203,15 @@ impl TestApp {
         &self.namespace
     }
 
+    /// The config file the local daemon was started from, for tests that
+    /// rewrite it and reload.
+    pub(crate) fn config_path(&self) -> std::path::PathBuf {
+        match &self.runtime {
+            Some(TestRuntime::Local { temp_dir, .. }) => temp_dir.path().join("bindizr.conf.toml"),
+            _ => panic!("only the local runtime owns its config file"),
+        }
+    }
+
     pub(crate) fn has_dns_secondaries(&self) -> bool {
         !self.dns_secondary_ports.is_empty()
     }

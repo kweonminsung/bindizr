@@ -3,7 +3,7 @@ use clap::Subcommand;
 
 use crate::{
     cli::{error::CliError, output::color},
-    socket::client::DaemonSocketClient,
+    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
 
 /// Subcommands for inspecting and validating configuration.
@@ -17,6 +17,13 @@ pub(crate) enum ConfigCommand {
     /// Show the configuration loaded by the running daemon
     #[command(alias = "ls")]
     List,
+    /// Re-read the configuration file in the running daemon
+    #[command(after_help = "\
+Settings bound to something built at startup — the `api` section, the
+`database` section, and the DNS listen address and port — are fixed while
+bindizr runs. A file that changes one of them is refused whole, so the
+running configuration always describes the running process.")]
+    Reload,
     /// Show a single configuration value by dotted key (e.g. api.listen_port)
     Get {
         /// Dotted configuration key, e.g. dns.secondary_addrs
@@ -29,8 +36,17 @@ pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliE
     match subcommand {
         ConfigCommand::Check { file } => check_config(file.as_deref()),
         ConfigCommand::List => print_config_list().await,
+        ConfigCommand::Reload => reload_config().await,
         ConfigCommand::Get { key } => print_config_value(&key).await,
     }
+}
+
+async fn reload_config() -> Result<(), CliError> {
+    let response = DaemonSocketClient::new()
+        .send_command(DaemonCommandKind::ConfigReload, ())
+        .await?;
+    println!("{}", response.message);
+    Ok(())
 }
 
 fn check_config(file: Option<&str>) -> Result<(), CliError> {

@@ -12,7 +12,6 @@ use bindizr_core::{
     dns::message::{self, Opcode, Rcode, Rtype},
     log_error, log_info, log_warn,
 };
-use server::acl::SecondaryAcl;
 use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
     sync::Semaphore,
@@ -39,9 +38,6 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
         bindizr_config.dns.listen_port,
     );
 
-    let secondary_acl = SecondaryAcl::from_config();
-    let tcp_secondary_acl = secondary_acl.clone();
-
     let tcp_listener = TcpListener::bind(listen_addr)
         .await
         .map_err(|e| format!("Failed to bind DNS TCP listener on {}: {}", listen_addr, e))?;
@@ -54,14 +50,14 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
 
     let tcp_stop = shutdown.waiter();
     tokio::spawn(async move {
-        if let Err(e) = run_tcp_server(tcp_listener, tcp_secondary_acl, tcp_stop).await {
+        if let Err(e) = run_tcp_server(tcp_listener, tcp_stop).await {
             log_error!("DNS TCP server error: {}", e);
         }
     });
 
     let udp_stop = shutdown.waiter();
     tokio::spawn(async move {
-        if let Err(e) = run_udp_server(udp_socket, secondary_acl, udp_stop).await {
+        if let Err(e) = run_udp_server(udp_socket, udp_stop).await {
             log_error!("DNS UDP server error: {}", e);
         }
     });
@@ -71,7 +67,6 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
 
 async fn run_tcp_server(
     listener: TcpListener,
-    secondary_acl: SecondaryAcl,
     stop: impl Future<Output = ()>,
 ) -> Result<(), String> {
     let open = Arc::new(Semaphore::new(MAX_TCP_CONNECTIONS));
@@ -97,9 +92,8 @@ async fn run_tcp_server(
 
         match accepted {
             Ok((stream, client_addr)) => {
-                let allowed = secondary_acl.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_tcp_connection(stream, client_addr, allowed).await {
+                    if let Err(e) = handle_tcp_connection(stream, client_addr).await {
                         log_error!("DNS TCP connection error from {}: {}", client_addr, e);
                     }
                     drop(permit);
@@ -115,7 +109,6 @@ async fn run_tcp_server(
 async fn handle_tcp_connection(
     mut stream: TcpStream,
     client_addr: SocketAddr,
-    secondary_acl: SecondaryAcl,
 ) -> Result<(), String> {
     loop {
         let query_data = match timeout(
@@ -141,7 +134,7 @@ async fn handle_tcp_connection(
             }
         };
 
-        dispatch_tcp_query(&mut stream, client_addr, &secondary_acl, &query_data).await?;
+        dispatch_tcp_query(&mut stream, client_addr, &query_data).await?;
     }
 
     Ok(())
@@ -150,7 +143,6 @@ async fn handle_tcp_connection(
 async fn dispatch_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
-    secondary_acl: &SecondaryAcl,
     query_data: &[u8],
 ) -> Result<(), String> {
     if message::is_response(query_data) {
@@ -185,11 +177,11 @@ async fn dispatch_tcp_query(
     }
 
     if query.qtype == Rtype::SOA {
-        server::soa::handle_tcp_soa(stream, client_addr, secondary_acl, &query)
+        server::soa::handle_tcp_soa(stream, client_addr, &query)
             .await
             .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
     } else if server::is_xfr_query_type(query.qtype) {
-        server::handle_tcp_query(stream, client_addr, secondary_acl, &query)
+        server::handle_tcp_query(stream, client_addr, &query)
             .await
             .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
     } else {
@@ -208,11 +200,7 @@ async fn dispatch_tcp_query(
     Ok(())
 }
 
-async fn run_udp_server(
-    socket: UdpSocket,
-    secondary_acl: SecondaryAcl,
-    stop: impl Future<Output = ()>,
-) -> Result<(), String> {
+async fn run_udp_server(socket: UdpSocket, stop: impl Future<Output = ()>) -> Result<(), String> {
     let socket = Arc::new(socket);
     let in_flight = Arc::new(Semaphore::new(MAX_UDP_IN_FLIGHT));
     let mut buf = vec![0u8; 65535];
@@ -246,20 +234,14 @@ async fn run_udp_server(
 
         let query_data = buf[..len].to_vec();
         let socket = socket.clone();
-        let secondary_acl = secondary_acl.clone();
         tokio::spawn(async move {
-            dispatch_udp_query(&socket, client_addr, &secondary_acl, &query_data).await;
+            dispatch_udp_query(&socket, client_addr, &query_data).await;
             drop(permit);
         });
     }
 }
 
-async fn dispatch_udp_query(
-    socket: &UdpSocket,
-    client_addr: SocketAddr,
-    secondary_acl: &SecondaryAcl,
-    query_data: &[u8],
-) {
+async fn dispatch_udp_query(socket: &UdpSocket, client_addr: SocketAddr, query_data: &[u8]) {
     if message::is_response(query_data) {
         log_warn!("Ignoring a DNS UDP response from {}", client_addr);
         return;
@@ -288,16 +270,14 @@ async fn dispatch_udp_query(
     }
 
     if query.qtype == Rtype::SOA {
-        if let Err(e) =
-            server::soa::handle_udp_soa(socket, client_addr, secondary_acl, &query).await
-        {
+        if let Err(e) = server::soa::handle_udp_soa(socket, client_addr, &query).await {
             log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
         }
         return;
     }
 
     let response = if server::is_xfr_query_type(query.qtype) {
-        server::handle_udp_query(client_addr, secondary_acl, &query).await
+        server::handle_udp_query(client_addr, &query).await
     } else {
         log_info!(
             "Refusing out-of-scope DNS UDP query from {} (qtype={:?})",

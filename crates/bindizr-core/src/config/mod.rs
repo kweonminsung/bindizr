@@ -1,20 +1,30 @@
 #[cfg(test)]
 mod tests;
 
-use std::{env, fmt, net::IpAddr, path::PathBuf};
+use std::{
+    env, fmt,
+    net::IpAddr,
+    path::PathBuf,
+    sync::{Arc, OnceLock, RwLock},
+};
 
 use config::{Config, File, FileFormat};
-use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 use crate::dns::address::is_address_target;
 
 pub(crate) const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
-static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
+/// Swappable so `reload` can replace it; readers take a snapshot, so a
+/// request decides on one version throughout even if a reload lands mid-way.
+static BINDIZR_CONFIG: RwLock<Option<Arc<BindizrConfig>>> = RwLock::new(None);
+
+/// The file `reload` re-reads. Fixed at startup: a reload changes settings,
+/// never which file they come from.
+static CONFIG_PATH: OnceLock<String> = OnceLock::new();
 
 /// Top-level bindizr configuration.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct BindizrConfig {
     pub api: ApiConfig,
     pub database: DatabaseConfig,
@@ -23,7 +33,7 @@ pub struct BindizrConfig {
 }
 
 /// HTTP API server settings.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
@@ -46,7 +56,7 @@ fn default_metrics_enabled() -> bool {
 }
 
 /// Database backend selection and per-backend connection settings.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct DatabaseConfig {
     #[serde(rename = "type")]
     pub database_type: DatabaseType,
@@ -59,7 +69,7 @@ pub struct DatabaseConfig {
 }
 
 /// Supported database backends.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
     Mysql,
@@ -92,25 +102,25 @@ impl std::str::FromStr for DatabaseType {
 }
 
 /// MySQL connection settings.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct MysqlConfig {
     pub server_url: String,
 }
 
 /// SQLite connection settings.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct SqliteConfig {
     pub file_path: String,
 }
 
 /// PostgreSQL connection settings.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct PostgresqlConfig {
     pub server_url: String,
 }
 
 /// DNS server and NOTIFY/nsupdate settings.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct DnsConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
@@ -156,7 +166,7 @@ pub struct DnsConfig {
 
 /// What a zone takes when its creation request leaves a field out. Only the
 /// creation reads these: afterwards the values are the zone's own columns.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct ZoneDefaultsConfig {
     #[serde(default = "default_zone_ttl")]
     pub ttl: i32,
@@ -275,13 +285,13 @@ fn default_notify_timeout_secs() -> u64 {
 }
 
 /// Logging settings.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct LoggingConfig {
     pub log_level: LogLevel,
 }
 
 /// Console log verbosity levels.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Trace,
@@ -328,9 +338,74 @@ pub fn initialize(conf_file_path: Option<&str>) -> Result<(), String> {
     eprintln!("Initializing configuration from file: {}", conf_file_path);
 
     let bindizr_config = load_config_file(&conf_file_path)?;
-    BINDIZR_CONFIG.get_or_init(|| bindizr_config);
+    let mut stored = BINDIZR_CONFIG.write().map_err(|_| POISONED)?;
+    if stored.is_some() {
+        return Err("Bindizr configuration is already initialized".to_string());
+    }
+    let _ = CONFIG_PATH.set(conf_file_path);
+    *stored = Some(Arc::new(bindizr_config));
 
     Ok(())
+}
+
+const POISONED: &str = "Bindizr configuration lock is poisoned";
+
+/// Re-read the configuration file and replace the stored one, returning the
+/// settings that changed. Settings a running process cannot adopt are refused
+/// rather than stored, so the configuration always describes the process.
+pub fn reload() -> Result<Vec<String>, String> {
+    let path = CONFIG_PATH
+        .get()
+        .ok_or("Bindizr configuration is not initialized")?;
+    let next = load_config_file(path)?;
+
+    let mut stored = BINDIZR_CONFIG.write().map_err(|_| POISONED)?;
+    let current = stored
+        .as_ref()
+        .ok_or("Bindizr configuration is not initialized")?;
+
+    let fixed = fixed_settings_changed(current, &next);
+    if !fixed.is_empty() {
+        return Err(format!(
+            "these settings are fixed while bindizr runs, so nothing was reloaded: {}",
+            fixed.join(", ")
+        ));
+    }
+
+    let changed = changed_settings(current, &next);
+    *stored = Some(Arc::new(next));
+    Ok(changed)
+}
+
+/// The settings a reload actually changed, for the line that reports it.
+fn changed_settings(current: &BindizrConfig, next: &BindizrConfig) -> Vec<String> {
+    let mut changed = Vec::new();
+    if current.dns != next.dns {
+        changed.push("dns".to_string());
+    }
+    if current.logging != next.logging {
+        changed.push("logging".to_string());
+    }
+    changed
+}
+
+/// Settings bound to something built at startup — a listening socket, the
+/// HTTP router, the database pool — which a reload cannot rebuild.
+fn fixed_settings_changed(current: &BindizrConfig, next: &BindizrConfig) -> Vec<String> {
+    let mut fixed = Vec::new();
+    if current.api != next.api {
+        fixed.push("api".to_string());
+    }
+    if current.database != next.database {
+        fixed.push("database".to_string());
+    }
+    if current.dns.listen_addr != next.dns.listen_addr {
+        fixed.push("dns.listen_addr".to_string());
+    }
+    if current.dns.listen_port != next.dns.listen_port {
+        fixed.push("dns.listen_port".to_string());
+    }
+    fixed
 }
 
 /// Resolve the config file path: explicit argument, then `BINDIZR_CONFIG_PATH`,
@@ -593,7 +668,13 @@ impl DnsConfig {
     }
 }
 
-/// Return the global configuration; panics if [`initialize`] has not run.
-pub fn bindizr_config() -> &'static BindizrConfig {
-    BINDIZR_CONFIG.get().expect("Configuration not initialized")
+/// A snapshot of the global configuration; panics if [`initialize`] has not
+/// run. A reload is invisible to a snapshot already taken, so hold one for
+/// as long as a single decision takes and no longer.
+pub fn bindizr_config() -> Arc<BindizrConfig> {
+    BINDIZR_CONFIG
+        .read()
+        .expect(POISONED)
+        .clone()
+        .expect("Configuration not initialized")
 }

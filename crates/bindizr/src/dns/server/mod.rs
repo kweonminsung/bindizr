@@ -47,13 +47,12 @@ pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
 pub(crate) async fn handle_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
-    secondary_acl: &acl::SecondaryAcl,
     query: &message::ParsedQuery,
 ) -> Result<(), XfrError> {
     let client_ip = client_addr.ip();
     let record_xfr_metric = |result| track_xfr(query.qtype, result);
 
-    if let Err(err) = validate_secondary_acl(client_ip, secondary_acl).await {
+    if let Err(err) = validate_secondary_acl(client_ip).await {
         record_xfr_metric(XfrResult::Refused);
         log_warn!("Refused XFR TCP query from {}: {}", client_ip, err);
         // RFC 5936, Section 2.2.1: refuse with an RCODE, not a dropped connection.
@@ -101,10 +100,9 @@ pub(crate) async fn handle_tcp_query(
 /// asks again over TCP; the caller checked the qtype.
 pub(crate) async fn handle_udp_query(
     client_addr: SocketAddr,
-    secondary_acl: &acl::SecondaryAcl,
     query: &message::ParsedQuery,
 ) -> Vec<u8> {
-    if let Err(err) = validate_secondary_acl(client_addr.ip(), secondary_acl).await {
+    if let Err(err) = validate_secondary_acl(client_addr.ip()).await {
         track_xfr(query.qtype, XfrResult::Refused);
         log_warn!("Refused XFR UDP query from {}: {}", client_addr.ip(), err);
         return query.error_response(Rcode::REFUSED);
@@ -114,11 +112,8 @@ pub(crate) async fn handle_udp_query(
     query.truncated_response()
 }
 
-async fn validate_secondary_acl(
-    client_ip: IpAddr,
-    secondary_acl: &acl::SecondaryAcl,
-) -> Result<(), XfrError> {
-    if !acl::is_client_allowed(client_ip, secondary_acl).await {
+async fn validate_secondary_acl(client_ip: IpAddr) -> Result<(), XfrError> {
+    if !acl::is_client_allowed(client_ip).await {
         return Err(XfrError::AccessDenied(format!(
             "IP {} is not a configured secondary",
             client_ip

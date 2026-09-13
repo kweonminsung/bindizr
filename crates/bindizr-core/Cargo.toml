@@ -20,7 +20,6 @@ domain = { workspace = true, features = ["tsig", "zonefile", "unstable-sign", "r
 hex.workspace = true
 config.workspace = true
 log.workspace = true
-once_cell.workspace = true
 prometheus.workspace = true
 rand.workspace = true
 serde.workspace = true

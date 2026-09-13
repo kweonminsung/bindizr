@@ -19,6 +19,18 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 /// reads as a "(deleted)" path, while this path points at the replacement.
 static DAEMON_EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
 
+/// Re-read the configuration file and apply what only a running process can:
+/// the settings whose readers captured them at startup.
+pub(crate) fn reload_config() -> Result<Vec<String>, String> {
+    let changed = config::reload()?;
+    // The installed logger reads its level per record, so this is enough.
+    logger::set_level(config::bindizr_config().logging.log_level);
+    // A no-op unless this instance had no scheduler, which a zero interval
+    // leaves it without.
+    service::dnssec::init_maintenance_scheduler();
+    Ok(changed)
+}
+
 /// Initialize config, logging, database, DNS, socket, and API servers, then run until Ctrl+C.
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     if let Ok(exe) = std::env::current_exe() {
@@ -57,6 +69,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     let mut terminate = signal(SignalKind::terminate())
         .map_err(|e| format!("Failed to listen for SIGTERM: {}", e))?;
+    let mut hangup =
+        signal(SignalKind::hangup()).map_err(|e| format!("Failed to listen for SIGHUP: {}", e))?;
 
     loop {
         let control = tokio::select! {
@@ -68,6 +82,18 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
             _ = terminate.recv() => {
                 log_info!("SIGTERM received, shutting down...");
                 break;
+            }
+            _ = hangup.recv() => {
+                match reload_config() {
+                    Ok(changed) if changed.is_empty() => {
+                        log_info!("SIGHUP received, nothing changed.")
+                    }
+                    Ok(changed) => {
+                        log_info!("SIGHUP received, reloaded: {}", changed.join(", "))
+                    }
+                    Err(e) => log_error!("SIGHUP received, nothing reloaded: {}", e),
+                }
+                continue;
             }
             control = control_rx.recv() => control,
         };

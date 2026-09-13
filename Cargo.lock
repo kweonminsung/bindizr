@@ -247,7 +247,6 @@ dependencies = [
  "hex",
  "hmac",
  "log",
- "once_cell",
  "openssl",
  "prometheus",
  "rand",

@@ -50,6 +50,9 @@ $ bindizr config check [<FILE>]
 # Show the configuration loaded by the running daemon, or one value by dotted key
 $ bindizr config list
 $ bindizr config get dns.secondary_addrs
+
+# Re-read the configuration file without restarting (SIGHUP does the same)
+$ bindizr config reload
 ```
 
 ## Zones and records

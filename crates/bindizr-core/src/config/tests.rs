@@ -1,7 +1,8 @@
 use config::{Config, File, FileFormat};
 
 use crate::config::{
-    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogLevel, resolve_config_path_with_env,
+    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogLevel, changed_settings,
+    fixed_settings_changed, resolve_config_path_with_env,
 };
 
 /// Deviations from the base config TOML; the default renders a minimal valid
@@ -302,4 +303,43 @@ fn from_raw_rejects_an_unparseable_secondary_address() {
     .unwrap_err();
 
     assert!(err.contains("is not a host[:port] address"), "{}", err);
+}
+
+#[test]
+fn a_reload_refuses_what_a_running_process_cannot_adopt() {
+    // require_authentication is in the list because the router is built
+    // once: a section is fixed whole, not field by field.
+    let current = parse_config(&TestConfigToml::default()).unwrap();
+
+    let mut api_moved = current.clone();
+    api_moved.api.listen_port += 1;
+    assert_eq!(fixed_settings_changed(&current, &api_moved), ["api"]);
+
+    let mut auth_toggled = current.clone();
+    auth_toggled.api.require_authentication = !current.api.require_authentication;
+    assert_eq!(fixed_settings_changed(&current, &auth_toggled), ["api"]);
+
+    let mut db_moved = current.clone();
+    db_moved.database.database_type = DatabaseType::Mysql;
+    assert_eq!(fixed_settings_changed(&current, &db_moved), ["database"]);
+
+    let mut dns_moved = current.clone();
+    dns_moved.dns.listen_port += 1;
+    assert_eq!(
+        fixed_settings_changed(&current, &dns_moved),
+        ["dns.listen_port"]
+    );
+}
+
+#[test]
+fn a_reload_takes_the_settings_read_per_use() {
+    let current = parse_config(&TestConfigToml::default()).unwrap();
+
+    let mut next = current.clone();
+    next.dns.secondary_addrs = "192.0.2.1:53".to_string();
+    next.logging.log_level = LogLevel::Warn;
+
+    assert!(fixed_settings_changed(&current, &next).is_empty());
+    assert_eq!(changed_settings(&current, &next), ["dns", "logging"]);
+    assert!(changed_settings(&current, &current).is_empty());
 }

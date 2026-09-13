@@ -38,10 +38,20 @@ pub fn init_maintenance_scheduler() {
     }
 
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut period = interval_secs;
+        let mut interval = new_interval(period);
         loop {
             interval.tick().await;
+            // A reload can change the period, or stand this instance down.
+            let configured = bindizr_config().dns.maintenance_interval_secs;
+            if configured == 0 {
+                continue;
+            }
+            if configured != period {
+                period = configured;
+                interval = new_interval(period);
+                continue;
+            }
             // A panic in the pass would otherwise unwind the scheduler itself.
             if let Err(e) = tokio::spawn(run_maintenance_pass()).await {
                 log_error!("DNSSEC maintenance pass did not finish: {}", e);
@@ -49,6 +59,12 @@ pub fn init_maintenance_scheduler() {
             }
         }
     });
+}
+
+fn new_interval(period_secs: u64) -> tokio::time::Interval {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(period_secs));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    interval
 }
 
 /// One scheduler pass: journal retention, signature refresh, and rollover
