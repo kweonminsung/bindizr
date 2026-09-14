@@ -9,6 +9,7 @@ struct ScannedLine {
     comment_at: usize,
 }
 
+/// Scan one zone-file line for tokens relevant to TTL resolution.
 fn scan_line(line: &str) -> ScannedLine {
     let mut tokens = Vec::new();
     let mut start = None;

@@ -1,5 +1,6 @@
 use super::*;
 
+/// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
         id: 1,
@@ -20,6 +21,7 @@ fn test_zone() -> Zone {
     }
 }
 
+/// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
@@ -38,6 +40,7 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
     }
 }
 
+/// Verify that p384 keys advertise a sha384 DS digest.
 #[test]
 fn p384_keys_advertise_a_sha384_ds_digest() {
     use crate::dns::dnssec::{ds_rdata_for, to_wire_name};
@@ -60,6 +63,7 @@ fn p384_keys_advertise_a_sha384_ds_digest() {
     assert_eq!(rdata.as_bytes().len(), 4 + 48);
 }
 
+/// Verify that `ds_rdata_for` pairs the key with each supported digest.
 #[test]
 fn ds_rdata_for_pairs_the_key_with_each_supported_digest() {
     use crate::dns::dnssec::{ds_rdata_for, to_wire_name};
@@ -90,6 +94,7 @@ fn ds_rdata_for_pairs_the_key_with_each_supported_digest() {
     assert!(ds_rdata_for(&key, &apex, 3).is_err());
 }
 
+/// Verify that ed448 keys generate and sign.
 #[test]
 fn ed448_keys_generate_and_sign() {
     let zone = test_zone();
@@ -126,6 +131,7 @@ fn ed448_keys_generate_and_sign() {
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 16);
 }
 
+/// Verify that rsa keys generate and sign.
 #[test]
 fn rsa_keys_generate_and_sign() {
     let zone = test_zone();

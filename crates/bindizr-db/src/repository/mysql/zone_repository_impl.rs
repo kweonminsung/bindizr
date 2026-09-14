@@ -16,6 +16,7 @@ pub(crate) struct MySqlZoneRepository {
 }
 
 impl MySqlZoneRepository {
+    /// Create a repository for zones using the supplied pool.
     pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
@@ -23,6 +24,7 @@ impl MySqlZoneRepository {
 
 #[async_trait]
 impl ZoneRepository for MySqlZoneRepository {
+    /// Insert a zone in the current transaction.
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -58,6 +60,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zone)
     }
 
+    /// Find a zone by ID in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -74,6 +77,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zone)
     }
 
+    /// Find a zone by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -86,6 +90,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zone)
     }
 
+    /// Find a zone by name in the current transaction.
     async fn get_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -105,6 +110,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zone)
     }
 
+    /// List all zones.
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -116,6 +122,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zones)
     }
 
+    /// List all zones in the current transaction.
     async fn list_all_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -130,6 +137,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zones)
     }
 
+    /// List zones matching the filter.
     async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
@@ -214,6 +222,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zones)
     }
 
+    /// Probe the zones table to check database connectivity.
     async fn ping(&self) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         sqlx::query("SELECT 1 FROM zones LIMIT 1")
@@ -222,6 +231,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(())
     }
 
+    /// Count zones matching the filter.
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
@@ -296,6 +306,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(count as u64)
     }
 
+    /// Update a zone in the current transaction.
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -329,6 +340,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(zone)
     }
 
+    /// Set or clear a zone's DNSSEC policy assignment in the current transaction.
     async fn update_dnssec_policy_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -346,6 +358,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(())
     }
 
+    /// Set or clear a zone's configured parent name servers in the current transaction.
     async fn update_parent_ns_addrs_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -363,6 +376,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(())
     }
 
+    /// Count zones using a DNSSEC policy.
     async fn count_by_dnssec_policy_id(&self, dnssec_policy_id: i32) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -375,6 +389,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(count as u64)
     }
 
+    /// Update only a zone's serial in the current transaction.
     async fn update_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -391,6 +406,7 @@ impl ZoneRepository for MySqlZoneRepository {
         Ok(())
     }
 
+    /// Delete a zone by ID in the current transaction.
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 

@@ -46,6 +46,7 @@ struct DbKeyStore(Option<Arc<Key>>);
 impl KeyStore for DbKeyStore {
     type Key = Arc<Key>;
 
+    /// Find a stored TSIG key matching the requested name and algorithm.
     fn get_key<N: ToName>(&self, name: &N, algorithm: Algorithm) -> Option<Self::Key> {
         self.0.as_ref().and_then(|key| key.get_key(name, algorithm))
     }
@@ -94,6 +95,7 @@ pub fn verify_tsig_sequence(
     verify(query_data, key, ServerSequence::request)
 }
 
+/// Verify a request's TSIG and return the authenticated signing context.
 fn verify<T>(
     query_data: &[u8],
     key: Option<Arc<Key>>,

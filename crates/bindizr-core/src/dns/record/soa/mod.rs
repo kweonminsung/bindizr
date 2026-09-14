@@ -18,6 +18,7 @@ pub struct SoaRecordValue<'a> {
 }
 
 impl<'a> SoaRecordValue<'a> {
+    /// Encode the SOA value into wire-format record data.
     pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
         let mut rdata = encode_name(self.mname)?;
         rdata.extend_from_slice(&encode_name(self.rname)?);
@@ -91,6 +92,7 @@ impl SoaMailbox {
         Err("SOA mailbox is not a valid encoded email".to_string())
     }
 
+    /// Validate the mailbox local-part label and domain labels.
     fn classify_wire_labels(&self) -> Result<(), ParseNameError> {
         let bare = self.0.trim_end_matches('.');
         if bare.len() > MAX_DOMAIN_LEN {
@@ -109,10 +111,12 @@ impl SoaMailbox {
         Ok(())
     }
 
+    /// Return the text representation of this SOA mailbox.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
+    /// Consume the mailbox and return its stored DNS presentation form.
     pub fn into_encoded(self) -> String {
         self.0
     }
@@ -141,11 +145,13 @@ fn decode_mailbox_labels(mailbox: &str) -> Result<Vec<String>, ParseNameError> {
 }
 
 impl std::fmt::Display for SoaMailbox {
+    /// Write the SOA mailbox in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
 }
 
+/// Escape mailbox local-part characters for DNS presentation text.
 fn escape_local_part(local: &str) -> String {
     let mut escaped = String::with_capacity(local.len());
 

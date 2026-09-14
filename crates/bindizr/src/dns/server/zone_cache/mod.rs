@@ -1,14 +1,5 @@
-//! Per-zone cache of a zone's records, keyed by serial. Every write bumps the
-//! serial, so an entry matching the zone's current serial is always fresh;
-//! repeated AXFRs at that serial skip the database read. One entry per zone.
-//!
-//! The cache is bounded by the records it holds and evicts the
-//! least-recently-used zone on overflow. A deleted zone has no invalidation hook here — the delete
-//! path lives in `bindizr-service`, which this crate depends on, so it cannot
-//! call back in without a dependency cycle — so without a bound the map would
-//! retain every transferred-then-deleted zone's records for the life of the
-//! process. An evicted zone simply re-reads from the database on its next
-//! transfer.
+//! Zone transfer content cached by zone id and serial; record writes advance the serial.
+//! The record budget bounds retained data, including entries for deleted zones.
 
 use std::{
     collections::HashMap,
@@ -25,10 +16,7 @@ use bindizr_core::{
 };
 use bindizr_service::{error::ServiceError, zone::ZoneService};
 
-/// Cap on the records held at once, from `dns.zone_cache_max_records`.
-/// Counting zones would bound nothing: one large zone outweighs a thousand
-/// small ones. Records track memory within roughly an order of magnitude,
-/// which is enough for a cache whose only failure is a database re-read.
+/// Read the configured cache record budget, which counts records rather than bytes.
 fn max_records() -> usize {
     config::bindizr_config().dns.zone_cache_max_records as usize
 }
@@ -42,7 +30,7 @@ pub(crate) struct ZoneContent {
 }
 
 impl ZoneContent {
-    /// Both planes, since a transfer serves both.
+    /// Count user and derived records together, since a transfer serves both.
     fn record_count(&self) -> usize {
         self.records.len() + self.dnssec_records.len()
     }
@@ -65,6 +53,7 @@ struct Cache {
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
 static CLOCK: AtomicU64 = AtomicU64::new(0);
 
+/// Advance the logical clock used to track cache recency.
 fn tick() -> u64 {
     CLOCK.fetch_add(1, Ordering::Relaxed)
 }
@@ -79,13 +68,11 @@ pub(crate) async fn find_zone_content(
         return load_content(zone).await;
     }
 
-    // Fast path: a cached entry at the current serial is still valid.
     if let Some(content) = lookup(zone.id, zone.serial) {
         return Ok(Some((zone, content)));
     }
 
-    // Slow path: read and cache. Concurrent misses may load twice; both store
-    // one serial's consistent data, so the result is still correct.
+    // Concurrent misses may load twice; each load still contains one complete serial.
     let Some((zone, content)) = load_content(zone).await? else {
         return Ok(None);
     };
@@ -93,6 +80,7 @@ pub(crate) async fn find_zone_content(
     Ok(Some((zone, content)))
 }
 
+/// Load a consistent zone snapshot, rejecting a concurrent deletion or rename.
 async fn load_content(zone: Zone) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
     let Some((loaded, records, dnssec_records)) =
         ZoneService::find_transfer_content(zone.id).await?
@@ -113,8 +101,8 @@ async fn load_content(zone: Zone) -> Result<Option<(Zone, ZoneContent)>, Service
     )))
 }
 
-/// The cache holds no invariant a panicking thread could leave broken, so a
-/// poisoned lock is recovered rather than failing every later query.
+/// Lock the shared zone cache, recovering a poisoned lock because panics cannot leave a cache
+/// invariant broken.
 fn locked_cache() -> std::sync::MutexGuard<'static, Cache> {
     CACHE
         .get_or_init(|| Mutex::new(Cache::default()))
@@ -122,12 +110,14 @@ fn locked_cache() -> std::sync::MutexGuard<'static, Cache> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Find cached zone content matching the requested serial.
 fn lookup(zone_id: i32, serial: i32) -> Option<ZoneContent> {
     let content = locked_cache().lookup(zone_id, serial);
     track_zone_cache_lookup(content.is_some());
     content
 }
 
+/// Store zone content in the cache within its configured budget.
 fn store(zone_id: i32, serial: i32, content: ZoneContent) {
     let mut cache = locked_cache();
     let evicted = cache.store(zone_id, serial, content, max_records());
@@ -135,6 +125,7 @@ fn store(zone_id: i32, serial: i32, content: ZoneContent) {
 }
 
 impl Cache {
+    /// Find cached zone content matching the requested serial.
     fn lookup(&mut self, zone_id: i32, serial: i32) -> Option<ZoneContent> {
         let entry = self
             .zones
@@ -144,7 +135,7 @@ impl Cache {
         Some(entry.content.clone())
     }
 
-    /// Returns how many zones were evicted to make room.
+    /// Store a zone within the record budget and return the number of evictions.
     fn store(
         &mut self,
         zone_id: i32,
@@ -189,6 +180,7 @@ impl Cache {
         evicted
     }
 
+    /// Remove a cached zone and subtract its records from the retained count.
     fn remove(&mut self, zone_id: i32) {
         if let Some(removed) = self.zones.remove(&zone_id) {
             self.records -= removed.records;

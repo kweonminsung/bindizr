@@ -5,11 +5,8 @@ use sqlx::{MySql, Postgres, Sqlite};
 
 use crate::{DatabasePool, error::DatabaseError, get_pool};
 
-/// How strongly a transactional read locks the rows it returns. Every `_tx`
-/// read names one, so the locking model reads off the call site; the two that
-/// take none read rows the caller's zone lock already covers. Granularity
-/// is the backend's: MySQL and PostgreSQL lock rows, SQLite's whole-database
-/// write lock already covers every level.
+/// Row locks requested on MySQL/PostgreSQL. SQLite relies on its transaction
+/// mode: a database write lock for mutations, a snapshot for read-only work.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LockLevel {
     /// The caller mutates these rows in this transaction.
@@ -17,8 +14,8 @@ pub enum LockLevel {
     /// The caller only derives output from these rows, but they must not
     /// change before it commits.
     Shared,
-    /// None needed: a lock the caller already holds — in practice the zone row,
-    /// which every zone-data mutation takes first — covers these rows.
+    /// No row lock: either an existing lock protects these rows, or the caller
+    /// accepts changes between reads.
     None,
 }
 
@@ -31,6 +28,7 @@ enum RepositoryTxKind<'a> {
     SQLite(sqlx::Transaction<'a, Sqlite>),
 }
 
+/// Begin a transaction on the configured database pool.
 pub async fn begin_tx() -> Result<RepositoryTx<'static>, DatabaseError> {
     // IMMEDIATE takes SQLite's write lock up front so a read-then-write
     // transaction can't fail late with "database is locked".
@@ -65,6 +63,7 @@ async fn begin(sqlite_begin: &'static str) -> Result<RepositoryTx<'static>, Data
 }
 
 impl<'a> RepositoryTx<'a> {
+    /// Commit the transaction on its database backend.
     pub async fn commit(self) -> Result<(), DatabaseError> {
         match self.0 {
             RepositoryTxKind::MySQL(tx) => tx
@@ -82,6 +81,7 @@ impl<'a> RepositoryTx<'a> {
         }
     }
 
+    /// Roll back the transaction on its database backend.
     pub async fn rollback(self) -> Result<(), DatabaseError> {
         match self.0 {
             RepositoryTxKind::MySQL(tx) => tx

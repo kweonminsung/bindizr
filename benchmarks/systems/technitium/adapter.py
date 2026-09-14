@@ -29,6 +29,7 @@ class TechnitiumAdapter(DnsAdapter):
     supports_ixfr = False
 
     def __init__(self, cfg: dict, project: str):
+        """Initialize the adapter with its benchmark configuration and project."""
         super().__init__(cfg, project)
         self.base = f"http://localhost:{API_PORT}/api"
         self.token: str | None = None
@@ -36,6 +37,7 @@ class TechnitiumAdapter(DnsAdapter):
         self.compose = dockerutil.Compose(HERE / "compose.yml", project)
 
     async def setup(self) -> None:
+        """Start the benchmark system and wait for it to become ready."""
         self.compose.down()  # clean slate: remove any leftovers from a prior run
         self.compose.up("technitium", wait=False)
         # Technitium compresses responses with brotli when offered; aiohttp has no
@@ -44,6 +46,7 @@ class TechnitiumAdapter(DnsAdapter):
         await self._login()
 
     async def _login(self, timeout: int = 90) -> None:
+        """Authenticate with the Technitium API and save its token."""
         for _ in range(timeout * 2):
             try:
                 url = self.base + "/user/login?user=admin&pass=admin&includeInfo=false"
@@ -59,29 +62,35 @@ class TechnitiumAdapter(DnsAdapter):
         raise RuntimeError("Technitium API did not become ready")
 
     async def teardown(self) -> None:
+        """Stop the benchmark system and release its resources."""
         if self.session:
             await self.session.close()
         self.compose.down()
 
     async def _get(self, path: str, params: dict) -> dict:
+        """Send an authenticated request to the Technitium API."""
         params = {"token": self.token, **params}
         async with self.session.get(self.base + path, params=params) as r:
             return await r.json()
 
     @staticmethod
     def _fqdn(zone: str, name: str) -> str:
+        """Qualify a record owner with its zone name."""
         return f"{name}.{zone.rstrip('.')}"
 
     async def create_zone(self, zone: str) -> None:
+        """Create the zone used by the benchmark."""
         await self._get("/zones/create", {"zone": zone.rstrip("."), "type": "Primary"})
         # Enable AXFR/IXFR for Benchmarks 4 & 5.
         await self._get("/zones/options/set",
                         {"zone": zone.rstrip("."), "zoneTransfer": "Allow"})
 
     async def delete_zone(self, zone: str) -> None:
+        """Remove the benchmark zone and its records."""
         await self._get("/zones/delete", {"zone": zone.rstrip(".")})
 
     def _value_params(self, rec: dict) -> dict:
+        """Map a benchmark record value to Technitium request parameters."""
         t = rec["type"]
         v = rec["value"]
         if t in ("A", "AAAA"):
@@ -95,10 +104,12 @@ class TechnitiumAdapter(DnsAdapter):
         return {"rdata": v}
 
     def _handle(self, zone: str, rec: dict) -> str:
+        """Encode the record identity and value into a reusable adapter handle."""
         return SEP.join([self._fqdn(zone, rec["name"]), rec["type"], rec["value"],
                          str(rec.get("priority", ""))])
 
     def _parse(self, handle: str) -> dict:
+        """Decode a record handle into its stored identity and value."""
         fqdn, rtype, value, prio = handle.split(SEP)
         rec = {"fqdn": fqdn, "type": rtype, "value": value}
         if prio:
@@ -106,6 +117,7 @@ class TechnitiumAdapter(DnsAdapter):
         return rec
 
     async def create_record(self, zone: str, rec: dict) -> str:
+        """Create a record and return its adapter-specific handle."""
         params = {
             "domain": self._fqdn(zone, rec["name"]),
             "zone": zone.rstrip("."),
@@ -119,6 +131,7 @@ class TechnitiumAdapter(DnsAdapter):
         return self._handle(zone, rec)
 
     async def get_record(self, zone: str, handle: str) -> bool:
+        """Fetch the handle's record information and report API success."""
         r = self._parse(handle)
         data = await self._get("/zones/records/get",
                                {"domain": r["fqdn"], "zone": zone.rstrip("."),
@@ -126,6 +139,7 @@ class TechnitiumAdapter(DnsAdapter):
         return data.get("status") == "ok"
 
     async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
+        """Replace the record identified by the handle with the supplied value."""
         r = self._parse(handle)
         t = r["type"]
         params = {
@@ -144,6 +158,7 @@ class TechnitiumAdapter(DnsAdapter):
         return data.get("status") == "ok"
 
     async def delete_record(self, zone: str, handle: str) -> bool:
+        """Delete the record identified by the handle."""
         r = self._parse(handle)
         params = {
             "domain": r["fqdn"],
@@ -156,4 +171,5 @@ class TechnitiumAdapter(DnsAdapter):
         return data.get("status") == "ok"
 
     def dns_endpoint(self) -> Endpoint:
+        """Return the DNS endpoint that serves the managed zone."""
         return Endpoint("127.0.0.1", DNS_PORT)

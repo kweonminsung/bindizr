@@ -42,6 +42,7 @@ pub struct GetTokenResponse {
 }
 
 impl GetTokenResponse {
+    /// Build a token response without exposing its stored hash.
     pub fn from_token(token: &ApiToken) -> Self {
         GetTokenResponse {
             id: token.id,

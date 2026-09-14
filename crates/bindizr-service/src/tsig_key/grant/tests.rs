@@ -2,6 +2,7 @@ use chrono::Utc;
 
 use super::*;
 
+/// Build a grant fixture with the requested name and type filters.
 fn grant(pattern: &str, types: &str) -> TsigGrant {
     TsigGrant {
         id: 0,
@@ -14,6 +15,7 @@ fn grant(pattern: &str, types: &str) -> TsigGrant {
     }
 }
 
+/// Build a TSIG grant fixture that permits reads only.
 fn read_only_grant(pattern: &str, types: &str) -> TsigGrant {
     TsigGrant {
         can_write: false,
@@ -21,6 +23,7 @@ fn read_only_grant(pattern: &str, types: &str) -> TsigGrant {
     }
 }
 
+/// Verify that `authorize_update` requires name and type match.
 #[test]
 fn authorize_update_requires_name_and_type_match() {
     let grants = vec![grant("*.dyn", "A,AAAA"), grant("@", "*")];
@@ -62,6 +65,7 @@ fn authorize_update_requires_name_and_type_match() {
     ));
 }
 
+/// Verify that only a grant over the whole zone covers a transfer.
 #[test]
 fn only_a_grant_over_the_whole_zone_covers_a_transfer() {
     // A transfer hands the zone over whole, so no narrowed grant covers it.
@@ -74,6 +78,7 @@ fn only_a_grant_over_the_whole_zone_covers_a_transfer() {
     assert!(covers_whole_zone(&[read_only_grant("*", "*")]));
 }
 
+/// Verify that a read only grant authorizes no update.
 #[test]
 fn a_read_only_grant_authorizes_no_update() {
     let grants = vec![read_only_grant("*", "*")];

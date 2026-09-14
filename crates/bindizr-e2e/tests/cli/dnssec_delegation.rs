@@ -3,6 +3,7 @@
 
 use crate::common::{FakeParent, ServedDs, TestApp, assert_cli_failure_contains};
 
+/// Read a test zone's DNSSEC status through the CLI.
 async fn dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
     let status = app
         .run_cli_success(&["dnssec", "status", zone_name, "--output", "json"])
@@ -10,6 +11,7 @@ async fn dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
     serde_json::from_str(&status).expect("CLI did not return valid JSON")
 }
 
+/// Verify parent DS checks through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_parent_ds_check_via_cli() {
@@ -84,6 +86,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
     assert!(disabled.contains("DNSSEC disabled successfully"));
 }
 
+/// Verify the CLI option to disable DNSSEC without a parent DS check.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_disable_skip_ds_check_via_cli() {

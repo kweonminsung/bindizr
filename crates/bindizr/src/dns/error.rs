@@ -22,6 +22,7 @@ pub(crate) enum XfrError {
 
 /// Protocol failures reported by the wire codec in `bindizr-core`.
 impl From<String> for XfrError {
+    /// Convert a failure into a zone-transfer error.
     fn from(message: String) -> Self {
         XfrError::ProtocolError(message)
     }
@@ -30,6 +31,7 @@ impl From<String> for XfrError {
 /// The DNS plane passes no caller, so a service failure here is never a
 /// client fault — it surfaces as an infrastructure error.
 impl From<ServiceError> for XfrError {
+    /// Convert a failure into a zone-transfer error.
     fn from(e: ServiceError) -> Self {
         XfrError::DatabaseError(e.to_string())
     }

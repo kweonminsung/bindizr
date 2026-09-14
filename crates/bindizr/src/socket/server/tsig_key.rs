@@ -15,7 +15,7 @@ use crate::socket::{
     },
 };
 
-/// Handle the `TsigKeyCreate` command by creating (or importing) a TSIG key.
+/// Create TSIG key from the control request.
 pub(crate) async fn create_tsig_key(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -36,7 +36,7 @@ pub(crate) async fn create_tsig_key(
     })
 }
 
-/// Handle the `TsigKeyList` command by returning all TSIG keys without secrets.
+/// List the requested TSIG keys.
 pub(crate) async fn list_tsig_keys() -> Result<DaemonResponse, ServiceError> {
     let response = TsigKeyService::list(&Caller::Global, PageFilter::default()).await?;
 
@@ -46,7 +46,7 @@ pub(crate) async fn list_tsig_keys() -> Result<DaemonResponse, ServiceError> {
     })
 }
 
-/// Handle the `TsigKeyGet` command by returning one TSIG key with its secret.
+/// Get the requested TSIG key.
 pub(crate) async fn get_tsig_key(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: TsigKeyNameParams = parse_params(data)?;
 
@@ -58,7 +58,7 @@ pub(crate) async fn get_tsig_key(data: &serde_json::Value) -> Result<DaemonRespo
     })
 }
 
-/// Handle the `TsigKeyDelete` command by deleting an unused TSIG key.
+/// Delete the requested TSIG key.
 pub(crate) async fn delete_tsig_key(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -72,7 +72,7 @@ pub(crate) async fn delete_tsig_key(
     })
 }
 
-/// Handle the `TsigGrantCreate` command by granting a key rights in a zone.
+/// Create TSIG grant from the control request.
 pub(crate) async fn create_tsig_grant(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -96,7 +96,7 @@ pub(crate) async fn create_tsig_grant(
     })
 }
 
-/// Handle the `TsigGrantListByKey` command by returning a key's grants.
+/// List the requested TSIG grants for a TSIG key.
 pub(crate) async fn list_tsig_grants_by_key(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -111,8 +111,7 @@ pub(crate) async fn list_tsig_grants_by_key(
     })
 }
 
-/// Handle the `TsigGrantListByZone` command by returning the grants that
-/// apply to a zone.
+/// List the requested TSIG grants for a zone.
 pub(crate) async fn list_tsig_grants_by_zone(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -128,7 +127,7 @@ pub(crate) async fn list_tsig_grants_by_zone(
     })
 }
 
-/// Handle the `TsigGrantDelete` command by revoking one of a key's grants.
+/// Delete the requested TSIG grant.
 pub(crate) async fn delete_tsig_grant(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {

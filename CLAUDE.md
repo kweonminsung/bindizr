@@ -356,10 +356,28 @@ grep -rnE "\b(struct|type|enum) [A-Za-z]*Record\b" crates/bindizr-core/src/dns
 
 ### Comments
 
-Keep comments that explain **why**: non-obvious behavior or invariants,
-protocol/wire-format details, public-API contracts (`///`). State the reason in
-one or two lines, without spelling out consequences the reader can derive,
-restating an already-made point, or enumerating what the code shows.
+Give every named function a short purpose comment, even when its name already
+suggests what it does. This includes private helpers, constructors, methods,
+trait declarations and implementations, nested functions, test helpers, and
+test functions. Use one sentence describing the operation or result, not a
+walkthrough of the body. Keep an existing purpose comment instead of adding a
+second one. Use `///` for Rust functions, a docstring for Python functions, and
+`#` before shell functions; named Helm helpers use template comments. Anonymous
+closures and generated dependency code do not need separate purpose comments.
+
+Read the existing comments before adding a purpose sentence. Keep one coherent
+documentation block per function, with the purpose first and any distinct
+rationale in a following paragraph. Merge overlapping sentences. Put Rust
+documentation before the function's attributes, and leave a blank line between
+documented items. Put explanations shared by a module in its module documentation;
+keep comments about individual steps beside those steps. Python docstrings come
+first in the body; do not strand an existing function explanation above `def`.
+
+Keep explanations of **why** as well: non-obvious behavior or invariants,
+protocol/wire-format details, and public-API contracts. State each reason in
+one or two lines, without spelling out consequences the reader can derive or
+enumerating what the code shows. A purpose sentence and a necessary constraint
+can share the same function documentation.
 
 This includes short **in-function** comments giving the business or protocol
 reason for a step — e.g. `// Increment zone serial so IXFR consumers can detect
@@ -367,11 +385,16 @@ this change`. Keep them even when the statement is obvious: they carry which
 downstream system or invariant depends on the step. Do not strip them when
 trimming.
 
-The same applies in tests: the test **name** states *what* is verified (never
-restate it in a comment); comments are for *why* the case exists when that
-isn't derivable — the regression or protocol rule it guards (cite the RFC
-section for wire-format cases), format assumptions the test relies on, and
-phase markers in long multi-step e2e flows.
+Keep shell comments that mark workflow phases, such as validation, build,
+installation, cleanup, and execution, including numbered steps. They help readers
+follow execution order even when nearby commands or output describe the same
+operation; the section-label restriction below does not apply to them.
+
+Test functions also keep a short purpose comment stating what they verify;
+overlap with the test name is fine. Within the body, comments explain why the
+case exists — the regression or protocol rule it guards (cite the RFC section
+for wire-format cases), format assumptions, and phase markers in long multi-step
+e2e flows. Do not repeat each assertion in an inline comment.
 
 Specifically avoid:
 

@@ -11,6 +11,7 @@ pub(crate) enum OutputFormat {
 impl std::str::FromStr for OutputFormat {
     type Err = String;
 
+    /// Parse an output format from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "json" => Ok(OutputFormat::Json),
@@ -51,8 +52,7 @@ where
     Ok(())
 }
 
-/// A table shows no pagination, so a short page reads as the whole listing
-/// unless it says otherwise.
+/// Print the number of omitted rows so a table page is not mistaken for the complete listing.
 fn print_page_remainder(data: &serde_json::Value) {
     let (Some(total), Some(shown)) = (
         data["pagination"]["total"].as_u64(),

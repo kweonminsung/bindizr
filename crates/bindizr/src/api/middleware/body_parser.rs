@@ -25,6 +25,7 @@ where
 {
     type Rejection = ApiError;
 
+    /// Parse a JSON request body into the expected input type.
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
         let start = Instant::now();
         let Json(value) = Json::<T>::from_request(req, state).await?;

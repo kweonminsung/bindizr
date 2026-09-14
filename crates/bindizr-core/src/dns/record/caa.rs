@@ -47,6 +47,7 @@ impl<'a> CaaRecordValue<'a> {
         })
     }
 
+    /// Validate the fields of this CAA value.
     pub fn validate(&self) -> Result<(), String> {
         // RFC 8659, Section 4.1: a tag is 1-15 alphanumeric characters.
         if self.tag.is_empty()
@@ -77,6 +78,7 @@ impl<'a> CaaRecordValue<'a> {
         Ok(())
     }
 
+    /// Render the CAA value in canonical text form.
     pub fn canonical(&self) -> String {
         format!(
             "{} {} {}",
@@ -103,6 +105,7 @@ impl<'a> CaaRecordValue<'a> {
 mod tests {
     use super::CaaRecordValue;
 
+    /// Verify that `parse` accepts quoted and bare values.
     #[test]
     fn parse_accepts_quoted_and_bare_values() {
         let quoted = CaaRecordValue::parse("0 issue \"letsencrypt.org\"").unwrap();
@@ -111,12 +114,14 @@ mod tests {
         assert_eq!(bare.canonical(), "0 issue \"letsencrypt.org\"");
     }
 
+    /// Verify that `parse` accepts repeated whitespace between fields.
     #[test]
     fn parse_accepts_repeated_whitespace_between_fields() {
         let spaced = CaaRecordValue::parse("  0  issue \t \"letsencrypt.org\"  ").unwrap();
         assert_eq!(spaced.canonical(), "0 issue \"letsencrypt.org\"");
     }
 
+    /// Verify that a quoted value resolves its escapes and renders them back.
     #[test]
     fn a_quoted_value_resolves_its_escapes_and_renders_them_back() {
         // An export and a zone file both spell a quote or backslash with the
@@ -131,6 +136,7 @@ mod tests {
         );
     }
 
+    /// Verify that `validate` rejects a bad tag or a missing value.
     #[test]
     fn validate_rejects_a_bad_tag_or_a_missing_value() {
         let long_tag = CaaRecordValue::parse("0 averyveryverylongtag x").unwrap();
@@ -138,6 +144,7 @@ mod tests {
         assert!(CaaRecordValue::parse("0 issue").is_err());
     }
 
+    /// Verify rejection of unclosed or concatenated quoted CAA values.
     #[test]
     fn rejects_a_quoted_value_that_does_not_close_or_stand_alone() {
         for value in [r#"0 issue "unterminated"#, r#"0 issue "a" trailing"#] {
@@ -148,6 +155,7 @@ mod tests {
         }
     }
 
+    /// Verify that `validate` rejects control characters no value can spell back.
     #[test]
     fn validate_rejects_control_characters_no_value_can_spell_back() {
         let parsed = CaaRecordValue::parse("0 issue a\tb").unwrap();

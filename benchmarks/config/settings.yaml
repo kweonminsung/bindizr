@@ -5,8 +5,7 @@
 seed: 1337
 
 # Record-set sizes used by bulk/large-zone/AXFR benchmarks.
-# 1_000_000 is heavy (time + disk); it is excluded from `sizes_ci` and only
-# runs when explicitly selected (BENCH_SIZES=1000000 or --sizes 1000000).
+# Full runs include 1_000_000 records; CI omits that size to bound time and disk use.
 sizes: [1000, 10000, 100000, 1000000]
 sizes_ci: [1000, 10000]
 
@@ -73,7 +72,7 @@ systems:
     label: "CoreDNS"
     kind: file_backed         # no management API; zone file + mtime-poll reload
 
-# Which systems each benchmark applies to (per the task spec).
+# Systems exercised by each benchmark.
 #
 # CoreDNS has no management API and no RFC 2136 dynamic update: writes mean
 # rewriting the zone file and waiting for the `file` plugin's mtime poll. It

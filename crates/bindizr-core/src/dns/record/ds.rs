@@ -36,6 +36,7 @@ impl DsRrValue {
         })
     }
 
+    /// Validate the fields of this DS value.
     pub fn validate(&self) -> Result<(), String> {
         // Digest lengths are fixed per type (RFC 4509 for SHA-256); a wrong
         // length is a broken delegation, not a serveable record.
@@ -67,6 +68,7 @@ impl DsRrValue {
         Ok(())
     }
 
+    /// Render the DS value in canonical text form.
     pub fn canonical(&self) -> String {
         format!(
             "{} {} {} {}",
@@ -92,12 +94,14 @@ impl DsRrValue {
 mod tests {
     use super::DsRrValue;
 
+    /// Verify that `parse` joins spaced digest and canonicalizes hex case.
     #[test]
     fn parse_joins_spaced_digest_and_canonicalizes_hex_case() {
         let parsed = DsRrValue::parse("34217 13 2 4b9b 6b07 3edd").unwrap();
         assert_eq!(parsed.canonical(), "34217 13 2 4B9B6B073EDD");
     }
 
+    /// Verify that `validate` pins the digest length per type.
     #[test]
     fn validate_pins_the_digest_length_per_type() {
         let short = DsRrValue::parse("1 13 2 4B9B").unwrap();
@@ -106,6 +110,7 @@ mod tests {
         assert!(DsRrValue::parse("1 13 9 4B9B").unwrap().validate().is_ok());
     }
 
+    /// Verify that `parse` rejects non hex and odd digests.
     #[test]
     fn parse_rejects_non_hex_and_odd_digests() {
         assert!(DsRrValue::parse("1 13 2 XYZ1").is_err());

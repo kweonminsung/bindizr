@@ -5,6 +5,7 @@ use std::fmt;
 use super::{BindizrConfig, DatabaseType};
 
 impl BindizrConfig {
+    /// Apply supported environment variables to the loaded configuration.
     pub(crate) fn apply_env_overrides(
         &mut self,
         get_env: impl Fn(&str) -> Option<String>,
@@ -124,12 +125,13 @@ impl BindizrConfig {
     }
 }
 
-/// An empty environment value clears the path, so a container image can leave
-/// the variable set and unfilled.
+/// Convert an environment path override to an optional path, treating an empty value as unset
+/// so containers can leave the variable unfilled.
 fn to_optional_path(value: String) -> Option<String> {
     Some(value.trim().to_string()).filter(|path| !path.is_empty())
 }
 
+/// Parse an environment override or return a configuration error.
 fn parse_env_value<T>(name: &str, value: &str) -> Result<T, String>
 where
     T: std::str::FromStr,

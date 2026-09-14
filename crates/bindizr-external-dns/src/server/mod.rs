@@ -47,6 +47,7 @@ pub(crate) fn health_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
+/// Serialize a webhook response with its JSON content type.
 fn json_response<T: serde::Serialize>(value: &T) -> Response {
     match serde_json::to_string(value) {
         // external-dns compares the negotiation Content-Type byte-for-byte,
@@ -78,6 +79,7 @@ fn upstream_error_response(error: UpstreamError) -> Response {
     }
 }
 
+/// Check whether the client accepts the supported webhook media type.
 fn is_accept_supported(headers: &HeaderMap) -> bool {
     match headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
         // external-dns always sends the exact media type; tolerate wildcard
@@ -87,6 +89,7 @@ fn is_accept_supported(headers: &HeaderMap) -> bool {
     }
 }
 
+/// Classify a response status for request metrics.
 fn result_label(response: &Response) -> &'static str {
     match response.status() {
         status if status.is_success() => "ok",

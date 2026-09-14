@@ -4,9 +4,8 @@
 //! parameters it signs under by the policy `zones.dnssec_policy_id` names;
 //! every transition journals its delta so secondaries follow via IXFR.
 //!
-//! Rollover is RFC 7583 pre-publish: `published` ahead of use, `active` once
-//! caches know the key (automatic for ZSKs, `ds-seen` for CSK/KSK), `retired`
-//! until caches drain, then removed.
+//! Promotion waits for the publish TTL and, for SEP keys, parent DS confirmation
+//! by maintenance or `ds-seen`. Retired keys remain until their cache deadlines.
 
 mod delegation;
 mod keys;
@@ -261,6 +260,7 @@ impl DnssecService {
     }
 }
 
+/// Describe the policy's key layout for validation errors.
 fn to_key_layout(split_keys: bool) -> &'static str {
     if split_keys {
         "split KSK/ZSK keys"
@@ -269,6 +269,7 @@ fn to_key_layout(split_keys: bool) -> &'static str {
     }
 }
 
+/// Schedule NOTIFY after a DNSSEC change to a zone.
 async fn notify_zone(zone_name: &str) {
     if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name)).await {
         log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
@@ -282,6 +283,7 @@ mod tests {
 
     use super::{DnssecPolicy, expiration_jitter_secs};
 
+    /// Build a policy fixture with the requested signature timing.
     fn policy(signature_validity_days: i32, signature_refresh_days: i32) -> DnssecPolicy {
         DnssecPolicy {
             id: 1,
@@ -296,6 +298,7 @@ mod tests {
         }
     }
 
+    /// Verify that jitter spreads over half the room the policy leaves.
     #[test]
     fn jitter_spreads_over_half_the_room_the_policy_leaves() {
         // The built-in default: 14 days of validity re-signed with 5 left.
@@ -306,6 +309,7 @@ mod tests {
         );
     }
 
+    /// Verify that the earliest signature stays clear of its refresh window.
     #[test]
     fn the_earliest_signature_stays_clear_of_its_refresh_window() {
         for (validity, refresh) in [(14, 5), (30, 7), (7, 6), (2, 1)] {
@@ -319,6 +323,7 @@ mod tests {
         }
     }
 
+    /// Verify that a policy leaving no room takes no jitter.
     #[test]
     fn a_policy_leaving_no_room_takes_no_jitter() {
         assert_eq!(expiration_jitter_secs(&policy(5, 5)), 0);

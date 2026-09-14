@@ -3,6 +3,7 @@ use base64::Engine;
 use super::{normalize_key_name, normalize_secret};
 use crate::error::ErrorCode;
 
+/// Verify that `normalize_key_name` lowercases and strips trailing dot.
 #[test]
 fn normalize_key_name_lowercases_and_strips_trailing_dot() {
     assert_eq!(
@@ -12,6 +13,7 @@ fn normalize_key_name_lowercases_and_strips_trailing_dot() {
     assert_eq!(normalize_key_name(" update-key ").unwrap(), "update-key");
 }
 
+/// Verify that `normalize_key_name` rejects invalid names.
 #[test]
 fn normalize_key_name_rejects_invalid_names() {
     for invalid in ["", ".", "bad name", "bad..label", &"a".repeat(300)] {
@@ -20,6 +22,7 @@ fn normalize_key_name_rejects_invalid_names() {
     }
 }
 
+/// Verify that `normalize_secret` accepts base64 and rejects garbage.
 #[test]
 fn normalize_secret_accepts_base64_and_rejects_garbage() {
     // 32-byte imported secret, whitespace trimmed.
@@ -35,6 +38,7 @@ fn normalize_secret_accepts_base64_and_rejects_garbage() {
     assert_eq!(empty.code, ErrorCode::InvalidInput);
 }
 
+/// Verify that `normalize_secret` enforces length bounds.
 #[test]
 fn normalize_secret_enforces_length_bounds() {
     // 6 decoded bytes: far below the 128-bit minimum.

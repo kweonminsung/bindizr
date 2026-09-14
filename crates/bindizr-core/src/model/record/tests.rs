@@ -1,6 +1,7 @@
 use super::RecordType;
 use crate::dns::record::TxtRecordValue;
 
+/// Verify that `values_equal` normalizes name like values.
 #[test]
 fn values_equal_normalizes_name_like_values() {
     assert!(RecordType::A.values_equal("192.0.2.10", None, "192.0.2.10", None));
@@ -31,6 +32,7 @@ fn values_equal_normalizes_name_like_values() {
     assert!(!RecordType::TXT.values_equal("Token=ABC", None, "token=abc", None));
 }
 
+/// Verify that `encoded_value` produces one spelling per RDATA.
 #[test]
 fn encoded_value_produces_one_spelling_per_rdata() {
     assert_eq!(
@@ -59,6 +61,7 @@ fn encoded_value_produces_one_spelling_per_rdata() {
     );
 }
 
+/// Verify that `encoded_value` keeps null MX and SRV root targets.
 #[test]
 fn encoded_value_keeps_null_mx_and_srv_root_targets() {
     assert_eq!(
@@ -71,6 +74,7 @@ fn encoded_value_keeps_null_mx_and_srv_root_targets() {
     );
 }
 
+/// Verify that `encoded_value` rejects invalid values.
 #[test]
 fn encoded_value_rejects_invalid_values() {
     assert!(RecordType::A.encoded_value("not-an-ip", None).is_err());
@@ -88,6 +92,7 @@ fn encoded_value_rejects_invalid_values() {
     assert!(RecordType::TXT.encoded_value("", None).is_err());
 }
 
+/// Verify that `encoded_value` round-trips TXT presentation form.
 #[test]
 fn encoded_value_round_trips_txt_presentation_form() {
     let encoded = RecordType::TXT.encoded_value("\"a\" \"b\"", None).unwrap();
@@ -97,6 +102,7 @@ fn encoded_value_round_trips_txt_presentation_form() {
     );
 }
 
+/// Verify that `display_value` adds trailing dot for name like values.
 #[test]
 fn display_value_adds_trailing_dot_for_name_like_values() {
     assert_eq!(
@@ -121,6 +127,7 @@ fn display_value_adds_trailing_dot_for_name_like_values() {
     );
 }
 
+/// Verify that `display_value` keeps non name values unchanged.
 #[test]
 fn display_value_keeps_non_name_values_unchanged() {
     assert_eq!(RecordType::A.display_value("127.0.0.1"), "127.0.0.1");
@@ -131,6 +138,7 @@ fn display_value_keeps_non_name_values_unchanged() {
     );
 }
 
+/// Verify that `display_value` leaves wrong field count unchanged.
 #[test]
 fn display_value_leaves_wrong_field_count_unchanged() {
     // Values whose field count cannot match any valid MX/SRV form must not be
@@ -173,6 +181,7 @@ fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
     }
 }
 
+/// Verify that validate MX value accepts a target with a field priority.
 #[test]
 fn validate_mx_value_accepts_a_target_with_a_field_priority() {
     assert!(
@@ -189,6 +198,7 @@ fn validate_mx_value_accepts_a_target_with_a_field_priority() {
     assert!(RecordType::MX.validate_value(".", Some(0)).is_ok());
 }
 
+/// Verify that validate MX value rejects invalid forms.
 #[test]
 fn validate_mx_value_rejects_invalid_forms() {
     for (value, priority) in [
@@ -211,6 +221,7 @@ fn validate_mx_value_rejects_invalid_forms() {
     }
 }
 
+/// Verify that validate SRV value accepts weight port target with a field priority.
 #[test]
 fn validate_srv_value_accepts_weight_port_target_with_a_field_priority() {
     assert!(
@@ -227,6 +238,7 @@ fn validate_srv_value_accepts_weight_port_target_with_a_field_priority() {
     assert!(RecordType::SRV.validate_value("0 443 .", Some(0)).is_ok());
 }
 
+/// Verify that validate SRV value rejects invalid forms.
 #[test]
 fn validate_srv_value_rejects_invalid_forms() {
     for (value, priority) in [
@@ -252,6 +264,7 @@ fn validate_srv_value_rejects_invalid_forms() {
     }
 }
 
+/// Verify that `validate_value` rejects priority on types without one.
 #[test]
 fn validate_value_rejects_priority_on_types_without_one() {
     let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();

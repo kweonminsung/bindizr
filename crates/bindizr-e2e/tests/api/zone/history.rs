@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions};
 
+/// Verify listing and retrieval of zone versions.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_versions_list_and_get() {
@@ -100,6 +101,7 @@ async fn zone_versions_list_and_get() {
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }
 
+/// Verify that zone versions diff reports the records between two serials.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_versions_diff_reports_the_records_between_two_serials() {
@@ -157,6 +159,7 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
     assert_eq!(diff["diff"]["summary"]["added"].as_i64().unwrap(), 2);
 }
 
+/// Verify that rollback previews match the applied changes.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_rollback_dry_run_then_apply() {
@@ -271,6 +274,7 @@ async fn zone_rollback_dry_run_then_apply() {
     assert!(names[0].starts_with("keep."));
 }
 
+/// Verify that zone rollback restores a delegation NS and DS together.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
@@ -339,6 +343,7 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
     }
 }
 
+/// Verify that zone rollback rejects bad serials.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_rollback_rejects_bad_serials() {
@@ -376,6 +381,7 @@ async fn zone_rollback_rejects_bad_serials() {
     }
 }
 
+/// Verify that zone versions record who made each change.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_versions_record_who_made_each_change() {

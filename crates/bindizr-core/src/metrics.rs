@@ -48,6 +48,7 @@ pub fn metrics() -> &'static Metrics {
     METRICS.get_or_init(Metrics::new)
 }
 
+/// Register a shared clone of a metric collector.
 fn register<C: Collector + Clone + 'static>(registry: &Registry, collector: &C) {
     registry
         .register(Box::new(collector.clone()))
@@ -55,6 +56,7 @@ fn register<C: Collector + Clone + 'static>(registry: &Registry, collector: &C) 
 }
 
 impl Metrics {
+    /// Create and register the daemon's metric collectors.
     fn new() -> Self {
         let registry = Registry::new();
 
@@ -347,6 +349,7 @@ impl XfrResult {
         Self::Error,
     ];
 
+    /// Return the text representation of this xfr result.
     fn as_str(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -382,6 +385,7 @@ pub enum SoaResult {
 impl SoaResult {
     const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Error];
 
+    /// Return the text representation of this SOA result.
     fn as_str(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -425,6 +429,7 @@ impl NsupdateResult {
         Self::Rcode(Rcode::NOTIMP),
     ];
 
+    /// Return the text representation of this nsupdate result.
     fn as_str(&self) -> &'static str {
         let rcode = match self {
             Self::TsigFailed => return "tsig_failed",
@@ -445,6 +450,7 @@ impl NsupdateResult {
     }
 }
 
+/// Increment the counter for a dynamic update result.
 pub fn track_nsupdate(result: NsupdateResult) {
     metrics()
         .nsupdate_requests_total
@@ -463,6 +469,7 @@ pub enum NotifyResult {
 impl NotifyResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::ResolveError];
 
+    /// Return the text representation of this notify result.
     fn as_str(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -472,6 +479,7 @@ impl NotifyResult {
     }
 }
 
+/// Record a NOTIFY delivery result.
 pub fn track_notify(result: NotifyResult) {
     metrics()
         .notify_sent_total
@@ -479,10 +487,8 @@ pub fn track_notify(result: NotifyResult) {
         .inc();
 }
 
-/// One serial advance. Counted before commit, so a later rollback overcounts
-/// — acceptable for a monitoring counter.
-/// The two tables are counted apart: a serial pruned from one but not the
-/// other is the gap an IXFR client reads as a broken journal.
+/// Count pruned journal and version rows separately so differences expose gaps that break IXFR
+/// history.
 pub fn track_pruned_rows(journal_rows: u64, version_rows: u64) {
     let metrics = metrics();
     metrics
@@ -495,6 +501,7 @@ pub fn track_pruned_rows(journal_rows: u64, version_rows: u64) {
         .inc_by(version_rows);
 }
 
+/// Increment the serial-advance counter before commit; rollbacks can therefore overcount advances.
 pub fn track_serial_bump() {
     metrics().zone_serial_bumps_total.inc();
 }
@@ -509,6 +516,7 @@ pub enum MaintenanceResult {
 impl MaintenanceResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::Panic];
 
+    /// Return the text representation of this maintenance result.
     fn as_str(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -518,6 +526,7 @@ impl MaintenanceResult {
     }
 }
 
+/// Increment the counter for a DNSSEC maintenance pass result.
 pub fn track_dnssec_maintenance(result: MaintenanceResult) {
     metrics()
         .dnssec_maintenance_runs_total
@@ -539,6 +548,7 @@ pub fn track_db_pool(connections: u32, idle: u32, max: u32) {
     metrics.db_connections_max.set(i64::from(max));
 }
 
+/// Record a zone-cache hit or miss.
 pub fn track_zone_cache_lookup(hit: bool) {
     metrics()
         .zone_cache_lookups_total

@@ -17,8 +17,8 @@ impl ZoneService {
         let probes = probe::probe_secondaries(zone.name.as_str())
             .await
             .map_err(ServiceError::internal)?;
-        // The serial is read after the probe; one that advanced meanwhile
-        // would show a secondary that took it as ahead.
+        // Refresh the serial after probing so a secondary that caught a concurrent
+        // write is not compared against the older serial as though it were ahead.
         let zone = Self::get_by_name(caller, zone_name).await?;
 
         Ok(ZoneStatusResponse::from_probes(

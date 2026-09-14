@@ -242,10 +242,8 @@ impl DnssecService {
         Ok(response)
     }
 
-    /// Generate and persist a pre-published replacement for `template` with
-    /// `algorithm`. It may sign once no resolver can still hold a DNSKEY
-    /// answer without it, which is the TTL that answer is served with (RFC
-    /// 7583, Section 3.3.1).
+    /// Publish a replacement for `template` with `algorithm`. Promotion waits
+    /// for the DNSKEY TTL; algorithm rollovers may require signing before then.
     pub(crate) async fn publish_replacement_key_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,

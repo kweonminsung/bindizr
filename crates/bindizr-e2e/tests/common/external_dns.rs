@@ -60,6 +60,7 @@ impl ExternalDnsAdapter {
 }
 
 impl Drop for ExternalDnsAdapter {
+    /// Stop the external-dns adapter process when the test fixture is dropped.
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();

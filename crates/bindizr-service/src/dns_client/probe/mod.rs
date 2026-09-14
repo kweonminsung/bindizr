@@ -98,6 +98,7 @@ async fn probe_entry(
     last.expect("resolve_address_entries never yields an empty Ok")
 }
 
+/// Query one secondary server for its SOA status.
 async fn probe_one(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,

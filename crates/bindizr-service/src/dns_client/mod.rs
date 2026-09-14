@@ -23,7 +23,7 @@ use tokio::{
 };
 
 /// Maximum size of a UDP DNS response we accept: room for the
-/// `EDNS_UDP_PAYLOAD_SIZE` the DS and NS questions advertise.
+/// `EDNS_UDP_PAYLOAD_SIZE` the parent DS questions advertise.
 const UDP_RESPONSE_BUF: usize = 4096;
 
 /// Ask over UDP and, when the answer comes back truncated, again over TCP

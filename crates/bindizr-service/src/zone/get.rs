@@ -37,7 +37,7 @@ impl ZoneService {
         )
     }
 
-    /// List the recorded zone changes between two serials, for building an IXFR.
+    /// Count journal rows in `(from_serial, to_serial]` for the IXFR size estimate.
     pub async fn count_journal_between_serials(
         zone_id: i32,
         from_serial: i32,
@@ -46,6 +46,7 @@ impl ZoneService {
         RepositoryService::count_zone_changes_between_serials(zone_id, from_serial, to_serial).await
     }
 
+    /// Journal rows in `(from_serial, to_serial]`, ordered by serial then row id.
     pub async fn list_journal_between_serials(
         zone_id: i32,
         from_serial: i32,
@@ -185,11 +186,9 @@ impl ZoneService {
             .await?
             .ok_or_else(|| ServiceError::zone_not_found(lookup_name.as_str()))
     }
-    /// A zone row and both record planes read under one shared zone lock, so
-    /// a transfer never serves records and signatures from different serials.
-    /// Takes no caller: DNS-plane reads are authorized by the transfer ACL.
-    /// Records an AXFR of the zone would send: the user plane and the derived
-    /// one, which is what [`ZoneService::find_transfer_content`] returns.
+
+    /// Count both record planes for the IXFR/AXFR size comparison. These unlocked
+    /// counts may drift during a write; they choose the transfer format only.
     pub async fn count_transfer_records(zone_name: &str) -> Result<u64, ServiceError> {
         let records = RepositoryService::count_records_by_filter(RecordFilter {
             zone_name: Some(zone_name.to_string()),
@@ -207,6 +206,8 @@ impl ZoneService {
         Ok(records + dnssec_records)
     }
 
+    /// Read the zone and both record planes under one shared zone lock so their
+    /// serial and signatures agree. The DNS caller owns TSIG/ACL authorization.
     pub async fn find_transfer_content(
         zone_id: i32,
     ) -> Result<Option<(Zone, Vec<Record>, Vec<DnssecRecord>)>, ServiceError> {

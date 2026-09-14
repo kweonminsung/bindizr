@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions};
 
+/// Verify the DNSSEC enable, status, re-sign, and disable lifecycle.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_enable_status_sign_disable_lifecycle() {
@@ -215,6 +216,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(body["code"], "DNSSEC_NOT_ENABLED");
 }
 
+/// Verify a complete rollover with combined signing keys.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_csk_rollover_lifecycle() {
@@ -351,6 +353,7 @@ async fn dnssec_csk_rollover_lifecycle() {
     assert_eq!(body["code"], "DNSSEC_NO_ROLLOVER_IN_PROGRESS");
 }
 
+/// Verify DNSSEC enablement with NSEC3 and separate key roles.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_enable_with_nsec3_and_split_keys() {
@@ -434,6 +437,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Verify that records listing signed pages the derived plane.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn records_listing_signed_pages_the_derived_plane() {
@@ -542,6 +546,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Verify that DNSSEC enable requires a global token.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_enable_requires_a_global_token() {
@@ -573,6 +578,7 @@ async fn dnssec_enable_requires_a_global_token() {
     assert_eq!(body["code"], "FORBIDDEN");
 }
 
+/// Verify that a signed listing searches the derived plane by name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn a_signed_listing_searches_the_derived_plane_by_name() {

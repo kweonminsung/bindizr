@@ -65,6 +65,7 @@ pub enum ParseError {
 }
 
 impl fmt::Display for ParseError {
+    /// Write the parse error in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParseError::TooShort => write!(f, "DNS message is too short"),
@@ -78,6 +79,7 @@ impl fmt::Display for ParseError {
     }
 }
 
+/// Parse the zone, prerequisites, updates, and TSIG from an UPDATE message.
 pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
     let message = Message::from_octets(data).map_err(|_| ParseError::TooShort)?;
 
@@ -132,6 +134,7 @@ pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
     })
 }
 
+/// Read one update record from the DNS wire message.
 fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRr, ParseError> {
     let name = ParsedName::parse(parser).map_err(|_| ParseError::InvalidName)?;
     let name = to_presentation_name(&name)?;
@@ -154,6 +157,7 @@ fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRr, Pars
     })
 }
 
+/// Validate additional records and locate the request's TSIG.
 fn parse_additional_section(
     parser: &mut Parser<'_, [u8]>,
     count: usize,
@@ -230,6 +234,7 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> 
 }
 
 impl UpdateRr {
+    /// Decode an update record's wire data into its typed value.
     fn parse_rdata<'a, T>(
         &self,
         message: &'a [u8],
@@ -238,10 +243,12 @@ impl UpdateRr {
     ) -> Result<T, String> {
         let refused = || format!("invalid {} rdata", what);
 
+        // Compression pointers address the whole message, not the RDATA slice.
         let mut parser = Parser::from_ref(message);
         parser.advance(self.rdata_start).map_err(|_| refused())?;
         let value = parse(&mut parser).ok_or_else(refused)?;
 
+        // A type parser must consume exactly RDLENGTH, without borrowing the next RR.
         if parser.pos() != self.rdata_start + self.rdata.len() {
             return Err(refused());
         }
@@ -249,7 +256,8 @@ impl UpdateRr {
         Ok(value)
     }
 
-    /// One UPDATE RR decoded into the record columns the service stores.
+    /// Decode this RR into stored columns. `message` must be the original
+    /// UPDATE message: compressed RDATA names refer to offsets within it.
     pub fn to_record_value(
         &self,
         message: &[u8],

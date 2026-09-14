@@ -20,6 +20,7 @@ pub(crate) fn init() -> mpsc::Receiver<DaemonControl> {
     rx
 }
 
+/// Request daemon shutdown and acknowledge the control request.
 pub(crate) fn shutdown() -> Result<DaemonResponse, ServiceError> {
     send_control(DaemonControl::Shutdown)?;
     Ok(DaemonResponse {
@@ -28,6 +29,7 @@ pub(crate) fn shutdown() -> Result<DaemonResponse, ServiceError> {
     })
 }
 
+/// Request daemon restart and acknowledge the control request.
 pub(crate) fn restart() -> Result<DaemonResponse, ServiceError> {
     send_control(DaemonControl::Restart)?;
     Ok(DaemonResponse {

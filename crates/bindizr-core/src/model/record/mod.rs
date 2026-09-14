@@ -47,6 +47,7 @@ pub struct RecordWithZone {
 }
 
 impl RecordWithZone {
+    /// Combine a stored record with its zone metadata.
     pub fn new(record: Record, zone_name: ZoneName) -> Self {
         Self {
             id: record.id,
@@ -95,12 +96,15 @@ pub enum RecordType {
     TLSA,
 }
 impl std::fmt::Display for RecordType {
+    /// Write the record type in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 impl TryFrom<String> for RecordType {
     type Error = String;
+
+    /// Validate and convert the stored value into a record type.
     fn try_from(s: String) -> Result<Self, Self::Error> {
         s.parse()
     }
@@ -112,10 +116,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for RecordType
 where
     String: sqlx::Type<DB>,
 {
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <String as sqlx::Type<DB>>::type_info()
     }
 
+    /// Check whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -125,6 +131,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for RecordType
 where
     String: sqlx::Encode<'q, DB>,
 {
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
@@ -136,6 +143,7 @@ where
 impl std::str::FromStr for RecordType {
     type Err = String;
 
+    /// Parse a record type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "A" => Ok(RecordType::A),
@@ -437,8 +445,10 @@ pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
     RecordType::TXT,
 ];
 
-// The priority lives in its own column, never in the value: MX stores `target`
-// and SRV `weight port target`.
+/// Render the trailing domain-name field of a stored record value.
+///
+/// Priority is a separate column: MX stores only the target, and SRV stores weight, port, and
+/// target.
 fn display_last_name_field(value: &str, field_count: usize) -> String {
     let mut fields = value
         .split_whitespace()

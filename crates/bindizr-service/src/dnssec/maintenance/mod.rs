@@ -61,6 +61,7 @@ pub fn init_maintenance_scheduler() {
     });
 }
 
+/// Create the configured DNSSEC maintenance timer.
 fn new_interval(period_secs: u64) -> tokio::time::Interval {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(period_secs));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 def run(cmd: list[str], check: bool = True, capture: bool = True) -> subprocess.CompletedProcess:
+    """Run a command with optional output capture and exit-status checking."""
     return subprocess.run(
         cmd,
         check=check,
@@ -21,14 +22,17 @@ class Compose:
     """Wrapper for a single docker compose project."""
 
     def __init__(self, file: Path, project: str, env: dict[str, str] | None = None):
+        """Store the Compose file, project name, and environment overrides."""
         self.file = Path(file)
         self.project = project
         self.env = env or {}
 
     def _base(self) -> list[str]:
+        """Build the Docker Compose command prefix for this project."""
         return ["docker", "compose", "-f", str(self.file), "-p", self.project]
 
     def up(self, *services: str, wait: bool = True) -> None:
+        """Start the requested Compose services and optionally wait for readiness."""
         cmd = self._base() + ["up", "-d"]
         if wait:
             cmd.append("--wait")
@@ -36,6 +40,8 @@ class Compose:
         subprocess.run(cmd, check=True, text=True, env={**os.environ, **self.env})
 
     def down(self) -> None:
+        """Remove the project containers, volumes, and orphaned services."""
+
         # All profiles, so `down` also removes Bindizr's optional mysql/postgres
         # services and their volumes rather than leaving stale data behind.
         env = {**os.environ, **self.env}
@@ -47,10 +53,12 @@ class Compose:
         )
 
     def logs(self, service: str, tail: int = 50) -> str:
+        """Collect recent output from a Compose service."""
         p = run(self._base() + ["logs", "--tail", str(tail), service], check=False)
         return (p.stdout or "") + (p.stderr or "")
 
     def container_id(self, service: str) -> str | None:
+        """Find the running container ID for a Compose service."""
         p = run(self._base() + ["ps", "-q", service], check=False)
         out = (p.stdout or "").strip()
         return out or None

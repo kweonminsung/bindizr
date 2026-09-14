@@ -1,11 +1,12 @@
 //! Table-creation DDL for each backend, run at startup to bring the schema up.
 //!
-//! Name columns are `VARCHAR(512)`, not 255: rows hold the escaped presentation
-//! form, whose `\` escapes can nearly double the 253-byte wire limit.
+//! Owner-name columns use `VARCHAR(512)` because presentation escapes can
+//! nearly double a name that fits the 255-octet wire limit.
 //!
 //! No timestamp column carries a `DEFAULT CURRENT_TIMESTAMP`: an insert that
 //! forgets to bind one must fail rather than take the database server's clock.
 
+/// Return the MySQL statements that create the application schema.
 pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
@@ -202,6 +203,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
     ]
 }
 
+/// Return the PostgreSQL statements that create the application schema.
 pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
@@ -424,6 +426,7 @@ pub(crate) fn postgres_table_creation_queries() -> Vec<&'static str> {
     ]
 }
 
+/// Return the SQLite statements that create the application schema.
 pub(crate) fn sqlite_table_creation_queries() -> Vec<&'static str> {
     vec![
         r#"
@@ -657,6 +660,7 @@ pub(crate) fn mysql_default_policy_seed() -> &'static str {
     "#
 }
 
+/// Build the PostgreSQL statement that seeds the default DNSSEC policy.
 pub(crate) fn postgres_default_policy_seed() -> &'static str {
     r#"
     INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
@@ -666,6 +670,7 @@ pub(crate) fn postgres_default_policy_seed() -> &'static str {
     "#
 }
 
+/// Build the SQLite statement that seeds the default DNSSEC policy.
 pub(crate) fn sqlite_default_policy_seed() -> &'static str {
     r#"
     INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,

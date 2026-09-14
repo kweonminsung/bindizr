@@ -17,6 +17,7 @@ fn closed_parent_addr() -> String {
         .to_string()
 }
 
+/// Verify that DNSSEC DS seen checks the parent even when the holddown is skipped.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
@@ -141,6 +142,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
     assert_eq!(key_by_tag(old_key_tag)["state"], "retired");
 }
 
+/// Verify that DNSSEC disable waits for the parent to drop the DS.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
@@ -231,6 +233,7 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     assert_eq!(body["dnssec"]["enabled"], false);
 }
 
+/// Verify that DNSSEC disable is refused until the parent can be asked.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
@@ -332,6 +335,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
     assert_eq!(status, StatusCode::OK);
 }
 
+/// Verify that DNSSEC DS seen requires the exact DS on every parent server.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
@@ -443,6 +447,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
     );
 }
 
+/// Verify that DNSSEC DS seen accepts the sha1 DS a parent computed itself.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
@@ -534,6 +539,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
     );
 }
 
+/// Verify that DNSSEC DS seen separates an unverifiable digest type from a missing DS.
 #[tokio::test]
 async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds() {
     let app = TestApp::start_local().await;
@@ -616,6 +622,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
     assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED", "{body}");
 }
 
+/// Verify that DNSSEC check DS reports an unverifiable digest at any one parent server.
 #[tokio::test]
 async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server() {
     let app = TestApp::start_local().await;

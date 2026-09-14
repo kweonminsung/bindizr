@@ -2,7 +2,9 @@ use reqwest::{Method, StatusCode};
 
 use crate::common::{TestApp, TestAppOptions};
 
-// Unauthenticated and describing every endpoint, so it stays off by default.
+/// Verify that the OpenAPI document is disabled by default.
+///
+/// It describes every endpoint and is served without authentication when enabled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn openapi_document_is_absent_unless_enabled() {
@@ -14,6 +16,7 @@ async fn openapi_document_is_absent_unless_enabled() {
     }
 }
 
+/// Verify that openapi document is served when enabled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn openapi_document_is_served_when_enabled() {
@@ -36,7 +39,8 @@ async fn openapi_document_is_served_when_enabled() {
     );
 }
 
-// The document is the API's own description, so it sits outside the auth layer.
+/// Verify that the API description remains accessible without a token outside the
+/// authentication layer.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn openapi_document_needs_no_token() {

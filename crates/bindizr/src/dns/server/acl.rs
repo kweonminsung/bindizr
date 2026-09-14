@@ -29,6 +29,7 @@ struct SecondaryAcl {
 }
 
 impl SecondaryAcl {
+    /// Check whether a peer IP is permitted by the secondary ACL.
     async fn allows(&self, client_ip: IpAddr) -> bool {
         // Literals first: a match there answers without reaching the resolver.
         if self
@@ -50,6 +51,7 @@ impl SecondaryAcl {
         false
     }
 
+    /// Parse configured secondary addresses into ACL entries.
     fn parse(raw: &str) -> Self {
         let entries = raw
             .split(',')
@@ -88,6 +90,7 @@ static RESOLVED: OnceLock<Mutex<HashMap<String, CachedAddrs>>> = OnceLock::new()
 /// waiting query. Entries are few, so one gate for all of them is enough.
 static RESOLVING: OnceLock<AsyncMutex<()>> = OnceLock::new();
 
+/// Return cached address resolutions for an ACL hostname.
 fn cached_addrs(host_port: &str) -> Option<Vec<IpAddr>> {
     locked_cache()
         .get(host_port)
@@ -95,6 +98,7 @@ fn cached_addrs(host_port: &str) -> Option<Vec<IpAddr>> {
         .map(|cached| cached.addrs.clone())
 }
 
+/// Lock the shared hostname resolution cache.
 fn locked_cache() -> std::sync::MutexGuard<'static, HashMap<String, CachedAddrs>> {
     RESOLVED
         .get_or_init(|| Mutex::new(HashMap::new()))
@@ -112,6 +116,7 @@ pub(crate) async fn is_client_allowed(client_ip: IpAddr) -> bool {
         .await
 }
 
+/// Resolve an ACL hostname to its permitted IP addresses.
 async fn resolve_acl_host(host_port: &str) -> Vec<IpAddr> {
     if let Some(addrs) = cached_addrs(host_port) {
         return addrs;
@@ -157,6 +162,7 @@ async fn resolve_acl_host(host_port: &str) -> Vec<IpAddr> {
 mod tests {
     use super::*;
 
+    /// Verify that secondary acl keeps hostnames for runtime resolution.
     #[test]
     fn secondary_acl_keeps_hostnames_for_runtime_resolution() {
         assert_eq!(
@@ -168,6 +174,7 @@ mod tests {
         );
     }
 
+    /// Verify that literal entries answer without resolving.
     #[tokio::test]
     async fn literal_entries_answer_without_resolving() {
         // The unresolvable entry proves no lookup happened.
@@ -177,6 +184,7 @@ mod tests {
         assert!(locked_cache().is_empty());
     }
 
+    /// Verify that secondary acl defaults hostname ports.
     #[test]
     fn secondary_acl_defaults_hostname_ports() {
         assert_eq!(

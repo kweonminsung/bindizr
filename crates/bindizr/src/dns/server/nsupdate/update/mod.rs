@@ -40,12 +40,14 @@ pub(crate) enum UpdateError {
 
 /// Decoding failures from the wire parser are the client's fault.
 impl From<String> for UpdateError {
+    /// Convert a failure into a dynamic update response error.
     fn from(message: String) -> Self {
         UpdateError::Refused(message)
     }
 }
 
 impl From<TsigError> for UpdateError {
+    /// Convert a failure into a dynamic update response error.
     fn from(err: TsigError) -> Self {
         match err {
             TsigError::Malformed(msg) => UpdateError::Refused(msg),
@@ -59,6 +61,7 @@ impl From<TsigError> for UpdateError {
 }
 
 impl From<DynamicUpdateError> for UpdateError {
+    /// Convert a failure into a dynamic update response error.
     fn from(err: DynamicUpdateError) -> Self {
         match err {
             DynamicUpdateError::Refused(msg) => UpdateError::Refused(msg),
@@ -218,6 +221,7 @@ fn decode_prerequisite(rr: &UpdateRr, query_data: &[u8]) -> Result<Prerequisite,
     }
 }
 
+/// Convert one wire update record into a validated service operation.
 fn decode_update(rr: &UpdateRr, query_data: &[u8]) -> Result<UpdateOp, UpdateError> {
     let name = rr.name.clone();
     match rr.class {
@@ -264,6 +268,7 @@ fn decode_update(rr: &UpdateRr, query_data: &[u8]) -> Result<UpdateOp, UpdateErr
     }
 }
 
+/// Validate TTL, type, and data for the selected record-deletion mode.
 fn validate_delete_shape(rr: &UpdateRr, is_rrset_delete: bool) -> Result<(), UpdateError> {
     if rr.ttl != 0 {
         return Err(UpdateError::Refused(

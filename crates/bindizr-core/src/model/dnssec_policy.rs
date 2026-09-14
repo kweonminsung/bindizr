@@ -26,6 +26,7 @@ impl DnssecDenial {
 }
 
 impl std::fmt::Display for DnssecDenial {
+    /// Write the DNSSEC denial in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -34,6 +35,7 @@ impl std::fmt::Display for DnssecDenial {
 impl std::str::FromStr for DnssecDenial {
     type Err = String;
 
+    /// Parse a DNSSEC denial from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "nsec" => Ok(DnssecDenial::Nsec),
@@ -48,6 +50,8 @@ impl std::str::FromStr for DnssecDenial {
 
 impl TryFrom<String> for DnssecDenial {
     type Error = String;
+
+    /// Validate and convert the stored value into a DNSSEC denial.
     fn try_from(s: String) -> Result<Self, Self::Error> {
         s.parse()
     }

@@ -26,6 +26,7 @@ use crate::api::{
 pub(crate) struct ZoneApi;
 
 impl ZoneApi {
+    /// Build the zone API routes.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/zones", routing::get(list_zones))
@@ -55,6 +56,7 @@ impl ZoneApi {
     }
 }
 
+/// Report the sync state of every configured secondary for a zone.
 #[utoipa::path(
         get,
         path = "/zones/{name}/status",
@@ -71,7 +73,6 @@ impl ZoneApi {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Report the sync state of every configured secondary for a zone.
 pub(crate) async fn get_zone_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -85,6 +86,7 @@ pub(crate) struct ExportZoneQuery {
     pub(crate) signed: Option<bool>,
 }
 
+/// Render a zone as BIND master-file text.
 #[utoipa::path(
         get,
         path = "/zones/{name}/export",
@@ -102,7 +104,6 @@ pub(crate) struct ExportZoneQuery {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Render a zone as BIND master-file text.
 pub(crate) async fn export_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -118,6 +119,7 @@ pub(crate) async fn export_zone(
         .into_response())
 }
 
+/// List a zone's versions, newest serial first.
 #[utoipa::path(
         get,
         path = "/zones/{name}/versions",
@@ -137,7 +139,6 @@ pub(crate) async fn export_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List a zone's versions, newest serial first.
 pub(crate) async fn list_zone_versions(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -154,6 +155,7 @@ pub(crate) async fn list_zone_versions(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Get one version plus the reconstructed records at that serial.
 #[utoipa::path(
         get,
         path = "/zones/{name}/versions/{serial}",
@@ -171,7 +173,6 @@ pub(crate) async fn list_zone_versions(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Get one version plus the reconstructed records at that serial.
 pub(crate) async fn get_zone_version(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneVersionParam>,
@@ -180,6 +181,7 @@ pub(crate) async fn get_zone_version(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Roll a zone back to the state captured at a version serial.
 #[utoipa::path(
         post,
         path = "/zones/{name}/versions/{serial}/rollback",
@@ -201,7 +203,6 @@ pub(crate) async fn get_zone_version(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Roll a zone back to the state captured at a version serial.
 pub(crate) async fn rollback_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneVersionParam>,
@@ -242,6 +243,7 @@ pub(crate) struct VersionDiffQuery {
     to: Option<i32>,
 }
 
+/// Diff the records at two of a zone's serials.
 #[utoipa::path(
         get,
         path = "/zones/{name}/versions/diff",
@@ -260,7 +262,6 @@ pub(crate) struct VersionDiffQuery {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Diff the records at two of a zone's serials.
 pub(crate) async fn diff_zone_versions(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -270,6 +271,7 @@ pub(crate) async fn diff_zone_versions(
     Ok((StatusCode::OK, Json(diff)).into_response())
 }
 
+/// List DNS zones, optionally filtered and paginated.
 #[utoipa::path(
         get,
         path = "/zones",
@@ -303,7 +305,6 @@ pub(crate) async fn diff_zone_versions(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List DNS zones, optionally filtered and paginated.
 pub(crate) async fn list_zones(
     RequestCaller(caller): RequestCaller,
     Query(mut query): Query<GetZonesFilter>,
@@ -313,6 +314,7 @@ pub(crate) async fn list_zones(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Get a single DNS zone, optionally including its records.
 #[utoipa::path(
         get,
         path = "/zones/{name}",
@@ -330,7 +332,6 @@ pub(crate) async fn list_zones(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Get a single DNS zone, optionally including its records.
 pub(crate) async fn get_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -353,6 +354,7 @@ pub(crate) async fn get_zone(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Create a new DNS zone.
 #[utoipa::path(
         post,
         path = "/zones",
@@ -369,7 +371,6 @@ pub(crate) async fn get_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Create a new DNS zone.
 pub(crate) async fn create_zone(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateZoneRequest>,
@@ -381,6 +382,7 @@ pub(crate) async fn create_zone(
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
+/// Update an existing DNS zone.
 #[utoipa::path(
         put,
         path = "/zones/{name}",
@@ -402,7 +404,6 @@ pub(crate) async fn create_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Update an existing DNS zone.
 pub(crate) async fn update_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -415,6 +416,7 @@ pub(crate) async fn update_zone(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Delete a DNS zone.
 #[utoipa::path(
         delete,
         path = "/zones/{name}",
@@ -431,7 +433,6 @@ pub(crate) async fn update_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Delete a DNS zone.
 pub(crate) async fn delete_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -443,6 +444,7 @@ pub(crate) async fn delete_zone(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Import records into a zone, reconciling them in one transaction.
 #[utoipa::path(
         post,
         path = "/zones/{name}/import",
@@ -464,7 +466,6 @@ pub(crate) async fn delete_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Import records into a zone, reconciling them in one transaction.
 pub(crate) async fn import_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,

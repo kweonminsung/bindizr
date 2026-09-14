@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::common::{TestApp, assert_cli_failure_contains};
 
+/// Verify that token create rejects duplicate name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn token_create_rejects_duplicate_name() {
@@ -12,6 +13,7 @@ async fn token_create_rejects_duplicate_name() {
     assert!(!output.status.success());
 }
 
+/// Verify token grant creation, listing, and revocation through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn token_grant_grants_revoke() {

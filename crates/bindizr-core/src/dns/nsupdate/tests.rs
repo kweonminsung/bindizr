@@ -15,6 +15,7 @@ use crate::{
     model::tsig_key::TsigAlgorithm,
 };
 
+/// Verify that `build_response` echoes request header and question.
 #[test]
 fn build_response_echoes_request_header_and_question() {
     let query = minimal_update_with_ztype(6);
@@ -31,6 +32,7 @@ fn build_response_echoes_request_header_and_question() {
     assert_eq!(msg.header_counts().arcount(), 0);
 }
 
+/// Verify that `build_response` signs with request mac chain.
 #[test]
 fn build_response_signs_with_request_mac_chain() {
     let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());

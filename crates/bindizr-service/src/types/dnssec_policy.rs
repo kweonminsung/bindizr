@@ -7,8 +7,8 @@ use utoipa::ToSchema;
 use crate::model::dnssec_policy::DnssecPolicy;
 
 /// Request body for creating a DNSSEC policy. The key layout, algorithm,
-/// and denial mode are fixed once created; every omitted field takes the
-/// built-in `default` policy's value.
+/// and denial mode are fixed once created. Omitted fields use the built-in
+/// defaults, independent of edits to the policy named `default`.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct CreateDnssecPolicyRequest {
     #[schema(example = "strict")]
@@ -79,6 +79,7 @@ pub struct GetDnssecPolicyResponse {
 }
 
 impl GetDnssecPolicyResponse {
+    /// Build a public response from a stored DNSSEC policy.
     pub fn from_policy(policy: &DnssecPolicy) -> Self {
         GetDnssecPolicyResponse {
             id: policy.id,

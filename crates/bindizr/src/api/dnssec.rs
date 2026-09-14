@@ -22,6 +22,7 @@ use crate::api::{
 pub(crate) struct DnssecApi;
 
 impl DnssecApi {
+    /// Build the DNSSEC API routes.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/zones/{name}/dnssec", routing::get(get_dnssec_status))
@@ -48,6 +49,7 @@ impl DnssecApi {
     }
 }
 
+/// Report the DNSSEC signing state of a zone.
 #[utoipa::path(
         get,
         path = "/zones/{name}/dnssec",
@@ -65,7 +67,6 @@ impl DnssecApi {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Report the DNSSEC signing state of a zone.
 pub(crate) async fn get_dnssec_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -75,6 +76,7 @@ pub(crate) async fn get_dnssec_status(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Enable DNSSEC for a zone: generate its signing keys and sign the zone.
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec",
@@ -96,7 +98,6 @@ pub(crate) async fn get_dnssec_status(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Enable DNSSEC for a zone: generate its signing key and sign the zone.
 pub(crate) async fn enable_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -118,6 +119,7 @@ pub(crate) struct DisableDnssecQuery {
     pub(crate) skip_ds_check: Option<bool>,
 }
 
+/// Disable DNSSEC for a zone.
 #[utoipa::path(
         delete,
         path = "/zones/{name}/dnssec",
@@ -137,7 +139,6 @@ pub(crate) struct DisableDnssecQuery {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Disable DNSSEC for a zone.
 pub(crate) async fn disable_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -150,6 +151,7 @@ pub(crate) async fn disable_dnssec(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Re-sign a zone from scratch, discarding stored signatures.
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/sign",
@@ -168,7 +170,6 @@ pub(crate) async fn disable_dnssec(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Re-sign a zone from scratch, discarding stored signatures.
 pub(crate) async fn sign_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -180,6 +181,7 @@ pub(crate) async fn sign_zone(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Start a key rollover: pre-publish a replacement key.
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/rollover",
@@ -201,7 +203,6 @@ pub(crate) async fn sign_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Start a key rollover: pre-publish a replacement key.
 pub(crate) async fn start_dnssec_rollover(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -218,6 +219,7 @@ pub(crate) struct DsSeenQuery {
     pub(crate) skip_holddown: Option<bool>,
 }
 
+/// Confirm the new DS is at the parent, promoting the pre-published key(s).
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/rollover/ds-seen",
@@ -239,7 +241,6 @@ pub(crate) struct DsSeenQuery {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Confirm the new DS is at the parent, promoting the pre-published key(s).
 pub(crate) async fn ds_seen_dnssec_rollover(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -256,6 +257,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Publish the RFC 8078 delete CDS/CDNSKEY pair.
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/withdraw",
@@ -275,7 +277,6 @@ pub(crate) async fn ds_seen_dnssec_rollover(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Publish the RFC 8078 delete CDS/CDNSKEY pair.
 pub(crate) async fn withdraw_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -285,6 +286,7 @@ pub(crate) async fn withdraw_dnssec(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Cancel a published DS withdrawal.
 #[utoipa::path(
         delete,
         path = "/zones/{name}/dnssec/withdraw",
@@ -304,7 +306,6 @@ pub(crate) async fn withdraw_dnssec(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Cancel a published DS withdrawal.
 pub(crate) async fn cancel_dnssec_withdrawal(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -314,6 +315,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Ask the parent zone whether it serves the zone's DS.
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/check-ds",
@@ -332,7 +334,6 @@ pub(crate) async fn cancel_dnssec_withdrawal(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Ask the parent zone whether it serves the zone's DS.
 pub(crate) async fn check_dnssec_ds(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -342,12 +343,13 @@ pub(crate) async fn check_dnssec_ds(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Change a zone's DNSSEC settings.
 #[utoipa::path(
         put,
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Change a zone's DNSSEC settings",
-        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy's (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.",
+        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy's (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys are removed after promotion and cache drain (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -363,7 +365,6 @@ pub(crate) async fn check_dnssec_ds(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Change a zone's DNSSEC settings.
 pub(crate) async fn update_dnssec_settings(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,

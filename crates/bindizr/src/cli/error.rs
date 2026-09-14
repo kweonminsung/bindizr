@@ -11,6 +11,7 @@ pub(crate) struct CliError {
 }
 
 impl From<String> for CliError {
+    /// Wrap a message as a CLI error.
     fn from(message: String) -> Self {
         CliError {
             code: None,
@@ -21,6 +22,7 @@ impl From<String> for CliError {
 }
 
 impl From<&str> for CliError {
+    /// Wrap a message as a CLI error.
     fn from(message: &str) -> Self {
         CliError {
             code: None,
@@ -151,6 +153,7 @@ impl CliError {
 mod tests {
     use super::*;
 
+    /// Verify that exit codes separate the classes a script branches on.
     #[test]
     fn exit_codes_separate_the_classes_a_script_branches_on() {
         let code = |code| {

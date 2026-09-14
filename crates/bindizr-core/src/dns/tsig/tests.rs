@@ -11,6 +11,7 @@ use crate::dns::nsupdate::parser::tests::minimal_update_with_ztype;
 
 pub(crate) const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
+/// Build a signing-key fixture for the test.
 pub(crate) fn test_key(algorithm: TsigAlgorithm) -> TsigKey {
     TsigKey {
         id: 1,
@@ -22,6 +23,7 @@ pub(crate) fn test_key(algorithm: TsigAlgorithm) -> TsigKey {
     }
 }
 
+/// Return the current Unix time for TSIG test messages.
 pub(crate) fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -29,6 +31,7 @@ pub(crate) fn now_secs() -> u64 {
         .as_secs()
 }
 
+/// Encode a DNS name for a test wire message.
 pub(crate) fn encode_name(name: &str) -> Vec<u8> {
     domain::base::Name::<Vec<u8>>::from_str(name)
         .unwrap()
@@ -36,11 +39,13 @@ pub(crate) fn encode_name(name: &str) -> Vec<u8> {
         .to_vec()
 }
 
+/// Encode a TSIG timestamp as six big-endian bytes.
 pub(crate) fn encode_u48(value: u64) -> [u8; 6] {
     let bytes = value.to_be_bytes();
     [bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]]
 }
 
+/// Sign test message bytes with the selected HMAC algorithm.
 pub(crate) fn hmac_sign(algorithm: TsigAlgorithm, data: &[u8]) -> Vec<u8> {
     macro_rules! sign_with {
         ($digest:ty) => {{
@@ -116,6 +121,7 @@ fn response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Vec<u8>) {
     )
 }
 
+/// Extract the DNS response from a TSIG verification failure.
 fn failed_response(err: TsigError) -> Vec<u8> {
     match err {
         TsigError::Failed { response, .. } => response,
@@ -123,6 +129,7 @@ fn failed_response(err: TsigError) -> Vec<u8> {
     }
 }
 
+/// Verify that `verify_tsig` accepts valid signatures for all algorithms.
 #[test]
 fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
     for algorithm in [
@@ -136,6 +143,7 @@ fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
     }
 }
 
+/// Verify that `verify_tsig` rejects tampered mac with badsig.
 #[test]
 fn verify_tsig_rejects_tampered_mac_with_badsig() {
     let mut query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
@@ -155,6 +163,7 @@ fn verify_tsig_rejects_tampered_mac_with_badsig() {
     assert!(mac.is_empty());
 }
 
+/// Verify that `verify_tsig` rejects original id mismatch with badsig.
 #[test]
 fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
     let mut query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
@@ -171,6 +180,7 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
     assert_eq!(error, TsigRcode::BADSIG);
 }
 
+/// Verify that `verify_tsig` rejects algorithm mismatch with badkey.
 #[test]
 fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
     let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
@@ -184,6 +194,7 @@ fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
     assert!(mac.is_empty());
 }
 
+/// Verify that `verify_tsig` rejects unknown key with badkey.
 #[test]
 fn verify_tsig_rejects_unknown_key_with_badkey() {
     let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
@@ -196,6 +207,7 @@ fn verify_tsig_rejects_unknown_key_with_badkey() {
     assert!(mac.is_empty());
 }
 
+/// Verify that `verify_tsig` rejects stale time with signed badtime.
 #[test]
 fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     let stale = now_secs() - 3600;

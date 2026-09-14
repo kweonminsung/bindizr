@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::common::TestApp;
 
+/// Verify DNSSEC policy management through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_policy_lifecycle_via_cli() {

@@ -3,6 +3,7 @@ use chrono::Duration;
 
 use super::*;
 
+/// Build a DNSSEC key fixture in the requested lifecycle state.
 fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible: DateTime<Utc>) -> DnssecKey {
     DnssecKey {
         id,
@@ -20,6 +21,7 @@ fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible: DateTime<U
     }
 }
 
+/// Verify that a retired key goes once its replacement signs the zone.
 #[test]
 fn a_retired_key_goes_once_its_replacement_signs_the_zone() {
     let now = Utc::now();
@@ -41,6 +43,7 @@ fn a_retired_key_goes_once_its_replacement_signs_the_zone() {
     assert_eq!(removable_key_ids(&keys, now), [1]);
 }
 
+/// Verify that a retired key waits out its hold down.
 #[test]
 fn a_retired_key_waits_out_its_hold_down() {
     // eligible_at is stamped at the transition, so caches may still be
@@ -64,10 +67,11 @@ fn a_retired_key_waits_out_its_hold_down() {
     assert!(removable_key_ids(&keys, now).is_empty());
 }
 
+/// Verify that a retired key stays while its replacement is only published.
 #[test]
 fn a_retired_key_stays_while_its_replacement_is_only_published() {
-    // A published key signs no zone data, so dropping the retired one
-    // would leave the zone's signatures uncovered.
+    // Keeping this algorithm requires an active successor; publication alone
+    // does not confirm that the replacement is ready to take over.
     let now = Utc::now();
     let keys = [
         key(
@@ -87,6 +91,7 @@ fn a_retired_key_stays_while_its_replacement_is_only_published() {
     assert!(removable_key_ids(&keys, now).is_empty());
 }
 
+/// Verify that a KSK alone cannot keep its algorithm alive.
 #[test]
 fn a_ksk_alone_cannot_keep_its_algorithm_alive() {
     // Only a CSK or ZSK signs zone data; an active KSK covers the DNSKEY
@@ -110,6 +115,7 @@ fn a_ksk_alone_cannot_keep_its_algorithm_alive() {
     assert!(removable_key_ids(&keys, now).is_empty());
 }
 
+/// Verify that an algorithm whose keys have all retired leaves together.
 #[test]
 fn an_algorithm_whose_keys_have_all_retired_leaves_together() {
     // RFC 6840, Section 5.11: an algorithm's DNSKEYs and its signatures
@@ -140,6 +146,7 @@ fn an_algorithm_whose_keys_have_all_retired_leaves_together() {
     assert_eq!(removable_key_ids(&keys, now), [1, 2]);
 }
 
+/// Verify that one key of a retiring algorithm still inside its hold down holds the rest.
 #[test]
 fn one_key_of_a_retiring_algorithm_still_inside_its_hold_down_holds_the_rest() {
     let now = Utc::now();

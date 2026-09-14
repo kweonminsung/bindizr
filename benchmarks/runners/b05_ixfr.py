@@ -1,8 +1,7 @@
 """Benchmark 5 — IXFR Performance.
 
-Establishes a baseline zone, records its SOA serial, applies a batch of changes
-(1 / 10 / 100 / 1000 records), waits for the serial to advance, then requests an
-incremental transfer (IXFR=baseline) and measures how much data moves.
+Establishes a baseline zone, records its SOA serial, applies each configured
+change batch, then waits for propagation before measuring IXFR from that serial.
 
 A well-behaved incremental server sends only the delta; a server without real
 IXFR falls back to a full AXFR — which this benchmark surfaces as a large
@@ -26,6 +25,7 @@ BASELINE = 1000
 
 
 def _serial(zone, host, port):
+    """Read a zone's SOA serial from the transfer endpoint."""
     ok, _, out = dnsutil.dig(zone, "SOA", host, port)
     if ok and len(out.split()) >= 3:
         try:
@@ -36,6 +36,7 @@ def _serial(zone, host, port):
 
 
 async def run(adapter, cfg, ctx) -> list:
+    """Measure incremental transfers after each configured change batch propagates."""
     zone = ctx["zone"]
     xe = adapter.xfr_endpoint()
     loop = asyncio.get_event_loop()

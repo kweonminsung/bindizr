@@ -11,6 +11,7 @@ pub(crate) use parent::{FakeParent, ServedDs};
 use serde_json::{Value, json};
 pub(crate) use transfer::{TransferOutcome, axfr};
 
+/// Convert an API record value into the DNS comparison form.
 pub(super) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
     let value = record["value"].clone();
     if !matches!(record_type, 15 | 33) {
@@ -35,6 +36,7 @@ pub(super) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
     json!(format!("{priority} {target}"))
 }
 
+/// Extract the DNS owner and type used to identify a record.
 pub(super) fn dns_key_from_record(record: &Value) -> (String, u16) {
     let name = record["name"]
         .as_str()
@@ -47,6 +49,7 @@ pub(super) fn dns_key_from_record(record: &Value) -> (String, u16) {
     (name, record_type)
 }
 
+/// Map a supported record mnemonic to its wire type number.
 pub(super) fn dns_record_type(record_type: &str) -> Option<u16> {
     match record_type {
         "A" => Some(1),
@@ -68,6 +71,7 @@ pub(super) fn dns_record_type(record_type: &str) -> Option<u16> {
     }
 }
 
+/// Poll DNS until its answers match the expected record values.
 pub(super) async fn wait_for_dns_records(
     port: u16,
     name: &str,
@@ -112,6 +116,7 @@ pub(super) async fn wait_for_dns_records(
     );
 }
 
+/// Check whether a DNS failure represents an expected deleted zone.
 fn is_deleted_zone_absence(record_type: u16, expected: &[Value], error: &str) -> bool {
     record_type == 6 && expected.is_empty() && error.contains("REFUSED RCODE")
 }
@@ -122,6 +127,7 @@ pub(crate) struct DnsAnswer {
     pub(crate) value: Option<Value>,
 }
 
+/// Compare DNS answers with expected values for the record type.
 fn dns_values_match(record_type: u16, expected: &[Value], answers: &[DnsAnswer]) -> bool {
     if record_type == 6 {
         return true;
@@ -174,11 +180,13 @@ pub(crate) fn probe_zone_soa(port: u16, zone_name: &str) -> bool {
     matches!(query_dns_record(port, zone_name, 6), Ok(answers) if !answers.is_empty())
 }
 
+/// Query DNS and decode the returned answers.
 fn query_dns_record(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsAnswer>, String> {
     let (query_id, response) = exchange_dns_query(port, name, record_type)?;
     parse_dns_response(query_id, &response)
 }
 
+/// Query DNS and count the returned answers.
 fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usize, String> {
     let (query_id, response) = exchange_dns_query(port, name, record_type)?;
     let message = Message::from_octets(response.as_slice()).map_err(|e| e.to_string())?;
@@ -196,6 +204,7 @@ fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usi
     Ok(count)
 }
 
+/// Send a DNS query and return its ID and response bytes.
 fn exchange_dns_query(port: u16, name: &str, record_type: u16) -> Result<(u16, Vec<u8>), String> {
     let socket = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
     socket
@@ -214,6 +223,7 @@ fn exchange_dns_query(port: u16, name: &str, record_type: u16) -> Result<(u16, V
     Ok((query_id, response[..len].to_vec()))
 }
 
+/// Encode a DNS query for the requested owner and type.
 fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8>, String> {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
@@ -226,6 +236,7 @@ fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8
     Ok(question.finish())
 }
 
+/// Parse an absolute DNS name for a query.
 fn query_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     let trimmed = name.trim_end_matches('.');
     if trimmed.is_empty() {
@@ -234,6 +245,7 @@ fn query_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     Name::from_str(trimmed).map_err(|e| format!("invalid DNS name '{name}': {e}"))
 }
 
+/// Validate a DNS response and decode its answers.
 pub(crate) fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<DnsAnswer>, String> {
     let message = Message::from_octets(response).map_err(|e| e.to_string())?;
     if !check_response_header(query_id, &message)? {
@@ -290,6 +302,7 @@ fn check_response_header(query_id: u16, message: &Message<&[u8]>) -> Result<bool
     }
 }
 
+/// Convert supported wire record data into the comparison value.
 fn decode_dns_value(
     data: &AllRecordData<&[u8], ParsedName<&[u8]>>,
     record_type: u16,
@@ -370,6 +383,7 @@ fn decode_dns_value(
     Ok(Some(value))
 }
 
+/// Encode bytes as uppercase hexadecimal text.
 fn hex_upper(bytes: impl AsRef<[u8]>) -> String {
     bytes
         .as_ref()

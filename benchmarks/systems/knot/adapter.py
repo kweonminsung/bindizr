@@ -23,6 +23,7 @@ SERVER = "127.0.0.1"
 
 
 def _rdata(rec: dict) -> str:
+    """Render a benchmark record as zone-file record data."""
     t, v = rec["type"], rec["value"]
     if t == "MX":
         return f'{rec.get("priority", 10)} {v if v.endswith(".") else v + "."}'
@@ -42,19 +43,20 @@ class KnotAdapter(DnsAdapter):
     update_batch = 500
 
     def __init__(self, cfg: dict, project: str):
+        """Initialize the adapter with its benchmark configuration and project."""
         super().__init__(cfg, project)
         self.compose = dockerutil.Compose(HERE / "compose.yml", project)
         self.cid: str | None = None
 
     async def setup(self) -> None:
+        """Start the benchmark system and wait for it to become ready."""
         self.compose.down()  # clean slate: remove any leftovers from a prior run
         self.compose.up("knot", wait=False)
         self.cid = self.compose.container_id("knot")
         await self._wait_dns()
 
     async def _wait_dns(self, timeout: int = 90) -> None:
-        # Confirm the dynamic-update path works, not just that SOA answers, so
-        # prepopulation never races a cold server.
+        """Wait for SOA queries and dynamic updates before prepopulating the zone."""
         for _ in range(timeout * 2):
             code, _out = await self._dig(ZONE, "SOA")
             if code:
@@ -67,9 +69,11 @@ class KnotAdapter(DnsAdapter):
         raise RuntimeError("Knot DNS did not become ready")
 
     async def teardown(self) -> None:
+        """Stop the benchmark system and release its resources."""
         self.compose.down()
 
     async def _dig(self, name: str, rtype: str) -> tuple[bool, str]:
+        """Query a record through the system DNS endpoint."""
         proc = await asyncio.create_subprocess_exec(
             "dig", f"@{SERVER}", "-p", str(DNS_PORT), name, rtype, "+short",
             "+tries=1", "+time=3",
@@ -79,6 +83,7 @@ class KnotAdapter(DnsAdapter):
         return (bool(text), text)
 
     async def _nsupdate(self, script: str, retries: int = 5) -> bool:
+        """Send a dynamic update script to the benchmark system."""
         header = f"server {SERVER} {DNS_PORT}\nzone {ZONE}\n"
         payload = (header + script + "send\n").encode()
         delay = 0.05
@@ -97,6 +102,7 @@ class KnotAdapter(DnsAdapter):
         return False
 
     async def _knotc(self, *args: str) -> bool:
+        """Run a Knot control command in the benchmark container."""
         proc = await asyncio.create_subprocess_exec(
             "docker", "exec", self.cid, "knotc", *args,
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
@@ -107,9 +113,11 @@ class KnotAdapter(DnsAdapter):
 
     @staticmethod
     def _fqdn(name: str) -> str:
+        """Qualify a record owner with its zone name."""
         return f"{name}.{ZONE}."
 
     async def create_zone(self, zone: str) -> None:
+        """Create the zone used by the benchmark."""
         return  # the zone is declared in knot.conf
 
     async def delete_zone(self, zone: str) -> None:
@@ -140,6 +148,7 @@ class KnotAdapter(DnsAdapter):
                 self.bulk_errors += len(chunk)
 
     async def create_record(self, zone: str, rec: dict) -> str:
+        """Create a record and return its adapter-specific handle."""
         fqdn = self._fqdn(rec["name"])
         ok = await self._nsupdate(
             f'update add {fqdn} {rec.get("ttl", 3600)} {rec["type"]} {_rdata(rec)}\n')
@@ -149,11 +158,13 @@ class KnotAdapter(DnsAdapter):
         return f'{fqdn}|{rec["type"]}'
 
     async def get_record(self, zone: str, handle: str) -> bool:
+        """Check whether the record identified by the handle is present."""
         fqdn, rtype = handle.rsplit("|", 1)
         ok, _ = await self._dig(fqdn, rtype)
         return ok
 
     async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
+        """Replace the record identified by the handle with the supplied value."""
         fqdn, rtype = handle.rsplit("|", 1)
         return await self._nsupdate(
             f"update delete {fqdn} {rtype}\n"
@@ -161,8 +172,10 @@ class KnotAdapter(DnsAdapter):
             f'{_rdata({**rec, "type": rtype})}\n')
 
     async def delete_record(self, zone: str, handle: str) -> bool:
+        """Delete the record identified by the handle."""
         fqdn, rtype = handle.rsplit("|", 1)
         return await self._nsupdate(f"update delete {fqdn} {rtype}\n")
 
     def dns_endpoint(self) -> Endpoint:
+        """Return the DNS endpoint that serves the managed zone."""
         return Endpoint(SERVER, DNS_PORT)

@@ -21,6 +21,7 @@ use self::{
 use super::{axfr, catalog};
 use crate::dns::error::XfrError;
 
+/// Answer an IXFR request using journal changes or an AXFR fallback.
 pub(crate) async fn handle_ixfr(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,

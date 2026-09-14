@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify zone creation, retrieval, update, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_create_read_update_delete() {
@@ -57,7 +58,6 @@ async fn zone_create_read_update_delete() {
     let actual_updated_zone_name = body["zone"]["name"].as_str().unwrap();
     assert_eq!(actual_updated_zone_name, updated_zone_name);
 
-    // A partial update keeps every omitted field.
     let (status, body) = app
         .request(
             Method::PUT,
@@ -90,6 +90,7 @@ async fn zone_create_read_update_delete() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Verify serial initialization and rejection of out-of-range serials.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_seed_and_reject_out_of_range_serial() {
@@ -142,6 +143,7 @@ async fn zone_seed_and_reject_out_of_range_serial() {
     }
 }
 
+/// Verify that zone auto serial starts at one and update rejects explicit serial.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_auto_serial_starts_at_one_and_update_rejects_explicit_serial() {
@@ -192,6 +194,10 @@ async fn zone_auto_serial_starts_at_one_and_update_rejects_explicit_serial() {
     );
 }
 
+/// Verify that version responses and record updates use the apex presentation name.
+///
+/// Both must translate the empty stored owner: versions render it as `@`, and updates accept
+/// `@` or the zone name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn apex_rows_render_and_update_through_their_presentation_name() {

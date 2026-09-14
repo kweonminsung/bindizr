@@ -72,6 +72,7 @@ impl TestApp {
     }
 }
 
+/// Find a local port available for both TCP and UDP DNS.
 fn reserve_dns_port() -> u16 {
     for _ in 0..10 {
         let tcp =
@@ -101,6 +102,7 @@ fn write_test_certificate(dir: &Path) -> String {
     cert_pem
 }
 
+/// Build an HTTP client that trusts the test TLS certificate.
 fn tls_client(cert_pem: String) -> Client {
     Client::builder()
         .add_root_certificate(
@@ -111,6 +113,7 @@ fn tls_client(cert_pem: String) -> Client {
         .expect("build the TLS client")
 }
 
+/// Write a daemon configuration for the local test application.
 fn write_config(
     config_path: &Path,
     api_port: u16,

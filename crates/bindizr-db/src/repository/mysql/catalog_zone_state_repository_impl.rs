@@ -10,6 +10,8 @@ pub(crate) struct MySqlCatalogZoneStateRepository;
 
 #[async_trait]
 impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
+    /// Store a catalog digest and advance its serial when the digest changes in the current
+    /// transaction.
     async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

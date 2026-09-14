@@ -10,6 +10,7 @@ use super::{Cache, ZoneContent};
 
 const MAX_RECORDS: usize = 500_000;
 
+/// Build cached zone content with the requested record count.
 fn zone_content(records: usize) -> ZoneContent {
     let records = (0..records)
         .map(|i| Record {
@@ -29,6 +30,7 @@ fn zone_content(records: usize) -> ZoneContent {
     }
 }
 
+/// Verify that a zone larger than the budget is served uncached.
 #[test]
 fn a_zone_larger_than_the_budget_is_served_uncached() {
     let mut cache = Cache::default();
@@ -38,6 +40,7 @@ fn a_zone_larger_than_the_budget_is_served_uncached() {
     assert_eq!(cache.records, 0);
 }
 
+/// Verify that a zone that grows past the budget releases its old entry.
 #[test]
 fn a_zone_that_grows_past_the_budget_releases_its_old_entry() {
     let mut cache = Cache::default();
@@ -49,6 +52,7 @@ fn a_zone_that_grows_past_the_budget_releases_its_old_entry() {
     assert_eq!(cache.records, 0);
 }
 
+/// Verify that a second large zone evicts the first to fit.
 #[test]
 fn a_second_large_zone_evicts_the_first_to_fit() {
     let mut cache = Cache::default();
@@ -61,6 +65,7 @@ fn a_second_large_zone_evicts_the_first_to_fit() {
     assert!(cache.records <= MAX_RECORDS);
 }
 
+/// Verify that eviction drops the least recently used zone.
 #[test]
 fn eviction_drops_the_least_recently_used_zone() {
     let mut cache = Cache::default();
@@ -76,6 +81,7 @@ fn eviction_drops_the_least_recently_used_zone() {
     assert!(cache.lookup(3, 1).is_some());
 }
 
+/// Verify that restoring a zone replaces its records rather than adding them.
 #[test]
 fn restoring_a_zone_replaces_its_records_rather_than_adding_them() {
     let mut cache = Cache::default();

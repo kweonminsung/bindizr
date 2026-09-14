@@ -67,6 +67,7 @@ pub(crate) fn metrics() -> &'static AdapterMetrics {
 }
 
 impl AdapterMetrics {
+    /// Render the adapter's metrics in Prometheus text format.
     pub(crate) fn encode(&self) -> String {
         TextEncoder::new()
             .encode_to_string(&self.registry.gather())

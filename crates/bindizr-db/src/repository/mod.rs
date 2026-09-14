@@ -1,5 +1,4 @@
-//! Backend-agnostic repository traits and the factory that builds
-//! per-backend implementations; the transaction they run on is `tx`'s.
+//! Repository traits and their backend implementations; `tx` owns transactions.
 
 pub(crate) mod mysql;
 pub(crate) mod postgres;
@@ -110,36 +109,54 @@ pub struct DnssecRecordFilter {
 
 #[async_trait]
 pub trait ZoneRepository: Send + Sync {
+    /// Insert a zone in the current transaction.
     async fn create_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
+
+    /// Find a zone by ID in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
         lock_level: LockLevel,
     ) -> Result<Option<Zone>, DatabaseError>;
+
+    /// Find a zone by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError>;
+
+    /// Find a zone by name in the current transaction.
     async fn get_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
         lock_level: LockLevel,
     ) -> Result<Option<Zone>, DatabaseError>;
+
+    /// List all zones.
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError>;
+
+    /// List all zones in the current transaction.
     async fn list_all_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         lock_level: LockLevel,
     ) -> Result<Vec<Zone>, DatabaseError>;
+
+    /// List zones matching the filter.
     async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError>;
+
+    /// Count zones matching the filter.
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError>;
+
     /// Limit-1 probe of the zones table; health checks must stay cheap on
     /// large tables.
     async fn ping(&self) -> Result<(), DatabaseError>;
+
     /// Full-row update, except the DNSSEC-owned `dnssec_policy_id` and
     /// `parent_ns_addrs`: ordinary zone updates cannot clobber them.
     async fn update_tx(&self, tx: &mut RepositoryTx<'_>, zone: Zone)
     -> Result<Zone, DatabaseError>;
+
     /// Set only `dnssec_policy_id`, leaving the zone's other columns
     /// untouched; `None` marks the zone unsigned.
     async fn update_dnssec_policy_id_tx(
@@ -148,16 +165,19 @@ pub trait ZoneRepository: Send + Sync {
         zone_id: i32,
         dnssec_policy_id: Option<i32>,
     ) -> Result<(), DatabaseError>;
+
     /// Set only `parent_ns_addrs`, leaving the zone's other columns
-    /// untouched; `None` returns the zone to parent discovery.
+    /// untouched; `None` clears the configured parent servers.
     async fn update_parent_ns_addrs_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         parent_ns_addrs: Option<&str>,
     ) -> Result<(), DatabaseError>;
+
     /// Zones signed under the policy: the in-use check before a delete.
     async fn count_by_dnssec_policy_id(&self, dnssec_policy_id: i32) -> Result<u64, DatabaseError>;
+
     /// Bump only the serial, leaving the zone's other columns untouched.
     async fn update_serial_tx(
         &self,
@@ -165,50 +185,79 @@ pub trait ZoneRepository: Send + Sync {
         zone_id: i32,
         serial: i32,
     ) -> Result<(), DatabaseError>;
+
+    /// Delete a zone by ID in the current transaction.
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
 }
 
 #[async_trait]
 pub trait DnssecPolicyRepository: Send + Sync {
+    /// Insert a DNSSEC policy.
     async fn create(&self, policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError>;
+
+    /// Find a DNSSEC policy by ID in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
         lock_level: LockLevel,
     ) -> Result<Option<DnssecPolicy>, DatabaseError>;
+
+    /// Find a DNSSEC policy by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<DnssecPolicy>, DatabaseError>;
+
+    /// Find a DNSSEC policy by name in the current transaction.
     async fn get_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         name: &str,
         lock_level: LockLevel,
     ) -> Result<Option<DnssecPolicy>, DatabaseError>;
+
+    /// List all DNSSEC policies.
     async fn list_all(&self) -> Result<Vec<DnssecPolicy>, DatabaseError>;
-    /// Write the editable columns (the timing and hold-down fields); the
+
+    /// Write the editable timing fields; the
     /// key layout, algorithm, and denial mode are fixed at creation.
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         policy: DnssecPolicy,
     ) -> Result<DnssecPolicy, DatabaseError>;
+
+    /// Delete a DNSSEC policy by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 #[async_trait]
 pub trait TsigKeyRepository: Send + Sync {
+    /// Insert a TSIG key.
     async fn create(&self, key: TsigKey) -> Result<TsigKey, DatabaseError>;
+
+    /// Find a TSIG key by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError>;
+
+    /// List all TSIG keys.
     async fn list_all(&self) -> Result<Vec<TsigKey>, DatabaseError>;
+
+    /// Delete a TSIG key by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 #[async_trait]
 pub trait TsigGrantRepository: Send + Sync {
+    /// Insert a TSIG grant.
     async fn create(&self, grant: TsigGrant) -> Result<TsigGrant, DatabaseError>;
+
+    /// Find a TSIG grant by ID.
     async fn get(&self, id: i32) -> Result<Option<TsigGrant>, DatabaseError>;
+
+    /// List TSIG grants for a zone.
     async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<TsigGrant>, DatabaseError>;
+
+    /// List TSIG grants for a TSIG key.
     async fn list_by_key_id(&self, tsig_key_id: i32) -> Result<Vec<TsigGrant>, DatabaseError>;
+
     /// Grants giving `tsig_key_id` rights in `zone_id`, for nsupdate
     /// authorization inside the update transaction.
     async fn list_by_zone_id_and_key_id_tx(
@@ -218,7 +267,11 @@ pub trait TsigGrantRepository: Send + Sync {
         tsig_key_id: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<TsigGrant>, DatabaseError>;
+
+    /// Count TSIG grants for a TSIG key.
     async fn count_by_key_id(&self, tsig_key_id: i32) -> Result<u64, DatabaseError>;
+
+    /// Delete a TSIG grant by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
@@ -226,9 +279,15 @@ pub trait TsigGrantRepository: Send + Sync {
 /// [`TsigGrantRepository`].
 #[async_trait]
 pub trait TokenGrantRepository: Send + Sync {
+    /// Insert a token grant.
     async fn create(&self, grant: TokenGrant) -> Result<TokenGrant, DatabaseError>;
+
+    /// Find a token grant by ID.
     async fn get(&self, id: i32) -> Result<Option<TokenGrant>, DatabaseError>;
+
+    /// List token grants for a zone.
     async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<TokenGrant>, DatabaseError>;
+
     /// Grants giving `api_token_id` rights in `zone_id`, for write
     /// authorization inside the caller's transaction.
     async fn list_by_zone_id_and_token_id_tx(
@@ -238,19 +297,24 @@ pub trait TokenGrantRepository: Send + Sync {
         api_token_id: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<TokenGrant>, DatabaseError>;
+
     /// Every grant of `api_token_id`; drives what a scoped token can see and
     /// NOTIFY.
     async fn list_by_token_id(&self, api_token_id: i32) -> Result<Vec<TokenGrant>, DatabaseError>;
+
+    /// Delete a token grant by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
 #[async_trait]
 pub trait RecordRepository: Send + Sync {
+    /// Insert a record in the current transaction.
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError>;
+
     /// Insert many records in one chunked statement, returning them with their
     /// assigned ids in input order.
     async fn create_many_tx(
@@ -258,20 +322,30 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         records: &[Record],
     ) -> Result<Vec<Record>, DatabaseError>;
+
+    /// Find a record by ID.
     async fn get(&self, id: i32) -> Result<Option<Record>, DatabaseError>;
+
+    /// Find a record with its zone metadata.
     async fn get_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError>;
+
+    /// Find a record by ID in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
         lock_level: LockLevel,
     ) -> Result<Option<Record>, DatabaseError>;
+
+    /// List records for a zone in the current transaction.
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError>;
+
+    /// List records at an owner name in a zone in the current transaction.
     async fn list_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -279,6 +353,7 @@ pub trait RecordRepository: Send + Sync {
         name: &OwnerName,
         lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError>;
+
     /// One owner name holding a DS record but no NS record — a delegation a DS
     /// would orphan. Row-form name, so the apex reads as the empty string.
     /// Every zone mutation runs this, so `record_type` leads the predicate to
@@ -288,6 +363,7 @@ pub trait RecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Option<String>, DatabaseError>;
+
     /// Load records whose owner name is any of `names` (lowercased match). Used
     /// by bulk insert to fetch only the rows that could conflict with the batch.
     async fn list_by_names_tx(
@@ -297,16 +373,23 @@ pub trait RecordRepository: Send + Sync {
         names: &[OwnerName],
         lock_level: LockLevel,
     ) -> Result<Vec<Record>, DatabaseError>;
+
+    /// List matching records with their zone metadata.
     async fn list_by_filter_with_zone(
         &self,
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError>;
+
+    /// Count records matching the filter.
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError>;
+
+    /// Update a record in the current transaction.
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         record: Record,
     ) -> Result<Record, DatabaseError>;
+
     /// Delete many records in as few statements as the backend's bind limit allows.
     async fn delete_many_tx(
         &self,
@@ -323,6 +406,7 @@ pub trait ZoneChangeRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         changes: &[ZoneChange],
     ) -> Result<(), DatabaseError>;
+
     /// Journal rows with serial in `(from_serial, to_serial]` — the IXFR delta
     /// half-open interval: changes strictly after `from_serial`.
     async fn list_between_serials(
@@ -331,6 +415,7 @@ pub trait ZoneChangeRepository: Send + Sync {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
+
     /// How many rows `list_between_serials` would return, so a caller can
     /// weigh the delta before loading it.
     async fn count_between_serials(
@@ -339,8 +424,9 @@ pub trait ZoneChangeRepository: Send + Sync {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<u64, DatabaseError>;
-    /// For reads that must be consistent with a mutation in the same
-    /// transaction.
+
+    /// Read journal entries in `(from_serial, to_serial]` consistently with mutations in the
+    /// current transaction.
     async fn list_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -349,6 +435,7 @@ pub trait ZoneChangeRepository: Send + Sync {
         to_serial: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
+
     /// Prune journal rows older than `cutoff`, whole serials at a time so the
     /// remaining chain stays contiguous; requests below it fall back to AXFR.
     /// Returns the number of rows deleted.
@@ -361,16 +448,20 @@ pub trait ZoneChangeRepository: Send + Sync {
 
 #[async_trait]
 pub trait ZoneVersionRepository: Send + Sync {
+    /// Insert or update a zone version in the current transaction.
     async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         version: ZoneVersion,
     ) -> Result<ZoneVersion, DatabaseError>;
+
+    /// Find a zone version by zone ID and serial.
     async fn get_by_serial(
         &self,
         zone_id: i32,
         serial: i32,
     ) -> Result<Option<ZoneVersion>, DatabaseError>;
+
     /// Versions with serial in the closed interval `[from_serial, to_serial]`;
     /// an IXFR needs both endpoint SOAs, unlike the journal's half-open range.
     async fn list_in_serial_range(
@@ -379,6 +470,7 @@ pub trait ZoneVersionRepository: Send + Sync {
         from_serial: i32,
         to_serial: i32,
     ) -> Result<Vec<ZoneVersion>, DatabaseError>;
+
     /// List versions for a zone, newest serial first, paginated. With
     /// `user_changes_only`, serials whose journal holds only signer-generated
     /// changes are skipped; the current serial is always listed.
@@ -389,9 +481,11 @@ pub trait ZoneVersionRepository: Send + Sync {
         limit: u32,
         offset: u64,
     ) -> Result<Vec<ZoneVersion>, DatabaseError>;
+
+    /// Count zone versions using the requested change filter.
     async fn count(&self, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError>;
-    /// For reads that must be consistent with a mutation in the same
-    /// transaction.
+
+    /// Read a zone version by serial consistently with mutations in the current transaction.
     async fn get_by_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -399,6 +493,7 @@ pub trait ZoneVersionRepository: Send + Sync {
         serial: i32,
         lock_level: LockLevel,
     ) -> Result<Option<ZoneVersion>, DatabaseError>;
+
     /// Prune versions older than `cutoff`, always keeping each zone's newest
     /// (the IXFR up-to-date response reads it). Returns rows deleted.
     async fn prune_older_than_tx(
@@ -410,17 +505,21 @@ pub trait ZoneVersionRepository: Send + Sync {
 
 #[async_trait]
 pub trait DnssecKeyRepository: Send + Sync {
+    /// Insert a DNSSEC key in the current transaction.
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         key: DnssecKey,
     ) -> Result<DnssecKey, DatabaseError>;
+
+    /// List DNSSEC keys for a zone in the current transaction.
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<DnssecKey>, DatabaseError>;
+
     /// Keys in `state` whose stamped `eligible_at` deadline has passed `cutoff`:
     /// the rollover work list.
     async fn list_by_state_eligible_before(
@@ -428,6 +527,7 @@ pub trait DnssecKeyRepository: Send + Sync {
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<DnssecKey>, DatabaseError>;
+
     /// Zone ids holding a key of `role` sitting in `state` longer than the
     /// zone's policy's ZSK lifetime (0 exempts the zone): the
     /// scheduled-rollover work list.
@@ -437,7 +537,11 @@ pub trait DnssecKeyRepository: Send + Sync {
         state: DnssecKeyState,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError>;
+
+    /// Count DNSSEC keys in the requested lifecycle state.
     async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError>;
+
+    /// Update a key's lifecycle state and transition deadlines in the current transaction.
     async fn update_state_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -446,13 +550,19 @@ pub trait DnssecKeyRepository: Send + Sync {
         changed_at: DateTime<Utc>,
         eligible_at: DateTime<Utc>,
     ) -> Result<(), DatabaseError>;
+
+    /// Update the maximum TTL signed by a DNSSEC key in the current transaction.
     async fn update_max_signed_ttl_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         id: i32,
         max_signed_ttl: i32,
     ) -> Result<(), DatabaseError>;
+
+    /// Delete a DNSSEC key by ID in the current transaction.
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError>;
+
+    /// Delete all DNSSEC keys for a zone in the current transaction.
     async fn delete_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -470,12 +580,15 @@ pub trait DnssecRecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         records: &[DnssecRecord],
     ) -> Result<(), DatabaseError>;
+
+    /// List derived DNSSEC records for a zone in the current transaction.
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         lock_level: LockLevel,
     ) -> Result<Vec<DnssecRecord>, DatabaseError>;
+
     /// Delete many derived records in as few statements as the backend's bind
     /// limit allows.
     async fn delete_many_tx(
@@ -483,46 +596,66 @@ pub trait DnssecRecordRepository: Send + Sync {
         tx: &mut RepositoryTx<'_>,
         ids: &[i32],
     ) -> Result<(), DatabaseError>;
+
+    /// Delete all derived DNSSEC records for a zone in the current transaction.
     async fn delete_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<(), DatabaseError>;
+
     /// Zones holding a signed view (any derived row): the signed-zone count.
     async fn count_zone_ids(&self) -> Result<u64, DatabaseError>;
+
     /// Zones holding an RRSIG that expires within their policy's re-sign
     /// window after `cutoff`: the re-sign work list.
     async fn list_zone_ids_expiring_within_refresh(
         &self,
         cutoff: DateTime<Utc>,
     ) -> Result<Vec<i32>, DatabaseError>;
+
     /// Rows expiring within their zone's policy's re-sign window after
     /// `cutoff`; only RRSIG rows carry `expires_at`.
     async fn count_expiring_within_refresh(
         &self,
         cutoff: DateTime<Utc>,
     ) -> Result<u64, DatabaseError>;
+
     /// Rows whose expiration has already passed `cutoff`: signatures no
     /// resolver will accept any more.
     async fn count_expired(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
+
+    /// List matching derived DNSSEC records with their zone metadata.
     async fn list_by_filter_with_zone(
         &self,
         filter: DnssecRecordFilter,
     ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError>;
+
+    /// Count derived DNSSEC records matching the filter.
     async fn count_by_filter(&self, filter: DnssecRecordFilter) -> Result<u64, DatabaseError>;
 }
 
 #[async_trait]
 pub trait ApiTokenRepository: Send + Sync {
+    /// Insert an API token.
     async fn create(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
+
+    /// Find an API token by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError>;
+
+    /// Find an API token by its stored token hash.
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError>;
+
+    /// List all API tokens.
     async fn list_all(&self) -> Result<Vec<ApiToken>, DatabaseError>;
+
     /// Writes only the mutable columns (`description`, `expires_at`,
     /// `last_used_at`); `name`, `token`, and `is_global` are fixed at create,
     /// so callers must pass them through unchanged for the echoed row to be
     /// truthful.
     async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError>;
+
+    /// Delete an API token by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
@@ -530,13 +663,18 @@ pub trait ApiTokenRepository: Send + Sync {
 /// publishes the RFC 8078 delete CDS/CDNSKEY pair instead of per-key ones.
 #[async_trait]
 pub trait DnssecWithdrawalRepository: Send + Sync {
+    /// Mark a zone for DNSSEC withdrawal in the current transaction.
     async fn create_tx(&self, tx: &mut RepositoryTx<'_>, zone_id: i32)
     -> Result<(), DatabaseError>;
+
+    /// Read a zone's DNSSEC withdrawal marker in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Option<i32>, DatabaseError>;
+
+    /// Clear a zone's DNSSEC withdrawal marker in the current transaction.
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, zone_id: i32)
     -> Result<(), DatabaseError>;
 }
@@ -557,6 +695,7 @@ pub trait CatalogZoneStateRepository: Send + Sync {
 pub(crate) struct RepositoryFactory;
 
 impl RepositoryFactory {
+    /// Create the zone repository for the configured database backend.
     pub(crate) fn create_zone_repository(pool: &DatabasePool) -> Box<dyn ZoneRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -571,6 +710,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the record repository for the configured database backend.
     pub(crate) fn create_record_repository(pool: &DatabasePool) -> Box<dyn RecordRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -585,6 +725,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the DNSSEC policy repository for the configured database backend.
     pub(crate) fn create_dnssec_policy_repository(
         pool: &DatabasePool,
     ) -> Box<dyn DnssecPolicyRepository> {
@@ -601,6 +742,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the TSIG key repository for the configured database backend.
     pub(crate) fn create_tsig_key_repository(pool: &DatabasePool) -> Box<dyn TsigKeyRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -615,6 +757,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the TSIG grant repository for the configured database backend.
     pub(crate) fn create_tsig_grant_repository(
         pool: &DatabasePool,
     ) -> Box<dyn TsigGrantRepository> {
@@ -631,6 +774,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the token grant repository for the configured database backend.
     pub(crate) fn create_token_grant_repository(
         pool: &DatabasePool,
     ) -> Box<dyn TokenGrantRepository> {
@@ -647,6 +791,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the API token repository for the configured database backend.
     pub(crate) fn create_api_token_repository(pool: &DatabasePool) -> Box<dyn ApiTokenRepository> {
         match pool {
             DatabasePool::MySQL(mysql_pool) => {
@@ -661,6 +806,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the zone change repository for the configured database backend.
     pub(crate) fn create_zone_change_repository(
         pool: &DatabasePool,
     ) -> Box<dyn ZoneChangeRepository> {
@@ -677,6 +823,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the zone version repository for the configured database backend.
     pub(crate) fn create_zone_version_repository(
         pool: &DatabasePool,
     ) -> Box<dyn ZoneVersionRepository> {
@@ -693,6 +840,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the catalog zone state repository for the configured database backend.
     pub(crate) fn create_catalog_zone_state_repository(
         pool: &DatabasePool,
     ) -> Box<dyn CatalogZoneStateRepository> {
@@ -703,6 +851,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the DNSSEC withdrawal repository for the configured database backend.
     pub(crate) fn create_dnssec_withdrawal_repository(
         pool: &DatabasePool,
     ) -> Box<dyn DnssecWithdrawalRepository> {
@@ -713,6 +862,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the DNSSEC key repository for the configured database backend.
     pub(crate) fn create_dnssec_key_repository(
         pool: &DatabasePool,
     ) -> Box<dyn DnssecKeyRepository> {
@@ -729,6 +879,7 @@ impl RepositoryFactory {
         }
     }
 
+    /// Create the DNSSEC record repository for the configured database backend.
     pub(crate) fn create_dnssec_record_repository(
         pool: &DatabasePool,
     ) -> Box<dyn DnssecRecordRepository> {

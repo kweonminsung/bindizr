@@ -257,6 +257,7 @@ impl GetRecordResponse {
         }
     }
 
+    /// Build a record response using the record and its zone metadata.
     pub fn from_record_with_zone(record: &RecordWithZone) -> Self {
         Self::from_record_and_zone_name(&record.record(), &record.zone_name)
     }
@@ -280,6 +281,6 @@ pub struct BulkRecordsResponse {
     #[schema(example = 3)]
     pub inserted: usize,
     pub records: Vec<GetRecordResponse>,
-    /// The insert as a record diff (all additions), for previewing the change.
+    /// Dry-run diff; adding a value at an existing name and type is a changed group.
     pub diff: RecordDiff,
 }

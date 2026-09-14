@@ -18,6 +18,7 @@ fi
 HOST="${1:-${BINDIZR_DNS_HOST:-127.0.0.1}}"
 PORT="${2:-${BINDIZR_DNS_PORT:-53}}"
 
+# Report an invalid primary-server host and stop setup.
 invalid_host() {
     echo "Invalid host: $HOST (expected an IPv4 address)"
     exit 1
@@ -48,12 +49,12 @@ fi
 echo "Configuring BIND for bindizr at $HOST port $PORT"
 
 ##################################
-# 1. Clean up previous broken syntax
+# 1. Remove directives from earlier runs
 ##################################
 echo "Cleaning up broken syntax..."
 
-# Remove previously inserted allow-notify, ixfr-from-differences, and catalog-zones;
-# host/port match generically so re-runs with a new address replace them.
+# Remove matching directives before insertion so reruns replace them;
+# the host/port patterns also match when the configured endpoint changes.
 perl -0777 -pi -e 's/^[ \t]*allow-notify \{ (?:127\.0\.0\.1|any|key "[^"]+"); \};\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*ixfr-from-differences yes;\r?\n//gm' "$OPTIONS_FILE"
 perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" \{\r?\n[ \t]*default-primaries \{ [^ ;]+ port [0-9]+; \};\r?\n[ \t]*\};\r?\n[ \t]*\};\r?\n//gm' "$OPTIONS_FILE"
@@ -63,7 +64,7 @@ perl -0777 -pi -e 's/^[ \t]*catalog-zones \{\r?\n[ \t]*zone "catalog\.bind" defa
 perl -0777 -pi -e 's/\r?\n?# managed by bindizr setup_bind\.sh\r?\nzone "catalog\.bind" \{\r?\n(?:[ \t].*\r?\n)*\};\r?\n//gm' "$MAIN_CONF"
 
 ##################################
-# 2. Insert catalog-zones & allow-notify
+# 2. Update notification and catalog options
 ##################################
 echo "Updating $OPTIONS_FILE..."
 
@@ -74,7 +75,7 @@ BEGIN {
     added_notify = 0
 }
 {
-    # Check if we are entering the options block
+    # Enter the options block and add notification settings.
     if ($0 ~ /options[[:space:]]*\{/) {
         in_options = 1
         depth = 1
@@ -88,12 +89,12 @@ BEGIN {
     }
 
     if (in_options) {
-        # Track nested braces
+        # Nested ACL blocks must not be mistaken for the end of options.
         d_open = gsub(/\{/, "{", $0)
         d_close = gsub(/\}/, "}", $0)
         depth += (d_open - d_close)
 
-        # Insert correct catalog-zones syntax before options block closes
+        # Insert catalog-zones before the options block closes.
         if (depth == 0) {
             print "    catalog-zones {"
             print "        zone \"catalog.bind\" default-primaries { " host " port " port "; };"

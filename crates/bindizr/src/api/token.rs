@@ -23,6 +23,7 @@ use crate::api::{
 pub(crate) struct TokenApi;
 
 impl TokenApi {
+    /// Build the token API routes.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/tokens", routing::get(list_tokens))
@@ -48,6 +49,7 @@ pub(crate) struct TokenNameParam {
     pub(crate) name: String,
 }
 
+/// List all API tokens (secrets omitted).
 #[utoipa::path(
         get,
         path = "/tokens",
@@ -62,7 +64,6 @@ pub(crate) struct TokenNameParam {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List all API tokens (secrets omitted).
 pub(crate) async fn list_tokens(
     RequestCaller(caller): RequestCaller,
     Query(mut page): Query<PageFilter>,
@@ -72,6 +73,7 @@ pub(crate) async fn list_tokens(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Create an API token; the secret is returned once, here.
 #[utoipa::path(
         post,
         path = "/tokens",
@@ -89,7 +91,6 @@ pub(crate) async fn list_tokens(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Create an API token; the secret is returned once, here.
 pub(crate) async fn create_token(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTokenRequest>,
@@ -109,6 +110,7 @@ pub(crate) async fn create_token(
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
+/// Describe the token the request authenticated with.
 #[utoipa::path(
         get,
         path = "/tokens/self",
@@ -121,7 +123,6 @@ pub(crate) async fn create_token(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Describe the token the request authenticated with.
 pub(crate) async fn get_self_token(
     AuthenticatedToken(token): AuthenticatedToken,
 ) -> Result<Response, ApiError> {
@@ -131,6 +132,7 @@ pub(crate) async fn get_self_token(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// List the grants of the token the request authenticated with.
 #[utoipa::path(
         get,
         path = "/tokens/self/grants",
@@ -144,7 +146,6 @@ pub(crate) async fn get_self_token(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List the grants of the token the request authenticated with.
 pub(crate) async fn list_self_token_grants(
     AuthenticatedToken(token): AuthenticatedToken,
     Query(mut page): Query<PageFilter>,
@@ -154,6 +155,7 @@ pub(crate) async fn list_self_token_grants(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Delete an API token by name.
 #[utoipa::path(
         delete,
         path = "/tokens/{name}",
@@ -171,7 +173,6 @@ pub(crate) async fn list_self_token_grants(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Delete an API token by name.
 pub(crate) async fn delete_token(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TokenNameParam>,
@@ -183,6 +184,7 @@ pub(crate) async fn delete_token(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// List an API token's grants.
 #[utoipa::path(
         get,
         path = "/tokens/{name}/grants",
@@ -200,7 +202,6 @@ pub(crate) async fn delete_token(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List an API token's grants.
 pub(crate) async fn list_token_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TokenNameParam>,
@@ -211,6 +212,7 @@ pub(crate) async fn list_token_grants(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Grant an API token record rights in a zone.
 #[utoipa::path(
         post,
         path = "/tokens/{name}/grants",
@@ -231,7 +233,6 @@ pub(crate) async fn list_token_grants(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Grant an API token record rights in a zone.
 pub(crate) async fn create_token_grant(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TokenNameParam>,
@@ -252,6 +253,7 @@ pub(crate) async fn create_token_grant(
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
+/// Revoke one of an API token's grants by grant id.
 #[utoipa::path(
         delete,
         path = "/tokens/{name}/grants/{id}",
@@ -269,7 +271,6 @@ pub(crate) async fn create_token_grant(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Revoke one of an API token's grants by grant id.
 pub(crate) async fn delete_token_grant(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<GrantIdParam>,
@@ -281,6 +282,7 @@ pub(crate) async fn delete_token_grant(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// List the API token grants that apply to a zone.
 #[utoipa::path(
         get,
         path = "/zones/{name}/token-grants",
@@ -298,7 +300,6 @@ pub(crate) async fn delete_token_grant(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List the API token grants that apply to a zone.
 pub(crate) async fn list_zone_token_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,

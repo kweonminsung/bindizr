@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify that record listings are scoped to the requested zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_scope_by_zone() {
@@ -84,6 +85,7 @@ async fn record_scope_by_zone() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Verify record filtering and pagination.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_filter_and_paginate() {
@@ -190,6 +192,7 @@ async fn record_filter_and_paginate() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Verify that record filter matches every spelling of an owner name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_filter_matches_every_spelling_of_an_owner_name() {
@@ -248,8 +251,10 @@ fn encode(value: &str) -> String {
         .collect()
 }
 
-// Rows hold the apex as the empty string, so `@` only reaches it once it is
-// mapped to that sentinel — there is no zone here to build an FQDN against.
+/// Verify that an apex filter works without a zone filter.
+///
+/// Without a zone to construct an FQDN, `@` must map to the empty-string owner stored in apex
+/// rows.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn apex_filter_finds_apex_records_without_a_zone_filter() {
@@ -285,6 +290,7 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
     );
 }
 
+/// Verify that empty name filter is no filter not the apex.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn empty_name_filter_is_no_filter_not_the_apex() {
@@ -330,8 +336,8 @@ async fn empty_name_filter_is_no_filter_not_the_apex() {
     assert!(count(&empty) > 1, "expected apex plus the two A records");
 }
 
-// Unescaped, these matched anything — and both are ordinary characters in the
-// rdata and names users search for.
+/// Verify that search treats SQL LIKE wildcards as literal characters in owner names and record
+/// values.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn search_treats_like_wildcards_as_literal_text() {
@@ -358,6 +364,7 @@ async fn search_treats_like_wildcards_as_literal_text() {
         assert_eq!(status, StatusCode::CREATED);
     }
 
+    /// Search a zone's records and collect the matching owner labels.
     async fn search(app: &TestApp, zone_name: &str, term: &str) -> Vec<String> {
         let q = term.replace('%', "%25").replace('_', "%5F");
         let (_, body) = app
@@ -392,6 +399,7 @@ async fn search_treats_like_wildcards_as_literal_text() {
     assert_eq!(search(&app, zone_name, "_").await, ["under"]);
 }
 
+/// Verify that record listing sorts by the field asked for.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_listing_sorts_by_the_field_asked_for() {

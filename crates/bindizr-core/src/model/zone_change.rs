@@ -40,6 +40,7 @@ pub enum ChangeOperation {
 }
 
 impl ChangeOperation {
+    /// Return the text representation of this change operation.
     pub fn as_str(self) -> &'static str {
         match self {
             ChangeOperation::Add => "ADD",
@@ -51,6 +52,7 @@ impl ChangeOperation {
 impl TryFrom<String> for ChangeOperation {
     type Error = String;
 
+    /// Validate and convert the stored value into a change operation.
     fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.as_str() {
             "ADD" => Ok(ChangeOperation::Add),
@@ -72,6 +74,7 @@ pub enum JournalRecordType {
 }
 
 impl JournalRecordType {
+    /// Return the text representation of this journal record type.
     pub fn as_str(&self) -> &'static str {
         match self {
             JournalRecordType::User(record_type) => record_type.as_str(),
@@ -82,6 +85,7 @@ impl JournalRecordType {
 }
 
 impl std::fmt::Display for JournalRecordType {
+    /// Write the journal record type in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -90,6 +94,7 @@ impl std::fmt::Display for JournalRecordType {
 impl TryFrom<String> for JournalRecordType {
     type Error = String;
 
+    /// Validate and convert the stored value into a journal record type.
     fn try_from(value: String) -> Result<Self, Self::Error> {
         if value.eq_ignore_ascii_case("SOA") {
             return Ok(JournalRecordType::Soa);
@@ -107,10 +112,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for ChangeOperation
 where
     String: sqlx::Type<DB>,
 {
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <String as sqlx::Type<DB>>::type_info()
     }
 
+    /// Check whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -120,6 +127,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for ChangeOperation
 where
     String: sqlx::Encode<'q, DB>,
 {
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
@@ -132,10 +140,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for JournalRecordType
 where
     String: sqlx::Type<DB>,
 {
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <String as sqlx::Type<DB>>::type_info()
     }
 
+    /// Check whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -145,6 +155,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for JournalRecordType
 where
     String: sqlx::Encode<'q, DB>,
 {
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,

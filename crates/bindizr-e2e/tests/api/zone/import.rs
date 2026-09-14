@@ -3,6 +3,7 @@ use serde_json::{Value, json};
 
 use crate::common::{TestApp, TestAppOptions};
 
+/// Populate a zone with records before testing an import.
 async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
     let (status, _) = app
         .request(
@@ -14,6 +15,7 @@ async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
     assert_eq!(status, StatusCode::CREATED);
 }
 
+/// Verify that zone-file import previews match the applied changes.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_dry_run_then_apply() {
@@ -82,6 +84,7 @@ async fn zone_import_zone_file_dry_run_then_apply() {
     assert_eq!(body["summary"]["unchanged"], 3);
 }
 
+/// Verify that replace imports reconcile all records in the zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_replace_mode() {
@@ -133,6 +136,7 @@ async fn zone_import_zone_file_replace_mode() {
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
 }
 
+/// Verify that zone import zone file upsert mode replaces records by name and type only.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_only() {
@@ -209,6 +213,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     assert_eq!(values(&body), vec!["192.0.2.9"]);
 }
 
+/// Verify that zone import zone file reconciles TTL.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_reconciles_ttl() {
@@ -289,6 +294,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
     assert_eq!(ttl_of(&body), 600);
 }
 
+/// Verify importing a zone from another DNS server through the API.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_from_server_over_http() {

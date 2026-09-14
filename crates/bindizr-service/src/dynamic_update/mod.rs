@@ -45,6 +45,7 @@ pub enum DynamicUpdateError {
 /// A service error the requester could fix is REFUSED; a backend fault is
 /// SERVFAIL.
 impl From<ServiceError> for DynamicUpdateError {
+    /// Map a service failure to the corresponding dynamic update error.
     fn from(err: ServiceError) -> Self {
         if err.code.http_status() < 500 {
             DynamicUpdateError::Refused(err.to_string())
@@ -108,6 +109,7 @@ pub enum UpdateOp {
 }
 
 impl UpdateOp {
+    /// Return the owner name targeted by this update operation.
     fn name(&self) -> &str {
         match self {
             UpdateOp::AddRr { name, .. }
@@ -258,6 +260,7 @@ async fn authorize_key(
     Ok(())
 }
 
+/// Apply one authorized dynamic update operation in the current transaction.
 async fn apply_op(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,

@@ -2,6 +2,7 @@ use bindizr_core::dns::name::ZoneName;
 
 use super::{DynamicUpdateError, parse_owner_in_zone};
 
+/// Verify that owner in zone reduces an in zone owner to its stored form.
 #[test]
 fn owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
     assert_eq!(
@@ -27,6 +28,7 @@ fn owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
     );
 }
 
+/// Verify that `owner_in_zone` rejects owners outside the zone.
 #[test]
 fn owner_in_zone_rejects_owners_outside_the_zone() {
     for owner in [

@@ -12,6 +12,7 @@ use crate::{
     model::{record::RecordType, tsig_key::TsigAlgorithm},
 };
 
+/// Verify that `encode_tcp_message` rejects oversized payload.
 #[test]
 fn encode_tcp_message_rejects_oversized_payload() {
     let message = vec![0; DNS_TCP_MAX_SIZE + 1];
@@ -19,6 +20,7 @@ fn encode_tcp_message_rejects_oversized_payload() {
     assert!(encode_tcp_message(&message).is_err());
 }
 
+/// Verify that overflowing answers split into multiple frames.
 #[test]
 fn overflowing_answers_split_into_multiple_frames() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
@@ -62,6 +64,7 @@ fn overflowing_answers_split_into_multiple_frames() {
     assert!(frame_count > 1);
 }
 
+/// Verify that `truncated_response` echoes the question with tc set.
 #[test]
 fn truncated_response_echoes_the_question_with_tc_set() {
     let mut builder = MessageBuilder::new_vec();
@@ -84,6 +87,7 @@ fn truncated_response_echoes_the_question_with_tc_set() {
     assert_eq!(&response[6..8], &0u16.to_be_bytes());
 }
 
+/// Verify that `is_response` separates a reply from a query.
 #[test]
 fn is_response_separates_a_reply_from_a_query() {
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
@@ -124,6 +128,7 @@ fn frame_message(frame: Vec<u8>) -> Vec<u8> {
     frame[2..].to_vec()
 }
 
+/// Verify that every envelope of a signed transfer carries a verifiable mac.
 #[test]
 fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
     let key = to_domain_key(&crate::dns::tsig::tests::test_key(
@@ -167,6 +172,7 @@ fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
     client.done().expect("the sequence did not close cleanly");
 }
 
+/// Verify that a signed message reserves room for its TSIG record.
 #[test]
 fn a_signed_message_reserves_room_for_its_tsig_record() {
     let key = to_domain_key(&crate::dns::tsig::tests::test_key(

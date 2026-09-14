@@ -41,6 +41,7 @@ pub enum ChangeSource {
 }
 
 impl ChangeSource {
+    /// Return the text representation of this change source.
     pub fn as_str(self) -> &'static str {
         match self {
             ChangeSource::Token => "token",
@@ -54,6 +55,7 @@ impl ChangeSource {
 impl TryFrom<String> for ChangeSource {
     type Error = String;
 
+    /// Validate and convert the stored value into a change source.
     fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.as_str() {
             "token" => Ok(ChangeSource::Token),

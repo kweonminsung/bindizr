@@ -58,6 +58,7 @@ pub enum DnssecRecordType {
 }
 
 impl DnssecRecordType {
+    /// Return the DNS wire type number for this derived record type.
     pub fn wire_type(self) -> u16 {
         match self {
             DnssecRecordType::Rrsig => 46,
@@ -70,6 +71,7 @@ impl DnssecRecordType {
         }
     }
 
+    /// Return the text representation of this DNSSEC record type.
     pub fn as_str(self) -> &'static str {
         match self {
             DnssecRecordType::Rrsig => "RRSIG",
@@ -84,6 +86,7 @@ impl DnssecRecordType {
 }
 
 impl std::fmt::Display for DnssecRecordType {
+    /// Write the DNSSEC record type in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -92,6 +95,7 @@ impl std::fmt::Display for DnssecRecordType {
 impl TryFrom<i32> for DnssecRecordType {
     type Error = String;
 
+    /// Validate and convert the stored value into a DNSSEC record type.
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
             46 => Ok(DnssecRecordType::Rrsig),
@@ -109,6 +113,7 @@ impl TryFrom<i32> for DnssecRecordType {
 impl std::str::FromStr for DnssecRecordType {
     type Err = String;
 
+    /// Parse a DNSSEC record type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "RRSIG" => Ok(DnssecRecordType::Rrsig),
@@ -127,10 +132,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for DnssecRecordType
 where
     i32: sqlx::Type<DB>,
 {
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <i32 as sqlx::Type<DB>>::type_info()
     }
 
+    /// Check whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <i32 as sqlx::Type<DB>>::compatible(ty)
     }
@@ -140,6 +147,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for DnssecRecordType
 where
     i32: sqlx::Encode<'q, DB>,
 {
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,

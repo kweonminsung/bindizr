@@ -63,6 +63,7 @@ impl<'a> NaptrRecordValue<'a> {
         Rdata::new(rdata)
     }
 
+    /// Validate the fields of this NAPTR value.
     pub fn validate(&self) -> Result<(), String> {
         // The replacement is a name or the root, which ends the rewrite chain.
         if self.replacement == "." {
@@ -72,6 +73,7 @@ impl<'a> NaptrRecordValue<'a> {
         validate_domain_record_value("NAPTR record replacement", self.replacement)
     }
 
+    /// Render the NAPTR value in canonical text form.
     pub fn canonical(&self) -> String {
         format!(
             "{} {} {} {} {} {}",
@@ -125,6 +127,7 @@ fn split_field<'a>(field: &str, input: &'a str) -> Result<(&'a str, &'a str), St
 mod tests {
     use super::{NaptrRecordValue, to_naptr_presentation};
 
+    /// Verify NAPTR parsing and replacement-name canonicalization.
     #[test]
     fn parses_the_presentation_form_and_canonicalizes_the_replacement() {
         let parsed =
@@ -137,6 +140,7 @@ mod tests {
         );
     }
 
+    /// Verify that a root replacement ends the rewrite chain.
     #[test]
     fn a_root_replacement_ends_the_rewrite_chain() {
         let value = "200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" .";
@@ -146,6 +150,7 @@ mod tests {
         assert_eq!(parsed.canonical(), value);
     }
 
+    /// Verify conversion of NAPTR wire data into its stored form.
     #[test]
     fn reads_a_wire_record_back_into_the_stored_form() {
         assert_eq!(
@@ -158,6 +163,7 @@ mod tests {
         );
     }
 
+    /// Verify that a regexp may carry quotes and escapes.
     #[test]
     fn a_regexp_may_carry_quotes_and_escapes() {
         let parsed = NaptrRecordValue::parse(r#"1 1 "u" "E2U+sip" "!\"a\"!sip:b!" ."#).unwrap();
@@ -165,6 +171,7 @@ mod tests {
         assert_eq!(parsed.canonical(), r#"1 1 "u" "E2U+sip" "!\"a\"!sip:b!" ."#);
     }
 
+    /// Verify rejection of NAPTR values with missing fields.
     #[test]
     fn rejects_a_value_missing_a_field() {
         for value in [

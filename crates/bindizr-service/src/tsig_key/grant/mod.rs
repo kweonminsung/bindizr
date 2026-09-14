@@ -1,5 +1,5 @@
-//! nsupdate grants for TSIG keys, in the spirit of BIND's `update-policy`.
-//! A grant belongs to its key and names the zone it covers.
+//! Zone grants for TSIG keys: name/type scopes for updates, whole-zone grants
+//! for transfers, and optional read-only access.
 
 use std::collections::HashMap;
 
@@ -21,7 +21,7 @@ use crate::{
     zone::ZoneService,
 };
 
-/// Grants and revokes zone nsupdate rights for TSIG keys.
+/// Grants and revokes update and transfer rights for TSIG keys.
 pub struct TsigGrantService;
 
 impl TsigGrantService {

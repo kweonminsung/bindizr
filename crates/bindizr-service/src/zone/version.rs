@@ -58,8 +58,8 @@ impl ZoneService {
         Self::save_version_tx(tx, zone, new_serial, subject).await
     }
 
-    /// A DS names a child zone's key (RFC 4034, Section 5), so it may only
-    /// stand at a delegation: every name holding a DS must also hold NS.
+    /// Reject DS records without an NS delegation at the same owner: a DS identifies a child
+    /// zone's key (RFC 4034, Section 5).
     async fn validate_delegations_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,

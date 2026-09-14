@@ -65,6 +65,8 @@ impl ExternalDnsService {
                 .await?
                 .ok_or_else(|| ServiceError::zone_not_found(zone_name.as_str()))?;
 
+                // Authorize the requested operations before idempotent pairs cancel;
+                // a no-op must not bypass grants or reveal existing records.
                 let writes: Vec<RecordWrite<'_>> = ops
                     .adds
                     .iter()

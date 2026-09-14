@@ -10,7 +10,7 @@ use crate::socket::{
     types::{DaemonResponse, DnssecPolicyNameParams, UpdateDnssecPolicyParams},
 };
 
-/// Handle the `DnssecPolicyCreate` command by creating a policy.
+/// Create DNSSEC policy from the control request.
 pub(crate) async fn create_dnssec_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -26,7 +26,7 @@ pub(crate) async fn create_dnssec_policy(
     })
 }
 
-/// Handle the `DnssecPolicyList` command by returning every policy.
+/// List the requested DNSSEC policies.
 pub(crate) async fn list_dnssec_policies() -> Result<DaemonResponse, ServiceError> {
     let response = DnssecPolicyService::list(&Caller::Global, PageFilter::default()).await?;
 
@@ -36,7 +36,7 @@ pub(crate) async fn list_dnssec_policies() -> Result<DaemonResponse, ServiceErro
     })
 }
 
-/// Handle the `DnssecPolicyGet` command by returning one policy.
+/// Get the requested DNSSEC policy.
 pub(crate) async fn get_dnssec_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -52,7 +52,7 @@ pub(crate) async fn get_dnssec_policy(
     })
 }
 
-/// Handle the `DnssecPolicyUpdate` command by editing a policy's timing.
+/// Update the requested DNSSEC policy.
 pub(crate) async fn update_dnssec_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -68,7 +68,7 @@ pub(crate) async fn update_dnssec_policy(
     })
 }
 
-/// Handle the `DnssecPolicyDelete` command by deleting an unused policy.
+/// Delete the requested DNSSEC policy.
 pub(crate) async fn delete_dnssec_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {

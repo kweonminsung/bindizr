@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify that record delete matching moves the zone by one serial.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_delete_matching_moves_the_zone_by_one_serial() {
@@ -94,6 +95,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     assert_eq!(serial_of(&app).await, before + 1);
 }
 
+/// Verify that record delete matching refuses what would widen it.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_delete_matching_refuses_what_would_widen_it() {

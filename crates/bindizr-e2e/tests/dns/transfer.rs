@@ -15,6 +15,7 @@ async fn transfer_app() -> TestApp {
     .await
 }
 
+/// Create a TSIG key fixture with the requested global access.
 async fn create_key(app: &TestApp, name: &str, global: bool) -> SigningKey {
     let mut args = vec!["tsig-key", "create", "--name", name];
     if global {
@@ -35,6 +36,7 @@ async fn create_key(app: &TestApp, name: &str, global: bool) -> SigningKey {
     }
 }
 
+/// Extract the received record count from a successful transfer.
 fn records(outcome: TransferOutcome) -> usize {
     match outcome {
         TransferOutcome::Records(count) => count,
@@ -42,6 +44,7 @@ fn records(outcome: TransferOutcome) -> usize {
     }
 }
 
+/// Extract the refusal code from a rejected transfer.
 fn refusal(outcome: TransferOutcome) -> Rcode {
     match outcome {
         TransferOutcome::Refused(rcode) => rcode,
@@ -49,6 +52,7 @@ fn refusal(outcome: TransferOutcome) -> Rcode {
     }
 }
 
+/// Verify that an unsigned transfer still runs under the address acl.
 #[tokio::test]
 #[serial]
 async fn an_unsigned_transfer_still_runs_under_the_address_acl() {
@@ -63,6 +67,7 @@ async fn an_unsigned_transfer_still_runs_under_the_address_acl() {
     );
 }
 
+/// Verify that a signed transfer answers under the key that asked.
 #[tokio::test]
 #[serial]
 async fn a_signed_transfer_answers_under_the_key_that_asked() {
@@ -77,6 +82,7 @@ async fn a_signed_transfer_answers_under_the_key_that_asked() {
     assert!(records(outcome) >= 3);
 }
 
+/// Verify that a key transfers only the zones it is granted whole.
 #[tokio::test]
 #[serial]
 async fn a_key_transfers_only_the_zones_it_is_granted_whole() {
@@ -111,6 +117,7 @@ async fn a_key_transfers_only_the_zones_it_is_granted_whole() {
     }
 }
 
+/// Verify that a transfer only grant pulls the zone without changing it.
 #[tokio::test]
 #[serial]
 async fn a_transfer_only_grant_pulls_the_zone_without_changing_it() {
@@ -139,6 +146,7 @@ async fn a_transfer_only_grant_pulls_the_zone_without_changing_it() {
     assert_eq!(rcode, Rcode::REFUSED);
 }
 
+/// Verify that an unknown key is refused rather than falling back to the address.
 #[tokio::test]
 #[serial]
 async fn an_unknown_key_is_refused_rather_than_falling_back_to_the_address() {

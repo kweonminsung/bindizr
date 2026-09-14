@@ -108,6 +108,7 @@ impl RecordService {
         .await
     }
 
+    /// Preview or apply a zone-file reconciliation in its own transaction.
     async fn reconcile_zone_file(
         zone_name: &str,
         content: &str,
@@ -129,6 +130,7 @@ impl RecordService {
             timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
+            // Relative owners and omitted TTLs must use the zone this transaction locked.
             let parsed = parse_zone_file(content, zone.name.as_str(), zone.default_ttl);
             timings.parse_ms = elapsed_ms(t);
             let mut errors = parsed.errors;
@@ -324,9 +326,8 @@ impl RecordService {
                 skipped,
             };
 
-            // The diff is only shown on a dry-run preview, so keep it off the apply
-            // hot path (import benchmarks measure records/sec here). Skip it too when
-            // errors block the import, so the preview shows no un-appliable changes.
+            // Only a valid dry run needs a diff; failed validation must not preview
+            // changes that cannot be applied.
             let diff = if dry_run && errors.is_empty() {
                 plan.diff(&zone, &existing_records)
             } else {

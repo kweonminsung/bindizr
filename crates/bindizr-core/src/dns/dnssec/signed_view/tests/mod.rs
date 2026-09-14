@@ -17,6 +17,7 @@ use crate::{
     },
 };
 
+/// Build a signing-key fixture for the test.
 fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) -> DnssecKey {
     let mut key = generate_key(
         zone,
@@ -31,6 +32,7 @@ fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) ->
     key
 }
 
+/// Return the fixed reference time used by signing tests.
 fn fixed_now() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-08-18T00:00:00Z")
         .unwrap()
@@ -50,6 +52,7 @@ struct ComputeArgs<'a> {
     force: bool,
 }
 
+/// Compute a signed view using the test's signing parameters.
 fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
     let now = fixed_now();
     SignedViewParams {
@@ -71,6 +74,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
     .unwrap()
 }
 
+/// Return the default signature expiration for the test clock.
 fn default_expiration() -> DateTime<Utc> {
     fixed_now() + Duration::days(14)
 }
@@ -88,6 +92,7 @@ fn as_stored(records: &[DnssecRecord]) -> Vec<DnssecRecord> {
         .collect()
 }
 
+/// Select derived records of the requested DNSSEC type.
 fn records_of_type(records: &[DnssecRecord], record_type: DnssecRecordType) -> Vec<&DnssecRecord> {
     records
         .iter()
@@ -95,6 +100,7 @@ fn records_of_type(records: &[DnssecRecord], record_type: DnssecRecordType) -> V
         .collect()
 }
 
+/// Select signatures for the requested owner and covered type.
 fn rrsigs_covering<'a>(
     records: &'a [DnssecRecord],
     owner: &OwnerName,

@@ -33,6 +33,7 @@ GRAPHS_DIR = RESULTS_DIR / "graphs"
 
 
 def load(path: Path | None = None) -> dict[str, Any]:
+    """Load benchmark settings and apply environment overrides."""
     path = path or (ROOT / "config" / "settings.yaml")
     with open(path) as fh:
         cfg = yaml.safe_load(fh)
@@ -73,6 +74,7 @@ def load(path: Path | None = None) -> dict[str, Any]:
 
 
 def system_label(cfg: dict[str, Any], key: str) -> str:
+    """Return the display label for a benchmark system."""
     if key == "bind9_native":
         return "Native BIND9"
     return cfg["systems"].get(key, {}).get("label", key)

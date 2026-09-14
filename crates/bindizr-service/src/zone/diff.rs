@@ -50,13 +50,14 @@ fn group_rrsets(
     rrsets
 }
 
-/// Borrowed so the two sides can be compared without copying every identity.
+/// Collect sorted, borrowed record identities for comparison without copying their contents.
 fn rrset_identities(rrset: &[RrsetRecord]) -> Vec<&(String, i32)> {
     let mut ids: Vec<_> = rrset.iter().map(|r| &r.identity).collect();
     ids.sort();
     ids
 }
 
+/// Collect the record values belonging to an owner and type.
 fn rrset_values(rrset: Vec<RrsetRecord>) -> Vec<RecordDiffValue> {
     rrset.into_iter().map(|r| r.value).collect()
 }

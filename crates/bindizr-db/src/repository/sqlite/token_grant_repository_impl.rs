@@ -13,6 +13,7 @@ pub(crate) struct SqliteTokenGrantRepository {
 }
 
 impl SqliteTokenGrantRepository {
+    /// Create a repository for token grants using the supplied pool.
     pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -20,6 +21,7 @@ impl SqliteTokenGrantRepository {
 
 #[async_trait]
 impl TokenGrantRepository for SqliteTokenGrantRepository {
+    /// Insert a token grant.
     async fn create(&self, mut grant: TokenGrant) -> Result<TokenGrant, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -44,6 +46,7 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         Ok(grant)
     }
 
+    /// Find a token grant by ID.
     async fn get(&self, id: i32) -> Result<Option<TokenGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -57,6 +60,7 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         Ok(grant)
     }
 
+    /// List token grants for a zone.
     async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<TokenGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -70,6 +74,7 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         Ok(grants)
     }
 
+    /// List token grants for an API token in a zone in the current transaction.
     async fn list_by_zone_id_and_token_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -90,6 +95,7 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         Ok(grants)
     }
 
+    /// List token grants for an API token.
     async fn list_by_token_id(&self, api_token_id: i32) -> Result<Vec<TokenGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -103,6 +109,7 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         Ok(grants)
     }
 
+    /// Delete a token grant by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

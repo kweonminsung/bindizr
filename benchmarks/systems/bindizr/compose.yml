@@ -1,5 +1,5 @@
 # Bindizr + one BIND9 secondary. BIND resolves Bindizr's IP at startup (no fixed
-# subnet). Database backend is selectable for Benchmark 8 via env:
+# subnet). Database backend is selectable for Benchmark 7 via env:
 #   BINDIZR_DB_TYPE = sqlite (default) | mysql | postgresql
 # mysql/postgresql services are activated by matching COMPOSE_PROFILES.
 services:
@@ -10,8 +10,6 @@ services:
     image: bindizr:local
     environment:
       BINDIZR_DATABASE_TYPE: ${BINDIZR_DB_TYPE:-sqlite}
-      # ?mode=rwc lets sqlx create the DB file on first connect (create_if_missing
-      # is off by default in Bindizr, which otherwise expects a pre-existing file).
       BINDIZR_SQLITE_FILE_PATH: /var/lib/bindizr/bindizr.db?mode=rwc
       BINDIZR_MYSQL_SERVER_URL: ${BINDIZR_MYSQL_URL:-mysql://bindizr:bindizr@mysql:3306/bindizr}
       BINDIZR_POSTGRESQL_SERVER_URL: ${BINDIZR_PG_URL:-postgresql://bindizr:bindizr@postgres:5432/bindizr}
@@ -22,11 +20,11 @@ services:
       BINDIZR_DNS_PORT: "53"
       BINDIZR_SECONDARY_ADDRS: bind9:53
       BINDIZR_NOTIFY_AFTER_UPDATE: ${BINDIZR_NOTIFY_AFTER_UPDATE:-true}
-      # sync = reload/NOTIFY inline on the write path; async = queued to a
+      # sync = NOTIFY inline on the write path; async = queued to a
       # background worker that coalesces NOTIFYs per zone over notify_batch_ms.
       BINDIZR_NOTIFY_MODE: ${BINDIZR_NOTIFY_MODE:-sync}
       BINDIZR_NOTIFY_BATCH_MS: ${BINDIZR_NOTIFY_BATCH_MS:-50}
-      # Cache rendered zone records by serial so repeated AXFRs skip the DB read.
+      # Cache both stored record planes by serial so repeated AXFRs skip the DB read.
       BINDIZR_ZONE_CACHE: ${BINDIZR_ZONE_CACHE:-true}
       BINDIZR_NOTIFY_RETRIES: "3"
       BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
@@ -54,7 +52,7 @@ services:
     image: internetsystemsconsortium/bind9:9.21
     # Resolve Bindizr's (dynamic) IP at startup and template it into named.conf,
     # so no fixed subnet is needed (avoids subnet clashes when stacks run back to
-    # back, e.g. Benchmark 8's per-backend runs).
+    # back, e.g. Benchmark 7's per-backend runs).
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |

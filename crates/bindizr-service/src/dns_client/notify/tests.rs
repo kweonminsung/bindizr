@@ -20,10 +20,12 @@ fn notify_response(query_id: u16, flags: u16, qname: &str) -> Vec<u8> {
     response
 }
 
+/// Build the test zone or its DNS name.
 fn zone() -> Name<Vec<u8>> {
     Name::from_str("example.com").unwrap()
 }
 
+/// Verify that `validate_notify_response` accepts matching noerror response.
 #[test]
 fn validate_notify_response_accepts_matching_noerror_response() {
     // 0xa000 = QR set + opcode NOTIFY, NOERROR.
@@ -32,6 +34,7 @@ fn validate_notify_response_accepts_matching_noerror_response() {
     assert!(validate_notify_response(1234, &zone(), &response).is_ok());
 }
 
+/// Verify that `validate_notify_response` rejects id mismatch.
 #[test]
 fn validate_notify_response_rejects_id_mismatch() {
     let response = notify_response(1234, 0xa000, "example.com");
@@ -41,6 +44,7 @@ fn validate_notify_response_rejects_id_mismatch() {
     assert!(err.contains("ID mismatch"));
 }
 
+/// Verify that `validate_notify_response` rejects error rcode.
 #[test]
 fn validate_notify_response_rejects_error_rcode() {
     // 0xa005 adds RCODE 5 (REFUSED).
@@ -51,6 +55,7 @@ fn validate_notify_response_rejects_error_rcode() {
     assert!(err.contains("RCODE 5"));
 }
 
+/// Verify that `validate_notify_response` rejects another question.
 #[test]
 fn validate_notify_response_rejects_another_question() {
     let response = notify_response(1234, 0xa000, "other.com");

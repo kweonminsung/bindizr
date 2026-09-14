@@ -17,6 +17,7 @@ use crate::{
 const SOA_WIRE_TYPE: u16 = 6;
 
 impl DnsMessageBuilder {
+    /// Append the zone's synthesized SOA answer.
     pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), String> {
         let rdata = zone.soa_rdata(serial)?;
         self.add_raw_rdata(
@@ -112,6 +113,7 @@ impl DnsMessageBuilder {
         )
     }
 
+    /// Append a catalog membership PTR answer.
     pub fn add_catalog_ptr(&mut self, zone: &Zone, member_zone: &str) -> Result<(), String> {
         let member_id = crate::dns::zone_name_to_member_id(member_zone);
         let ptr_name = format!("{}.zones.{}.", member_id, zone.name);
@@ -125,6 +127,7 @@ impl DnsMessageBuilder {
         )
     }
 
+    /// Encode a stored record and append it as an answer.
     pub fn add_record(&mut self, record: &Record, zone_name: &ZoneName) -> Result<(), String> {
         self.add_record_parts(
             zone_name,

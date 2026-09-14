@@ -290,6 +290,7 @@ pub(crate) enum ImportMode {
 }
 
 impl From<ImportMode> for ServiceImportMode {
+    /// Convert the CLI import mode into the service import mode.
     fn from(mode: ImportMode) -> Self {
         match mode {
             ImportMode::Append => ServiceImportMode::Append,

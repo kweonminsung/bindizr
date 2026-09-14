@@ -30,6 +30,7 @@ pub struct ParsedQuery {
 }
 
 impl ParsedQuery {
+    /// Parse a DNS question and its optional IXFR serial.
     pub fn parse(data: &[u8]) -> Result<ParsedQuery, String> {
         let message = Message::from_octets(data)
             .map_err(|e| format!("Failed to parse DNS message: {}", e))?;
@@ -123,6 +124,7 @@ impl ParsedQuery {
     }
 }
 
+/// Read the client's serial from the IXFR authority SOA.
 fn extract_ixfr_serial(message: &Message<&[u8]>) -> Option<u32> {
     message
         .authority()

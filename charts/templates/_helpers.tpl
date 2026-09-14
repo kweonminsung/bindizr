@@ -1,7 +1,9 @@
+{{- /* Return the chart name with any configured override. */ -}}
 {{- define "bindizr-chart.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- /* Build the release-qualified resource name. */ -}}
 {{- define "bindizr-chart.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
@@ -15,6 +17,7 @@
 {{- end -}}
 {{- end -}}
 
+{{- /* Render the common chart and release labels. */ -}}
 {{- define "bindizr-chart.labels" -}}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 app.kubernetes.io/name: {{ include "bindizr-chart.name" . }}
@@ -23,11 +26,13 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
+{{- /* Render the stable labels used by resource selectors. */ -}}
 {{- define "bindizr-chart.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "bindizr-chart.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{- /* Choose the service account name for the release. */ -}}
 {{- define "bindizr-chart.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
 {{- default (include "bindizr-chart.fullname" .) .Values.serviceAccount.name -}}
@@ -47,18 +52,22 @@ per-pod headless names instead of the load-balanced service. */ -}}
 {{- end -}}
 {{- end -}}
 
+{{- /* Choose the secret containing the database connection URL. */ -}}
 {{- define "bindizr-chart.databaseSecretName" -}}
 {{- default (printf "%s-db" (include "bindizr-chart.fullname" .)) .Values.bindizr.database.existingSecret -}}
 {{- end -}}
 
+{{- /* Build the name of the bundled MySQL resources. */ -}}
 {{- define "bindizr-chart.mysql.fullname" -}}
 {{- printf "%s-mysql" (include "bindizr-chart.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- /* Build the name of the bundled PostgreSQL resources. */ -}}
 {{- define "bindizr-chart.postgresql.fullname" -}}
 {{- printf "%s-postgresql" (include "bindizr-chart.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- /* Build the database connection URL from explicit or bundled-server settings. */ -}}
 {{- define "bindizr-chart.databaseUrl" -}}
 {{- if .Values.bindizr.database.serverUrl -}}
 {{- .Values.bindizr.database.serverUrl -}}

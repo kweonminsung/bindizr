@@ -26,6 +26,7 @@ pub struct CreateTokenGrantRequest {
     pub can_write: bool,
 }
 
+/// Enable write access when a new grant omits the permission flag.
 fn default_can_write() -> bool {
     true
 }
@@ -49,6 +50,7 @@ pub struct GetTokenGrantResponse {
 }
 
 impl GetTokenGrantResponse {
+    /// Build a token-grant response with its token and zone names.
     pub fn from_grant(grant: &TokenGrantWithNames) -> Self {
         GetTokenGrantResponse {
             id: grant.grant.id,

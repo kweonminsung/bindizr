@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions};
 
+/// Create a zone fixture through the API.
 async fn create_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
         .request(
@@ -19,6 +20,7 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
     assert_eq!(status, StatusCode::CREATED);
 }
 
+/// Build a record creation request for authorization tests.
 fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> serde_json::Value {
     json!({
         "name": name,
@@ -28,6 +30,7 @@ fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> s
     })
 }
 
+/// Verify that scoped token sees and writes only granted zones.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_sees_and_writes_only_granted_zones() {
@@ -176,6 +179,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     assert_eq!(status, StatusCode::OK);
 }
 
+/// Verify that `token` grants enforce name patterns and types.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn token_grants_enforce_name_patterns_and_types() {
@@ -240,6 +244,7 @@ async fn token_grants_enforce_name_patterns_and_types() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
+/// Verify that scoped token without grants sees nothing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_without_grants_sees_nothing() {
@@ -271,6 +276,7 @@ async fn scoped_token_without_grants_sees_nothing() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Verify that ungranted bulk is refused before it can probe the zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
@@ -320,8 +326,10 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
     }
 }
 
-// A batch whose names all fail to parse lists no write, so the per-write check
-// has nothing to reject; the caller must still be turned away on the zone.
+/// Verify that zone authorization rejects an ungranted batch even when none of its names can be
+/// parsed.
+///
+/// Such a batch produces no write targets for the per-record authorization check.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
@@ -357,6 +365,7 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
     assert_eq!(body["code"], "ZONE_NOT_FOUND", "{body}");
 }
 
+/// Verify that global token grant management over HTTP.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn global_token_grant_management_over_http() {
@@ -438,6 +447,7 @@ async fn global_token_grant_management_over_http() {
     assert!(body["items"].as_array().unwrap().is_empty());
 }
 
+/// Verify that tokens self grants lists the bearers own grants.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tokens_self_grants_lists_the_bearers_own_grants() {
@@ -488,6 +498,7 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
     assert!(body["items"].as_array().unwrap().is_empty(), "{body}");
 }
 
+/// Verify that hidden and absent zones read alike whatever the spelling.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
@@ -532,6 +543,7 @@ async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
     }
 }
 
+/// Verify that a narrowed grant reads only what it may write.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn a_narrowed_grant_reads_only_what_it_may_write() {
@@ -622,6 +634,7 @@ async fn a_narrowed_grant_reads_only_what_it_may_write() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
+/// Verify that a read only grant reads the zone but cannot change it.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
@@ -674,6 +687,7 @@ async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
+/// Verify that a grants pattern and types narrow the count too.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn a_grants_pattern_and_types_narrow_the_count_too() {

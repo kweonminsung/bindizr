@@ -1,5 +1,6 @@
 use super::*;
 
+/// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
         id: 1,
@@ -20,6 +21,7 @@ fn test_zone() -> Zone {
     }
 }
 
+/// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
@@ -38,6 +40,7 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
     }
 }
 
+/// Verify that published key cosigns key RRsets but not zone data.
 #[test]
 fn published_key_cosigns_key_rrsets_but_not_zone_data() {
     let zone = test_zone();
@@ -88,6 +91,7 @@ fn published_key_cosigns_key_rrsets_but_not_zone_data() {
     );
 }
 
+/// Verify that retired key stays published but leaves the CDS set.
 #[test]
 fn retired_key_stays_published_but_leaves_the_cds_set() {
     let zone = test_zone();
@@ -135,6 +139,7 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
     assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
 }
 
+/// Verify that split keys partition key RRsets from zone data.
 #[test]
 fn split_keys_partition_key_rrsets_from_zone_data() {
     let zone = test_zone();
@@ -188,6 +193,7 @@ fn split_keys_partition_key_rrsets_from_zone_data() {
     assert_eq!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).len(), 1);
 }
 
+/// Verify that algorithm rollover double signs zone data while published.
 #[test]
 fn algorithm_rollover_double_signs_zone_data_while_published() {
     let zone = test_zone();
@@ -226,6 +232,7 @@ fn algorithm_rollover_double_signs_zone_data_while_published() {
     );
 }
 
+/// Verify that algorithm rollover keeps the retired old algorithm signing.
 #[test]
 fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
     let zone = test_zone();

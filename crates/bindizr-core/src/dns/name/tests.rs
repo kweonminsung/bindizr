@@ -3,10 +3,12 @@ use super::{
     to_lookup_name,
 };
 
+/// Build the test zone or its DNS name.
 fn zone() -> ZoneName {
     ZoneName::parse("test.example.com").unwrap()
 }
 
+/// Verify that `decode` keeps an escaped dot inside one label.
 #[test]
 fn decode_keeps_an_escaped_dot_inside_one_label() {
     assert_eq!(
@@ -19,6 +21,7 @@ fn decode_keeps_an_escaped_dot_inside_one_label() {
     );
 }
 
+/// Verify that `decode` resolves decimal escapes.
 #[test]
 fn decode_resolves_decimal_escapes() {
     // BIND writes `\DDD` for octets with no plain spelling, so one name can
@@ -33,6 +36,7 @@ fn decode_resolves_decimal_escapes() {
     );
 }
 
+/// Verify that an escaped trailing dot is label data not the root.
 #[test]
 fn an_escaped_trailing_dot_is_label_data_not_the_root() {
     // Trimming the dot off the text first would leave a dangling escape.
@@ -46,6 +50,7 @@ fn an_escaped_trailing_dot_is_label_data_not_the_root() {
     );
 }
 
+/// Verify that `decode` rejects malformed escapes.
 #[test]
 fn decode_rejects_malformed_escapes() {
     for (name, expected) in [
@@ -59,6 +64,7 @@ fn decode_rejects_malformed_escapes() {
     }
 }
 
+/// Verify that lookup name canonicalizes spelling and case.
 #[test]
 fn lookup_name_canonicalizes_spelling_and_case() {
     // Two spellings of one name must reach the database as one string: the
@@ -84,6 +90,7 @@ fn lookup_name_canonicalizes_spelling_and_case() {
     );
 }
 
+/// Verify that containment compares whole labels.
 #[test]
 fn containment_compares_whole_labels() {
     let labels = |name: &str| decode_name_labels(name).unwrap().0;
@@ -113,6 +120,7 @@ fn containment_compares_whole_labels() {
     ));
 }
 
+/// Verify that owner name parse reduces input to the stored form.
 #[test]
 fn owner_name_parse_reduces_input_to_the_stored_form() {
     let zone = zone();
@@ -147,6 +155,7 @@ fn owner_name_parse_reduces_input_to_the_stored_form() {
     );
 }
 
+/// Verify that owner name parse strips the zone suffix once.
 #[test]
 fn owner_name_parse_strips_the_zone_suffix_once() {
     let zone = ZoneName::parse("example.com").unwrap();
@@ -160,6 +169,7 @@ fn owner_name_parse_strips_the_zone_suffix_once() {
     );
 }
 
+/// Verify that owner name keeps an escaped dot as label data.
 #[test]
 fn owner_name_keeps_an_escaped_dot_as_label_data() {
     let zone = ZoneName::parse("example.com").unwrap();
@@ -182,6 +192,7 @@ fn owner_name_keeps_an_escaped_dot_as_label_data() {
     );
 }
 
+/// Verify that owner name parse enforces the length limit on both paths.
 #[test]
 fn owner_name_parse_enforces_the_length_limit_on_both_paths() {
     let zone = ZoneName::parse("example.com").unwrap();
@@ -199,6 +210,7 @@ fn owner_name_parse_enforces_the_length_limit_on_both_paths() {
     );
 }
 
+/// Verify that owner name parse rejects names outside the zone.
 #[test]
 fn owner_name_parse_rejects_names_outside_the_zone() {
     let zone = zone();
@@ -218,6 +230,7 @@ fn owner_name_parse_rejects_names_outside_the_zone() {
     }
 }
 
+/// Verify that owner name parse absolute never qualifies a foreign name.
 #[test]
 fn owner_name_parse_absolute_never_qualifies_a_foreign_name() {
     let zone = ZoneName::parse("example.com").unwrap();
@@ -241,6 +254,7 @@ fn owner_name_parse_absolute_never_qualifies_a_foreign_name() {
     );
 }
 
+/// Verify that owner name equality and hashing fold case.
 #[test]
 fn owner_name_equality_and_hashing_fold_case() {
     use std::collections::HashSet;
@@ -253,6 +267,7 @@ fn owner_name_equality_and_hashing_fold_case() {
     assert!(seen.contains(&OwnerName::from_row("www")));
 }
 
+/// Verify that owner name to fqdn resolves within its zone.
 #[test]
 fn owner_name_to_fqdn_resolves_within_its_zone() {
     let zone = zone();
@@ -268,6 +283,7 @@ fn owner_name_to_fqdn_resolves_within_its_zone() {
     );
 }
 
+/// Verify that owner name is same or under compares labels.
 #[test]
 fn owner_name_is_same_or_under_compares_labels() {
     let sub = OwnerName::from_row("sub");
@@ -279,6 +295,7 @@ fn owner_name_is_same_or_under_compares_labels() {
     assert!(!OwnerName::from_row(r"a\.sub").is_same_or_under(&sub));
 }
 
+/// Verify that zone name parse normalizes case and the trailing dot.
 #[test]
 fn zone_name_parse_normalizes_case_and_the_trailing_dot() {
     assert_eq!(
@@ -295,6 +312,7 @@ fn zone_name_parse_normalizes_case_and_the_trailing_dot() {
     );
 }
 
+/// Verify that zone name parse rejects malformed names.
 #[test]
 fn zone_name_parse_rejects_malformed_names() {
     for (value, expected) in [
@@ -327,9 +345,10 @@ fn zone_name_parse_rejects_malformed_names() {
     }
 }
 
-// The invariant the type rests on: whatever a constructor accepts comes back
-// unchanged through storage and through the wire. `@` broke the first and a
-// `\DDD` whitespace escape the second.
+/// Verify that every accepted owner name survives storage and wire encoding unchanged.
+///
+/// The apex sentinel and decimal whitespace escapes exercise the two encodings this invariant
+/// depends on.
 #[test]
 fn every_accepted_owner_name_survives_storage_and_the_wire() {
     let zone = zone();
@@ -365,8 +384,8 @@ fn every_accepted_owner_name_survives_storage_and_the_wire() {
     }
 }
 
-// Both owner constructors admit the same names; only how they treat a name
-// outside the zone differs.
+/// Verify that both owner constructors accept the same labels, differing only in their
+/// treatment of names outside the zone.
 #[test]
 fn owner_name_constructors_admit_the_same_labels() {
     let zone = zone();
@@ -380,8 +399,9 @@ fn owner_name_constructors_admit_the_same_labels() {
     }
 }
 
-// RFC 1035, Section 2.3.4 bounds the wire form at 255 octets, not the 253 the
-// presentation form is measured by.
+/// Verify that owner names can reach the 255-octet wire limit of RFC 1035, Section 2.3.4.
+///
+/// The 253-character presentation limit must not be applied to wire bytes.
 #[test]
 fn owner_name_admits_a_maximum_length_name() {
     let zone = ZoneName::parse("example.com").unwrap();
@@ -402,8 +422,10 @@ fn owner_name_admits_a_maximum_length_name() {
     );
 }
 
-// A master file ends the owner field at any of these, so an unescaped one
-// would truncate the record or comment out the rest of the line.
+/// Verify that owner names escape master-file metacharacters.
+///
+/// Unescaped metacharacters would terminate the owner field or comment out the rest of the
+/// record.
 #[test]
 fn owner_name_escapes_master_file_metacharacters() {
     let zone = ZoneName::parse("example.com").unwrap();
@@ -420,8 +442,10 @@ fn owner_name_escapes_master_file_metacharacters() {
     }
 }
 
-// The wire limit applies to decoded labels but rows hold the escaped form, so
-// the column must fit the escaped worst case. Keep in step with the DB schema.
+/// Verify that the longest escaped owner name fits the database column.
+///
+/// The wire limit bounds decoded labels, so the schema must also allow for their presentation
+/// escapes.
 #[test]
 fn worst_case_stored_form_fits_the_schema_column_width() {
     const SCHEMA_COLUMN_WIDTH: usize = 512;
@@ -458,6 +482,7 @@ fn worst_case_stored_form_fits_the_schema_column_width() {
     );
 }
 
+/// Verify that `encode_name` produces length prefixed labels.
 #[test]
 fn encode_name_produces_length_prefixed_labels() {
     assert_eq!(
@@ -466,8 +491,9 @@ fn encode_name_produces_length_prefixed_labels() {
     );
 }
 
-// An escaped dot stays inside one label (RFC 1035, Section 5.1); this is the
-// SOA RNAME shape an admin email with a dotted local part produces.
+/// Verify that encoding keeps an escaped dot inside one label (RFC 1035, Section 5.1).
+///
+/// SOA mailboxes with a dotted local part rely on this label boundary.
 #[test]
 fn encode_name_keeps_escaped_dots_in_one_label() {
     assert_eq!(
@@ -485,12 +511,14 @@ fn encode_name_keeps_escaped_dots_in_one_label() {
     );
 }
 
+/// Verify that `encode_name` maps empty and root to the root name.
 #[test]
 fn encode_name_maps_empty_and_root_to_the_root_name() {
     assert_eq!(encode_name("").unwrap(), vec![0]);
     assert_eq!(encode_name(".").unwrap(), vec![0]);
 }
 
+/// Verify that owner to wire matches the encoded fqdn.
 #[test]
 fn owner_to_wire_matches_the_encoded_fqdn() {
     let zone = zone();
@@ -501,6 +529,7 @@ fn owner_to_wire_matches_the_encoded_fqdn() {
     );
 }
 
+/// Verify that zone to wire matches the encoded fqdn.
 #[test]
 fn zone_to_wire_matches_the_encoded_fqdn() {
     let zone = zone();

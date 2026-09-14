@@ -51,8 +51,8 @@ pub(crate) enum DnssecCommand {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
-        /// Move the signed zone to this policy; denial mode and key layout
-        /// must match, and a new algorithm starts a rollover
+        /// Move to a policy with the same key layout; a new denial mode
+        /// replaces the chain, and a new algorithm starts a rollover
         #[arg(long, value_name = "POLICY_NAME", group = "setting")]
         policy: Option<String>,
         /// Comma-separated host[:port] entries of the parent's nameservers;
@@ -115,9 +115,9 @@ pub(crate) enum DnssecCommand {
 /// Subcommands for rolling a zone's signing keys.
 #[derive(Subcommand, Debug)]
 pub(crate) enum DnssecRolloverCommand {
-    /// Pre-publish a same-algorithm replacement key: it joins the DNSKEY
-    /// and CDS/CDNSKEY records but signs no zone data until `ds-seen`
-    /// promotes it. To change the algorithm, use `dnssec set --policy`
+    /// Publish a replacement key with the same algorithm. After the publish
+    /// wait, maintenance promotes ZSKs automatically and CSK/KSKs once the
+    /// parent serves their DS; `ds-seen` requests that confirmation manually
     Start {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -147,8 +147,8 @@ pub(crate) enum DnssecRolloverCommand {
 /// Subcommands for a zone's DS withdrawal.
 #[derive(Subcommand, Debug)]
 pub(crate) enum DnssecWithdrawCommand {
-    /// Publish the delete pair (`CDS 0 0 0 00`); the parent drops the DS on
-    /// its own
+    /// Publish the delete pair (`CDS 0 0 0 00`) to request DS removal
+    /// from a parent that processes CDS records
     Start {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -162,6 +162,7 @@ pub(crate) enum DnssecWithdrawCommand {
     },
 }
 
+/// Run the requested DNSSEC lifecycle command.
 pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliError> {
     let client = DaemonSocketClient::new();
     match subcommand {
@@ -291,6 +292,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
     Ok(())
 }
 
+/// Print the zone's DNSSEC status and key information.
 pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
     let status = parse_response::<DnssecStatusResponse>(data)?.dnssec;
     let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {

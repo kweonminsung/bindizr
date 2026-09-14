@@ -13,6 +13,7 @@ pub(crate) struct SqliteDnssecPolicyRepository {
 }
 
 impl SqliteDnssecPolicyRepository {
+    /// Create a repository for DNSSEC policies using the supplied pool.
     pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -20,6 +21,7 @@ impl SqliteDnssecPolicyRepository {
 
 #[async_trait]
 impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
+    /// Insert a DNSSEC policy.
     async fn create(&self, mut policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -46,6 +48,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         Ok(policy)
     }
 
+    /// Find a DNSSEC policy by ID in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -64,6 +67,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         Ok(policy)
     }
 
+    /// Find a DNSSEC policy by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<DnssecPolicy>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -77,6 +81,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         Ok(policy)
     }
 
+    /// Find a DNSSEC policy by name in the current transaction.
     async fn get_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -95,6 +100,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         Ok(policy)
     }
 
+    /// List all DNSSEC policies.
     async fn list_all(&self) -> Result<Vec<DnssecPolicy>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -107,6 +113,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         Ok(policies)
     }
 
+    /// Update a DNSSEC policy in the current transaction.
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -131,6 +138,7 @@ impl DnssecPolicyRepository for SqliteDnssecPolicyRepository {
         Ok(policy)
     }
 
+    /// Delete a DNSSEC policy by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

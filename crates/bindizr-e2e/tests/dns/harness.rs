@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 
 use crate::common::dns::parse_dns_response;
 
+/// Verify that parse DNS response renders values in harness comparison format.
 #[test]
 fn parse_dns_response_renders_values_in_harness_comparison_format() {
     let mut builder = MessageBuilder::new_vec();
@@ -76,7 +77,8 @@ fn parse_dns_response_renders_values_in_harness_comparison_format() {
     );
 }
 
-// is_deleted_zone_absence matches on this exact "REFUSED RCODE" phrasing.
+/// Verify that a refused response includes the exact "REFUSED RCODE" text recognized by
+/// `is_deleted_zone_absence`.
 #[test]
 fn parse_dns_response_names_refused_rcode_in_error() {
     let mut builder = MessageBuilder::new_vec();
@@ -88,6 +90,7 @@ fn parse_dns_response_names_refused_rcode_in_error() {
     assert!(err.contains("REFUSED RCODE (5)"), "unexpected error: {err}");
 }
 
+/// Verify that `parse_dns_response` treats nxdomain as no answers.
 #[test]
 fn parse_dns_response_treats_nxdomain_as_no_answers() {
     let mut builder = MessageBuilder::new_vec();

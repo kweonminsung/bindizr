@@ -56,6 +56,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     Ok((catalog_zone, member_zones))
 }
 
+/// Hash catalog member names and serials to detect changes.
 fn catalog_digest(member_zones: &[String], zones: &[Zone]) -> String {
     // Names are canonical, so the index needs no case folding.
     let serial_by_name: HashMap<String, i32> = zones
@@ -83,6 +84,7 @@ fn catalog_digest(member_zones: &[String], zones: &[Zone]) -> String {
         .collect()
 }
 
+/// Send a catalog zone transfer using the requested question type.
 pub(crate) async fn handle_catalog_axfr_with_qtype(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,

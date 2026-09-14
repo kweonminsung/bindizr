@@ -35,6 +35,7 @@ pub(crate) struct SqliteZoneVersionRepository {
 }
 
 impl SqliteZoneVersionRepository {
+    /// Create a repository for zone versions using the supplied pool.
     pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -42,6 +43,7 @@ impl SqliteZoneVersionRepository {
 
 #[async_trait]
 impl ZoneVersionRepository for SqliteZoneVersionRepository {
+    /// Insert or update a zone version in the current transaction.
     async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -89,6 +91,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
             })
     }
 
+    /// Find a zone version by zone ID and serial.
     async fn get_by_serial(
         &self,
         zone_id: i32,
@@ -108,6 +111,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// List zone versions in the closed interval `[from_serial, to_serial]`.
     async fn list_in_serial_range(
         &self,
         zone_id: i32,
@@ -129,6 +133,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// List zone versions for a zone.
     async fn list(
         &self,
         zone_id: i32,
@@ -162,6 +167,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// Count zone versions using the requested change filter.
     async fn count(&self, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError> {
         let filter = if user_changes_only {
             USER_CHANGES_FILTER
@@ -182,6 +188,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         Ok(count as u64)
     }
 
+    /// Find a zone version by zone ID and serial in the current transaction.
     async fn get_by_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -205,6 +212,8 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// Prune old zone versions while retaining each zone's newest version in the current
+    /// transaction.
     async fn prune_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

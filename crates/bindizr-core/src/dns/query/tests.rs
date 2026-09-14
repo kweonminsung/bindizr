@@ -11,6 +11,7 @@ use domain::{
 
 use super::*;
 
+/// Parse a DNS wire-format name for the test.
 fn name(value: &str) -> Name<Vec<u8>> {
     Name::from_str(value).unwrap()
 }
@@ -113,6 +114,7 @@ fn build_transfer_message(id: u16, apex: &Name<Vec<u8>>, question: bool, aa: boo
     answer.finish()
 }
 
+/// Verify that transfer rejects a non in rr.
 #[test]
 fn transfer_rejects_a_non_in_rr() {
     let name: Name<Vec<u8>> = Name::from_str("example.com").unwrap();
@@ -134,6 +136,7 @@ fn transfer_rejects_a_non_in_rr() {
     assert!(err.contains("class"), "{err}");
 }
 
+/// Verify that transfer first message must echo the question and be authoritative.
 #[test]
 fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
     let apex = name("example.com");
@@ -166,6 +169,7 @@ fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
     );
 }
 
+/// Verify that build edns question advertises the payload size.
 #[test]
 fn build_edns_question_advertises_the_payload_size() {
     let (query_id, wire) = build_edns_question(true, &name("example.com"), Rtype::DS);
@@ -182,6 +186,7 @@ fn build_edns_question_advertises_the_payload_size() {
     assert_eq!(opt.opt().iter::<AllOptData<_, _>>().count(), 0);
 }
 
+/// Verify that `extract_ds_rrset` reads the records and the RRSET TTL.
 #[test]
 fn extract_ds_rrset_reads_the_records_and_the_rrset_ttl() {
     let child = name("example.com");
@@ -211,6 +216,7 @@ fn extract_ds_rrset_reads_the_records_and_the_rrset_ttl() {
     );
 }
 
+/// Verify that `extract_ds_rrset` reads nodata as no DS.
 #[test]
 fn extract_ds_rrset_reads_nodata_as_no_ds() {
     let child = name("example.com");
@@ -227,6 +233,7 @@ fn extract_ds_rrset_reads_nodata_as_no_ds() {
     assert_eq!(extract_ds_rrset(42, &child, &response).unwrap(), None);
 }
 
+/// Verify that `extract_ds_rrset` reads nxdomain as no DS.
 #[test]
 fn extract_ds_rrset_reads_nxdomain_as_no_ds() {
     let child = name("example.com");
@@ -243,6 +250,7 @@ fn extract_ds_rrset_reads_nxdomain_as_no_ds() {
     assert_eq!(extract_ds_rrset(42, &child, &response).unwrap(), None);
 }
 
+/// Verify that `extract_ds_rrset` rejects a negative answer without a parent SOA.
 #[test]
 fn extract_ds_rrset_rejects_a_negative_answer_without_a_parent_soa() {
     let child = name("example.com");
@@ -268,6 +276,7 @@ fn extract_ds_rrset_rejects_a_negative_answer_without_a_parent_soa() {
     assert!(extract_ds_rrset(42, &child, &response).is_err());
 }
 
+/// Verify that `extract_ds_rrset` rejects an answer to another question.
 #[test]
 fn extract_ds_rrset_rejects_an_answer_to_another_question() {
     let child = name("example.com");
@@ -287,6 +296,7 @@ fn extract_ds_rrset_rejects_an_answer_to_another_question() {
     );
 }
 
+/// Verify that `extract_ds_rrset` ignores records for another owner.
 #[test]
 fn extract_ds_rrset_ignores_records_for_another_owner() {
     let child = name("example.com");
@@ -303,6 +313,7 @@ fn extract_ds_rrset_ignores_records_for_another_owner() {
     assert_eq!(extract_ds_rrset(42, &child, &response).unwrap(), None);
 }
 
+/// Verify that `extract_ds_rrset` rejects a non authoritative answer.
 #[test]
 fn extract_ds_rrset_rejects_a_non_authoritative_answer() {
     let child = name("example.com");
@@ -322,6 +333,7 @@ fn extract_ds_rrset_rejects_a_non_authoritative_answer() {
     );
 }
 
+/// Verify that `extract_ds_rrset` rejects a truncated answer.
 #[test]
 fn extract_ds_rrset_rejects_a_truncated_answer() {
     let child = name("example.com");
@@ -341,6 +353,7 @@ fn extract_ds_rrset_rejects_a_truncated_answer() {
     );
 }
 
+/// Verify that `extract_ds_rrset` rejects an error rcode.
 #[test]
 fn extract_ds_rrset_rejects_an_error_rcode() {
     let child = name("example.com");
@@ -360,6 +373,7 @@ fn extract_ds_rrset_rejects_an_error_rcode() {
     );
 }
 
+/// Verify that `extract_ds_rrset` rejects id mismatch.
 #[test]
 fn extract_ds_rrset_rejects_id_mismatch() {
     let child = name("example.com");

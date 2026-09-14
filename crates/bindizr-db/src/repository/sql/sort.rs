@@ -30,6 +30,7 @@ pub enum SortOrder {
 }
 
 impl SortOrder {
+    /// Return the text representation of this sort order.
     fn as_str(self) -> &'static str {
         match self {
             SortOrder::Asc => "ASC",
@@ -39,6 +40,7 @@ impl SortOrder {
 }
 
 impl ZoneSort {
+    /// Return the SQL column for this sort field.
     fn column(self) -> &'static str {
         match self {
             ZoneSort::Name => "name",
@@ -50,6 +52,7 @@ impl ZoneSort {
 }
 
 impl RecordSort {
+    /// Return the SQL column for this sort field.
     fn column(self) -> &'static str {
         match self {
             RecordSort::Name => "r.name",
@@ -64,6 +67,7 @@ impl RecordSort {
 impl std::str::FromStr for ZoneSort {
     type Err = String;
 
+    /// Parse a zone sort from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "name" => Ok(ZoneSort::Name),
@@ -80,6 +84,7 @@ impl std::str::FromStr for ZoneSort {
 impl std::str::FromStr for RecordSort {
     type Err = String;
 
+    /// Parse a record sort from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "name" => Ok(RecordSort::Name),
@@ -98,6 +103,7 @@ impl std::str::FromStr for RecordSort {
 impl std::str::FromStr for SortOrder {
     type Err = String;
 
+    /// Parse a sort order from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "asc" => Ok(SortOrder::Asc),
@@ -125,6 +131,7 @@ pub(crate) fn record_order_by_sql(sort: RecordSort, order: SortOrder) -> String 
 mod tests {
     use super::*;
 
+    /// Verify that an order by always ends on the row id.
     #[test]
     fn an_order_by_always_ends_on_the_row_id() {
         // LIMIT/OFFSET over a non-unique sort would let tied rows swap between

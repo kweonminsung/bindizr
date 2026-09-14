@@ -15,8 +15,8 @@ pub struct TsigGrant {
     pub tsig_key_id: i32,
     pub record_name_pattern: String,
     pub record_types: String,
-    /// Whether the key may change records as well as transfer the zone. A
-    /// read-only grant still authorizes a transfer, narrowed the same way.
+    /// Whether the grant permits updates. Transfers require an unrestricted
+    /// name/type grant, regardless of this flag.
     pub can_write: bool,
     pub created_at: DateTime<Utc>,
 }

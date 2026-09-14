@@ -35,13 +35,13 @@ pub(crate) async fn get_metrics() -> Response {
         .into_response()
 }
 
-// Totals only, so count directly: a limit-1 page still orders the whole table.
+/// Refresh database counts and pool gauges for a metrics scrape.
+///
+/// Count directly: fetching even a one-record page still sorts the whole table.
 async fn refresh_db_gauges() -> Result<(), ServiceError> {
     let metrics = metrics();
 
-    // The same per-policy window as the scheduler's re-sign scan, so a
-    // persistent nonzero value means that scan is not keeping up.
-    // Concurrent, so the probe timeout budgets one round trip, not one per query.
+    // Run counts concurrently so the timeout budgets one round trip, not one per query.
     let (zones, records, dnssec_zones, published, active, retired, expiring, expired) = tokio::try_join!(
         ZoneService::count_all(),
         RecordService::count_all(),
@@ -49,6 +49,8 @@ async fn refresh_db_gauges() -> Result<(), ServiceError> {
         DnssecService::count_keys_by_state(DnssecKeyState::Published),
         DnssecService::count_keys_by_state(DnssecKeyState::Active),
         DnssecService::count_keys_by_state(DnssecKeyState::Retired),
+        // Use the scheduler's per-policy refresh window so a persistent nonzero
+        // count indicates that re-signing is not keeping up.
         DnssecService::count_rrsigs_expiring_within_refresh(Utc::now()),
         DnssecService::count_rrsigs_expired(Utc::now()),
     )?;

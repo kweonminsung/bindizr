@@ -15,9 +15,11 @@ pub use zone_name::ZoneName;
 
 /// Maximum length of a single DNS label, in bytes (RFC 1035).
 pub(crate) const MAX_DNS_LABEL_LEN: usize = 63;
-/// Maximum length of a domain name, in bytes (RFC 1035).
+/// Maximum unescaped presentation length, excluding the root dot.
+/// The wire form adds a label-length octet and the terminating zero.
 pub(crate) const MAX_DOMAIN_LEN: usize = 253;
 
+/// Check whether text contains whitespace or control characters.
 pub fn has_whitespace_or_control(value: &str) -> bool {
     value
         .chars()

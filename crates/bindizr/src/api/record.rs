@@ -24,6 +24,7 @@ use crate::api::{
 pub(crate) struct RecordApi;
 
 impl RecordApi {
+    /// Build the record API routes.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/records", routing::get(list_records))
@@ -40,6 +41,7 @@ impl RecordApi {
     }
 }
 
+/// List DNS records, optionally filtered and paginated.
 #[utoipa::path(
         get,
         path = "/records",
@@ -70,7 +72,6 @@ impl RecordApi {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List DNS records, optionally filtered and paginated.
 pub(crate) async fn list_records(
     RequestCaller(caller): RequestCaller,
     Query(mut query): Query<GetRecordsFilter>,
@@ -80,6 +81,7 @@ pub(crate) async fn list_records(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Get a single DNS record by ID.
 #[utoipa::path(
         get,
         path = "/records/{record_id}",
@@ -95,7 +97,6 @@ pub(crate) async fn list_records(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Get a single DNS record by ID.
 pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
@@ -108,6 +109,7 @@ pub(crate) async fn get_record(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Create a new DNS record.
 #[utoipa::path(
         post,
         path = "/records",
@@ -125,7 +127,6 @@ pub(crate) async fn get_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Create a new DNS record.
 pub(crate) async fn create_record(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRecordRequest>,
@@ -138,6 +139,7 @@ pub(crate) async fn create_record(
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
+/// Update an existing DNS record.
 #[utoipa::path(
         put,
         path = "/records/{record_id}",
@@ -159,7 +161,6 @@ pub(crate) async fn create_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Update an existing DNS record.
 pub(crate) async fn update_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
@@ -173,6 +174,7 @@ pub(crate) async fn update_record(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Delete a DNS record.
 #[utoipa::path(
         delete,
         path = "/records/{record_id}",
@@ -190,7 +192,6 @@ pub(crate) async fn update_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Delete a DNS record.
 pub(crate) async fn delete_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
@@ -203,6 +204,7 @@ pub(crate) async fn delete_record(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Delete every record matching the filter.
 #[utoipa::path(
         delete,
         path = "/records",
@@ -219,7 +221,6 @@ pub(crate) async fn delete_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Delete every record matching the filter.
 pub(crate) async fn delete_records_matching(
     RequestCaller(caller): RequestCaller,
     Query(filter): Query<DeleteRecordsFilter>,
@@ -228,6 +229,7 @@ pub(crate) async fn delete_records_matching(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Bulk insert DNS records into a zone in a single transaction.
 #[utoipa::path(
         post,
         path = "/records/bulk",
@@ -247,7 +249,6 @@ pub(crate) async fn delete_records_matching(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Bulk insert DNS records into a zone in a single transaction.
 pub(crate) async fn create_records_bulk(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,

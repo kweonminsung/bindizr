@@ -45,6 +45,7 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
+    /// Return the text representation of this error code.
     pub fn as_str(&self) -> &'static str {
         match self {
             ErrorCode::InvalidInput => "INVALID_INPUT",
@@ -132,6 +133,7 @@ impl ErrorCode {
         })
     }
 
+    /// Return the HTTP status associated with this service error code.
     pub fn http_status(&self) -> u16 {
         match self {
             ErrorCode::InvalidInput
@@ -184,6 +186,7 @@ pub struct ServiceError {
 }
 
 impl fmt::Display for ServiceError {
+    /// Write the service error in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.message)
     }
@@ -192,6 +195,7 @@ impl fmt::Display for ServiceError {
 impl std::error::Error for ServiceError {}
 
 impl ServiceError {
+    /// Build a service error from its code and message.
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
         ServiceError {
             code,
@@ -199,46 +203,57 @@ impl ServiceError {
         }
     }
 
+    /// Build an error for invalid request input.
     pub fn invalid_input(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidInput, message)
     }
 
+    /// Build an error for an invalid zone field.
     pub(crate) fn invalid_zone_field(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidZoneField, message)
     }
 
+    /// Build an error for an invalid record owner name.
     pub(crate) fn invalid_record_name(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidRecordName, message)
     }
 
+    /// Build an error for an invalid record value.
     pub(crate) fn invalid_record_value(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidRecordValue, message)
     }
 
+    /// Build an error for a conflicting zone mutation.
     pub(crate) fn zone_conflict(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::ZoneConflict, message)
     }
 
+    /// Build an error for a conflicting record mutation.
     pub(crate) fn record_conflict(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::RecordConflict, message)
     }
 
+    /// Build an error for a request without valid authentication.
     pub fn unauthorized(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::Unauthorized, message)
     }
 
+    /// Build an error for an invalid API token.
     pub(crate) fn invalid_token(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidToken, message)
     }
 
+    /// Build an error for an operation the caller may not perform.
     pub(crate) fn forbidden(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::Forbidden, message)
     }
 
+    /// Build an error for an internal service failure.
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::Internal, message)
     }
 
+    /// Build an error naming the missing zone.
     pub(crate) fn zone_not_found(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::ZoneNotFound,
@@ -246,6 +261,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error identifying the missing record.
     pub(crate) fn record_not_found(id: i32) -> Self {
         Self::new(
             ErrorCode::RecordNotFound,
@@ -253,6 +269,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error naming the missing API token.
     pub(crate) fn token_not_found(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TokenNotFound,
@@ -260,6 +277,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error for an API token name already in use.
     pub(crate) fn token_conflict(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TokenConflict,
@@ -267,6 +285,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error naming the missing TSIG key.
     pub(crate) fn tsig_key_not_found(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TsigKeyNotFound,
@@ -274,6 +293,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error for a TSIG key name already in use.
     pub(crate) fn tsig_key_conflict(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::TsigKeyConflict,
@@ -281,6 +301,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error explaining that grants still reference a TSIG key.
     pub(crate) fn tsig_key_in_use(name: impl Into<String>, grant_count: u64) -> Self {
         Self::new(
             ErrorCode::TsigKeyInUse,
@@ -293,6 +314,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error identifying the missing TSIG grant.
     pub(crate) fn tsig_grant_not_found(id: i32) -> Self {
         Self::new(
             ErrorCode::TsigGrantNotFound,
@@ -300,6 +322,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error identifying the missing token grant.
     pub(crate) fn token_grant_not_found(id: i32) -> Self {
         Self::new(
             ErrorCode::TokenGrantNotFound,
@@ -307,6 +330,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error for enabling DNSSEC on an already signed zone.
     pub(crate) fn dnssec_already_enabled(zone_name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecAlreadyEnabled,
@@ -314,6 +338,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error for an operation requiring DNSSEC on an unsigned zone.
     pub(crate) fn dnssec_not_enabled(zone_name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecNotEnabled,
@@ -321,6 +346,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error describing a DNSSEC signing failure.
     pub(crate) fn dnssec_signing_failed(message: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecSigningFailed,
@@ -328,6 +354,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error for a rollover already in progress.
     pub(crate) fn dnssec_rollover_in_progress(zone_name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecRolloverInProgress,
@@ -338,6 +365,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error for confirming a rollover that has not started.
     pub(crate) fn dnssec_no_rollover_in_progress(zone_name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecNoRolloverInProgress,
@@ -348,6 +376,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error listing DS records that still block DNSSEC removal.
     pub(crate) fn dnssec_ds_published(zone_name: impl Into<String>, key_tags: &[u16]) -> Self {
         Self::new(
             ErrorCode::DnssecDsPublished,
@@ -365,6 +394,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error listing DS records still required for key promotion.
     pub(crate) fn dnssec_ds_not_published(zone_name: impl Into<String>, key_tags: &[u16]) -> Self {
         Self::new(
             ErrorCode::DnssecDsNotPublished,
@@ -382,6 +412,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error for zone or key state changed during a parent probe.
     pub(crate) fn dnssec_state_changed(zone_name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecStateChanged,
@@ -393,6 +424,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error for parent DS digests that cannot be verified.
     pub(crate) fn dnssec_ds_digest_unsupported(
         zone_name: impl Into<String>,
         key_tags: &[u16],
@@ -414,6 +446,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error explaining why the parent DS check could not finish.
     pub(crate) fn dnssec_ds_unverified(
         zone_name: impl Into<String>,
         reason: impl Into<String>,
@@ -429,6 +462,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error naming the missing DNSSEC policy.
     pub(crate) fn dnssec_policy_not_found(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecPolicyNotFound,
@@ -436,6 +470,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error for a DNSSEC policy name already in use.
     pub(crate) fn dnssec_policy_conflict(name: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::DnssecPolicyConflict,
@@ -443,6 +478,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error explaining that zones still use a DNSSEC policy.
     pub(crate) fn dnssec_policy_in_use(name: impl Into<String>, zone_count: u64) -> Self {
         Self::new(
             ErrorCode::DnssecPolicyInUse,
@@ -455,6 +491,7 @@ impl ServiceError {
         )
     }
 
+    /// Build an error naming the missing zone serial.
     pub(crate) fn version_not_found(zone_name: impl Into<String>, serial: i32) -> Self {
         Self::new(
             ErrorCode::VersionNotFound,
@@ -471,6 +508,7 @@ impl ServiceError {
 mod tests {
     use super::*;
 
+    /// Verify that a signing failure is not an internal error.
     #[test]
     fn a_signing_failure_is_not_an_internal_error() {
         let err = ServiceError::dnssec_signing_failed("boom");

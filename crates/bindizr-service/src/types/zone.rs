@@ -38,6 +38,7 @@ pub struct GetZoneResponse {
 }
 
 impl GetZoneResponse {
+    /// Build a zone response from its stored settings.
     pub fn from_zone(zone: &Zone) -> Self {
         GetZoneResponse {
             id: zone.id,
@@ -220,13 +221,12 @@ pub struct SecondaryStatusResponse {
 }
 
 impl SecondaryStatusResponse {
-    /// The wire status strings are minted only in
-    /// [`ZoneStatusResponse::from_probes`]; consumers test them through these
-    /// predicates so a renamed state cannot silently stop matching.
+    /// Whether the probed secondary serial matches this status's zone serial.
     pub fn is_in_sync(&self) -> bool {
         self.status == "in_sync"
     }
 
+    /// Check whether the secondary probe failed to obtain a serial.
     pub fn is_unreachable(&self) -> bool {
         self.status == "unreachable"
     }

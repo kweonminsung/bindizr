@@ -80,6 +80,7 @@ pub async fn initialize() -> Result<(), DatabaseError> {
     Ok(())
 }
 
+/// Check whether the global database repositories are initialized.
 fn is_initialized() -> bool {
     DATABASE_POOL.get().is_some()
 }
@@ -186,6 +187,7 @@ impl DatabasePool {
 
         Ok(database_pool)
     }
+
     /// Connect to SQLite, create tables, and return the pool.
     pub(crate) async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
         // A clean install points at a database file that does not exist yet.
@@ -237,6 +239,7 @@ impl DatabasePool {
         Ok(database_pool)
     }
 
+    /// Create the application schema in the selected database backend.
     async fn create_tables(&self) -> Result<(), String> {
         match self {
             DatabasePool::MySQL(pool) => {
@@ -307,66 +310,79 @@ impl DatabasePool {
     }
 }
 
+/// Return the initialized zone repository.
 pub fn get_zone_repository() -> Box<dyn repository::ZoneRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_repository(pool)
 }
 
+/// Return the initialized record repository.
 pub fn get_record_repository() -> Box<dyn repository::RecordRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_record_repository(pool)
 }
 
+/// Return the initialized DNSSEC policy repository.
 pub fn get_dnssec_policy_repository() -> Box<dyn repository::DnssecPolicyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_dnssec_policy_repository(pool)
 }
 
+/// Return the initialized TSIG key repository.
 pub fn get_tsig_key_repository() -> Box<dyn repository::TsigKeyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_tsig_key_repository(pool)
 }
 
+/// Return the initialized TSIG grant repository.
 pub fn get_tsig_grant_repository() -> Box<dyn repository::TsigGrantRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_tsig_grant_repository(pool)
 }
 
+/// Return the initialized token grant repository.
 pub fn get_token_grant_repository() -> Box<dyn repository::TokenGrantRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_token_grant_repository(pool)
 }
 
+/// Return the initialized API token repository.
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_api_token_repository(pool)
 }
 
+/// Return the initialized zone change repository.
 pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_change_repository(pool)
 }
 
+/// Return the initialized zone version repository.
 pub fn get_zone_version_repository() -> Box<dyn repository::ZoneVersionRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_version_repository(pool)
 }
 
+/// Return the initialized catalog zone state repository.
 pub fn get_catalog_zone_state_repository() -> Box<dyn repository::CatalogZoneStateRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_catalog_zone_state_repository(pool)
 }
 
+/// Return the initialized DNSSEC withdrawal repository.
 pub fn get_dnssec_withdrawal_repository() -> Box<dyn repository::DnssecWithdrawalRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_dnssec_withdrawal_repository(pool)
 }
 
+/// Return the initialized DNSSEC key repository.
 pub fn get_dnssec_key_repository() -> Box<dyn repository::DnssecKeyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_dnssec_key_repository(pool)
 }
 
+/// Return the initialized DNSSEC record repository.
 pub fn get_dnssec_record_repository() -> Box<dyn repository::DnssecRecordRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_dnssec_record_repository(pool)

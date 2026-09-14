@@ -54,6 +54,7 @@ pub(crate) struct RecordWrite<'a> {
 }
 
 impl Caller {
+    /// Check whether the caller has unrestricted global access.
     fn is_global(&self) -> bool {
         matches!(self, Caller::Global | Caller::GlobalToken { .. })
     }
@@ -72,9 +73,8 @@ impl Caller {
         }
     }
 
-    /// Resolve who a Bearer token acts as: validate the token, then preload a
-    /// scoped token's grants so the rest of the request decides against one
-    /// read. The token row comes back too, since `Global` keeps no identity.
+    /// Validate a Bearer token and preload grants for read checks. Mutations
+    /// reload and lock the grants inside their transaction.
     pub async fn authenticate(bearer_token: &str) -> Result<(Caller, ApiToken), ServiceError> {
         let token = authenticate_token(bearer_token).await?;
         if token.is_global {
@@ -210,6 +210,7 @@ impl Caller {
     }
 }
 
+/// Check whether the supplied grants cover the requested zone operation.
 fn authorize_with_grants(
     grants: &[TokenGrant],
     zone: &Zone,

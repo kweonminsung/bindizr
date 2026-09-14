@@ -3,9 +3,8 @@
 Loads a fixed A-record zone into the system, then hammers its resolver with UDP
 queries for existing names, measuring QPS and latency percentiles.
 
-The headline comparison is `Native BIND9` vs `Bindizr + BIND9`: since Bindizr is
-outside the DNS data plane (queries are served by the BIND9 secondary), the two
-should match — demonstrating zero query overhead.
+Compare `Native BIND9` with `Bindizr + BIND9`, whose secondary answers queries.
+The measured QPS difference determines the report's query-overhead conclusion.
 """
 from __future__ import annotations
 
@@ -19,6 +18,7 @@ from lib import dnsquery, dnsutil  # noqa: E402
 
 
 async def run(adapter, cfg, ctx) -> dict:
+    """Measure DNS query throughput and latency for the benchmark system."""
     zone = ctx["zone"]
     q = cfg["query"]
     size = q["zone_size"]

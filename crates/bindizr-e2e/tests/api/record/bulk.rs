@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify bulk record insertion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert() {
@@ -37,6 +38,7 @@ async fn record_bulk_insert() {
     assert_eq!(body["items"].as_array().unwrap().len(), 2);
 }
 
+/// Verify that record bulk insert accepts DS ahead of its delegation NS.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
@@ -60,6 +62,7 @@ async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
     assert_eq!(body["records"][1]["record_type"], "NS");
 }
 
+/// Verify that record bulk dry run rejects a DS without delegation NS.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_dry_run_rejects_a_ds_without_delegation_ns() {
@@ -86,6 +89,7 @@ async fn record_bulk_dry_run_rejects_a_ds_without_delegation_ns() {
     );
 }
 
+/// Verify that record bulk insert is all or nothing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert_is_all_or_nothing() {
@@ -106,7 +110,6 @@ async fn record_bulk_insert_is_all_or_nothing() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // Nothing from the failed batch should have been persisted.
     let (status, body) = app
         .request(
             Method::GET,
@@ -118,6 +121,7 @@ async fn record_bulk_insert_is_all_or_nothing() {
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 }
 
+/// Verify that record bulk insert unknown zone returns not found.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert_unknown_zone_returns_not_found() {
@@ -134,6 +138,7 @@ async fn record_bulk_insert_unknown_zone_returns_not_found() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Verify that record bulk insert dry run then apply.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert_dry_run_then_apply() {
@@ -158,7 +163,6 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(body["inserted"], 0);
     assert_eq!(body["records"].as_array().unwrap().len(), 2);
 
-    // The dry run must not have persisted anything.
     let (status, body) = app
         .request(
             Method::GET,

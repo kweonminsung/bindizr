@@ -28,12 +28,14 @@ pub(crate) fn validate_record_ttl(ttl: i32) -> Result<(), ServiceError> {
     Ok(())
 }
 
+/// Parse a supported record type from request text.
 pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
     value
         .parse::<RecordType>()
         .map_err(|_| ServiceError::invalid_input(format!("invalid record type: {}", value)))
 }
 
+/// Validate and normalize a record owner relative to its zone.
 pub(crate) fn normalize_record_owner_name(
     input_name: &str,
     zone_name: &ZoneName,

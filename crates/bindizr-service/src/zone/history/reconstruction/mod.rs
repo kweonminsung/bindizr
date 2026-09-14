@@ -28,6 +28,7 @@ pub(crate) struct ReconstructedRecord {
 }
 
 impl From<Record> for ReconstructedRecord {
+    /// Convert a current record into the historical reconstruction form.
     fn from(record: Record) -> Self {
         ReconstructedRecord {
             name: record.name,
@@ -43,6 +44,7 @@ impl From<Record> for ReconstructedRecord {
 /// type, and the canonical comparison form of the value(+priority).
 pub(crate) type MatchKey = (String, String, String);
 
+/// Build a canonical matching identity from a record's owner, type, and value.
 pub(crate) fn to_match_key(
     name: &OwnerName,
     record_type: &RecordType,
@@ -56,6 +58,7 @@ pub(crate) fn to_match_key(
     )
 }
 
+/// Build the reconstruction identity of a current record.
 pub(crate) fn to_record_match_key(record: &Record) -> MatchKey {
     to_match_key(
         &record.name,

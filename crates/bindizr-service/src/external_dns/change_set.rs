@@ -59,6 +59,7 @@ pub(crate) struct ZoneChangeSet {
     pub(crate) creates: Vec<Record>,
 }
 
+/// Parse a record type supported by the external-dns adapter.
 fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceError> {
     let parsed = parse_record_type(record_type)?;
     if !parsed.is_external_dns_supported() {
@@ -81,6 +82,7 @@ fn normalize_ttl(ttl: Option<i32>) -> Result<Option<i32>, ServiceError> {
     }
 }
 
+/// Require nonempty values and exactly one value for a CNAME group.
 fn validate_rrset_shape(
     record: &ExternalDnsRecord,
     record_type: &RecordType,
@@ -100,6 +102,7 @@ fn validate_rrset_shape(
     Ok(())
 }
 
+/// Convert an external-dns record group into a validated change operation.
 pub(crate) fn parse_rrset_op(record: &ExternalDnsRecord) -> Result<RrsetOp, ServiceError> {
     let record_type = parse_supported_record_type(&record.record_type)?;
     let name = normalize_lookup_name(&record.name)?;
@@ -276,7 +279,6 @@ impl ZoneOps {
                 {
                     continue;
                 }
-                // Intra-request duplicate create.
                 if creates.iter().any(matches) {
                     continue;
                 }

@@ -109,6 +109,7 @@ pub struct Pagination {
 mod tests {
     use super::*;
 
+    /// Verify that page limit defaults and rejects out of range.
     #[test]
     fn page_limit_defaults_and_rejects_out_of_range() {
         // The cap, not the HTTP default, which the HTTP surface supplies.

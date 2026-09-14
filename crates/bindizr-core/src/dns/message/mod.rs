@@ -30,6 +30,7 @@ pub struct Overflow {
 }
 
 impl Overflow {
+    /// Build an overflow error without a pending TCP frame.
     fn without_frame(message: String) -> Self {
         Overflow {
             frame: None,
@@ -41,16 +42,19 @@ impl Overflow {
 /// What [`DnsMessageBuilder::add_raw_rdata`] accepts as its owner: a parsed
 /// name, or a typed name's wire bytes still carrying their encoding error.
 pub trait IntoOwner {
+    /// Convert an accepted owner representation into a wire-format name.
     fn into_owner(self) -> Result<Name<Vec<u8>>, String>;
 }
 
 impl IntoOwner for Name<Vec<u8>> {
+    /// Convert an accepted owner representation into a wire-format name.
     fn into_owner(self) -> Result<Name<Vec<u8>>, String> {
         Ok(self)
     }
 }
 
 impl IntoOwner for Result<Vec<u8>, ParseNameError> {
+    /// Convert an accepted owner representation into a wire-format name.
     fn into_owner(self) -> Result<Name<Vec<u8>>, String> {
         to_wire_name(self)
     }
@@ -61,6 +65,7 @@ impl IntoOwner for Result<Vec<u8>, ParseNameError> {
 struct ComposedRr<'a>(&'a [u8]);
 
 impl ComposeRecord for ComposedRr<'_> {
+    /// Append the precomposed record bytes to the message.
     fn compose_record<Target: Composer + ?Sized>(
         &self,
         target: &mut Target,
@@ -82,6 +87,7 @@ pub struct DnsMessageBuilder {
 }
 
 impl DnsMessageBuilder {
+    /// Create a DNS response builder for the supplied question.
     pub fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype) -> Self {
         Self {
             query_id,
@@ -130,15 +136,18 @@ impl DnsMessageBuilder {
         self.push_answer(answer);
     }
 
+    /// Return the number of buffered answers.
     fn answer_count(&self) -> usize {
         self.answers.len()
     }
 
+    /// Calculate the response size including the question and optional TSIG.
     fn message_len(&self) -> usize {
         let signature = self.signer.as_ref().map_or(0, signature_len);
         12 + self.qname.len() + 4 + self.answers_len + signature
     }
 
+    /// Remove the last answer and update the buffered byte count.
     fn pop_last_answer(&mut self) -> Option<Vec<u8>> {
         let answer = self.answers.pop();
         if let Some(answer) = &answer {
@@ -147,11 +156,13 @@ impl DnsMessageBuilder {
         answer
     }
 
+    /// Buffer an answer and update the buffered byte count.
     fn push_answer(&mut self, answer: Vec<u8>) {
         self.answers_len += answer.len();
         self.answers.push(answer);
     }
 
+    /// Clear the answers and reset the buffered byte count.
     fn clear_answers(&mut self) {
         self.answers.clear();
         self.answers_len = 0;
@@ -203,6 +214,7 @@ impl DnsMessageBuilder {
         Ok(Some(frame))
     }
 
+    /// Describe the buffered answer that exceeds the DNS message limit.
     fn too_large_message(&self) -> String {
         format!(
             "Single DNS answer is too large: {} bytes",
@@ -247,11 +259,13 @@ impl DnsMessageBuilder {
         encode_tcp_message(&message)
     }
 
+    /// Consume the builder and serialize its DNS response.
     pub fn build(mut self) -> Result<Vec<u8>, String> {
         self.build_message()
     }
 }
 
+/// Prefix a DNS message with its two-byte TCP frame length.
 pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, String> {
     if message.len() > DNS_TCP_MAX_SIZE {
         return Err(format!("Message too large: {} bytes", message.len()));

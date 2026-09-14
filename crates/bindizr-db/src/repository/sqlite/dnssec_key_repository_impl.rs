@@ -13,6 +13,7 @@ pub(crate) struct SqliteDnssecKeyRepository {
 }
 
 impl SqliteDnssecKeyRepository {
+    /// Create a repository for DNSSEC keys using the supplied pool.
     pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -20,6 +21,7 @@ impl SqliteDnssecKeyRepository {
 
 #[async_trait]
 impl DnssecKeyRepository for SqliteDnssecKeyRepository {
+    /// Insert a DNSSEC key in the current transaction.
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -53,6 +55,7 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         Ok(key)
     }
 
+    /// List DNSSEC keys for a zone in the current transaction.
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -76,6 +79,7 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         Ok(keys)
     }
 
+    /// List keys in the requested state whose transition deadline has passed.
     async fn list_by_state_eligible_before(
         &self,
         state: DnssecKeyState,
@@ -100,6 +104,7 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         Ok(keys)
     }
 
+    /// List zones whose keys have exceeded the policy's ZSK lifetime.
     async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
         &self,
         role: DnssecKeyRole,
@@ -131,6 +136,7 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         Ok(zone_ids)
     }
 
+    /// Count DNSSEC keys in the requested lifecycle state.
     async fn count_by_state(&self, state: DnssecKeyState) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -143,6 +149,7 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         Ok(count as u64)
     }
 
+    /// Update a key's lifecycle state and transition deadlines in the current transaction.
     async fn update_state_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -166,6 +173,7 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         Ok(())
     }
 
+    /// Update the maximum TTL signed by a DNSSEC key in the current transaction.
     async fn update_max_signed_ttl_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -183,6 +191,7 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         Ok(())
     }
 
+    /// Delete a DNSSEC key by ID in the current transaction.
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
@@ -194,6 +203,7 @@ impl DnssecKeyRepository for SqliteDnssecKeyRepository {
         Ok(())
     }
 
+    /// Delete all DNSSEC keys for a zone in the current transaction.
     async fn delete_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

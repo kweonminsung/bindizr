@@ -1,8 +1,13 @@
+//! Zone-file import validation, including conflicts with database-only records.
+//! Append cases exercise those conflicts because imports load only rows whose
+//! owner names occur in the submitted file.
+
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use crate::common::TestApp;
 
+/// Populate a zone with records before testing import validation.
 async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
     let (status, _) = app
         .request(
@@ -14,6 +19,7 @@ async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
     assert_eq!(status, StatusCode::CREATED);
 }
 
+/// Verify that zone import passes over unsupported types only when asked.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_passes_over_unsupported_types_only_when_asked() {
@@ -72,6 +78,7 @@ async fn zone_import_passes_over_unsupported_types_only_when_asked() {
     assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
 }
 
+/// Verify that zone import zone file reports validation errors.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_reports_validation_errors() {
@@ -103,6 +110,7 @@ async fn zone_import_zone_file_reports_validation_errors() {
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 }
 
+/// Verify that zone import preview shows empty diff on validation error.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_preview_shows_empty_diff_on_validation_error() {
@@ -132,9 +140,7 @@ async fn zone_import_preview_shows_empty_diff_on_validation_error() {
     assert_eq!(body["diff"]["summary"]["added"], 0);
 }
 
-// Append imports load only rows sharing an owner name with the file, so these
-// check constraints against records that exist only in the DB.
-
+/// Verify that zone import append rejects CNAME over existing db record.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_append_rejects_cname_over_existing_db_record() {
@@ -142,7 +148,7 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Seed an A record directly in the DB (stored under the lowercased name).
+    // Seed through the API so append must find a row absent from the file.
     seed_records(
         &app,
         zone_name,
@@ -179,6 +185,7 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
     assert_eq!(items[0]["value"], "192.0.2.1");
 }
 
+/// Verify that zone import append rejects record over existing CNAME.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_append_rejects_record_over_existing_cname() {
@@ -219,6 +226,7 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
     assert_eq!(items[0]["record_type"], "CNAME");
 }
 
+/// Verify that zone import append dedups against existing db record.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_append_dedups_against_existing_db_record() {
@@ -258,6 +266,7 @@ async fn zone_import_append_dedups_against_existing_db_record() {
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
 }
 
+/// Verify that zone import append into populated zone isolates names.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_append_into_populated_zone_isolates_names() {

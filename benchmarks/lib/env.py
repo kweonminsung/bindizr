@@ -13,6 +13,7 @@ SYSTEMS_DIR = Path(__file__).resolve().parent.parent / "systems"
 
 
 def _cmd(args: list[str]) -> str:
+    """Capture command output for environment metadata."""
     try:
         return subprocess.run(
             args, text=True, capture_output=True, timeout=15
@@ -41,6 +42,7 @@ def _compose_images() -> dict[str, str]:
 
 
 def _cpu_model() -> str:
+    """Read the host CPU model for the benchmark report."""
     try:
         with open("/proc/cpuinfo") as fh:
             for line in fh:
@@ -52,6 +54,7 @@ def _cpu_model() -> str:
 
 
 def _mem_total_gb() -> float:
+    """Read the host memory capacity in GiB."""
     try:
         with open("/proc/meminfo") as fh:
             for line in fh:
@@ -64,6 +67,7 @@ def _mem_total_gb() -> float:
 
 
 def collect(cfg: dict) -> dict:
+    """Collect hardware, software, and benchmark settings for the report."""
     free = shutil.disk_usage("/").free
     return {
         "hardware": {

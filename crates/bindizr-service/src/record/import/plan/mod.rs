@@ -41,6 +41,7 @@ fn is_protected(zone: &Zone, record: &Record) -> bool {
 /// What an import will change, decided before anything is written.
 pub(crate) struct ImportPlan<'a> {
     pub(crate) dels: Vec<Record>,
+    /// Reinserted through `adds`; kept apart so the summary counts them as updates.
     pub(crate) ttl_dels: Vec<Record>,
     pub(crate) adds: Vec<&'a DesiredRecord>,
     pub(crate) unchanged: usize,
@@ -118,8 +119,7 @@ pub(crate) fn compute_import_plan<'a>(
             for e in es {
                 if d.matches(e) {
                     present = true;
-                    // Records sharing a name and type share one TTL, so the
-                    // row is rewritten rather than edited in place.
+                    // Journal the old and new TTL as DEL+ADD so IXFR can replay it.
                     if reconcile_ttl && e.ttl != desired_ttl {
                         ttl_dels.push((*e).clone());
                         stale = true;
@@ -148,8 +148,7 @@ pub(crate) fn compute_import_plan<'a>(
 }
 
 impl ImportPlan<'_> {
-    /// The reconcile as a record diff: `after` is the existing set minus the
-    /// deletes plus the adds, so `build_record_diff` classifies each RRset.
+    /// Preview against the same zone and record snapshot used to compute this plan.
     pub(crate) fn diff(&self, zone: &Zone, existing: &[Record]) -> RecordDiff {
         let deleted_ids: HashSet<i32> = self
             .dels

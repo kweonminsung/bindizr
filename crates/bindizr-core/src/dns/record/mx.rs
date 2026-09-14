@@ -43,6 +43,7 @@ impl<'a> MxRecordValue<'a> {
         Rdata::new(rdata)
     }
 
+    /// Validate the fields of this MX value.
     pub fn validate(&self) -> Result<(), String> {
         if self.target.trim() == "." {
             if self.priority != 0 {
@@ -59,6 +60,7 @@ impl<'a> MxRecordValue<'a> {
         self.priority == 0 && self.target.trim() == "."
     }
 
+    /// Render the MX value in canonical text form.
     pub fn canonical(&self) -> String {
         format!("{} {}", self.priority, to_fqdn_lowercase(self.target))
     }

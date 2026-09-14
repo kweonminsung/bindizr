@@ -8,12 +8,14 @@ async fn dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
     serde_json::from_str(&status).expect("CLI did not return valid JSON")
 }
 
+/// Read the active signing key tag for a test zone.
 async fn signing_key_tag(app: &TestApp, zone_name: &str) -> u64 {
     dnssec_status(app, zone_name).await["dnssec"]["keys"][0]["key_tag"]
         .as_u64()
         .expect("status lists the signing key")
 }
 
+/// Verify the DNSSEC lifecycle through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_lifecycle_via_cli() {
@@ -99,6 +101,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
     assert!(status.contains("DNSSEC disabled"));
 }
 
+/// Verify DNSSEC rollover with NSEC3 through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_nsec3_rollover_via_cli() {
@@ -171,6 +174,7 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     assert!(!promoted.contains("published"), "{promoted}");
 }
 
+/// Verify DNSSEC key export and import through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_key_export_import_round_trip_via_cli() {
@@ -268,6 +272,7 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     assert!(imported.contains(&key_tag.to_string()), "{imported}");
 }
 
+/// Verify that zone DNSSEC split key import restores both roles.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_split_key_import_restores_both_roles() {
@@ -375,6 +380,7 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     );
 }
 
+/// Verify that a zone exported mid rollover imports still mid rollover.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn a_zone_exported_mid_rollover_imports_still_mid_rollover() {

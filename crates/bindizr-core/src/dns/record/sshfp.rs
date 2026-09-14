@@ -29,6 +29,7 @@ impl SshfpRecordValue {
         })
     }
 
+    /// Validate the fields of this SSHFP value.
     pub fn validate(&self) -> Result<(), String> {
         // Fingerprint lengths are fixed per type: SHA-1 and SHA-256.
         let expected = match self.fingerprint_type {
@@ -58,6 +59,7 @@ impl SshfpRecordValue {
         Ok(())
     }
 
+    /// Render the SSHFP value in canonical text form.
     pub fn canonical(&self) -> String {
         format!(
             "{} {} {}",
@@ -81,6 +83,7 @@ impl SshfpRecordValue {
 mod tests {
     use super::SshfpRecordValue;
 
+    /// Verify that `parse` drops rfc1035 parens around the fingerprint.
     #[test]
     fn parse_drops_rfc1035_parens_around_the_fingerprint() {
         // The form `domain`'s Display emits, fed back by nsupdate and import.
@@ -88,6 +91,7 @@ mod tests {
         assert_eq!(parsed.canonical(), format!("4 2 {}", "AB".repeat(32)));
     }
 
+    /// Verify that `parse` joins spaced hex and canonicalizes.
     #[test]
     fn parse_joins_spaced_hex_and_canonicalizes() {
         let parsed =
@@ -99,6 +103,7 @@ mod tests {
         );
     }
 
+    /// Verify that `validate` pins the fingerprint length per type.
     #[test]
     fn validate_pins_the_fingerprint_length_per_type() {
         let short = SshfpRecordValue::parse("4 2 4B9B").unwrap();

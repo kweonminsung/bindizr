@@ -5,6 +5,7 @@ use crate::common::{ExternalDnsAdapter, TestApp, TestAppOptions};
 
 const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
+/// Create a zone fixture through the API.
 async fn create_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
         .request(
@@ -21,11 +22,13 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
     assert_eq!(status, StatusCode::CREATED);
 }
 
+/// Grant the test token access to a zone.
 async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
     app.run_cli_success(&["token", "grant", token_name, zone_name])
         .await;
 }
 
+/// Collect values matching an owner and type from an API response.
 fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
     body["records"]
         .as_array()
@@ -37,6 +40,7 @@ fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
         .collect()
 }
 
+/// Verify that external DNS routes are not registered when disabled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_routes_are_not_registered_when_disabled() {
@@ -53,6 +57,7 @@ async fn external_dns_routes_are_not_registered_when_disabled() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Verify that external DNS domain listing reflects token grants.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_domain_listing_reflects_token_grants() {
@@ -91,6 +96,7 @@ async fn external_dns_domain_listing_reflects_token_grants() {
     assert_eq!(body["domains"], json!([granted_zone]));
 }
 
+/// Verify that a grant narrowed to a subtree narrows the domain filter.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
@@ -152,6 +158,7 @@ async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
     );
 }
 
+/// Verify that external DNS changes apply and stay idempotent.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_apply_and_stay_idempotent() {
@@ -244,6 +251,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     assert_eq!(app.zone_serial(&zone_name).await, base_serial + 3);
 }
 
+/// Verify that external DNS changes reject ungranted zones atomically.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_reject_ungranted_zones_atomically() {
@@ -295,6 +303,7 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
     assert!(record_values(&body, &format!("a.{granted_zone}"), "A").is_empty());
 }
 
+/// Verify that external DNS never falls back from ungranted subzone to granted parent.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent() {
@@ -350,6 +359,7 @@ async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent(
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }
 
+/// Verify that external DNS changes enforce record validation.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_enforce_record_validation() {
@@ -401,6 +411,7 @@ async fn external_dns_changes_enforce_record_validation() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Verify that adapter serves webhook protocol with scoped token.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn adapter_serves_webhook_protocol_with_scoped_token() {
@@ -515,6 +526,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
     assert_eq!(response.status().as_u16(), 401);
 }
 
+/// Verify that external DNS record listing spans read pages.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_record_listing_spans_read_pages() {

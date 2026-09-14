@@ -2,6 +2,7 @@ use serde_json::json;
 
 use super::{Changes, Endpoint};
 
+/// Build an external-dns endpoint fixture with the supplied targets.
 fn endpoint(dns_name: &str, record_type: &str, ttl: i64, targets: &[&str]) -> Endpoint {
     Endpoint {
         dns_name: dns_name.to_string(),
@@ -12,7 +13,8 @@ fn endpoint(dns_name: &str, record_type: &str, ttl: i64, targets: &[&str]) -> En
     }
 }
 
-// Field names and casing are the v0.21.0 endpoint.Endpoint json tags.
+/// Verify that endpoint fields deserialize using the names and casing of ExternalDNS v0.21.0
+/// JSON tags.
 #[test]
 fn endpoint_deserializes_external_dns_wire_format() {
     let parsed: Endpoint = serde_json::from_value(json!({
@@ -36,6 +38,7 @@ fn endpoint_deserializes_external_dns_wire_format() {
     assert_eq!(parsed.provider_specific[0].name, "x");
 }
 
+/// Verify that endpoint serializes with omitempty semantics.
 #[test]
 fn endpoint_serializes_with_omitempty_semantics() {
     let serialized =
@@ -57,6 +60,7 @@ fn endpoint_serializes_with_omitempty_semantics() {
     assert!(serialized.get("recordTTL").is_none());
 }
 
+/// Verify that endpoint validate rejects unsupported shapes.
 #[test]
 fn endpoint_validate_rejects_unsupported_shapes() {
     assert!(endpoint("", "A", 0, &["192.0.2.1"]).validate().is_err());
@@ -106,6 +110,7 @@ fn endpoint_validate_rejects_unsupported_shapes() {
     );
 }
 
+/// Verify that changes to bindizr pairs updates and maps TTL.
 #[test]
 fn changes_to_bindizr_pairs_updates_and_maps_ttl() {
     let changes: Changes = serde_json::from_value(json!({
@@ -126,6 +131,7 @@ fn changes_to_bindizr_pairs_updates_and_maps_ttl() {
     assert!(bindizr.deletes.is_empty());
 }
 
+/// Verify that changes to bindizr rejects mismatched update pairs.
 #[test]
 fn changes_to_bindizr_rejects_mismatched_update_pairs() {
     let changes: Changes = serde_json::from_value(json!({

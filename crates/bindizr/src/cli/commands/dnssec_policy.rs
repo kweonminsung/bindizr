@@ -199,6 +199,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
     Ok(())
 }
 
+/// Print a DNSSEC policy in the selected output format.
 fn print_policy(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
     print_response(data, output, |response: &DnssecPolicyResponse| {
         vec![DnssecPolicyRow::from(&response.dnssec_policy)]

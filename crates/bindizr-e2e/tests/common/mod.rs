@@ -63,6 +63,7 @@ enum TestRuntime {
 }
 
 impl TestApp {
+    /// Start the configured end-to-end test application.
     pub(crate) async fn start() -> Self {
         if env_flag(DNS_VERIFICATION_ENV) {
             Self::start_compose().await
@@ -77,6 +78,7 @@ impl TestApp {
         Self::start_with_options(TestAppOptions::default()).await
     }
 
+    /// Return the test API's base URL.
     pub(crate) fn base_url(&self) -> &str {
         &self.base_url
     }
@@ -108,6 +110,7 @@ impl TestApp {
             .await
     }
 
+    /// Create a test API token using the supplied CLI options.
     async fn create_token_with(&self, args: &[&str]) -> (String, String) {
         let args = [args, &["--output", "json"]].concat();
         let stdout = self.run_cli_success(&args).await;
@@ -125,10 +128,12 @@ impl TestApp {
         )
     }
 
+    /// Qualify a zone name with this test's namespace.
     pub(crate) fn zone_name(&self, base: &str) -> String {
         format!("{}.{}", self.namespace, base.trim_end_matches('.'))
     }
 
+    /// Return this test's isolation namespace.
     pub(crate) fn namespace(&self) -> &str {
         &self.namespace
     }
@@ -142,6 +147,7 @@ impl TestApp {
         }
     }
 
+    /// Check whether this test application includes DNS secondaries.
     pub(crate) fn has_dns_secondaries(&self) -> bool {
         !self.dns_secondary_ports.is_empty()
     }
@@ -180,6 +186,7 @@ impl TestApp {
         response
     }
 
+    /// Send an authenticated API request and decode its JSON response.
     async fn send_request(
         &self,
         method: Method,
@@ -212,6 +219,7 @@ impl TestApp {
         (status, body)
     }
 
+    /// Fetch all API record pages for a zone.
     pub(crate) async fn list_records(&self, zone_name: &str) -> Vec<Value> {
         let (status, body) = self
             .request(
@@ -227,6 +235,7 @@ impl TestApp {
             .clone()
     }
 
+    /// Read the zone's current serial through the API.
     pub(crate) async fn zone_serial(&self, zone_name: &str) -> i64 {
         let (status, body) = self
             .request(Method::GET, &format!("/zones/{zone_name}"), None)
@@ -237,6 +246,7 @@ impl TestApp {
             .expect("zone carries a serial")
     }
 
+    /// Create a default zone in this test's namespace.
     pub(crate) async fn create_test_zone(&self) -> Value {
         let zone_name = self.zone_name("example.com");
         let request = json!({
@@ -275,6 +285,7 @@ impl TestApp {
         .await
     }
 
+    /// Run a CLI command against this test application.
     pub(crate) async fn run_cli(&self, args: &[&str]) -> std::process::Output {
         self.run_cli_with_input(args, None).await
     }
@@ -333,18 +344,21 @@ impl TestApp {
         output
     }
 
+    /// Run a CLI command and return stdout after asserting success.
     pub(crate) async fn run_cli_success(&self, args: &[&str]) -> String {
         let output = self.run_cli(args).await;
         assert_cli_success(args, &output);
         String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
     }
 
+    /// Run a CLI command with stdin and return stdout after asserting success.
     pub(crate) async fn run_cli_success_with_input(&self, args: &[&str], input: &str) -> String {
         let output = self.run_cli_with_input(args, Some(input)).await;
         assert_cli_success(args, &output);
         String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
     }
 
+    /// Capture the record owner and type before an API mutation.
     async fn previous_dns_key(&self, method: &Method, path: &str) -> Option<(String, u16)> {
         if !matches!(*method, Method::PUT | Method::DELETE) {
             return None;
@@ -364,6 +378,7 @@ impl TestApp {
         None
     }
 
+    /// Wait until secondary DNS answers match the API's records.
     async fn assert_dns_matches_api(&self, previous_dns_key: Option<(String, u16)>) {
         if self.dns_secondary_ports.is_empty() {
             return;
@@ -418,6 +433,7 @@ impl TestApp {
 }
 
 impl Drop for TestApp {
+    /// Stop the test daemon and release its temporary files.
     fn drop(&mut self) {
         if let TestRuntime::Local { child, .. } = &mut self.runtime {
             let _ = child.kill();
@@ -426,6 +442,7 @@ impl Drop for TestApp {
     }
 }
 
+/// Generate an isolated namespace for a test application.
 fn test_namespace() -> String {
     let run_id = RUN_ID.get_or_init(|| {
         let elapsed = std::time::SystemTime::now()
@@ -437,6 +454,7 @@ fn test_namespace() -> String {
     format!("{run_id}-{sequence}")
 }
 
+/// Read a boolean test setting from the environment.
 fn env_flag(name: &str) -> bool {
     match env::var(name) {
         Err(env::VarError::NotPresent) => false,
@@ -449,6 +467,7 @@ fn env_flag(name: &str) -> bool {
     }
 }
 
+/// Find an available local TCP port for a test listener.
 fn reserve_tcp_port() -> u16 {
     TcpListener::bind(("127.0.0.1", 0))
         .expect("failed to bind ephemeral TCP port")

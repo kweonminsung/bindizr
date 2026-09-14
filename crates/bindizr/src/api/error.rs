@@ -19,12 +19,14 @@ use crate::api::middleware::body_parser::MAX_UPLOAD_BODY_BYTES;
 pub(crate) struct ApiError(pub(crate) ServiceError);
 
 impl From<ServiceError> for ApiError {
+    /// Wrap a service error for HTTP response conversion.
     fn from(value: ServiceError) -> Self {
         ApiError(value)
     }
 }
 
 impl IntoResponse for ApiError {
+    /// Convert a service error into its HTTP status and JSON error body.
     fn into_response(self) -> Response {
         let status = StatusCode::from_u16(self.0.code.http_status())
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -33,6 +35,7 @@ impl IntoResponse for ApiError {
 }
 
 impl From<JsonRejection> for ApiError {
+    /// Translate a JSON extraction failure into an API error.
     fn from(rejection: JsonRejection) -> Self {
         log_error!("JSON Rejection: {:?}", rejection);
 
@@ -77,6 +80,7 @@ where
 {
     type Rejection = ApiError;
 
+    /// Parse URL query parameters and translate validation errors.
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
         axum::extract::Query::from_request_parts(parts, state)
             .await
@@ -95,6 +99,7 @@ where
 {
     type Rejection = ApiError;
 
+    /// Parse route parameters and translate validation errors.
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
         axum::extract::Path::from_request_parts(parts, state)
             .await

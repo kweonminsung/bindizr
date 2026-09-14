@@ -7,7 +7,7 @@ use crate::socket::{
     types::{DaemonResponse, NotifyAllZonesParams, NotifyZoneParams},
 };
 
-/// Handle the `NotifyAllZones` command by sending DNS NOTIFY for every zone.
+/// Request NOTIFY delivery for all eligible zones.
 pub(crate) async fn notify_all_zones(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -21,7 +21,7 @@ pub(crate) async fn notify_all_zones(
     })
 }
 
-/// Handle the `NotifyZone` command by sending DNS NOTIFY for one zone.
+/// Request NOTIFY delivery for one zone.
 pub(crate) async fn notify_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: NotifyZoneParams = parse_params(data)?;
 

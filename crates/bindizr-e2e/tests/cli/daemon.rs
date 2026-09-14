@@ -1,8 +1,9 @@
+//! Local daemon lifecycle checks: stopping the container's PID 1 in Compose
+//! mode would recycle the shared stack beneath the remaining tests.
+
 use crate::common::TestApp;
 
-// Local mode only: in compose the daemon is the container's PID 1, so
-// stopping it would recycle the shared stack under the remaining tests.
-
+/// Verify that `status` reports running daemon.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn status_reports_running_daemon() {
@@ -13,6 +14,7 @@ async fn status_reports_running_daemon() {
     assert!(status.contains("Running"));
 }
 
+/// Verify that restart reexecs daemon in place.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn restart_reexecs_daemon_in_place() {
@@ -28,6 +30,7 @@ async fn restart_reexecs_daemon_in_place() {
     assert!(status.contains("Running"));
 }
 
+/// Verify that stop shuts down daemon.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn stop_shuts_down_daemon() {

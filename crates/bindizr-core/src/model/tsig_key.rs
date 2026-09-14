@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-/// TSIG HMAC algorithms supported for nsupdate authentication (RFC 8945).
+/// TSIG HMAC algorithms for update and transfer authentication (RFC 8945).
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub enum TsigAlgorithm {
     /// The default a key is created with, matching `tsig-keygen`'s.
@@ -29,6 +29,7 @@ impl TsigAlgorithm {
 }
 
 impl std::fmt::Display for TsigAlgorithm {
+    /// Write the TSIG algorithm in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -55,17 +56,18 @@ impl std::str::FromStr for TsigAlgorithm {
 
 impl TryFrom<String> for TsigAlgorithm {
     type Error = String;
+
+    /// Validate and convert the stored value into a TSIG algorithm.
     fn try_from(s: String) -> Result<Self, Self::Error> {
         s.parse()
     }
 }
 
-/// A TSIG key used to authenticate nsupdate requests. Keys are standalone
-/// credentials granted to zones through
-/// [`super::tsig_grant::TsigGrant`] rows; `name` is the wire name.
+/// A TSIG credential for updates and transfers; `name` is its wire name.
+/// Zone rights come from [`super::tsig_grant::TsigGrant`] rows.
 ///
-/// `is_global` is fixed at creation: a global key may update every zone
-/// (all names, all types) without any grant.
+/// `is_global` is fixed at creation: a global key may update and transfer
+/// every zone without any grant.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TsigKey {
     pub id: i32,
@@ -81,6 +83,7 @@ pub struct TsigKey {
 mod tests {
     use super::*;
 
+    /// Verify that algorithm parses storage and wire forms case insensitively.
     #[test]
     fn algorithm_parses_storage_and_wire_forms_case_insensitively() {
         assert_eq!(
@@ -93,6 +96,7 @@ mod tests {
         );
     }
 
+    /// Verify that algorithm rejects unsupported names.
     #[test]
     fn algorithm_rejects_unsupported_names() {
         assert!("hmac-md5".parse::<TsigAlgorithm>().is_err());

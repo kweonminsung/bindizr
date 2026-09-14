@@ -27,6 +27,7 @@ WARMUP = 1.5
 
 
 async def measure(adapter, prepop: int) -> dict:
+    """Measure record creation throughput at one prepopulated zone size."""
     await adapter.delete_zone(ZONE)
     await adapter.create_zone(ZONE)
     pool = generate(prepop, 1337)
@@ -37,6 +38,7 @@ async def measure(adapter, prepop: int) -> dict:
     create_recs = generate(300_000, 4242)
 
     async def step(seq: int) -> bool:
+        """Create one uniquely named record in the growing zone."""
         rec = dict(create_recs[seq % len(create_recs)])
         rec["name"] = f"crt{seq:08d}"
         await adapter.create_record(ZONE, rec)
@@ -49,6 +51,7 @@ async def measure(adapter, prepop: int) -> dict:
 
 
 async def main() -> None:
+    """Run and print the record-creation sweep across zone sizes."""
     label = sys.argv[1] if len(sys.argv) > 1 else "build"
     adapter = registry.build("bindizr", {"resources": {"sample_interval_secs": 1}},
                              f"bench-lz-{label}", notify_after_update=False)

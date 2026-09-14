@@ -43,6 +43,7 @@ pub struct ZoneVersionResponse {
 }
 
 impl ZoneVersionResponse {
+    /// Build a zone-version response from its stored metadata.
     pub(crate) fn from_version(version: &ZoneVersion) -> Result<Self, ServiceError> {
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
@@ -81,6 +82,7 @@ pub struct VersionRecordResponse {
 }
 
 impl From<ReconstructedRecord> for VersionRecordResponse {
+    /// Build a version-record response from a reconstructed record.
     fn from(record: ReconstructedRecord) -> Self {
         VersionRecordResponse {
             name: record.name.to_string(),
@@ -137,8 +139,8 @@ pub struct RecordDiffSummary {
     pub changed: usize,
 }
 
-/// The difference between two serials' records, grouped by name and type. Empty on
-/// a real apply, which does not need it; populated only for a dry-run preview.
+/// Record differences grouped by name and type. Version comparisons always
+/// populate this; mutation responses populate it only for dry-run previews.
 #[derive(Default, Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordDiff {
     pub entries: Vec<RecordDiffEntry>,

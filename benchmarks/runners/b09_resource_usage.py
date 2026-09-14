@@ -19,6 +19,7 @@ SELF_SAMPLES = True
 
 
 async def run(adapter, cfg, ctx) -> dict:
+    """Measure system resource use under the configured benchmark workloads."""
     zone = ctx["zone"]
     size = cfg["query"]["zone_size"]
     await adapter.create_zone(zone)
@@ -49,13 +50,13 @@ async def run(adapter, cfg, ctx) -> dict:
     res = sampler.stop()
     s = rec.summary()
 
-    # Bindizr idles outside the query plane while BIND9 serves, so the split
-    # shows where the stack's cost actually lands.
     def _service(name: str) -> str:
-        # docker container names are "<project>-<service>-<index>".
+        """Extract the service from a <project>-<service>-<index> container name."""
         parts = name.rsplit("-", 2)
         return parts[-2] if len(parts) == 3 else name
 
+    # Bindizr idles outside the query plane while BIND9 serves, so the split
+    # shows where the stack's cost actually lands.
     by_service = {_service(n): v for n, v in res.get("cpu_by_container", {}).items()}
     return {
         "system": ctx["label"],

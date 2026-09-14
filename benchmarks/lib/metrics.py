@@ -1,8 +1,8 @@
 """Latency/throughput measurement primitives.
 
 `LatencyRecorder` collects per-request latencies (in seconds) and success/error
-counts, then computes TPS, requests/sec, and p50/p95/p99 percentiles — the
-metrics required by Benchmarks 1, 3, 9.
+counts, then reports successful TPS, total requests/sec, and latency percentiles.
+Failed requests contribute to error rate, never to latency percentiles.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ class LatencyRecorder:
     ended_at: float | None = None
 
     def record(self, latency_secs: float, ok: bool = True) -> None:
+        """Record a successful latency sample or increment the error count."""
         if ok:
             self.latencies_ms.append(latency_secs * 1000.0)
         else:
@@ -25,19 +26,23 @@ class LatencyRecorder:
 
     @property
     def count(self) -> int:
+        """Return the number of successful measured requests."""
         return len(self.latencies_ms)
 
     @property
     def total(self) -> int:
+        """Return the total number of successful and failed requests."""
         return self.count + self.errors
 
     @property
     def elapsed_secs(self) -> float:
+        """Return the measured duration in seconds."""
         if self.started_at is None or self.ended_at is None:
             return 0.0
         return max(self.ended_at - self.started_at, 1e-9)
 
     def percentile(self, p: float) -> float:
+        """Interpolate a latency percentile from successful request samples."""
         if not self.latencies_ms:
             return 0.0
         data = sorted(self.latencies_ms)
@@ -47,6 +52,7 @@ class LatencyRecorder:
         return data[lo] + (data[hi] - data[lo]) * (k - lo)
 
     def summary(self) -> dict[str, float]:
+        """Summarize throughput, error rate, and successful-request latency."""
         tps = self.count / self.elapsed_secs if self.elapsed_secs else 0.0
         return {
             "count": self.count,

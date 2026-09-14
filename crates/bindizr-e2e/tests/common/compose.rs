@@ -22,6 +22,7 @@ const COMPOSE_COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
 static COMPOSE_STACK: OnceLock<ComposeStack> = OnceLock::new();
 
 impl TestApp {
+    /// Start a test application using the Docker Compose services.
     pub(crate) async fn start_compose() -> Self {
         let compose_stack = COMPOSE_STACK.get_or_init(ComposeStack::start);
         let client = Client::new();
@@ -45,6 +46,7 @@ pub(crate) struct ComposeStack {
 }
 
 impl ComposeStack {
+    /// Start the Compose stack used by the test harness.
     fn start() -> Self {
         let stack = Self {
             project_name: COMPOSE_PROJECT_NAME.to_string(),
@@ -62,12 +64,14 @@ impl ComposeStack {
         stack
     }
 
+    /// Build a CLI command that runs inside the Compose daemon container.
     pub(crate) fn cli_command(&self) -> Command {
         let mut command = self.compose_command();
         command.args(["exec", "-T", "bindizr", "bindizr"]);
         command
     }
 
+    /// Build a Docker Compose command for the test project.
     fn compose_command(&self) -> Command {
         let mut command = Command::new("docker");
         command.arg("compose").arg("-p").arg(&self.project_name);
@@ -78,6 +82,7 @@ impl ComposeStack {
         command
     }
 
+    /// Run a Compose command and assert that it succeeds.
     fn run_compose(&self, args: &[&str]) {
         eprintln!(
             "Running: docker compose -p {} -f {} {}",
@@ -124,6 +129,7 @@ impl ComposeStack {
     }
 }
 
+/// Check whether the expected Compose service ports are reachable.
 fn compose_services_are_reachable() -> bool {
     [8000, SECONDARY_PORTS[0], SECONDARY_PORTS[1]]
         .into_iter()
@@ -145,6 +151,7 @@ fn compose_files() -> Vec<&'static str> {
     }
 }
 
+/// Wait until the Compose API is ready for requests.
 async fn wait_for_compose_api(client: &Client) {
     eprintln!("Waiting for bindizr API at {COMPOSE_API_BASE_URL}...");
     for attempt in 1..=120 {

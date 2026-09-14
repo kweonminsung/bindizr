@@ -4,6 +4,7 @@ use crate::{
     model::record::RecordType,
 };
 
+/// Build a minimal UPDATE message with the requested zone type.
 pub(crate) fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
     let mut message = Vec::new();
     message.extend_from_slice(&[
@@ -20,10 +21,12 @@ pub(crate) fn minimal_update_with_ztype(ztype: u16) -> Vec<u8> {
     message
 }
 
+/// Set the additional-record count in a test DNS header.
 fn set_arcount(message: &mut [u8], arcount: u16) {
     message[10..12].copy_from_slice(&arcount.to_be_bytes());
 }
 
+/// Append an EDNS OPT record to the test message.
 fn append_opt_rr(message: &mut Vec<u8>) {
     message.extend_from_slice(&[
         0x00, // Root owner name
@@ -34,10 +37,12 @@ fn append_opt_rr(message: &mut Vec<u8>) {
     ]);
 }
 
+/// Append a TSIG fixture with the default key name.
 fn append_tsig_rr(message: &mut Vec<u8>) {
     append_tsig_rr_with_owner(message, &[0x03, b'k', b'e', b'y', 0x00]);
 }
 
+/// Append a TSIG fixture with the supplied owner name.
 fn append_tsig_rr_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
     let mut rdata = Vec::new();
     rdata.extend_from_slice(&[
@@ -60,6 +65,7 @@ fn append_tsig_rr_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
     message.extend_from_slice(&rdata);
 }
 
+/// Verify that `parse_update_request` rejects non SOA zone type.
 #[test]
 fn parse_update_request_rejects_non_soa_zone_type() {
     let message = minimal_update_with_ztype(1);
@@ -67,6 +73,7 @@ fn parse_update_request_rejects_non_soa_zone_type() {
     assert!(matches!(err, ParseError::InvalidZoneSection));
 }
 
+/// Verify that `parse_update_request` accepts SOA zone type.
 #[test]
 fn parse_update_request_accepts_soa_zone_type() {
     let message = minimal_update_with_ztype(6);
@@ -74,6 +81,7 @@ fn parse_update_request_accepts_soa_zone_type() {
     assert_eq!(request.zone_name, "example.com.");
 }
 
+/// Verify that `parse_update_request` accepts opt additional without TSIG.
 #[test]
 fn parse_update_request_accepts_opt_additional_without_tsig() {
     let mut message = minimal_update_with_ztype(6);
@@ -84,6 +92,7 @@ fn parse_update_request_accepts_opt_additional_without_tsig() {
     assert!(request.tsig.is_none());
 }
 
+/// Verify that `parse_update_request` accepts opt before TSIG.
 #[test]
 fn parse_update_request_accepts_opt_before_tsig() {
     let mut message = minimal_update_with_ztype(6);
@@ -137,6 +146,7 @@ fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
     assert_eq!(request.zone_name, r"evil\.example.com.");
 }
 
+/// Verify that `parse_update_request` rejects TSIG before other additional rrs.
 #[test]
 fn parse_update_request_rejects_tsig_before_other_additional_rrs() {
     let mut message = minimal_update_with_ztype(6);
@@ -148,6 +158,7 @@ fn parse_update_request_rejects_tsig_before_other_additional_rrs() {
     assert!(matches!(err, ParseError::InvalidTsig));
 }
 
+/// Verify that `to_record_value` preserves TXT character string boundaries.
 #[test]
 fn to_record_value_preserves_txt_character_string_boundaries() {
     let first = UpdateRr {
@@ -174,6 +185,7 @@ fn to_record_value_preserves_txt_character_string_boundaries() {
     assert!(!RecordType::TXT.values_equal(&first_value, None, &second_value, None));
 }
 
+/// Verify that `to_record_value` follows compression pointer in name RDATA.
 #[test]
 fn to_record_value_follows_compression_pointer_in_name_rdata() {
     let mut message = vec![
@@ -198,6 +210,7 @@ fn to_record_value_follows_compression_pointer_in_name_rdata() {
     assert_eq!(priority, None);
 }
 
+/// Verify that `to_record_value` rejects non backward compression pointers.
 #[test]
 fn to_record_value_rejects_non_backward_compression_pointers() {
     let forward = [
@@ -215,6 +228,7 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
     }
 }
 
+/// Verify that `to_record_value` rejects name RDATA with trailing bytes.
 #[test]
 fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
     let message = [1, b'a', 0, 0];
@@ -223,8 +237,8 @@ fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
     assert!(!err.is_empty());
 }
 
-// TXT RDATA is one or more character-strings (RFC 1035, Section 3.3.14), so an
-// empty value would store an undecodable record.
+/// Verify rejection of empty TXT RDATA, which lacks the character-string required by RFC 1035,
+/// Section 3.3.14.
 #[test]
 fn to_record_value_rejects_empty_txt_rdata() {
     let rr = update_rr(Rtype::TXT, Class::IN, 300, Vec::new());
@@ -232,6 +246,7 @@ fn to_record_value_rejects_empty_txt_rdata() {
     assert!(!err.is_empty());
 }
 
+/// Verify that `to_record_value` rejects non UTF8 TXT character strings.
 #[test]
 fn to_record_value_rejects_non_utf8_txt_character_strings() {
     let rr = update_rr(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
@@ -239,6 +254,7 @@ fn to_record_value_rejects_non_utf8_txt_character_strings() {
     assert!(!err.is_empty());
 }
 
+/// Verify that `to_record_value` splits SRV priority into its own column.
 #[test]
 fn to_record_value_splits_srv_priority_into_its_own_column() {
     // priority 10, weight 20, port 5060, target sip.example.com.
@@ -256,6 +272,7 @@ fn to_record_value_splits_srv_priority_into_its_own_column() {
     assert_eq!(priority, Some(10));
 }
 
+/// Build a dynamic update record with the requested wire fields.
 fn update_rr(rr_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRr {
     UpdateRr {
         name: "www.example.com.".to_string(),

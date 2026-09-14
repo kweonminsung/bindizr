@@ -51,6 +51,7 @@ where
     }
 }
 
+/// Write a length-prefixed DNS TCP frame.
 async fn write_frame<W>(writer: &mut W, frame: &[u8]) -> Result<(), XfrError>
 where
     W: tokio::io::AsyncWriteExt + Unpin,
@@ -59,6 +60,7 @@ where
     writer.flush().await.map_err(XfrError::IoError)
 }
 
+/// Read one DNS message from its TCP length-prefixed frame.
 pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     reader: &mut R,
 ) -> Result<Vec<u8>, XfrError> {
@@ -100,6 +102,7 @@ pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     Ok(message_buf)
 }
 
+/// Write one DNS message as a TCP length-prefixed frame.
 pub(crate) async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
     writer: &mut W,
     message: &[u8],
@@ -112,10 +115,12 @@ pub(crate) async fn write_tcp_message<W: tokio::io::AsyncWriteExt + Unpin>(
 mod tests {
     use super::*;
 
+    /// Decode a TCP DNS frame from the supplied test bytes.
     async fn read(bytes: &[u8]) -> Result<Vec<u8>, XfrError> {
         read_tcp_message(&mut &bytes[..]).await
     }
 
+    /// Verify that a written message reads back whole.
     #[tokio::test]
     async fn a_written_message_reads_back_whole() {
         let mut framed = Vec::new();
@@ -125,6 +130,7 @@ mod tests {
         assert_eq!(read(&framed).await.unwrap(), b"payload");
     }
 
+    /// Verify that a connection closed between messages is not a protocol error.
     #[tokio::test]
     async fn a_connection_closed_between_messages_is_not_a_protocol_error() {
         // The first byte is read on its own so a secondary hanging up between
@@ -134,6 +140,7 @@ mod tests {
         assert!(matches!(error, XfrError::IoError(_)), "{error:?}");
     }
 
+    /// Verify that a truncated length prefix is a protocol error.
     #[tokio::test]
     async fn a_truncated_length_prefix_is_a_protocol_error() {
         let error = read(&[0x00]).await.unwrap_err();
@@ -144,6 +151,7 @@ mod tests {
         );
     }
 
+    /// Verify that a body shorter than its prefix names the length it expected.
     #[tokio::test]
     async fn a_body_shorter_than_its_prefix_names_the_length_it_expected() {
         let error = read(&[0x00, 0x04, b'a', b'b']).await.unwrap_err();
@@ -154,6 +162,7 @@ mod tests {
         );
     }
 
+    /// Verify that the largest prefix a frame can carry is accepted.
     #[tokio::test]
     async fn the_largest_prefix_a_frame_can_carry_is_accepted() {
         // Two octets of prefix make this the largest frame there is.

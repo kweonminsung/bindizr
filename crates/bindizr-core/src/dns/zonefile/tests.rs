@@ -3,6 +3,7 @@
 
 use super::*;
 
+/// Verify that TXT rejects non UTF8 octets.
 #[test]
 fn txt_rejects_non_utf8_octets() {
     // `\255\254` decode to bytes 0xFF 0xFE, which are not valid UTF-8.
@@ -21,6 +22,7 @@ fn txt_rejects_non_utf8_octets() {
     );
 }
 
+/// Verify that parse error names the line of the submitted text.
 #[test]
 fn parse_error_names_the_line_of_the_submitted_text() {
     // An unknown rtype is caught where it sits; an rdata error is reported
@@ -37,6 +39,7 @@ fn parse_error_names_the_line_of_the_submitted_text() {
     );
 }
 
+/// Verify that TXT UTF8 multi segment parses as segments.
 #[test]
 fn txt_utf8_multi_segment_parses_as_segments() {
     let parsed = parse_zone_file("multi IN TXT \"foo\" \"bar\"\n", "example.com", 3600);
@@ -56,6 +59,7 @@ fn txt_utf8_multi_segment_parses_as_segments() {
     }
 }
 
+/// Verify that a TTL written with units reaches the parsed record.
 #[test]
 fn a_ttl_written_with_units_reaches_the_parsed_record() {
     // The slot rules are the rewrite's own tests; this is the round trip.
@@ -66,6 +70,7 @@ fn a_ttl_written_with_units_reaches_the_parsed_record() {
     assert_eq!(parsed.rrs[0].ttl, 172_800);
 }
 
+/// Verify zone-file parsing of NAPTR presentation data.
 #[test]
 fn reads_a_naptr_record_in_its_own_presentation_form() {
     // `domain` renders a root replacement as `..`, so the value comes from

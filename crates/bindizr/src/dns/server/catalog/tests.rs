@@ -2,6 +2,7 @@ use bindizr_core::dns::name::ZoneName;
 
 use super::*;
 
+/// Verify that catalog digest changes when members change.
 #[test]
 fn catalog_digest_changes_when_members_change() {
     let zones = vec![

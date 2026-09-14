@@ -17,6 +17,7 @@ use crate::{
 pub(crate) struct DaemonSocketClient;
 
 impl DaemonSocketClient {
+    /// Create a client for the daemon control socket.
     pub(crate) fn new() -> Self {
         DaemonSocketClient
     }
@@ -24,6 +25,7 @@ impl DaemonSocketClient {
     /// True only when nothing listens on either socket path; a timeout or
     /// garbled response may come from a live but wedged daemon.
     pub(crate) async fn daemon_socket_gone(&self) -> bool {
+        /// Check whether a connection error means no daemon is listening.
         fn gone(err: &std::io::Error) -> bool {
             matches!(
                 err.kind(),
@@ -42,6 +44,7 @@ impl DaemonSocketClient {
         }
     }
 
+    /// Request the daemon's current status.
     pub(crate) async fn status(&self) -> Result<DaemonStatusResponse, CliError> {
         let res = self.send_control_command(DaemonCommandKind::Status).await?;
         serde_json::from_value(res.data)
@@ -121,6 +124,7 @@ impl DaemonSocketClient {
     }
 }
 
+/// Open a connection to the daemon's control socket.
 async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
     try_connect_daemon_socket()
         .await

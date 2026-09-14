@@ -81,6 +81,7 @@ impl SignedViewParams<'_> {
             - chrono::Duration::seconds((slot % self.expiration_jitter_secs as u64) as i64)
     }
 
+    /// Compute the signed DNSSEC view and its changes from the previous view.
     pub fn compute(&self) -> Result<SignedViewDiff, String> {
         let zone = self.zone;
         let apex = to_wire_name(zone.name.to_wire())?;
@@ -172,7 +173,6 @@ impl SignedViewParams<'_> {
             signable.push(vec![rr]);
         }
 
-        // Index stored signatures for reuse: (owner, covered type) → rows.
         let mut prev_rrsigs: BTreeMap<(String, i32), Vec<&DnssecRecord>> = BTreeMap::new();
         for row in self.prev {
             if row.record_type == DnssecRecordType::Rrsig
@@ -254,10 +254,12 @@ pub struct SignedViewDiff {
 }
 
 impl SignedViewDiff {
+    /// Check whether the signed view has no added or removed records.
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty()
     }
 
+    /// Compare derived record identities to find additions and removals.
     fn from_planes(prev: &[DnssecRecord], new_rows: Vec<DnssecRecord>) -> SignedViewDiff {
         let identity = |record: &DnssecRecord| {
             (
@@ -292,10 +294,12 @@ impl SignedViewDiff {
     }
 }
 
+/// Convert a wire record type into a stored DNSSEC record type.
 fn derived_record_type(rtype: Rtype) -> Result<DnssecRecordType, String> {
     DnssecRecordType::try_from(rtype.to_int() as i32)
 }
 
+/// Check whether a type carries DNSKEY, CDS, or CDNSKEY data.
 fn is_key_rtype(rtype: Rtype) -> bool {
     matches!(rtype, Rtype::DNSKEY | Rtype::CDS | Rtype::CDNSKEY)
 }
@@ -324,6 +328,7 @@ fn rrset_digest(signers: &[&Signer<'_>], rrset: &[&SignRr]) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Check whether an owner lies below a delegation in this zone.
 fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8>>) -> bool {
     // Walk proper ancestors of `owner` down to (excluding) the apex; the name
     // is glue if any of them is a delegation point.
@@ -340,6 +345,7 @@ fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8
     false
 }
 
+/// Convert a derived absolute owner to a name relative to its zone.
 fn owner_in_zone(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, String> {
     OwnerName::parse_absolute_in_zone(&owner.to_string(), zone_name).map_err(|e| {
         format!(
@@ -359,6 +365,7 @@ pub(crate) struct Signer<'a> {
 }
 
 impl<'a> Signer<'a> {
+    /// Load a stored DNSSEC key into a signer for the zone apex.
     fn new(apex: &WireName, key: &'a DnssecKey) -> Result<Self, String> {
         let dnskey = dnskey_for(key)?;
         let secret = SecretKeyBytes::parse_from_bind(&key.private_key)
@@ -374,6 +381,7 @@ impl<'a> Signer<'a> {
         })
     }
 
+    /// Sign one RRset for the supplied validity interval.
     fn sign_rrset(
         &self,
         rrset: &[&SignRr],

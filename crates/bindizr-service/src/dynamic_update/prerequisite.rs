@@ -14,6 +14,7 @@ use crate::{
     repository::RepositoryService,
 };
 
+/// Evaluate UPDATE prerequisites against the locked zone contents.
 pub(crate) async fn evaluate_prerequisites_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
@@ -93,11 +94,13 @@ pub(crate) async fn evaluate_prerequisites_tx(
     Ok(())
 }
 
-/// The apex always exists: the zone itself owns its SOA and NS records.
+/// Check whether an owner exists, counting the apex as present because the zone owns its SOA
+/// and NS records.
 fn has_owner(owner: &OwnerName, records: &[Record]) -> bool {
     owner.is_apex() || records.iter().any(|record| record.name == *owner)
 }
 
+/// Check whether the zone contains records with the requested owner and type.
 fn has_rrset(owner: &OwnerName, record_type: &RecordType, records: &[Record]) -> bool {
     records
         .iter()

@@ -13,6 +13,7 @@ pub(crate) struct MySqlTsigGrantRepository {
 }
 
 impl MySqlTsigGrantRepository {
+    /// Create a repository for TSIG grants using the supplied pool.
     pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
@@ -20,6 +21,7 @@ impl MySqlTsigGrantRepository {
 
 #[async_trait]
 impl TsigGrantRepository for MySqlTsigGrantRepository {
+    /// Insert a TSIG grant.
     async fn create(&self, mut grant: TsigGrant) -> Result<TsigGrant, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -45,6 +47,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(grant)
     }
 
+    /// Find a TSIG grant by ID.
     async fn get(&self, id: i32) -> Result<Option<TsigGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -58,6 +61,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(grant)
     }
 
+    /// List TSIG grants for a zone.
     async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<TsigGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -71,6 +75,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(grants)
     }
 
+    /// List TSIG grants for a TSIG key in a zone in the current transaction.
     async fn list_by_zone_id_and_key_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -92,6 +97,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(grants)
     }
 
+    /// List TSIG grants for a TSIG key.
     async fn list_by_key_id(&self, tsig_key_id: i32) -> Result<Vec<TsigGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -105,6 +111,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(grants)
     }
 
+    /// Count TSIG grants for a TSIG key.
     async fn count_by_key_id(&self, tsig_key_id: i32) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -117,6 +124,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(count as u64)
     }
 
+    /// Delete a TSIG grant by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

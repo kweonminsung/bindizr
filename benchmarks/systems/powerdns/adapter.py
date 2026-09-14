@@ -30,6 +30,7 @@ API_MAX_CONNECTIONS = 8
 
 
 def _content(rec: dict) -> str:
+    """Render a benchmark record in the PowerDNS API content format."""
     v = rec["value"]
     if rec["type"] == "MX":
         return f'{rec.get("priority", 10)} {v}'
@@ -44,6 +45,7 @@ class PowerDnsAdapter(DnsAdapter):
     supports_ixfr = False  # gsqlite3 IXFR is limited; exercised via AXFR fallback
 
     def __init__(self, cfg: dict, project: str):
+        """Initialize the adapter with its benchmark configuration and project."""
         super().__init__(cfg, project)
         self.base = f"http://localhost:{API_PORT}/api/v1/servers/localhost"
         self.headers = {"X-API-Key": API_KEY}
@@ -51,6 +53,7 @@ class PowerDnsAdapter(DnsAdapter):
         self.compose = dockerutil.Compose(HERE / "compose.yml", project)
 
     async def setup(self) -> None:
+        """Start the benchmark system and wait for it to become ready."""
         self.compose.down()  # clean slate: remove any leftovers from a prior run
         self.compose.up("powerdns", wait=True)
         self.session = aiohttp.ClientSession(
@@ -59,6 +62,7 @@ class PowerDnsAdapter(DnsAdapter):
         await self._wait_api()
 
     async def _wait_api(self, timeout: int = 60) -> None:
+        """Wait until the system API is ready."""
         for _ in range(timeout * 2):
             try:
                 async with self.session.get(self.base, timeout=aiohttp.ClientTimeout(total=2)) as r:
@@ -70,15 +74,18 @@ class PowerDnsAdapter(DnsAdapter):
         raise RuntimeError("PowerDNS API did not become ready")
 
     async def teardown(self) -> None:
+        """Stop the benchmark system and release its resources."""
         if self.session:
             await self.session.close()
         self.compose.down()
 
     @staticmethod
     def _fqdn(zone: str, name: str) -> str:
+        """Qualify a record owner with its zone name."""
         return f"{name}.{zone.rstrip('.')}."
 
     async def create_zone(self, zone: str) -> None:
+        """Create the zone used by the benchmark."""
         z = zone if zone.endswith(".") else zone + "."
         body = {
             "name": z,
@@ -90,12 +97,14 @@ class PowerDnsAdapter(DnsAdapter):
                 raise RuntimeError(f"create_zone {r.status}: {await r.text()}")
 
     async def delete_zone(self, zone: str) -> None:
+        """Remove the benchmark zone and its records."""
         z = zone if zone.endswith(".") else zone + "."
         async with self.session.delete(self.base + f"/zones/{z}") as r:
             await r.read()
 
     async def _patch(self, zone: str, name: str, rtype: str, changetype: str,
                      rec: dict | None) -> bool:
+        """Submit a record-group change through the PowerDNS API."""
         z = zone if zone.endswith(".") else zone + "."
         rrset = {"name": self._fqdn(zone, name), "type": rtype, "changetype": changetype}
         if changetype == "REPLACE":
@@ -106,12 +115,13 @@ class PowerDnsAdapter(DnsAdapter):
             return r.status in (200, 204)
 
     async def create_record(self, zone: str, rec: dict) -> str:
+        """Create a record and return its adapter-specific handle."""
         if not await self._patch(zone, rec["name"], rec["type"], "REPLACE", rec):
             raise RuntimeError(f'create_record failed for {rec["name"]} {rec["type"]}')
         return f'{self._fqdn(zone, rec["name"])}|{rec["type"]}'
 
     async def bulk_import(self, zone: str, records: list[dict]) -> None:
-        # PowerDNS accepts many RRsets in one PATCH; batch for throughput.
+        """Import records in batched PowerDNS PATCH requests for throughput."""
         z = zone if zone.endswith(".") else zone + "."
         batch = 500
         for start in range(0, len(records), batch):
@@ -128,6 +138,7 @@ class PowerDnsAdapter(DnsAdapter):
                     raise RuntimeError(f"bulk PATCH {resp.status}: {await resp.text()}")
 
     async def get_record(self, zone: str, handle: str) -> bool:
+        """Check whether the record identified by the handle is present."""
         fqdn, rtype = handle.rsplit("|", 1)
         z = zone if zone.endswith(".") else zone + "."
         url = self.base + f"/zones/{z}?rrset_name={fqdn}&rrset_type={rtype}"
@@ -138,14 +149,17 @@ class PowerDnsAdapter(DnsAdapter):
             return bool(data.get("rrsets"))
 
     async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
+        """Replace the record identified by the handle with the supplied value."""
         fqdn, rtype = handle.rsplit("|", 1)
         name = fqdn[: -(len(zone.rstrip(".")) + 2)]
         return await self._patch(zone, name, rtype, "REPLACE", {**rec, "type": rtype})
 
     async def delete_record(self, zone: str, handle: str) -> bool:
+        """Delete the record identified by the handle."""
         fqdn, rtype = handle.rsplit("|", 1)
         name = fqdn[: -(len(zone.rstrip(".")) + 2)]
         return await self._patch(zone, name, rtype, "DELETE", None)
 
     def dns_endpoint(self) -> Endpoint:
+        """Return the DNS endpoint that serves the managed zone."""
         return Endpoint("127.0.0.1", DNS_PORT)

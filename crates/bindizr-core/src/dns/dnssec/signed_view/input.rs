@@ -158,6 +158,7 @@ pub(crate) fn denial_rrs(
     input: &[SignRr],
     denial: DnssecDenial,
 ) -> Result<Vec<SignRr>, String> {
+    /// Wrap a denial record's data in the signing record type.
     fn into_sign_rr<D>(
         rr: WireRecord<WireName, D>,
         wrap: impl FnOnce(D) -> ZoneRecordData<Vec<u8>, WireName>,

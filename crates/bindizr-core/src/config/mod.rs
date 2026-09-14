@@ -60,6 +60,7 @@ pub struct ApiConfig {
     pub tls_key_file: Option<String>,
 }
 
+/// Return the default metrics enabled setting.
 fn default_metrics_enabled() -> bool {
     true
 }
@@ -87,6 +88,7 @@ pub enum DatabaseType {
 }
 
 impl fmt::Display for DatabaseType {
+    /// Write the database type in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             DatabaseType::Mysql => "mysql",
@@ -100,6 +102,7 @@ impl fmt::Display for DatabaseType {
 impl std::str::FromStr for DatabaseType {
     type Err = String;
 
+    /// Parse a database type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "mysql" => Ok(DatabaseType::Mysql),
@@ -193,6 +196,7 @@ pub struct ZoneDefaultsConfig {
 }
 
 impl Default for ZoneDefaultsConfig {
+    /// Build the default zone settings.
     fn default() -> Self {
         Self {
             ttl: default_zone_ttl(),
@@ -204,26 +208,32 @@ impl Default for ZoneDefaultsConfig {
     }
 }
 
+/// Return the default zone TTL setting.
 fn default_zone_ttl() -> i32 {
     3_600
 }
 
+/// Return the default zone refresh setting.
 fn default_zone_refresh() -> i32 {
     300
 }
 
+/// Return the default zone retry setting.
 fn default_zone_retry() -> i32 {
     60
 }
 
+/// Return the default zone expire setting.
 fn default_zone_expire() -> i32 {
     3_600_000
 }
 
+/// Return the default zone minimum TTL setting.
 fn default_zone_minimum_ttl() -> i32 {
     86_400
 }
 
+/// Return the default journal retention days setting.
 fn default_journal_retention_days() -> u32 {
     365
 }
@@ -233,22 +243,27 @@ fn default_maintenance_interval_secs() -> u64 {
     3_600
 }
 
+/// Return the default notify after update setting.
 fn default_notify_after_update() -> bool {
     true
 }
 
+/// Return the default notify mode setting.
 fn default_notify_mode() -> NotifyMode {
     NotifyMode::Sync
 }
 
+/// Return the default notify batch ms setting.
 fn default_notify_batch_ms() -> u64 {
     50
 }
 
+/// Return the default zone cache setting.
 fn default_zone_cache() -> bool {
     true
 }
 
+/// Return the default zone cache max records setting.
 fn default_zone_cache_max_records() -> u64 {
     500_000
 }
@@ -264,6 +279,7 @@ pub enum NotifyMode {
 }
 
 impl fmt::Display for NotifyMode {
+    /// Write the notify mode in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             NotifyMode::Sync => "sync",
@@ -276,6 +292,7 @@ impl fmt::Display for NotifyMode {
 impl std::str::FromStr for NotifyMode {
     type Err = String;
 
+    /// Parse a notify mode from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "sync" => Ok(NotifyMode::Sync),
@@ -285,10 +302,12 @@ impl std::str::FromStr for NotifyMode {
     }
 }
 
+/// Return the default notify retries setting.
 fn default_notify_retries() -> u32 {
     3
 }
 
+/// Return the default notify timeout secs setting.
 fn default_notify_timeout_secs() -> u64 {
     3
 }
@@ -311,6 +330,7 @@ pub enum LogLevel {
 }
 
 impl fmt::Display for LogLevel {
+    /// Write the log level in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             LogLevel::Trace => "trace",
@@ -326,6 +346,7 @@ impl fmt::Display for LogLevel {
 impl std::str::FromStr for LogLevel {
     type Err = String;
 
+    /// Parse a log level from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "trace" => Ok(LogLevel::Trace),
@@ -392,6 +413,7 @@ pub fn resolve_config_path(conf_file_path: Option<&str>) -> String {
     resolve_config_path_with_env(conf_file_path, |name| env::var(name).ok())
 }
 
+/// Resolve the configuration path using the supplied environment lookup.
 fn resolve_config_path_with_env(
     conf_file_path: Option<&str>,
     get_env: impl Fn(&str) -> Option<String>,
@@ -453,6 +475,7 @@ impl BindizrConfig {
         fixed
     }
 
+    /// Assemble the effective configuration from its raw sections.
     fn from_raw(raw: Config, get_env: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
         let mut bindizr_config = raw
             .try_deserialize::<Self>()
@@ -469,6 +492,7 @@ impl BindizrConfig {
 }
 
 impl DatabaseConfig {
+    /// Validate the database configuration fields.
     fn validate(&self) -> Result<(), String> {
         match self.database_type {
             DatabaseType::Mysql if self.mysql.server_url.trim().is_empty() => Err(
@@ -497,6 +521,7 @@ impl ApiConfig {
         ))
     }
 
+    /// Validate the API configuration fields.
     fn validate(&self) -> Result<(), String> {
         if self.listen_port == 0 {
             return Err("api.listen_port must not be 0".to_string());
@@ -512,7 +537,7 @@ impl ApiConfig {
 }
 
 impl BindizrConfig {
-    /// Both bind at startup, so sharing one leaves the second failing.
+    /// Reject overlapping API and DNS endpoints so both servers can bind at startup.
     fn validate_listeners(&self) -> Result<(), String> {
         if self.api.listen_port == self.dns.listen_port
             && (self.api.listen_addr == self.dns.listen_addr
@@ -529,6 +554,7 @@ impl BindizrConfig {
 }
 
 impl DnsConfig {
+    /// Validate the DNS configuration fields.
     fn validate(&self) -> Result<(), String> {
         if self.listen_port == 0 {
             return Err("dns.listen_port must not be 0".to_string());

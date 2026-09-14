@@ -9,6 +9,7 @@ pub(crate) struct PostgresApiTokenRepository {
 }
 
 impl PostgresApiTokenRepository {
+    /// Create a repository for API tokens using the supplied pool.
     pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -16,6 +17,7 @@ impl PostgresApiTokenRepository {
 
 #[async_trait]
 impl ApiTokenRepository for PostgresApiTokenRepository {
+    /// Insert an API token.
     async fn create(&self, mut token: ApiToken) -> Result<ApiToken, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -42,6 +44,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         Ok(token)
     }
 
+    /// Find an API token by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -56,6 +59,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         Ok(row)
     }
 
+    /// Find an API token by its stored token hash.
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -70,6 +74,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         Ok(row)
     }
 
+    /// List all API tokens.
     async fn list_all(&self) -> Result<Vec<ApiToken>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -83,6 +88,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         Ok(rows)
     }
 
+    /// Update an API token.
     async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -103,6 +109,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         Ok(token)
     }
 
+    /// Delete an API token by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

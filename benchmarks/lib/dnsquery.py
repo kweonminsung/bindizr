@@ -1,8 +1,8 @@
 """Minimal async UDP DNS query load generator (no external deps).
 
 Builds raw DNS query packets and drives them over per-worker connected UDP
-sockets, so it can push far more QPS than forking `dig`. Used by Benchmark 9 to
-measure query throughput and latency across servers.
+sockets to avoid spawning `dig` per request. Used by the query-performance and
+resource-usage benchmarks.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ QTYPE = {"A": 1, "AAAA": 28, "CNAME": 5, "TXT": 16, "MX": 15}
 
 
 def build_query(qid: int, name: str, qtype: int = 1) -> bytes:
+    """Encode an authoritative DNS query for the requested name and type."""
     header = struct.pack(">HHHHHH", qid & 0xFFFF, 0x0000, 1, 0, 0, 0)  # RD=0 (auth)
     qname = b"".join(
         bytes([len(part)]) + part.encode() for part in name.rstrip(".").split(".")
@@ -27,6 +28,7 @@ def build_query(qid: int, name: str, qtype: int = 1) -> bytes:
 
 
 def _ancount(resp: bytes) -> int:
+    """Read the answer count from a DNS response header."""
     if len(resp) < 12:
         return 0
     return struct.unpack(">H", resp[6:8])[0]
@@ -35,6 +37,7 @@ def _ancount(resp: bytes) -> int:
 async def query_load(server: str, port: int, names: list[str], qtype: int,
                      concurrency: int, duration_secs: float,
                      warmup_secs: float = 0.0) -> LatencyRecorder:
+    """Measure UDP DNS query throughput and latency with a fixed worker pool."""
     rec = LatencyRecorder()
     clock = time.monotonic
     warmup_until = clock() + warmup_secs
@@ -45,6 +48,7 @@ async def query_load(server: str, port: int, names: list[str], qtype: int,
     n = len(names)
 
     async def worker() -> None:
+        """Issue sequential DNS queries on one UDP socket and record their results."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setblocking(False)
         sock.connect((server, port))

@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify zone-field validation and normalization.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_validate_and_normalize() {
@@ -126,6 +127,7 @@ async fn zone_validate_and_normalize() {
     }
 }
 
+/// Verify rejection of invalid zone names and TTLs.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_reject_invalid_name_and_ttl() {

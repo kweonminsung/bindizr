@@ -5,6 +5,7 @@ use bindizr_core::{
 
 use super::*;
 
+/// Build the test zone or its DNS name.
 fn zone() -> Zone {
     Zone {
         id: 1,
@@ -25,6 +26,7 @@ fn zone() -> Zone {
     }
 }
 
+/// Build a combined signing key fixture.
 fn csk() -> DnssecKey {
     let now = Utc::now();
     generate_key(
@@ -51,10 +53,12 @@ fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRr {
     }
 }
 
+/// Build a record-group fixture from the supplied values.
 fn rrset(records: Vec<DsRr>) -> Option<DsRrset> {
     Some(DsRrset { records, ttl: 3600 })
 }
 
+/// Build a parent DS probe result from the supplied server answers.
 fn parent(answers: Vec<Option<DsRrset>>) -> ParentDs {
     ParentDs {
         ns_addrs: vec!["192.0.2.1".to_string(), "192.0.2.2".to_string()],
@@ -62,10 +66,12 @@ fn parent(answers: Vec<Option<DsRrset>>) -> ParentDs {
     }
 }
 
+/// Compute delegation information for a key and simulated parent answers.
 fn info(key: &DnssecKey, answers: Vec<Option<DsRrset>>) -> DnssecDelegationInfo {
     to_delegation_info(&zone(), std::slice::from_ref(key), parent(answers)).unwrap()
 }
 
+/// Verify that promotion waits until every server serves the DS.
 #[test]
 fn promotion_waits_until_every_server_serves_the_ds() {
     let key = csk();
@@ -78,6 +84,7 @@ fn promotion_waits_until_every_server_serves_the_ds() {
     );
 }
 
+/// Verify that one server still serving a DS is enough to block a disable.
 #[test]
 fn one_server_still_serving_a_ds_is_enough_to_block_a_disable() {
     // `disable` refuses on ds_key_tags, so the union is what it reads: dropping
@@ -89,6 +96,7 @@ fn one_server_still_serving_a_ds_is_enough_to_block_a_disable() {
     assert_eq!(seen.ds_state, "published");
 }
 
+/// Verify that a parent serving nothing anywhere hides the delegation.
 #[test]
 fn a_parent_serving_nothing_anywhere_hides_the_delegation() {
     let key = csk();
@@ -100,6 +108,7 @@ fn a_parent_serving_nothing_anywhere_hides_the_delegation() {
     assert!(!hidden.keys[0].ds_digest_unsupported);
 }
 
+/// Verify that a DS for another key does not publish this one.
 #[test]
 fn a_ds_for_another_key_does_not_publish_this_one() {
     // Key tags are 16 bits and collide, so the whole RDATA is matched.
@@ -114,6 +123,7 @@ fn a_ds_for_another_key_does_not_publish_this_one() {
     assert_eq!(seen.ds_key_tags, [key.key_tag as u16]);
 }
 
+/// Verify that a digest bindizr cannot compute leaves the match undecided.
 #[test]
 fn a_digest_bindizr_cannot_compute_leaves_the_match_undecided() {
     // RFC 8624, Section 3.3 retires GOST (3), so a parent serving only that
@@ -131,6 +141,7 @@ fn a_digest_bindizr_cannot_compute_leaves_the_match_undecided() {
     assert!(!seen.keys[0].ds_published);
 }
 
+/// Verify that one server answering in a computable digest does not mask another.
 #[test]
 fn one_server_answering_in_a_computable_digest_does_not_mask_another() {
     // A parent mid-rollout between digest types is undecided, not a match.
@@ -147,6 +158,7 @@ fn one_server_answering_in_a_computable_digest_does_not_mask_another() {
     assert!(!seen.keys[0].ds_published);
 }
 
+/// Verify that the TTL reported is the longest any server serves.
 #[test]
 fn the_ttl_reported_is_the_longest_any_server_serves() {
     let key = csk();

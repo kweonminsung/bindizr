@@ -3,6 +3,7 @@ use chrono::Utc;
 
 use super::*;
 
+/// Build a record fixture with the requested fields.
 fn record(record_type: RecordType, value: &str, priority: Option<i32>) -> Record {
     Record {
         id: 1,
@@ -16,6 +17,7 @@ fn record(record_type: RecordType, value: &str, priority: Option<i32>) -> Record
     }
 }
 
+/// Verify that nothing given takes every record at the name.
 #[test]
 fn nothing_given_takes_every_record_at_the_name() {
     assert!(matches_record(
@@ -26,6 +28,7 @@ fn nothing_given_takes_every_record_at_the_name() {
     ));
 }
 
+/// Verify that a type narrows to one RRSET.
 #[test]
 fn a_type_narrows_to_one_rrset() {
     let a = record(RecordType::A, "192.0.2.1", None);
@@ -34,6 +37,7 @@ fn a_type_narrows_to_one_rrset() {
     assert!(!matches_record(&a, Some(&RecordType::TXT), None, None));
 }
 
+/// Verify that a value is compared canonically not as text.
 #[test]
 fn a_value_is_compared_canonically_not_as_text() {
     // The row stores the canonical spelling, so a request naming the same
@@ -54,6 +58,7 @@ fn a_value_is_compared_canonically_not_as_text() {
     ));
 }
 
+/// Verify that a value never carries the preference.
 #[test]
 fn a_value_never_carries_the_preference() {
     // MX keeps its preference in its own column, so the value compares to the
@@ -71,6 +76,7 @@ fn a_value_never_carries_the_preference() {
     }
 }
 
+/// Verify that a preference narrows where the value cannot.
 #[test]
 fn a_preference_narrows_where_the_value_cannot() {
     let ten = record(RecordType::MX, "mail.example.com.", Some(10));
@@ -90,6 +96,7 @@ fn a_preference_narrows_where_the_value_cannot() {
     ));
 }
 
+/// Verify that a preference asked of a type that has none matches nothing.
 #[test]
 fn a_preference_asked_of_a_type_that_has_none_matches_nothing() {
     assert!(!matches_record(

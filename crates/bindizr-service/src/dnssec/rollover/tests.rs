@@ -3,6 +3,7 @@ use bindizr_core::dns::name::ZoneName;
 use super::*;
 use crate::error::ErrorCode;
 
+/// Build the test zone or its DNS name.
 fn zone() -> Zone {
     Zone {
         id: 1,
@@ -23,6 +24,7 @@ fn zone() -> Zone {
     }
 }
 
+/// Build a DNSSEC key fixture in the requested lifecycle state.
 fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible_in: i64) -> DnssecKey {
     let now = Utc::now();
     DnssecKey {
@@ -41,6 +43,7 @@ fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible_in: i64) ->
     }
 }
 
+/// Verify that a published sep key past its hold down is promotable.
 #[test]
 fn a_published_sep_key_past_its_hold_down_is_promotable() {
     let keys = [
@@ -51,6 +54,7 @@ fn a_published_sep_key_past_its_hold_down_is_promotable() {
     assert_eq!(promotable_sep_key_ids(&zone(), &keys, false).unwrap(), [2]);
 }
 
+/// Verify that nothing published means no rollover to confirm.
 #[test]
 fn nothing_published_means_no_rollover_to_confirm() {
     let keys = [key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, -1)];
@@ -60,6 +64,7 @@ fn nothing_published_means_no_rollover_to_confirm() {
     assert_eq!(error.code, ErrorCode::DnssecNoRolloverInProgress);
 }
 
+/// Verify that a ZSK rollover has no parent DS to confirm.
 #[test]
 fn a_zsk_rollover_has_no_parent_ds_to_confirm() {
     // Only a SEP key is answerable by `ds-seen`; the scheduler promotes a
@@ -75,6 +80,7 @@ fn a_zsk_rollover_has_no_parent_ds_to_confirm() {
     assert!(error.message.contains("ZSK"), "{}", error.message);
 }
 
+/// Verify that a hold down still running names the time to retry.
 #[test]
 fn a_hold_down_still_running_names_the_time_to_retry() {
     let keys = [
@@ -88,6 +94,7 @@ fn a_hold_down_still_running_names_the_time_to_retry() {
     assert!(error.message.contains("retry after"), "{}", error.message);
 }
 
+/// Verify that skipping the hold down promotes anyway.
 #[test]
 fn skipping_the_hold_down_promotes_anyway() {
     let keys = [
@@ -98,6 +105,7 @@ fn skipping_the_hold_down_promotes_anyway() {
     assert_eq!(promotable_sep_key_ids(&zone(), &keys, true).unwrap(), [2]);
 }
 
+/// Verify that the latest deadline among the published keys gates them all.
 #[test]
 fn the_latest_deadline_among_the_published_keys_gates_them_all() {
     // Each key carries its own deadline, so the one published last is what
@@ -112,6 +120,7 @@ fn the_latest_deadline_among_the_published_keys_gates_them_all() {
     assert_eq!(error.code, ErrorCode::InvalidInput);
 }
 
+/// Verify that a retiring key waits out the signatures it made.
 #[test]
 fn a_retiring_key_waits_out_the_signatures_it_made() {
     let mut zsk = key(1, DnssecKeyRole::Zsk, DnssecKeyState::Active, 0);
@@ -121,6 +130,7 @@ fn a_retiring_key_waits_out_the_signatures_it_made() {
     assert_eq!(retirement_interval_secs(&zsk, Some(86_400)), 900);
 }
 
+/// Verify that a retiring sep key also waits out the parents DS.
 #[test]
 fn a_retiring_sep_key_also_waits_out_the_parents_ds() {
     // Resolvers that cached the parent's DS RRset before the replacement was

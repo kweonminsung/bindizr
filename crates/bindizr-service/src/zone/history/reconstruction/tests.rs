@@ -3,10 +3,12 @@ use chrono::Utc;
 
 use super::*;
 
+/// Build a validated zone name for the test.
 fn zone_name() -> ZoneName {
     ZoneName::parse("example.com").unwrap()
 }
 
+/// Build a record fixture with the requested fields.
 fn record(id: i32, name: &str, value: &str) -> Record {
     Record {
         id,
@@ -20,6 +22,7 @@ fn record(id: i32, name: &str, value: &str) -> Record {
     }
 }
 
+/// Build a journal entry for a history reconstruction test.
 fn change(
     serial: i32,
     operation: ChangeOperation,
@@ -41,14 +44,17 @@ fn change(
     }
 }
 
+/// Wrap a user record type as a journal record type.
 fn user(record_type: RecordType) -> JournalRecordType {
     JournalRecordType::User(record_type)
 }
 
+/// Collect reconstructed record values for comparison.
 fn values(records: &[ReconstructedRecord]) -> Vec<&str> {
     records.iter().map(|r| r.value.as_str()).collect()
 }
 
+/// Verify that undoing an add takes the record back out.
 #[test]
 fn undoing_an_add_takes_the_record_back_out() {
     let records = vec![record(1, "www", "192.0.2.1"), record(2, "www", "192.0.2.2")];
@@ -63,6 +69,7 @@ fn undoing_an_add_takes_the_record_back_out() {
     assert_eq!(values(&undo_changes(records, &changes)), ["192.0.2.1"]);
 }
 
+/// Verify that undoing a delete restores the row the journal kept.
 #[test]
 fn undoing_a_delete_restores_the_row_the_journal_kept() {
     let changes = [change(
@@ -79,6 +86,7 @@ fn undoing_a_delete_restores_the_row_the_journal_kept() {
     assert_eq!(restored[0].ttl, 300);
 }
 
+/// Verify that only one of two identical records comes out.
 #[test]
 fn only_one_of_two_identical_records_comes_out() {
     // The match key ignores row identity, so an undone ADD takes one of the
@@ -95,6 +103,7 @@ fn only_one_of_two_identical_records_comes_out() {
     assert_eq!(values(&undo_changes(records, &changes)), ["192.0.2.1"]);
 }
 
+/// Verify that a value spelled differently still matches its row.
 #[test]
 fn a_value_spelled_differently_still_matches_its_row() {
     // The key canonicalizes, so a value the journal spelled in another case
@@ -112,6 +121,7 @@ fn a_value_spelled_differently_still_matches_its_row() {
     assert!(undo_changes(vec![live], &changes).is_empty());
 }
 
+/// Verify that a record added and deleted inside the window leaves nothing.
 #[test]
 fn a_record_added_and_deleted_inside_the_window_leaves_nothing() {
     let changes = [
@@ -134,6 +144,7 @@ fn a_record_added_and_deleted_inside_the_window_leaves_nothing() {
     assert!(undo_changes(Vec::new(), &changes).is_empty());
 }
 
+/// Verify that derived and SOA rows are not user data to restore.
 #[test]
 fn derived_and_soa_rows_are_not_user_data_to_restore() {
     // Rollback re-signs the derived plane, and the SOA lives in the version
@@ -152,6 +163,7 @@ fn derived_and_soa_rows_are_not_user_data_to_restore() {
     assert!(undo_changes(Vec::new(), &changes).is_empty());
 }
 
+/// Verify that a history that does not add up does not block the rollback.
 #[test]
 fn a_history_that_does_not_add_up_does_not_block_the_rollback() {
     // Two anomalies at once: an ADD with no live row to take, and a user row
@@ -176,6 +188,7 @@ fn a_history_that_does_not_add_up_does_not_block_the_rollback() {
     );
 }
 
+/// Verify that the output order does not follow the hash map.
 #[test]
 fn the_output_order_does_not_follow_the_hash_map() {
     let records = vec![

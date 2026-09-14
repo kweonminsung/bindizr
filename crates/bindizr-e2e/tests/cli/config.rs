@@ -40,6 +40,7 @@ fn run_config_check(file: Option<&str>, env: &[(&str, &str)]) -> std::process::O
         .expect("failed to run bindizr CLI")
 }
 
+/// Verify that config check accepts a config flag.
 #[test]
 #[serial_test::serial(bindizr_e2e)]
 fn config_check_accepts_a_config_flag() {
@@ -56,6 +57,7 @@ fn config_check_accepts_a_config_flag() {
     assert!(stdout.contains("valid"));
 }
 
+/// Verify that config check uses config path env without argument.
 #[test]
 #[serial_test::serial(bindizr_e2e)]
 fn config_check_uses_config_path_env_without_argument() {
@@ -70,6 +72,7 @@ fn config_check_uses_config_path_env_without_argument() {
     assert!(String::from_utf8_lossy(&output.stdout).contains(path));
 }
 
+/// Verify that config check rejects invalid config.
 #[test]
 #[serial_test::serial(bindizr_e2e)]
 fn config_check_rejects_invalid_config() {
@@ -88,6 +91,7 @@ fn config_check_rejects_invalid_config() {
     );
 }
 
+/// Verify that config check rejects missing file.
 #[test]
 #[serial_test::serial(bindizr_e2e)]
 fn config_check_rejects_missing_file() {
@@ -105,6 +109,7 @@ fn config_check_rejects_missing_file() {
     );
 }
 
+/// Verify that config list and get show loaded config.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn config_list_and_get_show_loaded_config() {
@@ -125,6 +130,7 @@ async fn config_list_and_get_show_loaded_config() {
     assert_cli_failure_contains(&args, &missing, "Unknown configuration key");
 }
 
+/// Verify that config reload takes the file again and refuses what it cannot adopt.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {

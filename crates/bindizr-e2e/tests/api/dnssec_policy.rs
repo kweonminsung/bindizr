@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify DNSSEC policy creation, retrieval, update, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_policy_create_read_update_delete() {
@@ -65,7 +66,6 @@ async fn dnssec_policy_create_read_update_delete() {
     assert!(names.contains(&"default"), "{names:?}");
     assert!(names.contains(&policy_name.as_str()), "{names:?}");
 
-    // An update edits only the fields given and keeps the rest.
     let (status, body) = app
         .request(
             Method::PUT,
@@ -127,6 +127,7 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(body["dnssec_policy"]["name"], "default");
 }
 
+/// Verify that DNSSEC policy in use cannot be deleted.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_policy_in_use_cannot_be_deleted() {
@@ -193,6 +194,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
     assert_eq!(status, StatusCode::OK);
 }
 
+/// Verify that zone moves between policies and rolls algorithm.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_moves_between_policies_and_rolls_algorithm() {
@@ -261,6 +263,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     );
 }
 
+/// Verify that zone moves between denial chains without going insecure.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_moves_between_denial_chains_without_going_insecure() {

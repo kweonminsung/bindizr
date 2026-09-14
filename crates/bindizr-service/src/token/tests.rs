@@ -1,6 +1,7 @@
 use super::{MAX_EXPIRES_IN_DAYS, normalize_token_name, to_expires_at, validate_token_description};
 use crate::error::ErrorCode;
 
+/// Verify that `normalize_token_name` trims and folds case.
 #[test]
 fn normalize_token_name_trims_and_folds_case() {
     assert_eq!(
@@ -14,6 +15,7 @@ fn normalize_token_name_trims_and_folds_case() {
     );
 }
 
+/// Verify that `normalize_token_name` rejects empty and whitespace names.
 #[test]
 fn normalize_token_name_rejects_empty_and_whitespace_names() {
     for name in ["", "   ", "bad name", "bad\tname"] {
@@ -22,7 +24,9 @@ fn normalize_token_name_rejects_empty_and_whitespace_names() {
     }
 }
 
-// `/` splits a path segment, `?` and `#` end it, and dot segments get normalized away.
+/// Verify rejection of token names that cannot remain one URL path segment.
+///
+/// `/` splits segments, `?` and `#` terminate them, and URL normalization removes dot segments.
 #[test]
 fn normalize_token_name_rejects_names_that_are_not_one_path_segment() {
     for name in [".", "..", "self", "a/b", "a?b", "a#b", "a%2fb", "토큰"] {
@@ -35,6 +39,7 @@ fn normalize_token_name_rejects_names_that_are_not_one_path_segment() {
     );
 }
 
+/// Verify that `to_expires_at` is none without days and ahead of now with them.
 #[test]
 fn to_expires_at_is_none_without_days_and_ahead_of_now_with_them() {
     assert!(to_expires_at(None).unwrap().is_none());
@@ -42,6 +47,7 @@ fn to_expires_at_is_none_without_days_and_ahead_of_now_with_them() {
     assert!(to_expires_at(Some(MAX_EXPIRES_IN_DAYS)).is_ok());
 }
 
+/// Verify that `to_expires_at` rejects non positive values.
 #[test]
 fn to_expires_at_rejects_non_positive_values() {
     let zero = to_expires_at(Some(0)).unwrap_err();
@@ -51,6 +57,7 @@ fn to_expires_at_rejects_non_positive_values() {
     assert_eq!(negative.code, ErrorCode::InvalidInput);
 }
 
+/// Verify that `to_expires_at` rejects values beyond the cap.
 #[test]
 fn to_expires_at_rejects_values_beyond_the_cap() {
     let just_over = to_expires_at(Some(MAX_EXPIRES_IN_DAYS + 1)).unwrap_err();
@@ -60,6 +67,7 @@ fn to_expires_at_rejects_values_beyond_the_cap() {
     assert_eq!(overflow.code, ErrorCode::InvalidInput);
 }
 
+/// Verify that `validate_token_description` counts characters and rejects nul.
 #[test]
 fn validate_token_description_counts_characters_and_rejects_nul() {
     validate_token_description(None).unwrap();

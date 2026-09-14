@@ -1442,7 +1442,7 @@ paths:
       tags:
       - TSIG
       summary: Create a TSIG key
-      description: Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` makes the key able to update every zone (all names, all types) without any grant — effectively write access to all DNS data, so use it sparingly. The response includes the secret.
+      description: Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` permits updates and transfers for every zone without grants. The response includes the secret.
       operationId: create_tsig_key
       requestBody:
         content:
@@ -1635,8 +1635,8 @@ paths:
     post:
       tags:
       - TSIG
-      summary: Grant a TSIG key nsupdate rights in a zone
-      description: 'Grants the key nsupdate rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global keys are rejected: they already cover every zone and never carry grants.'
+      summary: Grant a TSIG key update and transfer rights in a zone
+      description: 'Grants update rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Unrestricted name/type grants also allow transfers; `can_write=false` grants transfers only. Global keys are rejected: they already cover every zone and never carry grants.'
       operationId: create_tsig_grant
       parameters:
       - name: name
@@ -2162,7 +2162,7 @@ paths:
       tags:
       - DNSSEC
       summary: Change a zone's DNSSEC settings
-      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy''s (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
+      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy''s (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys are removed after promotion and cache drain (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
       operationId: update_dnssec_settings
       parameters:
       - name: name
@@ -3245,7 +3245,7 @@ components:
           example: true
         diff:
           $ref: '#/components/schemas/RecordDiff'
-          description: The insert as a record diff (all additions), for previewing the change.
+          description: Dry-run diff; adding a value at an existing name and type is a changed group.
         dry_run:
           type: boolean
           example: false
@@ -3278,8 +3278,8 @@ components:
       type: object
       description: |-
         Request body for creating a DNSSEC policy. The key layout, algorithm,
-        and denial mode are fixed once created; every omitted field takes the
-        built-in `default` policy's value.
+        and denial mode are fixed once created. Omitted fields use the built-in
+        defaults, independent of edits to the policy named `default`.
       required:
       - name
       properties:
@@ -3431,7 +3431,7 @@ components:
           example: external-dns
     CreateTsigGrantRequest:
       type: object
-      description: Request body for granting a TSIG key nsupdate rights in a zone.
+      description: Request body for granting a TSIG key update and transfer rights in a zone.
       required:
       - zone_name
       properties:
@@ -3474,8 +3474,8 @@ components:
         global:
           type: boolean
           description: |-
-            Make the key global: it may update every zone (all names, all types)
-            without any grant. Fixed at creation.
+            Make the key global: it may update and transfer every zone without
+            any grant. Fixed at creation.
           example: false
         name:
           type: string
@@ -3714,11 +3714,11 @@ components:
           example: 34217
         presentation:
           type: string
-          description: 'Full presentation form: `<zone>. IN DS <tag> <alg> 2 <digest>`.'
+          description: 'Full presentation form: `<zone>. IN DS <tag> <alg> <digest_type> <digest>`.'
           example: example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
     DnssecKeyInfo:
       type: object
-      description: A signing key's public half; the private key never leaves the server.
+      description: Public signing-key metadata; private material is excluded from HTTP responses.
       required:
       - id
       - role
@@ -3737,7 +3737,9 @@ components:
           format: date-time
         dnskey:
           type: string
-          description: 'Apex DNSKEY RDATA in presentation form: `257 3 <alg> <public key>`.'
+          description: |-
+            Apex DNSKEY RDATA: `<flags> 3 <alg> <public key>`; flags are 256 for
+            a ZSK and 257 for a CSK or KSK.
           example: 257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==
         eligible_at:
           type:
@@ -4047,9 +4049,7 @@ components:
           type:
           - string
           - 'null'
-          description: |-
-            The parent nameservers configured on the zone; absent until DNSSEC
-            is enabled.
+          description: Configured parent nameservers; may also be set while the zone is unsigned.
           example: a.gtld-servers.net,b.gtld-servers.net
         policy:
           oneOf:
@@ -4243,7 +4243,7 @@ components:
           format: date-time
         global:
           type: boolean
-          description: Whether the key may update every zone without any grant.
+          description: Whether the key may update and transfer every zone without any grant.
           example: false
         id:
           type: integer
@@ -4723,7 +4723,7 @@ components:
                 format: date-time
               global:
                 type: boolean
-                description: Whether the key may update every zone without any grant.
+                description: Whether the key may update and transfer every zone without any grant.
                 example: false
               id:
                 type: integer
@@ -4910,8 +4910,8 @@ components:
     RecordDiff:
       type: object
       description: |-
-        The difference between two serials' records, grouped by name and type. Empty on
-        a real apply, which does not need it; populated only for a dry-run preview.
+        Record differences grouped by name and type. Version comparisons always
+        populate this; mutation responses populate it only for dry-run previews.
       required:
       - entries
       - summary

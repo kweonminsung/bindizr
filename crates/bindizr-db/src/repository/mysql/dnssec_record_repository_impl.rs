@@ -19,6 +19,7 @@ pub(crate) struct MySqlDnssecRecordRepository {
 }
 
 impl MySqlDnssecRecordRepository {
+    /// Create a repository for derived DNSSEC records using the supplied pool.
     pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
@@ -26,6 +27,7 @@ impl MySqlDnssecRecordRepository {
 
 #[async_trait]
 impl DnssecRecordRepository for MySqlDnssecRecordRepository {
+    /// Insert a batch of derived DNSSEC records in the current transaction.
     async fn create_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -63,6 +65,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(())
     }
 
+    /// List derived DNSSEC records for a zone in the current transaction.
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -88,6 +91,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(records)
     }
 
+    /// Delete the derived DNSSEC records with the supplied IDs in the current transaction.
     async fn delete_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -116,6 +120,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(())
     }
 
+    /// Delete all derived DNSSEC records for a zone in the current transaction.
     async fn delete_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -131,6 +136,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(())
     }
 
+    /// Count zones with stored derived DNSSEC records.
     async fn count_zone_ids(&self) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -142,6 +148,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(count as u64)
     }
 
+    /// List zones with signatures due for renewal.
     async fn list_zone_ids_expiring_within_refresh(
         &self,
         cutoff: DateTime<Utc>,
@@ -181,6 +188,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(zone_ids)
     }
 
+    /// Count signatures due for renewal.
     async fn count_expiring_within_refresh(
         &self,
         cutoff: DateTime<Utc>,
@@ -220,6 +228,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(count as u64)
     }
 
+    /// Count signatures that have already expired.
     async fn count_expired(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -238,6 +247,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(count as u64)
     }
 
+    /// List matching derived DNSSEC records with their zone metadata.
     async fn list_by_filter_with_zone(
         &self,
         filter: DnssecRecordFilter,
@@ -311,6 +321,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(records)
     }
 
+    /// Count derived DNSSEC records matching the filter.
     async fn count_by_filter(&self, filter: DnssecRecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();

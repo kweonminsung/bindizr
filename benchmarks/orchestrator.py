@@ -45,6 +45,7 @@ NOTIFY_OFF_BENCHMARKS = {"b01_crud_tps", "b02_bulk_import"}
 
 
 def bindizr_notify_for(bench: str) -> bool:
+    """Choose whether this workload needs bindizr NOTIFY delivery."""
     override = os.environ.get("BENCH_BINDIZR_NOTIFY")
     if override is not None:
         return override.lower() == "true"
@@ -52,10 +53,12 @@ def bindizr_notify_for(bench: str) -> bool:
 
 
 def project_name(system: str) -> str:
+    """Build the Compose project name for a benchmark run."""
     return f"bench-{system}".replace("_", "-")
 
 
 async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
+    """Set up one system, run its selected workload, and collect the result."""
     label = settings.system_label(cfg, system)
     print(f"\n=== {bench} :: {label} ({system}) ===", flush=True)
     proj = project_name(system)
@@ -131,6 +134,7 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
 
 
 async def main_async(args) -> None:
+    """Run the selected systems and benchmarks and write their report."""
     cfg = settings.load()
     repeats = int(cfg.get("repeats", 1))
     benches = args.benchmarks or list(RUNNERS.keys())
@@ -170,6 +174,7 @@ async def main_async(args) -> None:
 
 
 def main() -> None:
+    """Parse benchmark CLI options and start the async orchestrator."""
     ap = argparse.ArgumentParser()
     ap.add_argument("-b", "--benchmarks", nargs="*", help="benchmark keys (default: all)")
     ap.add_argument("-s", "--systems", nargs="*", help="system keys (default: per-benchmark)")

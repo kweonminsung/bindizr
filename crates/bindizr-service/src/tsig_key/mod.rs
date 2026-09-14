@@ -15,7 +15,7 @@ use crate::{
 /// HMAC-SHA256 and is sufficient entropy for the larger algorithms too.
 const GENERATED_SECRET_LEN: usize = 32;
 
-/// Creates, lists, and deletes TSIG keys used for nsupdate authentication.
+/// Manages TSIG credentials shared by update and transfer authentication.
 pub struct TsigKeyService;
 
 impl TsigKeyService {
@@ -90,8 +90,8 @@ impl TsigKeyService {
             .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
     }
 
-    /// Look up the key an incoming TSIG record names. The nsupdate path
-    /// authenticates before it opens its transaction, so this is a plain read.
+    /// Look up the key an incoming TSIG record names. Authentication precedes
+    /// any zone transaction, so this is a plain read.
     pub async fn find_by_wire_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
         // Canonicalize like storage does; an unparseable name matches no key.
         let Ok(name) = normalize_key_name(name) else {
@@ -126,6 +126,7 @@ const MIN_IMPORTED_SECRET_BYTES: usize = 16;
 /// The base64 form must fit the `tsig_keys.secret` VARCHAR(255) column.
 const MAX_SECRET_BASE64_LEN: usize = 255;
 
+/// Validate and normalize a base64-encoded TSIG secret.
 fn normalize_secret(value: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
@@ -153,6 +154,7 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
     Ok(trimmed.to_string())
 }
 
+/// Generate a base64-encoded random TSIG secret.
 fn generate_secret() -> String {
     let bytes: [u8; GENERATED_SECRET_LEN] = rand::rng().random();
     base64::engine::general_purpose::STANDARD.encode(bytes)

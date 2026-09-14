@@ -16,6 +16,7 @@ pub(crate) const DEFAULT_PRIORITY: u16 = 10;
 pub(crate) const MAX_RECORD_RDATA: usize =
     DNS_TCP_MAX_SIZE - 12 - (MAX_DOMAIN_LEN + 2 + 4) - (MAX_DOMAIN_LEN + 2 + 10);
 
+/// Parse an optional unsigned 16-bit record field.
 pub(crate) fn parse_optional_u16_record_field(
     field: &str,
     value: Option<i32>,
@@ -26,6 +27,7 @@ pub(crate) fn parse_optional_u16_record_field(
     })
 }
 
+/// Parse an unsigned 8-bit record field.
 pub(crate) fn parse_u8_record_field(field: &str, value: &str) -> Result<u8, String> {
     value
         .parse::<u8>()
@@ -63,10 +65,12 @@ pub(crate) fn parse_hex_record_field<'a>(
         .collect()
 }
 
+/// Encode bytes as uppercase hexadecimal text.
 pub(crate) fn hex_upper(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02X}")).collect()
 }
 
+/// Parse an unsigned 16-bit record field.
 pub(crate) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, String> {
     value
         .parse::<u16>()
@@ -145,9 +149,10 @@ pub(crate) fn to_quoted_string(text: &str) -> String {
     out
 }
 
-/// An rdata name carries whatever labels an owner name may, so it is decoded
-/// into them rather than split on `.`: RFC 2317, Section 4 delegates through
-/// a `0/25` label, and a `\.` inside a label is data, not a boundary.
+/// Validate a domain-name record value with the same decoded-label rules as an owner name.
+///
+/// Splitting on `.` would break escaped dots; non-LDH labels also occur in RFC 2317, Section 4
+/// delegations such as `0/25`.
 pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(), String> {
     let trimmed = value.trim();
 
@@ -177,9 +182,10 @@ pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
 mod tests {
     use super::validate_domain_record_value;
 
-    // RFC 2181, Section 11: a label is any octet string, so an rdata name takes
-    // what an owner name does. Nothing downstream reads one as text — the wire
-    // encoder and the canonical form both decode labels first.
+    /// Verify that domain-name record values accept the same labels as owner names.
+    ///
+    /// RFC 2181, Section 11 permits non-LDH labels; both canonicalization and wire encoding
+    /// decode them before use.
     #[test]
     fn accepts_the_labels_an_owner_name_may_carry() {
         for value in [
@@ -195,6 +201,7 @@ mod tests {
         }
     }
 
+    /// Verify rejection of record names that cannot round-trip through presentation text.
     #[test]
     fn rejects_what_no_presentation_form_spells_back() {
         for value in [

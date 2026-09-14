@@ -1,5 +1,6 @@
 use super::*;
 
+/// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
         id: 1,
@@ -20,6 +21,7 @@ fn test_zone() -> Zone {
     }
 }
 
+/// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
@@ -38,6 +40,7 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
     }
 }
 
+/// Verify that initial signing emits key RRsets NSEC chain and RRSIGs.
 #[test]
 fn initial_signing_emits_key_rrsets_nsec_chain_and_rrsigs() {
     let zone = test_zone();
@@ -123,6 +126,7 @@ fn initial_signing_emits_key_rrsets_nsec_chain_and_rrsigs() {
     assert!(rrsigs.iter().all(|row| row.rrset_digest.is_some()));
 }
 
+/// Verify that NSEC3 mode builds hashed chain with nsec3param.
 #[test]
 fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
     let zone = test_zone();
@@ -184,6 +188,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
     );
 }
 
+/// Verify that delegation NS and glue are unsigned.
 #[test]
 fn delegation_ns_and_glue_are_unsigned() {
     let zone = test_zone();
@@ -244,6 +249,7 @@ fn delegation_ns_and_glue_are_unsigned() {
     );
 }
 
+/// Verify that mixed TTL RRSET signs at the minimum.
 #[test]
 fn mixed_ttl_rrset_signs_at_the_minimum() {
     let zone = test_zone();
@@ -277,6 +283,7 @@ fn mixed_ttl_rrset_signs_at_the_minimum() {
     assert_eq!(rrsig[0].ttl, 300);
 }
 
+/// Verify that withdrawal publishes the delete CDS pair.
 #[test]
 fn withdrawal_publishes_the_delete_cds_pair() {
     let zone = test_zone();

@@ -94,6 +94,7 @@ pub(crate) fn axfr(
     Ok(TransferOutcome::Records(records))
 }
 
+/// Read the next length-prefixed DNS transfer frame.
 fn read_frame(stream: &mut TcpStream) -> Result<Option<Vec<u8>>, String> {
     let mut len = [0u8; 2];
     match stream.read_exact(&mut len) {
@@ -106,6 +107,7 @@ fn read_frame(stream: &mut TcpStream) -> Result<Option<Vec<u8>>, String> {
     Ok(Some(frame))
 }
 
+/// Convert a signing-key fixture into a TSIG verification key.
 fn to_key(key: &SigningKey) -> Result<Key, String> {
     let secret = base64::engine::general_purpose::STANDARD
         .decode(&key.secret)
@@ -114,6 +116,7 @@ fn to_key(key: &SigningKey) -> Result<Key, String> {
     Key::new(Algorithm::Sha256, &secret, key_name, None, None).map_err(|e| e.to_string())
 }
 
+/// Parse a DNS wire-format name for a transfer request.
 fn name(value: &str) -> Result<Name<Vec<u8>>, String> {
     Name::from_str(value.trim_end_matches('.')).map_err(|e| format!("invalid name '{value}': {e}"))
 }

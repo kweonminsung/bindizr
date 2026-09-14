@@ -9,6 +9,7 @@ const RRSIG: u16 = 46;
 const NSEC3PARAM: u16 = 51;
 const CDS: u16 = 59;
 
+/// Verify that signed zone propagates DNSSEC records and signed IXFR.
 #[tokio::test]
 #[serial]
 async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
@@ -92,6 +93,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
     }
 }
 
+/// Verify that NSEC3 zone propagates nsec3param and CDS.
 #[tokio::test]
 #[serial]
 async fn nsec3_zone_propagates_nsec3param_and_cds() {

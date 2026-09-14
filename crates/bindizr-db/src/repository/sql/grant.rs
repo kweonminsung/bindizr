@@ -51,6 +51,7 @@ pub(crate) fn grant_record_match_sql(
 mod tests {
     use super::*;
 
+    /// Verify that a grant pattern narrows by name and type.
     #[test]
     fn a_grant_pattern_narrows_by_name_and_type() {
         let sql = grant_record_match_sql("r", Some("record_type"), concat_pipes);
@@ -61,6 +62,7 @@ mod tests {
         assert!(sql.contains("',' || p.record_types || ',' LIKE '%,' || r.record_type || ',%'"));
     }
 
+    /// Verify that the derived plane reaches only a grant that limits no type.
     #[test]
     fn the_derived_plane_reaches_only_a_grant_that_limits_no_type() {
         let sql = grant_record_match_sql("d", None, concat_pipes);
@@ -68,6 +70,7 @@ mod tests {
         assert!(sql.ends_with("AND p.record_types = '*'"));
     }
 
+    /// Verify that mysql concatenates with a function.
     #[test]
     fn mysql_concatenates_with_a_function() {
         // `||` is logical OR there, so the fragment must not use it.

@@ -39,6 +39,7 @@ pub(crate) fn pattern_domain(pattern: &str, zone_name: &ZoneName) -> String {
     OwnerName::from_row(name).to_fqdn(zone_name)
 }
 
+/// Check whether a grant's type filter permits the requested record type.
 pub(crate) fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
     if types == MATCH_ANY {
         return true;

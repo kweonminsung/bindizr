@@ -16,14 +16,17 @@ impl OwnerName {
     /// of band, as the empty string.
     pub const APEX: &'static str = "@";
 
+    /// Create the relative owner name for the zone apex.
     pub fn apex() -> Self {
         Self(Vec::new())
     }
 
+    /// Check whether this owner names the zone apex.
     pub fn is_apex(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Return the owner's decoded DNS labels.
     pub fn labels(&self) -> &[String] {
         &self.0
     }
@@ -123,6 +126,7 @@ impl OwnerName {
         format!("{}.{}", self.render_labels(), zone_name.to_fqdn())
     }
 
+    /// Render DNS labels with the required presentation escapes.
     fn render_labels(&self) -> String {
         // Most owners are one label, which needs no join buffer.
         if let [label] = self.0.as_slice() {
@@ -143,6 +147,7 @@ impl OwnerName {
 
 /// Decodes the stored form, so a row column can hold an owner name directly.
 impl From<String> for OwnerName {
+    /// Wrap an owner name from its stored string representation.
     fn from(value: String) -> Self {
         Self::from_row(&value)
     }
@@ -154,10 +159,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for OwnerName
 where
     String: sqlx::Type<DB>,
 {
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <String as sqlx::Type<DB>>::type_info()
     }
 
+    /// Check whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -167,6 +174,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for OwnerName
 where
     String: sqlx::Encode<'q, DB>,
 {
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
@@ -178,6 +186,7 @@ where
 /// Presentation form, as input spells it: `@` at the apex; rows take
 /// [`OwnerName::to_stored`].
 impl std::fmt::Display for OwnerName {
+    /// Write the owner name in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_apex() {
             return f.write_str(Self::APEX);
@@ -247,6 +256,7 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
     Ok(labels)
 }
 
+/// Decode a completed label as UTF-8 and fold its ASCII case.
 fn finish_label(label: Vec<u8>) -> Result<String, ParseNameError> {
     String::from_utf8(label)
         .map(|mut label| {
@@ -256,9 +266,10 @@ fn finish_label(label: Vec<u8>) -> Result<String, ParseNameError> {
         .map_err(|_| ParseNameError::NonUtf8Label)
 }
 
-/// What every owner label must satisfy, whichever constructor produced it.
-/// Not LDH — owner names carry `_` and `*` — so it rejects only what input
-/// cannot spell back: whitespace and control octets, literal or via `\DDD`.
+/// Validate a decoded owner label consistently across name constructors.
+///
+/// Owner labels may contain `_` and `*`; reject whitespace and control octets even when
+/// supplied through `\DDD` escapes.
 fn classify_owner_label(label: &str) -> Result<(), ParseNameError> {
     if label.is_empty() {
         return Err(ParseNameError::EmptyLabel);
@@ -272,8 +283,8 @@ fn classify_owner_label(label: &str) -> Result<(), ParseNameError> {
     Ok(())
 }
 
-/// The RFC 1035, Section 2.3.4 limit, measured on the wire form: one length
-/// octet per label plus the root's terminating zero.
+/// Check the DNS wire-length limit in RFC 1035, Section 2.3.4, including each label's length
+/// octet and the root terminator.
 fn classify_wire_len(owner: &[String], zone: &[String]) -> Result<(), ParseNameError> {
     let wire_len: usize = owner
         .iter()

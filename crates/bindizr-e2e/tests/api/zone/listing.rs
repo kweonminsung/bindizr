@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify zone filtering and pagination.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_filter_and_paginate() {
@@ -59,6 +60,7 @@ async fn zone_filter_and_paginate() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Verify that zone listing sorts and filters on more than the name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_listing_sorts_and_filters_on_more_than_the_name() {

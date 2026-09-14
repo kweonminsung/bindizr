@@ -24,16 +24,19 @@ pub enum DatabaseError {
 }
 
 impl DatabaseError {
+    /// Check whether the database error reports a duplicate unique value.
     pub fn is_unique_violation(&self) -> bool {
         matches!(self, DatabaseError::UniqueViolation(_))
     }
 
+    /// Check whether the database error reports a foreign-key violation.
     pub fn is_foreign_key_violation(&self) -> bool {
         matches!(self, DatabaseError::ForeignKeyViolation(_))
     }
 }
 
 impl From<sqlx::Error> for DatabaseError {
+    /// Convert a SQLx error into a database error with constraint information.
     fn from(err: sqlx::Error) -> Self {
         match &err {
             sqlx::Error::PoolTimedOut => {

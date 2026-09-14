@@ -50,6 +50,7 @@ where
 {
     type Rejection = ApiError;
 
+    /// Extract the authorized caller from request extensions.
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
         parts
             .extensions
@@ -71,6 +72,7 @@ where
 {
     type Rejection = ApiError;
 
+    /// Extract the authenticated API token from request extensions.
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
         parts
             .extensions

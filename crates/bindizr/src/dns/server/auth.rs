@@ -22,6 +22,7 @@ pub(crate) struct TransferRefusal {
 }
 
 impl TransferRefusal {
+    /// Build a transfer refusal with the supplied reason.
     fn refused(reason: String, signer: Option<TransferSigner>) -> Self {
         TransferRefusal {
             reason,
@@ -30,6 +31,7 @@ impl TransferRefusal {
         }
     }
 
+    /// Convert the refusal into a DNS response.
     pub(crate) fn into_response(mut self, query: &ParsedQuery) -> Result<Vec<u8>, XfrError> {
         if let Some(response) = self.response {
             return Ok(response);
@@ -90,6 +92,7 @@ pub(crate) async fn authorize_transfer(
     }
 }
 
+/// Translate a TSIG error into a transfer refusal with its required response.
 fn to_refusal(error: TsigError) -> TransferRefusal {
     match error {
         TsigError::Failed { message, response } => TransferRefusal {

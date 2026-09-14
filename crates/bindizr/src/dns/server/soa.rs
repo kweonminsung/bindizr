@@ -25,6 +25,7 @@ use crate::dns::{
     wire,
 };
 
+/// Answer an SOA query over TCP.
 pub(crate) async fn handle_tcp_soa(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
@@ -38,6 +39,7 @@ pub(crate) async fn handle_tcp_soa(
     Ok(())
 }
 
+/// Build the response to an SOA query received over UDP.
 pub(crate) async fn handle_udp_soa(
     socket: &UdpSocket,
     client_addr: SocketAddr,

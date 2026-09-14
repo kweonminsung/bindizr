@@ -23,6 +23,7 @@ use crate::api::{
 pub(crate) struct DnssecPolicyApi;
 
 impl DnssecPolicyApi {
+    /// Build the DNSSEC policy API routes.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/dnssec-policies", routing::get(list_dnssec_policies))
@@ -44,6 +45,7 @@ pub(crate) struct DnssecPolicyNameParam {
     pub(crate) name: String,
 }
 
+/// List all DNSSEC policies.
 #[utoipa::path(
         get,
         path = "/dnssec-policies",
@@ -58,7 +60,6 @@ pub(crate) struct DnssecPolicyNameParam {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List all DNSSEC policies.
 pub(crate) async fn list_dnssec_policies(
     RequestCaller(caller): RequestCaller,
     Query(mut page): Query<PageFilter>,
@@ -68,6 +69,7 @@ pub(crate) async fn list_dnssec_policies(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Create a DNSSEC policy.
 #[utoipa::path(
         post,
         path = "/dnssec-policies",
@@ -85,7 +87,6 @@ pub(crate) async fn list_dnssec_policies(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Create a DNSSEC policy.
 pub(crate) async fn create_dnssec_policy(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateDnssecPolicyRequest>,
@@ -97,6 +98,7 @@ pub(crate) async fn create_dnssec_policy(
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
+/// Get one DNSSEC policy by name.
 #[utoipa::path(
         get,
         path = "/dnssec-policies/{name}",
@@ -113,7 +115,6 @@ pub(crate) async fn create_dnssec_policy(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Get one DNSSEC policy by name.
 pub(crate) async fn get_dnssec_policy(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<DnssecPolicyNameParam>,
@@ -125,6 +126,7 @@ pub(crate) async fn get_dnssec_policy(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Edit a DNSSEC policy's timing fields.
 #[utoipa::path(
         put,
         path = "/dnssec-policies/{name}",
@@ -145,7 +147,6 @@ pub(crate) async fn get_dnssec_policy(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Edit a DNSSEC policy's timing fields.
 pub(crate) async fn update_dnssec_policy(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<DnssecPolicyNameParam>,
@@ -158,6 +159,7 @@ pub(crate) async fn update_dnssec_policy(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Delete a DNSSEC policy no zone signs under.
 #[utoipa::path(
         delete,
         path = "/dnssec-policies/{name}",
@@ -177,7 +179,6 @@ pub(crate) async fn update_dnssec_policy(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Delete a DNSSEC policy no zone signs under.
 pub(crate) async fn delete_dnssec_policy(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<DnssecPolicyNameParam>,

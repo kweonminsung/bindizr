@@ -13,6 +13,7 @@ from . import dockerutil
 
 
 def _to_bytes(s: str) -> float:
+    """Parse Docker memory and I/O size strings into bytes."""
     s = s.strip()
     # Docker uses a lowercase SI 'k' for NET/BLOCK IO (e.g. "2.48kB") and binary
     # MiB/GiB for memory; accept both.
@@ -44,6 +45,7 @@ def sampler_for(adapter, cfg: dict) -> "ResourceSampler":
 
 class ResourceSampler:
     def __init__(self, container_ids: list[str], interval: float = 1.0):
+        """Initialize container sampling state and its polling interval."""
         self.ids = container_ids
         self.interval = interval
         self._stop = threading.Event()
@@ -51,14 +53,16 @@ class ResourceSampler:
         self.samples: list[dict] = []
 
     def start(self) -> None:
+        """Start resource sampling in a background thread."""
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def _loop(self) -> None:
-        # One `docker stats` snapshot per tick covers every container; stamp each
-        # sample with its tick so summary() can total the stack per interval.
+        """Poll container resource usage until sampling is stopped."""
         tick = 0
         while not self._stop.is_set():
+            # One snapshot covers every container; stamp samples with their tick
+            # so summary() can total the stack for that interval.
             for row in dockerutil.stats(self.ids):
                 cpu = float(row.get("CPUPerc", "0%").rstrip("%") or 0)
                 mem_use = _to_bytes(row.get("MemUsage", "0B").split("/")[0])
@@ -80,6 +84,7 @@ class ResourceSampler:
             self._stop.wait(self.interval)
 
     def stop(self) -> dict:
+        """Stop the sampling thread and return the collected resource summary."""
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=5)
@@ -94,12 +99,14 @@ class ResourceSampler:
         return list(totals.values())
 
     def _by_container(self, field: str) -> dict[str, list[float]]:
+        """Group samples of a resource field by container name."""
         out: dict[str, list[float]] = {}
         for s in self.samples:
             out.setdefault(s["name"], []).append(s[field])
         return out
 
     def summary(self) -> dict:
+        """Summarize CPU, memory, and network usage across the sampled interval."""
         if not self.samples:
             return {"peak_cpu_pct": 0, "avg_cpu_pct": 0, "cpu_by_container": {},
                     "peak_mem_mb": 0, "avg_mem_mb": 0, "net_tx_mb": 0, "samples": 0}

@@ -47,8 +47,8 @@ impl RecordService {
                 Some(record_type) => parse_record_type(record_type)?,
                 None => existing.record_type.clone(),
             };
-            // A stored value is encoded per record type (TXT keeps raw RDATA, others
-            // plain), so it can't carry across a type change — require a fresh value.
+            // Each type has its own stored grammar (TXT uses quoted presentation),
+            // so a type change requires a fresh value.
             if record_type != existing.record_type && request.value.is_none() {
                 return Err(ServiceError::invalid_input(
                     "value is required when changing a record's type".to_string(),

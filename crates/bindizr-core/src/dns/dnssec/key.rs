@@ -8,6 +8,7 @@ use crate::model::{
     zone::Zone,
 };
 
+/// Generate a DNSSEC key pair for the requested algorithm and role.
 pub fn generate_key(
     zone: &Zone,
     algorithm: DnssecAlgorithm,

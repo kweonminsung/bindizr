@@ -41,6 +41,7 @@ use crate::{
 /// zone-file content arrives JSON-escaped, roughly doubling in the worst case.
 const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
 
+/// Dispatch a control request and send its JSON response.
 async fn handle_client(stream: UnixStream) {
     let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
@@ -209,6 +210,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, St
 /// Socket paths tried in order when the daemon starts.
 const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH];
 
+/// Bind the daemon's configured control socket.
 async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
     let mut failures = Vec::new();
 
@@ -238,6 +240,7 @@ async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
     ))
 }
 
+/// Bind a Unix listener at the requested path.
 async fn bind_socket(socket_path: &str) -> io::Result<UnixListener> {
     prepare_socket_path(socket_path).await?;
     let listener = UnixListener::bind(socket_path)?;
@@ -246,6 +249,7 @@ async fn bind_socket(socket_path: &str) -> io::Result<UnixListener> {
     Ok(listener)
 }
 
+/// Prepare the control socket path and remove a stale socket if needed.
 async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     if let Some(parent) = Path::new(socket_path).parent() {
         fs::create_dir_all(parent).await?;
@@ -302,6 +306,7 @@ pub(crate) fn to_response_data<T: serde::Serialize>(
         .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))
 }
 
+/// Serialize a service error as a control response.
 fn error_response_json(err: &ServiceError) -> String {
     serde_json::to_string(&ErrorResponse::new(err)).unwrap_or_else(|_| {
         r#"{"error":"Failed to serialize error response","code":"INTERNAL"}"#.to_string()

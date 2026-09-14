@@ -45,10 +45,11 @@ impl RecordService {
 
     /// List records with their zone name matching `filter`, restricted to what
     /// the caller's grants carry in SQL so pagination stays database-side, and
-    /// again here where names compare as labels. A filter naming an unknown or
-    /// invisible zone reads as an empty page.
+    /// again here where names compare as labels. Scoped callers see an unknown
+    /// or invisible zone as an empty page.
     /// With `signed`, the derived DNSSEC plane pages after the user records;
-    /// value, search, and priority filters keep the listing user-plane only.
+    /// searches reach their names, value filters are refused, and priority filters
+    /// exclude the derived plane.
     pub async fn list_with_zone_by_filter(
         caller: &Caller,
         filter: GetRecordsFilter,
@@ -197,6 +198,7 @@ impl RecordService {
     }
 }
 
+/// Normalize a name filter for stored-owner and FQDN comparisons.
 fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) -> Option<String> {
     name.and_then(|name| {
         let trimmed = name.trim();

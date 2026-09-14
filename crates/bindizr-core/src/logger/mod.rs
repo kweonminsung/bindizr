@@ -49,6 +49,7 @@ macro_rules! log_debug_enabled {
 /// replacing the installed logger — `log` allows only one.
 static LOG_LEVEL: AtomicUsize = AtomicUsize::new(Level::Info as usize);
 
+/// Read the currently configured logging threshold.
 fn log_level() -> Level {
     Level::iter()
         .find(|level| *level as usize == LOG_LEVEL.load(Ordering::Relaxed))
@@ -59,10 +60,12 @@ fn log_level() -> Level {
 struct Logger;
 
 impl log::Log for Logger {
+    /// Check whether a log record meets the current threshold.
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         metadata.level() <= log_level()
     }
 
+    /// Write an enabled log record to stderr with its timestamp.
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
             // The offset keeps lines from replicas in other zones comparable.
@@ -84,11 +87,13 @@ impl log::Log for Logger {
         }
     }
 
+    /// Flush buffered stderr output.
     fn flush(&self) {
         let _ = io::stderr().flush();
     }
 }
 
+/// Convert a configured logging level into the logging facade's level.
 fn to_log_level(level: config::LogLevel) -> Level {
     match level {
         config::LogLevel::Error => Level::Error,

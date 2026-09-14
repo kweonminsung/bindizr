@@ -47,6 +47,7 @@ pub(crate) enum DnssecKeysCommand {
     },
 }
 
+/// Run the requested DNSSEC key import or export command.
 pub(crate) async fn handle_command(
     client: &DaemonSocketClient,
     subcommand: DnssecKeysCommand,

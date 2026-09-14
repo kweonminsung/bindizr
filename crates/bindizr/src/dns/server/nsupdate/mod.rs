@@ -16,6 +16,7 @@ use bindizr_core::{
 };
 use tokio::net::{TcpStream, UdpSocket};
 
+/// Apply a dynamic update received over TCP and send its response.
 pub(crate) async fn handle_tcp_nsupdate(
     stream: &mut TcpStream,
     query_data: &[u8],
@@ -32,6 +33,7 @@ pub(crate) async fn handle_tcp_nsupdate(
         .map_err(|e| format!("Failed to write NSUPDATE TCP response: {}", e))
 }
 
+/// Apply a dynamic update received over UDP and return its response.
 pub(crate) async fn handle_udp_nsupdate(
     socket: &UdpSocket,
     query_data: &[u8],

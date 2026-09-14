@@ -13,6 +13,7 @@ pub(crate) struct PostgresZoneChangeRepository {
 }
 
 impl PostgresZoneChangeRepository {
+    /// Create a repository for journal entries using the supplied pool.
     pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -20,6 +21,7 @@ impl PostgresZoneChangeRepository {
 
 #[async_trait]
 impl ZoneChangeRepository for PostgresZoneChangeRepository {
+    /// Insert a batch of journal entries in the current transaction.
     async fn create_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -78,6 +80,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         Ok(())
     }
 
+    /// List journal entries in the interval `(from_serial, to_serial]`.
     async fn list_between_serials(
         &self,
         zone_id: i32,
@@ -99,6 +102,8 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
+
+    /// Count journal entries in the interval `(from_serial, to_serial]`.
     async fn count_between_serials(
         &self,
         zone_id: i32,
@@ -122,6 +127,8 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         Ok(count as u64)
     }
 
+    /// List journal entries in the interval `(from_serial, to_serial]` in the current
+    /// transaction.
     async fn list_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -148,6 +155,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// Prune old journal entries while preserving complete serials in the current transaction.
     async fn prune_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

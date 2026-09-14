@@ -17,8 +17,8 @@ pub struct CreateTsigKeyRequest {
     /// Existing base64 secret to import; omit to generate a random one.
     #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: Option<String>,
-    /// Make the key global: it may update every zone (all names, all types)
-    /// without any grant. Fixed at creation.
+    /// Make the key global: it may update and transfer every zone without
+    /// any grant. Fixed at creation.
     #[serde(default)]
     #[schema(example = false)]
     pub global: bool,
@@ -33,13 +33,14 @@ pub struct GetTsigKeyResponse {
     pub name: String,
     #[schema(example = "hmac-sha256")]
     pub algorithm: String,
-    /// Whether the key may update every zone without any grant.
+    /// Whether the key may update and transfer every zone without any grant.
     #[schema(example = false)]
     pub global: bool,
     pub created_at: DateTime<Utc>,
 }
 
 impl GetTsigKeyResponse {
+    /// Build a TSIG key response from the stored key.
     pub fn from_key(key: &TsigKey) -> Self {
         GetTsigKeyResponse {
             id: key.id,
@@ -51,7 +52,7 @@ impl GetTsigKeyResponse {
     }
 }
 
-/// Request body for granting a TSIG key nsupdate rights in a zone.
+/// Request body for granting a TSIG key update and transfer rights in a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct CreateTsigGrantRequest {
     /// Name of an existing zone.
@@ -71,6 +72,7 @@ pub struct CreateTsigGrantRequest {
     pub can_write: bool,
 }
 
+/// Enable update access when a new TSIG grant omits the permission flag.
 fn default_can_write() -> bool {
     true
 }
@@ -94,6 +96,7 @@ pub struct GetTsigGrantResponse {
 }
 
 impl GetTsigGrantResponse {
+    /// Build a TSIG-grant response with its key and zone names.
     pub fn from_grant(grant: &TsigGrantWithNames) -> Self {
         GetTsigGrantResponse {
             id: grant.grant.id,
@@ -116,6 +119,7 @@ pub struct TsigKeyResponse {
 }
 
 impl TsigKeyResponse {
+    /// Build a TSIG key response from the stored key.
     pub fn from_key(key: &TsigKey) -> Self {
         TsigKeyResponse {
             tsig_key: GetTsigKeyResponse::from_key(key),

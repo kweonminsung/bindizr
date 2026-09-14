@@ -35,6 +35,7 @@ impl ZoneService {
         }
     }
 
+    /// Advance a named zone's serial and save its signed version atomically.
     async fn force_increment_serial_by_name(
         zone_name: &str,
         subject: &ChangeSubject,

@@ -2,6 +2,7 @@ use reqwest::{Method, StatusCode};
 
 use crate::common::{TestApp, TestAppOptions};
 
+/// Verify that health reports healthy with database available.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn health_reports_healthy_with_database_available() {
@@ -12,6 +13,7 @@ async fn health_reports_healthy_with_database_available() {
     assert_eq!(body["status"], "healthy");
 }
 
+/// Verify that home reports running message.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn home_reports_running_message() {
@@ -22,6 +24,7 @@ async fn home_reports_running_message() {
     assert_eq!(body["message"], "bindizr API running");
 }
 
+/// Verify that the API serves over TLS and nothing over plain HTTP.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn the_api_serves_over_tls_and_nothing_over_plain_http() {

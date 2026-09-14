@@ -72,6 +72,7 @@ pub(crate) struct AdapterConfig {
 }
 
 impl AdapterConfig {
+    /// Validate CLI options and build the adapter configuration.
     pub(crate) fn from_cli(cli: Cli) -> Result<Self, String> {
         let bindizr_url = cli.bindizr_url.trim().trim_end_matches('/').to_string();
         if !bindizr_url.starts_with("http://") && !bindizr_url.starts_with("https://") {
@@ -125,11 +126,13 @@ mod tests {
 
     use super::{AdapterConfig, Cli};
 
+    /// Parse CLI arguments for configuration tests.
     fn parse(args: &[&str]) -> Cli {
         Cli::try_parse_from(std::iter::once("bindizr-external-dns").chain(args.iter().copied()))
             .unwrap()
     }
 
+    /// Verify that listener defaults to localhost only.
     #[test]
     fn listener_defaults_to_localhost_only() {
         let cli = parse(&["--bindizr-url", "http://bindizr:8000"]);
@@ -140,6 +143,7 @@ mod tests {
         assert_eq!(cli.timeout_secs, 8);
     }
 
+    /// Verify that `config` normalizes url and requires HTTP scheme.
     #[test]
     fn config_normalizes_url_and_requires_http_scheme() {
         let config =
@@ -150,6 +154,7 @@ mod tests {
         assert!(AdapterConfig::from_cli(parse(&["--bindizr-url", "bindizr:8000"])).is_err());
     }
 
+    /// Verify that `config` rejects unusable base urls.
     #[test]
     fn config_rejects_unusable_base_urls() {
         for url in [
@@ -170,6 +175,7 @@ mod tests {
         assert_eq!(config.bindizr_url, "http://bindizr:8000/api");
     }
 
+    /// Verify that token file takes precedence and is trimmed.
     #[test]
     fn token_file_takes_precedence_and_is_trimmed() {
         let dir = tempfile::tempdir().unwrap();
@@ -189,6 +195,7 @@ mod tests {
         assert_eq!(config.token.as_deref(), Some("secret-token"));
     }
 
+    /// Verify that missing token resolves to none.
     #[test]
     fn missing_token_resolves_to_none() {
         let config = AdapterConfig::from_cli(parse(&[

@@ -14,6 +14,7 @@ pub(crate) struct ProbedSnapshot<T, F> {
 }
 
 impl<T: PartialEq, F: Fn(&Zone, &[DnssecKey]) -> Result<T, ServiceError>> ProbedSnapshot<T, F> {
+    /// Capture the zone and key fingerprint before a network probe.
     pub(crate) fn take(zone: &Zone, keys: &[DnssecKey], of: F) -> Result<Self, ServiceError> {
         Ok(Self {
             fingerprint: of(zone, keys)?,

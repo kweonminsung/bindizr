@@ -1,3 +1,4 @@
+/// Convert a configured SQLite path into a SQLx connection URL.
 pub(crate) fn to_sqlite_url(file_path: &str) -> Result<String, String> {
     let file_path = file_path.trim();
     if file_path.is_empty() {
@@ -15,6 +16,7 @@ pub(crate) fn to_sqlite_url(file_path: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    /// Verify that to sqlite url formats plain paths.
     #[test]
     fn to_sqlite_url_formats_plain_paths() {
         let result = to_sqlite_url("/absolute/path/to/database.db");

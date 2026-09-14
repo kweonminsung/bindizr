@@ -65,6 +65,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
     Ok(())
 }
 
+/// Accept DNS TCP connections until shutdown.
 async fn run_tcp_server(
     listener: TcpListener,
     stop: impl Future<Output = ()>,
@@ -106,6 +107,7 @@ async fn run_tcp_server(
     }
 }
 
+/// Read and dispatch DNS queries on one TCP connection.
 async fn handle_tcp_connection(
     mut stream: TcpStream,
     client_addr: SocketAddr,
@@ -140,6 +142,7 @@ async fn handle_tcp_connection(
     Ok(())
 }
 
+/// Route a TCP DNS query to its transfer, update, or SOA handler.
 async fn dispatch_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
@@ -200,6 +203,7 @@ async fn dispatch_tcp_query(
     Ok(())
 }
 
+/// Receive and dispatch DNS UDP datagrams until shutdown.
 async fn run_udp_server(socket: UdpSocket, stop: impl Future<Output = ()>) -> Result<(), String> {
     let socket = Arc::new(socket);
     let in_flight = Arc::new(Semaphore::new(MAX_UDP_IN_FLIGHT));
@@ -241,6 +245,7 @@ async fn run_udp_server(socket: UdpSocket, stop: impl Future<Output = ()>) -> Re
     }
 }
 
+/// Route a UDP DNS query to its update or SOA handler.
 async fn dispatch_udp_query(socket: &UdpSocket, client_addr: SocketAddr, query_data: &[u8]) {
     if message::is_response(query_data) {
         log_warn!("Ignoring a DNS UDP response from {}", client_addr);
@@ -289,6 +294,7 @@ async fn dispatch_udp_query(socket: &UdpSocket, client_addr: SocketAddr, query_d
     send_udp_response(socket, client_addr, &response).await;
 }
 
+/// Send a DNS response datagram to the requesting peer.
 async fn send_udp_response(socket: &UdpSocket, client_addr: SocketAddr, response: &[u8]) {
     if let Err(e) = socket.send_to(response, client_addr).await {
         log_warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);

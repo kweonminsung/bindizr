@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify that zone import accepts every user type and round-trips the export.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
@@ -101,6 +102,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     }
 }
 
+/// Verify that DNAME and NAPTR survive an import and export round trip.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
@@ -145,6 +147,7 @@ async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
     );
 }
 
+/// Verify that escaped labels and values survive an import and export round trip.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn escaped_labels_and_values_survive_an_import_and_export_round_trip() {

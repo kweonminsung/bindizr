@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify record creation, retrieval, update, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_create_read_update_delete() {
@@ -70,7 +71,6 @@ async fn record_create_read_update_delete() {
     assert_eq!(body["record"]["name"], format!("api-updated.{zone_name}."));
     assert_eq!(body["record"]["value"], "192.168.1.202");
 
-    // A partial update keeps every omitted field.
     let (status, body) = app
         .request(
             Method::PUT,
@@ -94,6 +94,7 @@ async fn record_create_read_update_delete() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Verify zone-name normalization in record requests.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_normalize_zone_name() {

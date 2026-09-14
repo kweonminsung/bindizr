@@ -42,6 +42,7 @@ pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliE
     }
 }
 
+/// Ask the daemon to reload its configuration.
 async fn reload_config() -> Result<(), CliError> {
     let response = DaemonSocketClient::new()
         .send_command(DaemonCommandKind::ConfigReload, ())
@@ -50,6 +51,7 @@ async fn reload_config() -> Result<(), CliError> {
     Ok(())
 }
 
+/// Validate the local configuration file.
 fn check_config(file: Option<&str>) -> Result<(), CliError> {
     let path = config::resolve_config_path(file);
     println!("Checking configuration file: {}", path);
@@ -60,12 +62,14 @@ fn check_config(file: Option<&str>) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Print all effective configuration values.
 async fn print_config_list() -> Result<(), CliError> {
     let config = DaemonSocketClient::new().config().await?;
     print_config(&config);
     Ok(())
 }
 
+/// Print one effective configuration value by key.
 async fn print_config_value(key: &str) -> Result<(), CliError> {
     let config = DaemonSocketClient::new().config().await?;
     let value = serde_json::to_value(&config)
@@ -88,6 +92,7 @@ async fn print_config_value(key: &str) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Print the configuration in the selected output format.
 fn print_config(config: &BindizrConfig) {
     print_section("api");
     print_value("listen_addr", config.api.listen_addr);
@@ -136,10 +141,12 @@ fn print_config(config: &BindizrConfig) {
     print_value("log_level", config.logging.log_level);
 }
 
+/// Print a configuration section heading.
 fn print_section(name: &str) {
     println!("{}", color::cyan(&format!("[{}]", name)));
 }
 
+/// Print one configuration key and its value.
 fn print_value(key: &str, value: impl std::fmt::Display) {
     println!("  {} = {}", color::yellow(&format!("{:<24}", key)), value);
 }

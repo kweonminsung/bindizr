@@ -1,5 +1,6 @@
 use super::*;
 
+/// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
         id: 1,
@@ -20,6 +21,7 @@ fn test_zone() -> Zone {
     }
 }
 
+/// Build a record fixture with the requested fields.
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
@@ -38,6 +40,7 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
     }
 }
 
+/// Verify that expirations spread across the jitter window.
 #[test]
 fn expirations_spread_across_the_jitter_window() {
     let zone = test_zone();
@@ -89,6 +92,7 @@ fn expirations_spread_across_the_jitter_window() {
     assert!(earliest > default_expiration() - Duration::seconds(window));
 }
 
+/// Verify that recompute against stored plane is empty.
 #[test]
 fn recompute_against_stored_plane_is_empty() {
     let zone = test_zone();
@@ -133,6 +137,7 @@ fn recompute_against_stored_plane_is_empty() {
     assert!(diff.removed.is_empty(), "removed: {:?}", diff.removed);
 }
 
+/// Verify that record change reuses unaffected signatures.
 #[test]
 fn record_change_reuses_unaffected_signatures() {
     let zone = test_zone();
@@ -224,6 +229,7 @@ fn record_change_reuses_unaffected_signatures() {
     );
 }
 
+/// Verify that signature inside refresh window is resigned.
 #[test]
 fn signature_inside_refresh_window_is_resigned() {
     let zone = test_zone();
@@ -275,6 +281,7 @@ fn signature_inside_refresh_window_is_resigned() {
     assert!(records_of_type(&diff.removed, DnssecRecordType::Dnskey).is_empty());
 }
 
+/// Verify that force resigns every RRSET.
 #[test]
 fn force_resigns_every_rrset() {
     let zone = test_zone();

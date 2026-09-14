@@ -2,6 +2,7 @@
 
 use super::{to_decimal_ttls, ttl_seconds};
 
+/// Verify that unit suffixes convert to seconds.
 #[test]
 fn unit_suffixes_convert_to_seconds() {
     assert_eq!(ttl_seconds("1h"), Some(3600));
@@ -11,6 +12,7 @@ fn unit_suffixes_convert_to_seconds() {
     assert_eq!(ttl_seconds("30S"), Some(30));
 }
 
+/// Verify that anything that is not a TTL is left for the scanner.
 #[test]
 fn anything_that_is_not_a_ttl_is_left_for_the_scanner() {
     // Plain digits need no rewrite; the rest are not TTLs at all.
@@ -22,6 +24,7 @@ fn anything_that_is_not_a_ttl_is_left_for_the_scanner() {
     assert_eq!(ttl_seconds("www"), None);
 }
 
+/// Verify that the TTL slot is rewritten in either field order.
 #[test]
 fn the_ttl_slot_is_rewritten_in_either_field_order() {
     assert_eq!(
@@ -40,6 +43,7 @@ fn the_ttl_slot_is_rewritten_in_either_field_order() {
     );
 }
 
+/// Verify that a TTL shaped token outside the slot is untouched.
 #[test]
 fn a_ttl_shaped_token_outside_the_slot_is_untouched() {
     // An owner may be named like a TTL, rdata may read like one, and a
@@ -55,6 +59,7 @@ fn a_ttl_shaped_token_outside_the_slot_is_untouched() {
     }
 }
 
+/// Verify that a continuation line keeps its RDATA.
 #[test]
 fn a_continuation_line_keeps_its_rdata() {
     // The TTL slot is behind us once the parentheses open, so the numbers

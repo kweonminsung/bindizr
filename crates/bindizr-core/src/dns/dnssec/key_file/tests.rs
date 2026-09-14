@@ -17,6 +17,7 @@ PrivateKey: azlfCEpPN7tJGVHRmdBQRYrBYVkKkpySkoYi7QTO+Yg=
 Created: 20260913195832
 ";
 
+/// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
         id: 1,
@@ -37,18 +38,21 @@ fn test_zone() -> Zone {
     }
 }
 
+/// Return the fixed reference time used by key-file tests.
 fn now() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-09-14T00:00:00Z")
         .unwrap()
         .to_utc()
 }
 
+/// Format a key-file timestamp relative to the test reference time.
 fn stamp(offset_hours: i64) -> String {
     (now() + Duration::hours(offset_hours))
         .format("%Y%m%d%H%M%S")
         .to_string()
 }
 
+/// Import a key-file fixture with the supplied timing metadata.
 fn import(timing: &[(&str, String)]) -> Result<DnssecKey, String> {
     let mut private = BIND_PRIVATE.to_string();
     for (field, at) in timing {
@@ -57,6 +61,7 @@ fn import(timing: &[(&str, String)]) -> Result<DnssecKey, String> {
     import_key(&test_zone(), true, BIND_DNSKEY, &private, now())
 }
 
+/// Verify that a key file without timing imports as a settled active key.
 #[test]
 fn a_key_file_without_timing_imports_as_a_settled_active_key() {
     let key = import(&[]).unwrap();
@@ -66,9 +71,10 @@ fn a_key_file_without_timing_imports_as_a_settled_active_key() {
     assert_eq!(key.eligible_at, now());
 }
 
+/// Verify that bind timing places an imported key in its rollover.
 #[test]
 fn bind_timing_places_an_imported_key_in_its_rollover() {
-    // Pre-published: signs nothing until its own Activate.
+    // Activate sets the earliest promotion time for a pre-published key.
     let key = import(&[("Publish", stamp(-1)), ("Activate", stamp(2))]).unwrap();
     assert_eq!(key.state, DnssecKeyState::Published);
     assert_eq!(key.state_changed_at, now() - Duration::hours(1));
@@ -92,6 +98,7 @@ fn bind_timing_places_an_imported_key_in_its_rollover() {
     assert_eq!(key.eligible_at, now() + Duration::hours(6));
 }
 
+/// Verify that a schedule bind left open falls back to the DNSKEY TTL.
 #[test]
 fn a_schedule_bind_left_open_falls_back_to_the_dnskey_ttl() {
     let ttl = Duration::seconds(i64::from(test_zone().default_ttl));
@@ -105,6 +112,7 @@ fn a_schedule_bind_left_open_falls_back_to_the_dnskey_ttl() {
     assert_eq!(key.eligible_at, now() + ttl);
 }
 
+/// Verify that a key outside the window bind serves it in is refused.
 #[test]
 fn a_key_outside_the_window_bind_serves_it_in_is_refused() {
     let not_yet = import(&[("Publish", stamp(1)), ("Activate", stamp(2))]).unwrap_err();
@@ -122,6 +130,7 @@ fn a_key_outside_the_window_bind_serves_it_in_is_refused() {
     assert!(malformed.contains("invalid Publish time"), "{malformed}");
 }
 
+/// Verify that an exported key file re-imports in the state it left.
 #[test]
 fn an_exported_key_file_re_imports_in_the_state_it_left() {
     for timing in [
@@ -150,6 +159,7 @@ fn an_exported_key_file_re_imports_in_the_state_it_left() {
     }
 }
 
+/// Verify that imported bind key pair round-trips.
 #[test]
 fn imported_bind_key_pair_round_trips() {
     let zone = test_zone();
@@ -167,6 +177,7 @@ fn imported_bind_key_pair_round_trips() {
     assert_eq!(imported.state, DnssecKeyState::Active);
 }
 
+/// Verify that import derives the role from the key layout.
 #[test]
 fn import_derives_the_role_from_the_key_layout() {
     let zone = test_zone();
@@ -186,6 +197,7 @@ fn import_derives_the_role_from_the_key_layout() {
     assert!(import_key(&zone, false, &dnskey, &zsk.private_key, now()).is_err());
 }
 
+/// Verify that `import` rejects a mismatched key pair.
 #[test]
 fn import_rejects_a_mismatched_key_pair() {
     let zone = test_zone();
@@ -196,6 +208,7 @@ fn import_rejects_a_mismatched_key_pair() {
     assert!(import_key(&zone, false, &dnskey, &other.private_key, now()).is_err());
 }
 
+/// Build a signing-key fixture for the test.
 fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) -> DnssecKey {
     let mut key = generate_key(
         zone,

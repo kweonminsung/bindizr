@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify that invalid record values are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_reject_invalid_values() {
@@ -68,6 +69,7 @@ async fn record_reject_invalid_values() {
     assert!(body["error"].as_str().unwrap().contains("valid IPv6"));
 }
 
+/// Verify that records sharing an owner and type must use one TTL.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_reject_mixed_ttl_for_one_name_and_type() {
@@ -128,6 +130,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
     assert_eq!(status, StatusCode::CREATED);
 }
 
+/// Verify rejection of negative TTLs on record creation and update.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_reject_negative_ttl_on_create_and_update() {
@@ -175,6 +178,7 @@ async fn record_reject_negative_ttl_on_create_and_update() {
     assert!(body["error"].as_str().unwrap().contains("TTL"), "{body}");
 }
 
+/// Verify rejection of priority on record types without a priority field.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_reject_priority_on_types_without_one() {
@@ -241,6 +245,7 @@ async fn record_reject_priority_on_types_without_one() {
     );
 }
 
+/// Verify preservation of TXT segment boundaries and case.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_preserve_txt_segments_and_case() {
@@ -323,6 +328,7 @@ async fn record_preserve_txt_segments_and_case() {
     );
 }
 
+/// Verify owner normalization and rejection of names outside the zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_normalize_owner_and_reject_out_of_zone() {
@@ -408,6 +414,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Verify creation of every supported user record type.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_create_supported_types() {
@@ -488,6 +495,7 @@ async fn record_create_supported_types() {
     }
 }
 
+/// Verify rejection of records that conflict with a CNAME.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_reject_cname_conflicts() {

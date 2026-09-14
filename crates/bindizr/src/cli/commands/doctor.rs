@@ -23,15 +23,18 @@ struct Report {
 }
 
 impl Report {
+    /// Print a successful diagnostic check.
     fn ok(&mut self, message: impl fmt::Display) {
         println!("[{}] {}", color::green("OK"), message);
     }
 
+    /// Print a failed diagnostic check and increment the failure count.
     fn fail(&mut self, message: impl fmt::Display) {
         self.failures += 1;
         println!("[{}] {}", color::red("FAIL"), message);
     }
 
+    /// Print a skipped diagnostic check.
     fn skip(&mut self, message: impl fmt::Display) {
         println!("[{}] {}", color::yellow("SKIP"), message);
     }
@@ -73,6 +76,7 @@ pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), Cl
     }
 }
 
+/// Check whether the daemon responds through its control socket.
 async fn check_daemon(client: &DaemonSocketClient, report: &mut Report) -> bool {
     match client.status().await {
         Ok(status) => {
@@ -92,6 +96,7 @@ async fn check_daemon(client: &DaemonSocketClient, report: &mut Report) -> bool 
     }
 }
 
+/// Check API reachability at the daemon's configured address.
 async fn check_api(config: &bindizr_core::config::BindizrConfig, report: &mut Report) {
     let addr = SocketAddr::new(
         loopback_if_unspecified(config.api.listen_addr),
@@ -161,6 +166,7 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
     }
 }
 
+/// Check database, DNS listener, and secondary status through the daemon.
 async fn check_daemon_side(client: &DaemonSocketClient, report: &mut Report) {
     let res = match client.send_command(DaemonCommandKind::Doctor, ()).await {
         Ok(res) => res,

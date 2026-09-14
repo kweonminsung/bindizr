@@ -21,6 +21,7 @@ secondary_addrs = ""
 log_level = "info"
 "#;
 
+/// Verify that `doctor` reports healthy installation.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn doctor_reports_healthy_installation() {

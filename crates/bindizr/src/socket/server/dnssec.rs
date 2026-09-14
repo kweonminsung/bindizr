@@ -11,7 +11,7 @@ use crate::socket::{
     },
 };
 
-/// Handle the `ZoneDnssecEnable` command by generating a key and signing the zone.
+/// Enable DNSSEC for the requested zone.
 pub(crate) async fn enable_dnssec(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -31,8 +31,7 @@ pub(crate) async fn enable_dnssec(
     })
 }
 
-/// Handle the `ZoneDnssecDisable` command by deleting the zone's keys and
-/// signatures.
+/// Disable DNSSEC for the requested zone.
 pub(crate) async fn disable_dnssec(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -46,7 +45,7 @@ pub(crate) async fn disable_dnssec(
     })
 }
 
-/// Handle the `ZoneDnssecStatus` command by returning a zone's signing state.
+/// Return the requested zone's DNSSEC status.
 pub(crate) async fn get_dnssec_status(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -60,7 +59,7 @@ pub(crate) async fn get_dnssec_status(
     })
 }
 
-/// Handle the `ZoneDnssecSign` command by re-signing a zone from scratch.
+/// Re-sign the requested zone.
 pub(crate) async fn sign_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
@@ -72,8 +71,7 @@ pub(crate) async fn sign_zone(data: &serde_json::Value) -> Result<DaemonResponse
     })
 }
 
-/// Handle the `ZoneDnssecRolloverStart` command by pre-publishing a
-/// replacement signing key.
+/// Start a DNSSEC key rollover for the requested zone.
 pub(crate) async fn rollover_start(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -92,8 +90,7 @@ pub(crate) async fn rollover_start(
     })
 }
 
-/// Handle the `ZoneDnssecRolloverDsSeen` command by promoting the
-/// pre-published key(s) and retiring the keys they replace.
+/// Confirm the parent DS and advance the requested rollover.
 pub(crate) async fn rollover_ds_seen(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -113,8 +110,7 @@ pub(crate) async fn rollover_ds_seen(
     })
 }
 
-/// Handle the `ZoneDnssecWithdraw` command by publishing the RFC 8078 delete
-/// CDS/CDNSKEY pair.
+/// Begin withdrawal of the requested zone's parent DS records.
 pub(crate) async fn withdraw_dnssec(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -128,8 +124,7 @@ pub(crate) async fn withdraw_dnssec(
     })
 }
 
-/// Handle the `ZoneDnssecUpdateSettings` command by changing the zone's
-/// policy and/or parent nameservers.
+/// Update the requested zone's DNSSEC settings.
 pub(crate) async fn update_dnssec_settings(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -149,8 +144,7 @@ pub(crate) async fn update_dnssec_settings(
     })
 }
 
-/// Handle the `ZoneDnssecKeysExport` command by returning the keys in BIND
-/// file form.
+/// Export the requested zone's DNSSEC key files.
 pub(crate) async fn export_dnssec_keys(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -164,8 +158,7 @@ pub(crate) async fn export_dnssec_keys(
     })
 }
 
-/// Handle the `ZoneDnssecKeysImport` command by importing a zone's key set
-/// and signing it.
+/// Import a DNSSEC key into the requested zone.
 pub(crate) async fn import_dnssec_key(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -180,7 +173,7 @@ pub(crate) async fn import_dnssec_key(
     })
 }
 
-/// Handle the `ZoneDnssecWithdrawCancel` command by removing the delete pair.
+/// Cancel the requested zone's parent DS withdrawal.
 pub(crate) async fn cancel_dnssec_withdrawal(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -194,8 +187,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
     })
 }
 
-/// Handle the `ZoneDnssecCheckDs` command by asking the parent zone for the
-/// zone's DS.
+/// Probe the parent servers for the requested zone's DS records.
 pub(crate) async fn check_dnssec_ds(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {

@@ -148,11 +148,13 @@ impl TxtRecordValue {
         out
     }
 
+    /// Consume the TXT segments and encode their length-prefixed wire data.
     pub(crate) fn into_rdata(self) -> Vec<u8> {
         self.0
     }
 }
 
+/// Parse quoted TXT character strings and their escapes.
 fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, String> {
     let mut segments = Vec::new();
     let mut bytes = trimmed.bytes().peekable();

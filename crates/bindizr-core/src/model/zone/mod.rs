@@ -29,7 +29,7 @@ pub struct Zone {
     /// enable/disable, untouched by ordinary zone updates.
     pub dnssec_policy_id: Option<i32>,
     /// The parent zone's nameservers asked for the zone's DS, as
-    /// comma-separated `host[:port]`; `None` discovers them. DNSSEC-owned
+    /// comma-separated `host[:port]`; `None` means unconfigured. DNSSEC-owned
     /// like `dnssec_policy_id`.
     pub parent_ns_addrs: Option<String>,
     /// Whether the DNS plane knows the zone. A disabled one stays editable but
@@ -74,8 +74,7 @@ impl Zone {
             .map_or(self.default_ttl, |(_, _, ttl)| ttl)
     }
 
-    /// Whether the SOA metadata columns (everything but identity, serial, and
-    /// the DNSSEC denial mode) differ from `other`'s.
+    /// Whether the SOA metadata differs from `other`, excluding the serial.
     pub fn soa_metadata_differs(&self, other: &Zone) -> bool {
         self.mname != other.mname
             || self.rname != other.rname

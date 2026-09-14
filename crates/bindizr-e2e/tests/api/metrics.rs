@@ -2,6 +2,7 @@ use reqwest::{Method, StatusCode};
 
 use crate::common::TestApp;
 
+/// Read one numeric sample from a Prometheus metrics response.
 fn metric_value(text: &str, name: &str) -> f64 {
     text.lines()
         .find_map(|line| line.strip_prefix(&format!("{name} ")))
@@ -9,6 +10,7 @@ fn metric_value(text: &str, name: &str) -> f64 {
         .unwrap_or_else(|| panic!("metric {name} missing from scrape"))
 }
 
+/// Verify that `metrics` reports zone totals and database up.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn metrics_reports_zone_totals_and_database_up() {
@@ -24,6 +26,7 @@ async fn metrics_reports_zone_totals_and_database_up() {
     assert!(metric_value(text, "bindizr_started_at_seconds") > 0.0);
 }
 
+/// Verify that `metrics` counts HTTP requests by route.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn metrics_counts_http_requests_by_route() {

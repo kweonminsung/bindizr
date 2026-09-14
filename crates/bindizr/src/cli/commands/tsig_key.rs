@@ -18,7 +18,7 @@ use crate::{
     },
 };
 
-/// Subcommands for managing TSIG keys used for nsupdate authentication.
+/// Subcommands for managing TSIG update and transfer credentials.
 #[derive(Subcommand, Debug)]
 pub(crate) enum TsigKeyCommand {
     /// Create a TSIG key (generates a secret unless one is provided)
@@ -32,9 +32,8 @@ pub(crate) enum TsigKeyCommand {
         /// Existing base64 secret to import (omit to generate a random one)
         #[arg(long, value_name = "BASE64")]
         secret: Option<String>,
-        /// Make the key global: it may update EVERY zone (all names, all
-        /// types) without any grant. Effectively write access to all DNS
-        /// data — use sparingly. Fixed at creation.
+        /// Allow updates and transfers for every zone without grants.
+        /// Fixed at creation
         #[arg(long)]
         global: bool,
         /// Output format (json, yaml, table)

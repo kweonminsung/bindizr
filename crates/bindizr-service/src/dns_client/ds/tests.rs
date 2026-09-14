@@ -109,6 +109,7 @@ fn build_rr(rtype: u16, ttl: u32, rdata: &[u8]) -> Vec<u8> {
     buf
 }
 
+/// Encode a DS record fixture with the requested key tag and TTL.
 fn ds_rr(key_tag: u16, ttl: u32) -> Vec<u8> {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
@@ -213,10 +214,12 @@ async fn fake_server(answer: Answer) -> SocketAddr {
     addr
 }
 
+/// Build a validated zone name for the test.
 fn zone_name(value: &str) -> ZoneName {
     ZoneName::parse(value).unwrap()
 }
 
+/// Build parent-server targets from the supplied test listener addresses.
 fn servers(addrs: &[SocketAddr]) -> Vec<(String, Vec<SocketAddr>)> {
     addrs
         .iter()
@@ -224,6 +227,7 @@ fn servers(addrs: &[SocketAddr]) -> Vec<(String, Vec<SocketAddr>)> {
         .collect()
 }
 
+/// Verify that `query_ds` reports each server apart.
 #[tokio::test]
 async fn query_ds_reports_each_server_apart() {
     let a = fake_server(Answer::Ds {
@@ -255,6 +259,7 @@ async fn query_ds_reports_each_server_apart() {
     );
 }
 
+/// Verify that query DS retries a truncated answer over TCP.
 #[tokio::test]
 async fn query_ds_retries_a_truncated_answer_over_tcp() {
     let server = fake_server(Answer::DsTruncatedOverUdp {
@@ -274,6 +279,7 @@ async fn query_ds_retries_a_truncated_answer_over_tcp() {
     );
 }
 
+/// Verify that `query_ds` reports absence per server.
 #[tokio::test]
 async fn query_ds_reports_absence_per_server() {
     let absent = fake_server(Answer::Ds {
@@ -314,6 +320,7 @@ async fn query_ds_reports_absence_per_server() {
     );
 }
 
+/// Verify that query DS fails when a server is silent or not authoritative.
 #[tokio::test]
 async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
     let absent = fake_server(Answer::Ds {
@@ -343,6 +350,7 @@ async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
     assert!(err.contains("not authoritative"), "{err}");
 }
 
+/// Verify that `query_ds` falls through to the next address of a server.
 #[tokio::test]
 async fn query_ds_falls_through_to_the_next_address_of_a_server() {
     let silent = fake_server(Answer::Silence).await;
@@ -368,6 +376,7 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
     );
 }
 
+/// Verify that `resolve_parent_ns_addrs` rejects an unresolvable entry.
 #[tokio::test]
 async fn resolve_parent_ns_addrs_rejects_an_unresolvable_entry() {
     let err = resolve_parent_ns_addrs("127.0.0.1:5353,nx.invalid", TIMEOUT)

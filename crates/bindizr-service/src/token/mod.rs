@@ -18,6 +18,7 @@ const MAX_EXPIRES_IN_DAYS: i64 = 36_500;
 /// Creates, lists, and revokes API tokens.
 pub struct TokenService;
 
+/// Hash an API token for storage and lookup.
 pub(crate) fn hash_token(token: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(token.as_bytes());
@@ -95,6 +96,7 @@ impl TokenService {
         RepositoryService::delete_api_token(token.id).await
     }
 
+    /// Load an API token by name or return a not-found error.
     pub(crate) async fn lookup_by_name(name: &str) -> Result<ApiToken, ServiceError> {
         RepositoryService::get_api_token_by_name(&normalize_token_name(name)?)
             .await?

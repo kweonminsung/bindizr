@@ -10,6 +10,7 @@ SYSTEMS = ROOT / "systems"
 
 
 def _load_adapter_module(key: str):
+    """Load the adapter module for the requested system key."""
     path = SYSTEMS / key / "adapter.py"
     if not path.exists():
         raise FileNotFoundError(f"no adapter for system '{key}' at {path}")
@@ -33,6 +34,7 @@ _CLASS = {
 
 
 def build(key: str, cfg: dict, project: str, **kwargs):
+    """Construct the adapter for a benchmark system and project."""
     mod = _load_adapter_module(key)
     cls = getattr(mod, _CLASS[key])
     return cls(cfg, project, **kwargs)

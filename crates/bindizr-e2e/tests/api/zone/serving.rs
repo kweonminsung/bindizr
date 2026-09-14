@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions, probe_zone_soa};
 
+/// Verify that `zone_status` reports secondaries.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_status_reports_secondaries() {
@@ -54,8 +55,7 @@ async fn zone_status_reports_secondaries() {
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }
 
-// Both read the apex row's owner: the version returned it blank, and the
-// update check compared the client spelling against the row form.
+/// Verify that a disabled zone stops answering DNS while remaining editable through the API.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {

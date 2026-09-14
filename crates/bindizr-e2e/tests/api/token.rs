@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions};
 
+/// Verify that tokens are created listed and deleted over HTTP.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tokens_are_created_listed_and_deleted_over_http() {
@@ -147,6 +148,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     assert_eq!(status, StatusCode::OK);
 }
 
+/// Verify that scoped token cannot manage tokens.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_cannot_manage_tokens() {
@@ -179,6 +181,7 @@ async fn scoped_token_cannot_manage_tokens() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
+/// Verify that tokens self describes the bearer.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tokens_self_describes_the_bearer() {
@@ -203,6 +206,7 @@ async fn tokens_self_describes_the_bearer() {
     }
 }
 
+/// Verify that tokens self needs a token even with authentication off.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tokens_self_needs_a_token_even_with_authentication_off() {

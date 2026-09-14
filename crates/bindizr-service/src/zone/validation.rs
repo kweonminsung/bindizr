@@ -44,6 +44,7 @@ fn normalize_description(description: Option<&str>) -> Result<Option<String>, Se
     Ok(Some(description.to_string()))
 }
 
+/// Validate and normalize the fields of a zone creation request.
 pub(crate) fn normalize_create_zone_request(
     request: &CreateZoneRequest,
 ) -> Result<NormalizedCreateZoneRequest, ServiceError> {
@@ -71,6 +72,7 @@ pub(crate) fn normalize_create_zone_request(
     })
 }
 
+/// Validate and normalize a zone name.
 pub(crate) fn normalize_zone_name(value: &str) -> Result<ZoneName, ServiceError> {
     let trimmed = value.trim();
 
@@ -95,6 +97,7 @@ fn normalize_domain_name(value: &str, field: &str) -> Result<ZoneName, ServiceEr
     ZoneName::parse(value).map_err(|e| ServiceError::invalid_zone_field(format!("{} {}", field, e)))
 }
 
+/// Validate and normalize the SOA contact mailbox.
 fn normalize_email(value: &str) -> Result<String, ServiceError> {
     let value = value.trim();
 
@@ -131,6 +134,7 @@ fn normalize_email(value: &str) -> Result<String, ServiceError> {
     Ok(normalized)
 }
 
+/// Validate the SOA mailbox's local part.
 fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     if local.is_empty() {
         return Err(ServiceError::invalid_zone_field(
@@ -159,6 +163,7 @@ fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     Ok(())
 }
 
+/// Check whether a character is permitted in an SOA mailbox local part.
 fn is_valid_email_local_char(c: char) -> bool {
     c.is_ascii_alphanumeric()
         || matches!(
@@ -185,6 +190,7 @@ fn is_valid_email_local_char(c: char) -> bool {
         )
 }
 
+/// Validate that a TTL fits the supported range.
 fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
     if ttl < MIN_TTL {
         return Err(ServiceError::invalid_zone_field(format!(
@@ -231,6 +237,7 @@ pub(crate) fn normalize_soa_timers(
     })
 }
 
+/// Resolve an omitted SOA interval to its fallback and validate the result.
 fn normalize_soa_interval(
     value: Option<i32>,
     fallback: i32,

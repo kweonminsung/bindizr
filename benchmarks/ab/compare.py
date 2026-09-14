@@ -23,6 +23,7 @@ LOWER_IS_BETTER = ("p50", "p95", "p99", "_ms", "secs", "latency", "error_rate",
 
 
 def _group(path: Path) -> dict[tuple, list[dict]]:
+    """Group a raw result file by benchmark measurement dimensions."""
     payload = json.loads(path.read_text())
     groups: dict[tuple, list[dict]] = {}
     for r in payload["results"]:
@@ -32,16 +33,19 @@ def _group(path: Path) -> dict[tuple, list[dict]]:
 
 
 def _mean(rows: list[dict], k: str):
+    """Average the available numeric values of one metric."""
     vals = [r[k] for r in rows
             if isinstance(r.get(k), (int, float)) and not isinstance(r.get(k), bool)]
     return statistics.fmean(vals) if vals else None
 
 
 def _lower_better(metric: str) -> bool:
+    """Check whether a smaller metric value indicates improvement."""
     return any(tok in metric for tok in LOWER_IS_BETTER)
 
 
 def main() -> None:
+    """Print a metric-by-metric comparison of two benchmark result files."""
     ap = argparse.ArgumentParser()
     ap.add_argument("a")
     ap.add_argument("b")

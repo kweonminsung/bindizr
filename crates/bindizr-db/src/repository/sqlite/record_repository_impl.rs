@@ -20,6 +20,7 @@ pub(crate) struct SqliteRecordRepository {
 }
 
 impl SqliteRecordRepository {
+    /// Create a repository for records using the supplied pool.
     pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -27,6 +28,7 @@ impl SqliteRecordRepository {
 
 #[async_trait]
 impl RecordRepository for SqliteRecordRepository {
+    /// Insert a record in the current transaction.
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -57,6 +59,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
+    /// Insert a batch of records in the current transaction.
     async fn create_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -111,6 +114,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(out)
     }
 
+    /// Find a record by ID.
     async fn get(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -123,6 +127,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
+    /// Find a record with its zone metadata.
     async fn get_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -142,6 +147,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
+    /// Find a record by ID in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -158,6 +164,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
+    /// List records for a zone in the current transaction.
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -176,6 +183,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(records)
     }
 
+    /// List records at an owner name in a zone in the current transaction.
     async fn list_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -198,6 +206,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(records)
     }
 
+    /// Find an owner with a DS record but no NS delegation in the current transaction.
     async fn get_ds_name_without_ns_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -216,6 +225,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(name)
     }
 
+    /// List records at the requested owner names in a zone in the current transaction.
     async fn list_by_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -253,6 +263,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(out)
     }
 
+    /// List matching records with their zone metadata.
     async fn list_by_filter_with_zone(
         &self,
         filter: RecordFilter,
@@ -350,6 +361,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(records)
     }
 
+    /// Count records matching the filter.
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let value = filter.value.as_deref().map(trim_partial_value);
@@ -431,6 +443,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(count as u64)
     }
 
+    /// Update a record in the current transaction.
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -459,6 +472,7 @@ impl RecordRepository for SqliteRecordRepository {
         Ok(record)
     }
 
+    /// Delete the records with the supplied IDs in the current transaction.
     async fn delete_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

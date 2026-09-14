@@ -6,11 +6,13 @@ pub struct DnameRecordValue<'a> {
 }
 
 impl<'a> DnameRecordValue<'a> {
+    /// Parse and validate a DNAME record value.
     pub fn parse(value: &'a str) -> Result<Self, String> {
         validate_domain_record_value("DNAME record value", value)?;
         Ok(Self { target: value })
     }
 
+    /// Render the DNAME value in canonical text form.
     pub fn canonical(&self) -> String {
         to_fqdn_lowercase(self.target)
     }
@@ -20,6 +22,7 @@ impl<'a> DnameRecordValue<'a> {
 mod tests {
     use super::DnameRecordValue;
 
+    /// Verify that DNAME targets use CNAME-compatible canonicalization.
     #[test]
     fn canonicalizes_the_target_like_cname() {
         assert_eq!(
@@ -30,6 +33,7 @@ mod tests {
         );
     }
 
+    /// Verify rejection of invalid DNAME targets.
     #[test]
     fn rejects_a_target_that_is_not_a_name() {
         assert!(DnameRecordValue::parse("not a name").is_err());

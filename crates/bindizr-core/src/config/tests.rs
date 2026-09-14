@@ -20,6 +20,7 @@ struct TestConfigToml {
 }
 
 impl Default for TestConfigToml {
+    /// Build a valid configuration fixture with default section values.
     fn default() -> Self {
         Self {
             api_listen_addr: "127.0.0.1",
@@ -35,6 +36,7 @@ impl Default for TestConfigToml {
 }
 
 impl TestConfigToml {
+    /// Render the configuration fixture as TOML.
     fn render(&self) -> String {
         let unselected_databases = if self.unselected_databases {
             "\n[database.mysql]\nserver_url = \"\"\n\n[database.postgresql]\nserver_url = \"\"\n"
@@ -73,6 +75,7 @@ log_level = "debug"
     }
 }
 
+/// Parse a TOML configuration fixture.
 fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
     let config = Config::builder()
         .add_source(File::from_str(&toml.render(), FileFormat::Toml))
@@ -81,6 +84,7 @@ fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
     BindizrConfig::from_raw(config, |_| None)
 }
 
+/// Verify that `from_raw` accepts valid config.
 #[test]
 fn from_raw_accepts_valid_config() {
     let parsed = parse_config(&TestConfigToml {
@@ -104,6 +108,7 @@ fn from_raw_accepts_valid_config() {
     assert!(parsed.dns.nsupdate_allow_unsigned);
 }
 
+/// Verify that `from_raw` defaults missing optional fields.
 #[test]
 fn from_raw_defaults_missing_optional_fields() {
     let parsed = parse_config(&TestConfigToml::default()).unwrap();
@@ -119,6 +124,7 @@ fn from_raw_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.maintenance_interval_secs, 3600);
 }
 
+/// Verify that `from_raw` defaults unselected database sections.
 #[test]
 fn from_raw_defaults_unselected_database_sections() {
     let parsed = parse_config(&TestConfigToml {
@@ -135,6 +141,7 @@ fn from_raw_defaults_unselected_database_sections() {
     assert_eq!(parsed.database.postgresql.server_url, "");
 }
 
+/// Verify that `from_raw` rejects invalid listen addr.
 #[test]
 fn from_raw_rejects_invalid_listen_addr() {
     let err = parse_config(&TestConfigToml {
@@ -146,6 +153,7 @@ fn from_raw_rejects_invalid_listen_addr() {
     assert!(err.contains("Invalid Bindizr configuration"));
 }
 
+/// Verify that `from_raw` rejects empty selected database url.
 #[test]
 fn from_raw_rejects_empty_selected_database_url() {
     let err = parse_config(&TestConfigToml {
@@ -157,6 +165,7 @@ fn from_raw_rejects_empty_selected_database_url() {
     assert!(err.contains("database.mysql.server_url must not be empty"));
 }
 
+/// Verify that `apply_env_overrides` replaces config values before validation.
 #[test]
 fn apply_env_overrides_replaces_config_values_before_validation() {
     let mut overridden = parse_config(&TestConfigToml {
@@ -219,6 +228,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert!(matches!(overridden.logging.log_level, LogLevel::Info));
 }
 
+/// Verify that `apply_env_overrides` rejects invalid values.
 #[test]
 fn apply_env_overrides_rejects_invalid_values() {
     let mut overridden = parse_config(&TestConfigToml {
@@ -237,6 +247,7 @@ fn apply_env_overrides_rejects_invalid_values() {
     assert!(err.contains("Invalid BINDIZR_API_PORT environment variable"));
 }
 
+/// Verify that `resolve_config_path` prefers argument then env then default.
 #[test]
 fn resolve_config_path_prefers_argument_then_env_then_default() {
     let env = |name: &str| (name == "BINDIZR_CONFIG_PATH").then(|| "/env/path.toml".to_string());
@@ -252,6 +263,7 @@ fn resolve_config_path_prefers_argument_then_env_then_default() {
     );
 }
 
+/// Verify that `from_raw` rejects entryless secondary addrs.
 #[test]
 fn from_raw_rejects_entryless_secondary_addrs() {
     let err = parse_config(&TestConfigToml {
@@ -263,6 +275,7 @@ fn from_raw_rejects_entryless_secondary_addrs() {
     assert!(err.contains("dns.secondary_addrs contains no addresses"));
 }
 
+/// Verify that `from_raw` rejects port zero.
 #[test]
 fn from_raw_rejects_port_zero() {
     // Port 0 binds an ephemeral one, somewhere no client could find.
@@ -281,6 +294,7 @@ fn from_raw_rejects_port_zero() {
     assert!(err.contains("api.listen_port must not be 0"), "{}", err);
 }
 
+/// Verify that `from_raw` rejects listeners sharing a port.
 #[test]
 fn from_raw_rejects_listeners_sharing_a_port() {
     let err = parse_config(&TestConfigToml {
@@ -293,6 +307,7 @@ fn from_raw_rejects_listeners_sharing_a_port() {
     assert!(err.contains("cannot share port 5353"), "{}", err);
 }
 
+/// Verify that `from_raw` rejects an unparseable secondary address.
 #[test]
 fn from_raw_rejects_an_unparseable_secondary_address() {
     let err = parse_config(&TestConfigToml {
@@ -304,6 +319,7 @@ fn from_raw_rejects_an_unparseable_secondary_address() {
     assert!(err.contains("is not a host[:port] address"), "{}", err);
 }
 
+/// Verify that a reload refuses what a running process cannot adopt.
 #[test]
 fn a_reload_refuses_what_a_running_process_cannot_adopt() {
     // require_authentication is in the list because the router is built
@@ -330,6 +346,7 @@ fn a_reload_refuses_what_a_running_process_cannot_adopt() {
     );
 }
 
+/// Verify that a reload takes the settings read per use.
 #[test]
 fn a_reload_takes_the_settings_read_per_use() {
     let current = parse_config(&TestConfigToml::default()).unwrap();

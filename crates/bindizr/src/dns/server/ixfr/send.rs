@@ -182,6 +182,7 @@ pub(crate) async fn send_ixfr_response(
     }
 }
 
+/// Append one journal change to a DNS transfer message.
 fn add_change(
     builder: &mut message::DnsMessageBuilder,
     change: &ZoneChange,

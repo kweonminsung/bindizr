@@ -18,6 +18,7 @@ use domain::{
 /// (RFC 8945, Section 10 suggested default).
 pub const DEFAULT_FUDGE: u16 = 300;
 
+/// Check whether a DNS message uses the UPDATE opcode.
 pub fn is_nsupdate(message: &[u8]) -> bool {
     Message::from_octets(message).is_ok_and(|message| message.header().opcode() == Opcode::UPDATE)
 }

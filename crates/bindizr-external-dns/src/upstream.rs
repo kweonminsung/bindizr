@@ -30,6 +30,7 @@ pub(crate) struct UpstreamClient {
 }
 
 impl UpstreamClient {
+    /// Build the bindizr HTTP client with authentication, timeout, and TLS settings.
     pub(crate) fn new(
         base_url: String,
         token: Option<String>,
@@ -58,6 +59,7 @@ impl UpstreamClient {
         })
     }
 
+    /// Fetch domain names available to the adapter's token.
     pub(crate) async fn list_domains(&self) -> Result<Vec<String>, UpstreamError> {
         #[derive(Deserialize)]
         struct DomainsBody {
@@ -67,6 +69,7 @@ impl UpstreamClient {
         Ok(body.domains)
     }
 
+    /// Fetch the records visible through the bindizr external-dns API.
     pub(crate) async fn list_records(&self) -> Result<Vec<BindizrRecord>, UpstreamError> {
         #[derive(Deserialize)]
         struct RecordsBody {
@@ -76,6 +79,7 @@ impl UpstreamClient {
         Ok(body.records)
     }
 
+    /// Submit a record change set to the bindizr API.
     pub(crate) async fn apply_changes(
         &self,
         changes: &BindizrChanges,
@@ -118,6 +122,7 @@ impl UpstreamClient {
         Ok(())
     }
 
+    /// Fetch and deserialize a JSON response from a bindizr API path.
     async fn fetch_json<T: serde::de::DeserializeOwned>(
         &self,
         path: &str,
@@ -128,6 +133,7 @@ impl UpstreamClient {
         })
     }
 
+    /// Build an authenticated request to a bindizr API path.
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         let mut request = self
             .http
@@ -138,6 +144,7 @@ impl UpstreamClient {
         request
     }
 
+    /// Send an upstream request and translate transport or HTTP failures.
     async fn send(
         &self,
         request: reqwest::RequestBuilder,

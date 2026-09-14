@@ -41,6 +41,7 @@ pub(crate) async fn initialize() {
     }
 }
 
+/// Check whether a query type requests AXFR or IXFR.
 pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
     matches!(qtype, Rtype::AXFR | Rtype::IXFR)
 }

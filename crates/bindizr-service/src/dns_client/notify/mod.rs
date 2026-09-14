@@ -132,6 +132,7 @@ async fn send_notify_to_server(
     Err(last_error.unwrap_or_else(|| format!("NOTIFY to {} was not attempted", server_addr)))
 }
 
+/// Send one NOTIFY attempt and validate the server's response.
 async fn send_notify_to_server_once(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,

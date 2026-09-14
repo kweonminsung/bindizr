@@ -191,6 +191,7 @@ pub(crate) struct ApiDoc;
 struct SecurityAddon;
 
 impl Modify for SecurityAddon {
+    /// Add bearer-token authentication to the OpenAPI document.
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         if let Some(components) = openapi.components.as_mut() {
             components.add_security_scheme(

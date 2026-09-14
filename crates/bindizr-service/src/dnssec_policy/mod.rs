@@ -1,6 +1,6 @@
 //! DNSSEC policies: the named signing-parameter bundles zones sign under.
-//! A policy row is a management write (single statements, constraints as
-//! the backstop); the zone side that consumes it lives in `dnssec`.
+//! Partial updates lock the policy row; creates and deletes rely on constraints.
+//! Zone signing consumes these policies in `dnssec`.
 
 use chrono::Utc;
 
@@ -83,6 +83,7 @@ impl DnssecPolicyService {
         .await
     }
 
+    /// List DNSSEC policies visible to an authorized caller.
     pub async fn list(
         caller: &Caller,
         page: PageFilter,
@@ -100,6 +101,7 @@ impl DnssecPolicyService {
         )
     }
 
+    /// Load a named DNSSEC policy for an authorized caller.
     pub async fn get(caller: &Caller, name: &str) -> Result<DnssecPolicy, ServiceError> {
         caller.require_global("manage DNSSEC policies")?;
 
@@ -217,8 +219,10 @@ pub(crate) fn normalize_policy_name(value: &str) -> Result<String, ServiceError>
     Ok(name)
 }
 
-/// A refresh window at least as long as the validity would re-sign on every
-/// pass; requiring headroom keeps re-signing periodic and expiry reachable.
+/// Validate signature validity, refresh, and key lifetime settings.
+///
+/// The refresh window must be shorter than validity, or every maintenance pass would re-sign
+/// the zone.
 fn validate_timing(
     signature_validity_days: u32,
     signature_refresh_days: u32,
@@ -259,11 +263,13 @@ fn validate_timing(
 mod tests {
     use super::{normalize_policy_name, validate_timing};
 
+    /// Verify that `normalize_policy_name` lowercases and trims.
     #[test]
     fn normalize_policy_name_lowercases_and_trims() {
         assert_eq!(normalize_policy_name("  Strict-1 ").unwrap(), "strict-1");
     }
 
+    /// Verify that `normalize_policy_name` rejects empty and odd characters.
     #[test]
     fn normalize_policy_name_rejects_empty_and_odd_characters() {
         assert!(normalize_policy_name("   ").is_err());
@@ -272,6 +278,7 @@ mod tests {
         assert!(normalize_policy_name(&"x".repeat(65)).is_err());
     }
 
+    /// Verify that `validate_timing` requires refresh below validity.
     #[test]
     fn validate_timing_requires_refresh_below_validity() {
         assert!(validate_timing(14, 5, 0).is_ok());

@@ -13,6 +13,7 @@ fn summary_row(stdout: &str) -> Vec<&str> {
         .collect()
 }
 
+/// Verify that zone create takes SOA timers.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_create_takes_soa_timers() {
@@ -53,6 +54,7 @@ async fn zone_create_takes_soa_timers() {
     assert_eq!(zone["minimum_ttl"], 120);
 }
 
+/// Verify zone creation, retrieval, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_create_read_delete() {
@@ -82,6 +84,7 @@ async fn zone_create_read_delete() {
     );
 }
 
+/// Verify that zone update changes only passed fields via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_update_changes_only_passed_fields_via_cli() {
@@ -110,6 +113,7 @@ async fn zone_update_changes_only_passed_fields_via_cli() {
     assert_eq!(updated["mname"], format!("ns1.{zone_name}"));
 }
 
+/// Verify zone filtering and pagination.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_filter_and_paginate() {
@@ -170,6 +174,7 @@ async fn zone_filter_and_paginate() {
     assert_eq!(page["pagination"]["total"], 2);
 }
 
+/// Verify rejection of invalid zone names and TTLs.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_reject_invalid_name_and_ttl() {
@@ -201,6 +206,7 @@ async fn zone_reject_invalid_name_and_ttl() {
     assert_cli_success(&["status"], &status);
 }
 
+/// Verify importing a zone file from standard input.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_zone_file_from_stdin() {
@@ -250,6 +256,7 @@ async fn zone_import_zone_file_from_stdin() {
     );
 }
 
+/// Verify zone-file export through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_export_via_cli() {
@@ -311,6 +318,7 @@ async fn zone_export_via_cli() {
     assert_eq!(summary_row(&reimport)[1..3], ["0", "0"], "{reimport}");
 }
 
+/// Verify that zone export orders by name then type then RDATA.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_export_orders_by_name_then_type_then_rdata() {
@@ -350,6 +358,7 @@ async fn zone_export_orders_by_name_then_type_then_rdata() {
     );
 }
 
+/// Verify that zone import dry run shows the diff via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_dry_run_shows_the_diff_via_cli() {
@@ -382,6 +391,7 @@ async fn zone_import_dry_run_shows_the_diff_via_cli() {
     assert!(names.is_empty(), "records were: {names:?}");
 }
 
+/// Verify zone history inspection and rollback through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_versions_and_rollback_flow() {
@@ -521,6 +531,7 @@ async fn zone_versions_and_rollback_flow() {
     assert_cli_failure_contains(&args, &output, "must be less than the current serial");
 }
 
+/// Verify zone status reporting through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_status_via_cli() {
@@ -536,6 +547,7 @@ async fn zone_status_via_cli() {
     }
 }
 
+/// Verify that zone import from server round-trips over AXFR.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_from_server_round_trips_over_axfr() {
