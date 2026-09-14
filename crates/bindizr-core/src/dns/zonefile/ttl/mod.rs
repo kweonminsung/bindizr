@@ -22,8 +22,16 @@ fn scan_line(line: &str) -> ScannedLine {
 
     for (index, byte) in line.bytes().enumerate() {
         match byte {
-            _ if escaped => escaped = false,
-            b'\\' => escaped = true,
+            // An escape is token data: `\@` is an owner of one `@` label, and
+            // forgetting where it began would read the next field as the owner.
+            _ if escaped => {
+                escaped = false;
+                start = start.or(Some(index));
+            }
+            b'\\' => {
+                escaped = true;
+                start = start.or(Some(index));
+            }
             b'"' => quoted = !quoted,
             b';' if !quoted => {
                 if let Some(from) = start.take() {
@@ -138,9 +146,6 @@ fn rewrite_ttl_slots(code: &str, tokens: &[(usize, usize)]) -> String {
     out
 }
 
-/// A unit-suffixed TTL in seconds: `<digits><unit>` repeated, over seconds,
-/// minutes, hours, days, and weeks. `None` for plain digits, which need no
-/// rewrite, and for anything else, which is not a TTL.
 /// Whether the token is a CLASS rather than a TTL, so the scan may step over
 /// it and keep looking (RFC 1035, Section 5.1; RFC 3597, Section 5 for
 /// `CLASS<n>`).
@@ -149,11 +154,15 @@ fn is_class(token: &str) -> bool {
         token.to_ascii_uppercase().as_str(),
         "IN" | "CH" | "CS" | "HS"
     ) || token
-        .strip_prefix("CLASS")
-        .or_else(|| token.strip_prefix("class"))
-        .is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+        .get(..5)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("CLASS"))
+        && token.len() > 5
+        && token[5..].bytes().all(|byte| byte.is_ascii_digit())
 }
 
+/// A unit-suffixed TTL in seconds: `<digits><unit>` repeated, over seconds,
+/// minutes, hours, days, and weeks. `None` for plain digits, which need no
+/// rewrite, and for anything else, which is not a TTL.
 fn ttl_seconds(token: &str) -> Option<u32> {
     if token.is_empty() || token.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;

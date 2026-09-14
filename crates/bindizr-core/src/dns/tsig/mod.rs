@@ -147,10 +147,16 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
     let Ok(additional) = message.additional() else {
         return RequestSignature::Malformed;
     };
-    if !additional
-        .clone()
-        .any(|record| matches!(record, Ok(record) if record.rtype() == Rtype::TSIG))
-    {
+    // A record that does not parse hides everything after it, so absence can
+    // only be concluded from a section read whole.
+    let mut carries_tsig = false;
+    for record in additional {
+        match record {
+            Ok(record) => carries_tsig |= record.rtype() == Rtype::TSIG,
+            Err(_) => return RequestSignature::Malformed,
+        }
+    }
+    if !carries_tsig {
         return RequestSignature::Absent;
     }
     match additional.limit_to::<Tsig<_, _>>().last() {

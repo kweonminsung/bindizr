@@ -96,6 +96,7 @@ fn restoring_a_zone_replaces_its_records_rather_than_adding_them() {
     assert!(cache.lookup(1, 2).is_some());
 }
 
+/// Verify that a lowered budget reaches zones already cached.
 #[test]
 fn a_lowered_budget_reaches_zones_already_cached() {
     let mut cache = Cache::default();

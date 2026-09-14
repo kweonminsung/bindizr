@@ -192,6 +192,7 @@ mod tests {
         assert_eq!(read(&framed).await.unwrap().len(), usize::from(u16::MAX));
     }
 
+    /// Verify that a write no one reads gives up rather than holding the slot.
     #[tokio::test(start_paused = true)]
     async fn a_write_no_one_reads_gives_up_rather_than_holding_the_slot() {
         // One byte of buffer, and nothing draining the far end.

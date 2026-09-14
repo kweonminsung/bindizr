@@ -226,6 +226,8 @@ fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     assert!(!mac.is_empty());
 }
 
+/// Verify that the reserved TSIG size covers the largest key a request can
+/// name.
 #[test]
 fn the_reserved_tsig_size_covers_the_largest_key_a_request_can_name() {
     // The longest name a key can carry, under the algorithm with the widest MAC.
@@ -250,6 +252,8 @@ fn the_reserved_tsig_size_covers_the_largest_key_a_request_can_name() {
     );
 }
 
+/// Verify that a TSIG which does not parse is not read as an unsigned
+/// request.
 #[test]
 fn a_tsig_that_does_not_parse_is_not_read_as_an_unsigned_request() {
     let signed = signed_update(TsigAlgorithm::HmacSha256, now_secs());
@@ -269,6 +273,16 @@ fn a_tsig_that_does_not_parse_is_not_read_as_an_unsigned_request() {
     empty_rdata.extend_from_slice(&0u16.to_be_bytes()); // RDLENGTH
     assert!(matches!(
         request_signature(&empty_rdata),
+        RequestSignature::Malformed
+    ));
+
+    // A TSIG whose RDLENGTH overruns the message stops the section making
+    // sense at all, so absence cannot be concluded from what follows.
+    let mut overrun = empty_rdata.clone();
+    let rdlength_at = overrun.len() - 2;
+    overrun[rdlength_at..].copy_from_slice(&8u16.to_be_bytes());
+    assert!(matches!(
+        request_signature(&overrun),
         RequestSignature::Malformed
     ));
 

@@ -161,13 +161,13 @@ fn print_section(name: &str) {
     println!("{}", color::cyan(&format!("[{}]", name)));
 }
 
-/// Print one configuration key and its value.
 /// A value the configuration may leave out, shown as unset rather than absent
 /// so the list says what the daemon actually holds.
 fn print_optional(key: &str, value: Option<&str>) {
     print_value(key, value.unwrap_or("(unset)"));
 }
 
+/// Print one configuration key and its value.
 fn print_value(key: &str, value: impl std::fmt::Display) {
     println!("  {} = {}", color::yellow(&format!("{:<24}", key)), value);
 }
