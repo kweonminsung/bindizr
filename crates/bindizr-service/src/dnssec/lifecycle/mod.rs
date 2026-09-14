@@ -6,7 +6,7 @@ use chrono::Utc;
 
 use super::{
     DnssecService, notify_zone, parent_ns_addrs::normalize_parent_ns_addrs,
-    snapshot::ProbedSnapshot, status::build_status_tx, to_key_layout,
+    status::build_status_tx, to_key_layout,
 };
 use crate::{
     authorization::Caller,
@@ -257,36 +257,18 @@ impl DnssecService {
     ) -> Result<(), ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
-        let mut snapshot = None;
-        if !skip_ds_check {
-            // Unlocked pre-read to learn which parent to ask; the network wait
-            // must not hold the zone row, which the deletion re-reads locked.
-            let (zone, keys) = {
-                let mut tx = RepositoryService::begin_read_tx("failed to disable DNSSEC").await?;
-                let result = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::None)
-                    .await
-                    .map(|(zone, _, keys)| (zone, keys));
-                RepositoryService::finish_tx(tx, result, "failed to disable DNSSEC").await?
-            };
-            let delegation = Self::probe_delegation(&zone, &keys).await?;
-            if !delegation.ds_key_tags.is_empty() {
-                return Err(ServiceError::dnssec_ds_published(
-                    zone.name.as_str(),
-                    &delegation.ds_key_tags,
-                ));
-            }
-            // The parent the probe asked; the locked zone must still name it.
-            snapshot = Some(ProbedSnapshot::take(&zone, &keys, |zone, _| {
-                Ok(zone.parent_ns_addrs.clone())
-            })?);
-        }
-
         let mut tx = RepositoryService::begin_tx("failed to disable DNSSEC").await?;
         let result = async {
             let (zone, _, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            if let Some(snapshot) = &snapshot {
-                snapshot.require_same(&zone, &keys)?;
+            if !skip_ds_check {
+                let delegation = Self::probe_delegation(&zone, &keys).await?;
+                if !delegation.ds_key_tags.is_empty() {
+                    return Err(ServiceError::dnssec_ds_published(
+                        zone.name.as_str(),
+                        &delegation.ds_key_tags,
+                    ));
+                }
             }
 
             let derived =

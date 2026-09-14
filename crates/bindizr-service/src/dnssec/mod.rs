@@ -6,6 +6,9 @@
 //!
 //! Promotion waits for the publish TTL and, for SEP keys, parent DS confirmation
 //! by maintenance or `ds-seen`. Retired keys remain until their cache deadlines.
+//! A parent probe runs inside the transaction that acts on its answer, under
+//! the zone lock, so the answer is about the keys and parent it then moves;
+//! `notify_timeout_secs` bounds each exchange.
 
 mod delegation;
 mod keys;
@@ -13,7 +16,6 @@ mod lifecycle;
 mod maintenance;
 mod parent_ns_addrs;
 mod rollover;
-mod snapshot;
 mod status;
 mod withdraw;
 

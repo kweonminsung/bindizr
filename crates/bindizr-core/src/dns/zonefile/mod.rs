@@ -49,7 +49,7 @@ pub fn parse_zone_file(content: &str, zone_name: &str, default_ttl: i32) -> Pars
     // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and
     // TTLs. PRELUDE_LINES counts them.
     let mut buffer = format!("$ORIGIN {origin_fqdn}\n$TTL {default_ttl}\n");
-    buffer.push_str(&ttl::to_decimal_ttls(content));
+    buffer.push_str(content);
     if !buffer.ends_with('\n') {
         buffer.push('\n');
     }
@@ -209,8 +209,6 @@ fn to_input_line_message(err: &ZoneFileError) -> String {
         None => message,
     }
 }
-
-mod ttl;
 
 #[cfg(test)]
 mod tests;

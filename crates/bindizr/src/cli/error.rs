@@ -143,8 +143,7 @@ impl CliError {
             | ErrorCode::DnssecPolicyConflict
             | ErrorCode::DnssecDsPublished
             | ErrorCode::DnssecDsNotPublished
-            | ErrorCode::DnssecDsUnverified
-            | ErrorCode::DnssecStateChanged => None,
+            | ErrorCode::DnssecDsUnverified => None,
         }
     }
 }

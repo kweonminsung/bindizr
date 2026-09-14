@@ -201,7 +201,11 @@ The file is standard BIND zone file text, for example:
 
 Relative names resolve against the zone and missing TTLs fall back to the
 zone TTL. SOA lines are ignored (SOA metadata is managed by bindizr) and
-$INCLUDE is not supported.")]
+$INCLUDE is not supported.
+
+TTLs are decimal seconds (RFC 1035). A file using BIND's unit suffixes
+(1h, 2d) is refused; write it out in seconds first:
+  named-compilezone -o - example.com db.example.com")]
     Import {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]

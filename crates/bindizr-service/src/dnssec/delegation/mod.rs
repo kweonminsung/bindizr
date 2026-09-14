@@ -4,9 +4,9 @@ use bindizr_core::dns::{
     dnssec::{DS_DIGEST_TYPES, ds_rdata_for, to_wire_name},
     query::DsRrset,
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
-use super::{DnssecService, snapshot::ProbedSnapshot, status::build_status_tx};
+use super::{DnssecService, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -29,31 +29,19 @@ impl DnssecService {
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
-        // Read unlocked: the probe's network wait must not hold the zone row.
-        let (zone, keys) = {
-            let mut tx = RepositoryService::begin_read_tx("failed to check the parent DS").await?;
-            let result = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::None)
-                .await
-                .map(|(zone, _, keys)| (zone, keys));
-            RepositoryService::finish_tx(tx, result, "failed to check the parent DS").await?
-        };
-        let delegation = Self::probe_delegation(&zone, &keys).await?;
-        // The delegation entries describe these keys in these states.
-        let snapshot = ProbedSnapshot::take(&zone, &keys, |zone, keys| {
-            Ok((zone.parent_ns_addrs.clone(), sep_key_states(keys)))
-        })?;
-
         let mut tx = RepositoryService::begin_read_tx("failed to check the parent DS").await?;
         let result = async {
             let (zone, policy, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-            snapshot.require_same(&zone, &keys)?;
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, zone.serial).await
+            let status = build_status_tx(&mut tx, &zone, Some(&policy), &keys, zone.serial).await?;
+            Ok((zone, keys, status))
         }
         .await;
-        let mut status =
+        let (zone, keys, mut status) =
             RepositoryService::finish_tx(tx, result, "failed to check the parent DS").await?;
-        status.delegation = Some(delegation);
+        // Read-only, so the wait stays outside the transaction; the keys are
+        // the ones the status describes.
+        status.delegation = Some(Self::probe_delegation(&zone, &keys).await?);
         Ok(status)
     }
 
@@ -160,18 +148,6 @@ fn to_delegation_info(
         ds_ttl: served.iter().map(|rrset| rrset.ttl).max(),
         checked_at: Utc::now(),
     })
-}
-
-/// The SEP keys as the delegation entries describe them: id, state, and
-/// eligibility, ordered by id.
-fn sep_key_states(keys: &[DnssecKey]) -> Vec<(i32, DnssecKeyState, DateTime<Utc>)> {
-    let mut states: Vec<_> = keys
-        .iter()
-        .filter(|key| key.role.is_sep())
-        .map(|key| (key.id, key.state, key.eligible_at))
-        .collect();
-    states.sort_unstable_by_key(|(id, _, _)| *id);
-    states
 }
 
 #[cfg(test)]

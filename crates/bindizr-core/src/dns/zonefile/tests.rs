@@ -59,15 +59,24 @@ fn txt_utf8_multi_segment_parses_as_segments() {
     }
 }
 
-/// Verify that a TTL written with units reaches the parsed record.
+/// Verify that a TTL written with a BIND unit suffix is refused on its line.
 #[test]
-fn a_ttl_written_with_units_reaches_the_parsed_record() {
-    // The slot rules are the rewrite's own tests; this is the round trip.
-    let parsed = parse_zone_file("$TTL 1h\nwww 2d IN A 192.0.2.1\n", "example.com", 300);
+fn a_ttl_written_with_units_is_refused() {
+    // RFC 1035, Section 5.1 defines the TTL as a decimal integer; the suffix
+    // is a BIND extension, and `named-compilezone` writes it back as seconds.
+    let parsed = parse_zone_file(
+        "www IN A 192.0.2.1\nmail 1h IN A 192.0.2.2\n",
+        "example.com",
+        300,
+    );
 
-    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert_eq!(parsed.rrs.len(), 1);
-    assert_eq!(parsed.rrs[0].ttl, 172_800);
+    assert_eq!(parsed.errors.len(), 1, "{:?}", parsed.errors);
+    assert!(
+        parsed.errors[0].starts_with("failed to parse zone file: 2:"),
+        "{}",
+        parsed.errors[0]
+    );
 }
 
 /// Verify zone-file parsing of NAPTR presentation data.

@@ -5,7 +5,7 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::{Duration, Utc};
 
-use super::{DnssecService, notify_zone, snapshot::ProbedSnapshot, status::build_status_tx};
+use super::{DnssecService, notify_zone, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -152,65 +152,43 @@ impl DnssecService {
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
         caller.require_global("manage DNSSEC signing")?;
 
-        let mut snapshot = None;
-        // The answer that confirms the DS also says how long resolvers cache
-        // it — the wait the key it replaces must outlive.
-        let mut parent_ds_ttl = None;
-        if !skip_ds_check {
-            // Unlocked pre-read to learn which keys await the parent; the
-            // network wait must not hold the zone row.
-            let (zone, keys) = {
-                let mut tx =
-                    RepositoryService::begin_read_tx("failed to advance key rollover").await?;
-                let result = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::None)
-                    .await
-                    .map(|(zone, _, keys)| (zone, keys));
-                RepositoryService::finish_tx(tx, result, "failed to advance key rollover").await?
-            };
-            let awaiting = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
-            let delegation = Self::probe_delegation(&zone, &keys).await?;
-            parent_ds_ttl = delegation.ds_ttl;
-            let unconfirmed: Vec<&DnssecDelegationKeyInfo> = delegation
-                .keys
-                .iter()
-                .filter(|key| awaiting.contains(&key.id) && !key.ds_published)
-                .collect();
-            let unsupported: Vec<u16> = unconfirmed
-                .iter()
-                .filter(|key| key.ds_digest_unsupported)
-                .map(|key| key.key_tag)
-                .collect();
-            if !unsupported.is_empty() {
-                return Err(ServiceError::dnssec_ds_digest_unsupported(
-                    zone.name.as_str(),
-                    &unsupported,
-                ));
-            }
-            let missing: Vec<u16> = unconfirmed.iter().map(|key| key.key_tag).collect();
-            if !missing.is_empty() {
-                return Err(ServiceError::dnssec_ds_not_published(
-                    zone.name.as_str(),
-                    &missing,
-                ));
-            }
-            // Promote exactly the keys the probe verified, at the parent it asked.
-            snapshot = Some(ProbedSnapshot::take(&zone, &keys, move |zone, keys| {
-                let mut promotable = promotable_sep_key_ids(zone, keys, skip_holddown)?;
-                promotable.sort_unstable();
-                Ok((zone.parent_ns_addrs.clone(), promotable))
-            })?);
-        }
-
         let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
         let result = async {
             let (zone, policy, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            if let Some(snapshot) = &snapshot {
-                snapshot.require_same(&zone, &keys)?;
+            let awaiting = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
+            // The answer that confirms the DS also says how long resolvers
+            // cache it — the wait the key it replaces must outlive.
+            let mut parent_ds_ttl = None;
+            if !skip_ds_check {
+                let delegation = Self::probe_delegation(&zone, &keys).await?;
+                parent_ds_ttl = delegation.ds_ttl;
+                let unconfirmed: Vec<&DnssecDelegationKeyInfo> = delegation
+                    .keys
+                    .iter()
+                    .filter(|key| awaiting.contains(&key.id) && !key.ds_published)
+                    .collect();
+                let unsupported: Vec<u16> = unconfirmed
+                    .iter()
+                    .filter(|key| key.ds_digest_unsupported)
+                    .map(|key| key.key_tag)
+                    .collect();
+                if !unsupported.is_empty() {
+                    return Err(ServiceError::dnssec_ds_digest_unsupported(
+                        zone.name.as_str(),
+                        &unsupported,
+                    ));
+                }
+                let missing: Vec<u16> = unconfirmed.iter().map(|key| key.key_tag).collect();
+                if !missing.is_empty() {
+                    return Err(ServiceError::dnssec_ds_not_published(
+                        zone.name.as_str(),
+                        &missing,
+                    ));
+                }
             }
-            let ds_published = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
             let keys =
-                Self::promote_published_keys_tx(&mut tx, &zone, keys, &ds_published, parent_ds_ttl)
+                Self::promote_published_keys_tx(&mut tx, &zone, keys, &awaiting, parent_ds_ttl)
                     .await?;
 
             let new_serial = DnssecService::resign_zone_tx(
