@@ -21,7 +21,6 @@ pub(crate) use bindizr_core::{config, log_error, log_info, log_warn};
 use error::DatabaseError;
 
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
-static INITIALIZE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Debug)]
 pub(crate) enum DatabasePool {
@@ -37,18 +36,8 @@ pub(crate) enum DatabaseType {
     SQLite,
 }
 
-/// Initialize the global database pool from configuration. Idempotent.
+/// Build the global database pool from configuration; the daemon calls this once.
 pub async fn initialize() -> Result<(), DatabaseError> {
-    if is_initialized() {
-        return Ok(());
-    }
-
-    let initialize_guard = INITIALIZE_LOCK.lock().await;
-
-    if is_initialized() {
-        return Ok(());
-    }
-
     let bindizr_config = config::bindizr_config();
 
     let database_type = match bindizr_config.database.database_type {
@@ -70,19 +59,12 @@ pub async fn initialize() -> Result<(), DatabaseError> {
         DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await?,
     };
 
-    // Cannot fail: the pool is set only here, under INITIALIZE_LOCK.
     DATABASE_POOL
         .set(pool)
-        .expect("database pool initialized twice");
+        .map_err(|_| DatabaseError::PoolError("database pool initialized twice".to_string()))?;
 
-    drop(initialize_guard);
     log_info!("Database pool initialized");
     Ok(())
-}
-
-/// Check whether the global database repositories are initialized.
-fn is_initialized() -> bool {
-    DATABASE_POOL.get().is_some()
 }
 
 /// Return the global database pool, panicking if not yet initialized.
@@ -90,9 +72,8 @@ pub(crate) fn get_pool() -> &'static DatabasePool {
     DATABASE_POOL.get().expect("Database pool not initialized")
 }
 
-/// How full the connection pool is. sqlx counts what it holds, not what waits
-/// on it, so saturation shows as `in_use` reaching `max` rather than as a
-/// queue depth.
+/// How full the connection pool is. sqlx counts held connections, not waiters,
+/// so saturation shows as `connections` reaching `max`.
 pub struct PoolStats {
     /// Connections the pool holds, idle and handed out alike.
     pub connections: u32,
@@ -115,9 +96,8 @@ pub fn pool_stats() -> Option<PoolStats> {
     })
 }
 
-/// Max pooled connections, scaled to the host; sqlx's default is a flat 10.
-/// SQLite shares it: under WAL the pool bounds read concurrency rather than
-/// contention for the writer slot.
+/// Max pooled connections, scaled to the host instead of sqlx's flat 10.
+/// SQLite shares it: under WAL the pool bounds readers, not the one writer.
 fn pool_max_connections() -> u32 {
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -203,15 +183,15 @@ impl DatabasePool {
                     sqlx::query("PRAGMA foreign_keys = ON")
                         .execute(&mut *conn)
                         .await?;
-                    // SQLite's busy handler polls unfairly, so a short timeout starves
-                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY. Set before the
-                    // WAL switch below, which takes a lock of its own.
+                    // SQLite's busy handler polls unfairly: a short timeout starves
+                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY. Set before the WAL
+                    // switch, which locks too.
                     sqlx::query("PRAGMA busy_timeout = 15000")
                         .execute(&mut *conn)
                         .await?;
-                    // WAL keeps readers off the writer's lock; being a file
-                    // property this re-asserts it per connection. SQLite answers
-                    // with the mode in force, not an error, if WAL cannot apply.
+                    // WAL keeps readers off the writer's lock; a file property, so
+                    // each connection re-asserts it. SQLite reports the mode in
+                    // force instead of failing when WAL cannot apply.
                     let mode = sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
                         .fetch_one(&mut *conn)
                         .await?;
