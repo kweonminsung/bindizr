@@ -166,8 +166,15 @@ impl ZoneService {
         let result = async {
             let zone =
                 Self::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-            let records =
-                RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
+            // Narrowed the way `/records` narrows it: a grant that hides a
+            // record from the listing must hide it from the zone's detail too.
+            let records = RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None)
+                .await?
+                .into_iter()
+                .filter(|record| {
+                    caller.record_visible(zone.id, &record.name, Some(&record.record_type))
+                })
+                .collect();
             Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
         }
         .await;

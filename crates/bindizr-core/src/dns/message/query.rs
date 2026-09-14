@@ -89,6 +89,25 @@ impl ParsedQuery {
             .finish()
     }
 
+    /// The truncated answer, signed when the question was.
+    pub fn signed_truncated_response(
+        &self,
+        signer: Option<&mut TransferSigner>,
+    ) -> Result<Vec<u8>, String> {
+        let question = self.echo_question(|header| {
+            header.set_aa(true);
+            header.set_tc(true);
+        });
+        let Some(signer) = signer else {
+            return Ok(question.finish());
+        };
+        let mut additional = question.additional();
+        signer
+            .answer(&mut additional, Time48::now())
+            .map_err(|e| format!("Failed to sign the response: {}", e))?;
+        Ok(additional.finish())
+    }
+
     /// The same, signed by the key that signed the request: an accepted key
     /// answers under itself, error or not (RFC 8945, Section 5.3).
     pub fn signed_error_response(

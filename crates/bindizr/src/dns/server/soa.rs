@@ -8,7 +8,7 @@ use bindizr_core::{
     dns::{
         message,
         message::{Rcode, Rtype},
-        tsig::TransferSigner,
+        tsig::{RequestSignature, TransferSigner, request_signature},
     },
     log_info, log_warn,
     metrics::{SoaResult, track_soa},
@@ -19,7 +19,7 @@ use tokio::net::{TcpStream, UdpSocket};
 use crate::dns::{
     error::XfrError,
     server::{
-        auth::{TransferRefusal, authorize_transfer},
+        auth::{TransferRefusal, authorize_transfer, signed_error},
         catalog,
     },
     wire,
@@ -85,14 +85,19 @@ async fn build_soa_response(
 
     log_info!("SOA query for zone {:?} from {}", zone_name_str, client_ip);
 
-    let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
-    if let Some(signer) = signer {
-        builder = builder.sign_with(signer);
-    }
+    let mut signer = signer;
+    let build = |signer: Option<TransferSigner>| {
+        let builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
+        match signer {
+            Some(signer) => builder.sign_with(signer),
+            None => builder,
+        }
+    };
 
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("SOA query for catalog zone: {}", catalog::CATALOG_ZONE_NAME);
         let (catalog_zone, _) = catalog::generate_catalog_zone().await?;
+        let mut builder = build(signer);
         builder.add_catalog_soa(
             &catalog_zone,
             bindizr_core::dns::serial_to_u32(catalog_zone.serial)?,
@@ -103,7 +108,7 @@ async fn build_soa_response(
 
     let Some(zone) = ZoneService::find_by_name(zone_name_str).await? else {
         track_soa(SoaResult::NotAuth);
-        return Ok(query.error_response(Rcode::NOTAUTH));
+        return signed_error(query, Rcode::NOTAUTH, signer.as_mut());
     };
 
     log_info!(
@@ -112,6 +117,7 @@ async fn build_soa_response(
         zone.serial
     );
 
+    let mut builder = build(signer);
     builder.add_soa(&zone, bindizr_core::dns::serial_to_u32(zone.serial)?)?;
 
     track_soa(SoaResult::Ok);
@@ -125,7 +131,10 @@ async fn authorize_soa(
     client_ip: IpAddr,
     query_data: &[u8],
 ) -> Result<Option<TransferSigner>, TransferRefusal> {
-    if is_self_probe(client_ip) {
+    // Only an unsigned probe skips the gate: a request that reached for a key
+    // is held to it wherever it came from, or a wrong secret would pass.
+    if is_self_probe(client_ip) && matches!(request_signature(query_data), RequestSignature::Absent)
+    {
         return Ok(None);
     }
     authorize_transfer(query_data, client_ip, &query.zone_name).await

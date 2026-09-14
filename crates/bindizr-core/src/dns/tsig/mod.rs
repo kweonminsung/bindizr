@@ -7,14 +7,17 @@ use std::{str::FromStr, sync::Arc};
 use base64::Engine;
 use domain::{
     base::{
-        Message, MessageBuilder, ToName,
+        Message, MessageBuilder, Rtype, ToName,
         iana::{Rcode, TsigRcode},
     },
     rdata::tsig::{Time48, Tsig},
     tsig::{Algorithm, Key, KeyName, KeyStore, ServerError, ServerSequence, ServerTransaction},
 };
 
-use crate::model::tsig_key::{TsigAlgorithm, TsigKey};
+use crate::{
+    dns::name::MAX_DOMAIN_LEN,
+    model::tsig_key::{TsigAlgorithm, TsigKey},
+};
 
 /// Why a TSIG-signed request could not be accepted.
 #[derive(Debug)]
@@ -33,6 +36,12 @@ pub type ResponseSigner = ServerTransaction<Arc<Key>>;
 /// Context for signing the envelopes of one transfer, which share a running
 /// MAC chain (RFC 8945, Section 5.3.1).
 pub type TransferSigner = ServerSequence<Arc<Key>>;
+
+/// The largest TSIG record a response can carry, so an intake cap can reserve
+/// room for one it has not seen yet: the longest key name, `hmac-sha512.`, its
+/// 64-byte MAC, and the 6 bytes BADTIME adds (RFC 8945, Section 4.2).
+pub(crate) const MAX_TSIG_RR: usize =
+    (MAX_DOMAIN_LEN + 2) + (2 + 2 + 4 + 2) + (13 + 6 + 2 + 2 + 64 + 2 + 2 + 2 + 6);
 
 /// Bytes a signed message must leave for its TSIG record.
 pub fn signature_len(signer: &TransferSigner) -> usize {
@@ -118,12 +127,36 @@ fn verify<T>(
     }
 }
 
-/// The key a signed message names, or `None` when it carries no TSIG record,
-/// which is what chooses between key- and address-authorized handling.
-pub fn signed_key_name(query_data: &[u8]) -> Option<String> {
-    let message = Message::from_octets(query_data).ok()?;
-    let tsig = message.additional().ok()?.limit_to::<Tsig<_, _>>().last()?;
-    Some(tsig.ok()?.owner().to_string())
+/// How a request presents itself for authorization.
+pub enum RequestSignature {
+    /// No TSIG record: the address decides, as it did before keys existed.
+    Absent,
+    /// A TSIG record that does not parse. Never treated as unsigned — a
+    /// caller that reaches for a key must be held to it.
+    Malformed,
+    /// The key name the record carries.
+    Key(String),
+}
+
+/// Read how the message is signed. Presence is decided on the record's type
+/// alone, so a malformed TSIG cannot pass itself off as an unsigned request.
+pub fn request_signature(query_data: &[u8]) -> RequestSignature {
+    let Ok(message) = Message::from_octets(query_data) else {
+        return RequestSignature::Absent;
+    };
+    let Ok(additional) = message.additional() else {
+        return RequestSignature::Malformed;
+    };
+    if !additional
+        .clone()
+        .any(|record| matches!(record, Ok(record) if record.rtype() == Rtype::TSIG))
+    {
+        return RequestSignature::Absent;
+    }
+    match additional.limit_to::<Tsig<_, _>>().last() {
+        Some(Ok(tsig)) => RequestSignature::Key(tsig.owner().to_string()),
+        _ => RequestSignature::Malformed,
+    }
 }
 
 /// Map a TSIG validation failure to the complete NOTAUTH response to send.

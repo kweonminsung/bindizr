@@ -14,7 +14,7 @@ pub(crate) mod zone_cache;
 
 use std::net::SocketAddr;
 
-use auth::authorize_transfer;
+use auth::{authorize_transfer, signed_error};
 use bindizr_core::{
     dns::message::{Rcode, Rtype},
     log_info, log_warn,
@@ -84,9 +84,10 @@ pub(crate) async fn handle_tcp_query(
         signer.is_some()
     );
 
+    let mut signer = signer;
     let result = match query.qtype {
-        Rtype::AXFR => axfr::handle_axfr(stream, query, client_ip, Rtype::AXFR, signer).await,
-        Rtype::IXFR => ixfr::handle_ixfr(stream, query, client_ip, signer).await,
+        Rtype::AXFR => axfr::handle_axfr(stream, query, client_ip, Rtype::AXFR, &mut signer).await,
+        Rtype::IXFR => ixfr::handle_ixfr(stream, query, client_ip, &mut signer).await,
         _ => {
             log_warn!("Unsupported query type: {:?}", query.qtype);
             return Err(XfrError::InvalidQuery(format!(
@@ -100,7 +101,7 @@ pub(crate) async fn handle_tcp_query(
     if let Err(err) = result {
         if matches!(err, XfrError::ZoneNotFound(_)) {
             record_xfr_metric(XfrResult::NotAuth);
-            let response = query.error_response(Rcode::NOTAUTH);
+            let response = signed_error(query, Rcode::NOTAUTH, signer.as_mut())?;
             wire::write_tcp_message(stream, &response).await?;
             return Ok(());
         }
@@ -114,25 +115,31 @@ pub(crate) async fn handle_tcp_query(
 }
 
 /// Answer an XFR query received over UDP with TC set, so an allowed client
-/// asks again over TCP; the caller checked the qtype. The truncated reply is
-/// unsigned: the client re-asks over TCP and that answer carries the MAC.
+/// asks again over TCP; the caller checked the qtype. A signed question is
+/// answered under its key here too (RFC 8945, Section 5.3), truncated or not.
 pub(crate) async fn handle_udp_query(
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],
 ) -> Vec<u8> {
-    if let Err(refusal) = authorize_transfer(query_data, client_addr.ip(), &query.zone_name).await {
-        track_xfr(query.qtype, XfrResult::Refused);
-        log_warn!(
-            "Refused XFR UDP query from {}: {}",
-            client_addr.ip(),
-            refusal.reason
-        );
-        return refusal
-            .into_response(query)
-            .unwrap_or_else(|_| query.error_response(Rcode::REFUSED));
-    }
+    let mut signer = match authorize_transfer(query_data, client_addr.ip(), &query.zone_name).await
+    {
+        Ok(signer) => signer,
+        Err(refusal) => {
+            track_xfr(query.qtype, XfrResult::Refused);
+            log_warn!(
+                "Refused XFR UDP query from {}: {}",
+                client_addr.ip(),
+                refusal.reason
+            );
+            return refusal
+                .into_response(query)
+                .unwrap_or_else(|_| query.error_response(Rcode::REFUSED));
+        }
+    };
     // The transfer itself counts when the client returns over TCP.
     track_xfr(query.qtype, XfrResult::Truncated);
-    query.truncated_response()
+    query
+        .signed_truncated_response(signer.as_mut())
+        .unwrap_or_else(|_| query.truncated_response())
 }

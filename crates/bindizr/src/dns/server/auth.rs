@@ -5,12 +5,30 @@ use std::net::IpAddr;
 
 use bindizr_core::dns::{
     message::{ParsedQuery, Rcode},
-    tsig::{TransferSigner, TsigError, signed_key_name, to_domain_key, verify_tsig_sequence},
+    tsig::{
+        RequestSignature, TransferSigner, TsigError, request_signature, to_domain_key,
+        verify_tsig_sequence,
+    },
 };
 use bindizr_service::tsig_key::{TsigKeyService, grant::TsigGrantService};
 
 use super::acl;
 use crate::dns::error::XfrError;
+
+/// The error response a request is owed, signed when a key was accepted: once
+/// a key is in play the answer carries it, error or not (RFC 8945, Section 5.3).
+pub(crate) fn signed_error(
+    query: &ParsedQuery,
+    rcode: Rcode,
+    signer: Option<&mut TransferSigner>,
+) -> Result<Vec<u8>, XfrError> {
+    match signer {
+        Some(signer) => query
+            .signed_error_response(rcode, signer)
+            .map_err(XfrError::ProtocolError),
+        None => Ok(query.error_response(rcode)),
+    }
+}
 
 /// A refused transfer and the response it owes the client: a TSIG failure
 /// answers with its own error RR, anything else with REFUSED, signed by the
@@ -36,12 +54,7 @@ impl TransferRefusal {
         if let Some(response) = self.response {
             return Ok(response);
         }
-        match self.signer.as_mut() {
-            Some(signer) => query
-                .signed_error_response(Rcode::REFUSED, signer)
-                .map_err(XfrError::ProtocolError),
-            None => Ok(query.error_response(Rcode::REFUSED)),
-        }
+        signed_error(query, Rcode::REFUSED, self.signer.as_mut())
     }
 }
 
@@ -53,14 +66,25 @@ pub(crate) async fn authorize_transfer(
     client_ip: IpAddr,
     zone_name: &str,
 ) -> Result<Option<TransferSigner>, TransferRefusal> {
-    let Some(key_name) = signed_key_name(query_data) else {
-        return match acl::is_client_allowed(client_ip).await {
-            true => Ok(None),
-            false => Err(TransferRefusal::refused(
-                format!("IP {} is not a configured secondary", client_ip),
+    let key_name = match request_signature(query_data) {
+        RequestSignature::Key(key_name) => key_name,
+        RequestSignature::Absent => {
+            return match acl::is_client_allowed(client_ip).await {
+                true => Ok(None),
+                false => Err(TransferRefusal::refused(
+                    format!("IP {} is not a configured secondary", client_ip),
+                    None,
+                )),
+            };
+        }
+        // The address would have allowed this one; a TSIG that does not parse
+        // must not be answered as though none had been sent.
+        RequestSignature::Malformed => {
+            return Err(TransferRefusal::refused(
+                "TSIG record is malformed".to_string(),
                 None,
-            )),
-        };
+            ));
+        }
     };
 
     // An unknown key still runs validation: the empty key store makes it

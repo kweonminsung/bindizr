@@ -26,7 +26,7 @@ pub(crate) async fn handle_ixfr(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
-    signer: Option<TransferSigner>,
+    signer: &mut Option<TransferSigner>,
 ) -> Result<(), XfrError> {
     let zone_name_str = query.zone_name.as_str();
 
@@ -67,7 +67,7 @@ pub(crate) async fn handle_ixfr(
                     return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
                 }
             };
-        return send_soa_response(stream, query, &current_soa, signer).await;
+        return send_soa_response(stream, query, &current_soa, signer.take()).await;
     }
 
     // Plain comparison, not the RFC 1982 serial arithmetic RFC 1995 assumes:
@@ -159,19 +159,22 @@ pub(crate) async fn handle_ixfr(
         client_serial,
         &changes,
         &versions_by_serial,
-        signer,
+        signer.take(),
     )
     .await
     {
         Ok(()) => {}
         // Nothing was written yet, so a full AXFR is still a valid response.
-        Err(IxfrSendError::NotStarted { error, signer }) => {
+        Err(IxfrSendError::NotStarted {
+            error,
+            signer: signer_back,
+        }) => {
             log_warn!(
                 "IXFR: Failed to build incremental response ({}), falling back to AXFR",
                 error
             );
-            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer.map(|s| *s))
-                .await;
+            *signer = signer_back.map(|s| *s);
+            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
         Err(IxfrSendError::Partial(err)) => {

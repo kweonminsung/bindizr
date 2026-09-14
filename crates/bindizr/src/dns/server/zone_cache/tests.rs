@@ -95,3 +95,16 @@ fn restoring_a_zone_replaces_its_records_rather_than_adding_them() {
     assert!(cache.lookup(1, 1).is_none());
     assert!(cache.lookup(1, 2).is_some());
 }
+
+#[test]
+fn a_lowered_budget_reaches_zones_already_cached() {
+    let mut cache = Cache::default();
+    cache.store(1, 1, zone_content(3), 10);
+    cache.store(2, 1, zone_content(3), 10);
+    assert_eq!(cache.records, 6);
+
+    assert_eq!(cache.trim_to(3), 1);
+    assert_eq!(cache.records, 3);
+    assert!(cache.lookup(1, 1).is_none(), "the older zone went first");
+    assert!(cache.lookup(2, 1).is_some());
+}

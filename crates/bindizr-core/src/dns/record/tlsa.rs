@@ -88,7 +88,7 @@ impl TlsaRecordValue {
 
 #[cfg(test)]
 mod tests {
-    use super::TlsaRecordValue;
+    use super::{MAX_RECORD_RDATA, TlsaRecordValue};
 
     /// Verify that `parse` joins spaced hex and canonicalizes.
     #[test]
@@ -120,15 +120,18 @@ mod tests {
     /// Verify that `validate` caps full certificates below the message limit.
     #[test]
     fn validate_caps_full_certificates_below_the_message_limit() {
-        let at_limit = format!("3 0 0 {}", "AB".repeat(64_996));
+        // Derived, not spelled: the cap moves with what an envelope reserves.
+        let cap = MAX_RECORD_RDATA - 3;
+
+        let at_limit = format!("3 0 0 {}", "AB".repeat(cap));
         assert!(
             TlsaRecordValue::parse(&at_limit)
                 .unwrap()
                 .validate()
                 .is_ok()
         );
-        let oversized = format!("3 0 0 {}", "AB".repeat(64_997));
+        let oversized = format!("3 0 0 {}", "AB".repeat(cap + 1));
         let err = TlsaRecordValue::parse(&oversized).unwrap().validate();
-        assert!(err.unwrap_err().contains("64996"));
+        assert!(err.unwrap_err().contains(&cap.to_string()));
     }
 }

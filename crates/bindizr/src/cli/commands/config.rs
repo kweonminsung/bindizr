@@ -101,6 +101,8 @@ fn print_config(config: &BindizrConfig) {
     print_value("metrics_enabled", config.api.metrics_enabled);
     print_value("external_dns_enabled", config.api.external_dns_enabled);
     print_value("openapi_enabled", config.api.openapi_enabled);
+    print_optional("tls_cert_file", config.api.tls_cert_file.as_deref());
+    print_optional("tls_key_file", config.api.tls_key_file.as_deref());
     println!();
 
     print_section("database");
@@ -135,6 +137,19 @@ fn print_config(config: &BindizrConfig) {
         "nsupdate_allow_unsigned",
         config.dns.nsupdate_allow_unsigned,
     );
+    print_value("journal_retention_days", config.dns.journal_retention_days);
+    print_value(
+        "maintenance_interval_secs",
+        config.dns.maintenance_interval_secs,
+    );
+    println!();
+
+    print_section("dns.zone_defaults");
+    print_value("ttl", config.dns.zone_defaults.ttl);
+    print_value("refresh", config.dns.zone_defaults.refresh);
+    print_value("retry", config.dns.zone_defaults.retry);
+    print_value("expire", config.dns.zone_defaults.expire);
+    print_value("minimum_ttl", config.dns.zone_defaults.minimum_ttl);
     println!();
 
     print_section("logging");
@@ -147,6 +162,12 @@ fn print_section(name: &str) {
 }
 
 /// Print one configuration key and its value.
+/// A value the configuration may leave out, shown as unset rather than absent
+/// so the list says what the daemon actually holds.
+fn print_optional(key: &str, value: Option<&str>) {
+    print_value(key, value.unwrap_or("(unset)"));
+}
+
 fn print_value(key: &str, value: impl std::fmt::Display) {
     println!("  {} = {}", color::yellow(&format!("{:<24}", key)), value);
 }

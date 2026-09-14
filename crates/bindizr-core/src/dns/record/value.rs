@@ -3,6 +3,7 @@
 use crate::dns::{
     DNS_TCP_MAX_SIZE,
     name::{MAX_DOMAIN_LEN, decode_name_labels, has_whitespace_or_control},
+    tsig::MAX_TSIG_RR,
 };
 
 /// Priority an MX or SRV row takes when its priority column is NULL; served
@@ -10,11 +11,11 @@ use crate::dns::{
 pub(crate) const DEFAULT_PRIORITY: u16 = 10;
 
 /// Maximum RDATA bytes for one stored record: the TCP message limit less the
-/// header and worst-case question and answer fields (wire names take
-/// `MAX_DOMAIN_LEN` + 2), so any accepted record fits a single-answer
-/// transfer message.
+/// header, worst-case question and answer fields, and the TSIG a signed
+/// transfer appends. A record cannot be split across messages, so an accepted
+/// one must fit an envelope whether or not the secondary asked with a key.
 pub(crate) const MAX_RECORD_RDATA: usize =
-    DNS_TCP_MAX_SIZE - 12 - (MAX_DOMAIN_LEN + 2 + 4) - (MAX_DOMAIN_LEN + 2 + 10);
+    DNS_TCP_MAX_SIZE - 12 - (MAX_DOMAIN_LEN + 2 + 4) - (MAX_DOMAIN_LEN + 2 + 10) - MAX_TSIG_RR;
 
 /// Parse an optional unsigned 16-bit record field.
 pub(crate) fn parse_optional_u16_record_field(

@@ -225,3 +225,56 @@ fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     assert_eq!(other.len(), 6);
     assert!(!mac.is_empty());
 }
+
+#[test]
+fn the_reserved_tsig_size_covers_the_largest_key_a_request_can_name() {
+    // The longest name a key can carry, under the algorithm with the widest MAC.
+    let name = format!(
+        "{}.{}.{}.{}",
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(61)
+    );
+    let key = to_domain_key(&TsigKey {
+        name,
+        algorithm: TsigAlgorithm::HmacSha512,
+        ..test_key(TsigAlgorithm::HmacSha512)
+    })
+    .unwrap();
+
+    let composed = usize::from(key.compose_len());
+    assert!(
+        composed <= MAX_TSIG_RR,
+        "a {composed}-byte TSIG record does not fit the {MAX_TSIG_RR} bytes reserved for one"
+    );
+}
+
+#[test]
+fn a_tsig_that_does_not_parse_is_not_read_as_an_unsigned_request() {
+    let signed = signed_update(TsigAlgorithm::HmacSha256, now_secs());
+    assert!(matches!(
+        request_signature(&signed),
+        RequestSignature::Key(name) if name == "update-key"
+    ));
+
+    // The same message with the TSIG RDATA cut away: a caller reaching for a
+    // key must be held to it, not fall through to the address that allowed it.
+    let mut empty_rdata = minimal_update_with_ztype(6);
+    empty_rdata[10..12].copy_from_slice(&1u16.to_be_bytes()); // ARCOUNT
+    empty_rdata.extend_from_slice(&encode_name("update-key"));
+    empty_rdata.extend_from_slice(&Rtype::TSIG.to_int().to_be_bytes());
+    empty_rdata.extend_from_slice(&Class::ANY.to_int().to_be_bytes());
+    empty_rdata.extend_from_slice(&0u32.to_be_bytes()); // TTL
+    empty_rdata.extend_from_slice(&0u16.to_be_bytes()); // RDLENGTH
+    assert!(matches!(
+        request_signature(&empty_rdata),
+        RequestSignature::Malformed
+    ));
+
+    // And a message with no TSIG at all still reads as unsigned.
+    assert!(matches!(
+        request_signature(&minimal_update_with_ztype(6)),
+        RequestSignature::Absent
+    ));
+}

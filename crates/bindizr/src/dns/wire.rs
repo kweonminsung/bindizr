@@ -2,9 +2,17 @@
 //! the 2-byte length prefix of DNS over TCP (RFC 1035, Section 4.2.2) and the
 //! size-driven flushing a zone transfer streams with.
 
+use std::{io::ErrorKind, time::Duration};
+
 use bindizr_core::dns::message::{DnsMessageBuilder, encode_tcp_message};
+use tokio::time::timeout;
 
 use crate::dns::error::XfrError;
+
+/// How long one frame may take to reach the client. A receiver that stops
+/// reading fills the send buffer and would otherwise hold its connection —
+/// and the slot the listener counts — for as long as it likes.
+const TCP_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Add one answer, sending the frame that fills up first when it does.
 pub(crate) async fn add_answer_and_flush_if_needed<W, F>(
@@ -56,8 +64,20 @@ async fn write_frame<W>(writer: &mut W, frame: &[u8]) -> Result<(), XfrError>
 where
     W: tokio::io::AsyncWriteExt + Unpin,
 {
-    writer.write_all(frame).await.map_err(XfrError::IoError)?;
-    writer.flush().await.map_err(XfrError::IoError)
+    let write = async {
+        writer.write_all(frame).await?;
+        writer.flush().await
+    };
+    match timeout(TCP_WRITE_TIMEOUT, write).await {
+        Ok(result) => result.map_err(XfrError::IoError),
+        Err(_) => Err(XfrError::IoError(std::io::Error::new(
+            ErrorKind::TimedOut,
+            format!(
+                "the client read nothing for {} seconds",
+                TCP_WRITE_TIMEOUT.as_secs()
+            ),
+        ))),
+    }
 }
 
 /// Read one DNS message from its TCP length-prefixed frame.
@@ -170,5 +190,20 @@ mod tests {
         framed.extend(std::iter::repeat_n(0u8, usize::from(u16::MAX)));
 
         assert_eq!(read(&framed).await.unwrap().len(), usize::from(u16::MAX));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_write_no_one_reads_gives_up_rather_than_holding_the_slot() {
+        // One byte of buffer, and nothing draining the far end.
+        let (mut writer, _unread) = tokio::io::duplex(1);
+
+        let error = write_tcp_message(&mut writer, &vec![0u8; 4096])
+            .await
+            .expect_err("the write should have timed out");
+
+        assert!(
+            matches!(&error, XfrError::IoError(e) if e.kind() == ErrorKind::TimedOut),
+            "{error}"
+        );
     }
 }

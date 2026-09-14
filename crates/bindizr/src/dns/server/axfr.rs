@@ -12,13 +12,14 @@ use crate::dns::error::XfrError;
 
 /// Handles an AXFR payload under `response_qtype`: the IXFR fallback keeps
 /// QTYPE=IXFR to match the original query. `signer` is present when the
-/// request arrived signed, and signs every envelope of this transfer.
+/// request arrived signed; it is claimed only once a zone is found, so a
+/// missing zone leaves it for the caller's error response.
 pub(crate) async fn handle_axfr(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     response_qtype: Rtype,
-    signer: Option<TransferSigner>,
+    signer: &mut Option<TransferSigner>,
 ) -> Result<(), XfrError> {
     let zone_name_str = query.zone_name.as_str();
 
@@ -29,8 +30,13 @@ pub(crate) async fn handle_axfr(
     );
 
     if catalog::is_catalog_zone(zone_name_str) {
-        return catalog::handle_catalog_axfr_with_qtype(stream, query, response_qtype, signer)
-            .await;
+        return catalog::handle_catalog_axfr_with_qtype(
+            stream,
+            query,
+            response_qtype,
+            signer.take(),
+        )
+        .await;
     }
 
     // Non-locking pre-read, only to learn the zone id and probe the cache.
@@ -51,7 +57,7 @@ pub(crate) async fn handle_axfr(
     );
 
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
-    if let Some(signer) = signer {
+    if let Some(signer) = signer.take() {
         builder = builder.sign_with(signer);
     }
     let mut messages_sent = 0usize;

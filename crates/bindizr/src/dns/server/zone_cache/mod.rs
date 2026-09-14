@@ -110,9 +110,17 @@ fn locked_cache() -> std::sync::MutexGuard<'static, Cache> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Find cached zone content matching the requested serial.
+/// Find cached zone content matching the requested serial, enforcing the
+/// budget first: a reload can lower it, and a server that only serves cached
+/// zones never stores again.
 fn lookup(zone_id: i32, serial: i32) -> Option<ZoneContent> {
-    let content = locked_cache().lookup(zone_id, serial);
+    let mut cache = locked_cache();
+    let evicted = cache.trim_to(max_records());
+    if evicted > 0 {
+        track_zone_cache_store(cache.records, evicted);
+    }
+    let content = cache.lookup(zone_id, serial);
+    drop(cache);
     track_zone_cache_lookup(content.is_some());
     content
 }
@@ -125,6 +133,25 @@ fn store(zone_id: i32, serial: i32, content: ZoneContent) {
 }
 
 impl Cache {
+    /// Drop least-recently-used zones until the retained records fit
+    /// `max_records`, which a reload may have lowered since the last store.
+    fn trim_to(&mut self, max_records: usize) -> usize {
+        let mut evicted = 0;
+        while self.records > max_records {
+            let Some(lru_id) = self
+                .zones
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(&id, _)| id)
+            else {
+                break;
+            };
+            self.remove(lru_id);
+            evicted += 1;
+        }
+        evicted
+    }
+
     /// Find cached zone content matching the requested serial.
     fn lookup(&mut self, zone_id: i32, serial: i32) -> Option<ZoneContent> {
         let entry = self

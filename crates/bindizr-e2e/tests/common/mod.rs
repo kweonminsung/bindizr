@@ -30,6 +30,8 @@ pub(crate) use dns::{
 };
 use dns::{dns_expected_value, dns_key_from_record, dns_record_type, wait_for_dns_records};
 
+/// The most a listing returns in one call; the HTTP API refuses more.
+const RECORD_PAGE_LIMIT: u32 = 1000;
 const DNS_VERIFICATION_ENV: &str = "BINDIZR_E2E_VERIFY_DNS";
 static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 static RUN_ID: OnceLock<String> = OnceLock::new();
@@ -389,25 +391,44 @@ impl TestApp {
             return;
         }
 
-        // Use the API's current records as the expected state for all secondaries.
-        let (status, body) = self
-            .send_request(
-                Method::GET,
-                &format!("/records?search={}&limit=1000", self.namespace),
-                None,
-            )
-            .await;
-        assert_eq!(
-            status,
-            StatusCode::OK,
-            "failed to list records for DNS verification"
-        );
+        // Use the API's current records as the expected state for all
+        // secondaries. Read every page: one short of the whole set would call
+        // a propagated record missing, or a split RRset half-served.
+        let mut records = Vec::new();
+        let mut offset = 0u64;
+        loop {
+            let (status, body) = self
+                .send_request(
+                    Method::GET,
+                    &format!(
+                        "/records?search={}&limit={RECORD_PAGE_LIMIT}&offset={offset}",
+                        self.namespace
+                    ),
+                    None,
+                )
+                .await;
+            assert_eq!(
+                status,
+                StatusCode::OK,
+                "failed to list records for DNS verification"
+            );
+            let page = body["items"]
+                .as_array()
+                .expect("record list response did not contain items")
+                .clone();
+            let read = page.len();
+            records.extend(page);
+            let total = body["pagination"]["total"]
+                .as_u64()
+                .expect("record list response did not contain a total");
+            offset += read as u64;
+            if read == 0 || offset >= total {
+                break;
+            }
+        }
 
         let mut expected = HashMap::<(String, u16), Vec<Value>>::new();
-        for record in body["items"]
-            .as_array()
-            .expect("record list response did not contain items")
-        {
+        for record in &records {
             let name = record["name"]
                 .as_str()
                 .expect("record did not contain a name")
