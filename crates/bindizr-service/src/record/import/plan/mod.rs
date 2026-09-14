@@ -18,17 +18,19 @@ pub(crate) struct DesiredRecord {
     pub(crate) stored_name: OwnerName,
 }
 
-/// Whether `existing` is the record the import wants present.
-fn matches_desired(existing: &Record, desired: &DesiredRecord) -> bool {
-    let record_type = &desired.prepared.record_type;
-    existing.name == desired.stored_name
-        && existing.record_type == *record_type
-        && record_type.values_equal(
-            &existing.value,
-            existing.priority,
-            &desired.prepared.value,
-            desired.prepared.priority,
-        )
+impl DesiredRecord {
+    /// Whether `existing` has the desired identity; TTL is reconciled separately.
+    fn matches(&self, existing: &Record) -> bool {
+        let record_type = &self.prepared.record_type;
+        existing.name == self.stored_name
+            && existing.record_type == *record_type
+            && record_type.values_equal(
+                &existing.value,
+                existing.priority,
+                &self.prepared.value,
+                self.prepared.priority,
+            )
+    }
 }
 
 /// Records referenced by the zone's own SOA/mname NS must never be removed.
@@ -74,7 +76,7 @@ pub(crate) fn compute_import_plan<'a>(
     let desired_matches_existing = |existing: &Record| {
         desired_by_name
             .get(&existing.name)
-            .is_some_and(|ds| ds.iter().any(|d| matches_desired(existing, d)))
+            .is_some_and(|ds| ds.iter().any(|d| d.matches(existing)))
     };
     // Upsert only touches the names and types the file speaks about.
     let desired_key_matches_existing = |existing: &Record| {
@@ -114,7 +116,7 @@ pub(crate) fn compute_import_plan<'a>(
         let mut stale = false;
         if let Some(es) = existing_by_name.get(&d.stored_name) {
             for e in es {
-                if matches_desired(e, d) {
+                if d.matches(e) {
                     present = true;
                     // Records sharing a name and type share one TTL, so the
                     // row is rewritten rather than edited in place.
@@ -145,37 +147,38 @@ pub(crate) fn compute_import_plan<'a>(
     }
 }
 
-/// The reconcile as a record diff: `after` is the existing set minus the
-/// deletes plus the adds, so `build_record_diff` classifies each RRset.
-pub(crate) fn build_import_diff(
-    zone: &Zone,
-    existing: &[Record],
-    adds: &[&DesiredRecord],
-    dels: &[Record],
-    ttl_dels: &[Record],
-) -> RecordDiff {
-    let deleted_ids: HashSet<i32> = dels.iter().chain(ttl_dels).map(|r| r.id).collect();
+impl ImportPlan<'_> {
+    /// The reconcile as a record diff: `after` is the existing set minus the
+    /// deletes plus the adds, so `build_record_diff` classifies each RRset.
+    pub(crate) fn diff(&self, zone: &Zone, existing: &[Record]) -> RecordDiff {
+        let deleted_ids: HashSet<i32> = self
+            .dels
+            .iter()
+            .chain(&self.ttl_dels)
+            .map(|r| r.id)
+            .collect();
 
-    let before: Vec<ReconstructedRecord> = existing
-        .iter()
-        .cloned()
-        .map(ReconstructedRecord::from)
-        .collect();
-    let mut after: Vec<ReconstructedRecord> = existing
-        .iter()
-        .filter(|record| !deleted_ids.contains(&record.id))
-        .cloned()
-        .map(ReconstructedRecord::from)
-        .collect();
-    after.extend(adds.iter().map(|add| ReconstructedRecord {
-        name: add.stored_name.clone(),
-        record_type: add.prepared.record_type.clone(),
-        value: add.prepared.value.clone(),
-        ttl: add.prepared.ttl.unwrap_or(zone.default_ttl),
-        priority: add.prepared.priority,
-    }));
+        let before: Vec<ReconstructedRecord> = existing
+            .iter()
+            .cloned()
+            .map(ReconstructedRecord::from)
+            .collect();
+        let mut after: Vec<ReconstructedRecord> = existing
+            .iter()
+            .filter(|record| !deleted_ids.contains(&record.id))
+            .cloned()
+            .map(ReconstructedRecord::from)
+            .collect();
+        after.extend(self.adds.iter().map(|add| ReconstructedRecord {
+            name: add.stored_name.clone(),
+            record_type: add.prepared.record_type.clone(),
+            value: add.prepared.value.clone(),
+            ttl: add.prepared.ttl.unwrap_or(zone.default_ttl),
+            priority: add.prepared.priority,
+        }));
 
-    build_record_diff(zone, &before, &after)
+        build_record_diff(zone, &before, &after)
+    }
 }
 
 #[cfg(test)]

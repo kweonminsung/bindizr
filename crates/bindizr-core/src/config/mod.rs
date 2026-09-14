@@ -373,7 +373,7 @@ pub fn reload() -> Result<Vec<String>, String> {
         .as_ref()
         .ok_or("Bindizr configuration is not initialized")?;
 
-    let fixed = fixed_settings_changed(current, &next);
+    let fixed = current.fixed_settings_changed(&next);
     if !fixed.is_empty() {
         return Err(format!(
             "these settings are fixed while bindizr runs, so nothing was reloaded: {}",
@@ -381,40 +381,9 @@ pub fn reload() -> Result<Vec<String>, String> {
         ));
     }
 
-    let changed = changed_settings(current, &next);
+    let changed = current.changed_settings(&next);
     *stored = Some(Arc::new(next));
     Ok(changed)
-}
-
-/// The settings a reload actually changed, for the line that reports it.
-fn changed_settings(current: &BindizrConfig, next: &BindizrConfig) -> Vec<String> {
-    let mut changed = Vec::new();
-    if current.dns != next.dns {
-        changed.push("dns".to_string());
-    }
-    if current.logging != next.logging {
-        changed.push("logging".to_string());
-    }
-    changed
-}
-
-/// Settings bound to something built at startup — a listening socket, the
-/// HTTP router, the database pool — which a reload cannot rebuild.
-fn fixed_settings_changed(current: &BindizrConfig, next: &BindizrConfig) -> Vec<String> {
-    let mut fixed = Vec::new();
-    if current.api != next.api {
-        fixed.push("api".to_string());
-    }
-    if current.database != next.database {
-        fixed.push("database".to_string());
-    }
-    if current.dns.listen_addr != next.dns.listen_addr {
-        fixed.push("dns.listen_addr".to_string());
-    }
-    if current.dns.listen_port != next.dns.listen_port {
-        fixed.push("dns.listen_port".to_string());
-    }
-    fixed
 }
 
 /// Resolve the config file path: explicit argument, then `BINDIZR_CONFIG_PATH`,
@@ -453,6 +422,37 @@ pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
 }
 
 impl BindizrConfig {
+    /// The settings a reload actually changed, for the line that reports it.
+    fn changed_settings(&self, next: &BindizrConfig) -> Vec<String> {
+        let mut changed = Vec::new();
+        if self.dns != next.dns {
+            changed.push("dns".to_string());
+        }
+        if self.logging != next.logging {
+            changed.push("logging".to_string());
+        }
+        changed
+    }
+
+    /// Settings bound to something built at startup — a listening socket, the
+    /// HTTP router, the database pool — which a reload cannot rebuild.
+    fn fixed_settings_changed(&self, next: &BindizrConfig) -> Vec<String> {
+        let mut fixed = Vec::new();
+        if self.api != next.api {
+            fixed.push("api".to_string());
+        }
+        if self.database != next.database {
+            fixed.push("database".to_string());
+        }
+        if self.dns.listen_addr != next.dns.listen_addr {
+            fixed.push("dns.listen_addr".to_string());
+        }
+        if self.dns.listen_port != next.dns.listen_port {
+            fixed.push("dns.listen_port".to_string());
+        }
+        fixed
+    }
+
     fn from_raw(raw: Config, get_env: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
         let mut bindizr_config = raw
             .try_deserialize::<Self>()

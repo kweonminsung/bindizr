@@ -229,119 +229,123 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> 
     Ok(format!("{}.", join_labels(&labels)))
 }
 
-pub(crate) fn parse_rdata<'a, T>(
-    message: &'a [u8],
-    rr: &UpdateRr,
-    what: &str,
-    parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
-) -> Result<T, String> {
-    let refused = || format!("invalid {} rdata", what);
+impl UpdateRr {
+    fn parse_rdata<'a, T>(
+        &self,
+        message: &'a [u8],
+        what: &str,
+        parse: impl FnOnce(&mut Parser<'a, [u8]>) -> Option<T>,
+    ) -> Result<T, String> {
+        let refused = || format!("invalid {} rdata", what);
 
-    let mut parser = Parser::from_ref(message);
-    parser.advance(rr.rdata_start).map_err(|_| refused())?;
-    let value = parse(&mut parser).ok_or_else(refused)?;
+        let mut parser = Parser::from_ref(message);
+        parser.advance(self.rdata_start).map_err(|_| refused())?;
+        let value = parse(&mut parser).ok_or_else(refused)?;
 
-    if parser.pos() != rr.rdata_start + rr.rdata.len() {
-        return Err(refused());
+        if parser.pos() != self.rdata_start + self.rdata.len() {
+            return Err(refused());
+        }
+
+        Ok(value)
     }
 
-    Ok(value)
-}
-
-/// One UPDATE RR decoded into the record columns the service stores.
-pub fn rr_to_record_value(
-    rr: &UpdateRr,
-    message: &[u8],
-) -> Result<(RecordType, String, Option<i32>), String> {
-    match RecordType::from_rtype(rr.rr_type)? {
-        RecordType::A => {
-            let data = parse_rdata(message, rr, "A", |parser| A::parse(parser).ok())?;
-            Ok((RecordType::A, data.addr().to_string(), None))
-        }
-        RecordType::AAAA => {
-            let data = parse_rdata(message, rr, "AAAA", |parser| Aaaa::parse(parser).ok())?;
-            Ok((RecordType::AAAA, data.addr().to_string(), None))
-        }
-        record_type
-        @ (RecordType::CNAME | RecordType::DNAME | RecordType::NS | RecordType::PTR) => {
-            let name = parse_rdata(message, rr, record_type.as_str(), |parser| {
-                ParsedName::parse(parser).ok()
-            })?;
-            let value = to_presentation_name(&name)
-                .map_err(|e| format!("invalid {} rdata: {}", record_type.as_str(), e))?;
-            Ok((record_type, value, None))
-        }
-        RecordType::TXT => {
-            let data = Txt::from_octets(rr.rdata.as_slice())
-                .map_err(|e| format!("invalid TXT rdata: {}", e))?;
-            // TXT values must be valid UTF-8 (a project-wide rule), so reject
-            // non-UTF-8 character-strings even though the wire allows them.
-            for charstr in data.iter_charstrs() {
-                if std::str::from_utf8(charstr.as_slice()).is_err() {
-                    return Err("invalid TXT rdata".to_string());
-                }
+    /// One UPDATE RR decoded into the record columns the service stores.
+    pub fn to_record_value(
+        &self,
+        message: &[u8],
+    ) -> Result<(RecordType, String, Option<i32>), String> {
+        match RecordType::from_rtype(self.rr_type)? {
+            RecordType::A => {
+                let data = self.parse_rdata(message, "A", |parser| A::parse(parser).ok())?;
+                Ok((RecordType::A, data.addr().to_string(), None))
             }
-            let value = TxtRecordValue::from_rdata(&rr.rdata)
-                .map_err(|e| format!("invalid TXT rdata: {}", e))?
-                .to_presentation();
-            Ok((RecordType::TXT, value, None))
-        }
-        RecordType::CAA => {
-            let data = parse_rdata(message, rr, "CAA", |parser| {
-                domain::rdata::Caa::parse(parser).ok()
-            })?;
-            Ok((RecordType::CAA, data.to_string(), None))
-        }
-        RecordType::DS => {
-            let data = parse_rdata(message, rr, "DS", |parser| {
-                domain::rdata::Ds::parse(parser).ok()
-            })?;
-            Ok((RecordType::DS, data.to_string(), None))
-        }
-        RecordType::NAPTR => {
-            let data = parse_rdata(message, rr, "NAPTR", |parser| {
-                domain::rdata::Naptr::parse(parser).ok()
-            })?;
-            let replacement = to_presentation_name(data.replacement())
-                .map_err(|e| format!("invalid NAPTR rdata: {}", e))?;
-            let value = to_naptr_presentation(
-                data.order(),
-                data.preference(),
-                data.flags().as_slice(),
-                data.services().as_slice(),
-                data.regexp().as_slice(),
-                &replacement,
-            )?;
-            Ok((RecordType::NAPTR, value, None))
-        }
-        RecordType::SSHFP => {
-            let data = parse_rdata(message, rr, "SSHFP", |parser| {
-                domain::rdata::Sshfp::parse(parser).ok()
-            })?;
-            Ok((RecordType::SSHFP, data.to_string(), None))
-        }
-        RecordType::TLSA => {
-            let data = parse_rdata(message, rr, "TLSA", |parser| {
-                domain::rdata::Tlsa::parse(parser).ok()
-            })?;
-            Ok((RecordType::TLSA, data.to_string(), None))
-        }
-        RecordType::MX => {
-            let data = parse_rdata(message, rr, "MX", |parser| Mx::parse(parser).ok())?;
-            let host = to_presentation_name(data.exchange())
-                .map_err(|e| format!("invalid MX rdata: {}", e))?;
-            Ok((RecordType::MX, host, Some(i32::from(data.preference()))))
-        }
-        RecordType::SRV => {
-            let data = parse_rdata(message, rr, "SRV", |parser| Srv::parse(parser).ok())?;
-            let target = to_presentation_name(data.target())
-                .map_err(|e| format!("invalid SRV rdata: {}", e))?;
-            // Priority lives in its own column, so the value holds the rest.
-            Ok((
-                RecordType::SRV,
-                format!("{} {} {}", data.weight(), data.port(), target),
-                Some(i32::from(data.priority())),
-            ))
+            RecordType::AAAA => {
+                let data = self.parse_rdata(message, "AAAA", |parser| Aaaa::parse(parser).ok())?;
+                Ok((RecordType::AAAA, data.addr().to_string(), None))
+            }
+            record_type @ (RecordType::CNAME
+            | RecordType::DNAME
+            | RecordType::NS
+            | RecordType::PTR) => {
+                let name = self.parse_rdata(message, record_type.as_str(), |parser| {
+                    ParsedName::parse(parser).ok()
+                })?;
+                let value = to_presentation_name(&name)
+                    .map_err(|e| format!("invalid {} rdata: {}", record_type.as_str(), e))?;
+                Ok((record_type, value, None))
+            }
+            RecordType::TXT => {
+                let data = Txt::from_octets(self.rdata.as_slice())
+                    .map_err(|e| format!("invalid TXT rdata: {}", e))?;
+                // TXT values must be valid UTF-8 (a project-wide rule), so reject
+                // non-UTF-8 character-strings even though the wire allows them.
+                for charstr in data.iter_charstrs() {
+                    if std::str::from_utf8(charstr.as_slice()).is_err() {
+                        return Err("invalid TXT rdata".to_string());
+                    }
+                }
+                let value = TxtRecordValue::from_rdata(&self.rdata)
+                    .map_err(|e| format!("invalid TXT rdata: {}", e))?
+                    .to_presentation();
+                Ok((RecordType::TXT, value, None))
+            }
+            RecordType::CAA => {
+                let data = self.parse_rdata(message, "CAA", |parser| {
+                    domain::rdata::Caa::parse(parser).ok()
+                })?;
+                Ok((RecordType::CAA, data.to_string(), None))
+            }
+            RecordType::DS => {
+                let data = self.parse_rdata(message, "DS", |parser| {
+                    domain::rdata::Ds::parse(parser).ok()
+                })?;
+                Ok((RecordType::DS, data.to_string(), None))
+            }
+            RecordType::NAPTR => {
+                let data = self.parse_rdata(message, "NAPTR", |parser| {
+                    domain::rdata::Naptr::parse(parser).ok()
+                })?;
+                let replacement = to_presentation_name(data.replacement())
+                    .map_err(|e| format!("invalid NAPTR rdata: {}", e))?;
+                let value = to_naptr_presentation(
+                    data.order(),
+                    data.preference(),
+                    data.flags().as_slice(),
+                    data.services().as_slice(),
+                    data.regexp().as_slice(),
+                    &replacement,
+                )?;
+                Ok((RecordType::NAPTR, value, None))
+            }
+            RecordType::SSHFP => {
+                let data = self.parse_rdata(message, "SSHFP", |parser| {
+                    domain::rdata::Sshfp::parse(parser).ok()
+                })?;
+                Ok((RecordType::SSHFP, data.to_string(), None))
+            }
+            RecordType::TLSA => {
+                let data = self.parse_rdata(message, "TLSA", |parser| {
+                    domain::rdata::Tlsa::parse(parser).ok()
+                })?;
+                Ok((RecordType::TLSA, data.to_string(), None))
+            }
+            RecordType::MX => {
+                let data = self.parse_rdata(message, "MX", |parser| Mx::parse(parser).ok())?;
+                let host = to_presentation_name(data.exchange())
+                    .map_err(|e| format!("invalid MX rdata: {}", e))?;
+                Ok((RecordType::MX, host, Some(i32::from(data.preference()))))
+            }
+            RecordType::SRV => {
+                let data = self.parse_rdata(message, "SRV", |parser| Srv::parse(parser).ok())?;
+                let target = to_presentation_name(data.target())
+                    .map_err(|e| format!("invalid SRV rdata: {}", e))?;
+                // Priority lives in its own column, so the value holds the rest.
+                Ok((
+                    RecordType::SRV,
+                    format!("{} {} {}", data.weight(), data.port(), target),
+                    Some(i32::from(data.priority())),
+                ))
+            }
         }
     }
 }

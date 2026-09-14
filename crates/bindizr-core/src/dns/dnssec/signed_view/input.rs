@@ -28,48 +28,72 @@ use crate::{
     model::dnssec_policy::DnssecDenial,
 };
 
-/// User records, the synthesized SOA, and the apex key RRsets in canonical
-/// order — the exact content the chain and the signatures must cover.
-pub(crate) fn build_signing_input(
-    params: &SignedViewParams<'_>,
-    apex: &WireName,
-    signers: &[Signer<'_>],
-) -> Result<Vec<SignRr>, String> {
-    let zone = params.zone;
-    let mut input: Vec<SignRr> = Vec::new();
+impl SignedViewParams<'_> {
+    /// User records, the synthesized SOA, and the apex key RRsets in canonical
+    /// order — the exact content the chain and the signatures must cover.
+    pub(crate) fn signing_input(
+        &self,
+        apex: &WireName,
+        signers: &[Signer<'_>],
+    ) -> Result<Vec<SignRr>, String> {
+        let zone = self.zone;
+        let mut input: Vec<SignRr> = Vec::new();
 
-    let soa_bytes = zone.soa_rdata(params.new_serial as u32)?;
-    input.push(WireRecord::new(
-        apex.clone(),
-        Class::IN,
-        Ttl::from_secs(zone.default_ttl as u32),
-        ZoneRecordData::Soa(parse_soa(soa_bytes.as_bytes())?),
-    ));
-
-    for signer in signers {
+        let soa_bytes = zone.soa_rdata(self.new_serial as u32)?;
         input.push(WireRecord::new(
             apex.clone(),
             Class::IN,
             Ttl::from_secs(zone.default_ttl as u32),
-            ZoneRecordData::Dnskey(signer.dnskey.clone()),
+            ZoneRecordData::Soa(parse_soa(soa_bytes.as_bytes())?),
         ));
-        if signer.key.wants_parent_ds() && !params.withdraw_parent_ds {
-            let cds = UnknownRecordData::from_octets(
-                Rtype::CDS,
-                ds_rdata_for(signer.key, apex, signer.key.algorithm.ds_digest_type())?.into_bytes(),
-            )
-            .map_err(|e| format!("invalid CDS rdata: {}", e))?;
+
+        for signer in signers {
+            input.push(WireRecord::new(
+                apex.clone(),
+                Class::IN,
+                Ttl::from_secs(zone.default_ttl as u32),
+                ZoneRecordData::Dnskey(signer.dnskey.clone()),
+            ));
+            if signer.key.wants_parent_ds() && !self.withdraw_parent_ds {
+                let cds = UnknownRecordData::from_octets(
+                    Rtype::CDS,
+                    ds_rdata_for(signer.key, apex, signer.key.algorithm.ds_digest_type())?
+                        .into_bytes(),
+                )
+                .map_err(|e| format!("invalid CDS rdata: {}", e))?;
+                input.push(WireRecord::new(
+                    apex.clone(),
+                    Class::IN,
+                    Ttl::from_secs(zone.default_ttl as u32),
+                    ZoneRecordData::Unknown(cds),
+                ));
+                let cdnskey = UnknownRecordData::from_octets(
+                    Rtype::CDNSKEY,
+                    to_rdata(&signer.dnskey).into_bytes(),
+                )
+                .map_err(|e| format!("invalid CDNSKEY rdata: {}", e))?;
+                input.push(WireRecord::new(
+                    apex.clone(),
+                    Class::IN,
+                    Ttl::from_secs(zone.default_ttl as u32),
+                    ZoneRecordData::Unknown(cdnskey),
+                ));
+            }
+        }
+
+        // RFC 8078, Section 4: the 0-algorithm pair asks the parent to delete
+        // the DS RRset entirely.
+        if self.withdraw_parent_ds && !signers.is_empty() {
+            let cds = UnknownRecordData::from_octets(Rtype::CDS, vec![0, 0, 0, 0, 0])
+                .map_err(|e| format!("invalid CDS rdata: {}", e))?;
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
                 Ttl::from_secs(zone.default_ttl as u32),
                 ZoneRecordData::Unknown(cds),
             ));
-            let cdnskey = UnknownRecordData::from_octets(
-                Rtype::CDNSKEY,
-                to_rdata(&signer.dnskey).into_bytes(),
-            )
-            .map_err(|e| format!("invalid CDNSKEY rdata: {}", e))?;
+            let cdnskey = UnknownRecordData::from_octets(Rtype::CDNSKEY, vec![0, 0, 3, 0, 0])
+                .map_err(|e| format!("invalid CDNSKEY rdata: {}", e))?;
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
@@ -77,62 +101,42 @@ pub(crate) fn build_signing_input(
                 ZoneRecordData::Unknown(cdnskey),
             ));
         }
-    }
 
-    // RFC 8078, Section 4: the 0-algorithm pair asks the parent to delete
-    // the DS RRset entirely.
-    if params.withdraw_parent_ds && !signers.is_empty() {
-        let cds = UnknownRecordData::from_octets(Rtype::CDS, vec![0, 0, 0, 0, 0])
-            .map_err(|e| format!("invalid CDS rdata: {}", e))?;
-        input.push(WireRecord::new(
-            apex.clone(),
-            Class::IN,
-            Ttl::from_secs(zone.default_ttl as u32),
-            ZoneRecordData::Unknown(cds),
-        ));
-        let cdnskey = UnknownRecordData::from_octets(Rtype::CDNSKEY, vec![0, 0, 3, 0, 0])
-            .map_err(|e| format!("invalid CDNSKEY rdata: {}", e))?;
-        input.push(WireRecord::new(
-            apex.clone(),
-            Class::IN,
-            Ttl::from_secs(zone.default_ttl as u32),
-            ZoneRecordData::Unknown(cdnskey),
-        ));
-    }
+        for record in self.records {
+            let EncodedRdata { record_type, rdata } =
+                EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)?;
+            let data =
+                UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
+                    .map_err(|e| format!("invalid record rdata: {}", e))?;
+            let owner = to_wire_name(record.name.to_wire(&zone.name))?;
+            input.push(WireRecord::new(
+                owner,
+                Class::IN,
+                Ttl::from_secs(record.ttl as u32),
+                ZoneRecordData::Unknown(data),
+            ));
+        }
 
-    for record in params.records {
-        let EncodedRdata { record_type, rdata } =
-            EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)?;
-        let data = UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
-            .map_err(|e| format!("invalid record rdata: {}", e))?;
-        let owner = to_wire_name(record.name.to_wire(&zone.name))?;
-        input.push(WireRecord::new(
-            owner,
-            Class::IN,
-            Ttl::from_secs(record.ttl as u32),
-            ZoneRecordData::Unknown(data),
-        ));
-    }
+        // An RRset shares one TTL (RFC 2181, Section 5.2); normalize stragglers to
+        // the set's minimum so RRset construction and Original TTL are well-defined.
+        let mut rrset_ttls: BTreeMap<(Vec<u8>, u16), Ttl> = BTreeMap::new();
+        for rr in &input {
+            let key = (rr.owner().as_slice().to_vec(), rr.rtype().to_int());
+            let entry = rrset_ttls.entry(key).or_insert_with(|| rr.ttl());
+            *entry = (*entry).min(rr.ttl());
+        }
+        for rr in &mut input {
+            let key = (rr.owner().as_slice().to_vec(), rr.rtype().to_int());
+            rr.set_ttl(rrset_ttls[&key]);
+        }
 
-    // An RRset shares one TTL (RFC 2181, Section 5.2); normalize stragglers to
-    // the set's minimum so RRset construction and Original TTL are well-defined.
-    let mut rrset_ttls: BTreeMap<(Vec<u8>, u16), Ttl> = BTreeMap::new();
-    for rr in &input {
-        let key = (rr.owner().as_slice().to_vec(), rr.rtype().to_int());
-        let entry = rrset_ttls.entry(key).or_insert_with(|| rr.ttl());
-        *entry = (*entry).min(rr.ttl());
-    }
-    for rr in &mut input {
-        let key = (rr.owner().as_slice().to_vec(), rr.rtype().to_int());
-        rr.set_ttl(rrset_ttls[&key]);
-    }
+        input.sort_by(|a, b| {
+            use domain::base::cmp::CanonicalOrd;
+            a.canonical_cmp(b)
+        });
 
-    input.sort_by(|a, b| {
-        use domain::base::cmp::CanonicalOrd;
-        a.canonical_cmp(b)
-    });
-
-    Ok(input)
+        Ok(input)
+    }
 }
 
 /// The typed SOA the denial generators require (they read MINIMUM per

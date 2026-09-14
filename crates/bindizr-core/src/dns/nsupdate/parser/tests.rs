@@ -1,4 +1,4 @@
-use super::{ParseError, UpdateRr, parse_update_request, rr_to_record_value};
+use super::{ParseError, UpdateRr, parse_update_request};
 use crate::{
     dns::message::{Class, Rtype},
     model::record::RecordType,
@@ -149,7 +149,7 @@ fn parse_update_request_rejects_tsig_before_other_additional_rrs() {
 }
 
 #[test]
-fn rr_to_record_value_preserves_txt_character_string_boundaries() {
+fn to_record_value_preserves_txt_character_string_boundaries() {
     let first = UpdateRr {
         name: "txt.example.com.".to_string(),
         rr_type: Rtype::TXT,
@@ -167,15 +167,15 @@ fn rr_to_record_value_preserves_txt_character_string_boundaries() {
         rdata_start: 0,
     };
 
-    let (_, first_value, _) = rr_to_record_value(&first, &first.rdata).unwrap();
-    let (_, second_value, _) = rr_to_record_value(&second, &second.rdata).unwrap();
+    let (_, first_value, _) = first.to_record_value(&first.rdata).unwrap();
+    let (_, second_value, _) = second.to_record_value(&second.rdata).unwrap();
 
     assert_ne!(first_value, second_value);
     assert!(!RecordType::TXT.values_equal(&first_value, None, &second_value, None));
 }
 
 #[test]
-fn rr_to_record_value_follows_compression_pointer_in_name_rdata() {
+fn to_record_value_follows_compression_pointer_in_name_rdata() {
     let mut message = vec![
         3, b'w', b'w', b'w', 0, 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,
     ];
@@ -192,14 +192,14 @@ fn rr_to_record_value_follows_compression_pointer_in_name_rdata() {
         rdata_start,
     };
 
-    let (record_type, value, priority) = rr_to_record_value(&rr, &message).unwrap();
+    let (record_type, value, priority) = rr.to_record_value(&message).unwrap();
     assert_eq!(record_type, RecordType::CNAME);
     assert_eq!(value, "example.com.");
     assert_eq!(priority, None);
 }
 
 #[test]
-fn rr_to_record_value_rejects_non_backward_compression_pointers() {
+fn to_record_value_rejects_non_backward_compression_pointers() {
     let forward = [
         0xC0, 0x02, // Pointer to the root label after this pointer
         0x00,
@@ -210,37 +210,37 @@ fn rr_to_record_value_rejects_non_backward_compression_pointers() {
 
     for message in [&forward[..], &self_referential[..]] {
         let rr = update_rr(Rtype::CNAME, Class::IN, 300, message[..2].to_vec());
-        let err = rr_to_record_value(&rr, message).unwrap_err();
+        let err = rr.to_record_value(message).unwrap_err();
         assert!(!err.is_empty());
     }
 }
 
 #[test]
-fn rr_to_record_value_rejects_name_rdata_with_trailing_bytes() {
+fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
     let message = [1, b'a', 0, 0];
     let rr = update_rr(Rtype::CNAME, Class::IN, 300, message.to_vec());
-    let err = rr_to_record_value(&rr, &message).unwrap_err();
+    let err = rr.to_record_value(&message).unwrap_err();
     assert!(!err.is_empty());
 }
 
 // TXT RDATA is one or more character-strings (RFC 1035, Section 3.3.14), so an
 // empty value would store an undecodable record.
 #[test]
-fn rr_to_record_value_rejects_empty_txt_rdata() {
+fn to_record_value_rejects_empty_txt_rdata() {
     let rr = update_rr(Rtype::TXT, Class::IN, 300, Vec::new());
-    let err = rr_to_record_value(&rr, &[]).unwrap_err();
+    let err = rr.to_record_value(&[]).unwrap_err();
     assert!(!err.is_empty());
 }
 
 #[test]
-fn rr_to_record_value_rejects_non_utf8_txt_character_strings() {
+fn to_record_value_rejects_non_utf8_txt_character_strings() {
     let rr = update_rr(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
-    let err = rr_to_record_value(&rr, &rr.rdata).unwrap_err();
+    let err = rr.to_record_value(&rr.rdata).unwrap_err();
     assert!(!err.is_empty());
 }
 
 #[test]
-fn rr_to_record_value_splits_srv_priority_into_its_own_column() {
+fn to_record_value_splits_srv_priority_into_its_own_column() {
     // priority 10, weight 20, port 5060, target sip.example.com.
     let mut rdata = vec![0, 10, 0, 20, 0x13, 0xC4];
     rdata.extend_from_slice(&[
@@ -248,7 +248,7 @@ fn rr_to_record_value_splits_srv_priority_into_its_own_column() {
     ]);
     let rr = update_rr(Rtype::SRV, Class::IN, 300, rdata.clone());
 
-    let (record_type, value, priority) = rr_to_record_value(&rr, &rdata).unwrap();
+    let (record_type, value, priority) = rr.to_record_value(&rdata).unwrap();
 
     assert_eq!(record_type, RecordType::SRV);
     // The wire encoder reads back this 3-field form with the priority column.

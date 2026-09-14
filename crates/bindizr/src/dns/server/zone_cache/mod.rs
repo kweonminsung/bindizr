@@ -41,6 +41,13 @@ pub(crate) struct ZoneContent {
     pub(crate) dnssec_records: Arc<Vec<DnssecRecord>>,
 }
 
+impl ZoneContent {
+    /// Both planes, since a transfer serves both.
+    fn record_count(&self) -> usize {
+        self.records.len() + self.dnssec_records.len()
+    }
+}
+
 struct CachedZone {
     serial: i32,
     content: ZoneContent,
@@ -149,7 +156,7 @@ impl Cache {
         // its old serial, which no lookup can satisfy any more.
         self.remove(zone_id);
 
-        let records = record_count(&content);
+        let records = content.record_count();
         if records > max_records {
             return 0;
         }
@@ -187,11 +194,6 @@ impl Cache {
             self.records -= removed.records;
         }
     }
-}
-
-/// Both planes, since a transfer serves both.
-fn record_count(content: &ZoneContent) -> usize {
-    content.records.len() + content.dnssec_records.len()
 }
 
 #[cfg(test)]

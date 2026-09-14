@@ -225,99 +225,101 @@ pub(crate) fn group_ops_by_zone(
     Ok(grouped)
 }
 
-/// Resolve one zone's operations against its current records; idempotent
-/// operations cancel out, so an effect-free request yields an empty set.
-pub(crate) fn compute_zone_change_set(
-    zone: &Zone,
-    existing: &[Record],
-    ops: &ZoneOps,
-) -> Result<ZoneChangeSet, ServiceError> {
-    let mut deletes: Vec<Record> = Vec::new();
-    for del in &ops.dels {
-        for value in &del.values {
-            for row in existing {
-                if row.name == del.name
-                    && row.record_type == del.record_type
-                    && del.record_type.values_equal(&row.value, None, value, None)
-                    && !deletes.iter().any(|d| d.id == row.id)
-                {
-                    deletes.push(row.clone());
+impl ZoneOps {
+    /// Resolve one zone's operations against its current records; idempotent
+    /// operations cancel out, so an effect-free request yields an empty set.
+    pub(crate) fn compute_change_set(
+        &self,
+        zone: &Zone,
+        existing: &[Record],
+    ) -> Result<ZoneChangeSet, ServiceError> {
+        let mut deletes: Vec<Record> = Vec::new();
+        for del in &self.dels {
+            for value in &del.values {
+                for row in existing {
+                    if row.name == del.name
+                        && row.record_type == del.record_type
+                        && del.record_type.values_equal(&row.value, None, value, None)
+                        && !deletes.iter().any(|d| d.id == row.id)
+                    {
+                        deletes.push(row.clone());
+                    }
                 }
             }
         }
-    }
 
-    let mut creates: Vec<Record> = Vec::new();
-    for add in &ops.adds {
-        let ttl = add.ttl.unwrap_or(zone.default_ttl);
-        for value in &add.values {
-            let same_rdata = |record: &Record| {
-                record.name == add.name
-                    && record.record_type == add.record_type
-                    && add
-                        .record_type
-                        .values_equal(&record.value, None, value, None)
-            };
-            let matches = |record: &Record| same_rdata(record) && record.ttl == ttl;
+        let mut creates: Vec<Record> = Vec::new();
+        for add in &self.adds {
+            let ttl = add.ttl.unwrap_or(zone.default_ttl);
+            for value in &add.values {
+                let same_rdata = |record: &Record| {
+                    record.name == add.name
+                        && record.record_type == add.record_type
+                        && add
+                            .record_type
+                            .values_equal(&record.value, None, value, None)
+                };
+                let matches = |record: &Record| same_rdata(record) && record.ttl == ttl;
 
-            // An unchanged update cancels its own delete instead of rewriting
-            // the row. TTL-sensitive, so a TTL-only update is still a change.
-            if let Some(pos) = deletes.iter().position(&matches) {
-                deletes.remove(pos);
-                continue;
-            }
-            // Idempotent create: a surviving row already holds this rdata. TTL
-            // is excluded to match the duplicate check behind this one, which
-            // would otherwise reject the create as a conflict.
-            if existing
-                .iter()
-                .any(|row| deletes.iter().all(|d| d.id != row.id) && same_rdata(row))
-            {
-                continue;
-            }
-            // Intra-request duplicate create.
-            if creates.iter().any(matches) {
-                continue;
-            }
+                // An unchanged update cancels its own delete instead of rewriting
+                // the row. TTL-sensitive, so a TTL-only update is still a change.
+                if let Some(pos) = deletes.iter().position(&matches) {
+                    deletes.remove(pos);
+                    continue;
+                }
+                // Idempotent create: a surviving row already holds this rdata. TTL
+                // is excluded to match the duplicate check behind this one, which
+                // would otherwise reject the create as a conflict.
+                if existing
+                    .iter()
+                    .any(|row| deletes.iter().all(|d| d.id != row.id) && same_rdata(row))
+                {
+                    continue;
+                }
+                // Intra-request duplicate create.
+                if creates.iter().any(matches) {
+                    continue;
+                }
 
-            creates.push(Record {
-                id: 0,
-                name: add.name.clone(),
-                record_type: add.record_type.clone(),
-                value: value.clone(),
-                ttl,
-                priority: None,
-                zone_id: zone.id,
-                created_at: Utc::now(),
-            });
+                creates.push(Record {
+                    id: 0,
+                    name: add.name.clone(),
+                    record_type: add.record_type.clone(),
+                    value: value.clone(),
+                    ttl,
+                    priority: None,
+                    zone_id: zone.id,
+                    created_at: Utc::now(),
+                });
+            }
         }
-    }
 
-    // Validate each insert against the post-delete state plus earlier inserts,
-    // so CNAME exclusivity and RRset TTL rules see the state they will land in.
-    for (index, create) in creates.iter().enumerate() {
-        let mut records_at_name: Vec<Record> = existing
-            .iter()
-            .filter(|row| deletes.iter().all(|d| d.id != row.id) && row.name == create.name)
-            .cloned()
-            .collect();
-        records_at_name.extend(
-            creates[..index]
+        // Validate each insert against the post-delete state plus earlier inserts,
+        // so CNAME exclusivity and RRset TTL rules see the state they will land in.
+        for (index, create) in creates.iter().enumerate() {
+            let mut records_at_name: Vec<Record> = existing
                 .iter()
-                .filter(|row| row.name == create.name)
-                .cloned(),
-        );
+                .filter(|row| deletes.iter().all(|d| d.id != row.id) && row.name == create.name)
+                .cloned()
+                .collect();
+            records_at_name.extend(
+                creates[..index]
+                    .iter()
+                    .filter(|row| row.name == create.name)
+                    .cloned(),
+            );
 
-        validate_record_add_constraints_normalized(
-            &records_at_name,
-            &create.name,
-            &create.record_type,
-            &create.value,
-            create.ttl,
-            create.priority,
-            None,
-        )?;
+            validate_record_add_constraints_normalized(
+                &records_at_name,
+                &create.name,
+                &create.record_type,
+                &create.value,
+                create.ttl,
+                create.priority,
+                None,
+            )?;
+        }
+
+        Ok(ZoneChangeSet { deletes, creates })
     }
-
-    Ok(ZoneChangeSet { deletes, creates })
 }

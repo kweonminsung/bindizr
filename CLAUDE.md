@@ -270,7 +270,7 @@ Every other helper starts with one of these verbs:
   argument (`to_fqdn(name)`, `to_sqlite_url(path)`, `to_response_data(status)`).
   `<source>_to_<form>` only when the source carries the meaning: the form is
   a bare type (`serial_to_u32`), several sources reach the same form
-  (`rr_to_record_value` beside the text parser, `labels_to_wire`), or the
+  (`labels_to_wire` beside `encode_name`), or the
   source is the point (`zone_name_to_member_id`). Two or more inputs make an
   assembly, `build_`. `parse_<thing>` — text or wire bytes into a typed
   value, fallible; an infallible reading is `to_` (`to_record_value_request`
@@ -288,7 +288,7 @@ Every other helper starts with one of these verbs:
   (`verify_tsig`). `check_<thing>` — a doctor-style diagnostic that reports
   instead of failing.
 - Derivation: `build_<thing>` / `compute_<thing>` — assemble or derive a value
-  from several inputs (`build_record_diff`, `compute_zone_change_set`);
+  from several inputs (`build_record_diff`, `compute_import_plan`);
   `group_<things>` partitions into a keyed map; `normalize_<thing>` —
   service-layer trim + canonicalize + validate, returning the canonical value
   or a `ServiceError`; `generate_<thing>` — fresh key, secret, or serial

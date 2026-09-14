@@ -17,7 +17,7 @@ use domain::{
     dnssec::sign::{keys::signingkey::SigningKey, records::Rrset, signatures::rrsigs::sign_rrset},
     rdata::{ZoneRecordData, dnssec::Timestamp},
 };
-use input::{build_signing_input, denial_rrs};
+use input::denial_rrs;
 use sha2::{Digest, Sha256};
 
 use super::{WireName, rdata::dnskey_for, to_wire_name};
@@ -105,7 +105,7 @@ impl SignedViewParams<'_> {
             );
         }
 
-        let input = build_signing_input(self, &apex, &signers)?;
+        let input = self.signing_input(&apex, &signers)?;
 
         let mut new_rows: Vec<DnssecRecord> = Vec::new();
         let denial_rrs = denial_rrs(&apex, &input, self.denial)?;

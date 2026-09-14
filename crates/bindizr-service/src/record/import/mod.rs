@@ -13,7 +13,7 @@ use bindizr_core::dns::{
 };
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
-use plan::{DesiredRecord, ImportPlan, build_import_diff, compute_import_plan};
+use plan::{DesiredRecord, compute_import_plan};
 
 use super::{
     RecordService,
@@ -251,20 +251,14 @@ impl RecordService {
             let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(zone.default_ttl);
 
             let t = Instant::now();
-            let ImportPlan {
-                dels,
-                ttl_dels,
-                adds,
-                unchanged,
-                updated,
-            } = compute_import_plan(mode, &zone, &existing_records, &desired);
+            let plan = compute_import_plan(mode, &zone, &existing_records, &desired);
             timings.reconcile_ms = elapsed_ms(t);
 
             // Validate additions against an in-memory copy so constraint
             // violations are caught without writing anything. Simulated records
             // are indexed by name so each check scans only same-name candidates.
             let t = Instant::now();
-            let del_ids: HashSet<i32> = dels.iter().chain(&ttl_dels).map(|d| d.id).collect();
+            let del_ids: HashSet<i32> = plan.dels.iter().chain(&plan.ttl_dels).map(|d| d.id).collect();
             let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> =
                 HashMap::with_capacity(existing_records.len());
             for e in existing_records.iter() {
@@ -275,7 +269,7 @@ impl RecordService {
                         .push(e.clone());
                 }
             }
-            for add in &adds {
+            for add in &plan.adds {
                 let records_at_name = simulated_by_name
                     .entry(add.stored_name.clone())
                     .or_default();
@@ -321,12 +315,12 @@ impl RecordService {
 
             let summary = ImportSummary {
                 parsed: parsed_count,
-                // `adds` also carries the re-inserted TTL-reconciled records,
+                // Additions also carry the re-inserted TTL-reconciled records,
                 // which are reported under `updated` instead.
-                added: adds.len() - updated,
-                deleted: dels.len(),
-                updated,
-                unchanged,
+                added: plan.adds.len() - plan.updated,
+                deleted: plan.dels.len(),
+                updated: plan.updated,
+                unchanged: plan.unchanged,
                 skipped,
             };
 
@@ -334,26 +328,26 @@ impl RecordService {
             // hot path (import benchmarks measure records/sec here). Skip it too when
             // errors block the import, so the preview shows no un-appliable changes.
             let diff = if dry_run && errors.is_empty() {
-                build_import_diff(&zone, &existing_records, &adds, &dels, &ttl_dels)
+                plan.diff(&zone, &existing_records)
             } else {
                 RecordDiff::default()
             };
 
             let will_apply = errors.is_empty() && !dry_run;
-            let has_changes = !dels.is_empty() || !adds.is_empty() || !ttl_dels.is_empty();
+            let has_changes = !plan.dels.is_empty() || !plan.adds.is_empty() || !plan.ttl_dels.is_empty();
 
             if will_apply && has_changes {
                 let new_serial = generate_serial(Some(zone.serial))?;
 
                 let t = Instant::now();
-                let mut all_dels = dels;
-                all_dels.extend(ttl_dels);
+                let mut all_dels = plan.dels;
+                all_dels.extend(plan.ttl_dels);
                 RecordService::delete_with_changes_tx(
                     &mut tx, zone.id, new_serial, &all_dels,
                 )
                 .await?;
 
-                let to_insert: Vec<Record> = adds
+                let to_insert: Vec<Record> = plan.adds
                     .iter()
                     .map(|add| Record {
                         id: 0,

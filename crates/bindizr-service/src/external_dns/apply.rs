@@ -6,7 +6,7 @@ use bindizr_db::repository::LockLevel;
 
 use super::{
     ExternalDnsService,
-    change_set::{compute_zone_change_set, group_ops_by_zone, parse_changes_request},
+    change_set::{group_ops_by_zone, parse_changes_request},
 };
 use crate::{
     authorization::{Caller, RecordWrite},
@@ -96,7 +96,7 @@ impl ExternalDnsService {
                 )
                 .await?;
 
-                let change_set = compute_zone_change_set(&zone, &existing, ops)?;
+                let change_set = ops.compute_change_set(&zone, &existing)?;
                 if change_set.deletes.is_empty() && change_set.creates.is_empty() {
                     continue;
                 }

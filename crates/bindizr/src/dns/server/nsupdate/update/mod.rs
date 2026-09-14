@@ -8,7 +8,7 @@ use bindizr_core::{
     config,
     dns::{
         message::{Class, Rtype},
-        nsupdate::parser::{UpdateRequest, UpdateRr, rr_to_record_value},
+        nsupdate::parser::{UpdateRequest, UpdateRr},
         tsig::{ResponseSigner, TsigError},
     },
     model::{record::RecordType, tsig_key::TsigKey},
@@ -203,7 +203,7 @@ fn decode_prerequisite(rr: &UpdateRr, query_data: &[u8]) -> Result<Prerequisite,
                 ));
             }
 
-            let (record_type, value, priority) = rr_to_record_value(rr, query_data)?;
+            let (record_type, value, priority) = rr.to_record_value(query_data)?;
             Ok(Prerequisite::RrInUse {
                 name,
                 record_type,
@@ -222,7 +222,7 @@ fn decode_update(rr: &UpdateRr, query_data: &[u8]) -> Result<UpdateOp, UpdateErr
     let name = rr.name.clone();
     match rr.class {
         Class::IN => {
-            let (record_type, value, priority) = rr_to_record_value(rr, query_data)?;
+            let (record_type, value, priority) = rr.to_record_value(query_data)?;
             if rr.ttl > i32::MAX as u32 {
                 return Err(UpdateError::Refused(format!(
                     "TTL value {} exceeds maximum allowed value ({})",
@@ -249,7 +249,7 @@ fn decode_update(rr: &UpdateRr, query_data: &[u8]) -> Result<UpdateOp, UpdateErr
         }
         Class::NONE => {
             validate_delete_shape(rr, false)?;
-            let (record_type, value, priority) = rr_to_record_value(rr, query_data)?;
+            let (record_type, value, priority) = rr.to_record_value(query_data)?;
             Ok(UpdateOp::DeleteRr {
                 name,
                 record_type,
