@@ -72,7 +72,8 @@ pub enum Prerequisite {
         name: String,
         record_type: RecordType,
     },
-    /// CLASS IN: this exact RR must exist.
+    /// CLASS IN: with the others of its name and type, the RRset must equal
+    /// the zone's (RFC 2136, Section 3.2.3).
     RrInUse {
         name: String,
         record_type: RecordType,

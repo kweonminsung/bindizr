@@ -7,7 +7,7 @@ use crate::{
     model::zone::Zone,
     repository::{
         LockLevel, RepositoryTx, ZoneFilter, ZoneRepository,
-        sql::{like_pattern, zone_order_by_sql},
+        sql::{like_pattern, name_like_pattern, name_text, zone_order_by_sql},
     },
 };
 
@@ -136,6 +136,8 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
+        let name_search = name_like_pattern(filter.search.as_deref());
+        let name = name_text(filter.name.as_deref());
 
         let order_by = zone_order_by_sql(filter.sort, filter.order);
         let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
@@ -171,8 +173,8 @@ impl ZoneRepository for SqliteZoneRepository {
             LIMIT ? OFFSET ?
             "#
         )))
-        .bind(&filter.name)
-        .bind(&filter.name)
+        .bind(&name)
+        .bind(&name)
         .bind(filter.id)
         .bind(filter.id)
         .bind(&filter.mname)
@@ -200,7 +202,7 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(filter.enabled)
         .bind(filter.enabled)
         .bind(&search)
-        .bind(&search)
+        .bind(&name_search)
         .bind(&search)
         .bind(&search)
         .bind(filter.scope_token_id)
@@ -231,6 +233,8 @@ impl ZoneRepository for SqliteZoneRepository {
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
+        let name_search = name_like_pattern(filter.search.as_deref());
+        let name = name_text(filter.name.as_deref());
 
         let count = sqlx::query_scalar::<_, i64>(
             r#"
@@ -263,8 +267,8 @@ impl ZoneRepository for SqliteZoneRepository {
               )
             "#,
         )
-        .bind(&filter.name)
-        .bind(&filter.name)
+        .bind(&name)
+        .bind(&name)
         .bind(filter.id)
         .bind(filter.id)
         .bind(&filter.mname)
@@ -292,7 +296,7 @@ impl ZoneRepository for SqliteZoneRepository {
         .bind(filter.enabled)
         .bind(filter.enabled)
         .bind(&search)
-        .bind(&search)
+        .bind(&name_search)
         .bind(&search)
         .bind(&search)
         .bind(filter.scope_token_id)

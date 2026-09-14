@@ -59,10 +59,9 @@ fn has_matching_rdata<'a>(
     value: &str,
     priority: Option<i32>,
 ) -> bool {
-    records.into_iter().any(|r| {
-        r.record_type == *record_type
-            && record_type.values_equal(&r.value, r.priority, value, priority)
-    })
+    records
+        .into_iter()
+        .any(|r| r.record_type == *record_type && r.has_rdata(value, priority))
 }
 
 /// Validate an add whose owner name has already been normalized to `stored_name`.

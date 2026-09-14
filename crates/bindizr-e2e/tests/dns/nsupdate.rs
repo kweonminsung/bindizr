@@ -178,6 +178,73 @@ async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
     assert_eq!(app.list_records(&zone_name).await.len(), before + 1);
 }
 
+/// Verify that a value prerequisite needs the whole RRset.
+#[tokio::test]
+#[serial]
+async fn a_value_prerequisite_needs_the_whole_rrset() {
+    let app = unsigned_nsupdate_app().await;
+    let zone_name = app.zone_name("nsupdate-rrset.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    let port = app.dns_port();
+
+    let owner = format!("check.{zone_name}.");
+    for addr in ["192.0.2.1", "192.0.2.2"] {
+        let rcode = send_update(
+            port,
+            &zone_name,
+            &[],
+            &[UpdateRr::AddA {
+                name: owner.clone(),
+                ttl: 300,
+                addr: addr.to_string(),
+            }],
+        )
+        .expect("seed the RRset");
+        assert_eq!(rcode, Rcode::NOERROR);
+    }
+    let before = app.list_records(&zone_name).await.len();
+    let update = [UpdateRr::AddA {
+        name: format!("subset.{zone_name}."),
+        ttl: 60,
+        addr: "192.0.2.99".to_string(),
+    }];
+
+    // RFC 2136, Section 3.2.3: the prerequisite RRset must equal the zone's,
+    // so naming one of its two values is NXRRSET and applies nothing.
+    let rcode = send_update(
+        port,
+        &zone_name,
+        &[PrereqRr::AEquals {
+            name: owner.clone(),
+            addr: "192.0.2.1".to_string(),
+        }],
+        &update,
+    )
+    .expect("subset prerequisite");
+    assert_eq!(rcode, Rcode::NXRRSET);
+    assert_eq!(app.list_records(&zone_name).await.len(), before);
+
+    // Both values, in either order, are the whole RRset.
+    let rcode = send_update(
+        port,
+        &zone_name,
+        &[
+            PrereqRr::AEquals {
+                name: owner.clone(),
+                addr: "192.0.2.2".to_string(),
+            },
+            PrereqRr::AEquals {
+                name: owner.clone(),
+                addr: "192.0.2.1".to_string(),
+            },
+        ],
+        &update,
+    )
+    .expect("whole prerequisite");
+    assert_eq!(rcode, Rcode::NOERROR);
+    assert_eq!(app.list_records(&zone_name).await.len(), before + 1);
+}
+
 /// Verify that `nsupdate` refuses an owner outside the zone.
 #[tokio::test]
 #[serial]

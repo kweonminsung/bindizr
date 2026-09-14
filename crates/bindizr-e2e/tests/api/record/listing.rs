@@ -240,13 +240,84 @@ async fn record_filter_matches_every_spelling_of_an_owner_name() {
     }
 }
 
-/// Percent-encode a query value; `;` and `\` would otherwise be taken apart.
+/// Verify that a name filter without a zone reads the same spellings.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for (name, record_type, value) in [
+        ("foo;bar", "A", "192.0.2.1"),
+        ("caf\u{e9}", "A", "192.0.2.2"),
+        ("note", "TXT", "caf\u{e9}"),
+    ] {
+        let (status, body) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name,
+                    "record_type": record_type,
+                    "value": value,
+                    "zone_name": zone_name,
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+
+    // Without a zone the filter is still rendered as rows hold it, a
+    // non-ASCII label in its `\DDD` escapes.
+    for spelling in [
+        "foo;bar",
+        r"foo\;bar",
+        &format!("foo;bar.{zone_name}."),
+        "caf\u{e9}",
+        r"caf\195\169",
+        &format!("caf\u{e9}.{zone_name}."),
+    ] {
+        let (status, body) = app
+            .request(
+                Method::GET,
+                &format!("/records?name={}", encode(spelling)),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            body["items"].as_array().map(Vec::len),
+            Some(1),
+            "no record matched {spelling:?}: {body}"
+        );
+    }
+
+    // One search reaches a name and a value spelled the same way.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!(
+                "/records?zone_name={zone_name}&search={}",
+                encode("caf\u{e9}")
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["items"].as_array().map(Vec::len), Some(2), "{body}");
+}
+
+/// Percent-encode a query value byte by byte; `;`, `\` and UTF-8 would
+/// otherwise be taken apart.
 fn encode(value: &str) -> String {
     value
-        .chars()
-        .map(|c| match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' | '_' | '~' => c.to_string(),
-            other => format!("%{:02X}", other as u32),
+        .bytes()
+        .map(|byte| match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                char::from(byte).to_string()
+            }
+            other => format!("%{other:02X}"),
         })
         .collect()
 }

@@ -5,7 +5,7 @@
 mod grant;
 mod sort;
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::name::{OwnerName, escape_non_ascii};
 use chrono::{DateTime, TimeDelta, Utc};
 pub(crate) use grant::{concat_fn, concat_pipes, grant_record_match_sql};
 pub use sort::{RecordSort, SortOrder, ZoneSort};
@@ -66,4 +66,15 @@ pub(crate) fn like_pattern(value: Option<&str>) -> Option<String> {
                 .replace('_', "\\_");
             format!("%{}%", escaped)
         })
+}
+
+/// Free text as the name columns hold it, for the filters that reach them.
+pub(crate) fn name_text(value: Option<&str>) -> Option<String> {
+    value.map(|value| escape_non_ascii(value).into_owned())
+}
+
+/// [`like_pattern`] for the name columns; the value columns take the term as
+/// typed, so one search reaches a name and a value spelled the same way.
+pub(crate) fn name_like_pattern(value: Option<&str>) -> Option<String> {
+    like_pattern(name_text(value).as_deref())
 }

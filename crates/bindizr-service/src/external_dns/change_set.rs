@@ -242,7 +242,7 @@ impl ZoneOps {
                 for row in existing {
                     if row.name == del.name
                         && row.record_type == del.record_type
-                        && del.record_type.values_equal(&row.value, None, value, None)
+                        && row.has_rdata(value, None)
                         && !deletes.iter().any(|d| d.id == row.id)
                     {
                         deletes.push(row.clone());
@@ -258,9 +258,7 @@ impl ZoneOps {
                 let same_rdata = |record: &Record| {
                     record.name == add.name
                         && record.record_type == add.record_type
-                        && add
-                            .record_type
-                            .values_equal(&record.value, None, value, None)
+                        && record.has_rdata(value, None)
                 };
                 let matches = |record: &Record| same_rdata(record) && record.ttl == ttl;
 

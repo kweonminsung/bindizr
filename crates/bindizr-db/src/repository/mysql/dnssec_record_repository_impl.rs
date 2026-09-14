@@ -8,7 +8,7 @@ use crate::{
     repository::{
         DnssecRecordFilter, DnssecRecordRepository, LockLevel, RepositoryTx,
         sql::{
-            apex_owner_sql, concat_fn, grant_record_match_sql, like_pattern, lock_clause,
+            apex_owner_sql, concat_fn, grant_record_match_sql, lock_clause, name_like_pattern,
             refresh_bound,
         },
     },
@@ -254,7 +254,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
     ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();
-        let search = like_pattern(filter.search.as_deref());
+        let search = name_like_pattern(filter.search.as_deref());
         let grant_match = grant_record_match_sql("d", None, concat_fn);
         let records = sqlx::query_as::<_, DnssecRecordWithZone>(AssertSqlSafe(format!(
             r#"
@@ -325,7 +325,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
     async fn count_by_filter(&self, filter: DnssecRecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();
-        let search = like_pattern(filter.search.as_deref());
+        let search = name_like_pattern(filter.search.as_deref());
         let grant_match = grant_record_match_sql("d", None, concat_fn);
         let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"

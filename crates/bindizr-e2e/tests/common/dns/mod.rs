@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 pub(crate) use transfer::{TransferOutcome, axfr};
 
 /// Convert an API record value into the DNS comparison form.
-pub(super) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
+pub(crate) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
     let value = record["value"].clone();
     if !matches!(record_type, 15 | 33) {
         return value;
@@ -37,7 +37,7 @@ pub(super) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
 }
 
 /// Extract the DNS owner and type used to identify a record.
-pub(super) fn dns_key_from_record(record: &Value) -> (String, u16) {
+pub(crate) fn dns_key_from_record(record: &Value) -> (String, u16) {
     let name = record["name"]
         .as_str()
         .expect("record did not contain a name")
@@ -50,7 +50,7 @@ pub(super) fn dns_key_from_record(record: &Value) -> (String, u16) {
 }
 
 /// Map a supported record mnemonic to its wire type number.
-pub(super) fn dns_record_type(record_type: &str) -> Option<u16> {
+pub(crate) fn dns_record_type(record_type: &str) -> Option<u16> {
     match record_type {
         "A" => Some(1),
         "NS" => Some(2),
@@ -72,7 +72,7 @@ pub(super) fn dns_record_type(record_type: &str) -> Option<u16> {
 }
 
 /// Poll DNS until its answers match the expected record values.
-pub(super) async fn wait_for_dns_records(
+pub(crate) async fn wait_for_dns_records(
     port: u16,
     name: &str,
     record_type: u16,

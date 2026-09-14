@@ -29,6 +29,15 @@ pub struct Record {
     pub zone_id: i32,
 }
 
+impl Record {
+    /// Whether this row holds `value` as its rdata (with `priority`, for MX
+    /// and SRV), compared canonically under the row's own type.
+    pub fn has_rdata(&self, value: &str, priority: Option<i32>) -> bool {
+        self.record_type
+            .values_equal(&self.value, self.priority, value, priority)
+    }
+}
+
 /// A [`Record`] joined with the name of its owning zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RecordWithZone {

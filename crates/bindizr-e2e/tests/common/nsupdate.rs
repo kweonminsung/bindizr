@@ -41,6 +41,9 @@ pub(crate) enum PrereqRr {
     NameInUse { name: String },
     /// CLASS NONE, TYPE ANY: the owner name must not exist.
     NameNotInUse { name: String },
+    /// CLASS IN, TTL 0: with the others of its name, these A values must be
+    /// exactly the zone's (RFC 2136, Section 3.2.3).
+    AEquals { name: String, addr: String },
 }
 
 /// Send an unsigned UPDATE for `zone` and return the response RCODE.
@@ -118,13 +121,20 @@ fn build_update(
 
     let mut answer = question.answer();
     for prerequisite in prerequisites {
-        let (owner, class) = match prerequisite {
-            PrereqRr::NameInUse { name } => (name, Class::ANY),
-            PrereqRr::NameNotInUse { name } => (name, Class::NONE),
-        };
-        answer
-            .push(empty_record(owner, Rtype::ANY, class)?)
-            .map_err(|e| e.to_string())?;
+        match prerequisite {
+            PrereqRr::NameInUse { name: owner } => answer
+                .push(empty_record(owner, Rtype::ANY, Class::ANY)?)
+                .map_err(|e| e.to_string())?,
+            PrereqRr::NameNotInUse { name: owner } => answer
+                .push(empty_record(owner, Rtype::ANY, Class::NONE)?)
+                .map_err(|e| e.to_string())?,
+            PrereqRr::AEquals { name: owner, addr } => {
+                let data = A::from_str(addr).map_err(|e| e.to_string())?;
+                answer
+                    .push(Record::new(name(owner)?, Class::IN, Ttl::ZERO, data))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
     }
 
     let mut authority = answer.authority();

@@ -2,6 +2,7 @@
 
 use super::{
     MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, has_whitespace_or_control,
+    push_decimal_escape,
 };
 
 /// A record's owner name as its decoded labels, relative to its zone; the apex
@@ -315,7 +316,7 @@ pub(crate) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
     for byte in label.bytes() {
         match byte {
             b'.' => escaped.push_str(r"\046"),
-            byte if !byte.is_ascii() => escaped.push_str(&format!(r"\{byte:03}")),
+            byte if !byte.is_ascii() => push_decimal_escape(&mut escaped, byte),
             byte if ESCAPED_IN_LABEL.contains(&char::from(byte)) => {
                 escaped.push('\\');
                 escaped.push(char::from(byte));

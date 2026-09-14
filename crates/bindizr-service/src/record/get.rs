@@ -1,4 +1,6 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::name::{
+    OwnerName, ZoneName, decode_name_labels, escape_non_ascii, join_labels,
+};
 use bindizr_db::repository::{DnssecRecordFilter, RecordFilter};
 
 use super::{ListedRecord, RecordService};
@@ -206,18 +208,30 @@ fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) 
             if trimmed == OwnerName::APEX {
                 return Some(OwnerName::apex().to_stored());
             }
-            return Some(trimmed.to_string());
+            // Rendered as rows hold it: a relative name against the owner, an
+            // absolute one against the FQDN the query builds.
+            return Some(match decode_name_labels(trimmed) {
+                Ok((labels, absolute)) => {
+                    let rendered = join_labels(&labels);
+                    if absolute {
+                        format!("{rendered}.")
+                    } else {
+                        rendered
+                    }
+                }
+                Err(_) => escape_non_ascii(trimmed).into_owned(),
+            });
         };
 
         // The query compares the filter against both the stored owner and the
         // FQDN it builds from it, so spell it the way rows do. Anything that is
-        // not a name passes through to match literally.
+        // not a name passes through in ASCII, to match nothing.
         if let Ok(owner) = OwnerName::parse_absolute_in_zone(trimmed, zone) {
             return Some(owner.to_fqdn(zone));
         }
         Some(match OwnerName::parse_in_zone(trimmed, zone) {
             Ok(owner) => owner.to_stored(),
-            Err(_) => trimmed.to_string(),
+            Err(_) => escape_non_ascii(trimmed).into_owned(),
         })
     })
 }

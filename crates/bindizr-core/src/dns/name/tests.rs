@@ -1,6 +1,6 @@
 use super::{
-    OwnerName, ParseNameError, ZoneName, decode_name_labels, encode_name, is_label_suffix,
-    to_lookup_name,
+    OwnerName, ParseNameError, ZoneName, decode_name_labels, encode_name, escape_non_ascii,
+    is_label_suffix, to_lookup_name,
 };
 
 /// Build the test zone or its DNS name.
@@ -199,6 +199,18 @@ fn a_rendered_dot_is_always_a_label_boundary() {
     // `a.sub` must not render to text ending in `.sub`; `[a\, sub]` may.
     assert_eq!(OwnerName::from_row(r"a\.sub").to_stored(), r"a\046sub");
     assert_eq!(OwnerName::from_row(r"a\\.sub").to_stored(), r"a\\.sub");
+}
+
+/// Verify that `escape_non_ascii` renders free text as name columns hold it.
+#[test]
+fn escape_non_ascii_renders_free_text_as_name_columns_hold_it() {
+    assert_eq!(
+        escape_non_ascii("caf\u{e9}.example"),
+        r"caf\195\169.example"
+    );
+    // ASCII text is left as typed, dots and escapes included: a search term
+    // is not a name, so nothing in it is a label to render.
+    assert_eq!(escape_non_ascii(r"a\.b_c%"), r"a\.b_c%");
 }
 
 /// Verify that a non-ASCII label renders in decimal escapes.

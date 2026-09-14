@@ -44,7 +44,8 @@ pub(crate) enum IxfrSendError {
         /// Boxed: a signing context dwarfs the error beside it.
         signer: Option<Box<TransferSigner>>,
     },
-    /// Failed mid-stream; falling back to AXFR would corrupt the partial IXFR.
+    /// Failed mid-stream, or in the I/O of the first frame, part of which may
+    /// have reached the client; falling back to AXFR would corrupt the stream.
     Partial(XfrError),
 }
 
@@ -173,8 +174,11 @@ pub(crate) async fn send_ixfr_response(
             log_info!("IXFR: sent response in {} DNS message(s)", messages_sent);
             Ok(())
         }
-        // A failure after the first flush leaves the stream mid-transfer.
-        Err(err) if messages_sent > 0 => Err(IxfrSendError::Partial(err)),
+        // A failure after the first flush leaves the stream mid-transfer, and
+        // so does an I/O failure on the first frame: part of it may be out.
+        Err(err) if messages_sent > 0 || matches!(err, XfrError::IoError(_)) => {
+            Err(IxfrSendError::Partial(err))
+        }
         Err(error) => Err(IxfrSendError::NotStarted {
             error,
             signer: builder.take_signer().map(Box::new),

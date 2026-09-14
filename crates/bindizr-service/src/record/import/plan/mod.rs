@@ -21,15 +21,9 @@ pub(crate) struct DesiredRecord {
 impl DesiredRecord {
     /// Whether `existing` has the desired identity; TTL is reconciled separately.
     fn matches(&self, existing: &Record) -> bool {
-        let record_type = &self.prepared.record_type;
         existing.name == self.stored_name
-            && existing.record_type == *record_type
-            && record_type.values_equal(
-                &existing.value,
-                existing.priority,
-                &self.prepared.value,
-                self.prepared.priority,
-            )
+            && existing.record_type == self.prepared.record_type
+            && existing.has_rdata(&self.prepared.value, self.prepared.priority)
     }
 }
 
