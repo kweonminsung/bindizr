@@ -44,9 +44,8 @@ impl RecordService {
     }
 
     /// List records with their zone name matching `filter`, restricted to what
-    /// the caller's grants carry in SQL so pagination stays database-side, and
-    /// again here where names compare as labels. Scoped callers see an unknown
-    /// or invisible zone as an empty page.
+    /// the caller's grants carry in SQL so pagination stays database-side.
+    /// Scoped callers see an unknown or invisible zone as an empty page.
     /// With `signed`, the derived DNSSEC plane pages after the user records;
     /// searches reach their names, value filters are refused, and priority filters
     /// exclude the derived plane.
@@ -161,13 +160,7 @@ impl RecordService {
             );
         }
 
-        // The SQL narrows by the same grants but by text, so this is where
-        // `a\.sub` stops passing as inside `sub`.
-        let items = items
-            .iter()
-            .filter(|record| record.visible_to(caller))
-            .map(ListedRecord::to_response)
-            .collect();
+        let items = items.iter().map(ListedRecord::to_response).collect();
         Ok(PaginatedResponse::from_page(
             items,
             limit,

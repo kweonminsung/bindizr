@@ -120,7 +120,7 @@ fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
     );
 
     let request = parse_update_request(&message).unwrap();
-    assert_eq!(request.tsig.unwrap().name, r"Key\.With\.Dot.");
+    assert_eq!(request.tsig.unwrap().name, r"Key\046With\046Dot.");
 }
 
 /// The wire carries one label holding a dot; rendering it unescaped would let
@@ -143,7 +143,7 @@ fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
     message.extend_from_slice(&1u16.to_be_bytes());
 
     let request = parse_update_request(&message).unwrap();
-    assert_eq!(request.zone_name, r"evil\.example.com.");
+    assert_eq!(request.zone_name, r"evil\046example.com.");
 }
 
 /// Verify that `parse_update_request` rejects TSIG before other additional rrs.

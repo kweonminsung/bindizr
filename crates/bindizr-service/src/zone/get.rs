@@ -23,7 +23,8 @@ impl ZoneService {
             .filter(|zone| zone.enabled))
     }
 
-    /// The same view inside a transaction, for the nsupdate apply.
+    /// The same view inside a transaction, for the nsupdate apply and the
+    /// transfer snapshot.
     pub(crate) async fn find_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
@@ -213,15 +214,16 @@ impl ZoneService {
         Ok(records + dnssec_records)
     }
 
-    /// Read the zone and both record planes under one shared zone lock so their
-    /// serial and signatures agree. The DNS caller owns TSIG/ACL authorization.
-    pub async fn find_transfer_content(
-        zone_id: i32,
+    /// Read the enabled zone carrying `zone_name` and both record planes under
+    /// one shared zone lock so their serial and signatures agree; keyed by the
+    /// name so a zone renamed since the caller's pre-read reads as `None`. The
+    /// DNS caller owns TSIG/ACL authorization.
+    pub async fn find_transfer_content_by_name(
+        zone_name: &str,
     ) -> Result<Option<(Zone, Vec<Record>, Vec<DnssecRecord>)>, ServiceError> {
         let mut tx = RepositoryService::begin_read_tx("failed to load transfer content").await?;
         let result = async {
-            let Some(zone) =
-                RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Shared).await?
+            let Some(zone) = Self::find_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?
             else {
                 return Ok(None);
             };

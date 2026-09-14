@@ -756,7 +756,23 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
     ])
     .await;
     // The apex grant still stands, so its two rows come with the one A record
-    // under `dyn`. SQL counts the dotted label too and the service drops it:
-    // the one case where the count and the page disagree.
-    assert_eq!(listed(&app).await, (3, 4));
+    // under `dyn`; the dotted label is stored as `a\046dyn`, so SQL leaves it
+    // out of the count too.
+    assert_eq!(listed(&app).await, (3, 3));
+
+    // And out of the pages: its slot holds the next visible row, not a gap.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&sort=name&order=asc&limit=1&offset=2"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["items"][0]["name"],
+        format!("host.dyn.{zone_name}."),
+        "{body}"
+    );
+    assert_eq!(body["pagination"]["total"], 3, "{body}");
 }

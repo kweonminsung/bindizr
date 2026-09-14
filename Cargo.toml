@@ -18,7 +18,7 @@ homepage = "https://github.com/kweonminsung/bindizr"
 repository = "https://github.com/kweonminsung/bindizr"
 documentation = "https://docs.rs/bindizr"
 license = "Apache-2.0"
-rust-version = "1.85"
+rust-version = "1.94"
 keywords = ["dns", "bind9", "cli", "xfr"]
 categories = ["command-line-utilities", "network-programming"]
 

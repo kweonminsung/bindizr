@@ -60,12 +60,12 @@ fn tick() -> u64 {
 
 /// Load a zone's transfer content, from cache when enabled and fresh.
 /// Serve the returned zone row, not the pre-read one — it is the row the
-/// content was read with. `None` when the zone was deleted meanwhile.
+/// content was read with. `None` when no enabled zone carries the name.
 pub(crate) async fn find_zone_content(
     zone: Zone,
 ) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
     if !config::bindizr_config().dns.zone_cache {
-        return load_content(zone).await;
+        return load_content(zone.name.as_str()).await;
     }
 
     if let Some(content) = lookup(zone.id, zone.serial) {
@@ -73,16 +73,17 @@ pub(crate) async fn find_zone_content(
     }
 
     // Concurrent misses may load twice; each load still contains one complete serial.
-    let Some((zone, content)) = load_content(zone).await? else {
+    let Some((zone, content)) = load_content(zone.name.as_str()).await? else {
         return Ok(None);
     };
     store(zone.id, zone.serial, content.clone());
     Ok(Some((zone, content)))
 }
 
-/// Load a zone snapshot; `None` when the zone was deleted meanwhile.
-async fn load_content(zone: Zone) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
-    let Some((zone, records, dnssec_records)) = ZoneService::find_transfer_content(zone.id).await?
+/// Load a zone snapshot by name; `None` when no enabled zone carries it.
+async fn load_content(zone_name: &str) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
+    let Some((zone, records, dnssec_records)) =
+        ZoneService::find_transfer_content_by_name(zone_name).await?
     else {
         return Ok(None);
     };

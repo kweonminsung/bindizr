@@ -130,9 +130,10 @@ it reads `evil\.example.com` as inside `example.com`. Use `OwnerName`'s
 methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or `is_label_suffix`.
 
 Names are canonical by construction: labels are lowercased (RFC 4343) and
-rendered back with only `.` and `\` escaped, so one name has one spelling.
-That is what lets the record-filter SQL compare owner names as text and
-concatenate them into FQDNs.
+rendered back with one escape per character, the in-label dot as `\046`, so
+one name has one spelling and a `.` in rendered text is always a label
+boundary. That is what lets the record-filter SQL compare owner names as
+text, match a grant's subtree with `LIKE`, and concatenate them into FQDNs.
 
 The row form is the type's, not a caller's: `from_row` decodes it and
 `sqlx::Encode` renders it, so bind an `OwnerName` itself rather than a string

@@ -63,8 +63,8 @@ fn pattern_matching_covers_all_forms() {
 fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
     // A pattern is stored canonically so one name has one spelling, and
     // matching decodes it back to labels.
-    assert_eq!(normalize_pattern(Some(r"a\046sub")).unwrap(), r"a\.sub");
-    assert_eq!(normalize_pattern(Some(r"*.a\.b")).unwrap(), r"*.a\.b");
+    assert_eq!(normalize_pattern(Some(r"a\.sub")).unwrap(), r"a\046sub");
+    assert_eq!(normalize_pattern(Some(r"*.a\.b")).unwrap(), r"*.a\046b");
 
     for invalid in [r"a\", "www.", "*.sub."] {
         let err = normalize_pattern(Some(invalid)).unwrap_err();
@@ -110,7 +110,7 @@ fn an_escaped_at_stays_a_literal_owner() {
 /// A text-only trailing-dot check would mistake the single label `a.` for an absolute name.
 #[test]
 fn an_escaped_dot_is_label_data_not_a_root_marker() {
-    assert_eq!(normalize_pattern(Some(r"a\.")).unwrap(), r"a\.");
+    assert_eq!(normalize_pattern(Some(r"a\.")).unwrap(), r"a\046");
 
     // A real trailing dot still is: a pattern is relative to its zone.
     assert_eq!(

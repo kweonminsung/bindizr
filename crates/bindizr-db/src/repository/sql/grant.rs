@@ -32,10 +32,8 @@ fn escaped_for_like(expression: &str) -> String {
 /// record's type column, or `None` for the derived DNSSEC plane, which carries
 /// no type of the grant's vocabulary.
 ///
-/// SQL cannot read a stored name as the labels of RFC 1035, Section 5.1, so a
-/// subtree pattern matches by text and over-approximates — `a\.sub` is one
-/// label but passes as if it were under `sub`. That never drops a row the
-/// caller may see, and the service decides again on labels.
+/// A subtree pattern matches by text, exactly: a stored name renders an
+/// in-label dot as `\046`, so every `.` in it is a label boundary.
 pub(crate) fn grant_record_match_sql(
     alias: &str,
     record_type_column: Option<&str>,

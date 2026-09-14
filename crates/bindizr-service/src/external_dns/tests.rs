@@ -100,7 +100,7 @@ fn an_escaped_dot_does_not_put_a_name_inside_the_zone_it_spells() {
     let zones = vec![test_zone(1, "example.com")];
     let name = normalize_lookup_name(r"evil\.example.com").unwrap();
 
-    assert_eq!(name, r"evil\.example.com");
+    assert_eq!(name, r"evil\046example.com");
     assert!(find_authoritative_zone(&zones, &name).is_none());
 }
 

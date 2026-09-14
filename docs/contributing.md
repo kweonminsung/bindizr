@@ -6,7 +6,7 @@ reporting something that confused you all count.
 
 ## Getting started
 
-You need Rust 1.85 or newer. Docker is only needed for the end-to-end tests and
+You need Rust 1.94 or newer. Docker is only needed for the end-to-end tests and
 the benchmark suite.
 
 ```bash

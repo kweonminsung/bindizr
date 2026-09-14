@@ -32,8 +32,8 @@ mod tests {
     fn an_escaped_dot_stays_inside_its_label() {
         // RFC 1035, Section 5.1: the escape makes the dot data, so the name has
         // two labels and the trailing dot is the only boundary left to drop.
-        assert_eq!(canonical(r"Evil\.Example.COM."), r"evil\.example.com.");
-        assert_eq!(canonical(r"a\.b"), r"a\.b.");
+        assert_eq!(canonical(r"Evil\.Example.COM."), r"evil\046example.com.");
+        assert_eq!(canonical(r"a\.b"), r"a\046b.");
     }
 
     /// Verify that a label keeps what only an escape could have spelled.

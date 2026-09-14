@@ -12,7 +12,6 @@ pub(crate) use matching::matches_record;
 pub(crate) use validation::{AddOutcome, validate_delete_constraints, validate_record_ttl};
 
 use crate::{
-    authorization::Caller,
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},
     types::{GetRecordResponse, RecordValueRequest},
 };
@@ -30,18 +29,6 @@ pub(crate) enum ListedRecord {
 }
 
 impl ListedRecord {
-    /// Whether `caller` may see this row. The derived DNSSEC plane belongs to
-    /// the zone rather than to any name, so only a grant restricting neither
-    /// name nor type reaches it.
-    pub(crate) fn visible_to(&self, caller: &Caller) -> bool {
-        match self {
-            ListedRecord::User(row) => {
-                caller.record_visible(row.zone_id, &row.name, Some(&row.record_type))
-            }
-            ListedRecord::Derived(row) => caller.record_visible(row.zone_id, &row.name, None),
-        }
-    }
-
     /// Render the row for the API: a user record keeps its id, a derived
     /// DNSSEC row carries none and renders its RDATA in presentation form.
     pub(crate) fn to_response(&self) -> GetRecordResponse {

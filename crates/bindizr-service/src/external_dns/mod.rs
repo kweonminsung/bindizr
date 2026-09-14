@@ -107,11 +107,6 @@ impl ExternalDnsService {
                 if !record.record_type.is_external_dns_supported() {
                     continue;
                 }
-                // Recheck grants on decoded labels: SQL name matching can
-                // over-include escaped names despite its name and type filters.
-                if !caller.record_visible(record.zone_id, &record.name, Some(&record.record_type)) {
-                    continue;
-                }
                 let name = policy::normalize_lookup_name(&record.name.to_fqdn(&row.zone_name))?;
                 let value = record
                     .record_type

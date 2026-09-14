@@ -192,7 +192,7 @@ mod tests {
             carried,
             [
                 (
-                    r"a\.b.example.com.",
+                    r"a\046b.example.com.",
                     &ZoneFileValue::Rdata("target.example.com.".to_string())
                 ),
                 (

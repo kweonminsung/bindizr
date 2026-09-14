@@ -71,11 +71,11 @@ fn lookup_name_canonicalizes_spelling_and_case() {
     // record filter compares them as text.
     assert_eq!(
         to_lookup_name(r"A\046B.Example.COM.").unwrap(),
-        r"a\.b.example.com"
+        r"a\046b.example.com"
     );
     assert_eq!(
         to_lookup_name(r"a\.b.example.com").unwrap(),
-        r"a\.b.example.com"
+        r"a\046b.example.com"
     );
     assert_eq!(
         to_lookup_name("  app.example.com  ").unwrap(),
@@ -176,8 +176,8 @@ fn owner_name_keeps_an_escaped_dot_as_label_data() {
 
     let owner = OwnerName::parse_in_zone(r"host\.name.example.com.", &zone).unwrap();
     assert_eq!(owner.labels(), ["host.name"]);
-    assert_eq!(owner.to_stored(), r"host\.name");
-    assert_eq!(owner.to_fqdn(&zone), r"host\.name.example.com.");
+    assert_eq!(owner.to_stored(), r"host\046name");
+    assert_eq!(owner.to_fqdn(&zone), r"host\046name.example.com.");
 
     // The same name spelled with a decimal escape is the same owner.
     assert_eq!(
@@ -190,6 +190,15 @@ fn owner_name_keeps_an_escaped_dot_as_label_data() {
         OwnerName::parse_in_zone(r"evil\.example.com.", &zone).unwrap_err(),
         ParseNameError::OutsideZone
     );
+}
+
+/// Verify that a rendered dot is always a label boundary.
+#[test]
+fn a_rendered_dot_is_always_a_label_boundary() {
+    // SQL matches a grant's subtree as `LIKE '%.sub'`, so the single label
+    // `a.sub` must not render to text ending in `.sub`; `[a\, sub]` may.
+    assert_eq!(OwnerName::from_row(r"a\.sub").to_stored(), r"a\046sub");
+    assert_eq!(OwnerName::from_row(r"a\\.sub").to_stored(), r"a\\.sub");
 }
 
 /// Verify that owner name parse enforces the length limit on both paths.

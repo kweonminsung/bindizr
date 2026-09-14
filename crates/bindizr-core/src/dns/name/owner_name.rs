@@ -303,18 +303,24 @@ fn classify_wire_len(owner: &[String], zone: &[String]) -> Result<(), ParseNameE
 /// origin, and the master-file metacharacters that would end the owner field.
 const ESCAPED_IN_LABEL: [char; 8] = ['.', '\\', '@', ';', '(', ')', '"', '$'];
 
-/// Inverse of [`decode_labels`] for one label.
+/// Inverse of [`decode_labels`] for one label. The dot takes its decimal form,
+/// `\046`, so a `.` in rendered text is always a label boundary and SQL can
+/// match a subtree by text.
 pub(crate) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
     if !label.contains(ESCAPED_IN_LABEL) {
         return std::borrow::Cow::Borrowed(label);
     }
 
-    let mut escaped = String::with_capacity(label.len() + 1);
+    let mut escaped = String::with_capacity(label.len() + 4);
     for c in label.chars() {
-        if ESCAPED_IN_LABEL.contains(&c) {
-            escaped.push('\\');
+        match c {
+            '.' => escaped.push_str(r"\046"),
+            c if ESCAPED_IN_LABEL.contains(&c) => {
+                escaped.push('\\');
+                escaped.push(c);
+            }
+            c => escaped.push(c),
         }
-        escaped.push(c);
     }
     std::borrow::Cow::Owned(escaped)
 }
