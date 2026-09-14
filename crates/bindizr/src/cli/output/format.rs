@@ -73,7 +73,7 @@ fn print_page_remainder(data: &serde_json::Value) {
 /// Print the payload as JSON or YAML, for a command that renders its own table.
 pub(crate) fn print_payload(data: &serde_json::Value, format: OutputFormat) -> Result<(), String> {
     let rendered = match format {
-        OutputFormat::Yaml => serde_yaml::to_string(data)
+        OutputFormat::Yaml => serde_norway::to_string(data)
             .map_err(|e| format!("Failed to serialize to YAML: {}", e))?,
         OutputFormat::Json | OutputFormat::Table => serde_json::to_string_pretty(data)
             .map_err(|e| format!("Failed to serialize to JSON: {}", e))?,

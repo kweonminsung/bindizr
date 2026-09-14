@@ -10,7 +10,6 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
-use config::{Config, File, FileFormat};
 use serde::{Deserialize, Serialize};
 
 use crate::dns::address::is_address_target;
@@ -431,16 +430,13 @@ pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
         return Err(format!("Bindizr config does not exist: {}", conf_file_path));
     }
 
-    let cfg = Config::builder()
-        .add_source(File::new(conf_file_path, FileFormat::Toml).required(true))
-        .build()
-        .map_err(|e| {
-            format!(
-                "Failed to build configuration from file '{}': {}",
-                conf_file_path, e
-            )
-        })?;
-    BindizrConfig::from_raw(cfg, |name| env::var(name).ok())
+    let text = std::fs::read_to_string(conf_file_path).map_err(|e| {
+        format!(
+            "Failed to read the configuration file '{}': {}",
+            conf_file_path, e
+        )
+    })?;
+    BindizrConfig::from_toml(&text, |name| env::var(name).ok())
 }
 
 impl BindizrConfig {
@@ -476,9 +472,8 @@ impl BindizrConfig {
     }
 
     /// Assemble the effective configuration from its raw sections.
-    fn from_raw(raw: Config, get_env: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
-        let mut bindizr_config = raw
-            .try_deserialize::<Self>()
+    fn from_toml(text: &str, get_env: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
+        let mut bindizr_config = toml::from_str::<Self>(text)
             .map_err(|e| format!("Invalid Bindizr configuration: {}", e))?;
 
         bindizr_config.apply_env_overrides(get_env)?;

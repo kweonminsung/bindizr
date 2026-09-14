@@ -316,7 +316,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let content = super::read_input(&file)?;
             // YAML is a superset of JSON, so one parse accepts both formats.
-            let parsed: serde_json::Value = serde_yaml::from_str(&content)
+            let parsed: serde_json::Value = serde_norway::from_str(&content)
                 .map_err(|e| format!("Invalid JSON/YAML in '{}': {}", file, e))?;
             let records = match parsed {
                 serde_json::Value::Array(_) => parsed,

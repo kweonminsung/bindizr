@@ -1,5 +1,3 @@
-use config::{Config, File, FileFormat};
-
 use crate::config::{
     BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogLevel, resolve_config_path_with_env,
 };
@@ -77,16 +75,12 @@ log_level = "debug"
 
 /// Parse a TOML configuration fixture.
 fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
-    let config = Config::builder()
-        .add_source(File::from_str(&toml.render(), FileFormat::Toml))
-        .build()
-        .unwrap();
-    BindizrConfig::from_raw(config, |_| None)
+    BindizrConfig::from_toml(&toml.render(), |_| None)
 }
 
-/// Verify that `from_raw` accepts valid config.
+/// Verify that `from_toml` accepts valid config.
 #[test]
-fn from_raw_accepts_valid_config() {
+fn from_toml_accepts_valid_config() {
     let parsed = parse_config(&TestConfigToml {
         secondary_addrs: "127.0.0.1:53",
         dns_notify: "notify_after_update = false\nnotify_on_startup = true\nnotify_retries = 4\nnotify_timeout_secs = 9\nnsupdate_allow_unsigned = true",
@@ -108,9 +102,9 @@ fn from_raw_accepts_valid_config() {
     assert!(parsed.dns.nsupdate_allow_unsigned);
 }
 
-/// Verify that `from_raw` defaults missing optional fields.
+/// Verify that `from_toml` defaults missing optional fields.
 #[test]
-fn from_raw_defaults_missing_optional_fields() {
+fn from_toml_defaults_missing_optional_fields() {
     let parsed = parse_config(&TestConfigToml::default()).unwrap();
 
     assert!(parsed.api.metrics_enabled);
@@ -124,9 +118,9 @@ fn from_raw_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.maintenance_interval_secs, 3600);
 }
 
-/// Verify that `from_raw` defaults unselected database sections.
+/// Verify that `from_toml` defaults unselected database sections.
 #[test]
-fn from_raw_defaults_unselected_database_sections() {
+fn from_toml_defaults_unselected_database_sections() {
     let parsed = parse_config(&TestConfigToml {
         unselected_databases: false,
         ..Default::default()
@@ -141,9 +135,9 @@ fn from_raw_defaults_unselected_database_sections() {
     assert_eq!(parsed.database.postgresql.server_url, "");
 }
 
-/// Verify that `from_raw` rejects invalid listen addr.
+/// Verify that `from_toml` rejects invalid listen addr.
 #[test]
-fn from_raw_rejects_invalid_listen_addr() {
+fn from_toml_rejects_invalid_listen_addr() {
     let err = parse_config(&TestConfigToml {
         api_listen_addr: "not-an-ip",
         ..Default::default()
@@ -153,9 +147,9 @@ fn from_raw_rejects_invalid_listen_addr() {
     assert!(err.contains("Invalid Bindizr configuration"));
 }
 
-/// Verify that `from_raw` rejects empty selected database url.
+/// Verify that `from_toml` rejects empty selected database url.
 #[test]
-fn from_raw_rejects_empty_selected_database_url() {
+fn from_toml_rejects_empty_selected_database_url() {
     let err = parse_config(&TestConfigToml {
         database_type: "mysql",
         ..Default::default()
@@ -263,9 +257,9 @@ fn resolve_config_path_prefers_argument_then_env_then_default() {
     );
 }
 
-/// Verify that `from_raw` rejects entryless secondary addrs.
+/// Verify that `from_toml` rejects entryless secondary addrs.
 #[test]
-fn from_raw_rejects_entryless_secondary_addrs() {
+fn from_toml_rejects_entryless_secondary_addrs() {
     let err = parse_config(&TestConfigToml {
         secondary_addrs: ",",
         ..Default::default()
@@ -275,9 +269,9 @@ fn from_raw_rejects_entryless_secondary_addrs() {
     assert!(err.contains("dns.secondary_addrs contains no addresses"));
 }
 
-/// Verify that `from_raw` rejects port zero.
+/// Verify that `from_toml` rejects port zero.
 #[test]
-fn from_raw_rejects_port_zero() {
+fn from_toml_rejects_port_zero() {
     // Port 0 binds an ephemeral one, somewhere no client could find.
     let err = parse_config(&TestConfigToml {
         dns_listen_port: 0,
@@ -294,9 +288,9 @@ fn from_raw_rejects_port_zero() {
     assert!(err.contains("api.listen_port must not be 0"), "{}", err);
 }
 
-/// Verify that `from_raw` rejects listeners sharing a port.
+/// Verify that `from_toml` rejects listeners sharing a port.
 #[test]
-fn from_raw_rejects_listeners_sharing_a_port() {
+fn from_toml_rejects_listeners_sharing_a_port() {
     let err = parse_config(&TestConfigToml {
         api_listen_port: 5353,
         dns_listen_port: 5353,
@@ -307,9 +301,9 @@ fn from_raw_rejects_listeners_sharing_a_port() {
     assert!(err.contains("cannot share port 5353"), "{}", err);
 }
 
-/// Verify that `from_raw` rejects an unparseable secondary address.
+/// Verify that `from_toml` rejects an unparseable secondary address.
 #[test]
-fn from_raw_rejects_an_unparseable_secondary_address() {
+fn from_toml_rejects_an_unparseable_secondary_address() {
     let err = parse_config(&TestConfigToml {
         secondary_addrs: "192.0.2.1, not a host",
         ..Default::default()
