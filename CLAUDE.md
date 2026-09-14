@@ -23,8 +23,10 @@ cargo +nightly fmt                                         # format (needs night
 - `rustfmt.toml` enables unstable features (`imports_granularity`,
   `group_imports`), so formatting requires the **nightly** toolchain. On stable
   `cargo fmt` runs but silently ignores those options.
-- `bindizr-e2e` tests drive real DB/BIND9 containers and need Docker; the other
-  crates' `--lib` tests run without external services.
+- `bindizr-e2e` uses temporary SQLite databases and local processes by default.
+  Set `BINDIZR_E2E_VERIFY_DNS=true` to run against DB/BIND9 containers with Docker
+  (also set `BINDIZR_E2E_ARM=true` on ARM). The other crates' `--lib` tests run
+  without external services.
 
 ## Architecture — workspace crates
 
@@ -484,7 +486,7 @@ never bare `pub`):
    `nsupdate/parser/tests.rs::minimal_update_with_ztype`). No crate-wide
    `test_util` grab-bag modules.
 3. **e2e suite**: shared helpers live in `tests/common/` as `pub(crate)`
-   (`pub(super)` for common-internal ones); the single harness `e2e.rs`
+   (private when only their own module needs them); the single harness `e2e.rs`
    declares plain private `mod`s. `common/` holds helpers only — test
    functions belong under `api/` / `cli/`.
 4. **Never across crates**: no `test-util` features or helper crates;

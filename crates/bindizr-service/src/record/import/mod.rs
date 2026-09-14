@@ -1,3 +1,5 @@
+mod plan;
+
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -11,24 +13,19 @@ use bindizr_core::dns::{
 };
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
+use plan::{DesiredRecord, ImportPlan, build_import_diff, compute_import_plan};
 
 use super::{
     RecordService,
     bulk::PreparedRecord,
-    validation::{
-        normalize_record_owner_name, validate_delete_constraints,
-        validate_record_add_constraints_normalized,
-    },
+    validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
 };
 use crate::{
     authorization::Caller,
     dnssec::DnssecService,
     error::ServiceError,
     log_debug, log_error, log_info, log_warn,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
+    model::record::{Record, RecordType},
     repository::RepositoryService,
     serial::generate_serial,
     timing::elapsed_ms,
@@ -36,144 +33,8 @@ use crate::{
         ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, RecordDiff,
         RecordValueRequest,
     },
-    zone::{
-        ZoneService, diff::build_record_diff, history::ReconstructedRecord, version::ChangeSubject,
-    },
+    zone::{ZoneService, version::ChangeSubject},
 };
-
-/// A record the import wants present, with its owner name already normalized so
-/// it can be compared against existing records.
-struct DesiredRecord {
-    prepared: PreparedRecord,
-    stored_name: OwnerName,
-}
-
-/// Whether `existing` is the record the import wants present.
-fn matches_desired(existing: &Record, desired: &DesiredRecord) -> bool {
-    let record_type = &desired.prepared.record_type;
-    existing.name == desired.stored_name
-        && existing.record_type == *record_type
-        && record_type.values_equal(
-            &existing.value,
-            existing.priority,
-            &desired.prepared.value,
-            desired.prepared.priority,
-        )
-}
-
-/// Records referenced by the zone's own SOA/mname NS must never be removed.
-fn is_protected(zone: &Zone, record: &Record) -> bool {
-    validate_delete_constraints(zone, std::slice::from_ref(record)).is_err()
-}
-
-/// What an import will change, decided before anything is written.
-struct ImportPlan<'a> {
-    dels: Vec<Record>,
-    ttl_dels: Vec<Record>,
-    adds: Vec<&'a DesiredRecord>,
-    unchanged: usize,
-    updated: usize,
-}
-
-/// Reconcile the file against the zone under `mode`. Records are indexed by
-/// owner name so each one is compared only against same-name rows, and a
-/// record the zone's own SOA or apex NS depends on is never deleted.
-fn compute_import_plan<'a>(
-    mode: ImportMode,
-    zone: &Zone,
-    existing_records: &[Record],
-    desired: &'a [DesiredRecord],
-) -> ImportPlan<'a> {
-    let mut existing_by_name: HashMap<&OwnerName, Vec<&Record>> =
-        HashMap::with_capacity(existing_records.len());
-    for record in existing_records {
-        existing_by_name
-            .entry(&record.name)
-            .or_default()
-            .push(record);
-    }
-    let mut desired_by_name: HashMap<&OwnerName, Vec<&DesiredRecord>> =
-        HashMap::with_capacity(desired.len());
-    for record in desired {
-        desired_by_name
-            .entry(&record.stored_name)
-            .or_default()
-            .push(record);
-    }
-
-    let desired_matches_existing = |existing: &Record| {
-        desired_by_name
-            .get(&existing.name)
-            .is_some_and(|ds| ds.iter().any(|d| matches_desired(existing, d)))
-    };
-    // Upsert only touches the names and types the file speaks about.
-    let desired_key_matches_existing = |existing: &Record| {
-        desired_by_name.get(&existing.name).is_some_and(|ds| {
-            ds.iter()
-                .any(|d| d.prepared.record_type == existing.record_type)
-        })
-    };
-    let dels: Vec<Record> = match mode {
-        ImportMode::Append => Vec::new(),
-        ImportMode::Replace => existing_records
-            .iter()
-            .filter(|e| !is_protected(zone, e) && !desired_matches_existing(e))
-            .cloned()
-            .collect(),
-        ImportMode::Upsert => existing_records
-            .iter()
-            .filter(|e| {
-                desired_key_matches_existing(e)
-                    && !is_protected(zone, e)
-                    && !desired_matches_existing(e)
-            })
-            .cloned()
-            .collect(),
-    };
-
-    // Append leaves what it finds, so a TTL it disagrees with stays.
-    let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
-
-    let mut ttl_dels = Vec::new();
-    let mut adds = Vec::new();
-    let mut unchanged = 0;
-    let mut updated = 0;
-    for d in desired {
-        let desired_ttl = d.prepared.ttl.unwrap_or(zone.default_ttl);
-        let mut present = false;
-        let mut stale = false;
-        if let Some(es) = existing_by_name.get(&d.stored_name) {
-            for e in es {
-                if matches_desired(e, d) {
-                    present = true;
-                    // Records sharing a name and type share one TTL, so the
-                    // row is rewritten rather than edited in place.
-                    if reconcile_ttl && e.ttl != desired_ttl {
-                        ttl_dels.push((*e).clone());
-                        stale = true;
-                    }
-                }
-            }
-        }
-
-        if !present {
-            adds.push(d);
-        } else if stale {
-            updated += 1;
-            adds.push(d);
-        } else {
-            unchanged += 1;
-        }
-    }
-
-    ImportPlan {
-        dels,
-        ttl_dels,
-        adds,
-        unchanged,
-        updated,
-    }
-}
 
 /// Outcome of the transactional part of a zone-file import.
 struct AppliedImport {
@@ -306,13 +167,10 @@ impl RecordService {
                 let stored_name = match normalize_record_owner_name(&rr.owner_fqdn, &zone.name)
                 {
                     Ok(stored_name) => stored_name,
-                    // Collect any client-input error (4xx) per record; only
-                    // internal failures abort the whole import.
-                    Err(e) if e.code.http_status() < 500 => {
+                    Err(e) => {
                         errors.push(format!("{}: {}", rr.owner_fqdn, e.message));
                         continue;
                     }
-                    Err(e) => return Err(e),
                 };
 
                 let name_key = stored_name.clone();
@@ -442,10 +300,9 @@ impl RecordService {
                         zone_id: 0,
                         created_at: Utc::now(),
                     }),
-                    Err(e) if e.code.http_status() < 500 => {
+                    Err(e) => {
                         errors.push(format!("{}: {}", add.prepared.owner_name, e.message))
                     }
-                    Err(e) => return Err(e),
                 }
             }
             // Mirror of the version-time delegation check, so a dry run
@@ -592,39 +449,3 @@ impl RecordService {
         Ok(response)
     }
 }
-
-/// The reconcile as a record diff: `after` is the existing set minus the
-/// deletes plus the adds, so `build_record_diff` classifies each RRset.
-fn build_import_diff(
-    zone: &Zone,
-    existing: &[Record],
-    adds: &[&DesiredRecord],
-    dels: &[Record],
-    ttl_dels: &[Record],
-) -> RecordDiff {
-    let deleted_ids: HashSet<i32> = dels.iter().chain(ttl_dels).map(|r| r.id).collect();
-
-    let before: Vec<ReconstructedRecord> = existing
-        .iter()
-        .cloned()
-        .map(ReconstructedRecord::from)
-        .collect();
-    let mut after: Vec<ReconstructedRecord> = existing
-        .iter()
-        .filter(|record| !deleted_ids.contains(&record.id))
-        .cloned()
-        .map(ReconstructedRecord::from)
-        .collect();
-    after.extend(adds.iter().map(|add| ReconstructedRecord {
-        name: add.stored_name.clone(),
-        record_type: add.prepared.record_type.clone(),
-        value: add.prepared.value.clone(),
-        ttl: add.prepared.ttl.unwrap_or(zone.default_ttl),
-        priority: add.prepared.priority,
-    }));
-
-    build_record_diff(zone, &before, &after)
-}
-
-#[cfg(test)]
-mod tests;

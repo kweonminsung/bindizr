@@ -2,15 +2,6 @@ use serde_json::json;
 
 use super::*;
 
-/// Bind a test socket, or `None` in sandboxes that forbid Unix sockets.
-fn try_bind_test_socket(socket_path: &str) -> Option<UnixListener> {
-    match UnixListener::bind(socket_path) {
-        Ok(listener) => Some(listener),
-        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => None,
-        Err(e) => panic!("failed to bind test socket: {}", e),
-    }
-}
-
 #[test]
 fn parse_params_rejects_wrongly_typed_fields() {
     use bindizr_service::types::CreateTsigKeyRequest;
@@ -79,9 +70,7 @@ async fn prepare_socket_path_removes_stale_socket() {
     let dir = tempfile::tempdir().unwrap();
     let socket_path = dir.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
-    let Some(listener) = try_bind_test_socket(socket_path) else {
-        return;
-    };
+    let listener = UnixListener::bind(socket_path).expect("failed to bind test socket");
     drop(listener);
 
     prepare_socket_path(socket_path).await.unwrap();
@@ -94,9 +83,7 @@ async fn prepare_socket_path_rejects_active_socket() {
     let dir = tempfile::tempdir().unwrap();
     let socket_path = dir.path().join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
-    let Some(listener) = try_bind_test_socket(socket_path) else {
-        return;
-    };
+    let listener = UnixListener::bind(socket_path).expect("failed to bind test socket");
 
     let err = prepare_socket_path(socket_path).await.unwrap_err();
 

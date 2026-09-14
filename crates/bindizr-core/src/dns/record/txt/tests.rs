@@ -167,6 +167,16 @@ fn parse_rejects_malformed_values() {
 
 #[test]
 fn to_presentation_round_trips_ownership_records() {
+    assert_eq!(
+        TxtRecordValue::from_string("v=spf1 \"x\\y\"").to_presentation(),
+        "\"v=spf1 \\\"x\\\\y\\\"\""
+    );
+    // Control bytes are escaped as \DDD per RFC 1035, Section 5.1.
+    assert_eq!(
+        TxtRecordValue::from_string("a\u{1}b").to_presentation(),
+        "\"a\\001b\""
+    );
+
     let ownership = r#""heritage=external-dns,external-dns/owner=default,external-dns/resource=ingress/default/app""#;
     assert_eq!(
         TxtRecordValue::parse(ownership).unwrap().to_presentation(),

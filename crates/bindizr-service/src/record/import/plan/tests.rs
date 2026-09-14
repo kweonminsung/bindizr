@@ -2,6 +2,7 @@ use bindizr_core::dns::name::ZoneName;
 use chrono::Utc;
 
 use super::*;
+use crate::model::record::RecordType;
 
 fn zone() -> Zone {
     Zone {

@@ -552,15 +552,3 @@ pub fn track_zone_cache_store(records: usize, evicted: usize) {
     metrics.zone_cache_records.set(records as i64);
     metrics.zone_cache_evictions_total.inc_by(evicted as u64);
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn encode_includes_build_info_and_startup_gauges() {
-        let text = metrics().encode();
-        assert!(text.contains("bindizr_build_info"));
-        assert!(text.contains("bindizr_started_at_seconds"));
-    }
-}

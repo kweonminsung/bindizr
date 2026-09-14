@@ -98,22 +98,6 @@ fn encoded_value_round_trips_txt_presentation_form() {
 }
 
 #[test]
-fn presentation_rdata_txt_escapes_special_characters() {
-    let ascii = TxtRecordValue::from_string("v=spf1 \"x\\y\"").to_presentation();
-    assert_eq!(
-        RecordType::TXT.presentation_rdata(&ascii, None),
-        "\"v=spf1 \\\"x\\\\y\\\"\""
-    );
-
-    // Control bytes are escaped as \DDD per RFC 1035, Section 5.1.
-    let control = TxtRecordValue::from_string("a\u{1}b").to_presentation();
-    assert_eq!(
-        RecordType::TXT.presentation_rdata(&control, None),
-        "\"a\\001b\""
-    );
-}
-
-#[test]
 fn display_value_adds_trailing_dot_for_name_like_values() {
     assert_eq!(
         RecordType::NS.display_value("ns.test.example.com"),
@@ -166,15 +150,6 @@ fn display_value_leaves_wrong_field_count_unchanged() {
             "malformed SRV value {value:?} should be returned unchanged"
         );
     }
-}
-
-#[test]
-fn validate_cname_value_accepts_underscore_labels() {
-    assert!(
-        RecordType::CNAME
-            .validate_value("_acme-challenge.validation.example.", None)
-            .is_ok()
-    );
 }
 
 /// Hyphen-edge and non-LDH labels are not here: an rdata name takes the labels

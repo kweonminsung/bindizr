@@ -69,6 +69,8 @@ helm install bindizr ./charts \
 
 ## Notes
 
+- Bindizr and BIND9 do not call the Kubernetes API, so the chart creates no Role or RoleBinding.
+- Non-secret daemon settings come from the ConfigMap; the database URL comes from its Secret through `BINDIZR_DATABASE_URL`.
 - External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.serverUrl`.
 - SQLite is not supported by this Helm chart.
 - nsupdate TSIG keys and their zone grants are managed at runtime (`bindizr tsig-key`, or the HTTP API), not through Helm values; `bindizr.dns.nsupdateAllowUnsigned` (default `false`) accepts unsigned updates and is not recommended in production.

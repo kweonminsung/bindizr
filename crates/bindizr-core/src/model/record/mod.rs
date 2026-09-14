@@ -288,12 +288,9 @@ impl RecordType {
             RecordType::CAA => CaaRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::CNAME => CnameRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
-            RecordType::DNAME => DnameRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
+            RecordType::CNAME | RecordType::DNAME | RecordType::NS | RecordType::PTR => {
+                Cow::Owned(to_fqdn_lowercase(value))
+            }
             RecordType::DS => DsRrValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
@@ -304,15 +301,9 @@ impl RecordType {
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
             RecordType::TXT => Cow::Borrowed(value),
-            RecordType::NS => NsRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
             RecordType::SRV => SrvRecordValue::parse(value, fallback_priority)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::PTR => PtrRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
             RecordType::SSHFP => SshfpRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
@@ -387,8 +378,8 @@ impl RecordType {
         }
 
         match self {
-            RecordType::MX => display_last_name_field(value, MX_FIELD_COUNTS),
-            RecordType::SRV => display_last_name_field(value, SRV_FIELD_COUNTS),
+            RecordType::MX => display_last_name_field(value, 1),
+            RecordType::SRV => display_last_name_field(value, 3),
             _ if self.is_name_like() => to_fqdn_lowercase(value),
             _ => value.to_string(),
         }
@@ -448,16 +439,13 @@ pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
 
 // The priority lives in its own column, never in the value: MX stores `target`
 // and SRV `weight port target`.
-const MX_FIELD_COUNTS: &[usize] = &[1];
-const SRV_FIELD_COUNTS: &[usize] = &[3];
-
-fn display_last_name_field(value: &str, valid_field_counts: &[usize]) -> String {
+fn display_last_name_field(value: &str, field_count: usize) -> String {
     let mut fields = value
         .split_whitespace()
         .map(str::to_string)
         .collect::<Vec<_>>();
 
-    if !valid_field_counts.contains(&fields.len()) {
+    if fields.len() != field_count {
         return value.to_string();
     }
 

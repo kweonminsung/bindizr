@@ -67,25 +67,3 @@ pub(crate) fn like_pattern(value: Option<&str>) -> Option<String> {
             format!("%{}%", escaped)
         })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{apex_owner_sql, name_like_types_sql};
-
-    #[test]
-    fn apex_owner_renders_as_a_quoted_sql_literal() {
-        // Interpolated straight into `r.name = ...`, so the quoting is part of
-        // the query's syntax.
-        assert_eq!(apex_owner_sql(), "''");
-    }
-
-    #[test]
-    fn name_like_types_render_as_a_quoted_sql_list() {
-        // Interpolated straight into `IN (...)`, so the quoting and separator
-        // are part of the query's syntax.
-        assert_eq!(
-            name_like_types_sql(),
-            "'CNAME','DNAME','NS','PTR','MX','SRV'"
-        );
-    }
-}

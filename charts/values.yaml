@@ -179,9 +179,6 @@ serviceAccount:
   annotations: {}
   name: ""
 
-rbac:
-  create: true
-
 mysql:
   enabled: false
   image:
