@@ -5,7 +5,6 @@ use super::error::{ErrorCode, ServiceError};
 pub(crate) use crate::database::repository::RepositoryTx;
 use crate::{
     database::{
-        error::DatabaseError,
         get_api_token_repository, get_catalog_zone_state_repository, get_dnssec_key_repository,
         get_dnssec_policy_repository, get_dnssec_record_repository,
         get_dnssec_withdrawal_repository, get_record_repository, get_token_grant_repository,
@@ -32,31 +31,15 @@ use crate::{
 
 pub(crate) struct RepositoryService;
 
-/// Map a zone insert/update failure: the UNIQUE(name) backstop catches
-/// check-then-act races on the zone name and becomes the same conflict error
-/// the service-level pre-check produces; anything else stays internal.
-fn zone_name_race_error(name: &str, action: &str, e: &DatabaseError) -> ServiceError {
-    if e.is_unique_violation() {
-        ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
-    } else {
-        ServiceError::internal(format!("failed to {} zone: {}", action, e))
-    }
-}
-
-/// Log a failed transaction open and map it to the caller's internal error.
-fn begin_tx_error(internal_msg: &'static str, e: &DatabaseError) -> ServiceError {
-    log_error!("Failed to begin transaction: {}", e);
-    ServiceError::internal(internal_msg)
-}
-
 impl RepositoryService {
     /// Begin a database transaction and translate any startup error.
     pub(crate) async fn begin_tx(
         internal_msg: &'static str,
     ) -> Result<RepositoryTx<'static>, ServiceError> {
-        db_repository::begin_tx()
-            .await
-            .map_err(|e| begin_tx_error(internal_msg, &e))
+        db_repository::begin_tx().await.map_err(|e| {
+            log_error!("Failed to begin transaction: {}", e);
+            ServiceError::internal(internal_msg)
+        })
     }
 
     /// Begin a transaction for a caller that only reads; see
@@ -64,9 +47,10 @@ impl RepositoryService {
     pub(crate) async fn begin_read_tx(
         internal_msg: &'static str,
     ) -> Result<RepositoryTx<'static>, ServiceError> {
-        db_repository::begin_read_tx()
-            .await
-            .map_err(|e| begin_tx_error(internal_msg, &e))
+        db_repository::begin_read_tx().await.map_err(|e| {
+            log_error!("Failed to begin transaction: {}", e);
+            ServiceError::internal(internal_msg)
+        })
     }
 
     /// Commit on success, roll back on failure. `E` is the caller's error
@@ -650,7 +634,15 @@ impl RepositoryService {
         get_zone_repository()
             .create_tx(tx, zone)
             .await
-            .map_err(|e| zone_name_race_error(name.as_str(), "create", &e))
+            .map_err(|e| {
+                // A concurrent create can slip past the service-level name check;
+                // surface the UNIQUE(name) backstop as the same conflict error.
+                if e.is_unique_violation() {
+                    ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
+                } else {
+                    ServiceError::internal(format!("failed to create zone: {}", e))
+                }
+            })
     }
 
     /// Update a zone in the current transaction.
@@ -662,7 +654,15 @@ impl RepositoryService {
         get_zone_repository()
             .update_tx(tx, zone)
             .await
-            .map_err(|e| zone_name_race_error(name.as_str(), "update", &e))
+            .map_err(|e| {
+                // A concurrent rename can slip past the service-level name check;
+                // surface the UNIQUE(name) backstop as the same conflict error.
+                if e.is_unique_violation() {
+                    ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
+                } else {
+                    ServiceError::internal(format!("failed to update zone: {}", e))
+                }
+            })
     }
 
     /// Set only the zone's `dnssec_policy_id`, leaving other columns

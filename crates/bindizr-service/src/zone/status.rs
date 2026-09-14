@@ -12,14 +12,13 @@ impl ZoneService {
         caller: &Caller,
         zone_name: &str,
     ) -> Result<ZoneStatusResponse, ServiceError> {
+        // Read once: a write landing during the probe can show a secondary as
+        // ahead for a moment, the drift a read-only path accepts.
         let zone = Self::get_by_name(caller, zone_name).await?;
 
         let probes = probe::probe_secondaries(zone.name.as_str())
             .await
             .map_err(ServiceError::internal)?;
-        // Refresh the serial after probing so a secondary that caught a concurrent
-        // write is not compared against the older serial as though it were ahead.
-        let zone = Self::get_by_name(caller, zone_name).await?;
 
         Ok(ZoneStatusResponse::from_probes(
             &zone,

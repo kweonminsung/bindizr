@@ -106,6 +106,16 @@ One locking model covers the service layer; keep new code on it:
   ExternalDNS apply resolves authoritative zones from committed state inside
   its transaction; the residual race with concurrent zone creation is
   accepted.
+- **The row lock and the constraint are the whole guarantee.** The service
+  layer never re-guards the gap between an unlocked pre-read and the locked
+  read after it: no fingerprint or "changed meanwhile" comparison, no
+  snapshot carried across a network wait, no in-process mutex or
+  singleflight around a cache miss. Such a guard means something only if
+  every path carries it, and none does. Work whose answer the transaction
+  acts on — a parent-DS probe included — runs inside it under the zone
+  lock; a read-only path runs it outside and accepts drift. The duplicate
+  pre-check above is an integrity check the constraint backstops, not a
+  concurrency guard.
 
 ### Names are labels, not strings
 
@@ -316,7 +326,7 @@ by what they build: the kind alone where the module builds one kind of
 thing (`unauthorized(message) -> Response` in the auth middleware,
 `ServiceError::unauthorized`), with `_error` / `_response` added only where
 one module builds several (`upstream_error_response`,
-`zone_name_race_error`). Names an external trait fixes (`Log::enabled`,
+`signed_error`). Names an external trait fixes (`Log::enabled`,
 `KeyStore::get_key`, sqlx's `compatible`) and serde default providers
 (`default_<field>`) are outside the vocabulary.
 

@@ -132,7 +132,7 @@ SQL grant의 MySQL 문자열 결합 문법, 정렬의 id 동률 처리, RRset �
   운영 상태다. 모두 하나의 실패나 성공으로 합치지 않았다.
 - DB unique 충돌을 서비스 오류로 변환하는 처리는 사전 확인 이후의 경쟁을 처리한다.
   rollback 실패 로그는 원래 오류를 보존한다. 둘 다 불필요한 catch가 아니다.
-- ACL hostname 조회의 캐시·timeout·동시 요청 합치기는 실제 resolver 부하와 지연을
+- ACL hostname 조회의 캐시·timeout은 실제 resolver 부하와 지연을
   줄인다. 리터럴 주소 검사와 mapped IPv4 정규화도 필요하다.
 - E2E의 임시 포트 재시도는 예약 소켓을 놓은 뒤 TCP/UDP listener가 기동하는 사이의
   경쟁을 다룬다. `serial_test`는 실행자가 테스트 스레드 수를 명시적으로 늘려도
