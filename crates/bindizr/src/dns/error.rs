@@ -7,6 +7,10 @@ pub(crate) enum XfrError {
     #[error("Zone not found: {0}")]
     ZoneNotFound(String),
 
+    /// The key that signed the request holds no grant over the zone whole.
+    #[error("Transfer refused: {0}")]
+    Refused(String),
+
     #[error("Database error: {0}")]
     DatabaseError(String),
 

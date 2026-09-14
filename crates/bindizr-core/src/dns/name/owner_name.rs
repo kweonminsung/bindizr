@@ -303,23 +303,24 @@ fn classify_wire_len(owner: &[String], zone: &[String]) -> Result<(), ParseNameE
 /// origin, and the master-file metacharacters that would end the owner field.
 const ESCAPED_IN_LABEL: [char; 8] = ['.', '\\', '@', ';', '(', ')', '"', '$'];
 
-/// Inverse of [`decode_labels`] for one label. The dot takes its decimal form,
-/// `\046`, so a `.` in rendered text is always a label boundary and SQL can
-/// match a subtree by text.
+/// Inverse of [`decode_labels`] for one label, in printable ASCII: the dot and
+/// every non-ASCII byte take the decimal form `\DDD`, so a `.` in rendered text
+/// is always a label boundary and an ASCII column compares bytewise.
 pub(crate) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
-    if !label.contains(ESCAPED_IN_LABEL) {
+    if label.is_ascii() && !label.contains(ESCAPED_IN_LABEL) {
         return std::borrow::Cow::Borrowed(label);
     }
 
     let mut escaped = String::with_capacity(label.len() + 4);
-    for c in label.chars() {
-        match c {
-            '.' => escaped.push_str(r"\046"),
-            c if ESCAPED_IN_LABEL.contains(&c) => {
+    for byte in label.bytes() {
+        match byte {
+            b'.' => escaped.push_str(r"\046"),
+            byte if !byte.is_ascii() => escaped.push_str(&format!(r"\{byte:03}")),
+            byte if ESCAPED_IN_LABEL.contains(&char::from(byte)) => {
                 escaped.push('\\');
-                escaped.push(c);
+                escaped.push(char::from(byte));
             }
-            c => escaped.push(c),
+            byte => escaped.push(char::from(byte)),
         }
     }
     std::borrow::Cow::Owned(escaped)

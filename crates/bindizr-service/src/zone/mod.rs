@@ -8,9 +8,12 @@ mod get;
 pub(crate) mod history;
 mod notify;
 mod status;
+mod transfer;
 mod update;
 pub(crate) mod validation;
 pub(crate) mod version;
+
+pub use transfer::{TransferAccess, TransferContent};
 
 /// Business logic for creating, updating, and querying DNS zones.
 #[derive(Clone)]

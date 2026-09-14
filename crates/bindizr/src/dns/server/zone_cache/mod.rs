@@ -12,9 +12,12 @@ use std::{
 use bindizr_core::{
     config,
     metrics::{track_zone_cache_lookup, track_zone_cache_store},
-    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
+    model::{dnssec_record::DnssecRecord, record::Record, tsig_key::TsigKey, zone::Zone},
 };
-use bindizr_service::{error::ServiceError, zone::ZoneService};
+use bindizr_service::{
+    error::ServiceError,
+    zone::{TransferAccess, TransferContent, ZoneService},
+};
 
 /// Read the configured cache record budget, which counts records rather than bytes.
 fn max_records() -> usize {
@@ -58,42 +61,56 @@ fn tick() -> u64 {
     CLOCK.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Load a zone's transfer content, from cache when enabled and fresh.
-/// Serve the returned zone row, not the pre-read one — it is the row the
-/// content was read with. `None` when no enabled zone carries the name.
+/// Load the transfer content of the zone `zone_name` names, as far as `key`
+/// may read it, from cache when enabled and fresh. The zone and the grant are
+/// decided on one locked row; a hit serves the content of that row's serial.
 pub(crate) async fn find_zone_content(
-    zone: Zone,
-) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
+    zone_name: &str,
+    key: Option<&TsigKey>,
+) -> Result<TransferAccess<(Zone, ZoneContent)>, ServiceError> {
     if !config::bindizr_config().dns.zone_cache {
-        return load_content(zone.name.as_str()).await;
+        return load_content(zone_name, key).await;
     }
 
-    if let Some(content) = lookup(zone.id, zone.serial) {
-        return Ok(Some((zone, content)));
-    }
-
-    // Concurrent misses may load twice; each load still contains one complete serial.
-    let Some((zone, content)) = load_content(zone.name.as_str()).await? else {
-        return Ok(None);
+    let zone = match ZoneService::authorize_transfer_by_name(zone_name, key).await? {
+        TransferAccess::Granted(zone) => zone,
+        TransferAccess::NotZone => return Ok(TransferAccess::NotZone),
+        TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
     };
-    store(zone.id, zone.serial, content.clone());
-    Ok(Some((zone, content)))
+    if let Some(content) = lookup(zone.id, zone.serial) {
+        return Ok(TransferAccess::Granted((zone, content)));
+    }
+
+    // A miss reads under its own lock, deciding the zone and the grant there
+    // again; concurrent misses may load twice, each one complete serial.
+    let loaded = load_content(zone_name, key).await?;
+    if let TransferAccess::Granted((zone, content)) = &loaded {
+        store(zone.id, zone.serial, content.clone());
+    }
+    Ok(loaded)
 }
 
-/// Load a zone snapshot by name; `None` when no enabled zone carries it.
-async fn load_content(zone_name: &str) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
-    let Some((zone, records, dnssec_records)) =
-        ZoneService::find_transfer_content_by_name(zone_name).await?
-    else {
-        return Ok(None);
-    };
-    Ok(Some((
-        zone,
-        ZoneContent {
-            records: Arc::new(records),
-            dnssec_records: Arc::new(dnssec_records),
-        },
-    )))
+/// Load a zone snapshot by name, as far as `key` may read it.
+async fn load_content(
+    zone_name: &str,
+    key: Option<&TsigKey>,
+) -> Result<TransferAccess<(Zone, ZoneContent)>, ServiceError> {
+    Ok(ZoneService::find_transfer_content_by_name(zone_name, key)
+        .await?
+        .map(|content| {
+            let TransferContent {
+                zone,
+                records,
+                dnssec_records,
+            } = content;
+            (
+                zone,
+                ZoneContent {
+                    records: Arc::new(records),
+                    dnssec_records: Arc::new(dnssec_records),
+                },
+            )
+        }))
 }
 
 /// Lock the shared zone cache, recovering a poisoned lock because panics cannot leave a cache

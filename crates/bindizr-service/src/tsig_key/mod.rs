@@ -115,10 +115,21 @@ impl TsigKeyService {
     }
 }
 
+/// The rendered name must fit the `tsig_keys.name` VARCHAR(255) column.
+const MAX_KEY_NAME_LEN: usize = 255;
+
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
 pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
-    to_lookup_name(value).map_err(|e| ServiceError::invalid_input(format!("TSIG key name {}", e)))
+    let name = to_lookup_name(value)
+        .map_err(|e| ServiceError::invalid_input(format!("TSIG key name {}", e)))?;
+    if name.len() > MAX_KEY_NAME_LEN {
+        return Err(ServiceError::invalid_input(format!(
+            "TSIG key name must be {} characters or fewer in its canonical spelling",
+            MAX_KEY_NAME_LEN
+        )));
+    }
+    Ok(name)
 }
 
 /// HMAC security degrades to the key length, so refuse imports under 128 bits.

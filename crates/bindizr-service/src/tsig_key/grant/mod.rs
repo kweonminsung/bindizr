@@ -4,10 +4,12 @@
 use std::collections::HashMap;
 
 use bindizr_core::dns::name::OwnerName;
+use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
 use super::TsigKeyService;
 use crate::{
+    RepositoryTx,
     authorization::Caller,
     error::ServiceError,
     grant_pattern::{MATCH_ANY, matches_name, matches_types, normalize_pattern, normalize_types},
@@ -15,6 +17,7 @@ use crate::{
         record::RecordType,
         tsig_grant::{TsigGrant, TsigGrantWithNames},
         tsig_key::TsigKey,
+        zone::Zone,
     },
     repository::RepositoryService,
     types::{GetTsigGrantResponse, PageFilter, PaginatedResponse},
@@ -137,22 +140,24 @@ impl TsigGrantService {
         )
     }
 
-    /// Whether `key` may transfer `zone_name`. A global key covers every zone;
-    /// a scoped one needs a grant over the whole zone, read-only or not.
-    pub async fn authorize_transfer(key: &TsigKey, zone_name: &str) -> Result<bool, ServiceError> {
+    /// Whether `key` may transfer `zone`: a global key covers every zone, a
+    /// scoped one needs a grant over the whole zone, read-only or not. The
+    /// grants are share-locked so a revocation waits for the read they gate.
+    pub(crate) async fn authorize_transfer_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        key: &TsigKey,
+    ) -> Result<bool, ServiceError> {
         if key.is_global {
             return Ok(true);
         }
-        // The catalog zone is virtual, so it holds no grants and only a global
-        // key reaches it.
-        let Some(zone) = ZoneService::find_by_name(zone_name).await? else {
-            return Ok(false);
-        };
-        let grants: Vec<TsigGrant> = RepositoryService::list_tsig_grants_by_key_id(key.id)
-            .await?
-            .into_iter()
-            .filter(|grant| grant.zone_id == zone.id)
-            .collect();
+        let grants = RepositoryService::list_tsig_grants_by_zone_id_and_key_id_tx(
+            tx,
+            zone.id,
+            key.id,
+            LockLevel::Shared,
+        )
+        .await?;
         Ok(covers_whole_zone(&grants))
     }
 

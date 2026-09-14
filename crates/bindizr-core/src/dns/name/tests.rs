@@ -201,6 +201,18 @@ fn a_rendered_dot_is_always_a_label_boundary() {
     assert_eq!(OwnerName::from_row(r"a\\.sub").to_stored(), r"a\\.sub");
 }
 
+/// Verify that a non-ASCII label renders in decimal escapes.
+#[test]
+fn a_non_ascii_label_renders_in_decimal_escapes() {
+    let zone = ZoneName::parse("example.com").unwrap();
+
+    // Printable ASCII, as BIND writes it, so an ASCII column compares the row
+    // bytewise; the escapes decode back to the same label.
+    let owner = OwnerName::parse_in_zone("café", &zone).unwrap();
+    assert_eq!(owner.to_stored(), r"caf\195\169");
+    assert_eq!(OwnerName::from_row(&owner.to_stored()), owner);
+}
+
 /// Verify that owner name parse enforces the length limit on both paths.
 #[test]
 fn owner_name_parse_enforces_the_length_limit_on_both_paths() {
@@ -457,24 +469,24 @@ fn owner_name_escapes_master_file_metacharacters() {
 /// escapes.
 #[test]
 fn worst_case_stored_form_fits_the_schema_column_width() {
-    const SCHEMA_COLUMN_WIDTH: usize = 512;
+    const SCHEMA_COLUMN_WIDTH: usize = 1024;
     let zone = ZoneName::parse("e.co").unwrap();
 
-    // Every `$` escapes, doubling each label; four is the split that maximizes
-    // the rendering under the 63-byte label cap and the wire budget.
+    // Every dot renders as four characters; four labels is the split that
+    // maximizes the rendering under the 63-byte label cap and the wire budget.
     let labels = [
-        "$".repeat(63),
-        "$".repeat(63),
-        "$".repeat(63),
-        "$".repeat(56),
+        r"\.".repeat(63),
+        r"\.".repeat(63),
+        r"\.".repeat(63),
+        r"\.".repeat(56),
     ];
-    let decoded: usize = labels.iter().map(String::len).sum();
+    let decoded: usize = labels.iter().map(|label| label.len() / 2).sum();
 
     let owner = OwnerName::parse_in_zone(&labels.join("."), &zone)
         .expect("the largest name the wire limit admits inside this zone");
     let stored = owner.to_stored();
 
-    assert_eq!(stored.len(), decoded * 2 + labels.len() - 1);
+    assert_eq!(stored.len(), decoded * 4 + labels.len() - 1);
     assert!(
         stored.len() <= SCHEMA_COLUMN_WIDTH,
         "stored form is {} bytes, column holds {}",

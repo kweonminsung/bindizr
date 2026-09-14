@@ -1,16 +1,22 @@
 //! Who may transfer a zone: the key that signed the request, or — when it
 //! carried no TSIG — the address ACL a deployment with no keys keeps using.
+//! A real zone's grant is decided in the service beside the row it serves;
+//! the virtual catalog zone, which holds no grants, is gated here.
 
 use std::net::IpAddr;
 
-use bindizr_core::dns::{
-    message::{ParsedQuery, Rcode},
-    tsig::{
-        RequestSignature, TransferSigner, TsigError, request_signature, to_domain_key,
-        verify_tsig_sequence,
+use bindizr_core::{
+    dns::{
+        is_catalog_zone,
+        message::{ParsedQuery, Rcode},
+        tsig::{
+            RequestSignature, TransferSigner, TsigError, request_signature, to_domain_key,
+            verify_tsig_sequence,
+        },
     },
+    model::tsig_key::TsigKey,
 };
-use bindizr_service::tsig_key::{TsigKeyService, grant::TsigGrantService};
+use bindizr_service::tsig_key::TsigKeyService;
 
 use super::acl;
 use crate::dns::error::XfrError;
@@ -41,7 +47,7 @@ pub(crate) struct TransferRefusal {
 
 impl TransferRefusal {
     /// Build a transfer refusal with the supplied reason.
-    fn refused(reason: String, signer: Option<TransferSigner>) -> Self {
+    pub(crate) fn refused(reason: String, signer: Option<TransferSigner>) -> Self {
         TransferRefusal {
             reason,
             response: None,
@@ -58,19 +64,29 @@ impl TransferRefusal {
     }
 }
 
-/// Decide whether the request may transfer the zone, and under which key. A
-/// signed request is authorized by that key and answered under it; an unsigned
-/// one by the address ACL.
-pub(crate) async fn authorize_transfer(
+/// Who a transfer request is: the verified key that signed it, or nobody when
+/// the address ACL admitted it unsigned; the signer answers under that key.
+pub(crate) struct TransferIdentity {
+    pub(crate) key: Option<TsigKey>,
+    pub(crate) signer: Option<TransferSigner>,
+}
+
+/// Authenticate a transfer request: verify its TSIG under the key it names, or
+/// admit an unsigned one by the address ACL. The catalog zone is virtual and
+/// holds no grants, so only the ACL or a global key reaches it.
+pub(crate) async fn authenticate_transfer(
     query_data: &[u8],
     client_ip: IpAddr,
     zone_name: &str,
-) -> Result<Option<TransferSigner>, TransferRefusal> {
+) -> Result<TransferIdentity, TransferRefusal> {
     let key_name = match request_signature(query_data) {
         RequestSignature::Key(key_name) => key_name,
         RequestSignature::Absent => {
             return match acl::is_client_allowed(client_ip).await {
-                true => Ok(None),
+                true => Ok(TransferIdentity {
+                    key: None,
+                    signer: None,
+                }),
                 false => Err(TransferRefusal::refused(
                     format!("IP {} is not a configured secondary", client_ip),
                     None,
@@ -100,20 +116,19 @@ pub(crate) async fn authorize_transfer(
     let signer = verify_tsig_sequence(query_data, domain_key).map_err(to_refusal)?;
 
     let key = key.expect("verification succeeded, so the key is known");
-    match TsigGrantService::authorize_transfer(&key, zone_name).await {
-        Ok(true) => Ok(Some(signer)),
-        Ok(false) => Err(TransferRefusal::refused(
+    if is_catalog_zone(zone_name) && !key.is_global {
+        return Err(TransferRefusal::refused(
             format!(
                 "TSIG key '{}' is not granted zone '{}' whole",
                 key.name, zone_name
             ),
             Some(signer),
-        )),
-        Err(e) => Err(TransferRefusal::refused(
-            format!("failed to authorize TSIG key '{}': {}", key.name, e),
-            Some(signer),
-        )),
+        ));
     }
+    Ok(TransferIdentity {
+        key: Some(key),
+        signer: Some(signer),
+    })
 }
 
 /// Translate a TSIG error into a transfer refusal with its required response.

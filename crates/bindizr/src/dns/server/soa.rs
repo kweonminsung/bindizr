@@ -13,13 +13,13 @@ use bindizr_core::{
     log_info, log_warn,
     metrics::{SoaResult, track_soa},
 };
-use bindizr_service::zone::ZoneService;
+use bindizr_service::zone::{TransferAccess, ZoneService};
 use tokio::net::{TcpStream, UdpSocket};
 
 use crate::dns::{
     error::XfrError,
     server::{
-        auth::{TransferRefusal, authorize_transfer, signed_error},
+        auth::{TransferIdentity, TransferRefusal, authenticate_transfer, signed_error},
         catalog,
     },
     wire,
@@ -61,7 +61,8 @@ fn is_self_probe(client_ip: IpAddr) -> bool {
 }
 
 /// The response bytes, which TCP and UDP send alike. A secondary polls the
-/// serial with the key it transfers under, so one gate answers both.
+/// serial with the key it transfers under, so one gate answers both, and the
+/// zone answered is the one that key is granted.
 async fn build_soa_response(
     query: &message::ParsedQuery,
     client_ip: IpAddr,
@@ -69,8 +70,8 @@ async fn build_soa_response(
 ) -> Result<Vec<u8>, XfrError> {
     let zone_name_str = query.zone_name.as_str();
 
-    let signer = match authorize_soa(query, client_ip, query_data).await {
-        Ok(signer) => signer,
+    let mut identity = match authenticate_soa(query, client_ip, query_data).await {
+        Ok(identity) => identity,
         Err(refusal) => {
             log_warn!(
                 "Refused SOA query for {:?} from {}: {}",
@@ -85,7 +86,6 @@ async fn build_soa_response(
 
     log_info!("SOA query for zone {:?} from {}", zone_name_str, client_ip);
 
-    let mut signer = signer;
     let build = |signer: Option<TransferSigner>| {
         let builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
         match signer {
@@ -97,7 +97,7 @@ async fn build_soa_response(
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("SOA query for catalog zone: {}", catalog::CATALOG_ZONE_NAME);
         let (catalog_zone, _) = catalog::generate_catalog_zone().await?;
-        let mut builder = build(signer);
+        let mut builder = build(identity.signer);
         builder.add_catalog_soa(
             &catalog_zone,
             bindizr_core::dns::serial_to_u32(catalog_zone.serial)?,
@@ -106,9 +106,24 @@ async fn build_soa_response(
         return Ok(builder.build()?);
     }
 
-    let Some(zone) = ZoneService::find_by_name(zone_name_str).await? else {
-        track_soa(SoaResult::NotAuth);
-        return signed_error(query, Rcode::NOTAUTH, signer.as_mut());
+    let zone = match ZoneService::authorize_transfer_by_name(zone_name_str, identity.key.as_ref())
+        .await?
+    {
+        TransferAccess::Granted(zone) => zone,
+        TransferAccess::NotZone => {
+            track_soa(SoaResult::NotAuth);
+            return signed_error(query, Rcode::NOTAUTH, identity.signer.as_mut());
+        }
+        TransferAccess::Refused(reason) => {
+            log_warn!(
+                "Refused SOA query for {:?} from {}: {}",
+                zone_name_str,
+                client_ip,
+                reason
+            );
+            track_soa(SoaResult::Refused);
+            return TransferRefusal::refused(reason, identity.signer).into_response(query);
+        }
     };
 
     log_info!(
@@ -117,7 +132,7 @@ async fn build_soa_response(
         zone.serial
     );
 
-    let mut builder = build(signer);
+    let mut builder = build(identity.signer);
     builder.add_soa(&zone, bindizr_core::dns::serial_to_u32(zone.serial)?)?;
 
     track_soa(SoaResult::Ok);
@@ -126,16 +141,19 @@ async fn build_soa_response(
 
 /// `bindizr doctor`'s own probe carries no key and is not a secondary, so it
 /// passes ahead of both gates.
-async fn authorize_soa(
+async fn authenticate_soa(
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     query_data: &[u8],
-) -> Result<Option<TransferSigner>, TransferRefusal> {
+) -> Result<TransferIdentity, TransferRefusal> {
     // Only an unsigned probe skips the gate: a request that reached for a key
     // is held to it wherever it came from, or a wrong secret would pass.
     if is_self_probe(client_ip) && matches!(request_signature(query_data), RequestSignature::Absent)
     {
-        return Ok(None);
+        return Ok(TransferIdentity {
+            key: None,
+            signer: None,
+        });
     }
-    authorize_transfer(query_data, client_ip, &query.zone_name).await
+    authenticate_transfer(query_data, client_ip, &query.zone_name).await
 }

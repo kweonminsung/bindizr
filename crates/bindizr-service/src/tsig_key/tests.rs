@@ -22,6 +22,21 @@ fn normalize_key_name_rejects_invalid_names() {
     }
 }
 
+/// Verify that `normalize_key_name` holds the rendered name to the column.
+#[test]
+fn normalize_key_name_holds_the_rendered_name_to_the_column() {
+    // A label of escaped dots renders four characters per byte, so a name
+    // the wire admits can still outgrow `tsig_keys.name`.
+    let fits = format!("{}.key", r"\.".repeat(62));
+    let too_long = format!("{}.{}", r"\.".repeat(40), r"\.".repeat(40));
+
+    assert_eq!(normalize_key_name(&fits).unwrap().len(), 252);
+    assert_eq!(
+        normalize_key_name(&too_long).unwrap_err().code,
+        ErrorCode::InvalidInput
+    );
+}
+
 /// Verify that `normalize_secret` accepts base64 and rejects garbage.
 #[test]
 fn normalize_secret_accepts_base64_and_rejects_garbage() {

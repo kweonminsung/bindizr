@@ -6,7 +6,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     log_error,
-    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone, zone_change::ZoneChange},
+    model::{record::Record, zone::Zone, zone_change::ZoneChange},
     repository::RepositoryService,
     types::{
         GetZoneResponse, GetZonesFilter, PaginatedResponse, normalize_page_limit, parse_setting,
@@ -14,17 +14,8 @@ use crate::{
 };
 
 impl ZoneService {
-    /// The DNS plane's view of a zone: transfers and SOA answers read it, so
-    /// a disabled zone is absent rather than served.
-    pub async fn find_by_name(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
-        let lookup_name = normalize_zone_name(zone_name)?;
-        Ok(RepositoryService::get_zone_by_name(lookup_name.as_str())
-            .await?
-            .filter(|zone| zone.enabled))
-    }
-
-    /// The same view inside a transaction, for the nsupdate apply and the
-    /// transfer snapshot.
+    /// The DNS plane's view of a zone: a disabled one is absent rather than
+    /// served. The nsupdate apply and the transfer authorization read it.
     pub(crate) async fn find_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
@@ -212,29 +203,5 @@ impl ZoneService {
             .await?;
 
         Ok(records + dnssec_records)
-    }
-
-    /// Read the enabled zone carrying `zone_name` and both record planes under
-    /// one shared zone lock so their serial and signatures agree; keyed by the
-    /// name so a zone renamed since the caller's pre-read reads as `None`. The
-    /// DNS caller owns TSIG/ACL authorization.
-    pub async fn find_transfer_content_by_name(
-        zone_name: &str,
-    ) -> Result<Option<(Zone, Vec<Record>, Vec<DnssecRecord>)>, ServiceError> {
-        let mut tx = RepositoryService::begin_read_tx("failed to load transfer content").await?;
-        let result = async {
-            let Some(zone) = Self::find_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?
-            else {
-                return Ok(None);
-            };
-            let records =
-                RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
-            let dnssec_records =
-                RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)
-                    .await?;
-            Ok(Some((zone, records, dnssec_records)))
-        }
-        .await;
-        RepositoryService::finish_tx(tx, result, "failed to load transfer content").await
     }
 }

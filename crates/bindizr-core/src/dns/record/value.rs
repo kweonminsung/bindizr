@@ -49,7 +49,7 @@ pub(crate) fn parse_hex_record_field<'a>(
     if hex.is_empty() {
         return Err(format!("{field} must not be empty"));
     }
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err(format!("{field} must be an even number of hex digits"));
     }
     // Decoded from bytes, not `&str` slices: a multi-byte character must fail
