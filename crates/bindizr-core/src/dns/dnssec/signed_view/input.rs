@@ -39,6 +39,7 @@ impl SignedViewParams<'_> {
         let zone = self.zone;
         let mut input: Vec<SignRr> = Vec::new();
 
+        // Synthesize the apex records owned by zone metadata and signing keys.
         let soa_bytes = zone.soa_rdata(self.new_serial as u32)?;
         input.push(WireRecord::new(
             apex.clone(),
@@ -102,6 +103,7 @@ impl SignedViewParams<'_> {
             ));
         }
 
+        // Add user records to the same input used for denial proofs and signatures.
         for record in self.records {
             let EncodedRdata { record_type, rdata } =
                 EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)?;
@@ -130,6 +132,7 @@ impl SignedViewParams<'_> {
             rr.set_ttl(rrset_ttls[&key]);
         }
 
+        // Canonical order keeps each RRset contiguous for the signing pass.
         input.sort_by(|a, b| {
             use domain::base::cmp::CanonicalOrd;
             a.canonical_cmp(b)

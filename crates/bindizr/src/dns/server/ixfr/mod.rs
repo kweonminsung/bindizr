@@ -37,6 +37,7 @@ pub(crate) async fn handle_ixfr(
         query.client_serial
     );
 
+    // Choose a full transfer or an SOA-only reply before loading incremental history.
     if catalog::is_catalog_zone(zone_name_str) {
         log_info!("IXFR: Catalog zone requested, falling back to AXFR");
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
@@ -91,6 +92,7 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, signer).await;
     }
 
+    // Pair journal steps with their SOA versions to prove the delta has no gaps.
     let changes = ZoneService::list_journal_between_serials(
         zone.id,
         client_serial as i32,
@@ -148,6 +150,8 @@ pub(crate) async fn handle_ixfr(
         current_serial
     );
 
+    // Send only after validating the complete delta; fallback depends on whether
+    // any bytes have reached the client.
     match send_ixfr_response(
         stream,
         query,

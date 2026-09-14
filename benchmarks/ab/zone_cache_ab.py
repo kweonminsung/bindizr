@@ -63,6 +63,8 @@ async def run_variant(zone_cache: bool) -> dict:
         if not bind9_cid:
             raise RuntimeError("bind9 container not found")
 
+        # Run consecutive transfers against the same populated zone to compare
+        # the first request with later requests that can reuse the cache.
         samples: list[float] = []
         counts: list[int] = []
         for i in range(AXFRS):
@@ -73,6 +75,7 @@ async def run_variant(zone_cache: bool) -> dict:
             counts.append(n)
             print(f"  axfr #{i + 1}: {ms:.0f} ms ({n} lines)", flush=True)
 
+        # Report the first transfer separately from the subsequent warm samples.
         cold, warm = samples[0], samples[1:]
         return {
             "zone_cache": label,

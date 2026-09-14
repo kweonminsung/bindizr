@@ -61,9 +61,10 @@ impl DnssecService {
         RepositoryService::finish_tx(tx, result, "failed to export DNSSEC keys").await
     }
 
-    /// Import an unsigned zone's complete key set from BIND key pairs and
-    /// sign it: one CSK pair, or a KSK pair and a ZSK pair under a split-key
-    /// policy. The migration path for a zone signed elsewhere.
+    /// Import BIND key pairs into an unsigned zone and sign it under the chosen policy.
+    ///
+    /// The set needs an active CSK or active KSK and ZSK keys; published and retired
+    /// rollover keys may accompany them.
     pub async fn import_keys(
         caller: &Caller,
         zone_name: &str,
@@ -147,6 +148,7 @@ impl DnssecService {
                 )));
             }
 
+            // Store the validated key set and its first signed view together.
             RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id))
                 .await?;
             let zone = Zone {
@@ -176,6 +178,8 @@ impl DnssecService {
             RepositoryService::finish_tx(tx, result, "failed to import DNSSEC keys").await?;
 
         crate::log_info!("event=dnssec_import_keys zone={}", response.zone_name);
+
+        // Announce the imported keys only after their signed records are committed.
         notify_zone(&response.zone_name).await;
         Ok(response)
     }

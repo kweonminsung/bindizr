@@ -127,7 +127,7 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(body["dnssec_policy"]["name"], "default");
 }
 
-/// Verify that DNSSEC policy in use cannot be deleted.
+/// Verify an assigned DNSSEC policy becomes deletable after DNSSEC is disabled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_policy_in_use_cannot_be_deleted() {
@@ -145,6 +145,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
+    // A missing policy cannot establish the zone's signing configuration.
     let (status, body) = app
         .request(
             Method::POST,
@@ -155,6 +156,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "DNSSEC_POLICY_NOT_FOUND");
 
+    // Once the zone uses the policy, deletion must respect that reference.
     let (status, body) = app
         .request(
             Method::POST,
@@ -175,6 +177,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_POLICY_IN_USE");
 
+    // Release the zone's policy reference by disabling DNSSEC, then delete the policy.
     let (status, _) = app
         .request(
             Method::DELETE,

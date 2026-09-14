@@ -74,6 +74,7 @@ async fn run_maintenance_pass() {
     let config = bindizr_config();
     let mut failed = false;
 
+    // Bound retained IXFR and rollback history before maintaining signed zones.
     let retention_days = config.dns.journal_retention_days;
     if retention_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(retention_days));
@@ -95,6 +96,7 @@ async fn run_maintenance_pass() {
         }
     }
 
+    // Refresh expiring signatures even when the zone's user records have not changed.
     match RepositoryService::list_rrsig_zone_ids_expiring_within_refresh(Utc::now()).await {
         Ok(zone_ids) => {
             for zone_id in zone_ids {
@@ -212,6 +214,7 @@ async fn run_maintenance_pass() {
         }
     }
 
+    // Remove retired keys after the hold-down for cached signed data has elapsed.
     match RepositoryService::list_dnssec_keys_by_state_eligible_before(
         DnssecKeyState::Retired,
         Utc::now(),

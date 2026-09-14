@@ -103,6 +103,7 @@ impl ExternalDnsService {
                     continue;
                 }
 
+                // Apply the remaining delta and its signatures under one zone serial.
                 let new_serial = generate_serial(Some(zone.serial))?;
                 RecordService::delete_with_changes_tx(
                     &mut tx,
@@ -141,6 +142,7 @@ impl ExternalDnsService {
             RepositoryService::finish_tx(tx, apply_result, "Failed to apply ExternalDNS changes")
                 .await?;
 
+        // Every affected zone must commit before any secondary is asked to transfer.
         for zone_name in &changed_zones {
             if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name)).await {
                 log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);

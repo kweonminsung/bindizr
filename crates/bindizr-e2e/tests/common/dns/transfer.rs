@@ -44,6 +44,7 @@ pub(crate) fn axfr(
         .map_err(|e| e.to_string())?;
     let mut additional = question.additional();
 
+    // A signed request seeds MAC verification across the response frames.
     let mut client = match key {
         Some(key) => Some(
             ClientSequence::request(to_key(key)?, &mut additional, Time48::now())
@@ -61,6 +62,7 @@ pub(crate) fn axfr(
     framed.extend_from_slice(&query);
     stream.write_all(&framed).map_err(|e| e.to_string())?;
 
+    // Keep reading frames until both boundary SOAs arrive; EOF alone is incomplete.
     let mut records = 0usize;
     let mut soa_seen = 0usize;
     while soa_seen < 2 {
@@ -86,6 +88,7 @@ pub(crate) fn axfr(
             records += 1;
         }
     }
+    // The closing SOA must also leave the TSIG sequence complete.
     if let Some(client) = client {
         client
             .done()

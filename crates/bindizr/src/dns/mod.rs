@@ -227,6 +227,8 @@ async fn run_udp_server(socket: UdpSocket, stop: impl Future<Output = ()>) -> Re
             }
         };
 
+        // Drop excess datagrams instead of queuing work; each handler holds its
+        // permit until dispatch finishes.
         let Ok(permit) = in_flight.clone().try_acquire_owned() else {
             log_warn!(
                 "Dropping DNS UDP query from {}: {} already in flight",
@@ -245,7 +247,7 @@ async fn run_udp_server(socket: UdpSocket, stop: impl Future<Output = ()>) -> Re
     }
 }
 
-/// Route a UDP DNS query to its update or SOA handler.
+/// Dispatch UDP UPDATE, SOA, and XFR queries, refusing unsupported query types.
 async fn dispatch_udp_query(socket: &UdpSocket, client_addr: SocketAddr, query_data: &[u8]) {
     if message::is_response(query_data) {
         log_warn!("Ignoring a DNS UDP response from {}", client_addr);

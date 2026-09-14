@@ -236,7 +236,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
             .unwrap()
     };
 
-    // Upsert with only the TTL changed: reconciled in place, not left unchanged.
+    // A TTL-only upsert is reported as an update and must change the stored TTL.
     let content = "www 600 IN A 192.0.2.1\n";
     let (status, body) = app
         .request(

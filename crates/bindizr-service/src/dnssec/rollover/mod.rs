@@ -44,6 +44,7 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to start key rollover").await?;
         let result = async {
+            // Select a role only after ruling out an existing rollover under the zone lock.
             let (zone, policy, keys) =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             if keys.iter().any(|key| key.state != DnssecKeyState::Active) {
@@ -76,6 +77,8 @@ impl DnssecService {
                 }
             };
 
+            // Publish the replacement alongside the active keys; promotion waits
+            // for the role's hold-down and, for a SEP key, the parent DS check.
             let mut keys = keys;
             let template = keys
                 .iter()
@@ -104,6 +107,8 @@ impl DnssecService {
             RepositoryService::finish_tx(tx, result, "failed to start key rollover").await?;
 
         crate::log_info!("event=dnssec_rollover_start zone={}", response.zone_name);
+
+        // Announce the pre-published key after the signed view commits.
         notify_zone(&response.zone_name).await;
         Ok(response)
     }

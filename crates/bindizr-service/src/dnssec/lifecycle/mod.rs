@@ -65,6 +65,7 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to enable DNSSEC").await?;
         let result = async {
+            // Check the unsigned state under the same lock used to install the keys.
             let zone =
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             let existing =
@@ -99,6 +100,7 @@ impl DnssecService {
                 ..zone
             };
 
+            // Create every signer role before building the zone's first signed view.
             let now = Utc::now();
             let roles: &[DnssecKeyRole] = if policy.split_keys {
                 &[DnssecKeyRole::Ksk, DnssecKeyRole::Zsk]
@@ -136,6 +138,8 @@ impl DnssecService {
         let response = RepositoryService::finish_tx(tx, result, "failed to enable DNSSEC").await?;
 
         crate::log_info!("event=dnssec_enable zone={}", response.zone_name);
+
+        // Secondaries can fetch the signed view only after the transaction commits.
         notify_zone(&response.zone_name).await;
         Ok(response)
     }
@@ -179,6 +183,8 @@ impl DnssecService {
             };
             let keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
+
+            // Parent addresses alone change no served records and need no re-signing.
             let Some(policy_name) = &policy_name else {
                 let policy = Self::find_zone_policy_tx(&mut tx, &zone).await?;
                 return build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await;
@@ -195,11 +201,15 @@ impl DnssecService {
             )
             .await?
             .ok_or_else(|| ServiceError::dnssec_policy_not_found(policy_name))?;
+
+            // Selecting the current policy leaves the existing signed view intact.
             if target.id == current.id {
                 return build_status_tx(&mut tx, &zone, Some(&current), &keys, zone.serial).await;
             }
             validate_policy_move(&zone, &current, &target)?;
 
+            // An algorithm change pre-publishes replacements before applying and
+            // signing under the target policy in this transaction.
             let keys = if keys.iter().any(|key| key.algorithm != target.algorithm) {
                 Self::start_algorithm_rollover_tx(&mut tx, &zone, &target, keys).await?
             } else {

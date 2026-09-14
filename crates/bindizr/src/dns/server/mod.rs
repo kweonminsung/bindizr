@@ -46,7 +46,9 @@ pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
     matches!(qtype, Rtype::AXFR | Rtype::IXFR)
 }
 
-/// Called at the dispatch, so an IXFR falling back to AXFR still counts as ixfr.
+/// Authorize and serve a TCP zone transfer, returning refusals as DNS responses.
+///
+/// Count by the requested type so an IXFR falling back to AXFR still counts as IXFR.
 pub(crate) async fn handle_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
@@ -56,6 +58,7 @@ pub(crate) async fn handle_tcp_query(
     let client_ip = client_addr.ip();
     let record_xfr_metric = |result| track_xfr(query.qtype, result);
 
+    // Resolve ACL and TSIG authorization before starting the transfer.
     let signer = match authorize_transfer(query_data, client_ip, &query.zone_name).await {
         Ok(signer) => signer,
         Err(refusal) => {
@@ -93,6 +96,7 @@ pub(crate) async fn handle_tcp_query(
         }
     };
 
+    // A missing zone gets NOTAUTH; other transfer failures propagate to the listener.
     if let Err(err) = result {
         if matches!(err, XfrError::ZoneNotFound(_)) {
             record_xfr_metric(XfrResult::NotAuth);

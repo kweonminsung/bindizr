@@ -32,6 +32,7 @@ async def run(adapter, cfg, ctx) -> dict:
     names = [f'{r["name"]}.{zone.rstrip(".")}' for r in records]
     ep = adapter.dns_endpoint()
 
+    # Exclude propagation wait from the query workload's warmup and measurements.
     p = cfg["propagation"]
     missing = await asyncio.get_event_loop().run_in_executor(
         None, dnsutil.first_unqueryable, records, zone, ep.host, ep.port,
@@ -46,6 +47,7 @@ async def run(adapter, cfg, ctx) -> dict:
             "error": "propagation timeout: imported zone not queryable",
         }
 
+    # Warm the query path, then collect throughput and latency samples.
     rec = await dnsquery.query_load(
         ep.host, ep.port, names, dnsquery.QTYPE["A"],
         q["concurrency"], q["duration_secs"], warmup_secs=2.0)

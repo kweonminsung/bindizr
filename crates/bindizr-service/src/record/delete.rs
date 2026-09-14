@@ -172,6 +172,7 @@ impl RecordService {
         let mut tx = RepositoryService::begin_tx("Failed to delete records").await?;
 
         let result: Result<DeleteRecordsResponse, ServiceError> = async {
+            // Resolve matches and authorization under the zone lock, including previews.
             let zone = ZoneService::get_visible_by_name_tx(
                 &mut tx,
                 caller,
@@ -213,6 +214,8 @@ impl RecordService {
                 .await?;
             validate_delete_constraints(&zone, &matched)?;
 
+            // Build the preview from the validated rows; dry runs and empty matches
+            // return it before any records or serials are written.
             let before: Vec<ReconstructedRecord> = existing
                 .iter()
                 .cloned()
@@ -240,6 +243,7 @@ impl RecordService {
                 return Ok(response);
             }
 
+            // Apply the complete deletion and refresh signatures in the same transaction.
             let new_serial = generate_serial(Some(zone.serial))?;
             Self::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
@@ -262,6 +266,7 @@ impl RecordService {
             response.applied
         );
 
+        // Announce only a committed deletion, never a preview or an empty match.
         if response.applied
             && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {

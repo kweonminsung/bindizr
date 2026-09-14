@@ -92,7 +92,7 @@ async fn print_config_value(key: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Print the configuration in the selected output format.
+/// Print configuration values grouped by section.
 fn print_config(config: &BindizrConfig) {
     print_section("api");
     print_value("listen_addr", config.api.listen_addr);

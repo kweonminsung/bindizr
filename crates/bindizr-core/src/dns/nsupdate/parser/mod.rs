@@ -97,6 +97,7 @@ pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
         .advance(DNS_HEADER_LEN)
         .map_err(|_| ParseError::TooShort)?;
 
+    // The single question identifies the update zone and must carry SOA/IN.
     let zone = ParsedName::parse(&mut parser).map_err(|_| ParseError::InvalidName)?;
     let ztype = parser
         .parse_u16_be()
@@ -110,6 +111,8 @@ pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
     }
     let zone_name = to_presentation_name(&zone)?;
 
+    // UPDATE uses the answer count for prerequisites and the authority count
+    // for changes; these are not ordinary response sections.
     let mut prerequisites = Vec::with_capacity(counts.ancount() as usize);
     for _ in 0..counts.ancount() {
         prerequisites.push(parse_rr(&mut parser, data)?);

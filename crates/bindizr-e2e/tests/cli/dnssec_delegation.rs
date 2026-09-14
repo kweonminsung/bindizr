@@ -21,6 +21,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
     let zone_name = app.zone_name("dnssec-parent-cli.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
+    // Enable signing against the test parent, then publish the active key's DS there.
     let enabled = app
         .run_cli_success(&[
             "dnssec",
@@ -42,6 +43,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
         3600,
     )]);
 
+    // A served DS keeps disable blocked and must appear in the CLI's parent check.
     let disable_args = ["dnssec", "disable", &zone_name];
     let refused = app.run_cli(&disable_args).await;
     assert_cli_failure_contains(&disable_args, &refused, "still serves DS records");
@@ -60,6 +62,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
         "{checked}"
     );
 
+    // Verify the parent address can also be set through the settings command.
     let set = app
         .run_cli_success(&[
             "dnssec",
@@ -74,6 +77,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
         "{set}"
     );
 
+    // With the parent DS removed, the CLI reports its absence and permits disable.
     parent.set_ds(Vec::new());
     let checked = app
         .run_cli_success(&["dnssec", "check-ds", &zone_name])

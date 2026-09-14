@@ -45,6 +45,8 @@ def load(path: Path | None = None) -> dict[str, Any]:
         cfg["ixfr_baseline"] = cfg.get("ixfr_baseline_ci", cfg.get("ixfr_baseline"))
         cfg["ixfr_change_sizes"] = cfg.get(
             "ixfr_change_sizes_ci", cfg.get("ixfr_change_sizes", []))
+
+    # Explicit environment values override the CI defaults selected above.
     if os.environ.get("BENCH_SIZES"):
         cfg["sizes"] = [int(x) for x in os.environ["BENCH_SIZES"].split(",")]
     if os.environ.get("BENCH_SEED"):

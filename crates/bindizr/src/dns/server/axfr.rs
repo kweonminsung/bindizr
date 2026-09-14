@@ -56,6 +56,7 @@ pub(crate) async fn handle_axfr(
     }
     let mut messages_sent = 0usize;
 
+    // The opening SOA identifies the serial of this content snapshot.
     let serial = bindizr_core::dns::serial_to_u32(zone.serial)?;
     crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
@@ -65,6 +66,7 @@ pub(crate) async fn handle_axfr(
     )
     .await?;
 
+    // The snapshot includes both user records and the derived DNSSEC plane.
     for record in content.records.iter() {
         crate::dns::wire::add_answer_and_flush_if_needed(
             &mut builder,

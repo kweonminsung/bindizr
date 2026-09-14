@@ -181,6 +181,7 @@ impl DnsMessageBuilder {
             return Ok(None);
         }
 
+        // Keep the overflowing answer out of the frame built from earlier answers.
         let last_answer = self.pop_last_answer().ok_or_else(|| {
             Overflow::without_frame("DNS message exceeded maximum size without answers".to_string())
         })?;

@@ -219,8 +219,8 @@ impl RecordService {
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             timings.load_zone_ms = elapsed_ms(t);
 
-            // Before any row is read, so an ungranted caller gets 404 rather than
-            // a constraint error naming what the zone holds; dry runs included.
+            // Authorize before loading existing record rows so an ungranted caller
+            // gets 404 instead of constraint details; dry runs included.
             // A name that will not parse lists no write; validation reports it.
             let writes: Vec<RecordWrite<'_>> = prepared
                 .iter()
@@ -370,9 +370,9 @@ impl RecordService {
                     .await?;
             timings.db_write_ms = elapsed_ms(t);
 
-            // Advance the serial once so IXFR consumers detect the batch
             let t = Instant::now();
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+            // Advance the serial once so IXFR consumers detect the batch.
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
                 .await?;
             timings.serial_ms = elapsed_ms(t);

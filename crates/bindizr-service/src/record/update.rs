@@ -208,6 +208,7 @@ impl RecordService {
                 &candidate_updated,
             )?;
 
+            // Store the validated replacement, signatures, and journal under one serial.
             let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();
 
@@ -243,6 +244,7 @@ impl RecordService {
             updated_record.id
         );
 
+        // Request secondary transfers only after the replacement is committed.
         if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }

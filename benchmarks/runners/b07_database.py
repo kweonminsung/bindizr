@@ -40,11 +40,12 @@ def _mem_split(res: dict) -> tuple[float, float]:
 
 
 async def _bench_backend(adapter, cfg, zone, label) -> dict:
-    """Measure CRUD and bulk imports using one database backend."""
+    """Measure create/read throughput, latency, and resource use for one backend."""
     c = cfg["crud"]
     conc, dur, warm = c["concurrency"], min(c["duration_secs"], 15), c["warmup_secs"]
     npool = min(c["records_prepopulate"], 2000)
 
+    # Populate the read workload's record pool before resource sampling starts.
     await adapter.create_zone(zone)
     pool = generate(npool, cfg["seed"] + 1)
     handles = []
@@ -52,6 +53,7 @@ async def _bench_backend(adapter, cfg, zone, label) -> dict:
         rec["name"] = f"pool{i:07d}"
         handles.append(await adapter.create_record(zone, rec))
 
+    # The resource window includes create-data preparation and both warmups.
     sampler = sampler_for(adapter, cfg)
     sampler.start()
 
@@ -68,6 +70,7 @@ async def _bench_backend(adapter, cfg, zone, label) -> dict:
         """Read one existing record for the measured workload."""
         return await adapter.get_record(zone, handles[seq % len(handles)])
 
+    # Measure create and read separately, each with its own unrecorded warmup.
     cr = await loadgen.run_closed_loop(create_step, conc, dur, warm)
     rr = await loadgen.run_closed_loop(read_step, conc, dur, warm)
     res = sampler.stop()

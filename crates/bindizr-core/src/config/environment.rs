@@ -48,6 +48,8 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_SQLITE_FILE_PATH") {
             self.database.sqlite.file_path = value;
         }
+        // The generic URL overrides the selected backend's URL above; SQLite
+        // continues to use its file path.
         if let Some(value) = get_env("BINDIZR_DATABASE_URL") {
             match self.database.database_type {
                 DatabaseType::Mysql => self.database.mysql.server_url = value,

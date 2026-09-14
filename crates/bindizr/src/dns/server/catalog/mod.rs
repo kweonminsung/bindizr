@@ -93,6 +93,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
 ) -> Result<(), XfrError> {
     log_info!("AXFR request for catalog zone: {}", CATALOG_ZONE_NAME);
 
+    // Materialize the virtual catalog from the current member zones.
     let (catalog_zone, member_zones) = generate_catalog_zone().await?;
 
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
@@ -100,6 +101,8 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
         builder = builder.sign_with(signer);
     }
     let mut messages_sent = 0usize;
+
+    // Both SOAs must carry this snapshot's serial to delimit the AXFR.
     let serial = bindizr_core::dns::serial_to_u32(catalog_zone.serial)?;
 
     crate::dns::wire::add_answer_and_flush_if_needed(
@@ -125,6 +128,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     )
     .await?;
 
+    // Member PTRs tell secondaries which zones this catalog provisions.
     for member_zone in &member_zones {
         crate::dns::wire::add_answer_and_flush_if_needed(
             &mut builder,
@@ -135,6 +139,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
         .await?;
     }
 
+    // Close the catalog snapshot before flushing its final envelope.
     crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
         stream,

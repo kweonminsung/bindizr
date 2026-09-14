@@ -291,7 +291,11 @@ impl TestApp {
     }
 
     /// Run the CLI, optionally piping `input` to its stdin (for `-` file args).
+    ///
+    /// After selected zone/record commands succeed, wait for configured secondary
+    /// DNS answers to match the API.
     async fn run_cli_with_input(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
+        // Remember deleted names before the API can no longer return their identity.
         let previous_dns_key = match args {
             ["record", "delete", record_id, ..] => {
                 self.previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
@@ -328,6 +332,7 @@ impl TestApp {
                 .expect("failed to run bindizr CLI"),
         };
 
+        // Verify propagation after successful commands that can change secondary state.
         if output.status.success()
             && matches!(
                 args,
@@ -384,6 +389,7 @@ impl TestApp {
             return;
         }
 
+        // Use the API's current records as the expected state for all secondaries.
         let (status, body) = self
             .send_request(
                 Method::GET,
@@ -416,12 +422,14 @@ impl TestApp {
                 .push(dns_expected_value(record, record_type));
         }
 
+        // Wait for each name and type to converge on every configured secondary.
         for ((name, record_type), values) in &expected {
             for port in &self.dns_secondary_ports {
                 wait_for_dns_records(*port, name, *record_type, values).await;
             }
         }
 
+        // A deleted name/type is absent from the API list but must also disappear in DNS.
         if let Some((name, record_type)) = previous_dns_key
             && !expected.contains_key(&(name.clone(), record_type))
         {

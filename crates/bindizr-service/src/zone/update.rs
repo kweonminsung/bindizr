@@ -234,6 +234,8 @@ impl ZoneService {
                 })?;
             }
 
+            // Journal the SOA and signature changes under the zone update's serial,
+            // then save the version that future IXFR and rollback reads will use.
             let changes = soa_replacement_changes(&existing_zone, &updated_zone, new_serial)?;
 
             RepositoryService::create_zone_changes_tx(&mut tx, &changes)
@@ -269,6 +271,7 @@ impl ZoneService {
             updated_zone.id
         );
 
+        // Announce the zone's new serial after its data and version have committed.
         if let Err(e) =
             crate::notify::send_notify_after_update(Some(updated_zone.name.as_str())).await
         {
@@ -279,6 +282,7 @@ impl ZoneService {
             );
         }
 
+        // Renaming or toggling a zone also changes the catalog seen by secondaries.
         if catalog_changed
             && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
         {

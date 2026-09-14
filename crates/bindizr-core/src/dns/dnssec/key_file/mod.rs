@@ -157,6 +157,7 @@ pub fn import_key(
         .decode(&public)
         .map_err(|e| format!("DNSKEY public key is not base64: {}", e))?;
 
+    // Interpret the SEP flag using the zone's CSK or split-key layout.
     let role = match (flags, split_keys) {
         (257, false) => DnssecKeyRole::Csk,
         (257, true) => DnssecKeyRole::Ksk,
@@ -174,6 +175,7 @@ pub fn import_key(
         }
     };
 
+    // Reconstruct the pair to reject a private key for a different DNSKEY.
     let dnskey = domain::rdata::Dnskey::new(
         flags,
         3,
@@ -185,6 +187,8 @@ pub fn import_key(
         .map_err(|e| format!("invalid private key: {}", e))?;
     domain::crypto::sign::KeyPair::from_bytes(&secret, &dnskey)
         .map_err(|e| format!("private key does not match the DNSKEY: {}", e))?;
+
+    // Preserve the rollover phase encoded by the private file's timing fields.
     let (state, state_changed_at, eligible_at) =
         bind_key_phase(private_key, zone.default_ttl, now)?;
 

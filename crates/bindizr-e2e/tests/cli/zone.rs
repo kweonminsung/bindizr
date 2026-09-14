@@ -397,6 +397,8 @@ async fn zone_import_dry_run_shows_the_diff_via_cli() {
 async fn zone_versions_and_rollback_flow() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("history.example");
+
+    // Build three versions so rollback can preserve www while removing the later extra.
     app.create_zone_cli(&zone_name, "3600").await;
 
     let zone = app
@@ -433,6 +435,7 @@ async fn zone_versions_and_rollback_flow() {
     ])
     .await;
 
+    // Inspect the version list and the target snapshot before comparing changes.
     let versions = app
         .run_cli_success(&["zone", "version", "list", &zone_name, "--output", "json"])
         .await;
@@ -492,6 +495,7 @@ async fn zone_versions_and_rollback_flow() {
         "{diff_to_current}"
     );
 
+    // Preview the rollback without advancing the current serial or changing records.
     let dry_run = app
         .run_cli_success(&[
             "zone",
@@ -505,6 +509,7 @@ async fn zone_versions_and_rollback_flow() {
     assert!(dry_run.contains("Dry run"));
     assert!(dry_run.contains("nothing applied"));
 
+    // Apply the same target as a new serial and verify only its records remain.
     let rolled_back = app
         .run_cli_success(&["zone", "version", "rollback", &zone_name, target_serial])
         .await;

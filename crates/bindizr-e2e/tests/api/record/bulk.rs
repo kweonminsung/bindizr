@@ -138,7 +138,7 @@ async fn record_bulk_insert_unknown_zone_returns_not_found() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Verify that record bulk insert dry run then apply.
+/// Verify that bulk insertion can be previewed without writes and then applied.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert_dry_run_then_apply() {
@@ -146,6 +146,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
+    // Preview both inserts and verify that no A records were stored.
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [
@@ -173,6 +174,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 
+    // Apply the same batch and verify that both records are now stored.
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [

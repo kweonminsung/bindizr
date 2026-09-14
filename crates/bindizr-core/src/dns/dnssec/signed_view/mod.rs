@@ -173,6 +173,7 @@ impl SignedViewParams<'_> {
             signable.push(vec![rr]);
         }
 
+        // Index stored signatures by owner and covered type for RRset reuse.
         let mut prev_rrsigs: BTreeMap<(String, i32), Vec<&DnssecRecord>> = BTreeMap::new();
         for row in self.prev {
             if row.record_type == DnssecRecordType::Rrsig
@@ -200,6 +201,8 @@ impl SignedViewParams<'_> {
                 };
             let digest = rrset_digest(rrset_signers, rrset);
 
+            // Reuse only a complete, unchanged set of signatures that outlives
+            // the refresh window; a forced pass regenerates every signature.
             let reusable = if self.force {
                 None
             } else {
@@ -242,6 +245,7 @@ impl SignedViewParams<'_> {
             }
         }
 
+        // Diff the complete derived plane so unchanged rows keep their storage identity.
         Ok(SignedViewDiff::from_planes(self.prev, new_rows))
     }
 }

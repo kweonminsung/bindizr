@@ -361,6 +361,7 @@ impl ZoneService {
                 soa_changed,
             };
 
+            // A preview stops after reconstruction and validation, before restoring rows.
             if dry_run {
                 return Ok((
                     RollbackZoneResponse {
@@ -375,6 +376,7 @@ impl ZoneService {
                 ));
             }
 
+            // Restore metadata and records as a new version in this transaction.
             RepositoryService::update_zone_tx(&mut tx, restored_zone.clone()).await?;
 
             if soa_changed {
@@ -412,6 +414,7 @@ impl ZoneService {
         let (response, zone_name, applied) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to roll back zone").await?;
 
+        // Announce only an applied rollback after its new version has committed.
         if applied {
             log_info!(
                 "event=zone_rollback zone={} target_serial={} new_serial={} added={} deleted={}",

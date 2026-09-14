@@ -31,12 +31,13 @@ pub(crate) fn reload_config() -> Result<Vec<String>, String> {
     Ok(changed)
 }
 
-/// Initialize config, logging, database, DNS, socket, and API servers, then run until Ctrl+C.
+/// Start daemon services, handle reload/restart/shutdown requests, and drain on shutdown.
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     if let Ok(exe) = std::env::current_exe() {
         let _ = DAEMON_EXE.set(exe);
     }
 
+    // Prepare configuration and background services before accepting requests.
     config::initialize(config_file)?;
 
     logger::initialize();
@@ -49,6 +50,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     service::dnssec::init_maintenance_scheduler();
 
+    // DNS must be listening before startup NOTIFY can prompt secondary transfers.
     let shutdown = Shutdown::new();
     dns::initialize(&shutdown).await?;
 
@@ -72,6 +74,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     let mut hangup =
         signal(SignalKind::hangup()).map_err(|e| format!("Failed to listen for SIGHUP: {}", e))?;
 
+    // Handle process signals and socket control commands in one lifecycle loop.
     loop {
         let control = tokio::select! {
             result = tokio::signal::ctrl_c() => {
@@ -112,6 +115,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
         }
     }
 
+    // Stop accepting work before waiting for API and socket requests to finish.
     shutdown.trigger();
 
     // In-flight zone transfers are not waited on: a cut transfer is one the

@@ -36,6 +36,7 @@ async fn zone_create_read_update_delete() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["zone"]["name"], zone_name);
 
+    // Rename the zone and replace its SOA settings through the original name.
     let update_zone_request = json!({
         "name": updated_zone_name,
         "mname": "ns2.external-dns.net",
@@ -58,6 +59,7 @@ async fn zone_create_read_update_delete() {
     let actual_updated_zone_name = body["zone"]["name"].as_str().unwrap();
     assert_eq!(actual_updated_zone_name, updated_zone_name);
 
+    // Address the renamed zone and change only TTL; omitted settings must survive.
     let (status, body) = app
         .request(
             Method::PUT,
@@ -71,6 +73,7 @@ async fn zone_create_read_update_delete() {
     assert_eq!(body["zone"]["rname"], "admin@updated-test.com");
     assert_eq!(body["zone"]["refresh"], 14400);
 
+    // Delete using the new identity and verify that it no longer resolves through the API.
     let (status, _) = app
         .request(
             Method::DELETE,

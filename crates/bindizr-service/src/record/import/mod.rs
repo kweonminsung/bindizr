@@ -337,6 +337,7 @@ impl RecordService {
             let will_apply = errors.is_empty() && !dry_run;
             let has_changes = !plan.dels.is_empty() || !plan.adds.is_empty() || !plan.ttl_dels.is_empty();
 
+            // Only a valid, nonempty apply writes rows and advances the serial.
             if will_apply && has_changes {
                 let new_serial = generate_serial(Some(zone.serial))?;
 
@@ -368,8 +369,8 @@ impl RecordService {
                 timings.db_write_ms = elapsed_ms(t);
 
                 let t = Instant::now();
-                // Advance the serial once so IXFR consumers detect the import
                 DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+                // Advance the serial once so IXFR consumers detect the import.
                 ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, subject).await?;
                 timings.serial_ms = elapsed_ms(t);
             }
@@ -410,6 +411,7 @@ impl RecordService {
             response.errors.len(),
         );
 
+        // Notify after commit only when the import changed the served zone.
         let t = Instant::now();
         if changed
             && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await

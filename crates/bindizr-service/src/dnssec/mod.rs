@@ -160,8 +160,9 @@ impl DnssecService {
         Ok(Some((zone, policy, keys)))
     }
 
-    /// Returns whether anything changed; with `force`, stored signatures are
-    /// ignored instead of reused.
+    /// Apply the signed DNSSEC view and journal its changes under the held zone lock.
+    ///
+    /// Returns whether anything changed; `force` regenerates stored signatures.
     async fn sign_zone_locked(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
@@ -170,6 +171,7 @@ impl DnssecService {
         keys: &[DnssecKey],
         force: bool,
     ) -> Result<bool, ServiceError> {
+        // Read both planes under the zone lock so the diff uses one consistent state.
         let records = RepositoryService::list_records_tx(tx, zone.id, LockLevel::None).await?;
         let prev = RepositoryService::list_dnssec_records_tx(tx, zone.id, LockLevel::None).await?;
 
@@ -196,6 +198,7 @@ impl DnssecService {
         .compute()
         .map_err(ServiceError::dnssec_signing_failed)?;
 
+        // Reused signatures and unchanged derived records need no storage writes.
         if diff.is_empty() {
             return Ok(false);
         }
@@ -252,6 +255,8 @@ impl DnssecService {
                 derived: true,
             });
         }
+
+        // The derived rows and their IXFR journal commit in the caller's transaction.
         RepositoryService::create_zone_changes_tx(tx, &changes).await?;
         let removed_ids: Vec<i32> = diff.removed.iter().map(|row| row.id).collect();
         RepositoryService::delete_dnssec_records_tx(tx, &removed_ids).await?;
