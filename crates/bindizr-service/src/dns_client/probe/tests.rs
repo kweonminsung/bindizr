@@ -5,10 +5,12 @@ use bindizr_core::dns::message::Name;
 use super::extract_soa_serial;
 use crate::dns_client::ds::tests::encode_name;
 
+/// Build the test zone or its DNS name.
 fn zone() -> Name<Vec<u8>> {
     Name::from_str("example.com").unwrap()
 }
 
+/// Build an SOA response fixture with the requested header and serial.
 fn build_soa_response(
     query_id: u16,
     flags: u16,
@@ -50,6 +52,7 @@ fn build_soa_response(
     buf
 }
 
+/// Verify that `extract_soa_serial` reads the answer serial.
 #[test]
 fn extract_soa_serial_reads_the_answer_serial() {
     // 0x8400 = QR + AA, NOERROR.
@@ -57,6 +60,7 @@ fn extract_soa_serial_reads_the_answer_serial() {
     assert_eq!(extract_soa_serial(42, &zone(), &response).unwrap(), 2026);
 }
 
+/// Verify that `extract_soa_serial` rejects id mismatch.
 #[test]
 fn extract_soa_serial_rejects_id_mismatch() {
     let response = build_soa_response(42, 0x8400, "example.com", true, 2026);
@@ -67,6 +71,7 @@ fn extract_soa_serial_rejects_id_mismatch() {
     );
 }
 
+/// Verify that `extract_soa_serial` rejects error rcode.
 #[test]
 fn extract_soa_serial_rejects_error_rcode() {
     // RCODE 5 (REFUSED)
@@ -77,6 +82,7 @@ fn extract_soa_serial_rejects_error_rcode() {
     );
 }
 
+/// Verify that `extract_soa_serial` rejects missing qr bit.
 #[test]
 fn extract_soa_serial_rejects_missing_qr_bit() {
     let response = build_soa_response(42, 0x0400, "example.com", true, 2026);
@@ -87,6 +93,7 @@ fn extract_soa_serial_rejects_missing_qr_bit() {
     );
 }
 
+/// Verify that `extract_soa_serial` rejects truncated response.
 #[test]
 fn extract_soa_serial_rejects_truncated_response() {
     let response = build_soa_response(42, 0x8600, "example.com", true, 2026);
@@ -96,6 +103,7 @@ fn extract_soa_serial_rejects_truncated_response() {
     );
 }
 
+/// Verify that `extract_soa_serial` rejects answer without SOA.
 #[test]
 fn extract_soa_serial_rejects_answer_without_soa() {
     let response = build_soa_response(42, 0x8400, "example.com", false, 0);
@@ -105,6 +113,7 @@ fn extract_soa_serial_rejects_answer_without_soa() {
     );
 }
 
+/// Verify that `extract_soa_serial` rejects a cache or another question.
 #[test]
 fn extract_soa_serial_rejects_a_cache_or_another_question() {
     // 0x8000 = QR without AA: a cache answered, not the secondary.

@@ -9,6 +9,7 @@ pub(crate) struct SqliteApiTokenRepository {
 }
 
 impl SqliteApiTokenRepository {
+    /// Create a repository for API tokens using the supplied pool.
     pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -16,6 +17,7 @@ impl SqliteApiTokenRepository {
 
 #[async_trait]
 impl ApiTokenRepository for SqliteApiTokenRepository {
+    /// Insert an API token.
     async fn create(&self, mut token: ApiToken) -> Result<ApiToken, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -40,6 +42,7 @@ impl ApiTokenRepository for SqliteApiTokenRepository {
         Ok(token)
     }
 
+    /// Find an API token by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<ApiToken>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -54,6 +57,7 @@ impl ApiTokenRepository for SqliteApiTokenRepository {
         Ok(row)
     }
 
+    /// Find an API token by its stored token hash.
     async fn get_by_token(&self, token: &str) -> Result<Option<ApiToken>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -68,11 +72,12 @@ impl ApiTokenRepository for SqliteApiTokenRepository {
         Ok(row)
     }
 
+    /// List all API tokens.
     async fn list_all(&self) -> Result<Vec<ApiToken>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let rows = sqlx::query_as::<_, ApiToken>(
-            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC"
+            "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC, id DESC"
         )
         .fetch_all(&mut *conn)
         .await
@@ -81,6 +86,7 @@ impl ApiTokenRepository for SqliteApiTokenRepository {
         Ok(rows)
     }
 
+    /// Update an API token.
     async fn update(&self, token: ApiToken) -> Result<ApiToken, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -101,6 +107,7 @@ impl ApiTokenRepository for SqliteApiTokenRepository {
         Ok(token)
     }
 
+    /// Delete an API token by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

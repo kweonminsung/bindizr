@@ -29,6 +29,7 @@ pub struct ErrorResponse {
 }
 
 impl ErrorResponse {
+    /// Build an error response from a service error's code and message.
     pub fn new(err: &ServiceError) -> Self {
         ErrorResponse {
             error: err.message.clone(),

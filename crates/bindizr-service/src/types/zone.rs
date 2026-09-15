@@ -1,5 +1,6 @@
 //! Zone request, patch, filter, and response payloads.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -29,9 +30,15 @@ pub struct GetZoneResponse {
     pub expire: i32,
     #[schema(example = 3600)]
     pub minimum_ttl: i32,
+    /// Whether the DNS plane serves the zone. A disabled one stays editable but
+    /// leaves the catalog and answers no transfer, so secondaries drop it.
+    #[schema(example = true)]
+    pub enabled: bool,
+    pub description: Option<String>,
 }
 
 impl GetZoneResponse {
+    /// Build a zone response from its stored settings.
     pub fn from_zone(zone: &Zone) -> Self {
         GetZoneResponse {
             id: zone.id,
@@ -44,6 +51,8 @@ impl GetZoneResponse {
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: zone.minimum_ttl,
+            enabled: zone.enabled,
+            description: zone.description.clone(),
         }
     }
 }
@@ -57,8 +66,10 @@ pub struct CreateZoneRequest {
     pub mname: String,
     #[schema(example = "admin@example.com")]
     pub rname: String,
+    /// Record TTL the zone hands out when a record names none; defaults to
+    /// `dns.zone_defaults.ttl`.
     #[schema(example = 3600)]
-    pub default_ttl: i32,
+    pub default_ttl: Option<i32>,
     /// Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
     #[schema(example = 42)]
     pub serial: Option<i32>,
@@ -70,6 +81,9 @@ pub struct CreateZoneRequest {
     pub expire: Option<i32>,
     #[schema(example = 3600)]
     pub minimum_ttl: Option<i32>,
+    /// Free-text note for operators, at most 255 characters.
+    #[schema(example = "customer A, migrated 2026-01")]
+    pub description: Option<String>,
 }
 
 /// Query filters and pagination for listing zones.
@@ -91,8 +105,26 @@ pub struct GetZonesFilter {
     pub max_default_ttl: Option<i32>,
     #[schema(example = 42)]
     pub serial: Option<i32>,
+    #[schema(example = 1)]
+    pub min_serial: Option<i32>,
+    #[schema(example = 99)]
+    pub max_serial: Option<i32>,
+    pub created_after: Option<DateTime<Utc>>,
+    pub created_before: Option<DateTime<Utc>>,
+    /// `true` keeps the zones signing under a DNSSEC policy, `false` the rest.
+    #[schema(example = true)]
+    pub signed: Option<bool>,
+    /// `true` keeps the zones the DNS plane serves, `false` the disabled ones.
+    #[schema(example = true)]
+    pub enabled: Option<bool>,
     #[schema(example = "example")]
     pub search: Option<String>,
+    /// `name` (the default), `serial`, `default_ttl`, or `created_at`.
+    #[schema(example = "name")]
+    pub sort: Option<String>,
+    /// `asc` (the default) or `desc`.
+    #[schema(example = "asc")]
+    pub order: Option<String>,
     /// Defaults to 50 when omitted; 1000 is the largest page accepted.
     #[schema(example = 50)]
     pub limit: Option<u32>,
@@ -133,6 +165,14 @@ pub struct UpdateZoneRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 42)]
     pub serial: Option<i32>,
+    /// `false` stops the DNS plane serving the zone without deleting it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = true)]
+    pub enabled: Option<bool>,
+    /// Empty clears the note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "customer A, migrated 2026-01")]
+    pub description: Option<String>,
 }
 
 /// The success message every front end serves for a manual NOTIFY.
@@ -181,13 +221,12 @@ pub struct SecondaryStatusResponse {
 }
 
 impl SecondaryStatusResponse {
-    /// The wire status strings are minted only in
-    /// [`ZoneStatusResponse::from_probes`]; consumers test them through these
-    /// predicates so a renamed state cannot silently stop matching.
+    /// Whether the probed secondary serial matches this status's zone serial.
     pub fn is_in_sync(&self) -> bool {
         self.status == "in_sync"
     }
 
+    /// Check whether the secondary probe failed to obtain a serial.
     pub fn is_unreachable(&self) -> bool {
         self.status == "unreachable"
     }

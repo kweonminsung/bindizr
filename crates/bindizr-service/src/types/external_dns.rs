@@ -62,11 +62,12 @@ pub struct ExternalDnsChangesResponse {
     pub records_deleted: u32,
 }
 
-/// Zones the ExternalDNS caller may manage under its grants.
+/// The names the ExternalDNS caller may manage under its grants, each
+/// covering itself and everything under it.
 #[derive(Serialize, Debug, ToSchema)]
-pub struct ExternalDnsZonesResponse {
+pub struct ExternalDnsDomainsResponse {
     #[schema(example = json!(["example.com"]))]
-    pub zones: Vec<String>,
+    pub domains: Vec<String>,
 }
 
 /// Records of every ExternalDNS-managed zone, one per name and type, in a

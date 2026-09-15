@@ -1,6 +1,9 @@
-use bindizr_core::dns::{
-    name::{ZoneName, has_whitespace_or_control},
-    record::SoaMailbox,
+use bindizr_core::{
+    config::bindizr_config,
+    dns::{
+        name::{ZoneName, has_whitespace_or_control},
+        record::SoaMailbox,
+    },
 };
 
 use crate::{error::ServiceError, types::CreateZoneRequest};
@@ -15,15 +18,44 @@ pub(crate) struct NormalizedCreateZoneRequest {
     pub(crate) mname: String,
     pub(crate) rname: String,
     pub(crate) ttl: i32,
+    pub(crate) description: Option<String>,
 }
 
+/// Empty clears the note. The length and NUL checks are 400s rather than a
+/// backend-dependent insert failure: VARCHAR(255) counts characters, and
+/// PostgreSQL text cannot hold NUL.
+fn normalize_description(description: Option<&str>) -> Result<Option<String>, ServiceError> {
+    let Some(description) = description.map(str::trim) else {
+        return Ok(None);
+    };
+    if description.is_empty() {
+        return Ok(None);
+    }
+    if description.chars().count() > 255 {
+        return Err(ServiceError::invalid_zone_field(
+            "description must be 255 characters or fewer",
+        ));
+    }
+    if description.contains('\0') {
+        return Err(ServiceError::invalid_zone_field(
+            "description must not contain NUL characters",
+        ));
+    }
+    Ok(Some(description.to_string()))
+}
+
+/// Validate and normalize the fields of a zone creation request.
 pub(crate) fn normalize_create_zone_request(
     request: &CreateZoneRequest,
 ) -> Result<NormalizedCreateZoneRequest, ServiceError> {
     let zone_name = normalize_zone_name(&request.name)?;
     let mname = normalize_domain_name(&request.mname, "mname")?.to_string();
     let rname = normalize_email(&request.rname)?;
-    let ttl = validate_ttl(request.default_ttl)?;
+    let ttl = validate_ttl(
+        request
+            .default_ttl
+            .unwrap_or(bindizr_config().dns.zone_defaults.ttl),
+    )?;
 
     // `zone_name` and `mname` are wire-safe after `normalize_domain_name`
     // (plain ASCII labels, each <= 63 bytes); the derived SOA RNAME's shifted
@@ -36,9 +68,11 @@ pub(crate) fn normalize_create_zone_request(
         mname,
         rname,
         ttl,
+        description: normalize_description(request.description.as_deref())?,
     })
 }
 
+/// Validate and normalize a zone name.
 pub(crate) fn normalize_zone_name(value: &str) -> Result<ZoneName, ServiceError> {
     let trimmed = value.trim();
 
@@ -63,6 +97,7 @@ fn normalize_domain_name(value: &str, field: &str) -> Result<ZoneName, ServiceEr
     ZoneName::parse(value).map_err(|e| ServiceError::invalid_zone_field(format!("{} {}", field, e)))
 }
 
+/// Validate and normalize the SOA contact mailbox.
 fn normalize_email(value: &str) -> Result<String, ServiceError> {
     let value = value.trim();
 
@@ -99,6 +134,7 @@ fn normalize_email(value: &str) -> Result<String, ServiceError> {
     Ok(normalized)
 }
 
+/// Validate the SOA mailbox's local part.
 fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     if local.is_empty() {
         return Err(ServiceError::invalid_zone_field(
@@ -127,6 +163,7 @@ fn validate_email_local_part(local: &str) -> Result<(), ServiceError> {
     Ok(())
 }
 
+/// Check whether a character is permitted in an SOA mailbox local part.
 fn is_valid_email_local_char(c: char) -> bool {
     c.is_ascii_alphanumeric()
         || matches!(
@@ -153,6 +190,7 @@ fn is_valid_email_local_char(c: char) -> bool {
         )
 }
 
+/// Validate that a TTL fits the supported range.
 fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
     if ttl < MIN_TTL {
         return Err(ServiceError::invalid_zone_field(format!(
@@ -199,6 +237,7 @@ pub(crate) fn normalize_soa_timers(
     })
 }
 
+/// Resolve an omitted SOA interval to its fallback and validate the result.
 fn normalize_soa_interval(
     value: Option<i32>,
     fallback: i32,

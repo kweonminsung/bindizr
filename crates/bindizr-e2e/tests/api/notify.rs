@@ -2,6 +2,7 @@ use reqwest::{Method, StatusCode};
 
 use crate::common::{TestApp, TestAppOptions};
 
+/// Verify NOTIFY for one or all zones with optional serial advancement.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn notify_zone_all_and_bump_serial() {
@@ -66,8 +67,8 @@ async fn notify_zone_all_and_bump_serial() {
     );
 }
 
-// The catalog zone is virtual: it has no row, so no zone grant can name it
-// and a scoped token must not be able to notify it.
+/// Verify that a scoped token cannot notify the virtual catalog zone, which has no database row
+/// a zone grant can reference.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_cannot_notify_the_catalog_zone() {

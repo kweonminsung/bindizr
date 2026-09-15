@@ -6,6 +6,7 @@ use crate::{
     model::record::RecordType,
 };
 
+/// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
         id: 1,
@@ -20,10 +21,13 @@ fn test_zone() -> Zone {
         minimum_ttl: 86400,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
+        enabled: true,
+        description: None,
         created_at: Utc::now(),
     }
 }
 
+/// Verify that `is_mname` matches the apex NS naming mname.
 #[test]
 fn is_mname_matches_the_apex_ns_naming_mname() {
     let zone = test_zone();
@@ -40,6 +44,7 @@ fn is_mname_matches_the_apex_ns_naming_mname() {
     ));
 }
 
+/// Verify that `is_mname` rejects other rows.
 #[test]
 fn is_mname_rejects_other_rows() {
     let zone = test_zone();
@@ -53,6 +58,7 @@ fn is_mname_rejects_other_rows() {
     assert!(!zone.is_mname(&RecordType::A, &OwnerName::apex(), "ns1.example.com"));
 }
 
+/// Verify that `apex_ns_rrset_ttl` joins the existing apex NS RRSET.
 #[test]
 fn apex_ns_rrset_ttl_joins_the_existing_apex_ns_rrset() {
     let zone = test_zone();
@@ -70,6 +76,7 @@ fn apex_ns_rrset_ttl_joins_the_existing_apex_ns_rrset() {
     );
 }
 
+/// Verify that `apex_ns_rrset_ttl` falls back to the zone TTL.
 #[test]
 fn apex_ns_rrset_ttl_falls_back_to_the_zone_ttl() {
     let zone = test_zone();
@@ -85,6 +92,7 @@ fn apex_ns_rrset_ttl_falls_back_to_the_zone_ttl() {
     );
 }
 
+/// Verify that `mname_record` builds the apex row for the zone.
 #[test]
 fn mname_record_builds_the_apex_row_for_the_zone() {
     let zone = test_zone();

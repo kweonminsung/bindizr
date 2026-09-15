@@ -13,6 +13,7 @@ pub(crate) struct SqliteZoneChangeRepository {
 }
 
 impl SqliteZoneChangeRepository {
+    /// Create a repository for journal entries using the supplied pool.
     pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -20,6 +21,7 @@ impl SqliteZoneChangeRepository {
 
 #[async_trait]
 impl ZoneChangeRepository for SqliteZoneChangeRepository {
+    /// Insert a batch of journal entries in the current transaction.
     async fn create_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -65,6 +67,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         Ok(())
     }
 
+    /// List journal entries in the interval `(from_serial, to_serial]`.
     async fn list_between_serials(
         &self,
         zone_id: i32,
@@ -87,6 +90,7 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// Count journal entries in the interval `(from_serial, to_serial]`.
     async fn count_between_serials(
         &self,
         zone_id: i32,
@@ -110,6 +114,8 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         Ok(count as u64)
     }
 
+    /// List journal entries in the interval `(from_serial, to_serial]` in the current
+    /// transaction.
     async fn list_between_serials_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -136,32 +142,31 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn prune_older_than_tx(
+    /// Prune one zone's journal rows older than `cutoff` in the current transaction.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // Delete whole serials only: everything up to the highest serial whose
-        // newest row predates the cutoff, so remaining IXFR steps stay complete.
+        // Delete whole serials only: everything up to the highest serial with
+        // a row older than the cutoff, so remaining IXFR steps stay complete.
         // SQLite compares timestamps as text; sqlx's RFC 3339 sorts
         // chronologically.
         let result = sqlx::query(
             r#"
             DELETE FROM zone_journal
-            WHERE EXISTS (
-                SELECT 1 FROM (
-                    SELECT zone_id AS cutoff_zone_id, MAX(serial) AS cutoff_serial
-                    FROM zone_journal
-                    WHERE created_at < ?
-                    GROUP BY zone_id
-                ) boundaries
-                WHERE boundaries.cutoff_zone_id = zone_journal.zone_id
-                  AND zone_journal.serial <= boundaries.cutoff_serial
-            )
+            WHERE zone_id = ?
+              AND serial <= (
+                  SELECT MAX(serial) FROM zone_journal
+                  WHERE zone_id = ? AND created_at < ?
+              )
             "#,
         )
+        .bind(zone_id)
+        .bind(zone_id)
         .bind(cutoff)
         .execute(&mut **sqlite_tx)
         .await

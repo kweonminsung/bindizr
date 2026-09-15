@@ -1,7 +1,7 @@
 """Benchmark 9 — Resource Usage.
 
-Populates a fixed zone, then applies a steady mixed query load while sampling
-container CPU, memory, network, and block IO. Reports peak/avg for each.
+Populates an A-record zone, then applies a steady query load while sampling
+container resources. Reports CPU, memory, and network usage.
 """
 from __future__ import annotations
 
@@ -14,11 +14,12 @@ from datasets.gen_dataset import generate  # noqa: E402
 from lib import dnsquery, dnsutil  # noqa: E402
 from lib.resources import sampler_for  # noqa: E402
 
-# Sampled around the measured phase below, not by the orchestrator.
+# Samples its own query phase, including warmup, rather than the orchestrator's full run.
 SELF_SAMPLES = True
 
 
 async def run(adapter, cfg, ctx) -> dict:
+    """Measure system resource use under the configured benchmark workloads."""
     zone = ctx["zone"]
     size = cfg["query"]["zone_size"]
     await adapter.create_zone(zone)
@@ -28,6 +29,7 @@ async def run(adapter, cfg, ctx) -> dict:
     names = [f'{r["name"]}.{zone.rstrip(".")}' for r in records]
     ep = adapter.dns_endpoint()
 
+    # Keep import and propagation costs outside the resource sampling window.
     p = cfg["propagation"]
     missing = await asyncio.get_event_loop().run_in_executor(
         None, dnsutil.first_unqueryable, records, zone, ep.host, ep.port,
@@ -41,6 +43,7 @@ async def run(adapter, cfg, ctx) -> dict:
             "error": "propagation timeout: imported zone not queryable",
         }
 
+    # Resource samples include query warmup; throughput and latency samples exclude it.
     sampler = sampler_for(adapter, cfg)
     sampler.start()
     rec = await dnsquery.query_load(
@@ -49,13 +52,13 @@ async def run(adapter, cfg, ctx) -> dict:
     res = sampler.stop()
     s = rec.summary()
 
-    # Bindizr idles outside the query plane while BIND9 serves, so the split
-    # shows where the stack's cost actually lands.
     def _service(name: str) -> str:
-        # docker container names are "<project>-<service>-<index>".
+        """Extract the service from a <project>-<service>-<index> container name."""
         parts = name.rsplit("-", 2)
         return parts[-2] if len(parts) == 3 else name
 
+    # Bindizr idles outside the query plane while BIND9 serves, so the split
+    # shows where the stack's cost actually lands.
     by_service = {_service(n): v for n, v in res.get("cpu_by_container", {}).items()}
     return {
         "system": ctx["label"],

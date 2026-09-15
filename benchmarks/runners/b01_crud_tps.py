@@ -20,6 +20,7 @@ from lib import loadgen  # noqa: E402
 
 
 async def run(adapter, cfg, ctx) -> dict:
+    """Measure record creation, reading, updating, and deletion throughput."""
     zone = ctx["zone"]
     c = cfg["crud"]
     conc = c["concurrency"]
@@ -41,6 +42,7 @@ async def run(adapter, cfg, ctx) -> dict:
     created: list[str] = []
 
     async def create_step(seq: int) -> bool:
+        """Create one uniquely named record for the measured workload."""
         rec = dict(create_recs[seq % len(create_recs)])
         rec["name"] = f"crt{seq:08d}"
         h = await adapter.create_record(zone, rec)
@@ -50,13 +52,13 @@ async def run(adapter, cfg, ctx) -> dict:
     create_rec = await loadgen.run_closed_loop(create_step, conc, dur, warm)
 
     async def read_step(seq: int) -> bool:
+        """Read one existing record for the measured workload."""
         return await adapter.get_record(zone, pool_handles[seq % len(pool_handles)])
 
     read_rec = await loadgen.run_closed_loop(read_step, conc, dur, warm)
 
-    # Change only the TTL, keeping name/type/value: an RRset-based system like
-    # PowerDNS and an id-based one like Bindizr then do comparable work.
     async def update_step(seq: int) -> bool:
+        """Update only TTL so record-group and ID-based APIs do comparable work."""
         idx = seq % len(pool_handles)
         rec = dict(pool_recs[idx])
         rec["ttl"] = 1800
@@ -64,8 +66,8 @@ async def run(adapter, cfg, ctx) -> dict:
 
     update_rec = await loadgen.run_closed_loop(update_step, conc, dur, warm)
 
-    # Delete exactly what the CREATE phase made, leaving the read/update pool intact.
     async def delete_step(seq: int) -> bool:
+        """Delete records from the CREATE phase, preserving the read/update pool."""
         return await adapter.delete_record(zone, created[seq])
 
     delete_rec = (

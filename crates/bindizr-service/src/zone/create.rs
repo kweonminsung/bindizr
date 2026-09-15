@@ -1,4 +1,4 @@
-use bindizr_core::dns::CATALOG_ZONE_NAME;
+use bindizr_core::{config::bindizr_config, dns::CATALOG_ZONE_NAME};
 use chrono::Utc;
 
 use super::ZoneService;
@@ -10,10 +10,7 @@ use crate::{
     repository::RepositoryService,
     serial::{generate_serial, validate_initial_serial},
     types::CreateZoneRequest,
-    zone::{
-        DEFAULT_EXPIRE, DEFAULT_MINIMUM_TTL, DEFAULT_REFRESH, DEFAULT_RETRY,
-        validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
-    },
+    zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
 };
 
 impl ZoneService {
@@ -25,13 +22,14 @@ impl ZoneService {
         caller.require_global("create zones")?;
 
         let validated = normalize_create_zone_request(create_zone_request)?;
+        let defaults = &bindizr_config().dns.zone_defaults;
         let timers = normalize_soa_timers(
             create_zone_request,
             ResolvedSoaTimers {
-                refresh: DEFAULT_REFRESH,
-                retry: DEFAULT_RETRY,
-                expire: DEFAULT_EXPIRE,
-                minimum_ttl: DEFAULT_MINIMUM_TTL,
+                refresh: defaults.refresh,
+                retry: defaults.retry,
+                expire: defaults.expire,
+                minimum_ttl: defaults.minimum_ttl,
             },
         )?;
 
@@ -69,6 +67,8 @@ impl ZoneService {
                     rname: validated.rname,
                     dnssec_policy_id: None,
                     parent_ns_addrs: None,
+                    enabled: true,
+                    description: validated.description.clone(),
                     default_ttl: validated.ttl,
                     serial,
                     refresh: timers.refresh,
@@ -102,7 +102,13 @@ impl ZoneService {
                 ServiceError::internal("Failed to create mname NS record")
             })?;
 
-            ZoneService::save_version_tx(&mut tx, &created_zone, created_zone.serial).await?;
+            ZoneService::save_version_tx(
+                &mut tx,
+                &created_zone,
+                created_zone.serial,
+                &caller.change_subject(),
+            )
+            .await?;
 
             Ok::<Zone, ServiceError>(created_zone)
         }

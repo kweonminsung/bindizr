@@ -1,7 +1,4 @@
-use bindizr_core::dns::{
-    CATALOG_ZONE_NAME,
-    name::{OwnerName, ZoneName},
-};
+use bindizr_core::dns::{CATALOG_ZONE_NAME, name::OwnerName};
 use bindizr_db::repository::LockLevel;
 
 use super::ZoneService;
@@ -14,17 +11,22 @@ use crate::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    record::RecordService,
+    record::{RecordService, validate_record_name_in_zone},
     repository::RepositoryService,
     serial::generate_serial,
     types::{CreateZoneRequest, UpdateZoneRequest},
-    zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
+    zone::{
+        validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
+        version::ChangeSubject,
+    },
 };
 
 /// Outcome of the transactional part of a zone update.
 struct AppliedZoneUpdate {
     zone: Zone,
-    previous_name: ZoneName,
+    /// Whether the update changed what the catalog publishes: its members are
+    /// the enabled zones, listed by name.
+    catalog_changed: bool,
     new_serial: i32,
 }
 
@@ -74,27 +76,38 @@ impl ZoneService {
                 "serial is managed automatically and cannot be set on update",
             ));
         }
-        Self::update_locked(zone_name, |existing| CreateZoneRequest {
-            name: request
-                .name
-                .clone()
-                .unwrap_or_else(|| existing.name.to_string()),
-            mname: request
-                .mname
-                .clone()
-                .unwrap_or_else(|| existing.mname.clone()),
-            rname: request
-                .rname
-                .clone()
-                .unwrap_or_else(|| existing.rname.clone()),
-            default_ttl: request.default_ttl.unwrap_or(existing.default_ttl),
-            serial: None,
-            // Omitted timers fall back to the existing zone in normalize_soa_timers.
-            refresh: request.refresh,
-            retry: request.retry,
-            expire: request.expire,
-            minimum_ttl: request.minimum_ttl,
-        })
+        Self::update_locked(
+            zone_name,
+            &caller.change_subject(),
+            request.enabled,
+            |existing| {
+                CreateZoneRequest {
+                    name: request
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| existing.name.to_string()),
+                    mname: request
+                        .mname
+                        .clone()
+                        .unwrap_or_else(|| existing.mname.clone()),
+                    rname: request
+                        .rname
+                        .clone()
+                        .unwrap_or_else(|| existing.rname.clone()),
+                    default_ttl: Some(request.default_ttl.unwrap_or(existing.default_ttl)),
+                    serial: None,
+                    // Omitted timers fall back to the existing zone in normalize_soa_timers.
+                    refresh: request.refresh,
+                    retry: request.retry,
+                    expire: request.expire,
+                    minimum_ttl: request.minimum_ttl,
+                    description: request
+                        .description
+                        .clone()
+                        .or_else(|| existing.description.clone()),
+                }
+            },
+        )
         .await
     }
 
@@ -102,6 +115,8 @@ impl ZoneService {
     /// bump the serial and record SOA/NS changes for IXFR.
     async fn update_locked(
         zone_name: &str,
+        subject: &ChangeSubject,
+        enabled: Option<bool>,
         build: impl FnOnce(&Zone) -> CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;
@@ -115,6 +130,16 @@ impl ZoneService {
 
             let request = build(&existing_zone);
             let validated = normalize_create_zone_request(&request)?;
+
+            // A longer zone name lengthens every record's wire name, so the
+            // records must still fit under it or the zone stops transferring.
+            if validated.name != existing_zone.name {
+                let records =
+                    RepositoryService::list_records_tx(&mut tx, zone_id, LockLevel::None).await?;
+                for record in &records {
+                    validate_record_name_in_zone(&record.name, &validated.name)?;
+                }
+            }
 
             let timers = normalize_soa_timers(
                 &request,
@@ -163,6 +188,8 @@ impl ZoneService {
                     minimum_ttl: timers.minimum_ttl,
                     dnssec_policy_id: existing_zone.dnssec_policy_id,
                     parent_ns_addrs: existing_zone.parent_ns_addrs.clone(),
+                    enabled: enabled.unwrap_or(existing_zone.enabled),
+                    description: validated.description,
                     created_at: existing_zone.created_at,
                 },
             )
@@ -217,6 +244,8 @@ impl ZoneService {
                 })?;
             }
 
+            // Journal the SOA and signature changes under the zone update's serial,
+            // then save the version that future IXFR and rollback reads will use.
             let changes = soa_replacement_changes(&existing_zone, &updated_zone, new_serial)?;
 
             RepositoryService::create_zone_changes_tx(&mut tx, &changes)
@@ -227,11 +256,12 @@ impl ZoneService {
                 })?;
 
             DnssecService::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-            ZoneService::save_version_tx(&mut tx, &updated_zone, new_serial).await?;
+            ZoneService::save_version_tx(&mut tx, &updated_zone, new_serial, subject).await?;
 
             Ok(AppliedZoneUpdate {
+                catalog_changed: existing_zone.name != updated_zone.name
+                    || existing_zone.enabled != updated_zone.enabled,
                 zone: updated_zone,
-                previous_name: existing_zone.name,
                 new_serial,
             })
         }
@@ -239,7 +269,7 @@ impl ZoneService {
 
         let AppliedZoneUpdate {
             zone: updated_zone,
-            previous_name,
+            catalog_changed,
             new_serial,
         } = RepositoryService::finish_tx(tx, apply_result, "Failed to update zone").await?;
 
@@ -251,6 +281,7 @@ impl ZoneService {
             updated_zone.id
         );
 
+        // Announce the zone's new serial after its data and version have committed.
         if let Err(e) =
             crate::notify::send_notify_after_update(Some(updated_zone.name.as_str())).await
         {
@@ -261,8 +292,8 @@ impl ZoneService {
             );
         }
 
-        // The catalog lists zones by name, so a rename must reach secondaries too.
-        if previous_name != updated_zone.name
+        // Renaming or toggling a zone also changes the catalog seen by secondaries.
+        if catalog_changed
             && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
         {
             log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);

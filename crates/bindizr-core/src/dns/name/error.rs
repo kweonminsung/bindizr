@@ -19,13 +19,14 @@ pub enum ParseNameError {
     DanglingEscape,
     /// A `\DDD` that is not three decimal digits, or is above 255.
     InvalidEscape,
-    /// A label may hold any octet (RFC 2181, Section 11), but bindizr renders
-    /// names as text, so a label must decode to valid UTF-8.
-    NonUtf8Label,
+    /// A label may hold any octet (RFC 2181, Section 11); bindizr holds names
+    /// to ASCII text, an internationalized label as its `xn--` A-label.
+    NonAscii,
     OutsideZone,
 }
 
 impl std::fmt::Display for ParseNameError {
+    /// Write the parse name error in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Empty => write!(f, "must not be empty"),
@@ -45,7 +46,10 @@ impl std::fmt::Display for ParseNameError {
             Self::LabelHyphen => write!(f, "labels must not start or end with hyphens"),
             Self::DanglingEscape => write!(f, "ends with an incomplete escape"),
             Self::InvalidEscape => write!(f, "contains an invalid escape"),
-            Self::NonUtf8Label => write!(f, "contains a label that is not valid UTF-8"),
+            Self::NonAscii => write!(
+                f,
+                "must be printable ASCII; spell an internationalized label in punycode (xn--)"
+            ),
             Self::OutsideZone => write!(f, "is outside the zone"),
         }
     }

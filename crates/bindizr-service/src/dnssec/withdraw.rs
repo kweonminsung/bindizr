@@ -30,9 +30,16 @@ impl DnssecService {
             }
             RepositoryService::create_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
 
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-                .await?
-                .unwrap_or(zone.serial);
+            let new_serial = Self::resign_zone_tx(
+                &mut tx,
+                &zone,
+                &policy,
+                &keys,
+                false,
+                &caller.change_subject(),
+            )
+            .await?
+            .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
         }
@@ -65,9 +72,16 @@ impl DnssecService {
             }
             RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
 
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &keys, false)
-                .await?
-                .unwrap_or(zone.serial);
+            let new_serial = Self::resign_zone_tx(
+                &mut tx,
+                &zone,
+                &policy,
+                &keys,
+                false,
+                &caller.change_subject(),
+            )
+            .await?
+            .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
         }

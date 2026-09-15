@@ -13,6 +13,7 @@ pub(crate) struct SqliteTokenGrantRepository {
 }
 
 impl SqliteTokenGrantRepository {
+    /// Create a repository for token grants using the supplied pool.
     pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -20,20 +21,22 @@ impl SqliteTokenGrantRepository {
 
 #[async_trait]
 impl TokenGrantRepository for SqliteTokenGrantRepository {
+    /// Insert a token grant.
     async fn create(&self, mut grant: TokenGrant) -> Result<TokenGrant, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO token_grants (zone_id, api_token_id, record_name_pattern, record_types, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO token_grants (zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(grant.zone_id)
         .bind(grant.api_token_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
+        .bind(grant.can_write)
         .bind(now)
         .execute(&mut *conn)
         .await?;
@@ -43,11 +46,12 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         Ok(grant)
     }
 
+    /// Find a token grant by ID.
     async fn get(&self, id: i32) -> Result<Option<TokenGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let grant = sqlx::query_as::<_, TokenGrant>(
-            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM token_grants WHERE id = ?",
+            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at FROM token_grants WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -56,11 +60,12 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         Ok(grant)
     }
 
+    /// List token grants for a zone.
     async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<TokenGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TokenGrant>(
-            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM token_grants WHERE zone_id = ? ORDER BY id",
+            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at FROM token_grants WHERE zone_id = ? ORDER BY id",
         )
         .bind(zone_id)
         .fetch_all(&mut *conn)
@@ -69,6 +74,7 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         Ok(grants)
     }
 
+    /// List token grants for an API token in a zone in the current transaction.
     async fn list_by_zone_id_and_token_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -79,7 +85,7 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         let sqlite_tx = tx.as_sqlite()?;
 
         let grants = sqlx::query_as::<_, TokenGrant>(
-            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM token_grants WHERE zone_id = ? AND api_token_id = ? ORDER BY id",
+            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at FROM token_grants WHERE zone_id = ? AND api_token_id = ? ORDER BY id",
         )
         .bind(zone_id)
         .bind(api_token_id)
@@ -89,11 +95,12 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         Ok(grants)
     }
 
+    /// List token grants for an API token.
     async fn list_by_token_id(&self, api_token_id: i32) -> Result<Vec<TokenGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TokenGrant>(
-            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, created_at FROM token_grants WHERE api_token_id = ? ORDER BY id",
+            "SELECT id, zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at FROM token_grants WHERE api_token_id = ? ORDER BY id",
         )
         .bind(api_token_id)
         .fetch_all(&mut *conn)
@@ -102,6 +109,7 @@ impl TokenGrantRepository for SqliteTokenGrantRepository {
         Ok(grants)
     }
 
+    /// Delete a token grant by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

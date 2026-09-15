@@ -1,5 +1,3 @@
-use config::{Config, File, FileFormat};
-
 use crate::config::{
     BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogLevel, resolve_config_path_with_env,
 };
@@ -20,6 +18,7 @@ struct TestConfigToml {
 }
 
 impl Default for TestConfigToml {
+    /// Build a valid configuration fixture with default section values.
     fn default() -> Self {
         Self {
             api_listen_addr: "127.0.0.1",
@@ -35,6 +34,7 @@ impl Default for TestConfigToml {
 }
 
 impl TestConfigToml {
+    /// Render the configuration fixture as TOML.
     fn render(&self) -> String {
         let unselected_databases = if self.unselected_databases {
             "\n[database.mysql]\nserver_url = \"\"\n\n[database.postgresql]\nserver_url = \"\"\n"
@@ -73,16 +73,14 @@ log_level = "debug"
     }
 }
 
+/// Parse a TOML configuration fixture.
 fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
-    let config = Config::builder()
-        .add_source(File::from_str(&toml.render(), FileFormat::Toml))
-        .build()
-        .unwrap();
-    BindizrConfig::from_raw(config, |_| None)
+    BindizrConfig::from_toml(&toml.render(), |_| None)
 }
 
+/// Verify that `from_toml` accepts valid config.
 #[test]
-fn from_raw_accepts_valid_config() {
+fn from_toml_accepts_valid_config() {
     let parsed = parse_config(&TestConfigToml {
         secondary_addrs: "127.0.0.1:53",
         dns_notify: "notify_after_update = false\nnotify_on_startup = true\nnotify_retries = 4\nnotify_timeout_secs = 9\nnsupdate_allow_unsigned = true",
@@ -104,8 +102,9 @@ fn from_raw_accepts_valid_config() {
     assert!(parsed.dns.nsupdate_allow_unsigned);
 }
 
+/// Verify that `from_toml` defaults missing optional fields.
 #[test]
-fn from_raw_defaults_missing_optional_fields() {
+fn from_toml_defaults_missing_optional_fields() {
     let parsed = parse_config(&TestConfigToml::default()).unwrap();
 
     assert!(parsed.api.metrics_enabled);
@@ -116,10 +115,12 @@ fn from_raw_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.notify_timeout_secs, 3);
     assert!(!parsed.dns.nsupdate_allow_unsigned);
     assert_eq!(parsed.dns.journal_retention_days, 365);
+    assert_eq!(parsed.dns.maintenance_interval_secs, 3600);
 }
 
+/// Verify that `from_toml` defaults unselected database sections.
 #[test]
-fn from_raw_defaults_unselected_database_sections() {
+fn from_toml_defaults_unselected_database_sections() {
     let parsed = parse_config(&TestConfigToml {
         unselected_databases: false,
         ..Default::default()
@@ -134,8 +135,9 @@ fn from_raw_defaults_unselected_database_sections() {
     assert_eq!(parsed.database.postgresql.server_url, "");
 }
 
+/// Verify that `from_toml` rejects invalid listen addr.
 #[test]
-fn from_raw_rejects_invalid_listen_addr() {
+fn from_toml_rejects_invalid_listen_addr() {
     let err = parse_config(&TestConfigToml {
         api_listen_addr: "not-an-ip",
         ..Default::default()
@@ -145,8 +147,9 @@ fn from_raw_rejects_invalid_listen_addr() {
     assert!(err.contains("Invalid Bindizr configuration"));
 }
 
+/// Verify that `from_toml` rejects empty selected database url.
 #[test]
-fn from_raw_rejects_empty_selected_database_url() {
+fn from_toml_rejects_empty_selected_database_url() {
     let err = parse_config(&TestConfigToml {
         database_type: "mysql",
         ..Default::default()
@@ -156,6 +159,7 @@ fn from_raw_rejects_empty_selected_database_url() {
     assert!(err.contains("database.mysql.server_url must not be empty"));
 }
 
+/// Verify that `apply_env_overrides` replaces config values before validation.
 #[test]
 fn apply_env_overrides_replaces_config_values_before_validation() {
     let mut overridden = parse_config(&TestConfigToml {
@@ -182,6 +186,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_NOTIFY_RETRIES" => Some("7".to_string()),
             "BINDIZR_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
             "BINDIZR_JOURNAL_RETENTION_DAYS" => Some("0".to_string()),
+            "BINDIZR_MAINTENANCE_INTERVAL_SECS" => Some("0".to_string()),
             "BINDIZR_LOG_LEVEL" => Some("info".to_string()),
             _ => None,
         })
@@ -212,9 +217,12 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.dns.notify_retries, 7);
     assert_eq!(overridden.dns.notify_timeout_secs, 11);
     assert_eq!(overridden.dns.journal_retention_days, 0);
+    // 0 is the off switch, not a rejected value.
+    assert_eq!(overridden.dns.maintenance_interval_secs, 0);
     assert!(matches!(overridden.logging.log_level, LogLevel::Info));
 }
 
+/// Verify that `apply_env_overrides` rejects invalid values.
 #[test]
 fn apply_env_overrides_rejects_invalid_values() {
     let mut overridden = parse_config(&TestConfigToml {
@@ -233,6 +241,7 @@ fn apply_env_overrides_rejects_invalid_values() {
     assert!(err.contains("Invalid BINDIZR_API_PORT environment variable"));
 }
 
+/// Verify that `resolve_config_path` prefers argument then env then default.
 #[test]
 fn resolve_config_path_prefers_argument_then_env_then_default() {
     let env = |name: &str| (name == "BINDIZR_CONFIG_PATH").then(|| "/env/path.toml".to_string());
@@ -248,8 +257,9 @@ fn resolve_config_path_prefers_argument_then_env_then_default() {
     );
 }
 
+/// Verify that `from_toml` rejects entryless secondary addrs.
 #[test]
-fn from_raw_rejects_entryless_secondary_addrs() {
+fn from_toml_rejects_entryless_secondary_addrs() {
     let err = parse_config(&TestConfigToml {
         secondary_addrs: ",",
         ..Default::default()
@@ -259,8 +269,9 @@ fn from_raw_rejects_entryless_secondary_addrs() {
     assert!(err.contains("dns.secondary_addrs contains no addresses"));
 }
 
+/// Verify that `from_toml` rejects port zero.
 #[test]
-fn from_raw_rejects_port_zero() {
+fn from_toml_rejects_port_zero() {
     // Port 0 binds an ephemeral one, somewhere no client could find.
     let err = parse_config(&TestConfigToml {
         dns_listen_port: 0,
@@ -277,8 +288,9 @@ fn from_raw_rejects_port_zero() {
     assert!(err.contains("api.listen_port must not be 0"), "{}", err);
 }
 
+/// Verify that `from_toml` rejects listeners sharing a port.
 #[test]
-fn from_raw_rejects_listeners_sharing_a_port() {
+fn from_toml_rejects_listeners_sharing_a_port() {
     let err = parse_config(&TestConfigToml {
         api_listen_port: 5353,
         dns_listen_port: 5353,
@@ -289,8 +301,9 @@ fn from_raw_rejects_listeners_sharing_a_port() {
     assert!(err.contains("cannot share port 5353"), "{}", err);
 }
 
+/// Verify that `from_toml` rejects an unparseable secondary address.
 #[test]
-fn from_raw_rejects_an_unparseable_secondary_address() {
+fn from_toml_rejects_an_unparseable_secondary_address() {
     let err = parse_config(&TestConfigToml {
         secondary_addrs: "192.0.2.1, not a host",
         ..Default::default()
@@ -298,4 +311,45 @@ fn from_raw_rejects_an_unparseable_secondary_address() {
     .unwrap_err();
 
     assert!(err.contains("is not a host[:port] address"), "{}", err);
+}
+
+/// Verify that a reload refuses what a running process cannot adopt.
+#[test]
+fn a_reload_refuses_what_a_running_process_cannot_adopt() {
+    // require_authentication is in the list because the router is built
+    // once: a section is fixed whole, not field by field.
+    let current = parse_config(&TestConfigToml::default()).unwrap();
+
+    let mut api_moved = current.clone();
+    api_moved.api.listen_port += 1;
+    assert_eq!(current.fixed_settings_changed(&api_moved), ["api"]);
+
+    let mut auth_toggled = current.clone();
+    auth_toggled.api.require_authentication = !current.api.require_authentication;
+    assert_eq!(current.fixed_settings_changed(&auth_toggled), ["api"]);
+
+    let mut db_moved = current.clone();
+    db_moved.database.database_type = DatabaseType::Mysql;
+    assert_eq!(current.fixed_settings_changed(&db_moved), ["database"]);
+
+    let mut dns_moved = current.clone();
+    dns_moved.dns.listen_port += 1;
+    assert_eq!(
+        current.fixed_settings_changed(&dns_moved),
+        ["dns.listen_port"]
+    );
+}
+
+/// Verify that a reload takes the settings read per use.
+#[test]
+fn a_reload_takes_the_settings_read_per_use() {
+    let current = parse_config(&TestConfigToml::default()).unwrap();
+
+    let mut next = current.clone();
+    next.dns.secondary_addrs = "192.0.2.1:53".to_string();
+    next.logging.log_level = LogLevel::Warn;
+
+    assert!(current.fixed_settings_changed(&next).is_empty());
+    assert_eq!(current.changed_settings(&next), ["dns", "logging"]);
+    assert!(current.changed_settings(&current).is_empty());
 }

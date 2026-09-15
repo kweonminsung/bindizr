@@ -47,8 +47,8 @@ impl RecordService {
                 Some(record_type) => parse_record_type(record_type)?,
                 None => existing.record_type.clone(),
             };
-            // A stored value is encoded per record type (TXT keeps raw RDATA, others
-            // plain), so it can't carry across a type change — require a fresh value.
+            // Each type has its own stored grammar (TXT uses quoted presentation),
+            // so a type change requires a fresh value.
             if record_type != existing.record_type && request.value.is_none() {
                 return Err(ServiceError::invalid_input(
                     "value is required when changing a record's type".to_string(),
@@ -146,8 +146,13 @@ impl RecordService {
                     }
                 };
 
-            // Invisible zones read as 404 so scoped tokens cannot probe ids.
-            if !caller.zone_visible(zone.id) {
+            // A record the caller's grants do not reach reads as 404, as it
+            // does on GET, so ids cannot be probed.
+            if !caller.record_visible(
+                zone.id,
+                &existing_record.name,
+                Some(&existing_record.record_type),
+            ) {
                 return Err(ServiceError::record_not_found(record_id));
             }
 
@@ -208,6 +213,7 @@ impl RecordService {
                 &candidate_updated,
             )?;
 
+            // Store the validated replacement, signatures, and journal under one serial.
             let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();
 
@@ -221,7 +227,8 @@ impl RecordService {
 
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the change
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
+                .await?;
 
             Ok::<(Record, ZoneName), ServiceError>((updated_record, zone_name))
         }
@@ -242,6 +249,7 @@ impl RecordService {
             updated_record.id
         );
 
+        // Request secondary transfers only after the replacement is committed.
         if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }

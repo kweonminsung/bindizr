@@ -18,6 +18,7 @@ RAW_DIR = RESULTS_DIR / "raw"
 
 
 def save_result(benchmark: str, result: dict[str, Any]) -> None:
+    """Append one benchmark result to its raw JSON file."""
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     out = RAW_DIR / f"{benchmark}.json"
     payload: dict[str, Any] = {"benchmark": benchmark, "results": []}
@@ -28,6 +29,7 @@ def save_result(benchmark: str, result: dict[str, Any]) -> None:
 
 
 def _load_all() -> dict[str, dict]:
+    """Load all saved raw benchmark result files."""
     data: dict[str, dict] = {}
     if RAW_DIR.exists():
         for f in sorted(RAW_DIR.glob("*.json")):
@@ -37,6 +39,7 @@ def _load_all() -> dict[str, dict]:
 
 
 def _md_table(headers: list[str], rows: list[list[Any]]) -> str:
+    """Render headers and rows as a Markdown table."""
     line = "| " + " | ".join(headers) + " |\n"
     line += "| " + " | ".join("---" for _ in headers) + " |\n"
     for r in rows:
@@ -45,6 +48,7 @@ def _md_table(headers: list[str], rows: list[list[Any]]) -> str:
 
 
 def build_report(env: dict, cfg: dict) -> None:
+    """Write the combined JSON, CSV, Markdown, and graph reports."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
     data = _load_all()
@@ -220,12 +224,12 @@ def _render_b07(rows: list[dict]) -> str:
 
 
 def _rows(data: dict, key: str) -> list[dict]:
+    """Return aggregated rows for one benchmark when results exist."""
     return _aggregate(data[key]["results"]) if key in data else []
 
 
 def _union_headers(results: list[dict]) -> list[str]:
-    # Union columns across all rows (first-seen order) so a failure row's extra
-    # keys (e.g. status/error) aren't clipped to the first row's schema.
+    """Collect columns in first-seen order, including failure-only status/error keys."""
     headers: list[str] = []
     for r in results:
         for h in r:
@@ -235,6 +239,7 @@ def _union_headers(results: list[dict]) -> list[str]:
 
 
 def _render_markdown(env: dict, data: dict) -> str:
+    """Render the environment and benchmark results as a Markdown report."""
     hw = env["hardware"]
     out = ["# Bindizr Benchmark Results\n"]
     out.append("## Test Environment\n")
@@ -310,11 +315,15 @@ def _render_markdown(env: dict, data: dict) -> str:
 
     if "b08_query_perf" in data:
         results = _rows(data, "b08_query_perf")
-        # A failed query run emits a status/error row with no qps; keep those out
-        # of the numeric table and the overhead math (which divides by qps), and
-        # list them separately below.
+
         def _ok(r):
+            """Select query runs with a QPS measurement for numeric comparisons.
+
+            Failed runs lack QPS, so they are reported separately from the
+            numeric table and the overhead calculation, which divides by QPS.
+            """
             return r.get("status") != "FAILED" and r.get("qps") is not None
+
         failed = [r for r in results if not _ok(r)]
         ok = [r for r in results if _ok(r)]
         native = next((r for r in ok if "Native" in r["system"]), None)
@@ -346,6 +355,7 @@ def _render_markdown(env: dict, data: dict) -> str:
 
 
 def _render_graphs(data: dict) -> None:
+    """Save comparison graphs when the plotting dependency is available."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -354,6 +364,7 @@ def _render_graphs(data: dict) -> None:
         return
 
     def bar(fname: str, title: str, labels: list[str], values: list[float], ylabel: str):
+        """Save a bar chart for one benchmark metric."""
         if not labels:
             return
         fig, ax = plt.subplots(figsize=(8, 4.5))

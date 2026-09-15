@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use bindizr_core::config;
+use bindizr_core::{config, log_info};
 use bindizr_service::error::ServiceError;
 
 use crate::socket::{
@@ -24,7 +24,7 @@ pub(crate) fn mark_start_time() {
     );
 }
 
-/// Handle the `Status` command with the daemon's PID, version, and start time.
+/// Return the daemon's current status as JSON.
 pub(crate) fn status() -> Result<DaemonResponse, ServiceError> {
     let pid = Some(process::id());
     let version = env!("CARGO_PKG_VERSION");
@@ -41,7 +41,23 @@ pub(crate) fn status() -> Result<DaemonResponse, ServiceError> {
     Ok(response)
 }
 
-/// Handle the `Config` command by returning the loaded configuration.
+/// Reload the daemon configuration and return the result.
+pub(crate) fn reload_config() -> Result<DaemonResponse, ServiceError> {
+    let changed = crate::daemon::reload_config().map_err(ServiceError::invalid_input)?;
+
+    let message = if changed.is_empty() {
+        "Configuration reloaded; nothing changed".to_string()
+    } else {
+        format!("Configuration reloaded: {} changed", changed.join(", "))
+    };
+    log_info!("event=config_reload changed={}", changed.join(","));
+    Ok(DaemonResponse {
+        message,
+        data: serde_json::Value::Null,
+    })
+}
+
+/// Return the daemon's effective configuration as JSON.
 pub(crate) fn config() -> Result<DaemonResponse, ServiceError> {
     Ok(DaemonResponse {
         message: "Configuration retrieved successfully".to_string(),

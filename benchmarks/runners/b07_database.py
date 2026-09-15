@@ -2,8 +2,8 @@
 
 Runs the same CRUD-lite workload against Bindizr backed by SQLite, MySQL, and
 PostgreSQL in turn, comparing create/read TPS, latency, and resource use. Each
-backend then runs a bulk-import comparison (`db_bulk_sizes`, e.g. 10k/100k) so
-the operationally-recommended backend is clear and 100k linearity is confirmed.
+backend then runs a bulk-import comparison (`db_bulk_sizes`, e.g. 10k/100k)
+to measure throughput scaling with zone size.
 
 This runner is special: it builds and tears down its own Bindizr adapters (one
 per backend), so the orchestrator invokes it with `adapter=None`.
@@ -40,10 +40,12 @@ def _mem_split(res: dict) -> tuple[float, float]:
 
 
 async def _bench_backend(adapter, cfg, zone, label) -> dict:
+    """Measure create/read throughput, latency, and resource use for one backend."""
     c = cfg["crud"]
     conc, dur, warm = c["concurrency"], min(c["duration_secs"], 15), c["warmup_secs"]
     npool = min(c["records_prepopulate"], 2000)
 
+    # Populate the read workload's record pool before resource sampling starts.
     await adapter.create_zone(zone)
     pool = generate(npool, cfg["seed"] + 1)
     handles = []
@@ -51,20 +53,24 @@ async def _bench_backend(adapter, cfg, zone, label) -> dict:
         rec["name"] = f"pool{i:07d}"
         handles.append(await adapter.create_record(zone, rec))
 
+    # The resource window includes create-data preparation and both warmups.
     sampler = sampler_for(adapter, cfg)
     sampler.start()
 
     create_recs = generate(200_000, cfg["seed"] + 3)
 
     async def create_step(seq):
+        """Create one uniquely named record for the measured workload."""
         rec = dict(create_recs[seq % len(create_recs)])
         rec["name"] = f"crt{seq:08d}"
         await adapter.create_record(zone, rec)
         return True
 
     async def read_step(seq):
+        """Read one existing record for the measured workload."""
         return await adapter.get_record(zone, handles[seq % len(handles)])
 
+    # Measure create and read separately, each with its own unrecorded warmup.
     cr = await loadgen.run_closed_loop(create_step, conc, dur, warm)
     rr = await loadgen.run_closed_loop(read_step, conc, dur, warm)
     res = sampler.stop()
@@ -118,6 +124,7 @@ async def _bulk_backend(adapter, cfg, zone, backend, size) -> dict:
 
 
 async def run(_adapter, cfg, ctx) -> list:
+    """Compare CRUD and bulk import performance across database backends."""
     zone = ctx["zone"]
     rows = []
     for backend in cfg["databases"]:

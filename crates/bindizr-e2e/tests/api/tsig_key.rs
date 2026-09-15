@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Create a named zone fixture through the API.
 async fn create_named_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
         .request(
@@ -19,6 +20,7 @@ async fn create_named_zone(app: &TestApp, zone_name: &str) {
     assert_eq!(status, StatusCode::CREATED);
 }
 
+/// Verify TSIG key creation, retrieval, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tsig_key_create_read_delete() {
@@ -47,7 +49,7 @@ async fn tsig_key_create_read_delete() {
     // ...but omitted from the list response.
     let (status, body) = app.request(Method::GET, "/tsig-keys", None).await;
     assert_eq!(status, StatusCode::OK);
-    let keys = body["tsig_keys"].as_array().unwrap();
+    let keys = body["items"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
     assert!(keys[0].get("secret").is_none());
 
@@ -71,6 +73,7 @@ async fn tsig_key_create_read_delete() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Verify that TSIG key imports existing secret and algorithm.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tsig_key_imports_existing_secret_and_algorithm() {
@@ -125,6 +128,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Verify creation and deletion of globally authorized TSIG keys.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn global_tsig_key_lifecycle() {
@@ -152,7 +156,7 @@ async fn global_tsig_key_lifecycle() {
 
     let (status, body) = app.request(Method::GET, "/tsig-keys", None).await;
     assert_eq!(status, StatusCode::OK);
-    let keys = body["tsig_keys"].as_array().unwrap();
+    let keys = body["items"].as_array().unwrap();
     let global = keys.iter().find(|k| k["name"] == "global-key").unwrap();
     assert_eq!(global["global"], true);
 

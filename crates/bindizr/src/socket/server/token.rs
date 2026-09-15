@@ -4,7 +4,7 @@ use bindizr_service::{
     token::{TokenService, grant::TokenGrantService},
     types::{
         CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse, GetTokenResponse,
-        TokenGrantListResponse, TokenGrantResponse, TokenListResponse,
+        PageFilter, TokenGrantResponse,
     },
 };
 
@@ -16,7 +16,7 @@ use crate::socket::{
     },
 };
 
-/// Handle the `TokenCreate` command by creating a new API token.
+/// Create token from the control request.
 pub(crate) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let request: CreateTokenRequest = parse_params(data)?;
 
@@ -39,19 +39,17 @@ pub(crate) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
     Ok(response)
 }
 
-/// Handle the `TokenList` command by returning all API tokens.
+/// List the requested tokens.
 pub(crate) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
-    let tokens = TokenService::list(&Caller::Global).await?;
-    let tokens: Vec<GetTokenResponse> = tokens.iter().map(GetTokenResponse::from_token).collect();
+    let response = TokenService::list(&Caller::Global, PageFilter::default()).await?;
 
-    let response = DaemonResponse {
+    Ok(DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
-        data: to_response_data(TokenListResponse { tokens })?,
-    };
-    Ok(response)
+        data: to_response_data(response)?,
+    })
 }
 
-/// Handle the `TokenDelete` command by deleting an API token by name.
+/// Delete the requested token.
 pub(crate) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: TokenNameParams = parse_params(data)?;
 
@@ -64,7 +62,7 @@ pub(crate) async fn delete_token(data: &serde_json::Value) -> Result<DaemonRespo
     Ok(response)
 }
 
-/// Handle the `TokenGrantCreate` command by granting a token rights in a zone.
+/// Create token grant from the control request.
 pub(crate) async fn create_token_grant(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -76,6 +74,7 @@ pub(crate) async fn create_token_grant(
         &params.request.zone_name,
         params.request.record_name_pattern.as_deref(),
         params.request.record_types.as_deref(),
+        params.request.can_write,
     )
     .await?;
 
@@ -87,48 +86,39 @@ pub(crate) async fn create_token_grant(
     })
 }
 
-/// Handle the `TokenGrantListByToken` command by returning a token's grants.
+/// List the requested token grants for an API token.
 pub(crate) async fn list_token_grants_by_token(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: TokenNameParams = parse_params(data)?;
 
-    let grants = TokenGrantService::list_by_token(&Caller::Global, &params.name).await?;
-    let grants: Vec<GetTokenGrantResponse> = grants
-        .iter()
-        .map(GetTokenGrantResponse::from_grant)
-        .collect();
+    let response =
+        TokenGrantService::list_by_token(&Caller::Global, &params.name, PageFilter::default())
+            .await?;
 
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
-        data: to_response_data(TokenGrantListResponse {
-            token_grants: grants,
-        })?,
+        data: to_response_data(response)?,
     })
 }
 
-/// Handle the `TokenGrantListByZone` command by returning the grants that
-/// apply to a zone.
+/// List the requested token grants for a zone.
 pub(crate) async fn list_token_grants_by_zone(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    let grants = TokenGrantService::list_by_zone(&Caller::Global, &params.name).await?;
-    let grants: Vec<GetTokenGrantResponse> = grants
-        .iter()
-        .map(GetTokenGrantResponse::from_grant)
-        .collect();
+    let response =
+        TokenGrantService::list_by_zone(&Caller::Global, &params.name, PageFilter::default())
+            .await?;
 
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
-        data: to_response_data(TokenGrantListResponse {
-            token_grants: grants,
-        })?,
+        data: to_response_data(response)?,
     })
 }
 
-/// Handle the `TokenGrantDelete` command by revoking one of a token's grants.
+/// Delete the requested token grant.
 pub(crate) async fn delete_token_grant(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {

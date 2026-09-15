@@ -5,6 +5,7 @@ use crate::common::{ExternalDnsAdapter, TestApp, TestAppOptions};
 
 const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
+/// Create a zone fixture through the API.
 async fn create_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
         .request(
@@ -21,11 +22,13 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
     assert_eq!(status, StatusCode::CREATED);
 }
 
+/// Grant the test token access to a zone.
 async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
     app.run_cli_success(&["token", "grant", token_name, zone_name])
         .await;
 }
 
+/// Collect values matching an owner and type from an API response.
 fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
     body["records"]
         .as_array()
@@ -37,12 +40,15 @@ fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
         .collect()
 }
 
+/// Verify that external DNS routes are not registered when disabled.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_routes_are_not_registered_when_disabled() {
     let app = TestApp::start_local().await;
 
-    let (status, _) = app.request(Method::GET, "/external-dns/zones", None).await;
+    let (status, _) = app
+        .request(Method::GET, "/external-dns/domains", None)
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (status, _) = app
@@ -51,9 +57,10 @@ async fn external_dns_routes_are_not_registered_when_disabled() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Verify that external DNS domain listing reflects token grants.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn external_dns_zone_listing_reflects_token_grants() {
+async fn external_dns_domain_listing_reflects_token_grants() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         require_authentication: true,
         external_dns_enabled: true,
@@ -72,19 +79,86 @@ async fn external_dns_zone_listing_reflects_token_grants() {
     grant_zone(&app, &granted_zone, &scoped_name).await;
 
     // A global token sees every zone.
-    let (status, body) = app.request(Method::GET, "/external-dns/zones", None).await;
+    let (status, body) = app
+        .request(Method::GET, "/external-dns/domains", None)
+        .await;
     assert_eq!(status, StatusCode::OK);
-    let zones = body["zones"].as_array().expect("zones array");
-    assert!(zones.contains(&json!(granted_zone)));
-    assert!(zones.contains(&json!(other_zone)));
+    let domains = body["domains"].as_array().expect("domains array");
+    assert!(domains.contains(&json!(granted_zone)));
+    assert!(domains.contains(&json!(other_zone)));
 
     // A scoped token sees only its grants (this feeds the DomainFilter).
     app.set_auth_token(scoped_token);
-    let (status, body) = app.request(Method::GET, "/external-dns/zones", None).await;
+    let (status, body) = app
+        .request(Method::GET, "/external-dns/domains", None)
+        .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["zones"], json!([granted_zone]));
+    assert_eq!(body["domains"], json!([granted_zone]));
 }
 
+/// Verify that a grant narrowed to a subtree narrows the domain filter.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let zone_name = app.zone_name("narrowed.com");
+    create_zone(&app, &zone_name).await;
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&[
+        "token",
+        "grant",
+        &scoped_name,
+        &zone_name,
+        "--pattern",
+        "*.k8s",
+    ])
+    .await;
+
+    // The filter carries the granted subtree, not the zone: ExternalDNS plans
+    // inside what the apply accepts instead of failing the whole sync on the
+    // first record outside the grant.
+    app.set_auth_token(scoped_token);
+    let (status, body) = app
+        .request(Method::GET, "/external-dns/domains", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["domains"],
+        json!([format!("k8s.{zone_name}")]),
+        "{body}"
+    );
+
+    // A read-only grant leaves ExternalDNS nothing to write, so it stays out.
+    app.run_cli_success(&[
+        "token",
+        "grant",
+        &scoped_name,
+        &zone_name,
+        "--pattern",
+        "*.readonly",
+        "--read-only",
+    ])
+    .await;
+    let (status, body) = app
+        .request(Method::GET, "/external-dns/domains", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["domains"],
+        json!([format!("k8s.{zone_name}")]),
+        "{body}"
+    );
+}
+
+/// Verify that external DNS changes apply and stay idempotent.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_apply_and_stay_idempotent() {
@@ -177,6 +251,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     assert_eq!(app.zone_serial(&zone_name).await, base_serial + 3);
 }
 
+/// Verify that external DNS changes reject ungranted zones atomically.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_reject_ungranted_zones_atomically() {
@@ -228,6 +303,7 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
     assert!(record_values(&body, &format!("a.{granted_zone}"), "A").is_empty());
 }
 
+/// Verify that external DNS never falls back from ungranted subzone to granted parent.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent() {
@@ -283,6 +359,7 @@ async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent(
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
 }
 
+/// Verify that external DNS changes enforce record validation.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_enforce_record_validation() {
@@ -334,6 +411,7 @@ async fn external_dns_changes_enforce_record_validation() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Verify that adapter serves webhook protocol with scoped token.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn adapter_serves_webhook_protocol_with_scoped_token() {
@@ -355,7 +433,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
 
     // Without a token, the provider API itself rejects the request.
     let unauthenticated = reqwest::Client::new()
-        .get(format!("{}/external-dns/zones", app.base_url()))
+        .get(format!("{}/external-dns/domains", app.base_url()))
         .send()
         .await
         .unwrap();
@@ -446,4 +524,57 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .await
         .unwrap();
     assert_eq!(response.status().as_u16(), 401);
+}
+
+/// Verify that external DNS record listing spans read pages.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn external_dns_record_listing_spans_read_pages() {
+    let app = TestApp::start_with_options(TestAppOptions {
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let zone_name = app.zone_name("paged.com");
+    create_zone(&app, &zone_name).await;
+
+    // Past the read page, so the listing has to tile without dropping a row.
+    const RECORDS: usize = 5_100;
+    let zone_file: String = (0..RECORDS)
+        .map(|i| {
+            format!(
+                "r{i} 3600 IN A 10.{}.{}.{}\n",
+                i / 65536,
+                (i / 256) % 256,
+                i % 256
+            )
+        })
+        .collect();
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": zone_file, "mode": "upsert" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["applied"], true, "{body}");
+
+    let (status, body) = app
+        .request(Method::GET, "/external-dns/records", None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let listed = body["records"].as_array().expect("records array");
+    let a_records = listed
+        .iter()
+        .filter(|record| record["record_type"] == "A")
+        .count();
+    assert_eq!(a_records, RECORDS, "{}", listed.len());
+
+    let names: std::collections::HashSet<&str> = listed
+        .iter()
+        .filter_map(|record| record["name"].as_str())
+        .collect();
+    assert_eq!(names.len(), listed.len(), "a row was listed twice");
 }

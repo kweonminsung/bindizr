@@ -22,11 +22,11 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    record::{AddOutcome, RecordService, validate_delete_constraints},
+    record::{AddOutcome, RecordService, matches_record, validate_delete_constraints},
     repository::RepositoryService,
     serial::generate_serial,
-    tsig_key::grant::authorize_update,
-    zone::ZoneService,
+    tsig_key::grant::{authorize_prerequisite, authorize_update},
+    zone::{ZoneService, version::ChangeSubject},
 };
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
@@ -45,6 +45,7 @@ pub enum DynamicUpdateError {
 /// A service error the requester could fix is REFUSED; a backend fault is
 /// SERVFAIL.
 impl From<ServiceError> for DynamicUpdateError {
+    /// Map a service failure to the corresponding dynamic update error.
     fn from(err: ServiceError) -> Self {
         if err.code.http_status() < 500 {
             DynamicUpdateError::Refused(err.to_string())
@@ -71,7 +72,8 @@ pub enum Prerequisite {
         name: String,
         record_type: RecordType,
     },
-    /// CLASS IN: this exact RR must exist.
+    /// CLASS IN: with the others of its name and type, the RRset must equal
+    /// the zone's (RFC 2136, Section 3.2.3).
     RrInUse {
         name: String,
         record_type: RecordType,
@@ -108,6 +110,7 @@ pub enum UpdateOp {
 }
 
 impl UpdateOp {
+    /// Return the owner name targeted by this update operation.
     fn name(&self) -> &str {
         match self {
             UpdateOp::AddRr { name, .. }
@@ -158,7 +161,14 @@ impl DynamicUpdateService {
                         ))
                     })?;
 
-            authorize_key(&mut tx, &zone, update.key.as_ref(), &update.updates).await?;
+            authorize_key(
+                &mut tx,
+                &zone,
+                update.key.as_ref(),
+                &update.prerequisites,
+                &update.updates,
+            )
+            .await?;
             evaluate_prerequisites_tx(&mut tx, &zone, &update.prerequisites).await?;
 
             // An exhausted serial cannot advance, so refuse rather than commit
@@ -174,7 +184,13 @@ impl DynamicUpdateService {
                 DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
                 // Bump the serial and version it so secondaries detect the change via
                 // SOA/NOTIFY and can serve it as an IXFR delta.
-                ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+                ZoneService::advance_serial_tx(
+                    &mut tx,
+                    &zone,
+                    new_serial,
+                    &ChangeSubject::nsupdate(update.key.as_ref().map(|key| key.name.as_str())),
+                )
+                .await?;
             }
 
             Ok((changed, zone, new_serial))
@@ -204,13 +220,15 @@ impl DynamicUpdateService {
     }
 }
 
-/// Authorize an authenticated request: global keys may update anything, other
-/// keys need a grant matching every update RR. `key` is `None` for an
-/// accepted unsigned request, which skips authorization entirely.
+/// Authorize an authenticated request: global keys may do anything, other
+/// keys need a grant reaching every prerequisite and every update RR. `key`
+/// is `None` for an accepted unsigned request, which skips authorization
+/// entirely.
 async fn authorize_key(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
     key: Option<&TsigKey>,
+    prerequisites: &[Prerequisite],
     updates: &[UpdateOp],
 ) -> Result<(), DynamicUpdateError> {
     let key = match key {
@@ -236,6 +254,29 @@ async fn authorize_key(
         )));
     }
 
+    // A prerequisite reads what it names, so the grant is checked before it
+    // is evaluated, ahead of where RFC 2136, Section 3.3 puts permissions.
+    for prerequisite in prerequisites {
+        let (name, record_type) = match prerequisite {
+            Prerequisite::NameInUse { name } | Prerequisite::NameNotInUse { name } => (name, None),
+            Prerequisite::RrsetInUse { name, record_type }
+            | Prerequisite::RrsetNotInUse { name, record_type }
+            | Prerequisite::RrInUse {
+                name, record_type, ..
+            } => (name, Some(record_type)),
+        };
+        let owner = parse_owner_in_zone(name, &zone.name)?;
+        if !authorize_prerequisite(&grants, &owner, record_type) {
+            return Err(DynamicUpdateError::Refused(format!(
+                "TSIG key '{}' is not authorized to read '{}' ({}) in zone '{}'",
+                key.name,
+                owner,
+                record_type.map_or("ANY", RecordType::as_str),
+                zone.name
+            )));
+        }
+    }
+
     for op in updates {
         let owner = parse_owner_in_zone(op.name(), &zone.name)?;
         if !authorize_update(&grants, &owner, op.record_type()) {
@@ -252,6 +293,7 @@ async fn authorize_key(
     Ok(())
 }
 
+/// Apply one authorized dynamic update operation in the current transaction.
 async fn apply_op(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
@@ -358,31 +400,11 @@ async fn delete_matching(
         RepositoryService::list_records_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive)
             .await?;
 
-    let mut matched: Vec<Record> = Vec::new();
-    for record in &owner_records {
-        if let Some(record_type) = record_type
-            && &record.record_type != record_type
-        {
-            continue;
-        }
-
-        // Priority is filtered separately, so compare rdata alone.
-        if let Some(value) = value
-            && !record
-                .record_type
-                .values_equal(&record.value, None, value, None)
-        {
-            continue;
-        }
-
-        if let Some(priority) = priority
-            && record.priority != Some(priority)
-        {
-            continue;
-        }
-
-        matched.push(record.clone());
-    }
+    let matched: Vec<Record> = owner_records
+        .iter()
+        .filter(|record| matches_record(record, record_type, value, priority))
+        .cloned()
+        .collect();
 
     if matched.is_empty() {
         return Ok(false);

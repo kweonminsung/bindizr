@@ -17,6 +17,7 @@ use crate::{
         token_grant::{TokenGrant, TokenGrantWithNames},
     },
     repository::RepositoryService,
+    types::{GetTokenGrantResponse, PageFilter, PaginatedResponse},
     zone::ZoneService,
 };
 
@@ -33,6 +34,7 @@ impl TokenGrantService {
         zone_name: &str,
         record_name_pattern: Option<&str>,
         record_types: Option<&str>,
+        can_write: bool,
     ) -> Result<TokenGrantWithNames, ServiceError> {
         caller.require_global("manage token grants")?;
 
@@ -54,6 +56,7 @@ impl TokenGrantService {
             api_token_id: token.id,
             record_name_pattern,
             record_types,
+            can_write,
             created_at: Utc::now(),
         })
         .await?;
@@ -69,16 +72,20 @@ impl TokenGrantService {
     pub async fn list_by_token(
         caller: &Caller,
         token_name: &str,
-    ) -> Result<Vec<TokenGrantWithNames>, ServiceError> {
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
         caller.require_global("manage token grants")?;
 
         let token = TokenService::lookup_by_name(token_name).await?;
-        Self::list_self(&token).await
+        Self::list_self(&token, page).await
     }
 
     /// Every grant of `token`, with the zone each covers. Any token may read
     /// its own, so there is no caller to gate.
-    pub async fn list_self(token: &ApiToken) -> Result<Vec<TokenGrantWithNames>, ServiceError> {
+    pub async fn list_self(
+        token: &ApiToken,
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
         let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
 
         // Any token reaches this, so read only its granted zones.
@@ -92,21 +99,28 @@ impl TokenGrantService {
             .map(|zone| (zone.id, zone.name.to_string()))
             .collect();
 
-        Ok(grants
-            .into_iter()
-            .map(|grant| TokenGrantWithNames {
-                zone_name: zone_names.get(&grant.zone_id).cloned().unwrap_or_default(),
-                api_token_name: token.name.clone(),
-                grant,
-            })
-            .collect())
+        PaginatedResponse::from_collection(
+            grants
+                .into_iter()
+                .map(|grant| {
+                    GetTokenGrantResponse::from_grant(&TokenGrantWithNames {
+                        zone_name: zone_names.get(&grant.zone_id).cloned().unwrap_or_default(),
+                        api_token_name: token.name.clone(),
+                        grant,
+                    })
+                })
+                .collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
     /// Every grant that applies to `zone_name`, with the token each belongs to.
     pub async fn list_by_zone(
         caller: &Caller,
         zone_name: &str,
-    ) -> Result<Vec<TokenGrantWithNames>, ServiceError> {
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
         caller.require_global("manage token grants")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
@@ -118,17 +132,23 @@ impl TokenGrantService {
             .map(|token| (token.id, token.name))
             .collect();
 
-        Ok(grants
-            .into_iter()
-            .map(|grant| TokenGrantWithNames {
-                api_token_name: token_names
-                    .get(&grant.api_token_id)
-                    .cloned()
-                    .unwrap_or_default(),
-                zone_name: zone.name.to_string(),
-                grant,
-            })
-            .collect())
+        PaginatedResponse::from_collection(
+            grants
+                .into_iter()
+                .map(|grant| {
+                    GetTokenGrantResponse::from_grant(&TokenGrantWithNames {
+                        api_token_name: token_names
+                            .get(&grant.api_token_id)
+                            .cloned()
+                            .unwrap_or_default(),
+                        zone_name: zone.name.to_string(),
+                        grant,
+                    })
+                })
+                .collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
     /// Revoke one of `token_name`'s grants by id. An id that belongs to another

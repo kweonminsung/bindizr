@@ -1,7 +1,7 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
-    CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, TokenGrantListResponse,
-    TokenGrantResponse, TokenListResponse,
+    CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
+    GetTokenResponse, PaginatedResponse, TokenGrantResponse,
 };
 use clap::Subcommand;
 
@@ -68,6 +68,9 @@ pub(crate) enum TokenCommand {
         /// Allowed record types: '*' or a comma-separated list, e.g. 'A,AAAA,TXT' (default: '*')
         #[arg(long, value_name = "TYPES")]
         types: Option<String>,
+        /// Grant read access only; the zone stays visible, narrowed the same way
+        #[arg(long)]
+        read_only: bool,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -129,9 +132,13 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
 
             log_debug!("Token list result: {:?}", res);
 
-            print_response(&res.data, output, |tokens: &TokenListResponse| {
-                tokens.tokens.iter().map(TokenRow::from).collect()
-            })?;
+            print_response(
+                &res.data,
+                output,
+                |tokens: &PaginatedResponse<GetTokenResponse>| {
+                    tokens.items.iter().map(TokenRow::from).collect()
+                },
+            )?;
         }
         TokenCommand::Delete { name } => {
             let res = client
@@ -147,6 +154,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             zone,
             pattern,
             types,
+            read_only,
             output,
         } => {
             let res = client
@@ -158,6 +166,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                             zone_name: zone,
                             record_name_pattern: pattern,
                             record_types: types,
+                            can_write: !read_only,
                         },
                     },
                 )
@@ -173,13 +182,13 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                     TokenNameParams { name },
                 )
                 .await?;
-            print_response(&res.data, output, |grants: &TokenGrantListResponse| {
-                grants
-                    .token_grants
-                    .iter()
-                    .map(TokenGrantRow::from)
-                    .collect()
-            })?;
+            print_response(
+                &res.data,
+                output,
+                |grants: &PaginatedResponse<GetTokenGrantResponse>| {
+                    grants.items.iter().map(TokenGrantRow::from).collect()
+                },
+            )?;
         }
         TokenCommand::Revoke { name, id } => {
             let res = client

@@ -10,6 +10,7 @@ use bindizr_service::types::{
 };
 use tabled::Tabled;
 
+/// Format an optional integer for table output.
 fn display_option_i32(opt: &Option<i32>) -> String {
     match opt {
         Some(val) => val.to_string(),
@@ -17,14 +18,17 @@ fn display_option_i32(opt: &Option<i32>) -> String {
     }
 }
 
+/// Render a boolean as yes or no.
 fn yes_no(value: bool) -> String {
     if value { "yes" } else { "no" }.to_string()
 }
 
+/// Format optional text for table output.
 fn display_option_text(opt: &Option<String>) -> String {
     opt.clone().unwrap_or_else(|| "-".to_string())
 }
 
+/// Format an optional timestamp for table output.
 fn display_option_time(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
     opt.map_or_else(|| "-".to_string(), |at| at.to_rfc3339())
 }
@@ -60,9 +64,14 @@ pub(crate) struct ZoneRow {
     pub(crate) expire: i32,
     #[tabled(rename = "MINIMUM-TTL")]
     pub(crate) minimum_ttl: i32,
+    #[tabled(rename = "SERVED")]
+    pub(crate) served: String,
+    #[tabled(rename = "DESCRIPTION")]
+    pub(crate) description: String,
 }
 
 impl From<&GetZoneResponse> for ZoneRow {
+    /// Build a CLI table row from the zone response.
     fn from(zone: &GetZoneResponse) -> Self {
         ZoneRow {
             id: zone.id,
@@ -75,6 +84,8 @@ impl From<&GetZoneResponse> for ZoneRow {
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: zone.minimum_ttl,
+            served: yes_no(zone.enabled),
+            description: display_option_text(&zone.description),
         }
     }
 }
@@ -100,6 +111,7 @@ pub(crate) struct RecordRow {
 }
 
 impl From<&GetRecordResponse> for RecordRow {
+    /// Build a CLI table row from the record response.
     fn from(record: &GetRecordResponse) -> Self {
         RecordRow {
             id: record.id,
@@ -137,6 +149,7 @@ pub(crate) struct DnssecKeyRow {
 }
 
 impl From<&DnssecKeyInfo> for DnssecKeyRow {
+    /// Build a CLI table row from the DNSSEC key info.
     fn from(key: &DnssecKeyInfo) -> Self {
         DnssecKeyRow {
             id: key.id,
@@ -170,15 +183,12 @@ pub(crate) struct DnssecPolicyRow {
     pub(crate) refresh: String,
     #[tabled(rename = "ZSK-LIFETIME")]
     pub(crate) zsk_lifetime: String,
-    #[tabled(rename = "PUBLISH-WAIT")]
-    pub(crate) publish_wait: String,
-    #[tabled(rename = "RETIRE-WAIT")]
-    pub(crate) retire_wait: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
 
 impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
+    /// Build a CLI table row from the DNSSEC policy response.
     fn from(policy: &GetDnssecPolicyResponse) -> Self {
         DnssecPolicyRow {
             id: policy.id,
@@ -193,8 +203,6 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
             } else {
                 format!("{}d", policy.zsk_lifetime_days)
             },
-            publish_wait: format!("{}s", policy.rollover_publish_holddown_secs),
-            retire_wait: format!("{}s", policy.rollover_retire_holddown_secs),
             created_at: policy.created_at.to_rfc3339(),
         }
     }
@@ -218,11 +226,16 @@ pub(crate) struct VersionRow {
     pub(crate) expire: i32,
     #[tabled(rename = "MINIMUM-TTL")]
     pub(crate) minimum_ttl: i32,
+    #[tabled(rename = "SOURCE")]
+    pub(crate) change_source: String,
+    #[tabled(rename = "CHANGED-BY")]
+    pub(crate) changed_by: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
 
 impl From<&ZoneVersionResponse> for VersionRow {
+    /// Build a CLI table row from the zone version response.
     fn from(version: &ZoneVersionResponse) -> Self {
         VersionRow {
             serial: version.serial,
@@ -233,6 +246,8 @@ impl From<&ZoneVersionResponse> for VersionRow {
             retry: version.retry,
             expire: version.expire,
             minimum_ttl: version.minimum_ttl,
+            change_source: version.change_source.clone(),
+            changed_by: display_option_text(&version.changed_by),
             created_at: version.created_at.to_rfc3339(),
         }
     }
@@ -254,6 +269,7 @@ pub(crate) struct VersionRecordRow {
 }
 
 impl From<&VersionRecordResponse> for VersionRecordRow {
+    /// Build a CLI table row from the version record response.
     fn from(record: &VersionRecordResponse) -> Self {
         VersionRecordRow {
             name: record.name.clone(),
@@ -286,6 +302,7 @@ pub(crate) struct RollbackSummaryRow {
 }
 
 impl From<&RollbackZoneResponse> for RollbackSummaryRow {
+    /// Build a CLI table row from the zone rollback summary.
     fn from(response: &RollbackZoneResponse) -> Self {
         RollbackSummaryRow {
             target_serial: response.target_serial,
@@ -323,6 +340,7 @@ impl SecondaryStatusRow {
             .collect()
     }
 
+    /// Build a table row from a secondary server's status.
     fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: i32) -> Self {
         let detail = match secondary.error.as_deref() {
             Some(error) if secondary.is_unreachable() => {
@@ -361,6 +379,7 @@ pub(crate) struct ImportSummaryRow {
 }
 
 impl From<&ImportSummary> for ImportSummaryRow {
+    /// Build a CLI table row from the import summary.
     fn from(summary: &ImportSummary) -> Self {
         ImportSummaryRow {
             parsed: summary.parsed,
@@ -395,6 +414,7 @@ pub(crate) struct TokenRow {
 }
 
 impl From<&GetTokenResponse> for TokenRow {
+    /// Build a CLI table row from the token response.
     fn from(token: &GetTokenResponse) -> Self {
         TokenRow {
             id: token.id,
@@ -413,6 +433,7 @@ impl From<&GetTokenResponse> for TokenRow {
 }
 
 impl From<&CreatedTokenResponse> for TokenRow {
+    /// Build a CLI table row from the newly created token.
     fn from(created: &CreatedTokenResponse) -> Self {
         TokenRow {
             token: created.secret.clone(),
@@ -439,6 +460,7 @@ pub(crate) struct TsigKeyRow {
 }
 
 impl From<&GetTsigKeyResponse> for TsigKeyRow {
+    /// Build a CLI table row from the TSIG key response.
     fn from(key: &GetTsigKeyResponse) -> Self {
         TsigKeyRow {
             id: key.id,
@@ -452,6 +474,7 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
 }
 
 impl From<&TsigKeyResponse> for TsigKeyRow {
+    /// Build a CLI table row from the TSIG key response.
     fn from(key: &TsigKeyResponse) -> Self {
         TsigKeyRow {
             secret: key.secret.clone(),
@@ -472,11 +495,14 @@ pub(crate) struct TokenGrantRow {
     pub(crate) record_name_pattern: String,
     #[tabled(rename = "RECORD-TYPES")]
     pub(crate) record_types: String,
+    #[tabled(rename = "ACCESS")]
+    pub(crate) access: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
 
 impl From<&GetTokenGrantResponse> for TokenGrantRow {
+    /// Build a CLI table row from the token grant response.
     fn from(grant: &GetTokenGrantResponse) -> Self {
         TokenGrantRow {
             id: grant.id,
@@ -484,6 +510,12 @@ impl From<&GetTokenGrantResponse> for TokenGrantRow {
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.record_name_pattern.clone(),
             record_types: grant.record_types.clone(),
+            access: if grant.can_write {
+                "read-write"
+            } else {
+                "read-only"
+            }
+            .to_string(),
             created_at: grant.created_at.to_rfc3339(),
         }
     }
@@ -501,11 +533,14 @@ pub(crate) struct TsigGrantRow {
     pub(crate) record_name_pattern: String,
     #[tabled(rename = "RECORD-TYPES")]
     pub(crate) record_types: String,
+    #[tabled(rename = "ACCESS")]
+    pub(crate) access: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
 
 impl From<&GetTsigGrantResponse> for TsigGrantRow {
+    /// Build a CLI table row from the TSIG grant response.
     fn from(grant: &GetTsigGrantResponse) -> Self {
         TsigGrantRow {
             id: grant.id,
@@ -513,6 +548,12 @@ impl From<&GetTsigGrantResponse> for TsigGrantRow {
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.record_name_pattern.clone(),
             record_types: grant.record_types.clone(),
+            access: if grant.can_write {
+                "transfer+update"
+            } else {
+                "transfer-only"
+            }
+            .to_string(),
             created_at: grant.created_at.to_rfc3339(),
         }
     }

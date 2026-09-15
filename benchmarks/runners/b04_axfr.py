@@ -25,11 +25,13 @@ APEX_LINES = 10
 
 
 async def _axfr_count(zone, host, port, timeout=300):
+    """Read the current record count through an AXFR."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, dnsutil.axfr, zone, host, port, timeout)
 
 
 async def run(adapter, cfg, ctx) -> list:
+    """Measure full zone-transfer performance at the configured zone sizes."""
     zone = ctx["zone"]
     xe = adapter.xfr_endpoint()
     rows = []

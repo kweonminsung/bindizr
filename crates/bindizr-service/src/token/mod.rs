@@ -3,7 +3,11 @@ use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
 use super::{error::ServiceError, repository::RepositoryService};
-use crate::{authorization::Caller, model::api_token::ApiToken};
+use crate::{
+    authorization::Caller,
+    model::api_token::ApiToken,
+    types::{GetTokenResponse, PageFilter, PaginatedResponse},
+};
 
 const MAX_TOKEN_NAME_LEN: usize = 255;
 /// `api_tokens.description` is VARCHAR(255) on MySQL and PostgreSQL.
@@ -14,6 +18,7 @@ const MAX_EXPIRES_IN_DAYS: i64 = 36_500;
 /// Creates, lists, and revokes API tokens.
 pub struct TokenService;
 
+/// Hash an API token for storage and lookup.
 pub(crate) fn hash_token(token: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(token.as_bytes());
@@ -67,10 +72,18 @@ impl TokenService {
     }
 
     /// List all API tokens.
-    pub async fn list(caller: &Caller) -> Result<Vec<ApiToken>, ServiceError> {
+    pub async fn list(
+        caller: &Caller,
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
         caller.require_global("manage API tokens")?;
 
-        RepositoryService::list_api_tokens().await
+        let tokens = RepositoryService::list_api_tokens().await?;
+        PaginatedResponse::from_collection(
+            tokens.iter().map(GetTokenResponse::from_token).collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
     /// Delete the API token with the given name, returning `NotFound` if it
@@ -83,6 +96,7 @@ impl TokenService {
         RepositoryService::delete_api_token(token.id).await
     }
 
+    /// Load an API token by name or return a not-found error.
     pub(crate) async fn lookup_by_name(name: &str) -> Result<ApiToken, ServiceError> {
         RepositoryService::get_api_token_by_name(&normalize_token_name(name)?)
             .await?

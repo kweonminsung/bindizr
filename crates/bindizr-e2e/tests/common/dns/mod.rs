@@ -1,4 +1,5 @@
 mod parent;
+mod transfer;
 
 use std::{net::UdpSocket, str::FromStr, time::Duration};
 
@@ -8,8 +9,10 @@ use domain::{
 };
 pub(crate) use parent::{FakeParent, ServedDs};
 use serde_json::{Value, json};
+pub(crate) use transfer::{TransferOutcome, axfr};
 
-pub(super) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
+/// Convert an API record value into the DNS comparison form.
+pub(crate) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
     let value = record["value"].clone();
     if !matches!(record_type, 15 | 33) {
         return value;
@@ -33,7 +36,8 @@ pub(super) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
     json!(format!("{priority} {target}"))
 }
 
-pub(super) fn dns_key_from_record(record: &Value) -> (String, u16) {
+/// Extract the DNS owner and type used to identify a record.
+pub(crate) fn dns_key_from_record(record: &Value) -> (String, u16) {
     let name = record["name"]
         .as_str()
         .expect("record did not contain a name")
@@ -45,7 +49,8 @@ pub(super) fn dns_key_from_record(record: &Value) -> (String, u16) {
     (name, record_type)
 }
 
-pub(super) fn dns_record_type(record_type: &str) -> Option<u16> {
+/// Map a supported record mnemonic to its wire type number.
+pub(crate) fn dns_record_type(record_type: &str) -> Option<u16> {
     match record_type {
         "A" => Some(1),
         "NS" => Some(2),
@@ -56,6 +61,8 @@ pub(super) fn dns_record_type(record_type: &str) -> Option<u16> {
         "TXT" => Some(16),
         "AAAA" => Some(28),
         "SRV" => Some(33),
+        "NAPTR" => Some(35),
+        "DNAME" => Some(39),
         "DS" => Some(43),
         "SSHFP" => Some(44),
         "TLSA" => Some(52),
@@ -64,7 +71,8 @@ pub(super) fn dns_record_type(record_type: &str) -> Option<u16> {
     }
 }
 
-pub(super) async fn wait_for_dns_records(
+/// Poll DNS until its answers match the expected record values.
+pub(crate) async fn wait_for_dns_records(
     port: u16,
     name: &str,
     record_type: u16,
@@ -108,6 +116,7 @@ pub(super) async fn wait_for_dns_records(
     );
 }
 
+/// Check whether a DNS failure represents an expected deleted zone.
 fn is_deleted_zone_absence(record_type: u16, expected: &[Value], error: &str) -> bool {
     record_type == 6 && expected.is_empty() && error.contains("REFUSED RCODE")
 }
@@ -118,6 +127,7 @@ pub(crate) struct DnsAnswer {
     pub(crate) value: Option<Value>,
 }
 
+/// Compare DNS answers with expected values for the record type.
 fn dns_values_match(record_type: u16, expected: &[Value], answers: &[DnsAnswer]) -> bool {
     if record_type == 6 {
         return true;
@@ -164,11 +174,19 @@ pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: 
     panic!("no type {record_type} record for {name} appeared on 127.0.0.1:{port}");
 }
 
+/// Whether the DNS plane serves `zone_name`: a zone it does not know answers
+/// REFUSED, which `check_response_header` reports as an error.
+pub(crate) fn probe_zone_soa(port: u16, zone_name: &str) -> bool {
+    matches!(query_dns_record(port, zone_name, 6), Ok(answers) if !answers.is_empty())
+}
+
+/// Query DNS and decode the returned answers.
 fn query_dns_record(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsAnswer>, String> {
     let (query_id, response) = exchange_dns_query(port, name, record_type)?;
     parse_dns_response(query_id, &response)
 }
 
+/// Query DNS and count the returned answers.
 fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usize, String> {
     let (query_id, response) = exchange_dns_query(port, name, record_type)?;
     let message = Message::from_octets(response.as_slice()).map_err(|e| e.to_string())?;
@@ -186,6 +204,7 @@ fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usi
     Ok(count)
 }
 
+/// Send a DNS query and return its ID and response bytes.
 fn exchange_dns_query(port: u16, name: &str, record_type: u16) -> Result<(u16, Vec<u8>), String> {
     let socket = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
     socket
@@ -204,6 +223,7 @@ fn exchange_dns_query(port: u16, name: &str, record_type: u16) -> Result<(u16, V
     Ok((query_id, response[..len].to_vec()))
 }
 
+/// Encode a DNS query for the requested owner and type.
 fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8>, String> {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
@@ -216,6 +236,7 @@ fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8
     Ok(question.finish())
 }
 
+/// Parse an absolute DNS name for a query.
 fn query_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     let trimmed = name.trim_end_matches('.');
     if trimmed.is_empty() {
@@ -224,6 +245,7 @@ fn query_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     Name::from_str(trimmed).map_err(|e| format!("invalid DNS name '{name}': {e}"))
 }
 
+/// Validate a DNS response and decode its answers.
 pub(crate) fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<DnsAnswer>, String> {
     let message = Message::from_octets(response).map_err(|e| e.to_string())?;
     if !check_response_header(query_id, &message)? {
@@ -280,6 +302,7 @@ fn check_response_header(query_id: u16, message: &Message<&[u8]>) -> Result<bool
     }
 }
 
+/// Convert supported wire record data into the comparison value.
 fn decode_dns_value(
     data: &AllRecordData<&[u8], ParsedName<&[u8]>>,
     record_type: u16,
@@ -290,6 +313,18 @@ fn decode_dns_value(
         AllRecordData::Ns(ns) => Value::String(to_presentation_name(ns.nsdname())),
         AllRecordData::Cname(cname) => Value::String(to_presentation_name(cname.cname())),
         AllRecordData::Ptr(ptr) => Value::String(to_presentation_name(ptr.ptrdname())),
+        AllRecordData::Dname(dname) => Value::String(to_presentation_name(dname.dname())),
+        // `domain` renders a root replacement as `..`, so the name is composed
+        // the way the record types do rather than taken from its Display.
+        AllRecordData::Naptr(naptr) => Value::String(format!(
+            "{} {} {} {} {} {}",
+            naptr.order(),
+            naptr.preference(),
+            to_quoted_string(&String::from_utf8_lossy(naptr.flags().as_slice())),
+            to_quoted_string(&String::from_utf8_lossy(naptr.services().as_slice())),
+            to_quoted_string(&String::from_utf8_lossy(naptr.regexp().as_slice())),
+            to_presentation_name(naptr.replacement())
+        )),
         AllRecordData::Mx(mx) => Value::String(format!(
             "{} {}",
             mx.preference(),
@@ -333,11 +368,14 @@ fn decode_dns_value(
             u8::from(tlsa.matching_type()),
             hex_upper(tlsa.data())
         )),
+        // The stored form re-escapes `"` and `\` inside the quoted value
+        // (RFC 8659, Section 4), so the wire bytes have to be escaped back
+        // before they compare.
         AllRecordData::Caa(caa) => Value::String(format!(
-            "{} {} \"{}\"",
+            "{} {} {}",
             caa.flags(),
             caa.tag(),
-            String::from_utf8_lossy(caa.value())
+            to_quoted_string(&String::from_utf8_lossy(caa.value()))
         )),
         AllRecordData::Soa(_) => return Ok(None),
         _ => return Err(format!("unsupported DNS answer type {record_type}")),
@@ -345,6 +383,7 @@ fn decode_dns_value(
     Ok(Some(value))
 }
 
+/// Encode bytes as uppercase hexadecimal text.
 fn hex_upper(bytes: impl AsRef<[u8]>) -> String {
     bytes
         .as_ref()
@@ -367,5 +406,21 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
     if out.is_empty() {
         out.push('.');
     }
+    out
+}
+
+/// Quote a value the way the record types render it: `"` and `\` escaped,
+/// control and non-ASCII bytes as `\DDD`, so it matches what the API reports.
+fn to_quoted_string(text: &str) -> String {
+    let mut out = String::from("\"");
+    for byte in text.bytes() {
+        match byte {
+            b'"' => out.push_str("\\\""),
+            b'\\' => out.push_str("\\\\"),
+            0x20..=0x7e => out.push(char::from(byte)),
+            _ => out.push_str(&format!("\\{byte:03}")),
+        }
+    }
+    out.push('"');
     out
 }

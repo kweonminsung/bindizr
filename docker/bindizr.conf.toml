@@ -33,5 +33,12 @@ notify_timeout_secs = 3
 nsupdate_allow_unsigned = false
 journal_retention_days = 365
 
+[dns.zone_defaults]             # Applied when a zone-creation request omits the field
+ttl = 3600                    # Default record TTL (seconds)
+refresh = 300                 # SOA refresh; NOTIFY drives propagation, so this only bounds a lost one
+retry = 60                    # SOA retry
+expire = 3600000              # SOA expire
+minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
+
 [logging]
 log_level = "info"

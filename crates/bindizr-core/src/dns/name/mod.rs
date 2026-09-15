@@ -15,9 +15,11 @@ pub use zone_name::ZoneName;
 
 /// Maximum length of a single DNS label, in bytes (RFC 1035).
 pub(crate) const MAX_DNS_LABEL_LEN: usize = 63;
-/// Maximum length of a domain name, in bytes (RFC 1035).
+/// Maximum unescaped presentation length, excluding the root dot.
+/// The wire form adds a label-length octet and the terminating zero.
 pub(crate) const MAX_DOMAIN_LEN: usize = 253;
 
+/// Check whether text contains whitespace or control characters.
 pub fn has_whitespace_or_control(value: &str) -> bool {
     value
         .chars()
@@ -54,15 +56,6 @@ pub(crate) fn classify_domain_label(
     Ok(())
 }
 
-/// `classify_domain_label` with the problem phrased against `field`.
-pub(crate) fn validate_domain_label(
-    label: &str,
-    field: &str,
-    allow_underscore: bool,
-) -> Result<(), String> {
-    classify_domain_label(label, allow_underscore).map_err(|e| format!("{} {}", field, e))
-}
-
 /// Normalize a name to lookup form: trimmed, no trailing dot, lowercase, and
 /// re-escaped canonically so two spellings of one name compare equal as text.
 pub fn to_lookup_name(value: &str) -> Result<String, ParseNameError> {
@@ -87,12 +80,17 @@ pub fn join_labels(labels: &[String]) -> String {
         .join(".")
 }
 
-/// Return `value` as a lowercase, trailing-dot FQDN.
+/// Return `value` as a lowercase, trailing-dot FQDN: labels decoded and
+/// re-escaped canonically, so a `\.` stays inside its label. A value that does
+/// not decode keeps its own spelling — this renders, it does not validate.
 pub(crate) fn to_fqdn_lowercase(value: &str) -> String {
-    format!(
-        "{}.",
-        value.trim().trim_end_matches('.').to_ascii_lowercase()
-    )
+    match to_lookup_name(value) {
+        Ok(name) => format!("{name}."),
+        Err(_) => format!(
+            "{}.",
+            value.trim().trim_end_matches('.').to_ascii_lowercase()
+        ),
+    }
 }
 
 /// Return `value` with a single trailing dot, preserving case.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A/B the Bindizr `zone_cache` (rendered-zone-by-serial cache) on the AXFR path.
+"""A/B the Bindizr `zone_cache` (stored records cached by zone id and serial) on the AXFR path.
 
 The suite's Benchmark 4 pulls AXFR from the BIND9 *secondary*, so it never
 exercises Bindizr's own XFR server. Here we AXFR straight at Bindizr from inside
@@ -47,6 +47,7 @@ def axfr_from_bind9(cid: str) -> tuple[float | None, int]:
 
 
 async def run_variant(zone_cache: bool) -> dict:
+    """Run the transfer workload with one zone-cache configuration."""
     label = "on" if zone_cache else "off"
     proj = f"bench-zc-{label}"
     adapter = registry.build("bindizr", {"resources": {"sample_interval_secs": 1}}, proj,
@@ -62,6 +63,8 @@ async def run_variant(zone_cache: bool) -> dict:
         if not bind9_cid:
             raise RuntimeError("bind9 container not found")
 
+        # Run consecutive transfers against the same populated zone to compare
+        # the first request with later requests that can reuse the cache.
         samples: list[float] = []
         counts: list[int] = []
         for i in range(AXFRS):
@@ -72,6 +75,7 @@ async def run_variant(zone_cache: bool) -> dict:
             counts.append(n)
             print(f"  axfr #{i + 1}: {ms:.0f} ms ({n} lines)", flush=True)
 
+        # Report the first transfer separately from the subsequent warm samples.
         cold, warm = samples[0], samples[1:]
         return {
             "zone_cache": label,
@@ -87,6 +91,7 @@ async def run_variant(zone_cache: bool) -> dict:
 
 
 async def main() -> None:
+    """Compare the transfer workload with the zone cache enabled and disabled."""
     results = [await run_variant(False), await run_variant(True)]
     off, on = results
     print("\n=== zone_cache A/B (AXFR from bind9 -> bindizr, "

@@ -1,5 +1,6 @@
 //! RFC 2136, Section 3.2: every prerequisite is checked against the zone
-//! before any update is applied.
+//! before any update is applied. Zone-class RRs are grouped by name and type
+//! and must equal the zone's RRset there (Section 3.2.3).
 
 use bindizr_core::dns::name::OwnerName;
 use bindizr_db::repository::LockLevel;
@@ -14,6 +15,7 @@ use crate::{
     repository::RepositoryService,
 };
 
+/// Evaluate UPDATE prerequisites against the locked zone contents.
 pub(crate) async fn evaluate_prerequisites_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
@@ -26,6 +28,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
     let zone_records =
         RepositoryService::list_records_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
+    let mut rrsets: Vec<WantedRrset<'_>> = Vec::new();
     for prerequisite in prerequisites {
         match prerequisite {
             Prerequisite::NameInUse { name } => {
@@ -71,35 +74,118 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 priority,
             } => {
                 let owner = parse_owner_in_zone(name, &zone.name)?;
-                let exists = zone_records.iter().any(|record| {
-                    record.name == owner
-                        && record.record_type == *record_type
-                        && record
-                            .record_type
-                            .values_equal(&record.value, None, value, None)
-                        && record.priority == *priority
-                });
-
-                if !exists {
-                    return Err(DynamicUpdateError::NxRrset(format!(
-                        "record {} {} not found",
-                        owner, record_type
-                    )));
+                match rrsets
+                    .iter_mut()
+                    .find(|rrset| rrset.owner == owner && rrset.record_type == *record_type)
+                {
+                    Some(rrset) => rrset.rrs.push((value.as_str(), *priority)),
+                    None => rrsets.push(WantedRrset {
+                        owner,
+                        record_type: record_type.clone(),
+                        rrs: vec![(value.as_str(), *priority)],
+                    }),
                 }
             }
+        }
+    }
+
+    for wanted in rrsets {
+        let stored: Vec<&Record> = zone_records
+            .iter()
+            .filter(|record| {
+                record.name == wanted.owner && record.record_type == wanted.record_type
+            })
+            .collect();
+        if !is_same_rrset(&stored, &wanted.rrs) {
+            return Err(DynamicUpdateError::NxRrset(format!(
+                "{} records at {} are not the ones the prerequisite names",
+                wanted.record_type, wanted.owner
+            )));
         }
     }
 
     Ok(())
 }
 
-/// The apex always exists: the zone itself owns its SOA and NS records.
+/// The RRs a prerequisite names at one owner and type, as value and priority.
+struct WantedRrset<'a> {
+    owner: OwnerName,
+    record_type: RecordType,
+    rrs: Vec<(&'a str, Option<i32>)>,
+}
+
+/// Whether the stored records of one name and type are exactly the RRs a
+/// prerequisite names; compared both ways, so order and repeats do not matter.
+fn is_same_rrset(stored: &[&Record], wanted: &[(&str, Option<i32>)]) -> bool {
+    let matches = |record: &Record, (value, priority): &(&str, Option<i32>)| {
+        record.has_rdata(value, *priority)
+    };
+    wanted
+        .iter()
+        .all(|rr| stored.iter().any(|record| matches(record, rr)))
+        && stored
+            .iter()
+            .all(|record| wanted.iter().any(|rr| matches(record, rr)))
+}
+
+/// Check whether an owner exists, counting the apex as present because the zone owns its SOA
+/// and NS records.
 fn has_owner(owner: &OwnerName, records: &[Record]) -> bool {
     owner.is_apex() || records.iter().any(|record| record.name == *owner)
 }
 
+/// Check whether the zone contains records with the requested owner and type.
 fn has_rrset(owner: &OwnerName, record_type: &RecordType, records: &[Record]) -> bool {
     records
         .iter()
         .any(|record| record.name == *owner && record.record_type == *record_type)
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+
+    use super::*;
+
+    /// Build a stored A record fixture with the given value.
+    fn a_record(value: &str) -> Record {
+        Record {
+            id: 0,
+            name: OwnerName::from_row("check"),
+            record_type: RecordType::A,
+            value: value.to_string(),
+            ttl: 300,
+            priority: None,
+            zone_id: 1,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Verify that a prerequisite must name the whole RRset.
+    #[test]
+    fn a_prerequisite_must_name_the_whole_rrset() {
+        let stored = [a_record("192.0.2.1"), a_record("192.0.2.2")];
+        let stored: Vec<&Record> = stored.iter().collect();
+
+        // RFC 2136, Section 3.2.3: a subset or a superset is not the RRset.
+        assert!(!is_same_rrset(&stored, &[("192.0.2.1", None)]));
+        assert!(!is_same_rrset(
+            &stored,
+            &[
+                ("192.0.2.1", None),
+                ("192.0.2.2", None),
+                ("192.0.2.3", None)
+            ]
+        ));
+        // Order and repeats in the request carry no meaning.
+        assert!(is_same_rrset(
+            &stored,
+            &[
+                ("192.0.2.2", None),
+                ("192.0.2.1", None),
+                ("192.0.2.2", None)
+            ]
+        ));
+        assert!(!is_same_rrset(&[], &[("192.0.2.1", None)]));
+    }
 }

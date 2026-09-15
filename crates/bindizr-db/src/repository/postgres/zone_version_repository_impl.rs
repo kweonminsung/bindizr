@@ -35,6 +35,7 @@ pub(crate) struct PostgresZoneVersionRepository {
 }
 
 impl PostgresZoneVersionRepository {
+    /// Create a repository for zone versions using the supplied pool.
     pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -42,6 +43,7 @@ impl PostgresZoneVersionRepository {
 
 #[async_trait]
 impl ZoneVersionRepository for PostgresZoneVersionRepository {
+    /// Insert or update a zone version in the current transaction.
     async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -51,8 +53,8 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
 
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             ON CONFLICT (zone_id, serial)
             DO UPDATE SET
                 mname = EXCLUDED.mname,
@@ -61,8 +63,10 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
                 refresh = EXCLUDED.refresh,
                 retry = EXCLUDED.retry,
                 expire = EXCLUDED.expire,
-                minimum_ttl = EXCLUDED.minimum_ttl
-            RETURNING id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+                minimum_ttl = EXCLUDED.minimum_ttl,
+                change_source = EXCLUDED.change_source,
+                changed_by = EXCLUDED.changed_by
+            RETURNING id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             "#,
         )
         .bind(version.zone_id)
@@ -74,12 +78,15 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         .bind(version.retry)
         .bind(version.expire)
         .bind(version.minimum_ttl)
+        .bind(version.change_source.as_str())
+        .bind(&version.changed_by)
         .bind(Utc::now())
         .fetch_one(&mut **postgres_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// Find a zone version by zone ID and serial.
     async fn get_by_serial(
         &self,
         zone_id: i32,
@@ -87,7 +94,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
     ) -> Result<Option<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = $1 AND serial = $2
             "#,
@@ -99,6 +106,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// List zone versions in the closed interval `[from_serial, to_serial]`.
     async fn list_in_serial_range(
         &self,
         zone_id: i32,
@@ -107,7 +115,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
     ) -> Result<Vec<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = $1 AND serial >= $2 AND serial <= $3
             "#,
@@ -119,6 +127,8 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
+
+    /// List zone versions for a zone.
     async fn list(
         &self,
         zone_id: i32,
@@ -133,7 +143,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         };
         sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = $1{filter}
             ORDER BY serial DESC
@@ -148,6 +158,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// Count zone versions using the requested change filter.
     async fn count(&self, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError> {
         let filter = if user_changes_only {
             USER_CHANGES_FILTER
@@ -164,6 +175,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         Ok(count as u64)
     }
 
+    /// Find a zone version by zone ID and serial in the current transaction.
     async fn get_by_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -175,7 +187,7 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
 
         sqlx::query_as::<_, ZoneVersion>(
             AssertSqlSafe(format!("{}{}", r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = $1 AND serial = $2
             "#, lock_clause(lock_level))),
@@ -187,27 +199,25 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn prune_older_than_tx(
+    /// Prune one zone's old versions, keeping its newest, in the current transaction.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
         let pg_tx = tx.as_postgres()?;
 
-        // Each zone's newest version survives regardless of age: the IXFR
+        // The zone's newest version survives regardless of age: the IXFR
         // up-to-date response reads it.
         let result = sqlx::query(
             r#"
-            DELETE FROM zone_versions h
-            USING (
-                SELECT zone_id AS newest_zone_id, MAX(serial) AS newest_serial
-                FROM zone_versions
-                GROUP BY zone_id
-            ) newest
-            WHERE newest.newest_zone_id = h.zone_id
-              AND h.created_at < $1 AND h.serial < newest.newest_serial
+            DELETE FROM zone_versions
+            WHERE zone_id = $1 AND created_at < $2
+              AND serial < (SELECT MAX(serial) FROM zone_versions WHERE zone_id = $1)
             "#,
         )
+        .bind(zone_id)
         .bind(cutoff)
         .execute(&mut **pg_tx)
         .await

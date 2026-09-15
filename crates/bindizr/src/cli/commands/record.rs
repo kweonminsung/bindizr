@@ -1,7 +1,7 @@
 use bindizr_service::types::{
-    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse,
-    GetRecordsFilter, PaginatedResponse, RecordItem, RecordResponse, RecordValueRequest,
-    UpdateRecordRequest,
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
+    GetRecordResponse, GetRecordsFilter, PaginatedResponse, RecordItem, RecordResponse,
+    RecordValueRequest, UpdateRecordRequest,
 };
 use clap::Subcommand;
 
@@ -52,7 +52,8 @@ pub(crate) enum RecordCommand {
 Input format (JSON or YAML): an array of records, or an object with a
 'records' array. Fields per record:
   name         owner name relative to the zone, or '@' for the apex (required)
-  record_type  A, AAAA, CNAME, MX, NS, PTR, SRV, TXT (required)
+  record_type  A, AAAA, CAA, CNAME, DNAME, DS, MX, NAPTR, NS, PTR, SRV,
+               SSHFP, TLSA, TXT (required)
   value        record value; TXT also accepts an array of strings (required)
   ttl          seconds (optional; defaults to the zone TTL)
   priority     MX/SRV priority (optional)
@@ -115,6 +116,12 @@ YAML example:
         /// Search records by partial text
         #[arg(short = 'q', long)]
         search: Option<String>,
+        /// Sort by: name (default), record_type, ttl, priority, created_at
+        #[arg(long, value_name = "FIELD")]
+        sort: Option<String>,
+        /// Sort order: asc (default) or desc
+        #[arg(long, value_name = "asc|desc")]
+        order: Option<String>,
         /// Append the derived DNSSEC records (RRSIG, DNSKEY, NSEC, ...)
         #[arg(long)]
         signed: bool,
@@ -171,6 +178,36 @@ YAML example:
         #[arg(value_name = "RECORD_ID")]
         id: i32,
     },
+
+    /// Delete every record at a name in one change
+    #[command(after_help = "\
+Narrowing follows RFC 2136, Section 2.5.2:
+  --name only                 every record type at the name
+  --name --type               every record of that type at the name
+  --name --type --value       one record
+
+The whole set goes in one transaction, so the zone advances by a single
+serial and the secondaries transfer once.")]
+    DeleteMatching {
+        /// Zone the records belong to
+        #[arg(long)]
+        zone: String,
+        /// Owner name relative to the zone, or '@' for the apex
+        #[arg(long)]
+        name: String,
+        /// Narrow to one record type
+        #[arg(long = "type")]
+        record_type: Option<String>,
+        /// Narrow to one value (requires --type)
+        #[arg(long)]
+        value: Option<String>,
+        /// Narrow to one MX/SRV priority
+        #[arg(long)]
+        priority: Option<i32>,
+        /// Report what would go without removing anything
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Handle the `record` subcommand by forwarding it to the daemon over the socket.
@@ -219,6 +256,8 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             max_priority,
             search,
             signed,
+            sort,
+            order,
             limit,
             offset,
             output,
@@ -235,6 +274,8 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 || max_priority.is_some()
                 || search.is_some()
                 || signed
+                || sort.is_some()
+                || order.is_some()
                 || limit.is_some()
                 || offset.is_some();
             let filter = has_filters.then_some(GetRecordsFilter {
@@ -250,6 +291,8 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 max_priority,
                 search,
                 signed: signed.then_some(true),
+                sort,
+                order,
                 limit,
                 offset,
             });
@@ -273,7 +316,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let content = super::read_input(&file)?;
             // YAML is a superset of JSON, so one parse accepts both formats.
-            let parsed: serde_json::Value = serde_yaml::from_str(&content)
+            let parsed: serde_json::Value = serde_norway::from_str(&content)
                 .map_err(|e| format!("Invalid JSON/YAML in '{}': {}", file, e))?;
             let records = match parsed {
                 serde_json::Value::Array(_) => parsed,
@@ -351,6 +394,29 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         RecordCommand::Delete { id } => {
             let response = client
                 .send_command(DaemonCommandKind::DeleteRecord, RecordIdParams { id })
+                .await?;
+            println!("{}", response.message);
+        }
+        RecordCommand::DeleteMatching {
+            zone,
+            name,
+            record_type,
+            value,
+            priority,
+            dry_run,
+        } => {
+            let response = client
+                .send_command(
+                    DaemonCommandKind::DeleteRecordsMatching,
+                    DeleteRecordsFilter {
+                        zone_name: zone,
+                        name,
+                        record_type,
+                        value,
+                        priority,
+                        dry_run,
+                    },
+                )
                 .await?;
             println!("{}", response.message);
         }

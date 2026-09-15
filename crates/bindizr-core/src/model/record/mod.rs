@@ -8,8 +8,9 @@ use crate::dns::{
     name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{
         ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
-        DsRrValue, MxRecordValue, NsRecordValue, PtrRecordValue, SrvRecordValue, SshfpRecordValue,
-        TlsaRecordValue, TxtContent, TxtRecordValue,
+        DnameRecordValue, DsRrValue, MxRecordValue, NaptrRecordValue, NsRecordValue,
+        PtrRecordValue, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtContent,
+        TxtRecordValue,
     },
 };
 
@@ -28,14 +29,23 @@ pub struct Record {
     pub zone_id: i32,
 }
 
+impl Record {
+    /// Whether this row holds `value` as its rdata (with `priority`, for MX
+    /// and SRV), compared canonically under the row's own type.
+    pub fn has_rdata(&self, value: &str, priority: Option<i32>) -> bool {
+        self.record_type
+            .values_equal(&self.value, self.priority, value, priority)
+    }
+}
+
 /// A [`Record`] joined with the name of its owning zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RecordWithZone {
     pub(crate) id: i32,
     #[sqlx(try_from = "String")]
-    pub(crate) name: OwnerName,
+    pub name: OwnerName,
     #[sqlx(try_from = "String")]
-    pub(crate) record_type: RecordType,
+    pub record_type: RecordType,
     pub(crate) value: String,
     pub(crate) ttl: i32,
     pub(crate) priority: Option<i32>,
@@ -46,6 +56,7 @@ pub struct RecordWithZone {
 }
 
 impl RecordWithZone {
+    /// Combine a stored record with its zone metadata.
     pub fn new(record: Record, zone_name: ZoneName) -> Self {
         Self {
             id: record.id,
@@ -82,8 +93,10 @@ pub enum RecordType {
     AAAA,
     CAA,
     CNAME,
+    DNAME,
     DS,
     MX,
+    NAPTR,
     TXT,
     NS,
     SRV,
@@ -92,12 +105,15 @@ pub enum RecordType {
     TLSA,
 }
 impl std::fmt::Display for RecordType {
+    /// Write the record type in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 impl TryFrom<String> for RecordType {
     type Error = String;
+
+    /// Validate and convert the stored value into a record type.
     fn try_from(s: String) -> Result<Self, Self::Error> {
         s.parse()
     }
@@ -109,10 +125,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for RecordType
 where
     String: sqlx::Type<DB>,
 {
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <String as sqlx::Type<DB>>::type_info()
     }
 
+    /// Check whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <String as sqlx::Type<DB>>::compatible(ty)
     }
@@ -122,6 +140,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for RecordType
 where
     String: sqlx::Encode<'q, DB>,
 {
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
@@ -133,14 +152,17 @@ where
 impl std::str::FromStr for RecordType {
     type Err = String;
 
+    /// Parse a record type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "A" => Ok(RecordType::A),
             "AAAA" => Ok(RecordType::AAAA),
             "CAA" => Ok(RecordType::CAA),
             "CNAME" => Ok(RecordType::CNAME),
+            "DNAME" => Ok(RecordType::DNAME),
             "DS" => Ok(RecordType::DS),
             "MX" => Ok(RecordType::MX),
+            "NAPTR" => Ok(RecordType::NAPTR),
             "TXT" => Ok(RecordType::TXT),
             "NS" => Ok(RecordType::NS),
             "SRV" => Ok(RecordType::SRV),
@@ -160,8 +182,10 @@ impl RecordType {
             RecordType::AAAA => "AAAA",
             RecordType::CAA => "CAA",
             RecordType::CNAME => "CNAME",
+            RecordType::DNAME => "DNAME",
             RecordType::DS => "DS",
             RecordType::MX => "MX",
+            RecordType::NAPTR => "NAPTR",
             RecordType::TXT => "TXT",
             RecordType::NS => "NS",
             RecordType::SRV => "SRV",
@@ -178,12 +202,14 @@ impl RecordType {
             Rtype::A => Ok(RecordType::A),
             Rtype::NS => Ok(RecordType::NS),
             Rtype::CNAME => Ok(RecordType::CNAME),
+            Rtype::DNAME => Ok(RecordType::DNAME),
             Rtype::PTR => Ok(RecordType::PTR),
             Rtype::CAA => Ok(RecordType::CAA),
             Rtype::DS => Ok(RecordType::DS),
             Rtype::SSHFP => Ok(RecordType::SSHFP),
             Rtype::TLSA => Ok(RecordType::TLSA),
             Rtype::MX => Ok(RecordType::MX),
+            Rtype::NAPTR => Ok(RecordType::NAPTR),
             Rtype::TXT => Ok(RecordType::TXT),
             Rtype::AAAA => Ok(RecordType::AAAA),
             Rtype::SRV => Ok(RecordType::SRV),
@@ -197,9 +223,11 @@ impl RecordType {
             RecordType::A => 1,
             RecordType::NS => 2,
             RecordType::CNAME => 5,
+            RecordType::DNAME => 39,
             RecordType::DS => 43,
             RecordType::PTR => 12,
             RecordType::MX => 15,
+            RecordType::NAPTR => 35,
             RecordType::TXT => 16,
             RecordType::AAAA => 28,
             RecordType::SRV => 33,
@@ -222,8 +250,10 @@ impl RecordType {
             RecordType::AAAA => AaaaRecordValue::parse(value).map(|_| ()),
             RecordType::CAA => CaaRecordValue::parse(value)?.validate(),
             RecordType::CNAME => CnameRecordValue::parse(value).map(|_| ()),
+            RecordType::DNAME => DnameRecordValue::parse(value).map(|_| ()),
             RecordType::DS => DsRrValue::parse(value)?.validate(),
             RecordType::MX => MxRecordValue::parse(value, priority)?.validate(),
+            RecordType::NAPTR => NaptrRecordValue::parse(value)?.validate(),
             // Stored TXT is always the presentation form.
             RecordType::TXT => TxtRecordValue::from_presentation(value)
                 .ok_or_else(|| format!("stored TXT value is not in presentation form: {value}"))?
@@ -275,25 +305,22 @@ impl RecordType {
             RecordType::CAA => CaaRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::CNAME => CnameRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
+            RecordType::CNAME | RecordType::DNAME | RecordType::NS | RecordType::PTR => {
+                Cow::Owned(to_fqdn_lowercase(value))
+            }
             RecordType::DS => DsRrValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
             RecordType::MX => MxRecordValue::parse(value, fallback_priority)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::TXT => Cow::Borrowed(value),
-            RecordType::NS => NsRecordValue::parse(value)
+            RecordType::NAPTR => NaptrRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
+                .unwrap_or(Cow::Borrowed(value)),
+            RecordType::TXT => Cow::Borrowed(value),
             RecordType::SRV => SrvRecordValue::parse(value, fallback_priority)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::PTR => PtrRecordValue::parse(value)
-                .map(|parsed| Cow::Owned(parsed.canonical()))
-                .unwrap_or_else(|_| Cow::Owned(to_fqdn_lowercase(value))),
             RecordType::SSHFP => SshfpRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
@@ -318,6 +345,7 @@ impl RecordType {
                 Ok(parsed.canonical())
             }
             RecordType::CNAME => CnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::DNAME => DnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::DS => {
                 let parsed = DsRrValue::parse(trimmed)?;
                 parsed.validate()?;
@@ -327,6 +355,11 @@ impl RecordType {
                 let parsed = MxRecordValue::parse(trimmed, priority)?;
                 parsed.validate()?;
                 Ok(parsed.encoded())
+            }
+            RecordType::NAPTR => {
+                let parsed = NaptrRecordValue::parse(trimmed)?;
+                parsed.validate()?;
+                Ok(parsed.canonical())
             }
             RecordType::TXT => TxtRecordValue::parse(value).map(|parsed| parsed.to_presentation()),
             RecordType::NS => NsRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
@@ -355,15 +388,15 @@ impl RecordType {
             return match TxtRecordValue::from_presentation(value)
                 .and_then(|rdata| rdata.to_content())
             {
-                Some(TxtContent::Single(value)) => value,
-                Some(TxtContent::Segments(segments)) => segments.join(""),
+                Some(TxtContent::Single(value)) => to_display_text(&value),
+                Some(TxtContent::Segments(segments)) => to_display_text(&segments.join("")),
                 None => value.to_string(),
             };
         }
 
         match self {
-            RecordType::MX => display_last_name_field(value, MX_FIELD_COUNTS),
-            RecordType::SRV => display_last_name_field(value, SRV_FIELD_COUNTS),
+            RecordType::MX => display_last_name_field(value, 1),
+            RecordType::SRV => display_last_name_field(value, 3),
             _ if self.is_name_like() => to_fqdn_lowercase(value),
             _ => value.to_string(),
         }
@@ -398,12 +431,31 @@ impl RecordType {
     }
 }
 
+/// TXT text for the display column: control characters as `\DDD`, since a
+/// text column cannot hold a NUL, and everything else as typed, for search.
+fn to_display_text(text: &str) -> String {
+    if !text.chars().any(|c| c.is_ascii_control()) {
+        return text.to_string();
+    }
+
+    let mut out = String::with_capacity(text.len() + 4);
+    for c in text.chars() {
+        if c.is_ascii_control() {
+            out.push_str(&format!("\\{:03}", c as u8));
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Types whose display form is a domain name, so their values compare
 /// case-insensitively (RFC 4343). The record-filter SQL selects on this same
 /// set, which is why it is rendered from here rather than spelled out per
 /// backend.
 pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
     RecordType::CNAME,
+    RecordType::DNAME,
     RecordType::NS,
     RecordType::PTR,
     RecordType::MX,
@@ -420,18 +472,17 @@ pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
     RecordType::TXT,
 ];
 
-// The priority lives in its own column, never in the value: MX stores `target`
-// and SRV `weight port target`.
-const MX_FIELD_COUNTS: &[usize] = &[1];
-const SRV_FIELD_COUNTS: &[usize] = &[3];
-
-fn display_last_name_field(value: &str, valid_field_counts: &[usize]) -> String {
+/// Render the trailing domain-name field of a stored record value.
+///
+/// Priority is a separate column: MX stores only the target, and SRV stores weight, port, and
+/// target.
+fn display_last_name_field(value: &str, field_count: usize) -> String {
     let mut fields = value
         .split_whitespace()
         .map(str::to_string)
         .collect::<Vec<_>>();
 
-    if !valid_field_counts.contains(&fields.len()) {
+    if fields.len() != field_count {
         return value.to_string();
     }
 

@@ -18,18 +18,22 @@ ZONE = "bench.example."
 
 
 def _ip4(rng: random.Random) -> str:
+    """Generate an IPv4 value for a benchmark record."""
     return f"10.{rng.randint(0, 255)}.{rng.randint(0, 255)}.{rng.randint(1, 254)}"
 
 
 def _ip6(rng: random.Random) -> str:
+    """Generate an IPv6 value for a benchmark record."""
     return "2001:db8::" + ":".join(f"{rng.randint(0, 0xffff):x}" for _ in range(3))
 
 
 def generate(count: int, seed: int, zone: str = ZONE) -> list[dict]:
+    """Generate a reproducible list of benchmark records."""
     return list(iter_records(count, seed, zone))
 
 
 def iter_records(count: int, seed: int, zone: str = ZONE) -> Iterator[dict]:
+    """Yield a reproducible stream of benchmark records."""
     rng = random.Random(seed)
     for i in range(count):
         name = f"host{i:06d}"

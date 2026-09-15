@@ -20,6 +20,11 @@ bindizr:
     # Serve the OpenAPI document at GET /openapi.json and /openapi.yaml
     # (unauthenticated; describes the whole API surface).
     openapiEnabled: false
+    tls:
+      # Serve the API over HTTPS from an existing Secret holding tls.crt and
+      # tls.key (a cert-manager Certificate makes one). Leave empty to serve
+      # plain HTTP, which is what an Ingress terminating TLS in front expects.
+      existingSecret: ""
     service:
       type: ClusterIP
       port: 8000
@@ -44,6 +49,7 @@ bindizr:
     zoneCacheMaxRecords: 500000
     # Days of IXFR journal/SOA history to keep (0 = unlimited).
     journalRetentionDays: 365
+    maintenanceIntervalSecs: 3600
     service:
       port: 53
 
@@ -67,6 +73,52 @@ bindizr:
     runAsUser: 10001
     runAsGroup: 10001
     runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      # The image sets cap_net_bind_service on the binary for port 53; with
+      # an empty bounding set the kernel refuses to exec it at all.
+      drop:
+        - ALL
+      add:
+        - NET_BIND_SERVICE
+
+  # Applied when a zone-creation request omits the field; afterwards the
+  # values are the zone's own columns.
+  zoneDefaults:
+    ttl: 3600
+    refresh: 300
+    retry: 60
+    expire: 3600000
+    minimumTtl: 86400
+
+  # Readiness runs /health, a database round trip, so a pod that cannot reach
+  # the database stops taking traffic. Liveness deliberately does not: a
+  # restart cannot fix a database outage, only spread it into a restart loop.
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: api
+    periodSeconds: 10
+    failureThreshold: 3
+  livenessProbe:
+    tcpSocket:
+      port: api
+    periodSeconds: 10
+    failureThreshold: 3
+  startupProbe:
+    tcpSocket:
+      port: api
+    periodSeconds: 5
+    failureThreshold: 30
+  terminationGracePeriodSeconds: 30
+
+  # Keeps a node drain from taking every replica at once. Ignored below two
+  # replicas, where one budget or the other would block the drain outright.
+  podDisruptionBudget:
+    enabled: true
+    spec:
+      maxUnavailable: 1
   resources: {}
   nodeSelector: {}
   tolerations: []
@@ -126,9 +178,6 @@ serviceAccount:
   create: true
   annotations: {}
   name: ""
-
-rbac:
-  create: true
 
 mysql:
   enabled: false

@@ -13,6 +13,7 @@ pub(crate) struct MySqlTsigGrantRepository {
 }
 
 impl MySqlTsigGrantRepository {
+    /// Create a repository for TSIG grants using the supplied pool.
     pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
@@ -20,20 +21,22 @@ impl MySqlTsigGrantRepository {
 
 #[async_trait]
 impl TsigGrantRepository for MySqlTsigGrantRepository {
+    /// Insert a TSIG grant.
     async fn create(&self, mut grant: TsigGrant) -> Result<TsigGrant, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(grant.zone_id)
         .bind(grant.tsig_key_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
+        .bind(grant.can_write)
         .bind(now)
         .execute(&mut *conn)
         .await?;
@@ -44,11 +47,12 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(grant)
     }
 
+    /// Find a TSIG grant by ID.
     async fn get(&self, id: i32) -> Result<Option<TsigGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let grant = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE id = ?",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -57,11 +61,12 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(grant)
     }
 
+    /// List TSIG grants for a zone.
     async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<TsigGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE zone_id = ? ORDER BY id",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE zone_id = ? ORDER BY id",
         )
         .bind(zone_id)
         .fetch_all(&mut *conn)
@@ -70,6 +75,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(grants)
     }
 
+    /// List TSIG grants for a TSIG key in a zone in the current transaction.
     async fn list_by_zone_id_and_key_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -80,7 +86,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         let mysql_tx = tx.as_mysql()?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(AssertSqlSafe(
-            format!("SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE zone_id = ? AND tsig_key_id = ? ORDER BY id{}",
+            format!("SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE zone_id = ? AND tsig_key_id = ? ORDER BY id{}",
             lock_clause(lock_level),
         )))
         .bind(zone_id)
@@ -91,11 +97,12 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(grants)
     }
 
+    /// List TSIG grants for a TSIG key.
     async fn list_by_key_id(&self, tsig_key_id: i32) -> Result<Vec<TsigGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE tsig_key_id = ? ORDER BY id",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE tsig_key_id = ? ORDER BY id",
         )
         .bind(tsig_key_id)
         .fetch_all(&mut *conn)
@@ -104,6 +111,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(grants)
     }
 
+    /// Count TSIG grants for a TSIG key.
     async fn count_by_key_id(&self, tsig_key_id: i32) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -116,6 +124,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
         Ok(count as u64)
     }
 
+    /// Delete a TSIG grant by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

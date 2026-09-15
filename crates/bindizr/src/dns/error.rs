@@ -7,6 +7,10 @@ pub(crate) enum XfrError {
     #[error("Zone not found: {0}")]
     ZoneNotFound(String),
 
+    /// The key that signed the request holds no grant over the zone whole.
+    #[error("Transfer refused: {0}")]
+    Refused(String),
+
     #[error("Database error: {0}")]
     DatabaseError(String),
 
@@ -18,13 +22,11 @@ pub(crate) enum XfrError {
 
     #[error("Invalid query: {0}")]
     InvalidQuery(String),
-
-    #[error("Access denied: {0}")]
-    AccessDenied(String),
 }
 
 /// Protocol failures reported by the wire codec in `bindizr-core`.
 impl From<String> for XfrError {
+    /// Convert a failure into a zone-transfer error.
     fn from(message: String) -> Self {
         XfrError::ProtocolError(message)
     }
@@ -33,6 +35,7 @@ impl From<String> for XfrError {
 /// The DNS plane passes no caller, so a service failure here is never a
 /// client fault — it surfaces as an infrastructure error.
 impl From<ServiceError> for XfrError {
+    /// Convert a failure into a zone-transfer error.
     fn from(e: ServiceError) -> Self {
         XfrError::DatabaseError(e.to_string())
     }

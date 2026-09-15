@@ -38,6 +38,7 @@ impl ZoneName {
         Self(value.trim_end_matches('.').to_ascii_lowercase())
     }
 
+    /// Return the text representation of this zone name.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -53,6 +54,7 @@ impl ZoneName {
         to_fqdn(&self.0)
     }
 
+    /// Encode the zone name as an absolute DNS wire-format name.
     pub fn to_wire(&self) -> Result<Vec<u8>, ParseNameError> {
         super::labels_to_wire(self.0.split('.'))
     }
@@ -60,12 +62,14 @@ impl ZoneName {
 
 /// Decodes the stored form, so a row column can hold a zone name directly.
 impl From<String> for ZoneName {
+    /// Wrap a zone name from its stored string representation.
     fn from(value: String) -> Self {
         Self::from_row(&value)
     }
 }
 
 impl std::fmt::Display for ZoneName {
+    /// Write the zone name in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }

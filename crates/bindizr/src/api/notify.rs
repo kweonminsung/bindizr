@@ -18,6 +18,7 @@ use crate::api::{
 pub(crate) struct NotifyApi;
 
 impl NotifyApi {
+    /// Build the notify API routes.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/notify", routing::post(notify_all_zones))
@@ -30,6 +31,7 @@ pub(crate) struct NotifyQuery {
     bump_serial: Option<bool>,
 }
 
+/// Send DNS NOTIFY messages for all zones.
 #[utoipa::path(
         post,
         path = "/notify",
@@ -45,7 +47,6 @@ pub(crate) struct NotifyQuery {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Send DNS NOTIFY messages for all zones.
 pub(crate) async fn notify_all_zones(
     RequestCaller(caller): RequestCaller,
     Query(query): Query<NotifyQuery>,
@@ -59,6 +60,7 @@ pub(crate) async fn notify_all_zones(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Send DNS NOTIFY messages for one zone.
 #[utoipa::path(
         post,
         path = "/zones/{name}/notify",
@@ -76,7 +78,6 @@ pub(crate) async fn notify_all_zones(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Send DNS NOTIFY messages for one zone.
 pub(crate) async fn notify_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,

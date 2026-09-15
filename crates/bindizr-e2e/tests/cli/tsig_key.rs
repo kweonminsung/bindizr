@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::common::{TestApp, assert_cli_failure_contains};
 
+/// Verify TSIG key creation, listing, retrieval, and deletion through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tsig_key_create_list_get_delete() {
@@ -41,6 +42,7 @@ async fn tsig_key_create_list_get_delete() {
     assert_cli_failure_contains(&args, &missing, "TSIG key with name 'cli-key' not found");
 }
 
+/// Verify TSIG grant creation, listing, and revocation through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tsig_key_grant_grants_revoke() {
@@ -105,6 +107,7 @@ async fn tsig_key_grant_grants_revoke() {
         .await;
 }
 
+/// Verify global TSIG key creation, listing, and deletion through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn global_tsig_key_create_list_delete() {

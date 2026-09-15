@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::common::{TestApp, assert_cli_failure_contains};
 
+/// Verify record creation, retrieval, and deletion.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_create_read_delete() {
@@ -56,6 +57,7 @@ async fn record_create_read_delete() {
     assert!(deleted_zone.contains("deleted successfully"));
 }
 
+/// Verify that record bulk dry run shows the diff via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_dry_run_shows_the_diff_via_cli() {
@@ -100,6 +102,7 @@ async fn record_bulk_dry_run_shows_the_diff_via_cli() {
     );
 }
 
+/// Verify that record update retype clears incompatible priority via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_update_retype_clears_incompatible_priority_via_cli() {
@@ -159,6 +162,7 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
     );
 }
 
+/// Verify that record update retype without value is rejected via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_update_retype_without_value_is_rejected_via_cli() {
@@ -197,6 +201,7 @@ async fn record_update_retype_without_value_is_rejected_via_cli() {
     assert_cli_failure_contains(&args, &output, "value is required when changing");
 }
 
+/// Verify that record update changes only passed fields via CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_update_changes_only_passed_fields_via_cli() {
@@ -250,6 +255,7 @@ async fn record_update_changes_only_passed_fields_via_cli() {
     assert_eq!(updated["name"], format!("www.{zone_name}."));
 }
 
+/// Verify record filtering by zone and type through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_filter_by_zone_and_type() {
@@ -295,6 +301,7 @@ async fn record_filter_by_zone_and_type() {
     assert_eq!(records[0]["value"], "192.0.2.1");
 }
 
+/// Verify that invalid record values are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_reject_invalid_values() {
@@ -325,6 +332,7 @@ async fn record_reject_invalid_values() {
     }
 }
 
+/// Verify bulk record insertion from standard input.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_bulk_insert_from_stdin() {
@@ -402,6 +410,7 @@ async fn record_bulk_insert_from_stdin() {
     assert!(names.contains(&format!("ftp.{zone_name}.")));
 }
 
+/// Verify creation of TXT segments from repeated CLI value options.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn record_create_txt_segments_from_repeated_value() {

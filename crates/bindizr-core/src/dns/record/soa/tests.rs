@@ -1,6 +1,7 @@
 use super::{SoaMailbox, SoaRecordValue};
 use crate::dns::name::encode_name;
 
+/// Verify that `from_email` escapes local part.
 #[test]
 fn from_email_escapes_local_part() {
     assert_eq!(
@@ -13,6 +14,7 @@ fn from_email_escapes_local_part() {
     assert!(SoaMailbox::from_email("host@@example.com").is_err());
 }
 
+/// Verify that `to_email` round-trips.
 #[test]
 fn to_email_round_trips() {
     for email in [
@@ -30,6 +32,7 @@ fn to_email_round_trips() {
     }
 }
 
+/// Verify that to email handles plain stored mailbox.
 #[test]
 fn to_email_handles_plain_stored_mailbox() {
     assert_eq!(
@@ -46,6 +49,7 @@ fn to_email_handles_plain_stored_mailbox() {
     );
 }
 
+/// Verify that `to_email` rejects invalid input.
 #[test]
 fn to_email_rejects_invalid_input() {
     assert!(SoaMailbox::from_encoded("no-separator").to_email().is_err());
@@ -53,7 +57,8 @@ fn to_email_rejects_invalid_input() {
     assert!(SoaMailbox::from_encoded("dangling\\").to_email().is_err());
 }
 
-// RFC 1035, Section 3.3.13.
+/// Verify that SOA RDATA encodes two names followed by five counters (RFC 1035, Section
+/// 3.3.13).
 #[test]
 fn encode_soa_rdata_is_names_then_five_counters() {
     let rdata = SoaRecordValue {

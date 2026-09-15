@@ -20,6 +20,7 @@ use crate::{
 /// instead of tripping the RRset TTL rule.
 const RRSET_TTL: i32 = 3600;
 
+/// Verify that `normalize_record_owner_name` maps parse failures to record name errors.
 #[test]
 fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
     // Core owns the parsing; this layer owns the code and the message.
@@ -55,6 +56,7 @@ fn validate_add(
     )
 }
 
+/// Verify that `add` rejects DS at apex but defers the NS coupling.
 #[test]
 fn add_rejects_ds_at_apex_but_defers_the_ns_coupling() {
     const DS_VALUE: &str =
@@ -69,6 +71,7 @@ fn add_rejects_ds_at_apex_but_defers_the_ns_coupling() {
     assert!(without_ns.is_ok());
 }
 
+/// Verify that `add` rejects CNAME at apex and allows delegation NS.
 #[test]
 fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let cname_at_apex = validate_add(
@@ -106,6 +109,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     assert_eq!(cname_conflict.unwrap_err().code, ErrorCode::RecordConflict);
 }
 
+/// Verify that `add` rejects wire equivalent MX and SRV duplicates.
 #[test]
 fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
     // Case and trailing-dot differences canonicalize equal, so the add is a duplicate.
@@ -138,6 +142,7 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
     assert_eq!(duplicate_srv.unwrap_err().code, ErrorCode::RecordConflict);
 }
 
+/// Verify that `add` treats an omitted MX priority as the default.
 #[test]
 fn add_treats_an_omitted_mx_priority_as_the_default() {
     // A stored MX with no priority and an add carrying the default 10 are the
@@ -154,6 +159,7 @@ fn add_treats_an_omitted_mx_priority_as_the_default() {
     assert_eq!(duplicate_mx.unwrap_err().code, ErrorCode::RecordConflict);
 }
 
+/// Verify that `add` rejects null MX alongside other MX records.
 #[test]
 fn add_rejects_null_mx_alongside_other_mx_records() {
     let existing_mx = test_record(1, "", RecordType::MX, "mail.example.com", Some(10));
@@ -179,6 +185,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
     );
 }
 
+/// Verify that `add` enforces one TTL per RRSET.
 #[test]
 fn add_enforces_one_ttl_per_rrset() {
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
@@ -216,6 +223,7 @@ fn add_enforces_one_ttl_per_rrset() {
     assert!(other_rrset.is_ok());
 }
 
+/// Verify that `validate_delete_constraints` protects the mname NS.
 #[test]
 fn validate_delete_constraints_protects_the_mname_ns() {
     let zone = test_zone();
@@ -227,6 +235,7 @@ fn validate_delete_constraints_protects_the_mname_ns() {
     assert!(validate_delete_constraints(&zone, &[secondary_ns]).is_ok());
 }
 
+/// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
         id: 1,
@@ -241,10 +250,13 @@ fn test_zone() -> Zone {
         minimum_ttl: 86400,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
+        enabled: true,
+        description: None,
         created_at: Utc::now(),
     }
 }
 
+/// Build a record fixture with the requested fields.
 fn test_record(
     id: i32,
     name: &str,

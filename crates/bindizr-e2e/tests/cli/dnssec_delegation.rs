@@ -3,6 +3,7 @@
 
 use crate::common::{FakeParent, ServedDs, TestApp, assert_cli_failure_contains};
 
+/// Read a test zone's DNSSEC status through the CLI.
 async fn dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
     let status = app
         .run_cli_success(&["dnssec", "status", zone_name, "--output", "json"])
@@ -10,6 +11,7 @@ async fn dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
     serde_json::from_str(&status).expect("CLI did not return valid JSON")
 }
 
+/// Verify parent DS checks through the CLI.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_parent_ds_check_via_cli() {
@@ -19,6 +21,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
     let zone_name = app.zone_name("dnssec-parent-cli.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
+    // Enable signing against the test parent, then publish the active key's DS there.
     let enabled = app
         .run_cli_success(&[
             "dnssec",
@@ -40,6 +43,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
         3600,
     )]);
 
+    // A served DS keeps disable blocked and must appear in the CLI's parent check.
     let disable_args = ["dnssec", "disable", &zone_name];
     let refused = app.run_cli(&disable_args).await;
     assert_cli_failure_contains(&disable_args, &refused, "still serves DS records");
@@ -58,6 +62,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
         "{checked}"
     );
 
+    // Verify the parent address can also be set through the settings command.
     let set = app
         .run_cli_success(&[
             "dnssec",
@@ -72,6 +77,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
         "{set}"
     );
 
+    // With the parent DS removed, the CLI reports its absence and permits disable.
     parent.set_ds(Vec::new());
     let checked = app
         .run_cli_success(&["dnssec", "check-ds", &zone_name])
@@ -84,6 +90,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
     assert!(disabled.contains("DNSSEC disabled successfully"));
 }
 
+/// Verify the CLI option to disable DNSSEC without a parent DS check.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_dnssec_disable_skip_ds_check_via_cli() {

@@ -45,6 +45,7 @@ impl<'a> SrvRecordValue<'a> {
         Rdata::new(rdata)
     }
 
+    /// Validate the fields of this SRV value.
     pub fn validate(&self) -> Result<(), String> {
         if self.target.trim() == "." {
             return Ok(());
@@ -53,6 +54,7 @@ impl<'a> SrvRecordValue<'a> {
         validate_domain_record_value("SRV record target", self.target)
     }
 
+    /// Render the SRV value in canonical text form.
     pub fn canonical(&self) -> String {
         format!(
             "{} {} {} {}",

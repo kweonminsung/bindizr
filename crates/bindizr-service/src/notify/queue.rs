@@ -69,6 +69,7 @@ struct NotifyBatch {
 }
 
 impl NotifyBatch {
+    /// Add a zone to the pending NOTIFY batch.
     fn add(&mut self, job: ApplyJob) {
         match job.zone_name {
             Some(name) => {
@@ -78,6 +79,7 @@ impl NotifyBatch {
         }
     }
 
+    /// Drain the pending batch and send notifications for its zones.
     async fn flush(self) {
         if self.all_zones {
             // Notifying all zones covers every per-zone entry in this batch.

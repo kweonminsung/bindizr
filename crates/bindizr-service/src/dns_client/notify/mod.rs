@@ -7,7 +7,7 @@ use bindizr_core::{
         query::validate_notify_response,
     },
     log_error, log_info,
-    metrics::metrics,
+    metrics::{NotifyResult, track_notify},
 };
 
 /// Sends DNS NOTIFY to all configured secondary servers for one zone. Which
@@ -69,12 +69,7 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, St
         let addrs = match result {
             Ok(addrs) => addrs,
             Err(e) => {
-                // Nothing was sent, so resolution failures must not inflate
-                // the send-failure rate.
-                metrics()
-                    .notify_sent_total
-                    .with_label_values(&["resolve_error"])
-                    .inc();
+                track_notify(NotifyResult::ResolveError);
                 reports.push(NotifyReport {
                     address: entry,
                     result: Err(format!("failed to resolve: {}", e)),
@@ -87,15 +82,12 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, St
             let result = match send_notify_to_server(&qname, addr, timeout, retries).await {
                 Ok(()) => {
                     log_info!("NOTIFY sent successfully to {}", addr);
-                    metrics().notify_sent_total.with_label_values(&["ok"]).inc();
+                    track_notify(NotifyResult::Ok);
                     Ok(())
                 }
                 Err(e) => {
                     log_error!("Failed to send NOTIFY to {}: {}", addr, e);
-                    metrics()
-                        .notify_sent_total
-                        .with_label_values(&["error"])
-                        .inc();
+                    track_notify(NotifyResult::Error);
                     Err(e)
                 }
             };
@@ -140,6 +132,7 @@ async fn send_notify_to_server(
     Err(last_error.unwrap_or_else(|| format!("NOTIFY to {} was not attempted", server_addr)))
 }
 
+/// Send one NOTIFY attempt and validate the server's response.
 async fn send_notify_to_server_once(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,

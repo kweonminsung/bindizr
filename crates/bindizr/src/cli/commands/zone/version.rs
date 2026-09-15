@@ -79,6 +79,7 @@ pub(crate) enum ZoneVersionCommand {
     },
 }
 
+/// Run the requested zone history or rollback command.
 pub(crate) async fn handle_command(
     client: &DaemonSocketClient,
     subcommand: ZoneVersionCommand,

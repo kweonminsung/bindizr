@@ -6,7 +6,7 @@ use bindizr_core::dns::{
     record::{TxtContent, TxtRecordValue},
 };
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use super::version::RecordDiff;
 use crate::model::record::{Record, RecordType, RecordWithZone};
@@ -130,6 +130,53 @@ pub struct UpdateRecordRequest {
     pub priority: Option<i32>,
 }
 
+/// Which records a conditional delete removes, narrowing from a whole name
+/// down to one record, as RFC 2136, Section 2.5.2 spells the same three forms.
+/// `zone_name` and `name` are both required: without a name this would be a
+/// second, quieter way to empty a zone, which `DELETE /zones/{name}` owns.
+#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+pub struct DeleteRecordsFilter {
+    #[schema(example = "example.com")]
+    pub zone_name: String,
+    /// Owner name relative to the zone, or `@` for the apex.
+    #[schema(example = "www")]
+    pub name: String,
+    /// Narrows to one type; omitted, every type at the name goes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "A")]
+    pub record_type: Option<String>,
+    /// Narrows to one record; compared canonically, so a value spelled
+    /// another way still matches. Requires `record_type`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "192.0.2.1")]
+    pub value: Option<String>,
+    /// MX and SRV keep their preference in its own column, so it narrows
+    /// there rather than being part of `value`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 10)]
+    pub priority: Option<i32>,
+    /// When true, report what would go without removing anything.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+/// What a conditional delete removed, or would have. Matching nothing is not
+/// an error: the zone already reads the way the request asked for, so the
+/// serial does not move and no NOTIFY goes out.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct DeleteRecordsResponse {
+    #[schema(example = true)]
+    pub applied: bool,
+    #[schema(example = false)]
+    pub dry_run: bool,
+    #[schema(example = 3)]
+    pub deleted: usize,
+    pub records: Vec<GetRecordResponse>,
+    /// The removal as a record diff, for previewing the change.
+    pub diff: RecordDiff,
+}
+
 /// Query filters and pagination for listing records.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
 pub struct GetRecordsFilter {
@@ -155,6 +202,12 @@ pub struct GetRecordsFilter {
     pub max_priority: Option<i32>,
     #[schema(example = "api")]
     pub search: Option<String>,
+    /// `name` (the default), `record_type`, `ttl`, `priority`, or `created_at`.
+    #[schema(example = "name")]
+    pub sort: Option<String>,
+    /// `asc` (the default) or `desc`.
+    #[schema(example = "asc")]
+    pub order: Option<String>,
     /// With true, the derived DNSSEC records page after the user records.
     #[schema(example = false)]
     pub signed: Option<bool>,
@@ -204,6 +257,7 @@ impl GetRecordResponse {
         }
     }
 
+    /// Build a record response using the record and its zone metadata.
     pub fn from_record_with_zone(record: &RecordWithZone) -> Self {
         Self::from_record_and_zone_name(&record.record(), &record.zone_name)
     }
@@ -227,6 +281,6 @@ pub struct BulkRecordsResponse {
     #[schema(example = 3)]
     pub inserted: usize,
     pub records: Vec<GetRecordResponse>,
-    /// The insert as a record diff (all additions), for previewing the change.
+    /// Dry-run diff; adding a value at an existing name and type is a changed group.
     pub diff: RecordDiff,
 }

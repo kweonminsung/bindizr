@@ -73,7 +73,7 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: TokenCommand,
     },
-    /// Manage TSIG keys and the zones each may update with nsupdate
+    /// Manage TSIG keys and their zone update and transfer rights
     TsigKey {
         #[command(subcommand)]
         subcommand: TsigKeyCommand,

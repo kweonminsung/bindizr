@@ -1,6 +1,6 @@
 //! Outbound queries and the responses they expect: building a question,
-//! and reading back a NOTIFY acknowledgement, a SOA serial, a parent's DS
-//! RRset, or a zone's NS names.
+//! and reading back NOTIFY acknowledgements, SOA serials, parent DS answers,
+//! and zone-transfer records.
 
 use domain::{
     base::{
@@ -340,9 +340,10 @@ pub fn extract_ds_rrset(
     Ok(Some(DsRrset { records, ttl }))
 }
 
-/// A negative DS answer counts only with a strict ancestor's SOA in the
-/// authority section (RFC 2308, Section 2): the child's own server says
-/// NODATA just as authoritatively.
+/// Require a strict ancestor's SOA in the authority section to substantiate a negative DS
+/// answer (RFC 2308, Section 2).
+///
+/// The child's own server can also answer NODATA authoritatively, so its SOA is insufficient.
 fn require_parent_soa(message: &Message<&[u8]>, qname: &Name<Vec<u8>>) -> Result<(), String> {
     let authority = message
         .authority()

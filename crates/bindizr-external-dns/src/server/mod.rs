@@ -47,6 +47,7 @@ pub(crate) fn health_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
+/// Serialize a webhook response with its JSON content type.
 fn json_response<T: serde::Serialize>(value: &T) -> Response {
     match serde_json::to_string(value) {
         // external-dns compares the negotiation Content-Type byte-for-byte,
@@ -78,6 +79,7 @@ fn upstream_error_response(error: UpstreamError) -> Response {
     }
 }
 
+/// Check whether the client accepts the supported webhook media type.
 fn is_accept_supported(headers: &HeaderMap) -> bool {
     match headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
         // external-dns always sends the exact media type; tolerate wildcard
@@ -87,6 +89,7 @@ fn is_accept_supported(headers: &HeaderMap) -> bool {
     }
 }
 
+/// Classify a response status for request metrics.
 fn result_label(response: &Response) -> &'static str {
     match response.status() {
         status if status.is_success() => "ok",
@@ -133,7 +136,7 @@ async fn track_webhook_metrics(request: Request, next: Next) -> Response {
     response
 }
 
-/// `GET /` — negotiation: return the DomainFilter of manageable zones.
+/// `GET /` — negotiation: return the DomainFilter of manageable names.
 async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if !is_accept_supported(&headers) {
         return (
@@ -143,18 +146,18 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
             .into_response();
     }
 
-    match state.upstream.list_zones().await {
+    match state.upstream.list_domains().await {
         // An empty DomainFilter reads as "manage everything" to external-dns;
         // refuse retryably so a new grant heals negotiation without a restart.
-        Ok(zones) if zones.is_empty() => (
+        Ok(domains) if domains.is_empty() => (
             StatusCode::SERVICE_UNAVAILABLE,
-            "no manageable zones: grant zones to the API token with \
+            "no manageable names: grant zones to the API token with \
              'bindizr token grant', or create a zone first",
         )
             .into_response(),
-        Ok(zones) => {
-            log_info!("event=negotiate zones={}", zones.len());
-            json_response(&DomainFilter { include: zones })
+        Ok(domains) => {
+            log_info!("event=negotiate domains={}", domains.len());
+            json_response(&DomainFilter { include: domains })
         }
         Err(e) => upstream_error_response(e),
     }

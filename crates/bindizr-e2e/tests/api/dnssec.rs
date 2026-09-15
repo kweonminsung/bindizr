@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions};
 
+/// Verify the DNSSEC enable, status, re-sign, and disable lifecycle.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_enable_status_sign_disable_lifecycle() {
@@ -15,7 +16,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -24,7 +25,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(dnssec["enabled"], true);
     // Enabling without a policy signs under the seeded `default` policy.
     assert_eq!(dnssec["policy"]["name"], "default");
-    assert_eq!(dnssec["policy"]["denial"], "nsec");
+    assert_eq!(dnssec["policy"]["denial"], "nsec3");
 
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
@@ -44,11 +45,20 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     // Signing changes the zone content, so it rides the serial/IXFR mechanics.
     assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 1);
 
+    // The healthy case status has to be able to show.
+    assert!(dnssec["signatures"].as_u64().unwrap() > 0, "{dnssec}");
+    assert_eq!(dnssec["expired_signatures"], 0, "{dnssec}");
+    assert!(
+        dnssec["next_resign_at"].as_str().unwrap()
+            < dnssec["earliest_signature_expires_at"].as_str().unwrap(),
+        "{dnssec}"
+    );
+
     let (status, body) = app
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -165,7 +175,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         signed_export.contains("\tIN\tRRSIG\tSOA "),
         "{signed_export}"
     );
-    assert!(signed_export.contains("\tIN\tNSEC\t"), "{signed_export}");
+    assert!(signed_export.contains("\tIN\tNSEC3\t"), "{signed_export}");
     // The delegation: DS signed as the parent's data, its NS served unsigned.
     assert!(
         signed_export.contains("sub\t3600\tIN\tDS\t12345 13 2 "),
@@ -206,22 +216,13 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(body["code"], "DNSSEC_NOT_ENABLED");
 }
 
+/// Verify a complete rollover with combined signing keys.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_csk_rollover_lifecycle() {
     let app = TestApp::start().await;
-    // A zero publish hold-down lets the rollover be confirmed as soon as the
-    // zone's DNSKEY TTL allows; the hold-down never drops below that TTL, so
-    // the minimum TTL is the shortest wait that still reaches promotion.
-    let policy_name = format!("{}-fast", app.namespace());
-    let (status, _) = app
-        .request(
-            Method::POST,
-            "/dnssec-policies",
-            Some(json!({ "name": policy_name, "rollover_publish_holddown_secs": 0 })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
+    // A short zone TTL is the whole publish wait, so the rollover reaches
+    // promotion inside the test.
     let zone_name = app.zone_name("rollover.example");
     let (status, body) = app
         .request(
@@ -244,12 +245,11 @@ async fn dnssec_csk_rollover_lifecycle() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let dnssec = &body["dnssec"];
-    assert_eq!(dnssec["policy"]["name"], policy_name);
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
     assert_eq!(keys[0]["role"], "csk");
@@ -353,6 +353,7 @@ async fn dnssec_csk_rollover_lifecycle() {
     assert_eq!(body["code"], "DNSSEC_NO_ROLLOVER_IN_PROGRESS");
 }
 
+/// Verify DNSSEC enablement with NSEC3 and separate key roles.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_enable_with_nsec3_and_split_keys() {
@@ -374,7 +375,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -436,6 +437,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Verify that records listing signed pages the derived plane.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn records_listing_signed_pages_the_derived_plane() {
@@ -460,7 +462,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -498,7 +500,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
     );
     assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
     let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
-    for record_type in ["DNSKEY", "NSEC", "RRSIG"] {
+    for record_type in ["DNSKEY", "NSEC3", "RRSIG"] {
         assert!(
             derived
                 .iter()
@@ -544,6 +546,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Verify that DNSSEC enable requires a global token.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_enable_requires_a_global_token() {
@@ -568,9 +571,73 @@ async fn dnssec_enable_requires_a_global_token() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["code"], "FORBIDDEN");
+}
+
+/// Verify that a signed listing searches the derived plane by name.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_signed_listing_searches_the_derived_plane_by_name() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "searchable", "record_type": "A", "value": "192.0.2.1",
+                "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // A search used to leave the derived rows out entirely.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&search=searchable&signed=true&limit=1000"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let types: Vec<&str> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| record["record_type"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"A"), "{body}");
+    assert!(types.contains(&"RRSIG"), "{body}");
+
+    // Refused rather than quietly answered without the rows it cannot narrow.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&value=192.0.2.1&signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("value cannot narrow the derived"),
+        "{body}"
+    );
 }

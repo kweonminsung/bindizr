@@ -6,28 +6,30 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     log_error,
-    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone, zone_change::ZoneChange},
+    model::{record::Record, zone::Zone, zone_change::ZoneChange},
     repository::RepositoryService,
-    types::{GetZoneResponse, GetZonesFilter, PaginatedResponse, normalize_page_limit},
+    types::{
+        GetZoneResponse, GetZonesFilter, PaginatedResponse, normalize_page_limit, parse_setting,
+    },
 };
 
 impl ZoneService {
-    /// Look up a zone by name, returning `None` if it does not exist.
-    pub async fn find_by_name(zone_name: &str) -> Result<Option<Zone>, ServiceError> {
-        let lookup_name = normalize_zone_name(zone_name)?;
-        RepositoryService::get_zone_by_name(lookup_name.as_str()).await
-    }
-
+    /// The DNS plane's view of a zone: a disabled one is absent rather than
+    /// served. The nsupdate apply and the transfer authorization read it.
     pub(crate) async fn find_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
         lock_level: LockLevel,
     ) -> Result<Option<Zone>, ServiceError> {
         let lookup_name = normalize_zone_name(zone_name)?;
-        RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str(), lock_level).await
+        Ok(
+            RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str(), lock_level)
+                .await?
+                .filter(|zone| zone.enabled),
+        )
     }
 
-    /// List the recorded zone changes between two serials, for building an IXFR.
+    /// Count journal rows in `(from_serial, to_serial]` for the IXFR size estimate.
     pub async fn count_journal_between_serials(
         zone_id: i32,
         from_serial: i32,
@@ -36,6 +38,7 @@ impl ZoneService {
         RepositoryService::count_zone_changes_between_serials(zone_id, from_serial, to_serial).await
     }
 
+    /// Journal rows in `(from_serial, to_serial]`, ordered by serial then row id.
     pub async fn list_journal_between_serials(
         zone_id: i32,
         from_serial: i32,
@@ -49,11 +52,14 @@ impl ZoneService {
         RepositoryService::ping_zones().await
     }
 
+    /// The zones the DNS plane serves: the catalog's membership and the NOTIFY
+    /// fan-out read it.
     pub async fn list() -> Result<Vec<Zone>, ServiceError> {
-        RepositoryService::list_zones().await.map_err(|e| {
+        let zones = RepositoryService::list_zones().await.map_err(|e| {
             log_error!("Failed to fetch zones: {}", e);
             ServiceError::internal("Failed to fetch zones")
-        })
+        })?;
+        Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
     }
 
     /// Every zone, for the unauthenticated metrics endpoint.
@@ -89,8 +95,16 @@ impl ZoneService {
             min_default_ttl: filter.min_default_ttl,
             max_default_ttl: filter.max_default_ttl,
             serial: filter.serial,
+            min_serial: filter.min_serial,
+            max_serial: filter.max_serial,
+            created_after: filter.created_after,
+            created_before: filter.created_before,
+            signed: filter.signed,
+            enabled: filter.enabled,
             search: filter.search,
             scope_token_id,
+            sort: parse_setting(filter.sort.as_deref())?,
+            order: parse_setting(filter.order.as_deref())?,
             limit,
             offset,
         };
@@ -144,8 +158,15 @@ impl ZoneService {
         let result = async {
             let zone =
                 Self::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-            let records =
-                RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
+            // Narrowed the way `/records` narrows it: a grant that hides a
+            // record from the listing must hide it from the zone's detail too.
+            let records = RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None)
+                .await?
+                .into_iter()
+                .filter(|record| {
+                    caller.record_visible(zone.id, &record.name, Some(&record.record_type))
+                })
+                .collect();
             Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
         }
         .await;
@@ -164,11 +185,9 @@ impl ZoneService {
             .await?
             .ok_or_else(|| ServiceError::zone_not_found(lookup_name.as_str()))
     }
-    /// A zone row and both record planes read under one shared zone lock, so
-    /// a transfer never serves records and signatures from different serials.
-    /// Takes no caller: DNS-plane reads are authorized by the transfer ACL.
-    /// Records an AXFR of the zone would send: the user plane and the derived
-    /// one, which is what [`ZoneService::find_transfer_content`] returns.
+
+    /// Count both record planes for the IXFR/AXFR size comparison. These unlocked
+    /// counts may drift during a write; they choose the transfer format only.
     pub async fn count_transfer_records(zone_name: &str) -> Result<u64, ServiceError> {
         let records = RepositoryService::count_records_by_filter(RecordFilter {
             zone_name: Some(zone_name.to_string()),
@@ -184,26 +203,5 @@ impl ZoneService {
             .await?;
 
         Ok(records + dnssec_records)
-    }
-
-    pub async fn find_transfer_content(
-        zone_id: i32,
-    ) -> Result<Option<(Zone, Vec<Record>, Vec<DnssecRecord>)>, ServiceError> {
-        let mut tx = RepositoryService::begin_read_tx("failed to load transfer content").await?;
-        let result = async {
-            let Some(zone) =
-                RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Shared).await?
-            else {
-                return Ok(None);
-            };
-            let records =
-                RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
-            let dnssec_records =
-                RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)
-                    .await?;
-            Ok(Some((zone, records, dnssec_records)))
-        }
-        .await;
-        RepositoryService::finish_tx(tx, result, "failed to load transfer content").await
     }
 }

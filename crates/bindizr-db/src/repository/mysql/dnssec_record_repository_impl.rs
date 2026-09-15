@@ -7,7 +7,10 @@ use crate::{
     model::dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     repository::{
         DnssecRecordFilter, DnssecRecordRepository, LockLevel, RepositoryTx,
-        sql::{apex_owner_sql, lock_clause, refresh_bound},
+        sql::{
+            apex_owner_sql, concat_fn, grant_record_match_sql, like_pattern, lock_clause,
+            refresh_bound,
+        },
     },
 };
 
@@ -16,6 +19,7 @@ pub(crate) struct MySqlDnssecRecordRepository {
 }
 
 impl MySqlDnssecRecordRepository {
+    /// Create a repository for derived DNSSEC records using the supplied pool.
     pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
@@ -23,6 +27,7 @@ impl MySqlDnssecRecordRepository {
 
 #[async_trait]
 impl DnssecRecordRepository for MySqlDnssecRecordRepository {
+    /// Insert a batch of derived DNSSEC records in the current transaction.
     async fn create_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -60,6 +65,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(())
     }
 
+    /// List derived DNSSEC records for a zone in the current transaction.
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -85,6 +91,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(records)
     }
 
+    /// Delete the derived DNSSEC records with the supplied IDs in the current transaction.
     async fn delete_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -113,6 +120,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(())
     }
 
+    /// Delete all derived DNSSEC records for a zone in the current transaction.
     async fn delete_by_zone_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -128,6 +136,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(())
     }
 
+    /// Count zones with stored derived DNSSEC records.
     async fn count_zone_ids(&self) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -139,6 +148,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(count as u64)
     }
 
+    /// List zones with signatures due for renewal.
     async fn list_zone_ids_expiring_within_refresh(
         &self,
         cutoff: DateTime<Utc>,
@@ -178,6 +188,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(zone_ids)
     }
 
+    /// Count signatures due for renewal.
     async fn count_expiring_within_refresh(
         &self,
         cutoff: DateTime<Utc>,
@@ -217,12 +228,34 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(count as u64)
     }
 
+    /// Count signatures that have already expired.
+    async fn count_expired(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM dnssec_records
+            WHERE expires_at IS NOT NULL
+              AND expires_at <= ?
+            "#,
+        )
+        .bind(cutoff)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        Ok(count as u64)
+    }
+
+    /// List matching derived DNSSEC records with their zone metadata.
     async fn list_by_filter_with_zone(
         &self,
         filter: DnssecRecordFilter,
     ) -> Result<Vec<DnssecRecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();
+        let search = like_pattern(filter.search.as_deref());
+        let grant_match = grant_record_match_sql("d", None, concat_fn);
         let records = sqlx::query_as::<_, DnssecRecordWithZone>(AssertSqlSafe(format!(
             r#"
             SELECT d.name, d.record_type, d.ttl, d.rdata, d.zone_id, z.name AS zone_name
@@ -240,8 +273,15 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
               AND (? IS NULL OR d.ttl <= ?)
               AND (
                     ? IS NULL
+                    OR LOWER(z.name) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(d.name) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(CASE WHEN d.name = {apex_owner} THEN CONCAT(z.name, '.') ELSE CONCAT(d.name, '.', z.name, '.') END) LIKE LOWER(?) ESCAPE '\\'
+              )
+              AND (
+                    ? IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = ? AND p.zone_id = d.zone_id)
+                               WHERE p.api_token_id = ? AND p.zone_id = d.zone_id
+                                 AND {grant_match})
               )
             -- every type at one name shares d.name, so without d.id a plan change
             -- between two pages could drop or repeat a row.
@@ -262,6 +302,10 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         .bind(filter.min_ttl)
         .bind(filter.max_ttl)
         .bind(filter.max_ttl)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
         .bind(filter.scope_token_id)
         .bind(filter.scope_token_id)
         .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
@@ -277,9 +321,12 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         Ok(records)
     }
 
+    /// Count derived DNSSEC records matching the filter.
     async fn count_by_filter(&self, filter: DnssecRecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let apex_owner = apex_owner_sql();
+        let search = like_pattern(filter.search.as_deref());
+        let grant_match = grant_record_match_sql("d", None, concat_fn);
         let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
@@ -297,8 +344,15 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
               AND (? IS NULL OR d.ttl <= ?)
               AND (
                     ? IS NULL
+                    OR LOWER(z.name) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(d.name) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(CASE WHEN d.name = {apex_owner} THEN CONCAT(z.name, '.') ELSE CONCAT(d.name, '.', z.name, '.') END) LIKE LOWER(?) ESCAPE '\\'
+              )
+              AND (
+                    ? IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = ? AND p.zone_id = d.zone_id)
+                               WHERE p.api_token_id = ? AND p.zone_id = d.zone_id
+                                 AND {grant_match})
               )
             "#
         )))
@@ -315,6 +369,10 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         .bind(filter.min_ttl)
         .bind(filter.max_ttl)
         .bind(filter.max_ttl)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
         .bind(filter.scope_token_id)
         .bind(filter.scope_token_id)
         .fetch_one(&mut *conn)

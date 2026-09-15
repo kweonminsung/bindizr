@@ -50,8 +50,6 @@ impl RecordService {
             )
             .await?;
 
-            // Only records sharing the owner name can conflict, so load just
-            // those instead of the whole zone.
             let owner_name = normalize_record_owner_name(&create_record_request.name, &zone.name)?;
 
             caller
@@ -65,6 +63,8 @@ impl RecordService {
                 )
                 .await?;
 
+            // Only records sharing the owner name can conflict, so load just
+            // those instead of the whole zone.
             let records_at_name = match RepositoryService::list_records_by_name_tx(
                 &mut tx,
                 zone.id,
@@ -95,6 +95,7 @@ impl RecordService {
                 None,
             )?;
 
+            // Persist the validated record and its signed view as one journaled serial.
             let new_serial = generate_serial(Some(zone.serial))?;
 
             let created_record = Self::create_with_changes_tx(
@@ -121,7 +122,8 @@ impl RecordService {
 
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the change
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial).await?;
+            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
+                .await?;
 
             Ok::<(Record, ZoneName), ServiceError>((created_record, zone.name))
         }
@@ -144,6 +146,7 @@ impl RecordService {
             created_record.id
         );
 
+        // Request secondary transfers only after the new record is committed.
         if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
             log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }

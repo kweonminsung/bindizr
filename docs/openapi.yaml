@@ -16,13 +16,33 @@ paths:
       summary: List all DNSSEC policies
       description: 'Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC, 14-day signatures re-signed with 5 days left) is seeded at startup.'
       operationId: list_dnssec_policies
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: All DNSSEC policies
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DnssecPolicyListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetDnssecPolicyResponse'
         '401':
           description: Unauthorized
           content:
@@ -45,7 +65,7 @@ paths:
       tags:
       - DNSSEC
       summary: Create a DNSSEC policy
-      description: Creates a DNSSEC policy. The algorithm (`ecdsap256sha256` by default; also `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, `rsasha512`), denial mode (`nsec` or `nsec3`), and key layout (`split_keys`) are fixed once created; the timing fields can be edited later. Omitted fields take the built-in defaults.
+      description: Creates a DNSSEC policy. The algorithm (`ecdsap256sha256` by default; also `ecdsap384sha384`, `ed25519`, `ed448`, `rsasha256`, `rsasha512`), denial mode (`nsec3` by default, or `nsec`), and key layout (`split_keys`) are fixed once created; the timing fields can be edited later. Omitted fields take the built-in defaults.
       operationId: create_dnssec_policy
       requestBody:
         content:
@@ -144,7 +164,7 @@ paths:
       tags:
       - DNSSEC
       summary: Edit a DNSSEC policy's timing
-      description: 'Edits the policy''s signature validity, re-sign threshold, scheduled ZSK lifetime, and rollover hold-downs; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or maintenance scan.'
+      description: 'Edits the policy''s signature validity, re-sign threshold, and scheduled ZSK lifetime; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or maintenance scan.'
       operationId: update_dnssec_policy
       parameters:
       - name: name
@@ -364,6 +384,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /external-dns/domains:
+    get:
+      tags:
+      - ExternalDNS
+      summary: List the names ExternalDNS may manage
+      description: 'The ExternalDNS domain filter the calling token''s grants come to: every zone name for a global token, otherwise one name per writable grant — the zone where the grant covers every name, the granted subtree where it does not. Each entry covers itself and everything under it, so a grant narrowed by record type or to one exact name reads wider here than it is.'
+      operationId: list_external_dns_domains
+      responses:
+        '200':
+          description: Manageable names
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalDnsDomainsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /external-dns/records:
     get:
       tags:
@@ -378,32 +424,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExternalDnsRecordsResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /external-dns/zones:
-    get:
-      tags:
-      - ExternalDNS
-      summary: List the zones ExternalDNS may manage
-      description: 'Zones the calling token may manage: every zone for a global token, otherwise the zones its grants cover.'
-      operationId: list_external_dns_zones
-      responses:
-        '200':
-          description: Allowed zones
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExternalDnsZonesResponse'
         '401':
           description: Unauthorized
           content:
@@ -555,9 +575,21 @@ paths:
         required: false
         schema:
           type: string
+      - name: sort
+        in: query
+        description: Sort by name (the default), record_type, ttl, priority, or created_at.
+        required: false
+        schema:
+          type: string
+      - name: order
+        in: query
+        description: asc (the default) or desc.
+        required: false
+        schema:
+          type: string
       - name: signed
         in: query
-        description: Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id; record_type also accepts a derived type, while value, search, and priority filters keep the listing user-only.
+        description: Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and record_type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them.
         required: false
         schema:
           type: boolean
@@ -653,6 +685,90 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '415':
           description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - Records
+      summary: Delete records by name
+      description: 'Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.'
+      operationId: delete_records_matching
+      parameters:
+      - name: zone_name
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: name
+        in: query
+        description: Owner name relative to the zone, or `@` for the apex.
+        required: true
+        schema:
+          type: string
+      - name: record_type
+        in: query
+        description: Narrows to one type; omitted, every type at the name goes.
+        required: false
+        schema:
+          type: string
+      - name: value
+        in: query
+        description: |-
+          Narrows to one record; compared canonically, so a value spelled
+          another way still matches. Requires `record_type`.
+        required: false
+        schema:
+          type: string
+      - name: priority
+        in: query
+        description: |-
+          MX and SRV keep their preference in its own column, so it narrows
+          there rather than being part of `value`.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: dry_run
+        in: query
+        description: When true, report what would go without removing anything.
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Records deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteRecordsResponse'
+        '400':
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Zone not found
           content:
             application/json:
               schema:
@@ -896,13 +1012,33 @@ paths:
       summary: List all API tokens
       description: Lists every API token without its secret; a secret is shown once, in the create response.
       operationId: list_tokens
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: All API tokens
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTokenResponse'
         '401':
           description: Unauthorized
           content:
@@ -1009,13 +1145,33 @@ paths:
       summary: List the grants of the API token making the request
       description: The calling token's grants; any token may read its own. A global token holds none, so its list is empty. With authentication disabled no token is presented, so this answers 401.
       operationId: list_self_token_grants
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: The calling token's grants
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenGrantListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTokenGrantResponse'
         '401':
           description: Unauthorized, or no token presented
           content:
@@ -1092,7 +1248,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenGrantListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTokenGrantResponse'
         '401':
           description: Unauthorized
           content:
@@ -1237,13 +1393,33 @@ paths:
       summary: List all TSIG keys
       description: Lists every TSIG key without its secret. Fetch a single key to read the secret.
       operationId: list_tsig_keys
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: All TSIG keys
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TsigKeyListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTsigKeyResponse'
         '401':
           description: Unauthorized
           content:
@@ -1266,7 +1442,7 @@ paths:
       tags:
       - TSIG
       summary: Create a TSIG key
-      description: Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` makes the key able to update every zone (all names, all types) without any grant — effectively write access to all DNS data, so use it sparingly. The response includes the secret.
+      description: Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` permits updates and transfers for every zone without grants. The response includes the secret.
       operationId: create_tsig_key
       requestBody:
         content:
@@ -1431,7 +1607,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TsigGrantListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTsigGrantResponse'
         '401':
           description: Unauthorized
           content:
@@ -1459,8 +1635,8 @@ paths:
     post:
       tags:
       - TSIG
-      summary: Grant a TSIG key nsupdate rights in a zone
-      description: 'Grants the key nsupdate rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global keys are rejected: they already cover every zone and never carry grants.'
+      summary: Grant a TSIG key update and transfer rights in a zone
+      description: 'Grants update rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Unrestricted name/type grants also allow transfers; `can_write=false` grants transfers only. Global keys are rejected: they already cover every zone and never carry grants.'
       operationId: create_tsig_grant
       parameters:
       - name: name
@@ -1629,9 +1805,59 @@ paths:
         schema:
           type: integer
           format: int32
+      - name: min_serial
+        in: query
+        description: Filter by minimum serial.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: max_serial
+        in: query
+        description: Filter by maximum serial.
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: created_after
+        in: query
+        description: Keep zones created at or after this RFC 3339 timestamp.
+        required: false
+        schema:
+          type: string
+      - name: created_before
+        in: query
+        description: Keep zones created at or before this RFC 3339 timestamp.
+        required: false
+        schema:
+          type: string
+      - name: signed
+        in: query
+        description: true keeps the zones signing under a DNSSEC policy, false the rest.
+        required: false
+        schema:
+          type: boolean
+      - name: enabled
+        in: query
+        description: true keeps the zones the DNS plane serves, false the disabled ones.
+        required: false
+        schema:
+          type: boolean
       - name: search
         in: query
         description: Partially search zones.
+        required: false
+        schema:
+          type: string
+      - name: sort
+        in: query
+        description: Sort by name (the default), serial, default_ttl, or created_at.
+        required: false
+        schema:
+          type: string
+      - name: order
+        in: query
+        description: asc (the default) or desc.
         required: false
         schema:
           type: string
@@ -1936,7 +2162,7 @@ paths:
       tags:
       - DNSSEC
       summary: Change a zone's DNSSEC settings
-      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy''s (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
+      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy''s (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys are removed after promotion and cache drain (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
       operationId: update_dnssec_settings
       parameters:
       - name: name
@@ -1959,7 +2185,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DnssecStatusResponse'
         '400':
-          description: 'Bad request: no field given, an invalid parent address, or a policy whose denial mode or key layout differs from the zone''s'
+          description: 'Bad request: no field given, an invalid parent address, or a policy whose key layout differs from the zone''s'
           content:
             application/json:
               schema:
@@ -2004,7 +2230,7 @@ paths:
       tags:
       - DNSSEC
       summary: Enable DNSSEC for a zone
-      description: 'Generates the zone''s signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone''s nameservers that every later DS check asks.'
+      description: 'Generates the zone''s signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC3 denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone''s nameservers that every later DS check asks.'
       operationId: enable_dnssec
       parameters:
       - name: name
@@ -2072,7 +2298,7 @@ paths:
       tags:
       - DNSSEC
       summary: Disable DNSSEC for a zone
-      description: 'Deletes the zone''s signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the zone''s parent nameservers (`parent_ns_addrs`) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`), fails to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked (`DNSSEC_STATE_CHANGED`; retry). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller''s.'
+      description: 'Deletes the zone''s signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the zone''s parent nameservers (`parent_ns_addrs`) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`) or fails to answer (`DNSSEC_DS_UNVERIFIED`). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller''s.'
       operationId: disable_dnssec
       parameters:
       - name: name
@@ -2249,7 +2475,7 @@ paths:
       tags:
       - DNSSEC
       summary: Confirm the new DS is at the parent (ds-seen)
-      description: Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute, or `DNSSEC_STATE_CHANGED` when the zone's keys or parent changed while they were being asked (retry). `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.
+      description: Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The maintenance scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.
       operationId: ds_seen_dnssec_rollover
       parameters:
       - name: name
@@ -2527,7 +2753,7 @@ paths:
       tags:
       - Zone
       summary: Import records into a zone
-      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned.
+      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. A record type bindizr does not store fails the file the same way unless `skip_unsupported` is set, which passes over those records and lists them in `skipped_records`. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.
       operationId: import_zone
       parameters:
       - name: name
@@ -2699,7 +2925,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenGrantListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTokenGrantResponse'
         '401':
           description: Unauthorized
           content:
@@ -2743,7 +2969,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TsigGrantListResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetTsigGrantResponse'
         '401':
           description: Unauthorized
           content:
@@ -3019,7 +3245,7 @@ components:
           example: true
         diff:
           $ref: '#/components/schemas/RecordDiff'
-          description: The insert as a record diff (all additions), for previewing the change.
+          description: Dry-run diff; adding a value at an existing name and type is a changed group.
         dry_run:
           type: boolean
           example: false
@@ -3052,8 +3278,8 @@ components:
       type: object
       description: |-
         Request body for creating a DNSSEC policy. The key layout, algorithm,
-        and denial mode are fixed once created; every omitted field takes the
-        built-in `default` policy's value.
+        and denial mode are fixed once created. Omitted fields use the built-in
+        defaults, independent of edits to the policy named `default`.
       required:
       - name
       properties:
@@ -3070,28 +3296,12 @@ components:
           - string
           - 'null'
           description: |-
-            Denial-of-existence mode: `nsec` (default) or `nsec3` (RFC 9276
-            parameters).
+            Denial-of-existence mode: `nsec3` (default, RFC 9276 parameters) or
+            `nsec`, which leaves the zone's names walkable.
           example: nsec3
         name:
           type: string
           example: strict
-        rollover_publish_holddown_secs:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Wait before a pre-published key may start signing (default one day).
-          example: 86400
-          minimum: 0
-        rollover_retire_holddown_secs:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Wait before a retired key is removed from the zone (default two days).
-          example: 172800
-          minimum: 0
         signature_refresh_days:
           type:
           - integer
@@ -3166,6 +3376,12 @@ components:
       required:
       - zone_name
       properties:
+        can_write:
+          type: boolean
+          description: |-
+            Whether the grant carries write rights. A read-only grant still makes
+            the zone visible, narrowed the same way. Defaults to true.
+          example: true
         record_name_pattern:
           type:
           - string
@@ -3215,10 +3431,16 @@ components:
           example: external-dns
     CreateTsigGrantRequest:
       type: object
-      description: Request body for granting a TSIG key nsupdate rights in a zone.
+      description: Request body for granting a TSIG key update and transfer rights in a zone.
       required:
       - zone_name
       properties:
+        can_write:
+          type: boolean
+          description: |-
+            Whether the grant carries nsupdate rights. A read-only grant over the
+            whole zone still transfers it. Defaults to true.
+          example: true
         record_name_pattern:
           type:
           - string
@@ -3252,8 +3474,8 @@ components:
         global:
           type: boolean
           description: |-
-            Make the key global: it may update every zone (all names, all types)
-            without any grant. Fixed at creation.
+            Make the key global: it may update and transfer every zone without
+            any grant. Fixed at creation.
           example: false
         name:
           type: string
@@ -3271,12 +3493,22 @@ components:
       - name
       - mname
       - rname
-      - default_ttl
       properties:
         default_ttl:
-          type: integer
+          type:
+          - integer
+          - 'null'
           format: int32
+          description: |-
+            Record TTL the zone hands out when a record names none; defaults to
+            `dns.zone_defaults.ttl`.
           example: 3600
+        description:
+          type:
+          - string
+          - 'null'
+          description: Free-text note for operators, at most 255 characters.
+          example: customer A, migrated 2026-01
         expire:
           type:
           - integer
@@ -3329,6 +3561,36 @@ components:
           example: k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu
         token:
           $ref: '#/components/schemas/GetTokenResponse'
+    DeleteRecordsResponse:
+      type: object
+      description: |-
+        What a conditional delete removed, or would have. Matching nothing is not
+        an error: the zone already reads the way the request asked for, so the
+        serial does not move and no NOTIFY goes out.
+      required:
+      - applied
+      - dry_run
+      - deleted
+      - records
+      - diff
+      properties:
+        applied:
+          type: boolean
+          example: true
+        deleted:
+          type: integer
+          example: 3
+          minimum: 0
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+          description: The removal as a record diff, for previewing the change.
+        dry_run:
+          type: boolean
+          example: false
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/GetRecordResponse'
     DnssecDelegationInfo:
       type: object
       description: What the parent zone's servers answered when asked for the zone's DS.
@@ -3452,11 +3714,11 @@ components:
           example: 34217
         presentation:
           type: string
-          description: 'Full presentation form: `<zone>. IN DS <tag> <alg> 2 <digest>`.'
+          description: 'Full presentation form: `<zone>. IN DS <tag> <alg> <digest_type> <digest>`.'
           example: example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
     DnssecKeyInfo:
       type: object
-      description: A signing key's public half; the private key never leaves the server.
+      description: Public signing-key metadata; private material is excluded from HTTP responses.
       required:
       - id
       - role
@@ -3475,7 +3737,9 @@ components:
           format: date-time
         dnskey:
           type: string
-          description: 'Apex DNSKEY RDATA in presentation form: `257 3 <alg> <public key>`.'
+          description: |-
+            Apex DNSKEY RDATA: `<flags> 3 <alg> <public key>`; flags are 256 for
+            a ZSK and 257 for a CSK or KSK.
           example: 257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==
         eligible_at:
           type:
@@ -3504,16 +3768,6 @@ components:
         state_changed_at:
           type: string
           format: date-time
-    DnssecPolicyListResponse:
-      type: object
-      description: Every DNSSEC policy.
-      required:
-      - dnssec_policies
-      properties:
-        dnssec_policies:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetDnssecPolicyResponse'
     DnssecPolicyResponse:
       type: object
       description: A DNSSEC policy wrapped in a response envelope.
@@ -3624,6 +3878,20 @@ components:
           description: Counted one per value removed, not per name and type.
           example: 1
           minimum: 0
+    ExternalDnsDomainsResponse:
+      type: object
+      description: |-
+        The names the ExternalDNS caller may manage under its grants, each
+        covering itself and everything under it.
+      required:
+      - domains
+      properties:
+        domains:
+          type: array
+          items:
+            type: string
+          example:
+          - example.com
     ExternalDnsRecord:
       type: object
       description: |-
@@ -3676,18 +3944,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ExternalDnsRecord'
-    ExternalDnsZonesResponse:
-      type: object
-      description: Zones the ExternalDNS caller may manage under its grants.
-      required:
-      - zones
-      properties:
-        zones:
-          type: array
-          items:
-            type: string
-          example:
-          - example.com
     GetDnssecPolicyResponse:
       type: object
       description: API representation of a DNSSEC policy.
@@ -3700,8 +3956,6 @@ components:
       - signature_validity_days
       - signature_refresh_days
       - zsk_lifetime_days
-      - rollover_publish_holddown_secs
-      - rollover_retire_holddown_secs
       - created_at
       properties:
         algorithm:
@@ -3713,7 +3967,7 @@ components:
         denial:
           type: string
           description: '`nsec` or `nsec3`.'
-          example: nsec
+          example: nsec3
         id:
           type: integer
           format: int32
@@ -3721,16 +3975,6 @@ components:
         name:
           type: string
           example: default
-        rollover_publish_holddown_secs:
-          type: integer
-          format: int32
-          example: 86400
-          minimum: 0
-        rollover_retire_holddown_secs:
-          type: integer
-          format: int32
-          example: 172800
-          minimum: 0
         signature_refresh_days:
           type: integer
           format: int32
@@ -3758,6 +4002,8 @@ components:
       - enabled
       - keys
       - ds_records
+      - signatures
+      - expired_signatures
       - serial
       properties:
         delegation:
@@ -3781,17 +4027,29 @@ components:
         enabled:
           type: boolean
           example: true
+        expired_signatures:
+          type: integer
+          format: int64
+          description: |-
+            Signatures already past their expiration; any at all mean resolvers
+            are failing part of the zone.
+          example: 0
+          minimum: 0
         keys:
           type: array
           items:
             $ref: '#/components/schemas/DnssecKeyInfo'
+        next_resign_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: When the re-signer next has work; absent for an unsigned zone.
         parent_ns_addrs:
           type:
           - string
           - 'null'
-          description: |-
-            The parent nameservers configured on the zone; absent until DNSSEC
-            is enabled.
+          description: Configured parent nameservers; may also be set while the zone is unsigned.
           example: a.gtld-servers.net,b.gtld-servers.net
         policy:
           oneOf:
@@ -3802,6 +4060,12 @@ components:
           type: integer
           format: int32
           example: 7
+        signatures:
+          type: integer
+          format: int64
+          description: Signatures the zone serves.
+          example: 42
+          minimum: 0
         withdrawing:
           type: boolean
           description: |-
@@ -3865,11 +4129,15 @@ components:
       - zone_name
       - record_name_pattern
       - record_types
+      - can_write
       - created_at
       properties:
         api_token:
           type: string
           example: external-dns
+        can_write:
+          type: boolean
+          example: true
         created_at:
           type: string
           format: date-time
@@ -3932,8 +4200,12 @@ components:
       - zone_name
       - record_name_pattern
       - record_types
+      - can_write
       - created_at
       properties:
+        can_write:
+          type: boolean
+          example: true
         created_at:
           type: string
           format: date-time
@@ -3971,7 +4243,7 @@ components:
           format: date-time
         global:
           type: boolean
-          description: Whether the key may update every zone without any grant.
+          description: Whether the key may update and transfer every zone without any grant.
           example: false
         id:
           type: integer
@@ -3994,11 +4266,22 @@ components:
       - retry
       - expire
       - minimum_ttl
+      - enabled
       properties:
         default_ttl:
           type: integer
           format: int32
           example: 3600
+        description:
+          type:
+          - string
+          - 'null'
+        enabled:
+          type: boolean
+          description: |-
+            Whether the DNS plane serves the zone. A disabled one stays editable but
+            leaves the catalog and answers no transfer, so secondaries drop it.
+          example: true
         expire:
           type: integer
           format: int32
@@ -4113,6 +4396,11 @@ components:
           example: 192.0.2.1:53
         mode:
           $ref: '#/components/schemas/ImportMode'
+        skip_unsupported:
+          type: boolean
+          description: |-
+            Pass over records bindizr has no type for instead of failing the whole
+            file; they are counted as skipped and listed in `skipped_records`.
     ImportZoneResponse:
       type: object
       description: Result of a zone import, including a summary and any validation errors.
@@ -4137,6 +4425,11 @@ components:
           items:
             type: string
           description: Per-record validation errors. When non-empty nothing is applied.
+        skipped_records:
+          type: array
+          items:
+            type: string
+          description: Records passed over under `skip_unsupported`.
         summary:
           $ref: '#/components/schemas/ImportSummary'
     MessageResponse:
@@ -4148,6 +4441,67 @@ components:
         message:
           type: string
           example: Deleted successfully
+    PaginatedResponse_GetDnssecPolicyResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a DNSSEC policy.
+            required:
+            - id
+            - name
+            - algorithm
+            - denial
+            - split_keys
+            - signature_validity_days
+            - signature_refresh_days
+            - zsk_lifetime_days
+            - created_at
+            properties:
+              algorithm:
+                type: string
+                example: ecdsap256sha256
+              created_at:
+                type: string
+                format: date-time
+              denial:
+                type: string
+                description: '`nsec` or `nsec3`.'
+                example: nsec3
+              id:
+                type: integer
+                format: int32
+                example: 1
+              name:
+                type: string
+                example: default
+              signature_refresh_days:
+                type: integer
+                format: int32
+                example: 5
+                minimum: 0
+              signature_validity_days:
+                type: integer
+                format: int32
+                example: 14
+                minimum: 0
+              split_keys:
+                type: boolean
+                example: false
+              zsk_lifetime_days:
+                type: integer
+                format: int32
+                description: 0 disables scheduled ZSK rollovers.
+                example: 0
+                minimum: 0
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetRecordResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -4204,6 +4558,182 @@ components:
                 example: example.com
         pagination:
           $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetTokenGrantResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a token grant.
+            required:
+            - id
+            - api_token
+            - zone_name
+            - record_name_pattern
+            - record_types
+            - can_write
+            - created_at
+            properties:
+              api_token:
+                type: string
+                example: external-dns
+              can_write:
+                type: boolean
+                example: true
+              created_at:
+                type: string
+                format: date-time
+              id:
+                type: integer
+                format: int32
+                example: 1
+              record_name_pattern:
+                type: string
+                example: '*.dyn'
+              record_types:
+                type: string
+                example: A,AAAA,TXT
+              zone_name:
+                type: string
+                example: example.com
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetTokenResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of an API token; never carries the secret.
+            required:
+            - id
+            - name
+            - global
+            - created_at
+            properties:
+              created_at:
+                type: string
+                format: date-time
+              description:
+                type:
+                - string
+                - 'null'
+              expires_at:
+                type:
+                - string
+                - 'null'
+                format: date-time
+              global:
+                type: boolean
+                description: Whether the token may manage every zone and the zone plane.
+                example: false
+              id:
+                type: integer
+                format: int32
+                example: 1
+              last_used_at:
+                type:
+                - string
+                - 'null'
+                format: date-time
+              name:
+                type: string
+                example: external-dns
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetTsigGrantResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a TSIG grant.
+            required:
+            - id
+            - tsig_key
+            - zone_name
+            - record_name_pattern
+            - record_types
+            - can_write
+            - created_at
+            properties:
+              can_write:
+                type: boolean
+                example: true
+              created_at:
+                type: string
+                format: date-time
+              id:
+                type: integer
+                format: int32
+                example: 1
+              record_name_pattern:
+                type: string
+                example: '*.dyn'
+              record_types:
+                type: string
+                example: A,AAAA,TXT
+              tsig_key:
+                type: string
+                example: update-key
+              zone_name:
+                type: string
+                example: example.com
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetTsigKeyResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a TSIG key; never carries the secret.
+            required:
+            - id
+            - name
+            - algorithm
+            - global
+            - created_at
+            properties:
+              algorithm:
+                type: string
+                example: hmac-sha256
+              created_at:
+                type: string
+                format: date-time
+              global:
+                type: boolean
+                description: Whether the key may update and transfer every zone without any grant.
+                example: false
+              id:
+                type: integer
+                format: int32
+                example: 1
+              name:
+                type: string
+                example: update-key
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetZoneResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -4227,11 +4757,22 @@ components:
             - retry
             - expire
             - minimum_ttl
+            - enabled
             properties:
               default_ttl:
                 type: integer
                 format: int32
                 example: 3600
+              description:
+                type:
+                - string
+                - 'null'
+              enabled:
+                type: boolean
+                description: |-
+                  Whether the DNS plane serves the zone. A disabled one stays editable but
+                  leaves the catalog and answers no transfer, so secondaries drop it.
+                example: true
               expire:
                 type: integer
                 format: int32
@@ -4290,8 +4831,24 @@ components:
             - retry
             - expire
             - minimum_ttl
+            - change_source
             - created_at
             properties:
+              change_source:
+                type: string
+                description: |-
+                  Which plane asked for this version: `token`, `nsupdate`, `system`
+                  (the DNSSEC maintenance scheduler), or `local` (the daemon socket, or
+                  any request while authentication is disabled).
+                example: token
+              changed_by:
+                type:
+                - string
+                - 'null'
+                description: |-
+                  The API token or TSIG key the change was made under, absent where no
+                  credential stood behind it.
+                example: admin
               created_at:
                 type: string
                 format: date-time
@@ -4353,8 +4910,8 @@ components:
     RecordDiff:
       type: object
       description: |-
-        The difference between two serials' records, grouped by name and type. Empty on
-        a real apply, which does not need it; populated only for a dry-run preview.
+        Record differences grouped by name and type. Version comparisons always
+        populate this; mutation responses populate it only for dry-run previews.
       required:
       - entries
       - summary
@@ -4577,16 +5134,6 @@ components:
           - 'null'
           format: int64
           example: 42
-    TokenGrantListResponse:
-      type: object
-      description: Grants of one token, or every grant that applies to one zone.
-      required:
-      - token_grants
-      properties:
-        token_grants:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetTokenGrantResponse'
     TokenGrantResponse:
       type: object
       description: A single token grant wrapped in a response envelope.
@@ -4595,16 +5142,6 @@ components:
       properties:
         token_grant:
           $ref: '#/components/schemas/GetTokenGrantResponse'
-    TokenListResponse:
-      type: object
-      description: List of API tokens (secrets omitted).
-      required:
-      - tokens
-      properties:
-        tokens:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetTokenResponse'
     TokenResponse:
       type: object
       description: 'One token without its secret: the self lookup.'
@@ -4613,16 +5150,6 @@ components:
       properties:
         token:
           $ref: '#/components/schemas/GetTokenResponse'
-    TsigGrantListResponse:
-      type: object
-      description: Grants of one key, or every grant that applies to one zone.
-      required:
-      - tsig_grants
-      properties:
-        tsig_grants:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetTsigGrantResponse'
     TsigGrantResponse:
       type: object
       description: A single TSIG grant wrapped in a response envelope.
@@ -4631,16 +5158,6 @@ components:
       properties:
         tsig_grant:
           $ref: '#/components/schemas/GetTsigGrantResponse'
-    TsigKeyListResponse:
-      type: object
-      description: List of TSIG keys (secrets omitted).
-      required:
-      - tsig_keys
-      properties:
-        tsig_keys:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetTsigKeyResponse'
     TsigKeyResponse:
       type: object
       description: 'A key with its secret: the create and get responses.'
@@ -4659,20 +5176,6 @@ components:
         Request body for editing a DNSSEC policy's timing; an omitted field keeps
         its value. Takes effect on the next signing pass or maintenance scan.
       properties:
-        rollover_publish_holddown_secs:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          example: 86400
-          minimum: 0
-        rollover_retire_holddown_secs:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          example: 172800
-          minimum: 0
         signature_refresh_days:
           type:
           - integer
@@ -4713,8 +5216,9 @@ components:
           - string
           - 'null'
           description: |-
-            Policy to move the signed zone to; it must share the zone's denial
-            mode and key layout, and a new algorithm starts a rollover.
+            Policy to move the signed zone to; it must share the zone's key
+            layout. A new denial mode replaces the chain under one serial, and a
+            new algorithm starts a rollover.
           example: strict
     UpdateRecordRequest:
       type: object
@@ -4764,6 +5268,18 @@ components:
           - 'null'
           format: int32
           example: 3600
+        description:
+          type:
+          - string
+          - 'null'
+          description: Empty clears the note.
+          example: customer A, migrated 2026-01
+        enabled:
+          type:
+          - boolean
+          - 'null'
+          description: '`false` stops the DNS plane serving the zone without deleting it.'
+          example: true
         expire:
           type:
           - integer
@@ -4926,8 +5442,24 @@ components:
       - retry
       - expire
       - minimum_ttl
+      - change_source
       - created_at
       properties:
+        change_source:
+          type: string
+          description: |-
+            Which plane asked for this version: `token`, `nsupdate`, `system`
+            (the DNSSEC maintenance scheduler), or `local` (the daemon socket, or
+            any request while authentication is disabled).
+          example: token
+        changed_by:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The API token or TSIG key the change was made under, absent where no
+            credential stood behind it.
+          example: admin
         created_at:
           type: string
           format: date-time

@@ -23,8 +23,9 @@ pub struct EnableDnssecRequest {
 /// keeps its value.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct UpdateDnssecSettingsRequest {
-    /// Policy to move the signed zone to; it must share the zone's denial
-    /// mode and key layout, and a new algorithm starts a rollover.
+    /// Policy to move the signed zone to; it must share the zone's key
+    /// layout. A new denial mode replaces the chain under one serial, and a
+    /// new algorithm starts a rollover.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "strict")]
     pub policy: Option<String>,
@@ -92,7 +93,7 @@ pub struct RolloverDnssecRequest {
     pub role: Option<String>,
 }
 
-/// A signing key's public half; the private key never leaves the server.
+/// Public signing-key metadata; private material is excluded from HTTP responses.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecKeyInfo {
     #[schema(example = 1)]
@@ -112,7 +113,8 @@ pub struct DnssecKeyInfo {
     pub algorithm: String,
     #[schema(example = 34217)]
     pub key_tag: i32,
-    /// Apex DNSKEY RDATA in presentation form: `257 3 <alg> <public key>`.
+    /// Apex DNSKEY RDATA: `<flags> 3 <alg> <public key>`; flags are 256 for
+    /// a ZSK and 257 for a CSK or KSK.
     #[schema(
         example = "257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ=="
     )]
@@ -132,7 +134,7 @@ pub struct DnssecDsInfo {
     pub digest_type: u8,
     #[schema(example = "4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383")]
     pub digest: String,
-    /// Full presentation form: `<zone>. IN DS <tag> <alg> 2 <digest>`.
+    /// Full presentation form: `<zone>. IN DS <tag> <alg> <digest_type> <digest>`.
     #[schema(
         example = "example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383"
     )]
@@ -157,8 +159,7 @@ pub struct GetDnssecStatusResponse {
     #[serde(default)]
     #[schema(example = false)]
     pub withdrawing: bool,
-    /// The parent nameservers configured on the zone; absent until DNSSEC
-    /// is enabled.
+    /// Configured parent nameservers; may also be set while the zone is unsigned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
     pub parent_ns_addrs: Option<String>,
@@ -169,6 +170,16 @@ pub struct GetDnssecStatusResponse {
     /// Earliest stored signature expiration; the re-signer renews before it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub earliest_signature_expires_at: Option<DateTime<Utc>>,
+    /// Signatures the zone serves.
+    #[schema(example = 42)]
+    pub signatures: u64,
+    /// Signatures already past their expiration; any at all mean resolvers
+    /// are failing part of the zone.
+    #[schema(example = 0)]
+    pub expired_signatures: u64,
+    /// When the re-signer next has work; absent for an unsigned zone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_resign_at: Option<DateTime<Utc>>,
     #[schema(example = 7)]
     pub serial: i32,
 }

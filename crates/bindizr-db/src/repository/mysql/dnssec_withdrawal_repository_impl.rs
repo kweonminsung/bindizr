@@ -10,6 +10,7 @@ pub(crate) struct MySqlDnssecWithdrawalRepository;
 
 #[async_trait]
 impl DnssecWithdrawalRepository for MySqlDnssecWithdrawalRepository {
+    /// Mark a zone for DNSSEC withdrawal in the current transaction.
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -26,6 +27,7 @@ impl DnssecWithdrawalRepository for MySqlDnssecWithdrawalRepository {
         Ok(())
     }
 
+    /// Read a zone's DNSSEC withdrawal marker in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -40,6 +42,7 @@ impl DnssecWithdrawalRepository for MySqlDnssecWithdrawalRepository {
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// Clear a zone's DNSSEC withdrawal marker in the current transaction.
     async fn delete_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

@@ -23,15 +23,18 @@ struct Report {
 }
 
 impl Report {
+    /// Print a successful diagnostic check.
     fn ok(&mut self, message: impl fmt::Display) {
         println!("[{}] {}", color::green("OK"), message);
     }
 
+    /// Print a failed diagnostic check and increment the failure count.
     fn fail(&mut self, message: impl fmt::Display) {
         self.failures += 1;
         println!("[{}] {}", color::red("FAIL"), message);
     }
 
+    /// Print a skipped diagnostic check.
     fn skip(&mut self, message: impl fmt::Display) {
         println!("[{}] {}", color::yellow("SKIP"), message);
     }
@@ -73,6 +76,7 @@ pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), Cl
     }
 }
 
+/// Check whether the daemon responds through its control socket.
 async fn check_daemon(client: &DaemonSocketClient, report: &mut Report) -> bool {
     match client.status().await {
         Ok(status) => {
@@ -92,11 +96,27 @@ async fn check_daemon(client: &DaemonSocketClient, report: &mut Report) -> bool 
     }
 }
 
+/// Check API reachability at the daemon's configured address.
 async fn check_api(config: &bindizr_core::config::BindizrConfig, report: &mut Report) {
     let addr = SocketAddr::new(
         loopback_if_unspecified(config.api.listen_addr),
         config.api.listen_port,
     );
+
+    // Under TLS the probe stops at the connection: a listening daemon has
+    // already loaded the pair, and speaking TLS here would mean trusting
+    // whatever it presents.
+    if config.api.tls_files().is_some() {
+        match tokio::time::timeout(API_CHECK_TIMEOUT, TcpStream::connect(addr)).await {
+            Ok(Ok(_)) => report.ok(format!(
+                "API listening: https://{} (TLS handshake not attempted)",
+                addr
+            )),
+            Ok(Err(e)) => report.fail(format!("API not reachable: https://{} ({})", addr, e)),
+            Err(_) => report.fail(format!("API not reachable: https://{} (timed out)", addr)),
+        }
+        return;
+    }
 
     match probe_http_status_line(addr).await {
         Ok(status_line) => report.ok(format!("API reachable: http://{} ({})", addr, status_line)),
@@ -104,8 +124,8 @@ async fn check_api(config: &bindizr_core::config::BindizrConfig, report: &mut Re
     }
 }
 
-/// Minimal HTTP GET returning the status line; the API is plain HTTP on
-/// localhost, so a full HTTP client dependency is unnecessary.
+/// Minimal HTTP GET returning the status line; a plain-HTTP API needs no full
+/// HTTP client dependency here.
 async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
     let exchange = async {
         let mut stream = TcpStream::connect(addr).await.map_err(|e| e.to_string())?;
@@ -146,6 +166,7 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
     }
 }
 
+/// Check database, DNS listener, and secondary status through the daemon.
 async fn check_daemon_side(client: &DaemonSocketClient, report: &mut Report) {
     let res = match client.send_command(DaemonCommandKind::Doctor, ()).await {
         Ok(res) => res,

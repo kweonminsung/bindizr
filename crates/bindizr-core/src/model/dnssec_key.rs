@@ -1,8 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-/// DNSSEC signing algorithms, named and numbered per the IANA registry
-/// (RFC 8624 recommends both; 13 is the interoperability default).
+/// Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DnssecAlgorithm {
     /// RSA with SHA-256, algorithm 8 (RFC 5702).
@@ -32,6 +31,7 @@ impl DnssecAlgorithm {
         }
     }
 
+    /// Parse a supported DNSSEC algorithm number.
     pub fn from_int(value: i32) -> Option<Self> {
         match value {
             8 => Some(DnssecAlgorithm::RsaSha256),
@@ -79,6 +79,7 @@ impl DnssecAlgorithm {
 }
 
 impl std::fmt::Display for DnssecAlgorithm {
+    /// Write the DNSSEC algorithm in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -87,6 +88,7 @@ impl std::fmt::Display for DnssecAlgorithm {
 impl std::str::FromStr for DnssecAlgorithm {
     type Err = String;
 
+    /// Parse a DNSSEC algorithm from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "rsasha256" => Ok(DnssecAlgorithm::RsaSha256),
@@ -106,6 +108,8 @@ impl std::str::FromStr for DnssecAlgorithm {
 
 impl TryFrom<i32> for DnssecAlgorithm {
     type Error = String;
+
+    /// Validate and convert the stored value into a DNSSEC algorithm.
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         DnssecAlgorithm::from_int(value)
             .ok_or_else(|| format!("unsupported DNSSEC algorithm number {}", value))
@@ -123,6 +127,7 @@ pub enum DnssecKeyRole {
 }
 
 impl DnssecKeyRole {
+    /// Return the text representation of this DNSSEC key role.
     pub fn as_str(&self) -> &'static str {
         match self {
             DnssecKeyRole::Csk => "csk",
@@ -144,6 +149,7 @@ impl DnssecKeyRole {
 }
 
 impl std::fmt::Display for DnssecKeyRole {
+    /// Write the DNSSEC key role in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -152,6 +158,7 @@ impl std::fmt::Display for DnssecKeyRole {
 impl std::str::FromStr for DnssecKeyRole {
     type Err = String;
 
+    /// Parse a DNSSEC key role from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "csk" => Ok(DnssecKeyRole::Csk),
@@ -167,6 +174,8 @@ impl std::str::FromStr for DnssecKeyRole {
 
 impl TryFrom<String> for DnssecKeyRole {
     type Error = String;
+
+    /// Validate and convert the stored value into a DNSSEC key role.
     fn try_from(s: String) -> Result<Self, Self::Error> {
         s.parse()
     }
@@ -176,17 +185,18 @@ impl TryFrom<String> for DnssecKeyRole {
 /// `Active` keys.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DnssecKeyState {
-    /// In the DNSKEY RRset ahead of use so caches learn it; signs no zone
-    /// data yet.
+    /// Published ahead of promotion so caches learn it; an algorithm rollover
+    /// may already require it to sign (see [`DnssecKey::signs_zone_data`]).
     Published,
     /// Signing normally.
     Active,
-    /// No longer signing zone data, but still published while caches drain
-    /// old signatures and the parent DS may linger.
+    /// Retained while cached signatures and parent DS records drain; an
+    /// algorithm rollover may still require it to sign zone data.
     Retired,
 }
 
 impl DnssecKeyState {
+    /// Return the text representation of this DNSSEC key state.
     pub fn as_str(&self) -> &'static str {
         match self {
             DnssecKeyState::Published => "published",
@@ -197,6 +207,7 @@ impl DnssecKeyState {
 }
 
 impl std::fmt::Display for DnssecKeyState {
+    /// Write the DNSSEC key state in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -205,6 +216,7 @@ impl std::fmt::Display for DnssecKeyState {
 impl std::str::FromStr for DnssecKeyState {
     type Err = String;
 
+    /// Parse a DNSSEC key state from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "published" => Ok(DnssecKeyState::Published),
@@ -220,13 +232,15 @@ impl std::str::FromStr for DnssecKeyState {
 
 impl TryFrom<String> for DnssecKeyState {
     type Error = String;
+
+    /// Validate and convert the stored value into a DNSSEC key state.
     fn try_from(s: String) -> Result<Self, Self::Error> {
         s.parse()
     }
 }
 
-/// A zone's DNSSEC signing key; a zone with key rows is signed. The private
-/// key never leaves the service layer.
+/// A zone's DNSSEC signing key; key rows mark a signed zone. Private material
+/// is exported only through the daemon socket, never the HTTP API.
 #[derive(Debug, Clone, FromRow)]
 pub struct DnssecKey {
     pub id: i32,
@@ -246,7 +260,7 @@ pub struct DnssecKey {
     /// When the key entered `state`.
     pub state_changed_at: DateTime<Utc>,
     /// When the key's next state transition is allowed, stamped at the
-    /// transition that started the wait — later TTL or hold-down changes
+    /// transition that started the wait — a later TTL change
     /// cannot shorten it.
     pub eligible_at: DateTime<Utc>,
     /// Largest TTL among the RRsets this key has signed, so retirement knows
@@ -256,9 +270,8 @@ pub struct DnssecKey {
 }
 
 impl DnssecKey {
-    /// Whether the key signs zone data among `keys`, the zone's key set:
-    /// Active always does; published/retired ones do while their algorithm
-    /// has no active data signer (RFC 6840, Section 5.11).
+    /// CSK/ZSK keys sign when active, or when their algorithm has no active
+    /// data signer in `keys` (RFC 6840, Section 5.11). KSKs never sign zone data.
     pub fn signs_zone_data(&self, keys: &[DnssecKey]) -> bool {
         if !matches!(self.role, DnssecKeyRole::Csk | DnssecKeyRole::Zsk) {
             return false;

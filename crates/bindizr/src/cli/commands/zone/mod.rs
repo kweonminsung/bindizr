@@ -4,10 +4,10 @@
 mod version;
 
 use bindizr_service::types::{
-    CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-    ImportMode as ServiceImportMode, ImportZoneRequest, ImportZoneResponse, PaginatedResponse,
-    TokenGrantListResponse, TsigGrantListResponse, UpdateZoneRequest, ZoneDetailResponse,
-    ZoneResponse, ZoneStatusResponse,
+    CreateZoneRequest, ExportZoneFileResponse, GetTokenGrantResponse, GetTsigGrantResponse,
+    GetZoneResponse, GetZonesFilter, ImportMode as ServiceImportMode, ImportZoneRequest,
+    ImportZoneResponse, PaginatedResponse, UpdateZoneRequest, ZoneDetailResponse, ZoneResponse,
+    ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -43,9 +43,9 @@ pub(crate) enum ZoneCommand {
         /// SOA RNAME, as an email address
         #[arg(long)]
         rname: String,
-        /// Default record TTL (seconds)
+        /// Default record TTL (seconds; defaults to dns.zone_defaults.ttl)
         #[arg(long)]
-        default_ttl: i32,
+        default_ttl: Option<i32>,
         /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
         serial: Option<i32>,
@@ -61,6 +61,9 @@ pub(crate) enum ZoneCommand {
         /// SOA minimum TTL (seconds)
         #[arg(long)]
         minimum_ttl: Option<i32>,
+        /// Free-text note for operators
+        #[arg(long, value_name = "TEXT")]
+        description: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -93,9 +96,33 @@ pub(crate) enum ZoneCommand {
         /// Filter by serial
         #[arg(long)]
         serial: Option<i32>,
+        /// Filter by minimum serial
+        #[arg(long)]
+        min_serial: Option<i32>,
+        /// Filter by maximum serial
+        #[arg(long)]
+        max_serial: Option<i32>,
+        /// Keep zones created at or after this RFC 3339 timestamp
+        #[arg(long, value_name = "TIMESTAMP")]
+        created_after: Option<chrono::DateTime<chrono::Utc>>,
+        /// Keep zones created at or before this RFC 3339 timestamp
+        #[arg(long, value_name = "TIMESTAMP")]
+        created_before: Option<chrono::DateTime<chrono::Utc>>,
+        /// Keep only zones signing under a DNSSEC policy
+        #[arg(long)]
+        signed: bool,
+        /// Keep the zones the DNS plane serves, or the disabled ones
+        #[arg(long, value_name = "true|false")]
+        enabled: Option<bool>,
         /// Search zones by partial text
         #[arg(short = 'q', long)]
         search: Option<String>,
+        /// Sort by: name (default), serial, default_ttl, created_at
+        #[arg(long, value_name = "FIELD")]
+        sort: Option<String>,
+        /// Sort order: asc (default) or desc
+        #[arg(long, value_name = "asc|desc")]
+        order: Option<String>,
         /// Maximum number of zones to return
         #[arg(long)]
         limit: Option<u32>,
@@ -146,6 +173,12 @@ pub(crate) enum ZoneCommand {
         /// SOA minimum TTL (seconds)
         #[arg(long)]
         minimum_ttl: Option<i32>,
+        /// Serve the zone or stop serving it without deleting it
+        #[arg(long, value_name = "true|false")]
+        enabled: Option<bool>,
+        /// Free-text note for operators; empty clears it
+        #[arg(long, value_name = "TEXT")]
+        description: Option<String>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -168,7 +201,11 @@ The file is standard BIND zone file text, for example:
 
 Relative names resolve against the zone and missing TTLs fall back to the
 zone TTL. SOA lines are ignored (SOA metadata is managed by bindizr) and
-$INCLUDE is not supported.")]
+$INCLUDE is not supported.
+
+TTLs are decimal seconds (RFC 1035). A file using BIND's unit suffixes
+(1h, 2d) is refused; write it out in seconds first:
+  named-compilezone -o - example.com db.example.com")]
     Import {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -190,6 +227,10 @@ $INCLUDE is not supported.")]
         /// as a +/-/~ diff
         #[arg(long)]
         dry_run: bool,
+        /// Pass over record types bindizr does not store instead of failing
+        /// the whole file
+        #[arg(long)]
+        skip_unsupported: bool,
     },
 
     /// Export a zone as BIND master-file text
@@ -253,6 +294,7 @@ pub(crate) enum ImportMode {
 }
 
 impl From<ImportMode> for ServiceImportMode {
+    /// Convert the CLI import mode into the service import mode.
     fn from(mode: ImportMode) -> Self {
         match mode {
             ImportMode::Append => ServiceImportMode::Append,
@@ -290,6 +332,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             retry,
             expire,
             minimum_ttl,
+            description,
             output,
         } => {
             let data = client
@@ -301,6 +344,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         rname,
                         default_ttl,
                         serial,
+                        description,
                         refresh,
                         retry,
                         expire,
@@ -323,7 +367,15 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             min_default_ttl,
             max_default_ttl,
             serial,
+            min_serial,
+            max_serial,
+            created_after,
+            created_before,
+            signed,
+            enabled,
             search,
+            sort,
+            order,
             limit,
             offset,
             output,
@@ -336,7 +388,15 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 || min_default_ttl.is_some()
                 || max_default_ttl.is_some()
                 || serial.is_some()
+                || min_serial.is_some()
+                || max_serial.is_some()
+                || created_after.is_some()
+                || created_before.is_some()
+                || signed
+                || enabled.is_some()
                 || search.is_some()
+                || sort.is_some()
+                || order.is_some()
                 || limit.is_some()
                 || offset.is_some();
             let filter_payload = || GetZonesFilter {
@@ -348,7 +408,15 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 min_default_ttl,
                 max_default_ttl,
                 serial,
+                min_serial,
+                max_serial,
+                created_after,
+                created_before,
+                signed: signed.then_some(true),
+                enabled,
                 search,
+                sort,
+                order,
                 limit,
                 offset,
             };
@@ -388,6 +456,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             retry,
             expire,
             minimum_ttl,
+            enabled,
+            description,
             output,
         } => {
             let data = client
@@ -406,6 +476,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                             expire,
                             minimum_ttl,
                             serial: None,
+                            enabled,
+                            description,
                         },
                     },
                 )
@@ -439,6 +511,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             from_server,
             mode,
             dry_run,
+            skip_unsupported,
         } => {
             let content = file.map(|file| super::read_input(&file)).transpose()?;
             let response = client
@@ -451,6 +524,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                             from_server,
                             mode: mode.into(),
                             dry_run,
+                            skip_unsupported,
                         },
                     },
                 )
@@ -465,6 +539,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 for error in &import.errors {
                     eprintln!("  - {}", error);
                 }
+            }
+
+            // Also stderr: a warning about the zone, not part of the summary.
+            for skipped in &import.skipped_records {
+                eprintln!("  ~ {}", skipped);
             }
 
             print_table(vec![ImportSummaryRow::from(&import.summary)]);
@@ -493,13 +572,13 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     ZoneNameParams { name },
                 )
                 .await?;
-            print_response(&res.data, output, |grants: &TokenGrantListResponse| {
-                grants
-                    .token_grants
-                    .iter()
-                    .map(TokenGrantRow::from)
-                    .collect()
-            })?;
+            print_response(
+                &res.data,
+                output,
+                |grants: &PaginatedResponse<GetTokenGrantResponse>| {
+                    grants.items.iter().map(TokenGrantRow::from).collect()
+                },
+            )?;
         }
         ZoneCommand::TsigGrants { name, output } => {
             let res = client
@@ -508,9 +587,13 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     ZoneNameParams { name },
                 )
                 .await?;
-            print_response(&res.data, output, |grants: &TsigGrantListResponse| {
-                grants.tsig_grants.iter().map(TsigGrantRow::from).collect()
-            })?;
+            print_response(
+                &res.data,
+                output,
+                |grants: &PaginatedResponse<GetTsigGrantResponse>| {
+                    grants.items.iter().map(TsigGrantRow::from).collect()
+                },
+            )?;
         }
         ZoneCommand::Notify(args) => {
             let response = client

@@ -24,6 +24,7 @@ APEX_LINES = 10
 
 
 async def run(adapter, cfg, ctx) -> list:
+    """Measure large-zone creation, import, transfer, deletion, and resource use."""
     zone = ctx["zone"]
     xe = adapter.xfr_endpoint()
     loop = asyncio.get_event_loop()

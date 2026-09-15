@@ -148,11 +148,13 @@ impl TxtRecordValue {
         out
     }
 
+    /// Consume the TXT segments and encode their length-prefixed wire data.
     pub(crate) fn into_rdata(self) -> Vec<u8> {
         self.0
     }
 }
 
+/// Parse quoted TXT character strings and their escapes.
 fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, String> {
     let mut segments = Vec::new();
     let mut bytes = trimmed.bytes().peekable();
@@ -162,6 +164,7 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, String> {
             return Err("TXT character-strings must be separated by spaces".to_string());
         }
 
+        // Decode escapes before checking the character-string's wire byte length.
         let mut segment: Vec<u8> = Vec::new();
         loop {
             match bytes.next() {
@@ -195,6 +198,7 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, String> {
             String::from_utf8(segment).map_err(|_| "TXT value must be valid UTF-8".to_string())?,
         );
 
+        // Require spaces between quoted strings while preserving each wire segment.
         match bytes.next() {
             None => break,
             Some(b' ') => {

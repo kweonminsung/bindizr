@@ -84,6 +84,7 @@ impl ApiRouter {
         router
     }
 
+    /// Return the API's running-status message.
     async fn get_home() -> impl IntoResponse {
         (
             StatusCode::OK,
@@ -93,10 +94,12 @@ impl ApiRouter {
         )
     }
 
+    /// Return the OpenAPI document as JSON.
     async fn openapi_json() -> impl IntoResponse {
         (StatusCode::OK, Json(ApiDoc::openapi()))
     }
 
+    /// Return the OpenAPI document as YAML.
     async fn openapi_yaml() -> axum::response::Response {
         match ApiDoc::openapi().to_yaml() {
             Ok(openapi_yaml) => (
@@ -112,6 +115,7 @@ impl ApiRouter {
         }
     }
 
+    /// Return the API error for an unsupported HTTP method.
     async fn method_not_allowed() -> impl IntoResponse {
         ApiError(ServiceError::new(
             ErrorCode::MethodNotAllowed,
@@ -119,6 +123,7 @@ impl ApiRouter {
         ))
     }
 
+    /// Return the API error for an unknown route.
     async fn not_found() -> impl IntoResponse {
         ApiError(ServiceError::new(
             ErrorCode::EndpointNotFound,

@@ -33,6 +33,7 @@ pub(crate) struct Endpoint {
     pub(crate) provider_specific: Vec<ProviderSpecificProperty>,
 }
 
+/// Check whether an endpoint TTL uses the unset sentinel.
 fn is_ttl_unset(ttl: &i64) -> bool {
     *ttl == 0
 }

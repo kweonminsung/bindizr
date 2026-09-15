@@ -12,12 +12,14 @@ pub(crate) struct Shutdown {
 }
 
 impl Shutdown {
+    /// Create a shared shutdown signal.
     pub(crate) fn new() -> Self {
         Self {
             tx: watch::channel(false).0,
         }
     }
 
+    /// Signal all listeners to begin shutdown.
     pub(crate) fn trigger(&self) {
         let _ = self.tx.send(true);
     }

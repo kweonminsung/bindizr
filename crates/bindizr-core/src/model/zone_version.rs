@@ -16,5 +16,53 @@ pub struct ZoneVersion {
     pub retry: i32,
     pub expire: i32,
     pub minimum_ttl: i32,
+    /// Which plane asked for this version.
+    #[sqlx(try_from = "String")]
+    pub change_source: ChangeSource,
+    /// The API token or TSIG key the change was made under, absent where no
+    /// credential stood behind it. Copied rather than referenced, so the
+    /// answer outlives the credential.
+    pub changed_by: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+/// The plane a zone version's change came through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeSource {
+    /// An API token, global or scoped.
+    Token,
+    /// An RFC 2136 update, named by the TSIG key that signed it.
+    Nsupdate,
+    /// The DNSSEC maintenance scheduler, on nobody's request.
+    System,
+    /// No credential stood behind it: the daemon socket, or any request made
+    /// while authentication is disabled.
+    Local,
+}
+
+impl ChangeSource {
+    /// Return the text representation of this change source.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ChangeSource::Token => "token",
+            ChangeSource::Nsupdate => "nsupdate",
+            ChangeSource::System => "system",
+            ChangeSource::Local => "local",
+        }
+    }
+}
+
+impl TryFrom<String> for ChangeSource {
+    type Error = String;
+
+    /// Validate and convert the stored value into a change source.
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "token" => Ok(ChangeSource::Token),
+            "nsupdate" => Ok(ChangeSource::Nsupdate),
+            "system" => Ok(ChangeSource::System),
+            "local" => Ok(ChangeSource::Local),
+            other => Err(format!("unknown change source '{}'", other)),
+        }
+    }
 }

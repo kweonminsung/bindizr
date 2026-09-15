@@ -35,6 +35,7 @@ pub(crate) struct MySqlZoneVersionRepository {
 }
 
 impl MySqlZoneVersionRepository {
+    /// Create a repository for zone versions using the supplied pool.
     pub(crate) fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
     }
@@ -42,6 +43,7 @@ impl MySqlZoneVersionRepository {
 
 #[async_trait]
 impl ZoneVersionRepository for MySqlZoneVersionRepository {
+    /// Insert or update a zone version in the current transaction.
     async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -51,8 +53,8 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 mname = VALUES(mname),
                 rname = VALUES(rname),
@@ -60,7 +62,9 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
                 refresh = VALUES(refresh),
                 retry = VALUES(retry),
                 expire = VALUES(expire),
-                minimum_ttl = VALUES(minimum_ttl)
+                minimum_ttl = VALUES(minimum_ttl),
+                change_source = VALUES(change_source),
+                changed_by = VALUES(changed_by)
             "#,
         )
         .bind(version.zone_id)
@@ -72,6 +76,8 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         .bind(version.retry)
         .bind(version.expire)
         .bind(version.minimum_ttl)
+        .bind(version.change_source.as_str())
+        .bind(&version.changed_by)
         .bind(Utc::now())
         .execute(&mut **mysql_tx)
         .await
@@ -84,6 +90,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
             })
     }
 
+    /// Find a zone version by zone ID and serial.
     async fn get_by_serial(
         &self,
         zone_id: i32,
@@ -91,7 +98,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
     ) -> Result<Option<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial = ?
             "#,
@@ -103,6 +110,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// List zone versions in the closed interval `[from_serial, to_serial]`.
     async fn list_in_serial_range(
         &self,
         zone_id: i32,
@@ -111,7 +119,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
     ) -> Result<Vec<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial >= ? AND serial <= ?
             "#,
@@ -123,6 +131,8 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
+
+    /// List zone versions for a zone.
     async fn list(
         &self,
         zone_id: i32,
@@ -137,7 +147,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         };
         let mut query = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ?{filter}
             ORDER BY serial DESC
@@ -156,6 +166,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// Count zone versions using the requested change filter.
     async fn count(&self, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError> {
         let filter = if user_changes_only {
             USER_CHANGES_FILTER
@@ -176,6 +187,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         Ok(count as u64)
     }
 
+    /// Find a zone version by zone ID and serial in the current transaction.
     async fn get_by_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -187,7 +199,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
 
         sqlx::query_as::<_, ZoneVersion>(
             AssertSqlSafe(format!("{}{}", r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial = ?
             "#, lock_clause(lock_level))),
@@ -199,28 +211,32 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn prune_older_than_tx(
+    /// Prune one zone's old versions, keeping its newest, in the current transaction.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        // Each zone's newest version survives regardless of age: the IXFR
-        // up-to-date response reads it.
+        // The zone's newest version survives regardless of age: the IXFR
+        // up-to-date response reads it. MySQL reads a DELETE's own table only
+        // through a derived table.
         let result = sqlx::query(
             r#"
-            DELETE h FROM zone_versions h
-            JOIN (
-                SELECT zone_id AS newest_zone_id, MAX(serial) AS newest_serial
-                FROM zone_versions
-                GROUP BY zone_id
-            ) newest
-              ON newest.newest_zone_id = h.zone_id
-            WHERE h.created_at < ? AND h.serial < newest.newest_serial
+            DELETE FROM zone_versions
+            WHERE zone_id = ? AND created_at < ?
+              AND serial < (
+                  SELECT newest_serial FROM (
+                      SELECT MAX(serial) AS newest_serial FROM zone_versions WHERE zone_id = ?
+                  ) newest
+              )
             "#,
         )
+        .bind(zone_id)
         .bind(cutoff)
+        .bind(zone_id)
         .execute(&mut **mysql_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;

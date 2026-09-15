@@ -1,6 +1,6 @@
 //! DNSSEC policies: the named signing-parameter bundles zones sign under.
-//! A policy row is a management write (single statements, constraints as
-//! the backstop); the zone side that consumes it lives in `dnssec`.
+//! Partial updates lock the policy row; creates and deletes rely on constraints.
+//! Zone signing consumes these policies in `dnssec`.
 
 use chrono::Utc;
 
@@ -13,7 +13,10 @@ use crate::{
         dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
     },
     repository::RepositoryService,
-    types::{CreateDnssecPolicyRequest, UpdateDnssecPolicyRequest},
+    types::{
+        CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageFilter, PaginatedResponse,
+        UpdateDnssecPolicyRequest,
+    },
 };
 
 /// RFC 1982 serial arithmetic is only unambiguous while expiration -
@@ -45,7 +48,9 @@ impl DnssecPolicyService {
             Some(raw) => raw
                 .parse::<DnssecDenial>()
                 .map_err(ServiceError::invalid_input)?,
-            None => DnssecDenial::Nsec,
+            // NSEC leaves the zone walkable, so a policy that did not
+            // choose is not opted into it.
+            None => DnssecDenial::Nsec3,
         };
         let signature_validity_days = request.signature_validity_days.unwrap_or(14);
         let signature_refresh_days = request.signature_refresh_days.unwrap_or(5);
@@ -73,23 +78,30 @@ impl DnssecPolicyService {
             signature_validity_days: signature_validity_days as i32,
             signature_refresh_days: signature_refresh_days as i32,
             zsk_lifetime_days: zsk_lifetime_days as i32,
-            rollover_publish_holddown_secs: i64::from(
-                request.rollover_publish_holddown_secs.unwrap_or(86_400),
-            ),
-            rollover_retire_holddown_secs: i64::from(
-                request.rollover_retire_holddown_secs.unwrap_or(172_800),
-            ),
             created_at: Utc::now(),
         })
         .await
     }
 
-    pub async fn list(caller: &Caller) -> Result<Vec<DnssecPolicy>, ServiceError> {
+    /// List DNSSEC policies visible to an authorized caller.
+    pub async fn list(
+        caller: &Caller,
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetDnssecPolicyResponse>, ServiceError> {
         caller.require_global("manage DNSSEC policies")?;
 
-        RepositoryService::list_dnssec_policies().await
+        let policies = RepositoryService::list_dnssec_policies().await?;
+        PaginatedResponse::from_collection(
+            policies
+                .iter()
+                .map(GetDnssecPolicyResponse::from_policy)
+                .collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
+    /// Load a named DNSSEC policy for an authorized caller.
     pub async fn get(caller: &Caller, name: &str) -> Result<DnssecPolicy, ServiceError> {
         caller.require_global("manage DNSSEC policies")?;
 
@@ -148,12 +160,6 @@ impl DnssecPolicyService {
                     signature_validity_days: signature_validity_days as i32,
                     signature_refresh_days: signature_refresh_days as i32,
                     zsk_lifetime_days: zsk_lifetime_days as i32,
-                    rollover_publish_holddown_secs: request
-                        .rollover_publish_holddown_secs
-                        .map_or(policy.rollover_publish_holddown_secs, i64::from),
-                    rollover_retire_holddown_secs: request
-                        .rollover_retire_holddown_secs
-                        .map_or(policy.rollover_retire_holddown_secs, i64::from),
                     ..policy
                 },
             )
@@ -213,8 +219,10 @@ pub(crate) fn normalize_policy_name(value: &str) -> Result<String, ServiceError>
     Ok(name)
 }
 
-/// A refresh window at least as long as the validity would re-sign on every
-/// pass; requiring headroom keeps re-signing periodic and expiry reachable.
+/// Validate signature validity, refresh, and key lifetime settings.
+///
+/// The refresh window must be shorter than validity, or every maintenance pass would re-sign
+/// the zone.
 fn validate_timing(
     signature_validity_days: u32,
     signature_refresh_days: u32,
@@ -255,11 +263,13 @@ fn validate_timing(
 mod tests {
     use super::{normalize_policy_name, validate_timing};
 
+    /// Verify that `normalize_policy_name` lowercases and trims.
     #[test]
     fn normalize_policy_name_lowercases_and_trims() {
         assert_eq!(normalize_policy_name("  Strict-1 ").unwrap(), "strict-1");
     }
 
+    /// Verify that `normalize_policy_name` rejects empty and odd characters.
     #[test]
     fn normalize_policy_name_rejects_empty_and_odd_characters() {
         assert!(normalize_policy_name("   ").is_err());
@@ -268,6 +278,7 @@ mod tests {
         assert!(normalize_policy_name(&"x".repeat(65)).is_err());
     }
 
+    /// Verify that `validate_timing` requires refresh below validity.
     #[test]
     fn validate_timing_requires_refresh_below_validity() {
         assert!(validate_timing(14, 5, 0).is_ok());

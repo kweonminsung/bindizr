@@ -44,6 +44,7 @@ pub(crate) async fn doctor() -> Result<DaemonResponse, ServiceError> {
         },
     };
 
+    // Probe the local catalog SOA to supply the reference serial for diagnosis.
     let dns_addr = SocketAddr::new(
         loopback_if_unspecified(config.dns.listen_addr),
         config.dns.listen_port,
@@ -68,6 +69,7 @@ pub(crate) async fn doctor() -> Result<DaemonResponse, ServiceError> {
             ),
         };
 
+    // Capture secondary serials before the NOTIFY check can trigger a refresh.
     let secondaries = probe::probe_secondaries(CATALOG_ZONE_NAME)
         .await
         .map_err(ServiceError::internal)?
@@ -86,6 +88,7 @@ pub(crate) async fn doctor() -> Result<DaemonResponse, ServiceError> {
         })
         .collect();
 
+    // Actively test NOTIFY delivery; this can prompt secondaries to transfer the catalog.
     let notifies = notify::notify_secondaries(CATALOG_ZONE_NAME)
         .await
         .map_err(ServiceError::internal)?

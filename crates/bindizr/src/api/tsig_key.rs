@@ -7,22 +7,23 @@ use axum::{
 use bindizr_service::{
     tsig_key::{TsigKeyService, grant::TsigGrantService},
     types::{
-        CreateTsigGrantRequest, CreateTsigKeyRequest, ErrorResponse, GetTsigGrantResponse,
-        GetTsigKeyResponse, MessageResponse, TsigGrantListResponse, TsigGrantResponse,
-        TsigKeyListResponse, TsigKeyResponse,
+        CreateTsigGrantRequest, CreateTsigKeyRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
+        GetTsigGrantResponse, GetTsigKeyResponse, MessageResponse, PageFilter, PaginatedResponse,
+        TsigGrantResponse, TsigKeyResponse,
     },
 };
 use serde::Deserialize;
 
 use crate::api::{
     GrantIdParam, RequestCaller, ZoneNameParam,
-    error::{ApiError, Path},
+    error::{ApiError, Path, Query},
     middleware::body_parser::JsonBody,
 };
 
 pub(crate) struct TsigKeyApi;
 
 impl TsigKeyApi {
+    /// Build the TSIG key API routes.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/tsig-keys", routing::get(list_tsig_keys))
@@ -47,35 +48,37 @@ pub(crate) struct TsigKeyNameParam {
     pub(crate) name: String,
 }
 
+/// List all TSIG keys (secrets omitted).
 #[utoipa::path(
         get,
         path = "/tsig-keys",
         tag = "TSIG",
         summary = "List all TSIG keys",
+        params(PageFilter),
         description = "Lists every TSIG key without its secret. Fetch a single key to read the secret.",
         responses(
-            (status = 200, description = "All TSIG keys", body = TsigKeyListResponse),
+            (status = 200, description = "All TSIG keys", body = PaginatedResponse<GetTsigKeyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List all TSIG keys (secrets omitted).
 pub(crate) async fn list_tsig_keys(
     RequestCaller(caller): RequestCaller,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let keys = TsigKeyService::list(&caller).await?;
-    let keys: Vec<GetTsigKeyResponse> = keys.iter().map(GetTsigKeyResponse::from_key).collect();
-    let response = TsigKeyListResponse { tsig_keys: keys };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = TsigKeyService::list(&caller, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Create a TSIG key, generating a secret unless one is imported.
 #[utoipa::path(
         post,
         path = "/tsig-keys",
         tag = "TSIG",
         summary = "Create a TSIG key",
-        description = "Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` makes the key able to update every zone (all names, all types) without any grant — effectively write access to all DNS data, so use it sparingly. The response includes the secret.",
+        description = "Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` permits updates and transfers for every zone without grants. The response includes the secret.",
         request_body = CreateTsigKeyRequest,
         responses(
             (status = 201, description = "TSIG key created successfully", body = TsigKeyResponse),
@@ -87,7 +90,6 @@ pub(crate) async fn list_tsig_keys(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Create a TSIG key, generating a secret unless one is imported.
 pub(crate) async fn create_tsig_key(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTsigKeyRequest>,
@@ -104,6 +106,7 @@ pub(crate) async fn create_tsig_key(
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
+/// Get one TSIG key by name, including its secret.
 #[utoipa::path(
         get,
         path = "/tsig-keys/{name}",
@@ -121,7 +124,6 @@ pub(crate) async fn create_tsig_key(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Get one TSIG key by name, including its secret.
 pub(crate) async fn get_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
@@ -131,6 +133,7 @@ pub(crate) async fn get_tsig_key(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Delete a TSIG key that holds no grants.
 #[utoipa::path(
         delete,
         path = "/tsig-keys/{name}",
@@ -149,7 +152,6 @@ pub(crate) async fn get_tsig_key(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Delete a TSIG key that holds no grants.
 pub(crate) async fn delete_tsig_key(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
@@ -161,43 +163,41 @@ pub(crate) async fn delete_tsig_key(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// List a TSIG key's grants.
 #[utoipa::path(
         get,
         path = "/tsig-keys/{name}/grants",
         tag = "TSIG",
         summary = "List a TSIG key's grants",
+        params(PageFilter),
         params(
             ("name" = String, Path, description = "The name of the TSIG key.")
         ),
         responses(
-            (status = 200, description = "The key's grants", body = TsigGrantListResponse),
+            (status = 200, description = "The key's grants", body = PaginatedResponse<GetTsigGrantResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "TSIG key not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List a TSIG key's grants.
 pub(crate) async fn list_tsig_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let grants = TsigGrantService::list_by_key(&caller, &params.name).await?;
-    let response = TsigGrantListResponse {
-        tsig_grants: grants
-            .iter()
-            .map(GetTsigGrantResponse::from_grant)
-            .collect(),
-    };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = TsigGrantService::list_by_key(&caller, &params.name, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Grant a TSIG key update and transfer rights in a zone.
 #[utoipa::path(
         post,
         path = "/tsig-keys/{name}/grants",
         tag = "TSIG",
-        summary = "Grant a TSIG key nsupdate rights in a zone",
-        description = "Grants the key nsupdate rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global keys are rejected: they already cover every zone and never carry grants.",
+        summary = "Grant a TSIG key update and transfer rights in a zone",
+        description = "Grants update rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Unrestricted name/type grants also allow transfers; `can_write=false` grants transfers only. Global keys are rejected: they already cover every zone and never carry grants.",
         params(
             ("name" = String, Path, description = "The name of the TSIG key.")
         ),
@@ -212,7 +212,6 @@ pub(crate) async fn list_tsig_grants(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Grant a TSIG key nsupdate rights in a zone.
 pub(crate) async fn create_tsig_grant(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<TsigKeyNameParam>,
@@ -224,6 +223,7 @@ pub(crate) async fn create_tsig_grant(
         &body.zone_name,
         body.record_name_pattern.as_deref(),
         body.record_types.as_deref(),
+        body.can_write,
     )
     .await?;
     let response = TsigGrantResponse {
@@ -232,6 +232,7 @@ pub(crate) async fn create_tsig_grant(
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
+/// Revoke one of a TSIG key's grants by grant id.
 #[utoipa::path(
         delete,
         path = "/tsig-keys/{name}/grants/{id}",
@@ -249,7 +250,6 @@ pub(crate) async fn create_tsig_grant(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Revoke one of a TSIG key's grants by grant id.
 pub(crate) async fn delete_tsig_grant(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<GrantIdParam>,
@@ -261,33 +261,30 @@ pub(crate) async fn delete_tsig_grant(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// List the TSIG grants that apply to a zone.
 #[utoipa::path(
         get,
         path = "/zones/{name}/tsig-grants",
         tag = "TSIG",
         summary = "List the TSIG grants that apply to a zone",
+        params(PageFilter),
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
         responses(
-            (status = 200, description = "Grants covering the zone", body = TsigGrantListResponse),
+            (status = 200, description = "Grants covering the zone", body = PaginatedResponse<GetTsigGrantResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List the TSIG grants that apply to a zone.
 pub(crate) async fn list_zone_tsig_grants(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
+    Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
-    let grants = TsigGrantService::list_by_zone(&caller, &params.name).await?;
-    let response = TsigGrantListResponse {
-        tsig_grants: grants
-            .iter()
-            .map(GetTsigGrantResponse::from_grant)
-            .collect(),
-    };
+    page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
+    let response = TsigGrantService::list_by_zone(&caller, &params.name, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

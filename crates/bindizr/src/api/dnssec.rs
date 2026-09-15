@@ -22,6 +22,7 @@ use crate::api::{
 pub(crate) struct DnssecApi;
 
 impl DnssecApi {
+    /// Build the DNSSEC API routes.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/zones/{name}/dnssec", routing::get(get_dnssec_status))
@@ -48,6 +49,7 @@ impl DnssecApi {
     }
 }
 
+/// Report the DNSSEC signing state of a zone.
 #[utoipa::path(
         get,
         path = "/zones/{name}/dnssec",
@@ -65,7 +67,6 @@ impl DnssecApi {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Report the DNSSEC signing state of a zone.
 pub(crate) async fn get_dnssec_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -75,12 +76,13 @@ pub(crate) async fn get_dnssec_status(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Enable DNSSEC for a zone: generate its signing keys and sign the zone.
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Enable DNSSEC for a zone",
-        description = "Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone's nameservers that every later DS check asks.",
+        description = "Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC3 denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone's nameservers that every later DS check asks.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -96,7 +98,6 @@ pub(crate) async fn get_dnssec_status(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Enable DNSSEC for a zone: generate its signing key and sign the zone.
 pub(crate) async fn enable_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -118,12 +119,13 @@ pub(crate) struct DisableDnssecQuery {
     pub(crate) skip_ds_check: Option<bool>,
 }
 
+/// Disable DNSSEC for a zone.
 #[utoipa::path(
         delete,
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Disable DNSSEC for a zone",
-        description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the zone's parent nameservers (`parent_ns_addrs`) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`), fails to answer (`DNSSEC_DS_UNVERIFIED`), or was replaced while being asked (`DNSSEC_STATE_CHANGED`; retry). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller's.",
+        description = "Deletes the zone's signing keys and derived records, so secondaries unsign via IXFR. Dropping the signatures while the parent zone still publishes a DS makes the zone bogus, so the zone's parent nameservers (`parent_ns_addrs`) are asked first: refused while any serves a DS for the zone (`DNSSEC_DS_PUBLISHED`) or fails to answer (`DNSSEC_DS_UNVERIFIED`). `skip_ds_check=true` skips the check; waiting out the DS TTL after its removal stays the caller's.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
             ("skip_ds_check" = Option<bool>, Query, description = "Skip the parent DS check.")
@@ -137,7 +139,6 @@ pub(crate) struct DisableDnssecQuery {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Disable DNSSEC for a zone.
 pub(crate) async fn disable_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -150,6 +151,7 @@ pub(crate) async fn disable_dnssec(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Re-sign a zone from scratch, discarding stored signatures.
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/sign",
@@ -168,7 +170,6 @@ pub(crate) async fn disable_dnssec(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Re-sign a zone from scratch, discarding stored signatures.
 pub(crate) async fn sign_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -180,6 +181,7 @@ pub(crate) async fn sign_zone(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Start a key rollover: pre-publish a replacement key.
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/rollover",
@@ -201,7 +203,6 @@ pub(crate) async fn sign_zone(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Start a key rollover: pre-publish a replacement key.
 pub(crate) async fn start_dnssec_rollover(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -218,12 +219,13 @@ pub(crate) struct DsSeenQuery {
     pub(crate) skip_holddown: Option<bool>,
 }
 
+/// Confirm the new DS is at the parent, promoting the pre-published key(s).
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/rollover/ds-seen",
         tag = "DNSSEC",
         summary = "Confirm the new DS is at the parent (ds-seen)",
-        description = "Promotes the pre-published key to active and retires the key it replaces, once the publish hold-down has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute, or `DNSSEC_STATE_CHANGED` when the zone's keys or parent changed while they were being asked (retry). `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain; ZSK rollovers involve no DS and are promoted automatically after a hold-down.",
+        description = "Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The maintenance scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
             ("skip_ds_check" = Option<bool>, Query, description = "Skip the parent DS check."),
@@ -239,7 +241,6 @@ pub(crate) struct DsSeenQuery {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Confirm the new DS is at the parent, promoting the pre-published key(s).
 pub(crate) async fn ds_seen_dnssec_rollover(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -256,6 +257,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Publish the RFC 8078 delete CDS/CDNSKEY pair.
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/withdraw",
@@ -275,7 +277,6 @@ pub(crate) async fn ds_seen_dnssec_rollover(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Publish the RFC 8078 delete CDS/CDNSKEY pair.
 pub(crate) async fn withdraw_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -285,6 +286,7 @@ pub(crate) async fn withdraw_dnssec(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Cancel a published DS withdrawal.
 #[utoipa::path(
         delete,
         path = "/zones/{name}/dnssec/withdraw",
@@ -304,7 +306,6 @@ pub(crate) async fn withdraw_dnssec(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Cancel a published DS withdrawal.
 pub(crate) async fn cancel_dnssec_withdrawal(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -314,6 +315,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Ask the parent zone whether it serves the zone's DS.
 #[utoipa::path(
         post,
         path = "/zones/{name}/dnssec/check-ds",
@@ -332,7 +334,6 @@ pub(crate) async fn cancel_dnssec_withdrawal(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Ask the parent zone whether it serves the zone's DS.
 pub(crate) async fn check_dnssec_ds(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
@@ -342,19 +343,20 @@ pub(crate) async fn check_dnssec_ds(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Change a zone's DNSSEC settings.
 #[utoipa::path(
         put,
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Change a zone's DNSSEC settings",
-        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the denial mode and key layout must match the current policy's (they are fixed while signed; disable and re-enable to change them), and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys leave after ds-seen (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.",
+        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy's (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys are removed after promotion and cache drain (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
         request_body = UpdateDnssecSettingsRequest,
         responses(
             (status = 200, description = "Settings changed", body = DnssecStatusResponse),
-            (status = 400, description = "Bad request: no field given, an invalid parent address, or a policy whose denial mode or key layout differs from the zone's", body = ErrorResponse),
+            (status = 400, description = "Bad request: no field given, an invalid parent address, or a policy whose key layout differs from the zone's", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone or DNSSEC policy not found", body = ErrorResponse),
@@ -363,7 +365,6 @@ pub(crate) async fn check_dnssec_ds(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Change a zone's DNSSEC settings.
 pub(crate) async fn update_dnssec_settings(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,

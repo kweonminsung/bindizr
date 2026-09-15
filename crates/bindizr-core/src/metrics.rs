@@ -10,23 +10,30 @@ use prometheus::{
     Registry, TextEncoder, core::Collector,
 };
 
+use crate::dns::message::{Rcode, Rtype};
+
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
 
 pub struct Metrics {
     registry: Registry,
     pub database_up: IntGauge,
+    pub db_connections: IntGaugeVec,
+    pub db_connections_max: IntGauge,
     pub zones_total: IntGauge,
     pub records_total: IntGauge,
     pub http_requests_total: IntCounterVec,
     pub http_request_duration_seconds: HistogramVec,
     pub xfr_total: IntCounterVec,
+    pub soa_queries_total: IntCounterVec,
     pub notify_sent_total: IntCounterVec,
     pub nsupdate_requests_total: IntCounterVec,
     pub zone_serial_bumps_total: IntCounter,
+    pub pruned_rows_total: IntCounterVec,
     pub dnssec_zones_total: IntGauge,
     pub dnssec_keys_total: IntGaugeVec,
     pub dnssec_rrsigs_expiring_total: IntGauge,
+    pub dnssec_rrsigs_expired_total: IntGauge,
     pub dnssec_maintenance_runs_total: IntCounterVec,
     pub zone_cache_lookups_total: IntCounterVec,
     pub zone_cache_evictions_total: IntCounter,
@@ -41,6 +48,7 @@ pub fn metrics() -> &'static Metrics {
     METRICS.get_or_init(Metrics::new)
 }
 
+/// Register a shared clone of a metric collector.
 fn register<C: Collector + Clone + 'static>(registry: &Registry, collector: &C) {
     registry
         .register(Box::new(collector.clone()))
@@ -48,6 +56,7 @@ fn register<C: Collector + Clone + 'static>(registry: &Registry, collector: &C) 
 }
 
 impl Metrics {
+    /// Create and register the daemon's metric collectors.
     fn new() -> Self {
         let registry = Registry::new();
 
@@ -83,6 +92,24 @@ impl Metrics {
         )
         .expect("valid metric definition");
         register(&registry, &database_up);
+
+        let db_connections = IntGaugeVec::new(
+            Opts::new(
+                "bindizr_db_connections",
+                "Pooled database connections by state; `in_use` reaching \
+                 `bindizr_db_connections_max` is the saturation every request then queues behind",
+            ),
+            &["state"],
+        )
+        .expect("valid metric definition");
+        register(&registry, &db_connections);
+
+        let db_connections_max = IntGauge::new(
+            "bindizr_db_connections_max",
+            "Connection ceiling the pool was built with, scaled to the host's cores",
+        )
+        .expect("valid metric definition");
+        register(&registry, &db_connections_max);
 
         let zones_total = IntGauge::new(
             "bindizr_zones_total",
@@ -125,6 +152,17 @@ impl Metrics {
         .expect("valid metric definition");
         register(&registry, &xfr_total);
 
+        let soa_queries_total = IntCounterVec::new(
+            Opts::new(
+                "bindizr_soa_queries_total",
+                "SOA queries answered, by outcome; secondaries poll these on their refresh \
+                 timer, so a rise in `refused` means one stopped being a configured secondary",
+            ),
+            &["result"],
+        )
+        .expect("valid metric definition");
+        register(&registry, &soa_queries_total);
+
         let notify_sent_total = IntCounterVec::new(
             Opts::new(
                 "bindizr_notify_sent_total",
@@ -152,6 +190,17 @@ impl Metrics {
         .expect("valid metric definition");
         register(&registry, &zone_serial_bumps_total);
 
+        let pruned_rows_total = IntCounterVec::new(
+            Opts::new(
+                "bindizr_pruned_rows_total",
+                "Rows the retention pass deleted, by table; a rate of zero while zones keep \
+                 changing means the journal is growing without bound",
+            ),
+            &["table"],
+        )
+        .expect("valid metric definition");
+        register(&registry, &pruned_rows_total);
+
         let dnssec_zones_total = IntGauge::new(
             "bindizr_dnssec_zones_total",
             "Number of DNSSEC-signed zones, refreshed at scrape time.",
@@ -176,6 +225,14 @@ impl Metrics {
         )
         .expect("valid metric definition");
         register(&registry, &dnssec_rrsigs_expiring_total);
+
+        let dnssec_rrsigs_expired_total = IntGauge::new(
+            "bindizr_dnssec_rrsigs_expired_total",
+            "Signatures already past their expiration; any at all mean resolvers are failing \
+             part of a zone",
+        )
+        .expect("valid metric definition");
+        register(&registry, &dnssec_rrsigs_expired_total);
 
         let dnssec_maintenance_runs_total = IntCounterVec::new(
             Opts::new(
@@ -213,20 +270,52 @@ impl Metrics {
         .expect("valid metric definition");
         register(&registry, &zone_cache_records);
 
+        // Prometheus emits a labelled series only once it is touched, so an
+        // alert on a counter staying at zero reads "no data" until the first
+        // event. Every label set here is small and fully known.
+        for result in XfrResult::ALL {
+            for xfr_type in ["axfr", "ixfr"] {
+                xfr_total.with_label_values(&[xfr_type, result.as_str()]);
+            }
+        }
+        for result in SoaResult::ALL {
+            soa_queries_total.with_label_values(&[result.as_str()]);
+        }
+        for result in NsupdateResult::ALL {
+            nsupdate_requests_total.with_label_values(&[result.as_str()]);
+        }
+        for result in NotifyResult::ALL {
+            notify_sent_total.with_label_values(&[result.as_str()]);
+        }
+        for result in MaintenanceResult::ALL {
+            dnssec_maintenance_runs_total.with_label_values(&[result.as_str()]);
+        }
+        for table in ["journal", "version"] {
+            pruned_rows_total.with_label_values(&[table]);
+        }
+        for result in ["hit", "miss"] {
+            zone_cache_lookups_total.with_label_values(&[result]);
+        }
+
         Self {
             registry,
             database_up,
+            db_connections,
+            db_connections_max,
             zones_total,
             records_total,
             http_requests_total,
             http_request_duration_seconds,
             xfr_total,
+            soa_queries_total,
             notify_sent_total,
             nsupdate_requests_total,
             zone_serial_bumps_total,
+            pruned_rows_total,
             dnssec_zones_total,
             dnssec_keys_total,
             dnssec_rrsigs_expiring_total,
+            dnssec_rrsigs_expired_total,
             dnssec_maintenance_runs_total,
             zone_cache_lookups_total,
             zone_cache_evictions_total,
@@ -242,14 +331,234 @@ impl Metrics {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub enum XfrResult {
+    Ok,
+    Refused,
+    NotAuth,
+    /// Answered over UDP with TC set; the transfer follows over TCP.
+    Truncated,
+    Error,
+}
 
-    #[test]
-    fn encode_includes_build_info_and_startup_gauges() {
-        let text = metrics().encode();
-        assert!(text.contains("bindizr_build_info"));
-        assert!(text.contains("bindizr_started_at_seconds"));
+impl XfrResult {
+    const ALL: [Self; 5] = [
+        Self::Ok,
+        Self::Refused,
+        Self::NotAuth,
+        Self::Truncated,
+        Self::Error,
+    ];
+
+    /// Return the text representation of this xfr result.
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Refused => "refused",
+            Self::NotAuth => "notauth",
+            Self::Truncated => "truncated",
+            Self::Error => "error",
+        }
     }
+}
+
+/// A zone transfer's outcome, by query type. Non-transfer types are not
+/// counted here, so the caller may pass whatever it was asked for.
+pub fn track_xfr(qtype: Rtype, result: XfrResult) {
+    let xfr_type = match qtype {
+        Rtype::AXFR => "axfr",
+        Rtype::IXFR => "ixfr",
+        _ => return,
+    };
+    metrics()
+        .xfr_total
+        .with_label_values(&[xfr_type, result.as_str()])
+        .inc();
+}
+
+pub enum SoaResult {
+    Ok,
+    Refused,
+    NotAuth,
+    Error,
+}
+
+impl SoaResult {
+    const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Error];
+
+    /// Return the text representation of this SOA result.
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Refused => "refused",
+            Self::NotAuth => "notauth",
+            Self::Error => "error",
+        }
+    }
+}
+
+/// Secondaries poll SOA on their refresh timer, so this is the question
+/// bindizr answers most; the result says whether they are getting a serial.
+pub fn track_soa(result: SoaResult) {
+    metrics()
+        .soa_queries_total
+        .with_label_values(&[result.as_str()])
+        .inc();
+}
+
+pub enum NsupdateResult {
+    /// A TSIG failure answers with its own NOTAUTH, so it is kept apart from
+    /// the NOTAUTH an update refused on its merits gets.
+    TsigFailed,
+    /// Every other outcome is named by the response code, a bounded set,
+    /// never the free-form message.
+    Rcode(Rcode),
+}
+
+impl NsupdateResult {
+    const ALL: [Self; 11] = [
+        Self::TsigFailed,
+        Self::Rcode(Rcode::NOERROR),
+        Self::Rcode(Rcode::FORMERR),
+        Self::Rcode(Rcode::REFUSED),
+        Self::Rcode(Rcode::YXDOMAIN),
+        Self::Rcode(Rcode::YXRRSET),
+        Self::Rcode(Rcode::NXDOMAIN),
+        Self::Rcode(Rcode::NXRRSET),
+        Self::Rcode(Rcode::NOTZONE),
+        Self::Rcode(Rcode::SERVFAIL),
+        Self::Rcode(Rcode::NOTIMP),
+    ];
+
+    /// Return the text representation of this nsupdate result.
+    fn as_str(&self) -> &'static str {
+        let rcode = match self {
+            Self::TsigFailed => return "tsig_failed",
+            Self::Rcode(rcode) => *rcode,
+        };
+        match rcode {
+            Rcode::NOERROR => "noerror",
+            Rcode::FORMERR => "formerr",
+            Rcode::REFUSED => "refused",
+            Rcode::YXDOMAIN => "yxdomain",
+            Rcode::YXRRSET => "yxrrset",
+            Rcode::NXDOMAIN => "nxdomain",
+            Rcode::NXRRSET => "nxrrset",
+            Rcode::NOTZONE => "notzone",
+            Rcode::SERVFAIL => "servfail",
+            _ => "other",
+        }
+    }
+}
+
+/// Increment the counter for a dynamic update result.
+pub fn track_nsupdate(result: NsupdateResult) {
+    metrics()
+        .nsupdate_requests_total
+        .with_label_values(&[result.as_str()])
+        .inc();
+}
+
+pub enum NotifyResult {
+    Ok,
+    Error,
+    /// Nothing was sent, so it is kept apart from the send failures it would
+    /// otherwise inflate.
+    ResolveError,
+}
+
+impl NotifyResult {
+    const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::ResolveError];
+
+    /// Return the text representation of this notify result.
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Error => "error",
+            Self::ResolveError => "resolve_error",
+        }
+    }
+}
+
+/// Record a NOTIFY delivery result.
+pub fn track_notify(result: NotifyResult) {
+    metrics()
+        .notify_sent_total
+        .with_label_values(&[result.as_str()])
+        .inc();
+}
+
+/// Count pruned journal and version rows separately so differences expose gaps that break IXFR
+/// history.
+pub fn track_pruned_rows(journal_rows: u64, version_rows: u64) {
+    let metrics = metrics();
+    metrics
+        .pruned_rows_total
+        .with_label_values(&["journal"])
+        .inc_by(journal_rows);
+    metrics
+        .pruned_rows_total
+        .with_label_values(&["version"])
+        .inc_by(version_rows);
+}
+
+/// Increment the serial-advance counter before commit; rollbacks can therefore overcount advances.
+pub fn track_serial_bump() {
+    metrics().zone_serial_bumps_total.inc();
+}
+
+pub enum MaintenanceResult {
+    Ok,
+    Error,
+    /// The pass unwound; the scheduler itself survived.
+    Panic,
+}
+
+impl MaintenanceResult {
+    const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::Panic];
+
+    /// Return the text representation of this maintenance result.
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Error => "error",
+            Self::Panic => "panic",
+        }
+    }
+}
+
+/// Increment the counter for a DNSSEC maintenance pass result.
+pub fn track_dnssec_maintenance(result: MaintenanceResult) {
+    metrics()
+        .dnssec_maintenance_runs_total
+        .with_label_values(&[result.as_str()])
+        .inc();
+}
+
+/// The pool's occupancy at scrape time.
+pub fn track_db_pool(connections: u32, idle: u32, max: u32) {
+    let metrics = metrics();
+    metrics
+        .db_connections
+        .with_label_values(&["idle"])
+        .set(i64::from(idle));
+    metrics
+        .db_connections
+        .with_label_values(&["in_use"])
+        .set(i64::from(connections.saturating_sub(idle)));
+    metrics.db_connections_max.set(i64::from(max));
+}
+
+/// Record a zone-cache hit or miss.
+pub fn track_zone_cache_lookup(hit: bool) {
+    metrics()
+        .zone_cache_lookups_total
+        .with_label_values(&[if hit { "hit" } else { "miss" }])
+        .inc();
+}
+
+/// What the cache holds after a store, and what it dropped to fit.
+pub fn track_zone_cache_store(records: usize, evicted: usize) {
+    let metrics = metrics();
+    metrics.zone_cache_records.set(records as i64);
+    metrics.zone_cache_evictions_total.inc_by(evicted as u64);
 }

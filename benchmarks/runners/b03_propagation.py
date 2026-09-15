@@ -19,6 +19,7 @@ from lib.metrics import LatencyRecorder  # noqa: E402
 
 
 async def run(adapter, cfg, ctx) -> dict:
+    """Measure the delay from a record mutation to a visible DNS answer."""
     zone = ctx["zone"]
     ep = adapter.dns_endpoint()
     p = cfg["propagation"]

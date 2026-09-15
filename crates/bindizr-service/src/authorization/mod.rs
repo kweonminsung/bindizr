@@ -18,20 +18,32 @@ use chrono::{Duration, Utc};
 use crate::{
     RepositoryTx,
     error::ServiceError,
-    grant_pattern::{matches_name, matches_types},
+    grant_pattern::{MATCH_ANY, matches_name, matches_types},
     log_error,
-    model::{api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone},
+    model::{
+        api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone,
+        zone_version::ChangeSource,
+    },
     repository::RepositoryService,
     token::hash_token,
+    zone::version::ChangeSubject,
 };
 
 /// The identity a request acts as. The daemon socket and disabled
-/// authentication act as `Global`; scoped tokens carry their grants,
+/// authentication act as `Global`, behind no credential at all; a token
+/// carries the name a change is recorded under, and a scoped one its grants,
 /// preloaded once per request by the auth middleware.
 #[derive(Debug, Clone)]
 pub enum Caller {
     Global,
-    Token { id: i32, grants: Arc<[TokenGrant]> },
+    GlobalToken {
+        name: Arc<str>,
+    },
+    Token {
+        id: i32,
+        name: Arc<str>,
+        grants: Arc<[TokenGrant]>,
+    },
 }
 
 /// One record-plane write to authorize: the owner name relative to the zone
@@ -42,21 +54,39 @@ pub(crate) struct RecordWrite<'a> {
 }
 
 impl Caller {
+    /// Check whether the caller has unrestricted global access.
     fn is_global(&self) -> bool {
-        matches!(self, Caller::Global)
+        matches!(self, Caller::Global | Caller::GlobalToken { .. })
     }
 
-    /// Resolve who a Bearer token acts as: validate the token, then preload a
-    /// scoped token's grants so the rest of the request decides against one
-    /// read. The token row comes back too, since `Global` keeps no identity.
+    /// The credential name a change made by this caller is recorded under.
+    pub(crate) fn change_subject(&self) -> ChangeSubject {
+        match self {
+            Caller::Global => ChangeSubject {
+                source: ChangeSource::Local,
+                actor: None,
+            },
+            Caller::GlobalToken { name } | Caller::Token { name, .. } => ChangeSubject {
+                source: ChangeSource::Token,
+                actor: Some(name.to_string()),
+            },
+        }
+    }
+
+    /// Validate a Bearer token and preload grants for read checks. Mutations
+    /// reload and lock the grants inside their transaction.
     pub async fn authenticate(bearer_token: &str) -> Result<(Caller, ApiToken), ServiceError> {
         let token = authenticate_token(bearer_token).await?;
         if token.is_global {
-            return Ok((Caller::Global, token));
+            let caller = Caller::GlobalToken {
+                name: token.name.as_str().into(),
+            };
+            return Ok((caller, token));
         }
         let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
         let caller = Caller::Token {
             id: token.id,
+            name: token.name.as_str().into(),
             grants: grants.into(),
         };
         Ok((caller, token))
@@ -77,15 +107,23 @@ impl Caller {
     /// unrestricted. List queries join it against the grants in SQL.
     pub(crate) fn scope_token_id(&self) -> Option<i32> {
         match self {
-            Caller::Global => None,
+            Caller::Global | Caller::GlobalToken { .. } => None,
             Caller::Token { id, .. } => Some(*id),
+        }
+    }
+
+    /// The grants that bound the caller, or `None` when nothing does.
+    pub(crate) fn grants(&self) -> Option<&[TokenGrant]> {
+        match self {
+            Caller::Global | Caller::GlobalToken { .. } => None,
+            Caller::Token { grants, .. } => Some(grants),
         }
     }
 
     /// Whether the caller may see `zone_id`.
     pub(crate) fn zone_visible(&self, zone_id: i32) -> bool {
         match self {
-            Caller::Global => true,
+            Caller::Global | Caller::GlobalToken { .. } => true,
             Caller::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
         }
     }
@@ -111,7 +149,7 @@ impl Caller {
         writes: &[RecordWrite<'_>],
     ) -> Result<(), ServiceError> {
         match self {
-            Caller::Global => Ok(()),
+            Caller::Global | Caller::GlobalToken { .. } => Ok(()),
             Caller::Token { id, .. } => {
                 let grants = RepositoryService::list_token_grants_by_zone_id_and_token_id_tx(
                     tx,
@@ -129,8 +167,50 @@ impl Caller {
             }
         }
     }
+
+    /// Whether the caller may read a record of this name and type: a grant
+    /// narrows reads the same way it narrows writes.
+    pub(crate) fn record_visible(
+        &self,
+        zone_id: i32,
+        name: &OwnerName,
+        record_type: Option<&RecordType>,
+    ) -> bool {
+        match self {
+            Caller::Global | Caller::GlobalToken { .. } => true,
+            Caller::Token { grants, .. } => grants.iter().any(|grant| {
+                grant.zone_id == zone_id
+                    && matches_name(&grant.record_name_pattern, name)
+                    && matches_types(&grant.record_types, record_type)
+            }),
+        }
+    }
+
+    /// Whether the caller sees the zone whole. A view the zone is rebuilt
+    /// from — its export, a stored version, a version diff — cannot be
+    /// narrowed: half a zone re-applied deletes what it left out.
+    pub(crate) fn ensure_zone_unrestricted(&self, zone: &Zone) -> Result<(), ServiceError> {
+        let unrestricted = match self {
+            Caller::Global | Caller::GlobalToken { .. } => true,
+            Caller::Token { grants, .. } => grants.iter().any(|grant| {
+                grant.zone_id == zone.id
+                    && grant.record_name_pattern == MATCH_ANY
+                    && grant.record_types == MATCH_ANY
+            }),
+        };
+        if unrestricted {
+            return Ok(());
+        }
+
+        self.ensure_zone_visible(zone)?;
+        Err(ServiceError::forbidden(format!(
+            "API token is scoped to part of zone '{}', so it cannot read the zone whole",
+            zone.name
+        )))
+    }
 }
 
+/// Check whether the supplied grants cover the requested zone operation.
 fn authorize_with_grants(
     grants: &[TokenGrant],
     zone: &Zone,
@@ -138,7 +218,8 @@ fn authorize_with_grants(
 ) -> Result<(), ServiceError> {
     for write in writes {
         let granted = grants.iter().any(|grant| {
-            matches_name(&grant.record_name_pattern, &write.relative_name)
+            grant.can_write
+                && matches_name(&grant.record_name_pattern, &write.relative_name)
                 && matches_types(&grant.record_types, write.record_type)
         });
         if !granted {

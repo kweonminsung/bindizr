@@ -7,24 +7,18 @@ pub use domain::base::{
 };
 use domain::{
     base::{
-        Header, Message, MessageBuilder, ToName, Ttl, UnknownRecordData, rdata::ComposeRecordData,
-        record::ComposeRecord,
+        MessageBuilder, ToName, Ttl, UnknownRecordData, rdata::ComposeRecordData,
+        record::ComposeRecord, wire::Composer,
     },
-    rdata::Soa,
+    rdata::tsig::Time48,
 };
 
-use crate::{
-    dns::{
-        DNS_TCP_MAX_SIZE,
-        dnssec::to_wire_name,
-        name::{OwnerName, ParseNameError, ZoneName, encode_name, to_fqdn},
-        record::{EncodedRdata, Rdata, SoaRecordValue, TxtRecordValue},
-    },
-    model::{
-        dnssec_record::DnssecRecord,
-        record::{Record, RecordType},
-        zone::Zone,
-    },
+use crate::dns::{
+    DNS_TCP_MAX_SIZE,
+    dnssec::to_wire_name,
+    name::ParseNameError,
+    record::Rdata,
+    tsig::{TransferSigner, signature_len},
 };
 
 /// A size failure that may still carry a frame: the caller must send it so
@@ -36,6 +30,7 @@ pub struct Overflow {
 }
 
 impl Overflow {
+    /// Build an overflow error without a pending TCP frame.
     fn without_frame(message: String) -> Self {
         Overflow {
             frame: None,
@@ -44,25 +39,38 @@ impl Overflow {
     }
 }
 
-/// RR TYPE number of SOA (RFC 1035); SOA never appears as a stored record
-/// row, so `RecordType` does not spell it.
-const SOA_WIRE_TYPE: u16 = 6;
-
 /// What [`DnsMessageBuilder::add_raw_rdata`] accepts as its owner: a parsed
 /// name, or a typed name's wire bytes still carrying their encoding error.
 pub trait IntoOwner {
+    /// Convert an accepted owner representation into a wire-format name.
     fn into_owner(self) -> Result<Name<Vec<u8>>, String>;
 }
 
 impl IntoOwner for Name<Vec<u8>> {
+    /// Convert an accepted owner representation into a wire-format name.
     fn into_owner(self) -> Result<Name<Vec<u8>>, String> {
         Ok(self)
     }
 }
 
 impl IntoOwner for Result<Vec<u8>, ParseNameError> {
+    /// Convert an accepted owner representation into a wire-format name.
     fn into_owner(self) -> Result<Name<Vec<u8>>, String> {
         to_wire_name(self)
+    }
+}
+
+/// An RR already composed into wire bytes, pushed back through `domain`'s
+/// builder so a message can carry a section it did not compose.
+struct ComposedRr<'a>(&'a [u8]);
+
+impl ComposeRecord for ComposedRr<'_> {
+    /// Append the precomposed record bytes to the message.
+    fn compose_record<Target: Composer + ?Sized>(
+        &self,
+        target: &mut Target,
+    ) -> Result<(), Target::AppendError> {
+        target.append_slice(self.0)
     }
 }
 
@@ -73,9 +81,13 @@ pub struct DnsMessageBuilder {
     answers: Vec<Vec<u8>>,
     /// Total byte length of `answers`, maintained incrementally for `message_len`.
     answers_len: usize,
+    /// Signs every message this builder produces, carrying one MAC chain
+    /// across the envelopes of a transfer.
+    signer: Option<TransferSigner>,
 }
 
 impl DnsMessageBuilder {
+    /// Create a DNS response builder for the supplied question.
     pub fn new(query_id: u16, qname: &Name<Vec<u8>>, qtype: Rtype) -> Self {
         Self {
             query_id,
@@ -83,156 +95,21 @@ impl DnsMessageBuilder {
             qtype: qtype.to_int(),
             answers: Vec::new(),
             answers_len: 0,
+            signer: None,
         }
     }
 
-    pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), String> {
-        let rdata = zone.soa_rdata(serial)?;
-        self.add_raw_rdata(
-            zone.name.to_wire(),
-            SOA_WIRE_TYPE,
-            zone.default_ttl as u32,
-            rdata,
-        )
+    /// Sign what this builder produces, for a request that arrived signed. The
+    /// TSIG record's own bytes count against the message size limit.
+    pub fn sign_with(mut self, signer: TransferSigner) -> Self {
+        self.signer = Some(signer);
+        self
     }
 
-    /// Adds a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
-    pub fn add_catalog_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), String> {
-        let rdata = SoaRecordValue {
-            mname: "invalid",
-            rname: "invalid",
-            serial,
-            refresh: zone.refresh as u32,
-            retry: zone.retry as u32,
-            expire: zone.expire as u32,
-            minimum: zone.minimum_ttl as u32,
-        }
-        .to_rdata()?;
-        self.add_raw_rdata(
-            zone.name.to_wire(),
-            SOA_WIRE_TYPE,
-            zone.default_ttl as u32,
-            rdata,
-        )
-    }
-
-    /// Adds an SOA from a serial-specific version.
-    pub fn add_version_soa(
-        &mut self,
-        soa: &crate::model::zone_version::ZoneVersion,
-    ) -> Result<(), String> {
-        let serial = crate::dns::serial_to_u32(soa.serial)?;
-        let rdata = SoaRecordValue {
-            mname: &soa.mname,
-            rname: &soa.rname,
-            serial,
-            refresh: soa.refresh as u32,
-            retry: soa.retry as u32,
-            expire: soa.expire as u32,
-            minimum: soa.minimum_ttl as u32,
-        }
-        .to_rdata()?;
-
-        // IXFR SOA owner is the transfer QNAME.
-        self.add_raw_rdata(
-            self.qname.clone(),
-            SOA_WIRE_TYPE,
-            soa.default_ttl as u32,
-            rdata,
-        )
-    }
-
-    /// Adds one answer of any supported stored type at an absolute owner name.
-    fn add_text_rdata(
-        &mut self,
-        name: &str,
-        ttl: u32,
-        record_type: &RecordType,
-        value: &str,
-        priority: Option<i32>,
-    ) -> Result<(), String> {
-        let EncodedRdata { record_type, rdata } =
-            EncodedRdata::from_columns(record_type, value, priority)?;
-        self.add_raw_rdata(parse_name(name)?, record_type, ttl, rdata)
-    }
-
-    /// Adds the catalog-zone NS record, which is the placeholder "invalid".
-    pub fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), String> {
-        let owner_name = zone.name.to_fqdn();
-        self.add_text_rdata(
-            &owner_name,
-            zone.default_ttl as u32,
-            &RecordType::NS,
-            "invalid",
-            None,
-        )
-    }
-
-    /// Adds the catalog-zone version TXT record.
-    pub fn add_catalog_schema_version(&mut self, zone: &Zone) -> Result<(), String> {
-        let version_name = format!("version.{}.", zone.name);
-        // "2" is the RFC 9432 catalog zone schema version.
-        self.add_text_rdata(
-            &version_name,
-            zone.default_ttl as u32,
-            &RecordType::TXT,
-            &TxtRecordValue::from_string("2").to_presentation(),
-            None,
-        )
-    }
-
-    pub fn add_catalog_ptr(&mut self, zone: &Zone, member_zone: &str) -> Result<(), String> {
-        let member_id = crate::dns::zone_name_to_member_id(member_zone);
-        let ptr_name = format!("{}.zones.{}.", member_id, zone.name);
-        let ptr_target = to_fqdn(member_zone);
-        self.add_text_rdata(
-            &ptr_name,
-            zone.default_ttl as u32,
-            &RecordType::PTR,
-            &ptr_target,
-            None,
-        )
-    }
-
-    pub fn add_record(&mut self, record: &Record, zone_name: &ZoneName) -> Result<(), String> {
-        self.add_record_parts(
-            zone_name,
-            &record.name,
-            &record.record_type,
-            &record.value,
-            record.ttl,
-            record.priority,
-        )
-    }
-
-    /// Adds an answer from stored record columns (records and journal
-    /// rows share this shape). Unsupported types are skipped.
-    pub fn add_record_parts(
-        &mut self,
-        zone_name: &ZoneName,
-        name: &OwnerName,
-        record_type: &RecordType,
-        value: &str,
-        ttl: i32,
-        priority: Option<i32>,
-    ) -> Result<(), String> {
-        let EncodedRdata { record_type, rdata } =
-            EncodedRdata::from_columns(record_type, value, priority)?;
-        self.add_raw_rdata(name.to_wire(zone_name), record_type, ttl as u32, rdata)
-    }
-
-    /// Adds a derived DNSSEC record; its RDATA is stored in wire form.
-    pub fn add_dnssec_record(
-        &mut self,
-        record: &DnssecRecord,
-        zone_name: &ZoneName,
-    ) -> Result<(), String> {
-        self.add_raw_rdata(
-            record.name.to_wire(zone_name),
-            record.record_type.wire_type(),
-            record.ttl as u32,
-            record.rdata.clone(),
-        )
+    /// Hand the signer back to a caller answering the request another way.
+    /// Only sound before the first frame: a MAC chain cannot be rewound.
+    pub fn take_signer(&mut self) -> Option<TransferSigner> {
+        self.signer.take()
     }
 
     /// Adds an answer from wire-format RDATA bytes, with no per-type parser.
@@ -259,14 +136,18 @@ impl DnsMessageBuilder {
         self.push_answer(answer);
     }
 
+    /// Return the number of buffered answers.
     fn answer_count(&self) -> usize {
         self.answers.len()
     }
 
+    /// Calculate the response size including the question and optional TSIG.
     fn message_len(&self) -> usize {
-        12 + self.qname.len() + 4 + self.answers_len
+        let signature = self.signer.as_ref().map_or(0, signature_len);
+        12 + self.qname.len() + 4 + self.answers_len + signature
     }
 
+    /// Remove the last answer and update the buffered byte count.
     fn pop_last_answer(&mut self) -> Option<Vec<u8>> {
         let answer = self.answers.pop();
         if let Some(answer) = &answer {
@@ -275,11 +156,13 @@ impl DnsMessageBuilder {
         answer
     }
 
+    /// Buffer an answer and update the buffered byte count.
     fn push_answer(&mut self, answer: Vec<u8>) {
         self.answers_len += answer.len();
         self.answers.push(answer);
     }
 
+    /// Clear the answers and reset the buffered byte count.
     fn clear_answers(&mut self) {
         self.answers.clear();
         self.answers_len = 0;
@@ -298,6 +181,7 @@ impl DnsMessageBuilder {
             return Ok(None);
         }
 
+        // Keep the overflowing answer out of the frame built from earlier answers.
         let last_answer = self.pop_last_answer().ok_or_else(|| {
             Overflow::without_frame("DNS message exceeded maximum size without answers".to_string())
         })?;
@@ -331,6 +215,7 @@ impl DnsMessageBuilder {
         Ok(Some(frame))
     }
 
+    /// Describe the buffered answer that exceeds the DNS message limit.
     fn too_large_message(&self) -> String {
         format!(
             "Single DNS answer is too large: {} bytes",
@@ -338,154 +223,50 @@ impl DnsMessageBuilder {
         )
     }
 
-    fn build_message_into(&self, message: &mut Vec<u8>) {
-        message.extend_from_slice(&self.query_id.to_be_bytes()); // ID
-        message.push(0x84); // QR=1, Opcode=0, AA=1, TC=0, RD=0
-        message.push(0x00); // RA=0, Z=0, RCODE=0 (NOERROR)
-        message.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT=1
-        message.extend_from_slice(&(self.answers.len() as u16).to_be_bytes()); // ANCOUNT
-        message.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT=0
-        message.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT=0
-
-        message.extend_from_slice(self.qname.as_slice());
-        message.extend_from_slice(&self.qtype.to_be_bytes()); // QTYPE
-        message.extend_from_slice(&1u16.to_be_bytes()); // QCLASS (IN)
-
-        for answer in &self.answers {
-            message.extend_from_slice(answer);
-        }
-    }
-
-    /// Serializes into a length-prefixed TCP frame in one buffer, with no
-    /// intermediate message copy.
-    fn build_tcp_frame(&self) -> Result<Vec<u8>, String> {
-        let len = self.message_len();
-        if len > DNS_TCP_MAX_SIZE {
-            return Err(format!("Message too large: {} bytes", len));
-        }
-
-        let mut frame = Vec::with_capacity(2 + len);
-        frame.extend_from_slice(&(len as u16).to_be_bytes());
-        self.build_message_into(&mut frame);
-        Ok(frame)
-    }
-
-    pub fn build(self) -> Vec<u8> {
-        let mut message = Vec::with_capacity(self.message_len());
-        self.build_message_into(&mut message);
-        message
-    }
-}
-
-/// Parses a presentation-form name through the one core name encoding.
-fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
-    let wire = encode_name(name)?;
-    Name::from_octets(wire).map_err(|e| format!("Invalid domain name '{}': {}", name, e))
-}
-
-/// Whether the message is itself a response (QR=1). Answering one lets a
-/// spoofed source aim the reply at a third party.
-pub fn is_response(message: &[u8]) -> bool {
-    Message::from_octets(message).is_ok_and(|message| message.header().qr())
-}
-
-/// A DNS query parsed once at the listener and handed to every handler.
-pub struct ParsedQuery {
-    pub qname: Name<Vec<u8>>,
-    /// Presentation form of `qname` without the trailing dot.
-    pub zone_name: String,
-    pub qtype: Rtype,
-    pub client_serial: Option<u32>,
-    pub query_id: u16,
-    pub opcode: Opcode,
-}
-
-impl ParsedQuery {
-    pub fn parse(data: &[u8]) -> Result<ParsedQuery, String> {
-        let message = Message::from_octets(data)
-            .map_err(|e| format!("Failed to parse DNS message: {}", e))?;
-
-        let query_id = message.header().id();
-        let opcode = message.header().opcode();
-
-        let question = message
-            .first_question()
-            .ok_or_else(|| "No question in DNS query".to_string())?;
-
-        let qname = question.qname().to_name::<Vec<u8>>();
-        let qtype = question.qtype();
-
-        // domain's `Display` renders the root as "." and otherwise omits the
-        // root dot, so only the root query maps to the empty zone form; a
-        // trailing escaped dot inside the last label stays data.
-        let qname_presentation = qname.to_string();
-        let zone_name = if qname_presentation == "." {
-            String::new()
-        } else {
-            qname_presentation
-        };
-
-        // An IXFR query carries the client's current serial in an
-        // authority-section SOA (RFC 1995, Section 2).
-        let client_serial = if qtype == Rtype::IXFR {
-            extract_ixfr_serial(&message)
-        } else {
-            None
-        };
-
-        Ok(ParsedQuery {
-            qname,
-            zone_name,
-            qtype,
-            client_serial,
-            query_id,
-            opcode,
-        })
-    }
-
-    /// An empty authoritative answer with TC set, so a transfer client asks
-    /// again over TCP (RFC 1995, Section 2; RFC 5936, Section 4.1.1).
-    pub fn truncated_response(&self) -> Vec<u8> {
-        self.echo_question(|header| {
-            header.set_aa(true);
-            header.set_tc(true);
-        })
-    }
-
-    /// A response echoing this query with only `rcode` set.
-    pub fn error_response(&self, rcode: Rcode) -> Vec<u8> {
-        self.echo_question(|header| header.set_rcode(rcode))
-    }
-
-    /// A response carrying only this query's question, its header shaped by
-    /// `set` after the id and QR.
-    fn echo_question(&self, set: impl FnOnce(&mut Header)) -> Vec<u8> {
+    /// Compose the buffered answers into one authoritative response, signed
+    /// when the request was. Built through `domain`, which composes the
+    /// additional section a TSIG record needs.
+    fn build_message(&mut self) -> Result<Vec<u8>, String> {
         let mut builder = MessageBuilder::new_vec();
         let header = builder.header_mut();
         header.set_id(self.query_id);
         header.set_qr(true);
-        // RFC 1035, Section 4.1.1: a response echoes the request's opcode.
-        header.set_opcode(self.opcode);
-        set(header);
+        header.set_aa(true);
 
         let mut question = builder.question();
         question
-            .push((&self.qname, self.qtype))
-            .expect("composing into a Vec cannot run out of space");
+            .push((&self.qname, Rtype::from_int(self.qtype), Class::IN))
+            .map_err(|e| format!("Failed to compose the question: {}", e))?;
 
-        question.finish()
+        let mut answer = question.answer();
+        for composed in &self.answers {
+            answer
+                .push(ComposedRr(composed))
+                .map_err(|e| format!("Failed to compose an answer: {}", e))?;
+        }
+
+        let mut additional = answer.additional();
+        if let Some(signer) = self.signer.as_mut() {
+            signer
+                .answer(&mut additional, Time48::now())
+                .map_err(|e| format!("Failed to sign the response: {}", e))?;
+        }
+        Ok(additional.finish())
+    }
+
+    /// Serializes into a length-prefixed TCP frame.
+    fn build_tcp_frame(&mut self) -> Result<Vec<u8>, String> {
+        let message = self.build_message()?;
+        encode_tcp_message(&message)
+    }
+
+    /// Consume the builder and serialize its DNS response.
+    pub fn build(mut self) -> Result<Vec<u8>, String> {
+        self.build_message()
     }
 }
 
-fn extract_ixfr_serial(message: &Message<&[u8]>) -> Option<u32> {
-    message
-        .authority()
-        .ok()?
-        .limit_to::<Soa<_>>()
-        .find_map(|rr| rr.ok())
-        .map(|rr| rr.data().serial().into_int())
-}
-
+/// Prefix a DNS message with its two-byte TCP frame length.
 pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, String> {
     if message.len() > DNS_TCP_MAX_SIZE {
         return Err(format!("Message too large: {} bytes", message.len()));
@@ -497,6 +278,11 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, String> {
     result.extend_from_slice(message);
     Ok(result)
 }
+
+mod query;
+mod records;
+
+pub use query::{ParsedQuery, is_response};
 
 #[cfg(test)]
 mod tests;

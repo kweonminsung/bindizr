@@ -2,7 +2,7 @@
 
 use std::sync::OnceLock;
 
-use prometheus::{Encoder, HistogramVec, IntCounterVec, Registry, TextEncoder};
+use prometheus::{HistogramVec, IntCounterVec, Registry, TextEncoder};
 
 pub(crate) struct AdapterMetrics {
     registry: Registry,
@@ -67,15 +67,10 @@ pub(crate) fn metrics() -> &'static AdapterMetrics {
 }
 
 impl AdapterMetrics {
+    /// Render the adapter's metrics in Prometheus text format.
     pub(crate) fn encode(&self) -> String {
-        let mut buffer = Vec::new();
-        let encoder = TextEncoder::new();
-        if encoder
-            .encode(&self.registry.gather(), &mut buffer)
-            .is_err()
-        {
-            return String::new();
-        }
-        String::from_utf8(buffer).unwrap_or_default()
+        TextEncoder::new()
+            .encode_to_string(&self.registry.gather())
+            .unwrap_or_default()
     }
 }

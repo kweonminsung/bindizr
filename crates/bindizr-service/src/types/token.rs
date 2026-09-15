@@ -42,6 +42,7 @@ pub struct GetTokenResponse {
 }
 
 impl GetTokenResponse {
+    /// Build a token response without exposing its stored hash.
     pub fn from_token(token: &ApiToken) -> Self {
         GetTokenResponse {
             id: token.id,
@@ -67,10 +68,4 @@ pub struct CreatedTokenResponse {
     pub token: GetTokenResponse,
     #[schema(example = "k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu")]
     pub secret: String,
-}
-
-/// List of API tokens (secrets omitted).
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct TokenListResponse {
-    pub tokens: Vec<GetTokenResponse>,
 }

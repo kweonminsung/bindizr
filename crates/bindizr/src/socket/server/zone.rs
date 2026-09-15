@@ -18,7 +18,7 @@ use crate::socket::{
     },
 };
 
-/// Handle the `GetZone` command by returning a zone by name.
+/// Return the requested zone.
 pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
@@ -32,7 +32,7 @@ pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse,
     })
 }
 
-/// Handle the `ListZones` command by returning zones matching the filter.
+/// Return zones matching the request filters.
 pub(crate) async fn list_zones(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let filter: GetZonesFilter = if data.is_null() {
         GetZonesFilter::default()
@@ -47,7 +47,7 @@ pub(crate) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
     })
 }
 
-/// Handle the `CreateZone` command by creating a new zone.
+/// Create a zone from the control request.
 pub(crate) async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let request: CreateZoneRequest = parse_params(data)?;
 
@@ -60,7 +60,7 @@ pub(crate) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
     })
 }
 
-/// Handle the `UpdateZone` command by applying a partial update.
+/// Update the requested zone.
 pub(crate) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateZoneParams = parse_params(data)?;
 
@@ -73,8 +73,7 @@ pub(crate) async fn update_zone(data: &serde_json::Value) -> Result<DaemonRespon
     })
 }
 
-/// Handle the `ImportZone` command by reconciling zone file text, or a
-/// transfer from a server, with a zone in a single transaction.
+/// Preview or apply records imported into the requested zone.
 pub(crate) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ImportZoneParams = parse_params(data)?;
 
@@ -97,7 +96,7 @@ pub(crate) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
     })
 }
 
-/// Handle the `ExportZoneFile` command by rendering a zone as master-file text.
+/// Export the requested zone as a zone file.
 pub(crate) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ExportZoneFileParams = parse_params(data)?;
     let zone_file = ZoneService::export(&Caller::Global, &params.name, params.signed).await?;
@@ -107,7 +106,7 @@ pub(crate) async fn export_zone(data: &serde_json::Value) -> Result<DaemonRespon
     })
 }
 
-/// Handle the `ListZoneVersions` command by returning a zone's serial history.
+/// Return the requested zone's version history.
 pub(crate) async fn list_zone_versions(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -128,8 +127,7 @@ pub(crate) async fn list_zone_versions(
     })
 }
 
-/// Handle the `GetZoneVersion` command by returning one version with its
-/// reconstructed records.
+/// Return a zone version or its difference from another version.
 pub(crate) async fn get_zone_version(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -143,8 +141,7 @@ pub(crate) async fn get_zone_version(
     })
 }
 
-/// Handle the `DiffZoneVersions` command by diffing two of a zone's serials.
-/// A missing `to_serial` compares `from_serial` against the current serial.
+/// Compare two zone versions, using the current serial when `to_serial` is omitted.
 pub(crate) async fn diff_zone_versions(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -170,7 +167,7 @@ pub(crate) async fn diff_zone_versions(
     })
 }
 
-/// Handle the `RollbackZone` command by rolling a zone back to a version serial.
+/// Preview or apply a rollback to the requested zone version.
 pub(crate) async fn rollback_zone(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -198,8 +195,7 @@ pub(crate) async fn rollback_zone(
     })
 }
 
-/// Handle the `ZoneStatus` command by probing every configured secondary for
-/// the SOA serial it serves and comparing it with the zone's serial.
+/// Return the requested zone's primary and secondary status.
 pub(crate) async fn zone_status(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
@@ -227,7 +223,7 @@ pub(crate) async fn zone_status(data: &serde_json::Value) -> Result<DaemonRespon
     })
 }
 
-/// Handle the `DeleteZone` command by deleting a zone by name.
+/// Delete the requested zone.
 pub(crate) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 

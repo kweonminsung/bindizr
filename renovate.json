@@ -4,16 +4,18 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
-  "baseBranches": [
+  "baseBranchPatterns": [
     "develop"
   ],
   "automerge": true,
+  "rangeStrategy": "bumpMinor",
   "packageRules": [
     {
-      "matchPackagePatterns": [
-        ".*"
+      "description": "A major bump can pass build and tests while changing behaviour, so it waits for a human.",
+      "matchUpdateTypes": [
+        "major"
       ],
-      "rangeStrategy": "bumpMinor"
+      "automerge": false
     }
   ]
 }

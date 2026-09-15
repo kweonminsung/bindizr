@@ -3,6 +3,7 @@ use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions};
 
+/// Create a zone fixture through the API.
 async fn create_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
         .request(
@@ -19,6 +20,7 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
     assert_eq!(status, StatusCode::CREATED);
 }
 
+/// Build a record creation request for authorization tests.
 fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> serde_json::Value {
     json!({
         "name": name,
@@ -28,6 +30,7 @@ fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> s
     })
 }
 
+/// Verify that scoped token sees and writes only granted zones.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_sees_and_writes_only_granted_zones() {
@@ -176,6 +179,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     assert_eq!(status, StatusCode::OK);
 }
 
+/// Verify that `token` grants enforce name patterns and types.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn token_grants_enforce_name_patterns_and_types() {
@@ -240,6 +244,77 @@ async fn token_grants_enforce_name_patterns_and_types() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
+/// Verify that a delete filter outside the grant is refused whether or not
+/// it matches a record, and that such a record reads as absent by id.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token.clone());
+
+    let zone_name = app.zone_name("example.com");
+    create_zone(&app, &zone_name).await;
+
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&[
+        "token",
+        "grant",
+        &scoped_name,
+        &zone_name,
+        "--pattern",
+        "*.dyn",
+        "--types",
+        "A,TXT",
+    ])
+    .await;
+
+    // The answer must not depend on whether the record exists.
+    let filter = format!("/records?zone_name={zone_name}&name=www&record_type=A");
+    let paths = [filter.clone(), format!("{filter}&dry_run=true")];
+    app.set_auth_token(scoped_token.clone());
+    for path in &paths {
+        let (status, body) = app.request(Method::DELETE, path, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {body}");
+    }
+
+    app.set_auth_token(global_token);
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "www", "A", "192.0.2.1")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let record_id = body["record"]["id"].as_i64().unwrap();
+
+    app.set_auth_token(scoped_token);
+    for path in &paths {
+        let (status, body) = app.request(Method::DELETE, path, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {body}");
+    }
+
+    // Addressed by id, the record reads as absent, as it does on GET.
+    let (status, _) = app
+        .request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = app
+        .request(
+            Method::PUT,
+            &format!("/records/{record_id}"),
+            Some(json!({ "ttl": 600 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Verify that scoped token without grants sees nothing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_without_grants_sees_nothing() {
@@ -271,6 +346,7 @@ async fn scoped_token_without_grants_sees_nothing() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Verify that ungranted bulk is refused before it can probe the zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
@@ -320,8 +396,10 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
     }
 }
 
-// A batch whose names all fail to parse lists no write, so the per-write check
-// has nothing to reject; the caller must still be turned away on the zone.
+/// Verify that zone authorization rejects an ungranted batch even when none of its names can be
+/// parsed.
+///
+/// Such a batch produces no write targets for the per-record authorization check.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
@@ -357,6 +435,7 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
     assert_eq!(body["code"], "ZONE_NOT_FOUND", "{body}");
 }
 
+/// Verify that global token grant management over HTTP.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn global_token_grant_management_over_http() {
@@ -390,7 +469,7 @@ async fn global_token_grant_management_over_http() {
         .request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["token_grants"].as_array().unwrap().len(), 1);
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
 
     let (status, body) = app
         .request(
@@ -400,7 +479,7 @@ async fn global_token_grant_management_over_http() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["token_grants"][0]["api_token"], json!(scoped_name));
+    assert_eq!(body["items"][0]["api_token"], json!(scoped_name));
 
     // A global token already covers every zone, so it cannot be granted one.
     let (status, _) = app
@@ -435,9 +514,10 @@ async fn global_token_grant_management_over_http() {
         .request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body["token_grants"].as_array().unwrap().is_empty());
+    assert!(body["items"].as_array().unwrap().is_empty());
 }
 
+/// Verify that tokens self grants lists the bearers own grants.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tokens_self_grants_lists_the_bearers_own_grants() {
@@ -468,7 +548,7 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
     app.set_auth_token(scoped_token);
     let (status, body) = app.request(Method::GET, "/tokens/self/grants", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let grants = body["token_grants"].as_array().unwrap();
+    let grants = body["items"].as_array().unwrap();
     assert_eq!(grants.len(), 1, "{body}");
     assert_eq!(grants[0]["api_token"], json!(scoped_name));
     assert_eq!(grants[0]["zone_name"], json!(granted_zone));
@@ -485,12 +565,10 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
     app.set_auth_token(global_token);
     let (status, body) = app.request(Method::GET, "/tokens/self/grants", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        body["token_grants"].as_array().unwrap().is_empty(),
-        "{body}"
-    );
+    assert!(body["items"].as_array().unwrap().is_empty(), "{body}");
 }
 
+/// Verify that hidden and absent zones read alike whatever the spelling.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
@@ -533,4 +611,238 @@ async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
         assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
         assert_eq!(body["error"], expected, "{body}");
     }
+}
+
+/// Verify that a narrowed grant reads only what it may write.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_narrowed_grant_reads_only_what_it_may_write() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let zone_name = app.zone_name("example.com");
+    create_zone(&app, &zone_name).await;
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "host.dyn", "A", "192.0.2.1")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let granted_id = body["record"]["id"].as_i64().unwrap();
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "www", "A", "192.0.2.2")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let outside_id = body["record"]["id"].as_i64().unwrap();
+
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&[
+        "token",
+        "grant",
+        &scoped_name,
+        &zone_name,
+        "--pattern",
+        "*.dyn",
+    ])
+    .await;
+    app.set_auth_token(scoped_token);
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&limit=1000"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let listed_ids: Vec<i64> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_i64().unwrap())
+        .collect();
+    assert!(listed_ids.contains(&granted_id));
+    assert!(!listed_ids.contains(&outside_id));
+    // The count is narrowed in SQL beside the page, so a scoped listing does
+    // not advertise rows it will never hand over.
+    assert_eq!(body["pagination"]["total"], 1, "{body}");
+
+    let (status, _) = app
+        .request(Method::GET, &format!("/records/{granted_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = app
+        .request(Method::GET, &format!("/records/{outside_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A view the zone is rebuilt from cannot be handed over half-written.
+    let (status, _) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = app
+        .request(
+            Method::GET,
+            &format!("/zones/{zone_name}/versions/diff?from=1&to=2"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// Verify that a read only grant reads the zone but cannot change it.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let zone_name = app.zone_name("example.com");
+    create_zone(&app, &zone_name).await;
+
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "app", "A", "192.0.2.1")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let record_id = body["record"]["id"].as_i64().unwrap();
+
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&["token", "grant", &scoped_name, &zone_name, "--read-only"])
+        .await;
+    app.set_auth_token(scoped_token);
+
+    let (status, _) = app
+        .request(Method::GET, &format!("/records/{record_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = app
+        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "other", "A", "192.0.2.2")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = app
+        .request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// Verify that a grants pattern and types narrow the count too.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_grants_pattern_and_types_narrow_the_count_too() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+
+    let zone_name = app.zone_name("example.com");
+    create_zone(&app, &zone_name).await;
+    for (name, record_type, value) in [
+        ("@", "TXT", "apex"),
+        ("host.dyn", "A", "192.0.2.1"),
+        ("host.dyn", "TXT", "text"),
+        ("www", "A", "192.0.2.2"),
+        // One label that happens to contain a dot: matching by text reads it
+        // as under `dyn`, matching by label does not.
+        (r"a\.dyn", "A", "192.0.2.3"),
+    ] {
+        let (status, body) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(record_body(&zone_name, name, record_type, value)),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+
+    // Granting runs over the daemon socket, which carries no token.
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&["token", "grant", &scoped_name, &zone_name, "--pattern", "@"])
+        .await;
+    app.set_auth_token(scoped_token);
+
+    let listed = async |app: &TestApp| -> (usize, u64) {
+        let (status, body) = app
+            .request(
+                Method::GET,
+                &format!("/records?zone_name={zone_name}&limit=1000"),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        (
+            body["items"].as_array().unwrap().len(),
+            body["pagination"]["total"].as_u64().unwrap(),
+        )
+    };
+
+    // The apex holds the TXT above and the NS the zone was created with.
+    assert_eq!(listed(&app).await, (2, 2));
+
+    app.run_cli_success(&[
+        "token",
+        "grant",
+        &scoped_name,
+        &zone_name,
+        "--pattern",
+        "*.dyn",
+        "--types",
+        "A",
+    ])
+    .await;
+    // The apex grant still stands, so its two rows come with the one A record
+    // under `dyn`; the dotted label is stored as `a\046dyn`, so SQL leaves it
+    // out of the count too.
+    assert_eq!(listed(&app).await, (3, 3));
+
+    // And out of the pages: its slot holds the next visible row, not a gap.
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&sort=name&order=asc&limit=1&offset=2"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["items"][0]["name"],
+        format!("host.dyn.{zone_name}."),
+        "{body}"
+    );
+    assert_eq!(body["pagination"]["total"], 3, "{body}");
 }

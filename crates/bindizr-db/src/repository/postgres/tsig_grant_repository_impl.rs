@@ -13,6 +13,7 @@ pub(crate) struct PostgresTsigGrantRepository {
 }
 
 impl PostgresTsigGrantRepository {
+    /// Create a repository for TSIG grants using the supplied pool.
     pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -20,14 +21,15 @@ impl PostgresTsigGrantRepository {
 
 #[async_trait]
 impl TsigGrantRepository for PostgresTsigGrantRepository {
+    /// Insert a TSIG grant.
     async fn create(&self, mut grant: TsigGrant) -> Result<TsigGrant, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, created_at)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO tsig_grants (zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id
             "#,
         )
@@ -35,6 +37,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         .bind(grant.tsig_key_id)
         .bind(&grant.record_name_pattern)
         .bind(&grant.record_types)
+        .bind(grant.can_write)
         .bind(now)
         .fetch_one(&mut *conn)
         .await?;
@@ -45,11 +48,12 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         Ok(grant)
     }
 
+    /// Find a TSIG grant by ID.
     async fn get(&self, id: i32) -> Result<Option<TsigGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let grant = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE id = $1",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE id = $1",
         )
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -58,11 +62,12 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         Ok(grant)
     }
 
+    /// List TSIG grants for a zone.
     async fn list_by_zone_id(&self, zone_id: i32) -> Result<Vec<TsigGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE zone_id = $1 ORDER BY id",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE zone_id = $1 ORDER BY id",
         )
         .bind(zone_id)
         .fetch_all(&mut *conn)
@@ -71,6 +76,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         Ok(grants)
     }
 
+    /// List TSIG grants for a TSIG key in a zone in the current transaction.
     async fn list_by_zone_id_and_key_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -81,7 +87,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         let postgres_tx = tx.as_postgres()?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(AssertSqlSafe(
-            format!("SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE zone_id = $1 AND tsig_key_id = $2 ORDER BY id{}",
+            format!("SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE zone_id = $1 AND tsig_key_id = $2 ORDER BY id{}",
             lock_clause(lock_level),
         )))
         .bind(zone_id)
@@ -92,11 +98,12 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         Ok(grants)
     }
 
+    /// List TSIG grants for a TSIG key.
     async fn list_by_key_id(&self, tsig_key_id: i32) -> Result<Vec<TsigGrant>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let grants = sqlx::query_as::<_, TsigGrant>(
-            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, created_at FROM tsig_grants WHERE tsig_key_id = $1 ORDER BY id",
+            "SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE tsig_key_id = $1 ORDER BY id",
         )
         .bind(tsig_key_id)
         .fetch_all(&mut *conn)
@@ -105,6 +112,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         Ok(grants)
     }
 
+    /// Count TSIG grants for a TSIG key.
     async fn count_by_key_id(&self, tsig_key_id: i32) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -117,6 +125,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
         Ok(count as u64)
     }
 
+    /// Delete a TSIG grant by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

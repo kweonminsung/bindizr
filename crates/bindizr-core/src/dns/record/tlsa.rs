@@ -33,6 +33,7 @@ impl TlsaRecordValue {
         })
     }
 
+    /// Validate the fields of this TLSA value.
     pub fn validate(&self) -> Result<(), String> {
         // Digest lengths are fixed per matching type; type 0 is a full
         // certificate or SPKI and takes any length.
@@ -63,6 +64,7 @@ impl TlsaRecordValue {
         Ok(())
     }
 
+    /// Render the TLSA value in canonical text form.
     pub fn canonical(&self) -> String {
         format!(
             "{} {} {} {}",
@@ -86,8 +88,9 @@ impl TlsaRecordValue {
 
 #[cfg(test)]
 mod tests {
-    use super::TlsaRecordValue;
+    use super::{MAX_RECORD_RDATA, TlsaRecordValue};
 
+    /// Verify that `parse` joins spaced hex and canonicalizes.
     #[test]
     fn parse_joins_spaced_hex_and_canonicalizes() {
         let parsed = TlsaRecordValue::parse(
@@ -100,6 +103,7 @@ mod tests {
         );
     }
 
+    /// Verify that `validate` pins digest lengths but not full certificates.
     #[test]
     fn validate_pins_digest_lengths_but_not_full_certificates() {
         let short = TlsaRecordValue::parse("3 1 1 4B9B").unwrap();
@@ -113,17 +117,21 @@ mod tests {
         );
     }
 
+    /// Verify that `validate` caps full certificates below the message limit.
     #[test]
     fn validate_caps_full_certificates_below_the_message_limit() {
-        let at_limit = format!("3 0 0 {}", "AB".repeat(64_996));
+        // Derived, not spelled: the cap moves with what an envelope reserves.
+        let cap = MAX_RECORD_RDATA - 3;
+
+        let at_limit = format!("3 0 0 {}", "AB".repeat(cap));
         assert!(
             TlsaRecordValue::parse(&at_limit)
                 .unwrap()
                 .validate()
                 .is_ok()
         );
-        let oversized = format!("3 0 0 {}", "AB".repeat(64_997));
+        let oversized = format!("3 0 0 {}", "AB".repeat(cap + 1));
         let err = TlsaRecordValue::parse(&oversized).unwrap().validate();
-        assert!(err.unwrap_err().contains("64996"));
+        assert!(err.unwrap_err().contains(&cap.to_string()));
     }
 }

@@ -5,10 +5,39 @@ use crate::{
     RepositoryTx,
     error::ServiceError,
     log_error,
-    metrics::metrics,
-    model::{zone::Zone, zone_version::ZoneVersion},
+    metrics::track_serial_bump,
+    model::{
+        zone::Zone,
+        zone_version::{ChangeSource, ZoneVersion},
+    },
     repository::RepositoryService,
 };
+
+/// Who a zone version is recorded as the work of; the scheduler and an
+/// unsigned update have no name to give.
+pub(crate) struct ChangeSubject {
+    pub(crate) source: ChangeSource,
+    pub(crate) actor: Option<String>,
+}
+
+impl ChangeSubject {
+    /// An RFC 2136 update, named by the TSIG key that signed it; unsigned
+    /// updates reach here only through an address ACL, which names nobody.
+    pub(crate) fn nsupdate(key_name: Option<&str>) -> Self {
+        ChangeSubject {
+            source: ChangeSource::Nsupdate,
+            actor: key_name.map(str::to_string),
+        }
+    }
+
+    /// The maintenance scheduler, acting on nobody's request.
+    pub(crate) fn system() -> Self {
+        ChangeSubject {
+            source: ChangeSource::System,
+            actor: None,
+        }
+    }
+}
 
 impl ZoneService {
     /// Advance the zone serial so IXFR consumers detect the change, and
@@ -17,6 +46,7 @@ impl ZoneService {
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
         new_serial: i32,
+        subject: &ChangeSubject,
     ) -> Result<(), ServiceError> {
         RepositoryService::update_zone_serial_tx(tx, zone.id, new_serial)
             .await
@@ -25,11 +55,11 @@ impl ZoneService {
                 ServiceError::internal("Failed to update zone serial")
             })?;
 
-        Self::save_version_tx(tx, zone, new_serial).await
+        Self::save_version_tx(tx, zone, new_serial, subject).await
     }
 
-    /// A DS names a child zone's key (RFC 4034, Section 5), so it may only
-    /// stand at a delegation: every name holding a DS must also hold NS.
+    /// Reject DS records without an NS delegation at the same owner: a DS identifies a child
+    /// zone's key (RFC 4034, Section 5).
     async fn validate_delegations_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
@@ -52,6 +82,7 @@ impl ZoneService {
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
         serial: i32,
+        subject: &ChangeSubject,
     ) -> Result<(), ServiceError> {
         Self::validate_delegations_tx(tx, zone.id).await?;
         RepositoryService::upsert_zone_version_tx(
@@ -70,6 +101,8 @@ impl ZoneService {
                 retry: zone.retry,
                 expire: zone.expire,
                 minimum_ttl: zone.minimum_ttl,
+                change_source: subject.source,
+                changed_by: subject.actor.clone(),
                 created_at: Utc::now(),
             },
         )
@@ -79,10 +112,8 @@ impl ZoneService {
             ServiceError::internal("Failed to save SOA version")
         })?;
 
-        // Every serial-advancing path funnels through this version write; count
-        // bumps here. Incremented pre-commit: a later rollback overcounts, which
-        // is acceptable for a monitoring counter.
-        metrics().zone_serial_bumps_total.inc();
+        // Every serial-advancing path funnels through this version write.
+        track_serial_bump();
 
         Ok(())
     }

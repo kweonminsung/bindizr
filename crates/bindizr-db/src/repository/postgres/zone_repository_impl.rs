@@ -7,7 +7,7 @@ use crate::{
     model::zone::Zone,
     repository::{
         LockLevel, RepositoryTx, ZoneFilter, ZoneRepository,
-        sql::{like_pattern, lock_clause},
+        sql::{like_pattern, lock_clause, zone_order_by_sql},
     },
 };
 
@@ -16,6 +16,7 @@ pub(crate) struct PostgresZoneRepository {
 }
 
 impl PostgresZoneRepository {
+    /// Create a repository for zones using the supplied pool.
     pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -23,6 +24,7 @@ impl PostgresZoneRepository {
 
 #[async_trait]
 impl ZoneRepository for PostgresZoneRepository {
+    /// Insert a zone in the current transaction.
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -33,8 +35,8 @@ impl ZoneRepository for PostgresZoneRepository {
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            INSERT INTO zones (name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, parent_ns_addrs, enabled, description, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING id
             "#,
         )
@@ -48,6 +50,8 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
         .bind(&zone.parent_ns_addrs)
+        .bind(zone.enabled)
+        .bind(&zone.description)
         .bind(now)
         .fetch_one(&mut **postgres_tx)
         .await?;
@@ -57,6 +61,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zone)
     }
 
+    /// Find a zone by ID in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -65,7 +70,7 @@ impl ZoneRepository for PostgresZoneRepository {
     ) -> Result<Option<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE id = $1{}",lock_clause(lock_level))))
+        let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE id = $1{}",lock_clause(lock_level))))
             .bind(id)
             .fetch_optional(&mut **postgres_tx)
             .await?;
@@ -73,10 +78,11 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zone)
     }
 
+    /// Find a zone by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE name = $1")
+        let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = $1")
             .bind(name)
             .fetch_optional(&mut *conn)
             .await?;
@@ -84,6 +90,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zone)
     }
 
+    /// Find a zone by name in the current transaction.
     async fn get_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -93,7 +100,7 @@ impl ZoneRepository for PostgresZoneRepository {
         let postgres_tx = tx.as_postgres()?;
 
         let zone = sqlx::query_as::<_, Zone>(AssertSqlSafe(
-            format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones WHERE name = $1{}",
+            format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = $1{}",
             lock_clause(lock_level),
         )))
         .bind(name)
@@ -103,16 +110,18 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zone)
     }
 
+    /// List all zones.
     async fn list_all(&self) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
-        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones ORDER BY name")
+        let zones = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name")
             .fetch_all(&mut *conn)
             .await?;
 
         Ok(zones)
     }
 
+    /// List all zones in the current transaction.
     async fn list_all_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -120,20 +129,22 @@ impl ZoneRepository for PostgresZoneRepository {
     ) -> Result<Vec<Zone>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
+        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones ORDER BY name{}",lock_clause(lock_level))))
             .fetch_all(&mut **postgres_tx)
             .await?;
 
         Ok(zones)
     }
 
+    /// List zones matching the filter.
     async fn list_by_filter(&self, filter: ZoneFilter) -> Result<Vec<Zone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
 
-        let zones = sqlx::query_as::<_, Zone>(
+        let order_by = zone_order_by_sql(filter.sort, filter.order);
+        let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
             r#"
-            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, created_at
+            SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at
             FROM zones
             WHERE ($1::TEXT IS NULL OR LOWER(name) = LOWER($2))
               AND ($3::INT4 IS NULL OR id = $4)
@@ -143,21 +154,27 @@ impl ZoneRepository for PostgresZoneRepository {
               AND ($11::INT4 IS NULL OR default_ttl >= $12)
               AND ($13::INT4 IS NULL OR default_ttl <= $14)
               AND ($15::INT4 IS NULL OR serial = $16)
+              AND ($17::INT4 IS NULL OR serial >= $18)
+              AND ($19::INT4 IS NULL OR serial <= $20)
+              AND ($21::TIMESTAMPTZ IS NULL OR created_at >= $22)
+              AND ($23::TIMESTAMPTZ IS NULL OR created_at <= $24)
+              AND ($25::BOOL IS NULL OR (dnssec_policy_id IS NOT NULL) = $26)
+              AND ($27::BOOL IS NULL OR enabled = $28)
               AND (
-                    $17::TEXT IS NULL
-                    OR LOWER(name) LIKE LOWER($18) ESCAPE '\'
-                    OR LOWER(mname) LIKE LOWER($19) ESCAPE '\'
-                    OR LOWER(rname) LIKE LOWER($20) ESCAPE '\'
+                    $29::TEXT IS NULL
+                    OR LOWER(name) LIKE LOWER($30) ESCAPE '\'
+                    OR LOWER(mname) LIKE LOWER($31) ESCAPE '\'
+                    OR LOWER(rname) LIKE LOWER($32) ESCAPE '\'
               )
               AND (
-                    $23::INT4 IS NULL
+                    $35::INT4 IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = $23 AND p.zone_id = zones.id)
+                               WHERE p.api_token_id = $35 AND p.zone_id = zones.id)
               )
-            ORDER BY name
-            LIMIT $21 OFFSET $22
-            "#,
-        )
+            {order_by}
+            LIMIT $33 OFFSET $34
+            "#
+        )))
         .bind(&filter.name)
         .bind(&filter.name)
         .bind(filter.id)
@@ -174,6 +191,18 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(filter.max_default_ttl)
         .bind(filter.serial)
         .bind(filter.serial)
+        .bind(filter.min_serial)
+        .bind(filter.min_serial)
+        .bind(filter.max_serial)
+        .bind(filter.max_serial)
+        .bind(filter.created_after)
+        .bind(filter.created_after)
+        .bind(filter.created_before)
+        .bind(filter.created_before)
+        .bind(filter.signed)
+        .bind(filter.signed)
+        .bind(filter.enabled)
+        .bind(filter.enabled)
         .bind(&search)
         .bind(&search)
         .bind(&search)
@@ -192,6 +221,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zones)
     }
 
+    /// Probe the zones table to check database connectivity.
     async fn ping(&self) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         sqlx::query("SELECT 1 FROM zones LIMIT 1")
@@ -200,6 +230,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(())
     }
 
+    /// Count zones matching the filter.
     async fn count_by_filter(&self, filter: ZoneFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
@@ -216,16 +247,22 @@ impl ZoneRepository for PostgresZoneRepository {
               AND ($11::INT4 IS NULL OR default_ttl >= $12)
               AND ($13::INT4 IS NULL OR default_ttl <= $14)
               AND ($15::INT4 IS NULL OR serial = $16)
+              AND ($17::INT4 IS NULL OR serial >= $18)
+              AND ($19::INT4 IS NULL OR serial <= $20)
+              AND ($21::TIMESTAMPTZ IS NULL OR created_at >= $22)
+              AND ($23::TIMESTAMPTZ IS NULL OR created_at <= $24)
+              AND ($25::BOOL IS NULL OR (dnssec_policy_id IS NOT NULL) = $26)
+              AND ($27::BOOL IS NULL OR enabled = $28)
               AND (
-                    $17::TEXT IS NULL
-                    OR LOWER(name) LIKE LOWER($18) ESCAPE '\'
-                    OR LOWER(mname) LIKE LOWER($19) ESCAPE '\'
-                    OR LOWER(rname) LIKE LOWER($20) ESCAPE '\'
+                    $29::TEXT IS NULL
+                    OR LOWER(name) LIKE LOWER($30) ESCAPE '\'
+                    OR LOWER(mname) LIKE LOWER($31) ESCAPE '\'
+                    OR LOWER(rname) LIKE LOWER($32) ESCAPE '\'
               )
               AND (
-                    $21::INT4 IS NULL
+                    $33::INT4 IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = $21 AND p.zone_id = zones.id)
+                               WHERE p.api_token_id = $33 AND p.zone_id = zones.id)
               )
             "#,
         )
@@ -245,6 +282,18 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(filter.max_default_ttl)
         .bind(filter.serial)
         .bind(filter.serial)
+        .bind(filter.min_serial)
+        .bind(filter.min_serial)
+        .bind(filter.max_serial)
+        .bind(filter.max_serial)
+        .bind(filter.created_after)
+        .bind(filter.created_after)
+        .bind(filter.created_before)
+        .bind(filter.created_before)
+        .bind(filter.signed)
+        .bind(filter.signed)
+        .bind(filter.enabled)
+        .bind(filter.enabled)
         .bind(&search)
         .bind(&search)
         .bind(&search)
@@ -256,6 +305,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(count as u64)
     }
 
+    /// Update a zone in the current transaction.
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -267,8 +317,9 @@ impl ZoneRepository for PostgresZoneRepository {
             r#"
             UPDATE zones 
             SET name = $1, mname = $2, rname = $3,
-                default_ttl = $4, serial = $5, refresh = $6, retry = $7, expire = $8, minimum_ttl = $9
-            WHERE id = $10
+                default_ttl = $4, serial = $5, refresh = $6, retry = $7, expire = $8, minimum_ttl = $9,
+                enabled = $10, description = $11
+            WHERE id = $12
             "#,
         )
         .bind(zone.name.as_str())
@@ -280,6 +331,8 @@ impl ZoneRepository for PostgresZoneRepository {
         .bind(zone.retry)
         .bind(zone.expire)
         .bind(zone.minimum_ttl)
+        .bind(zone.enabled)
+        .bind(&zone.description)
         .bind(zone.id)
         .execute(&mut **postgres_tx)
         .await?;
@@ -287,6 +340,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(zone)
     }
 
+    /// Set or clear a zone's DNSSEC policy assignment in the current transaction.
     async fn update_dnssec_policy_id_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -304,6 +358,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(())
     }
 
+    /// Set or clear a zone's configured parent name servers in the current transaction.
     async fn update_parent_ns_addrs_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -321,6 +376,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(())
     }
 
+    /// Count zones using a DNSSEC policy.
     async fn count_by_dnssec_policy_id(&self, dnssec_policy_id: i32) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -333,6 +389,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(count as u64)
     }
 
+    /// Update only a zone's serial in the current transaction.
     async fn update_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -349,6 +406,7 @@ impl ZoneRepository for PostgresZoneRepository {
         Ok(())
     }
 
+    /// Delete a zone by ID in the current transaction.
     async fn delete_tx(&self, tx: &mut RepositoryTx<'_>, id: i32) -> Result<(), DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 

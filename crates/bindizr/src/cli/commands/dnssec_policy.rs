@@ -1,6 +1,6 @@
 use bindizr_core::log_debug;
 use bindizr_service::types::{
-    CreateDnssecPolicyRequest, DnssecPolicyListResponse, DnssecPolicyResponse,
+    CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, PaginatedResponse,
     UpdateDnssecPolicyRequest,
 };
 use clap::Subcommand;
@@ -28,7 +28,7 @@ pub(crate) enum DnssecPolicyCommand {
         /// Signing algorithm: ecdsap256sha256 (default), ecdsap384sha384, ed25519, ed448, rsasha256, or rsasha512. Fixed at creation
         #[arg(long, value_name = "ALG")]
         algorithm: Option<String>,
-        /// Denial-of-existence mode: nsec (default) or nsec3. Fixed at creation
+        /// Denial-of-existence mode: nsec3 (default) or nsec. Fixed at creation
         #[arg(long, value_name = "nsec|nsec3")]
         denial: Option<String>,
         /// Generate split KSK/ZSK keys instead of one CSK, so the ZSK rolls
@@ -45,12 +45,6 @@ pub(crate) enum DnssecPolicyCommand {
         /// default, disables scheduled rolls)
         #[arg(long, value_name = "DAYS")]
         zsk_lifetime_days: Option<u32>,
-        /// Wait before a pre-published key may start signing (default 86400)
-        #[arg(long, value_name = "SECS")]
-        rollover_publish_holddown_secs: Option<u32>,
-        /// Wait before a retired key is removed from the zone (default 172800)
-        #[arg(long, value_name = "SECS")]
-        rollover_retire_holddown_secs: Option<u32>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -87,12 +81,6 @@ pub(crate) enum DnssecPolicyCommand {
         /// disables scheduled rolls)
         #[arg(long, value_name = "DAYS")]
         zsk_lifetime_days: Option<u32>,
-        /// Wait before a pre-published key may start signing
-        #[arg(long, value_name = "SECS")]
-        rollover_publish_holddown_secs: Option<u32>,
-        /// Wait before a retired key is removed from the zone
-        #[arg(long, value_name = "SECS")]
-        rollover_retire_holddown_secs: Option<u32>,
         /// Output format (json, yaml, table)
         #[arg(short, long, default_value = "table")]
         output: OutputFormat,
@@ -121,8 +109,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             signature_validity_days,
             signature_refresh_days,
             zsk_lifetime_days,
-            rollover_publish_holddown_secs,
-            rollover_retire_holddown_secs,
             output,
         } => {
             let res = client
@@ -136,8 +122,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                         signature_validity_days,
                         signature_refresh_days,
                         zsk_lifetime_days,
-                        rollover_publish_holddown_secs,
-                        rollover_retire_holddown_secs,
                     },
                 )
                 .await?;
@@ -153,13 +137,13 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             log_debug!("DNSSEC policy list result: {:?}", res);
 
-            print_response(&res.data, output, |policies: &DnssecPolicyListResponse| {
-                policies
-                    .dnssec_policies
-                    .iter()
-                    .map(DnssecPolicyRow::from)
-                    .collect()
-            })?;
+            print_response(
+                &res.data,
+                output,
+                |policies: &PaginatedResponse<GetDnssecPolicyResponse>| {
+                    policies.items.iter().map(DnssecPolicyRow::from).collect()
+                },
+            )?;
         }
         DnssecPolicyCommand::Get { name, output } => {
             let res = client
@@ -178,8 +162,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             signature_validity_days,
             signature_refresh_days,
             zsk_lifetime_days,
-            rollover_publish_holddown_secs,
-            rollover_retire_holddown_secs,
             output,
         } => {
             let res = client
@@ -191,8 +173,6 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
                             signature_validity_days,
                             signature_refresh_days,
                             zsk_lifetime_days,
-                            rollover_publish_holddown_secs,
-                            rollover_retire_holddown_secs,
                         },
                     },
                 )
@@ -219,6 +199,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
     Ok(())
 }
 
+/// Print a DNSSEC policy in the selected output format.
 fn print_policy(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
     print_response(data, output, |response: &DnssecPolicyResponse| {
         vec![DnssecPolicyRow::from(&response.dnssec_policy)]

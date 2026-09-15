@@ -3,9 +3,8 @@
 Loads a fixed A-record zone into the system, then hammers its resolver with UDP
 queries for existing names, measuring QPS and latency percentiles.
 
-The headline comparison is `Native BIND9` vs `Bindizr + BIND9`: since Bindizr is
-outside the DNS data plane (queries are served by the BIND9 secondary), the two
-should match — demonstrating zero query overhead.
+Compare `Native BIND9` with `Bindizr + BIND9`, whose secondary answers queries.
+The measured QPS difference determines the report's query-overhead conclusion.
 """
 from __future__ import annotations
 
@@ -19,6 +18,7 @@ from lib import dnsquery, dnsutil  # noqa: E402
 
 
 async def run(adapter, cfg, ctx) -> dict:
+    """Measure DNS query throughput and latency for the benchmark system."""
     zone = ctx["zone"]
     q = cfg["query"]
     size = q["zone_size"]
@@ -32,6 +32,7 @@ async def run(adapter, cfg, ctx) -> dict:
     names = [f'{r["name"]}.{zone.rstrip(".")}' for r in records]
     ep = adapter.dns_endpoint()
 
+    # Exclude propagation wait from the query workload's warmup and measurements.
     p = cfg["propagation"]
     missing = await asyncio.get_event_loop().run_in_executor(
         None, dnsutil.first_unqueryable, records, zone, ep.host, ep.port,
@@ -46,6 +47,7 @@ async def run(adapter, cfg, ctx) -> dict:
             "error": "propagation timeout: imported zone not queryable",
         }
 
+    # Warm the query path, then collect throughput and latency samples.
     rec = await dnsquery.query_load(
         ep.host, ep.port, names, dnsquery.QTYPE["A"],
         q["concurrency"], q["duration_secs"], warmup_secs=2.0)

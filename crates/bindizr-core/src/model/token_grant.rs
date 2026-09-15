@@ -14,6 +14,9 @@ pub struct TokenGrant {
     pub api_token_id: i32,
     pub record_name_pattern: String,
     pub record_types: String,
+    /// Whether the grant carries write rights as well as read. A read-only
+    /// grant still makes the zone visible, narrowed the same way.
+    pub can_write: bool,
     pub created_at: DateTime<Utc>,
 }
 

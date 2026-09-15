@@ -9,8 +9,8 @@ use bindizr_service::{
     record::RecordService,
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
-        ErrorResponse, GetRecordResponse, GetRecordsFilter, MessageResponse, PaginatedResponse,
-        RecordResponse, UpdateRecordRequest,
+        DeleteRecordsFilter, DeleteRecordsResponse, ErrorResponse, GetRecordResponse,
+        GetRecordsFilter, MessageResponse, PaginatedResponse, RecordResponse, UpdateRecordRequest,
     },
 };
 use serde::Deserialize;
@@ -24,6 +24,7 @@ use crate::api::{
 pub(crate) struct RecordApi;
 
 impl RecordApi {
+    /// Build the record API routes.
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/records", routing::get(list_records))
@@ -31,6 +32,7 @@ impl RecordApi {
             .route("/records", routing::post(create_record))
             .route("/records/{record_id}", routing::put(update_record))
             .route("/records/{record_id}", routing::delete(delete_record))
+            .route("/records", routing::delete(delete_records_matching))
             .route(
                 "/records/bulk",
                 routing::post(create_records_bulk)
@@ -39,6 +41,7 @@ impl RecordApi {
     }
 }
 
+/// List DNS records, optionally filtered and paginated.
 #[utoipa::path(
         get,
         path = "/records",
@@ -56,7 +59,9 @@ impl RecordApi {
             ("min_priority" = Option<i32>, Query, description = "Filter by minimum priority."),
             ("max_priority" = Option<i32>, Query, description = "Filter by maximum priority."),
             ("search" = Option<String>, Query, description = "Partially search records."),
-            ("signed" = Option<bool>, Query, description = "Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id; record_type also accepts a derived type, while value, search, and priority filters keep the listing user-only."),
+            ("sort" = Option<String>, Query, description = "Sort by name (the default), record_type, ttl, priority, or created_at."),
+            ("order" = Option<String>, Query, description = "asc (the default) or desc."),
+            ("signed" = Option<bool>, Query, description = "Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and record_type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them."),
             ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Records per page; defaults to 50."),
             ("offset" = Option<u64>, Query, description = "Number of records to skip.")
         ),
@@ -67,7 +72,6 @@ impl RecordApi {
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List DNS records, optionally filtered and paginated.
 pub(crate) async fn list_records(
     RequestCaller(caller): RequestCaller,
     Query(mut query): Query<GetRecordsFilter>,
@@ -77,6 +81,7 @@ pub(crate) async fn list_records(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Get a single DNS record by ID.
 #[utoipa::path(
         get,
         path = "/records/{record_id}",
@@ -92,7 +97,6 @@ pub(crate) async fn list_records(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Get a single DNS record by ID.
 pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
@@ -105,6 +109,7 @@ pub(crate) async fn get_record(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Create a new DNS record.
 #[utoipa::path(
         post,
         path = "/records",
@@ -122,7 +127,6 @@ pub(crate) async fn get_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Create a new DNS record.
 pub(crate) async fn create_record(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRecordRequest>,
@@ -135,6 +139,7 @@ pub(crate) async fn create_record(
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
+/// Update an existing DNS record.
 #[utoipa::path(
         put,
         path = "/records/{record_id}",
@@ -156,7 +161,6 @@ pub(crate) async fn create_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Update an existing DNS record.
 pub(crate) async fn update_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
@@ -170,6 +174,7 @@ pub(crate) async fn update_record(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Delete a DNS record.
 #[utoipa::path(
         delete,
         path = "/records/{record_id}",
@@ -187,7 +192,6 @@ pub(crate) async fn update_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Delete a DNS record.
 pub(crate) async fn delete_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
@@ -200,6 +204,32 @@ pub(crate) async fn delete_record(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Delete every record matching the filter.
+#[utoipa::path(
+        delete,
+        path = "/records",
+        tag = "Records",
+        summary = "Delete records by name",
+        description = "Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.",
+        params(DeleteRecordsFilter),
+        responses(
+            (status = 200, description = "Records deleted", body = DeleteRecordsResponse),
+            (status = 400, description = "Invalid filter", body = ErrorResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "Forbidden", body = ErrorResponse),
+            (status = 404, description = "Zone not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error", body = ErrorResponse)
+        )
+)]
+pub(crate) async fn delete_records_matching(
+    RequestCaller(caller): RequestCaller,
+    Query(filter): Query<DeleteRecordsFilter>,
+) -> Result<Response, ApiError> {
+    let response = RecordService::delete_matching(&caller, &filter).await?;
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+/// Bulk insert DNS records into a zone in a single transaction.
 #[utoipa::path(
         post,
         path = "/records/bulk",
@@ -219,7 +249,6 @@ pub(crate) async fn delete_record(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Bulk insert DNS records into a zone in a single transaction.
 pub(crate) async fn create_records_bulk(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 pub(crate) use bindizr_core::dns::{CATALOG_ZONE_NAME, is_catalog_zone};
 use bindizr_core::{
-    dns::{message, message::Rtype, name::ZoneName},
+    dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
     log_info,
     model::zone::Zone,
 };
@@ -48,12 +48,15 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
         minimum_ttl: 60,
         dnssec_policy_id: None,
         parent_ns_addrs: None,
+        enabled: true,
+        description: None,
         created_at: Utc::now(),
     };
 
     Ok((catalog_zone, member_zones))
 }
 
+/// Hash catalog member names and serials to detect changes.
 fn catalog_digest(member_zones: &[String], zones: &[Zone]) -> String {
     // Names are canonical, so the index needs no case folding.
     let serial_by_name: HashMap<String, i32> = zones
@@ -81,17 +84,25 @@ fn catalog_digest(member_zones: &[String], zones: &[Zone]) -> String {
         .collect()
 }
 
+/// Send a catalog zone transfer using the requested question type.
 pub(crate) async fn handle_catalog_axfr_with_qtype(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     response_qtype: Rtype,
+    signer: Option<TransferSigner>,
 ) -> Result<(), XfrError> {
     log_info!("AXFR request for catalog zone: {}", CATALOG_ZONE_NAME);
 
+    // Materialize the virtual catalog from the current member zones.
     let (catalog_zone, member_zones) = generate_catalog_zone().await?;
 
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
+    if let Some(signer) = signer {
+        builder = builder.sign_with(signer);
+    }
     let mut messages_sent = 0usize;
+
+    // Both SOAs must carry this snapshot's serial to delimit the AXFR.
     let serial = bindizr_core::dns::serial_to_u32(catalog_zone.serial)?;
 
     crate::dns::wire::add_answer_and_flush_if_needed(
@@ -117,6 +128,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     )
     .await?;
 
+    // Member PTRs tell secondaries which zones this catalog provisions.
     for member_zone in &member_zones {
         crate::dns::wire::add_answer_and_flush_if_needed(
             &mut builder,
@@ -127,6 +139,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
         .await?;
     }
 
+    // Close the catalog snapshot before flushing its final envelope.
     crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
         stream,

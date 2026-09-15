@@ -19,12 +19,25 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 /// reads as a "(deleted)" path, while this path points at the replacement.
 static DAEMON_EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
 
-/// Initialize config, logging, database, DNS, socket, and API servers, then run until Ctrl+C.
+/// Re-read the configuration file and apply what only a running process can:
+/// the settings whose readers captured them at startup.
+pub(crate) fn reload_config() -> Result<Vec<String>, String> {
+    let changed = config::reload()?;
+    // The installed logger reads its level per record, so this is enough.
+    logger::set_level(config::bindizr_config().logging.log_level);
+    // A no-op unless this instance had no scheduler, which a zero interval
+    // leaves it without.
+    service::dnssec::init_maintenance_scheduler();
+    Ok(changed)
+}
+
+/// Start daemon services, handle reload/restart/shutdown requests, and drain on shutdown.
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     if let Ok(exe) = std::env::current_exe() {
         let _ = DAEMON_EXE.set(exe);
     }
 
+    // Prepare configuration and background services before accepting requests.
     config::initialize(config_file)?;
 
     logger::initialize();
@@ -37,6 +50,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     service::dnssec::init_maintenance_scheduler();
 
+    // DNS must be listening before startup NOTIFY can prompt secondary transfers.
     let shutdown = Shutdown::new();
     dns::initialize(&shutdown).await?;
 
@@ -57,7 +71,10 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     let mut terminate = signal(SignalKind::terminate())
         .map_err(|e| format!("Failed to listen for SIGTERM: {}", e))?;
+    let mut hangup =
+        signal(SignalKind::hangup()).map_err(|e| format!("Failed to listen for SIGHUP: {}", e))?;
 
+    // Handle process signals and socket control commands in one lifecycle loop.
     loop {
         let control = tokio::select! {
             result = tokio::signal::ctrl_c() => {
@@ -68,6 +85,18 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
             _ = terminate.recv() => {
                 log_info!("SIGTERM received, shutting down...");
                 break;
+            }
+            _ = hangup.recv() => {
+                match reload_config() {
+                    Ok(changed) if changed.is_empty() => {
+                        log_info!("SIGHUP received, nothing changed.")
+                    }
+                    Ok(changed) => {
+                        log_info!("SIGHUP received, reloaded: {}", changed.join(", "))
+                    }
+                    Err(e) => log_error!("SIGHUP received, nothing reloaded: {}", e),
+                }
+                continue;
             }
             control = control_rx.recv() => control,
         };
@@ -86,6 +115,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
         }
     }
 
+    // Stop accepting work before waiting for API and socket requests to finish.
     shutdown.trigger();
 
     // In-flight zone transfers are not waited on: a cut transfer is one the

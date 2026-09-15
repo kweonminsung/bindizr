@@ -5,22 +5,28 @@ use bindizr_service::error::ErrorCode;
 #[derive(Debug)]
 pub(crate) struct CliError {
     pub(crate) code: Option<ErrorCode>,
+    /// The daemon never answered, so no reply could carry a code.
+    daemon_unreachable: bool,
     pub(crate) message: String,
 }
 
 impl From<String> for CliError {
+    /// Wrap a message as a CLI error.
     fn from(message: String) -> Self {
         CliError {
             code: None,
+            daemon_unreachable: false,
             message,
         }
     }
 }
 
 impl From<&str> for CliError {
+    /// Wrap a message as a CLI error.
     fn from(message: &str) -> Self {
         CliError {
             code: None,
+            daemon_unreachable: false,
             message: message.to_string(),
         }
     }
@@ -31,10 +37,33 @@ const EXIT_FAILURE: i32 = 1;
 const EXIT_NOT_FOUND: i32 = 3;
 const EXIT_CONFLICT: i32 = 4;
 const EXIT_DENIED: i32 = 5;
+const EXIT_UNAVAILABLE: i32 = 6;
 
 impl CliError {
+    /// An error reply from the daemon, carrying whatever code it sent.
+    pub(crate) fn from_daemon(code: Option<ErrorCode>, message: String) -> Self {
+        CliError {
+            code,
+            daemon_unreachable: false,
+            message,
+        }
+    }
+
+    /// The daemon could not be reached. Exits distinctly so a script can
+    /// retry, where a rejected request would fail the same way again.
+    pub(crate) fn daemon_unreachable(message: String) -> Self {
+        CliError {
+            code: None,
+            daemon_unreachable: true,
+            message,
+        }
+    }
+
     /// Derived from `http_status`, so a new code needs no second list here.
     pub(crate) fn exit_code(&self) -> i32 {
+        if self.daemon_unreachable {
+            return EXIT_UNAVAILABLE;
+        }
         match self.code.map(|code| code.http_status()) {
             Some(404) => EXIT_NOT_FOUND,
             Some(409) => EXIT_CONFLICT,
@@ -114,8 +143,7 @@ impl CliError {
             | ErrorCode::DnssecPolicyConflict
             | ErrorCode::DnssecDsPublished
             | ErrorCode::DnssecDsNotPublished
-            | ErrorCode::DnssecDsUnverified
-            | ErrorCode::DnssecStateChanged => None,
+            | ErrorCode::DnssecDsUnverified => None,
         }
     }
 }
@@ -124,11 +152,13 @@ impl CliError {
 mod tests {
     use super::*;
 
+    /// Verify that exit codes separate the classes a script branches on.
     #[test]
     fn exit_codes_separate_the_classes_a_script_branches_on() {
         let code = |code| {
             CliError {
                 code: Some(code),
+                daemon_unreachable: false,
                 message: String::new(),
             }
             .exit_code()
@@ -138,9 +168,13 @@ mod tests {
         assert_eq!(code(ErrorCode::RecordConflict), EXIT_CONFLICT);
         assert_eq!(code(ErrorCode::Forbidden), EXIT_DENIED);
         assert_eq!(code(ErrorCode::InvalidInput), EXIT_FAILURE);
-        // An unreachable daemon sends no code at all.
+        // An unreachable daemon sends no code at all, and a script retries it.
         assert_eq!(
-            CliError::from("daemon is not running").exit_code(),
+            CliError::daemon_unreachable("connection refused".to_string()).exit_code(),
+            EXIT_UNAVAILABLE
+        );
+        assert_eq!(
+            CliError::from("malformed response").exit_code(),
             EXIT_FAILURE
         );
     }

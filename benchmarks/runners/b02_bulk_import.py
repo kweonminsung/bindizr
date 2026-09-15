@@ -2,7 +2,7 @@
 
 Imports N records (per configured size) into a fresh zone and measures wall-clock
 import time, records/sec, and peak memory. Uses each adapter's `bulk_import`
-(batch APIs where available, else sequential concurrent creates).
+(batch APIs where available, otherwise a fixed pool of concurrent creates).
 
 Adapters that expose a second bulk-load path (Bindizr's BIND zone-file import)
 also report it as an extra `<label> (zone import)` row, so the two Bindizr
@@ -54,6 +54,7 @@ async def _measure(adapter, zone, size, label, load, errors) -> dict:
 
 
 async def run(adapter, cfg, ctx) -> list:
+    """Measure bulk import performance at the configured record counts."""
     zone = ctx["zone"]
     rows = []
     for size in cfg["sizes"]:

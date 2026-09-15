@@ -30,6 +30,22 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --set postgresql.enabled=true
 ```
 
+## Serving the API over TLS
+
+The API is `ClusterIP` and carries bearer tokens, so anything reaching it from
+outside the cluster needs TLS. Point the chart at a Secret holding `tls.crt`
+and `tls.key` — a cert-manager `Certificate` produces one — and bindizr serves
+HTTPS itself:
+
+```bash
+$ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
+  --reuse-values --set bindizr.api.tls.existingSecret=bindizr-api-tls
+```
+
+The readiness probe follows to HTTPS on its own. Leave the value empty when an
+Ingress terminates TLS in front instead; the Service stays `ClusterIP` either
+way, so bindizr's own port is never reachable from outside.
+
 !!! note "SQLite is not supported by the Helm chart"
 
     A pod-local SQLite file cannot be shared across replicas or survive

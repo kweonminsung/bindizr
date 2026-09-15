@@ -22,6 +22,7 @@ ARGS=()
 SYSTEMS=""
 BENCHES=""
 
+# Print benchmark usage information and exit.
 usage() { sed -n '2,20p' "$0"; exit 0; }
 
 while [[ $# -gt 0 ]]; do
@@ -47,6 +48,8 @@ fi
   echo "ERROR: missing Python deps. Run: pip install -r requirements.txt" >&2; exit 1; }
 
 # --- cleanup on exit ---------------------------------------------------------
+
+# Tear down leftover benchmark stacks while preserving the exit status.
 cleanup() {
   # Preserve the script's real exit status: on a clean run the `grep` below finds
   # no leftover stacks and returns 1, which would otherwise become the script's

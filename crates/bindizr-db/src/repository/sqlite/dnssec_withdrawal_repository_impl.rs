@@ -10,6 +10,7 @@ pub(crate) struct SqliteDnssecWithdrawalRepository;
 
 #[async_trait]
 impl DnssecWithdrawalRepository for SqliteDnssecWithdrawalRepository {
+    /// Mark a zone for DNSSEC withdrawal in the current transaction.
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -26,6 +27,7 @@ impl DnssecWithdrawalRepository for SqliteDnssecWithdrawalRepository {
         Ok(())
     }
 
+    /// Read a zone's DNSSEC withdrawal marker in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -40,6 +42,7 @@ impl DnssecWithdrawalRepository for SqliteDnssecWithdrawalRepository {
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// Clear a zone's DNSSEC withdrawal marker in the current transaction.
     async fn delete_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

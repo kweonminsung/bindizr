@@ -38,6 +38,7 @@ class DnsAdapter(abc.ABC):
     supports_ixfr: bool = True
 
     def __init__(self, cfg: dict, project: str):
+        """Initialize the adapter with its benchmark configuration and project."""
         self.cfg = cfg
         self.project = project
 
@@ -50,10 +51,14 @@ class DnsAdapter(abc.ABC):
         """Tear down containers and volumes."""
 
     @abc.abstractmethod
-    async def create_zone(self, zone: str) -> None: ...
+    async def create_zone(self, zone: str) -> None:
+        """Create the zone used by the benchmark."""
+        ...
 
     @abc.abstractmethod
-    async def delete_zone(self, zone: str) -> None: ...
+    async def delete_zone(self, zone: str) -> None:
+        """Remove the benchmark zone and its records."""
+        ...
 
     @abc.abstractmethod
     async def create_record(self, zone: str, rec: dict) -> str:
@@ -64,10 +69,14 @@ class DnsAdapter(abc.ABC):
         """Fetch a record; return True on success."""
 
     @abc.abstractmethod
-    async def update_record(self, zone: str, handle: str, rec: dict) -> bool: ...
+    async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
+        """Replace the record identified by the handle with the supplied value."""
+        ...
 
     @abc.abstractmethod
-    async def delete_record(self, zone: str, handle: str) -> bool: ...
+    async def delete_record(self, zone: str, handle: str) -> bool:
+        """Delete the record identified by the handle."""
+        ...
 
     async def bulk_import(self, zone: str, records: list[dict]) -> None:
         """Concurrent creates via a fixed worker pool; adapters override for batch APIs.
@@ -82,6 +91,7 @@ class DnsAdapter(abc.ABC):
             queue.put_nowait(i)
 
         async def worker():
+            """Import queued records with bounded retries and count failures."""
             while True:
                 try:
                     i = queue.get_nowait()

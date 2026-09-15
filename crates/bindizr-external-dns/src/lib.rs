@@ -30,10 +30,12 @@ pub async fn execute() {
         );
     }
 
+    // Prepare the upstream connection settings before accepting webhook requests.
     let upstream = upstream::UpstreamClient::new(
         adapter_config.bindizr_url.clone(),
         adapter_config.token,
         adapter_config.timeout_secs,
+        adapter_config.ca_file.as_deref(),
     )
     .unwrap_or_else(|e| {
         eprintln!("{}", e);
@@ -41,6 +43,7 @@ pub async fn execute() {
     });
     let state = Arc::new(server::AppState { upstream });
 
+    // Bind both endpoints before either server starts accepting requests.
     let webhook_listener = tokio::net::TcpListener::bind(adapter_config.listen_addr)
         .await
         .unwrap_or_else(|e| {
@@ -71,6 +74,7 @@ pub async fn execute() {
     let webhook = axum::serve(webhook_listener, server::webhook_router(state.clone()));
     let health = axum::serve(health_listener, server::health_router(state));
 
+    // Stop the adapter when either server exits or an interrupt arrives.
     tokio::select! {
         result = webhook => {
             if let Err(e) = result {

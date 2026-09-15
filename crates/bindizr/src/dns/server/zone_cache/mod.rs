@@ -1,14 +1,5 @@
-//! Per-zone cache of a zone's records, keyed by serial. Every write bumps the
-//! serial, so an entry matching the zone's current serial is always fresh;
-//! repeated AXFRs at that serial skip the database read. One entry per zone.
-//!
-//! The cache is bounded by the records it holds and evicts the
-//! least-recently-used zone on overflow. A deleted zone has no invalidation hook here — the delete
-//! path lives in `bindizr-service`, which this crate depends on, so it cannot
-//! call back in without a dependency cycle — so without a bound the map would
-//! retain every transferred-then-deleted zone's records for the life of the
-//! process. An evicted zone simply re-reads from the database on its next
-//! transfer.
+//! Zone transfer content cached by zone id and serial; record writes advance the serial.
+//! The record budget bounds retained data, including entries for deleted zones.
 
 use std::{
     collections::HashMap,
@@ -20,15 +11,15 @@ use std::{
 
 use bindizr_core::{
     config,
-    metrics::metrics,
-    model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
+    metrics::{track_zone_cache_lookup, track_zone_cache_store},
+    model::{dnssec_record::DnssecRecord, record::Record, tsig_key::TsigKey, zone::Zone},
 };
-use bindizr_service::{error::ServiceError, zone::ZoneService};
+use bindizr_service::{
+    error::ServiceError,
+    zone::{TransferAccess, TransferContent, ZoneService},
+};
 
-/// Cap on the records held at once, from `dns.zone_cache_max_records`.
-/// Counting zones would bound nothing: one large zone outweighs a thousand
-/// small ones. Records track memory within roughly an order of magnitude,
-/// which is enough for a cache whose only failure is a database re-read.
+/// Read the configured cache record budget, which counts records rather than bytes.
 fn max_records() -> usize {
     config::bindizr_config().dns.zone_cache_max_records as usize
 }
@@ -39,6 +30,13 @@ fn max_records() -> usize {
 pub(crate) struct ZoneContent {
     pub(crate) records: Arc<Vec<Record>>,
     pub(crate) dnssec_records: Arc<Vec<DnssecRecord>>,
+}
+
+impl ZoneContent {
+    /// Count user and derived records together, since a transfer serves both.
+    fn record_count(&self) -> usize {
+        self.records.len() + self.dnssec_records.len()
+    }
 }
 
 struct CachedZone {
@@ -58,56 +56,65 @@ struct Cache {
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
 static CLOCK: AtomicU64 = AtomicU64::new(0);
 
+/// Advance the logical clock used to track cache recency.
 fn tick() -> u64 {
     CLOCK.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Load a zone's transfer content, from cache when enabled and fresh.
-/// Serve the returned zone row, not the pre-read one — it is the row the
-/// content was read with. `None` when the zone was deleted meanwhile.
+/// Load the transfer content of the zone `zone_name` names, as far as `key`
+/// may read it, from cache when enabled and fresh. The zone and the grant are
+/// decided on one locked row; a hit serves the content of that row's serial.
 pub(crate) async fn find_zone_content(
-    zone: Zone,
-) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
+    zone_name: &str,
+    key: Option<&TsigKey>,
+) -> Result<TransferAccess<(Zone, ZoneContent)>, ServiceError> {
     if !config::bindizr_config().dns.zone_cache {
-        return load_content(zone).await;
+        return load_content(zone_name, key).await;
     }
 
-    // Fast path: a cached entry at the current serial is still valid.
+    let zone = match ZoneService::authorize_transfer_by_name(zone_name, key).await? {
+        TransferAccess::Granted(zone) => zone,
+        TransferAccess::NotZone => return Ok(TransferAccess::NotZone),
+        TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
+    };
     if let Some(content) = lookup(zone.id, zone.serial) {
-        return Ok(Some((zone, content)));
+        return Ok(TransferAccess::Granted((zone, content)));
     }
 
-    // Slow path: read and cache. Concurrent misses may load twice; both store
-    // one serial's consistent data, so the result is still correct.
-    let Some((zone, content)) = load_content(zone).await? else {
-        return Ok(None);
-    };
-    store(zone.id, zone.serial, content.clone());
-    Ok(Some((zone, content)))
-}
-
-async fn load_content(zone: Zone) -> Result<Option<(Zone, ZoneContent)>, ServiceError> {
-    let Some((loaded, records, dnssec_records)) =
-        ZoneService::find_transfer_content(zone.id).await?
-    else {
-        return Ok(None);
-    };
-    // A rename since the pre-read would serve the new apex under the old name.
-    if loaded.name != zone.name {
-        return Ok(None);
+    // A miss reads under its own lock, deciding the zone and the grant there
+    // again; concurrent misses may load twice, each one complete serial.
+    let loaded = load_content(zone_name, key).await?;
+    if let TransferAccess::Granted((zone, content)) = &loaded {
+        store(zone.id, zone.serial, content.clone());
     }
-    let zone = loaded;
-    Ok(Some((
-        zone,
-        ZoneContent {
-            records: Arc::new(records),
-            dnssec_records: Arc::new(dnssec_records),
-        },
-    )))
+    Ok(loaded)
 }
 
-/// The cache holds no invariant a panicking thread could leave broken, so a
-/// poisoned lock is recovered rather than failing every later query.
+/// Load a zone snapshot by name, as far as `key` may read it.
+async fn load_content(
+    zone_name: &str,
+    key: Option<&TsigKey>,
+) -> Result<TransferAccess<(Zone, ZoneContent)>, ServiceError> {
+    Ok(ZoneService::find_transfer_content_by_name(zone_name, key)
+        .await?
+        .map(|content| {
+            let TransferContent {
+                zone,
+                records,
+                dnssec_records,
+            } = content;
+            (
+                zone,
+                ZoneContent {
+                    records: Arc::new(records),
+                    dnssec_records: Arc::new(dnssec_records),
+                },
+            )
+        }))
+}
+
+/// Lock the shared zone cache, recovering a poisoned lock because panics cannot leave a cache
+/// invariant broken.
 fn locked_cache() -> std::sync::MutexGuard<'static, Cache> {
     CACHE
         .get_or_init(|| Mutex::new(Cache::default()))
@@ -115,25 +122,49 @@ fn locked_cache() -> std::sync::MutexGuard<'static, Cache> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Find cached zone content matching the requested serial, enforcing the
+/// budget first: a reload can lower it, and a server that only serves cached
+/// zones never stores again.
 fn lookup(zone_id: i32, serial: i32) -> Option<ZoneContent> {
-    let content = locked_cache().lookup(zone_id, serial);
-    let result = if content.is_some() { "hit" } else { "miss" };
-    metrics()
-        .zone_cache_lookups_total
-        .with_label_values(&[result])
-        .inc();
+    let mut cache = locked_cache();
+    let evicted = cache.trim_to(max_records());
+    if evicted > 0 {
+        track_zone_cache_store(cache.records, evicted);
+    }
+    let content = cache.lookup(zone_id, serial);
+    drop(cache);
+    track_zone_cache_lookup(content.is_some());
     content
 }
 
+/// Store zone content in the cache within its configured budget.
 fn store(zone_id: i32, serial: i32, content: ZoneContent) {
     let mut cache = locked_cache();
     let evicted = cache.store(zone_id, serial, content, max_records());
-    let metrics = metrics();
-    metrics.zone_cache_records.set(cache.records as i64);
-    metrics.zone_cache_evictions_total.inc_by(evicted as u64);
+    track_zone_cache_store(cache.records, evicted);
 }
 
 impl Cache {
+    /// Drop least-recently-used zones until the retained records fit
+    /// `max_records`, which a reload may have lowered since the last store.
+    fn trim_to(&mut self, max_records: usize) -> usize {
+        let mut evicted = 0;
+        while self.records > max_records {
+            let Some(lru_id) = self
+                .zones
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(&id, _)| id)
+            else {
+                break;
+            };
+            self.remove(lru_id);
+            evicted += 1;
+        }
+        evicted
+    }
+
+    /// Find cached zone content matching the requested serial.
     fn lookup(&mut self, zone_id: i32, serial: i32) -> Option<ZoneContent> {
         let entry = self
             .zones
@@ -143,7 +174,7 @@ impl Cache {
         Some(entry.content.clone())
     }
 
-    /// Returns how many zones were evicted to make room.
+    /// Store a zone within the record budget and return the number of evictions.
     fn store(
         &mut self,
         zone_id: i32,
@@ -155,7 +186,7 @@ impl Cache {
         // its old serial, which no lookup can satisfy any more.
         self.remove(zone_id);
 
-        let records = content_records(&content);
+        let records = content.record_count();
         if records > max_records {
             return 0;
         }
@@ -188,16 +219,12 @@ impl Cache {
         evicted
     }
 
+    /// Remove a cached zone and subtract its records from the retained count.
     fn remove(&mut self, zone_id: i32) {
         if let Some(removed) = self.zones.remove(&zone_id) {
             self.records -= removed.records;
         }
     }
-}
-
-/// Both planes, since a transfer serves both.
-fn content_records(content: &ZoneContent) -> usize {
-    content.records.len() + content.dnssec_records.len()
 }
 
 #[cfg(test)]

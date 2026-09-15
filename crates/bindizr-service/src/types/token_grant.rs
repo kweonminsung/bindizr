@@ -19,6 +19,16 @@ pub struct CreateTokenGrantRequest {
     /// `*` or a comma-separated list of record types. Defaults to `*`.
     #[schema(example = "A,AAAA,TXT")]
     pub record_types: Option<String>,
+    /// Whether the grant carries write rights. A read-only grant still makes
+    /// the zone visible, narrowed the same way. Defaults to true.
+    #[serde(default = "default_can_write")]
+    #[schema(example = true)]
+    pub can_write: bool,
+}
+
+/// Enable write access when a new grant omits the permission flag.
+fn default_can_write() -> bool {
+    true
 }
 
 /// API representation of a token grant.
@@ -34,10 +44,13 @@ pub struct GetTokenGrantResponse {
     pub record_name_pattern: String,
     #[schema(example = "A,AAAA,TXT")]
     pub record_types: String,
+    #[schema(example = true)]
+    pub can_write: bool,
     pub created_at: DateTime<Utc>,
 }
 
 impl GetTokenGrantResponse {
+    /// Build a token-grant response with its token and zone names.
     pub fn from_grant(grant: &TokenGrantWithNames) -> Self {
         GetTokenGrantResponse {
             id: grant.grant.id,
@@ -45,6 +58,7 @@ impl GetTokenGrantResponse {
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.grant.record_name_pattern.clone(),
             record_types: grant.grant.record_types.clone(),
+            can_write: grant.grant.can_write,
             created_at: grant.grant.created_at,
         }
     }
@@ -54,10 +68,4 @@ impl GetTokenGrantResponse {
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct TokenGrantResponse {
     pub token_grant: GetTokenGrantResponse,
-}
-
-/// Grants of one token, or every grant that applies to one zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct TokenGrantListResponse {
-    pub token_grants: Vec<GetTokenGrantResponse>,
 }

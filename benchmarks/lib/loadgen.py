@@ -26,6 +26,7 @@ async def run_closed_loop(
     duration_secs: float,
     warmup_secs: float = 0.0,
 ) -> LatencyRecorder:
+    """Measure an async workload with fixed concurrency and an unmeasured warmup."""
     rec = LatencyRecorder()
     counter = itertools.count()
     clock = time.monotonic
@@ -35,6 +36,7 @@ async def run_closed_loop(
     rec.started_at = measure_start
 
     async def worker() -> None:
+        """Run workload steps and record their latency and success."""
         while True:
             now = clock()
             if now >= measure_end:
@@ -65,6 +67,7 @@ async def run_n(step: Step, concurrency: int, total: int) -> LatencyRecorder:
     rec.started_at = clock()
 
     async def worker() -> None:
+        """Run workload steps and record their latency and success."""
         while True:
             try:
                 seq = queue.get_nowait()

@@ -17,20 +17,14 @@ fn closed_parent_addr() -> String {
         .to_string()
 }
 
+/// Verify that DNSSEC DS seen checks the parent even when the holddown is skipped.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
     let app = TestApp::start_local().await;
     let parent = FakeParent::start();
-    let policy_name = format!("{}-fast", app.namespace());
-    let (status, _) = app
-        .request(
-            Method::POST,
-            "/dnssec-policies",
-            Some(json!({ "name": policy_name, "rollover_publish_holddown_secs": 0 })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
+    // A short zone TTL is the whole publish wait, so the rollover reaches
+    // promotion inside the test.
     let zone_name = app.zone_name("ds-seen.example");
     let (status, _) = app
         .request(
@@ -51,7 +45,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name, "parent_ns_addrs": parent.addr() })),
+            Some(json!({ "parent_ns_addrs": parent.addr()})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -148,6 +142,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
     assert_eq!(key_by_tag(old_key_tag)["state"], "retired");
 }
 
+/// Verify that DNSSEC disable waits for the parent to drop the DS.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
@@ -160,7 +155,7 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent.addr() })),
+            Some(json!({ "parent_ns_addrs": parent.addr()})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -238,6 +233,7 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
     assert_eq!(body["dnssec"]["enabled"], false);
 }
 
+/// Verify that DNSSEC disable is refused until the parent can be asked.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
@@ -249,7 +245,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": closed_parent_addr() })),
+            Some(json!({ "parent_ns_addrs": closed_parent_addr()})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -298,7 +294,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
         .request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent.addr() })),
+            Some(json!({ "parent_ns_addrs": parent.addr()})),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -325,7 +321,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": closed_parent_addr() })),
+            Some(json!({ "parent_ns_addrs": closed_parent_addr()})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -339,6 +335,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
     assert_eq!(status, StatusCode::OK);
 }
 
+/// Verify that DNSSEC DS seen requires the exact DS on every parent server.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
@@ -366,7 +363,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent_ns_addrs })),
+            Some(json!({ "parent_ns_addrs": parent_ns_addrs})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -450,6 +447,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
     );
 }
 
+/// Verify that DNSSEC DS seen accepts the sha1 DS a parent computed itself.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
@@ -475,7 +473,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent.addr() })),
+            Some(json!({ "parent_ns_addrs": parent.addr()})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -541,6 +539,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
     );
 }
 
+/// Verify that DNSSEC DS seen separates an unverifiable digest type from a missing DS.
 #[tokio::test]
 async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds() {
     let app = TestApp::start_local().await;
@@ -565,7 +564,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent.addr() })),
+            Some(json!({ "parent_ns_addrs": parent.addr()})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -623,6 +622,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
     assert_eq!(body["code"], "DNSSEC_DS_UNVERIFIED", "{body}");
 }
 
+/// Verify that DNSSEC check DS reports an unverifiable digest at any one parent server.
 #[tokio::test]
 async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server() {
     let app = TestApp::start_local().await;
@@ -649,7 +649,7 @@ async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server
         .request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent_ns_addrs })),
+            Some(json!({ "parent_ns_addrs": parent_ns_addrs})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);

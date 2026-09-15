@@ -1,20 +1,31 @@
+mod environment;
+
 #[cfg(test)]
 mod tests;
 
-use std::{env, fmt, net::IpAddr, path::PathBuf};
+use std::{
+    env, fmt,
+    net::IpAddr,
+    path::PathBuf,
+    sync::{Arc, OnceLock, RwLock},
+};
 
-use config::{Config, File, FileFormat};
-use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 use crate::dns::address::is_address_target;
 
 pub(crate) const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
-static BINDIZR_CONFIG: OnceCell<BindizrConfig> = OnceCell::new();
+/// Swappable so `reload` can replace it; readers take a snapshot, so a
+/// request decides on one version throughout even if a reload lands mid-way.
+static BINDIZR_CONFIG: RwLock<Option<Arc<BindizrConfig>>> = RwLock::new(None);
+
+/// The file `reload` re-reads. Fixed at startup: a reload changes settings,
+/// never which file they come from.
+static CONFIG_PATH: OnceLock<String> = OnceLock::new();
 
 /// Top-level bindizr configuration.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct BindizrConfig {
     pub api: ApiConfig,
     pub database: DatabaseConfig,
@@ -23,7 +34,7 @@ pub struct BindizrConfig {
 }
 
 /// HTTP API server settings.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
@@ -39,14 +50,22 @@ pub struct ApiConfig {
     /// (unauthenticated). Off by default: it describes the whole API surface.
     #[serde(default)]
     pub openapi_enabled: bool,
+    /// PEM certificate chain and private key. Set both to serve HTTPS;
+    /// without them the API is plain HTTP and its bearer tokens travel in
+    /// the clear.
+    #[serde(default)]
+    pub tls_cert_file: Option<String>,
+    #[serde(default)]
+    pub tls_key_file: Option<String>,
 }
 
+/// Return the default metrics enabled setting.
 fn default_metrics_enabled() -> bool {
     true
 }
 
 /// Database backend selection and per-backend connection settings.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct DatabaseConfig {
     #[serde(rename = "type")]
     pub database_type: DatabaseType,
@@ -59,7 +78,7 @@ pub struct DatabaseConfig {
 }
 
 /// Supported database backends.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
     Mysql,
@@ -68,6 +87,7 @@ pub enum DatabaseType {
 }
 
 impl fmt::Display for DatabaseType {
+    /// Write the database type in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             DatabaseType::Mysql => "mysql",
@@ -81,6 +101,7 @@ impl fmt::Display for DatabaseType {
 impl std::str::FromStr for DatabaseType {
     type Err = String;
 
+    /// Parse a database type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "mysql" => Ok(DatabaseType::Mysql),
@@ -92,25 +113,25 @@ impl std::str::FromStr for DatabaseType {
 }
 
 /// MySQL connection settings.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct MysqlConfig {
     pub server_url: String,
 }
 
 /// SQLite connection settings.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct SqliteConfig {
     pub file_path: String,
 }
 
 /// PostgreSQL connection settings.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct PostgresqlConfig {
     pub server_url: String,
 }
 
 /// DNS server and NOTIFY/nsupdate settings.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct DnsConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
@@ -144,28 +165,104 @@ pub struct DnsConfig {
     /// for pruned serials fall back to AXFR; rollback reaches only kept serials.
     #[serde(default = "default_journal_retention_days")]
     pub journal_retention_days: u32,
+    /// Seconds between maintenance passes: signature refresh, journal
+    /// retention, and the rollover steps that advance on a deadline or the
+    /// parent's DS. `0` runs no pass on this instance — every instance runs
+    /// the whole pass, so all but one may turn it off, but not all.
+    #[serde(default = "default_maintenance_interval_secs")]
+    pub maintenance_interval_secs: u64,
+    #[serde(default)]
+    pub zone_defaults: ZoneDefaultsConfig,
 }
 
+/// What a zone takes when its creation request leaves a field out. Only the
+/// creation reads these: afterwards the values are the zone's own columns.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct ZoneDefaultsConfig {
+    #[serde(default = "default_zone_ttl")]
+    pub ttl: i32,
+    /// Bindizr drives propagation with NOTIFY, so refresh and retry stay
+    /// short: they bound how long a secondary stays stale when a NOTIFY is
+    /// lost, not the happy-path latency.
+    #[serde(default = "default_zone_refresh")]
+    pub refresh: i32,
+    #[serde(default = "default_zone_retry")]
+    pub retry: i32,
+    #[serde(default = "default_zone_expire")]
+    pub expire: i32,
+    #[serde(default = "default_zone_minimum_ttl")]
+    pub minimum_ttl: i32,
+}
+
+impl Default for ZoneDefaultsConfig {
+    /// Build the default zone settings.
+    fn default() -> Self {
+        Self {
+            ttl: default_zone_ttl(),
+            refresh: default_zone_refresh(),
+            retry: default_zone_retry(),
+            expire: default_zone_expire(),
+            minimum_ttl: default_zone_minimum_ttl(),
+        }
+    }
+}
+
+/// Return the default zone TTL setting.
+fn default_zone_ttl() -> i32 {
+    3_600
+}
+
+/// Return the default zone refresh setting.
+fn default_zone_refresh() -> i32 {
+    300
+}
+
+/// Return the default zone retry setting.
+fn default_zone_retry() -> i32 {
+    60
+}
+
+/// Return the default zone expire setting.
+fn default_zone_expire() -> i32 {
+    3_600_000
+}
+
+/// Return the default zone minimum TTL setting.
+fn default_zone_minimum_ttl() -> i32 {
+    86_400
+}
+
+/// Return the default journal retention days setting.
 fn default_journal_retention_days() -> u32 {
     365
 }
 
+/// Plenty next to the day-scale windows a pass enforces.
+fn default_maintenance_interval_secs() -> u64 {
+    3_600
+}
+
+/// Return the default notify after update setting.
 fn default_notify_after_update() -> bool {
     true
 }
 
+/// Return the default notify mode setting.
 fn default_notify_mode() -> NotifyMode {
     NotifyMode::Sync
 }
 
+/// Return the default notify batch ms setting.
 fn default_notify_batch_ms() -> u64 {
     50
 }
 
+/// Return the default zone cache setting.
 fn default_zone_cache() -> bool {
     true
 }
 
+/// Return the default zone cache max records setting.
 fn default_zone_cache_max_records() -> u64 {
     500_000
 }
@@ -181,6 +278,7 @@ pub enum NotifyMode {
 }
 
 impl fmt::Display for NotifyMode {
+    /// Write the notify mode in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             NotifyMode::Sync => "sync",
@@ -193,6 +291,7 @@ impl fmt::Display for NotifyMode {
 impl std::str::FromStr for NotifyMode {
     type Err = String;
 
+    /// Parse a notify mode from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "sync" => Ok(NotifyMode::Sync),
@@ -202,22 +301,24 @@ impl std::str::FromStr for NotifyMode {
     }
 }
 
+/// Return the default notify retries setting.
 fn default_notify_retries() -> u32 {
     3
 }
 
+/// Return the default notify timeout secs setting.
 fn default_notify_timeout_secs() -> u64 {
     3
 }
 
 /// Logging settings.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct LoggingConfig {
     pub log_level: LogLevel,
 }
 
 /// Console log verbosity levels.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Trace,
@@ -228,6 +329,7 @@ pub enum LogLevel {
 }
 
 impl fmt::Display for LogLevel {
+    /// Write the log level in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             LogLevel::Trace => "trace",
@@ -243,6 +345,7 @@ impl fmt::Display for LogLevel {
 impl std::str::FromStr for LogLevel {
     type Err = String;
 
+    /// Parse a log level from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "trace" => Ok(LogLevel::Trace),
@@ -264,9 +367,43 @@ pub fn initialize(conf_file_path: Option<&str>) -> Result<(), String> {
     eprintln!("Initializing configuration from file: {}", conf_file_path);
 
     let bindizr_config = load_config_file(&conf_file_path)?;
-    BINDIZR_CONFIG.get_or_init(|| bindizr_config);
+    let mut stored = BINDIZR_CONFIG.write().map_err(|_| POISONED)?;
+    if stored.is_some() {
+        return Err("Bindizr configuration is already initialized".to_string());
+    }
+    let _ = CONFIG_PATH.set(conf_file_path);
+    *stored = Some(Arc::new(bindizr_config));
 
     Ok(())
+}
+
+const POISONED: &str = "Bindizr configuration lock is poisoned";
+
+/// Re-read the configuration file and replace the stored one, returning the
+/// settings that changed. Settings a running process cannot adopt are refused
+/// rather than stored, so the configuration always describes the process.
+pub fn reload() -> Result<Vec<String>, String> {
+    let path = CONFIG_PATH
+        .get()
+        .ok_or("Bindizr configuration is not initialized")?;
+    let next = load_config_file(path)?;
+
+    let mut stored = BINDIZR_CONFIG.write().map_err(|_| POISONED)?;
+    let current = stored
+        .as_ref()
+        .ok_or("Bindizr configuration is not initialized")?;
+
+    let fixed = current.fixed_settings_changed(&next);
+    if !fixed.is_empty() {
+        return Err(format!(
+            "these settings are fixed while bindizr runs, so nothing was reloaded: {}",
+            fixed.join(", ")
+        ));
+    }
+
+    let changed = current.changed_settings(&next);
+    *stored = Some(Arc::new(next));
+    Ok(changed)
 }
 
 /// Resolve the config file path: explicit argument, then `BINDIZR_CONFIG_PATH`,
@@ -275,6 +412,7 @@ pub fn resolve_config_path(conf_file_path: Option<&str>) -> String {
     resolve_config_path_with_env(conf_file_path, |name| env::var(name).ok())
 }
 
+/// Resolve the configuration path using the supplied environment lookup.
 fn resolve_config_path_with_env(
     conf_file_path: Option<&str>,
     get_env: impl Fn(&str) -> Option<String>,
@@ -292,26 +430,50 @@ pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
         return Err(format!("Bindizr config does not exist: {}", conf_file_path));
     }
 
-    let cfg = load_raw_config(conf_file_path)?;
-    BindizrConfig::from_raw(cfg, |name| env::var(name).ok())
-}
-
-fn load_raw_config(conf_file_path: &str) -> Result<Config, String> {
-    Config::builder()
-        .add_source(File::new(conf_file_path, FileFormat::Toml).required(true))
-        .build()
-        .map_err(|e| {
-            format!(
-                "Failed to build configuration from file '{}': {}",
-                conf_file_path, e
-            )
-        })
+    let text = std::fs::read_to_string(conf_file_path).map_err(|e| {
+        format!(
+            "Failed to read the configuration file '{}': {}",
+            conf_file_path, e
+        )
+    })?;
+    BindizrConfig::from_toml(&text, |name| env::var(name).ok())
 }
 
 impl BindizrConfig {
-    fn from_raw(raw: Config, get_env: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
-        let mut bindizr_config = raw
-            .try_deserialize::<Self>()
+    /// The settings a reload actually changed, for the line that reports it.
+    fn changed_settings(&self, next: &BindizrConfig) -> Vec<String> {
+        let mut changed = Vec::new();
+        if self.dns != next.dns {
+            changed.push("dns".to_string());
+        }
+        if self.logging != next.logging {
+            changed.push("logging".to_string());
+        }
+        changed
+    }
+
+    /// Settings bound to something built at startup — a listening socket, the
+    /// HTTP router, the database pool — which a reload cannot rebuild.
+    fn fixed_settings_changed(&self, next: &BindizrConfig) -> Vec<String> {
+        let mut fixed = Vec::new();
+        if self.api != next.api {
+            fixed.push("api".to_string());
+        }
+        if self.database != next.database {
+            fixed.push("database".to_string());
+        }
+        if self.dns.listen_addr != next.dns.listen_addr {
+            fixed.push("dns.listen_addr".to_string());
+        }
+        if self.dns.listen_port != next.dns.listen_port {
+            fixed.push("dns.listen_port".to_string());
+        }
+        fixed
+    }
+
+    /// Assemble the effective configuration from its raw sections.
+    fn from_toml(text: &str, get_env: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
+        let mut bindizr_config = toml::from_str::<Self>(text)
             .map_err(|e| format!("Invalid Bindizr configuration: {}", e))?;
 
         bindizr_config.apply_env_overrides(get_env)?;
@@ -322,111 +484,10 @@ impl BindizrConfig {
 
         Ok(bindizr_config)
     }
-
-    fn apply_env_overrides(
-        &mut self,
-        get_env: impl Fn(&str) -> Option<String>,
-    ) -> Result<(), String> {
-        if let Some(value) = get_env("BINDIZR_API_LISTEN_ADDR") {
-            self.api.listen_addr = parse_env_value("BINDIZR_API_LISTEN_ADDR", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_API_PORT") {
-            self.api.listen_port = parse_env_value("BINDIZR_API_PORT", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_API_REQUIRE_AUTHENTICATION") {
-            self.api.require_authentication =
-                parse_env_value("BINDIZR_API_REQUIRE_AUTHENTICATION", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_API_METRICS_ENABLED") {
-            self.api.metrics_enabled = parse_env_value("BINDIZR_API_METRICS_ENABLED", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_API_EXTERNAL_DNS_ENABLED") {
-            self.api.external_dns_enabled =
-                parse_env_value("BINDIZR_API_EXTERNAL_DNS_ENABLED", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_API_OPENAPI_ENABLED") {
-            self.api.openapi_enabled = parse_env_value("BINDIZR_API_OPENAPI_ENABLED", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
-            self.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_MYSQL_SERVER_URL") {
-            self.database.mysql.server_url = value;
-        }
-        if let Some(value) = get_env("BINDIZR_POSTGRESQL_SERVER_URL") {
-            self.database.postgresql.server_url = value;
-        }
-        if let Some(value) = get_env("BINDIZR_SQLITE_FILE_PATH") {
-            self.database.sqlite.file_path = value;
-        }
-        if let Some(value) = get_env("BINDIZR_DATABASE_URL") {
-            match self.database.database_type {
-                DatabaseType::Mysql => self.database.mysql.server_url = value,
-                DatabaseType::Postgresql => self.database.postgresql.server_url = value,
-                DatabaseType::Sqlite => {}
-            }
-        }
-        if let Some(value) = get_env("BINDIZR_DNS_PORT") {
-            self.dns.listen_port = parse_env_value("BINDIZR_DNS_PORT", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_DNS_LISTEN_ADDR") {
-            self.dns.listen_addr = parse_env_value("BINDIZR_DNS_LISTEN_ADDR", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_SECONDARY_ADDRS") {
-            self.dns.secondary_addrs = value;
-        }
-        if let Some(value) = get_env("BINDIZR_NSUPDATE_ALLOW_UNSIGNED") {
-            self.dns.nsupdate_allow_unsigned =
-                parse_env_value("BINDIZR_NSUPDATE_ALLOW_UNSIGNED", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_NOTIFY_AFTER_UPDATE") {
-            self.dns.notify_after_update = parse_env_value("BINDIZR_NOTIFY_AFTER_UPDATE", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_NOTIFY_MODE") {
-            self.dns.notify_mode = parse_env_value("BINDIZR_NOTIFY_MODE", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_NOTIFY_BATCH_MS") {
-            self.dns.notify_batch_ms = parse_env_value("BINDIZR_NOTIFY_BATCH_MS", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_ZONE_CACHE") {
-            self.dns.zone_cache = parse_env_value("BINDIZR_ZONE_CACHE", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_ZONE_CACHE_MAX_RECORDS") {
-            self.dns.zone_cache_max_records =
-                parse_env_value("BINDIZR_ZONE_CACHE_MAX_RECORDS", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_NOTIFY_ON_STARTUP") {
-            self.dns.notify_on_startup = parse_env_value("BINDIZR_NOTIFY_ON_STARTUP", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_NOTIFY_RETRIES") {
-            self.dns.notify_retries = parse_env_value("BINDIZR_NOTIFY_RETRIES", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_NOTIFY_TIMEOUT_SECS") {
-            self.dns.notify_timeout_secs = parse_env_value("BINDIZR_NOTIFY_TIMEOUT_SECS", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_JOURNAL_RETENTION_DAYS") {
-            self.dns.journal_retention_days =
-                parse_env_value("BINDIZR_JOURNAL_RETENTION_DAYS", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_LOG_LEVEL") {
-            self.logging.log_level = parse_env_value("BINDIZR_LOG_LEVEL", &value)?;
-        }
-
-        Ok(())
-    }
-}
-
-fn parse_env_value<T>(name: &str, value: &str) -> Result<T, String>
-where
-    T: std::str::FromStr,
-    T::Err: fmt::Display,
-{
-    value
-        .parse::<T>()
-        .map_err(|e| format!("Invalid {} environment variable '{}': {}", name, value, e))
 }
 
 impl DatabaseConfig {
+    /// Validate the database configuration fields.
     fn validate(&self) -> Result<(), String> {
         match self.database_type {
             DatabaseType::Mysql if self.mysql.server_url.trim().is_empty() => Err(
@@ -447,16 +508,31 @@ impl DatabaseConfig {
 }
 
 impl ApiConfig {
+    /// The certificate and key to serve HTTPS with, or `None` for plain HTTP.
+    pub fn tls_files(&self) -> Option<(&str, &str)> {
+        Some((
+            self.tls_cert_file.as_deref()?,
+            self.tls_key_file.as_deref()?,
+        ))
+    }
+
+    /// Validate the API configuration fields.
     fn validate(&self) -> Result<(), String> {
         if self.listen_port == 0 {
             return Err("api.listen_port must not be 0".to_string());
         }
-        Ok(())
+        // Half a pair would serve plain HTTP on a port the operator means to
+        // be HTTPS, which no later error would reveal.
+        match (self.tls_cert_file.as_deref(), self.tls_key_file.as_deref()) {
+            (Some(_), None) => Err("api.tls_cert_file needs api.tls_key_file".to_string()),
+            (None, Some(_)) => Err("api.tls_key_file needs api.tls_cert_file".to_string()),
+            _ => Ok(()),
+        }
     }
 }
 
 impl BindizrConfig {
-    /// Both bind at startup, so sharing one leaves the second failing.
+    /// Reject overlapping API and DNS endpoints so both servers can bind at startup.
     fn validate_listeners(&self) -> Result<(), String> {
         if self.api.listen_port == self.dns.listen_port
             && (self.api.listen_addr == self.dns.listen_addr
@@ -473,6 +549,7 @@ impl BindizrConfig {
 }
 
 impl DnsConfig {
+    /// Validate the DNS configuration fields.
     fn validate(&self) -> Result<(), String> {
         if self.listen_port == 0 {
             return Err("dns.listen_port must not be 0".to_string());
@@ -509,7 +586,13 @@ impl DnsConfig {
     }
 }
 
-/// Return the global configuration; panics if [`initialize`] has not run.
-pub fn bindizr_config() -> &'static BindizrConfig {
-    BINDIZR_CONFIG.get().expect("Configuration not initialized")
+/// A snapshot of the global configuration; panics if [`initialize`] has not
+/// run. A reload is invisible to a snapshot already taken, so hold one for
+/// as long as a single decision takes and no longer.
+pub fn bindizr_config() -> Arc<BindizrConfig> {
+    BINDIZR_CONFIG
+        .read()
+        .expect(POISONED)
+        .clone()
+        .expect("Configuration not initialized")
 }

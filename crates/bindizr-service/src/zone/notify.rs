@@ -30,13 +30,13 @@ impl ZoneService {
             Some(name) => {
                 Self::get_by_name(caller, name).await?;
                 if force {
-                    Self::force_increment_serial(zone_name).await?;
+                    Self::force_increment_serial(zone_name, &caller.change_subject()).await?;
                 }
             }
             None => {
                 caller.require_global("send NOTIFY for all zones")?;
                 if force {
-                    Self::force_increment_serial(zone_name).await?;
+                    Self::force_increment_serial(zone_name, &caller.change_subject()).await?;
                 }
             }
         }

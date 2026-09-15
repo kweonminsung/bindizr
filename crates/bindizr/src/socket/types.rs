@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) enum DaemonCommandKind {
     Status,
     Config,
+    ConfigReload,
     TokenCreate,
     TokenList,
     TokenDelete,
@@ -42,6 +43,7 @@ pub(crate) enum DaemonCommandKind {
     UpdateRecord,
     BulkCreateRecords,
     DeleteRecord,
+    DeleteRecordsMatching,
     NotifyAllZones,
     NotifyZone,
     ImportZone,

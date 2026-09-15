@@ -16,7 +16,7 @@ type RecordedRequest = (String, Option<String>, String);
 #[derive(Clone)]
 struct MockState {
     requests: Arc<Mutex<Vec<RecordedRequest>>>,
-    zones: (u16, String),
+    domains: (u16, String),
     records: (u16, String),
     changes: (u16, String),
     adjust: (u16, String),
@@ -28,11 +28,13 @@ struct MockUpstream {
 }
 
 impl MockUpstream {
+    /// Return requests captured by the mock upstream server.
     fn recorded(&self) -> Vec<RecordedRequest> {
         self.requests.lock().unwrap().clone()
     }
 }
 
+/// Record a mock upstream request and return its configured response.
 async fn mock_handler(State(state): State<MockState>, request: Request) -> Response {
     let path = request.uri().path().to_string();
     let authorization = request
@@ -50,7 +52,7 @@ async fn mock_handler(State(state): State<MockState>, request: Request) -> Respo
     ));
 
     let (status, body) = match path.as_str() {
-        "/external-dns/zones" => state.zones.clone(),
+        "/external-dns/domains" => state.domains.clone(),
         "/external-dns/records" => state.records.clone(),
         "/external-dns/changes" => state.changes.clone(),
         "/external-dns/adjust" => state.adjust.clone(),
@@ -68,8 +70,9 @@ async fn mock_handler(State(state): State<MockState>, request: Request) -> Respo
         .into_response()
 }
 
+/// Start a mock upstream with domain, record, and change responses.
 async fn spawn_mock(
-    zones: (u16, Value),
+    domains: (u16, Value),
     records: (u16, Value),
     changes: (u16, Value),
 ) -> MockUpstream {
@@ -77,11 +80,12 @@ async fn spawn_mock(
         500,
         json!({"error": "adjust is not mocked", "code": "INTERNAL"}),
     );
-    spawn_mock_with_adjust(zones, records, changes, not_mocked).await
+    spawn_mock_with_adjust(domains, records, changes, not_mocked).await
 }
 
+/// Start a mock upstream including an endpoint-adjustment response.
 async fn spawn_mock_with_adjust(
-    zones: (u16, Value),
+    domains: (u16, Value),
     records: (u16, Value),
     changes: (u16, Value),
     adjust: (u16, Value),
@@ -89,7 +93,7 @@ async fn spawn_mock_with_adjust(
     let requests = Arc::new(Mutex::new(Vec::new()));
     let state = MockState {
         requests: requests.clone(),
-        zones: (zones.0, zones.1.to_string()),
+        domains: (domains.0, domains.1.to_string()),
         records: (records.0, records.1.to_string()),
         changes: (changes.0, changes.1.to_string()),
         adjust: (adjust.0, adjust.1.to_string()),
@@ -103,9 +107,10 @@ async fn spawn_mock_with_adjust(
     MockUpstream { addr, requests }
 }
 
+/// Build successful domain, record, and change response fixtures.
 fn ok_mock_bodies() -> ((u16, Value), (u16, Value), (u16, Value)) {
     (
-        (200, json!({"zones": ["example.com"]})),
+        (200, json!({"domains": ["example.com"]})),
         (200, json!({"records": []})),
         (
             200,
@@ -114,11 +119,13 @@ fn ok_mock_bodies() -> ((u16, Value), (u16, Value), (u16, Value)) {
     )
 }
 
+/// Start a webhook adapter connected to the test upstream.
 async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>) -> String {
     let upstream = UpstreamClient::new(
         format!("http://{}", upstream_addr),
         token.map(str::to_string),
         2,
+        None,
     )
     .unwrap();
     let state = Arc::new(AppState { upstream });
@@ -131,6 +138,7 @@ async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>)
     format!("http://{}", addr)
 }
 
+/// Send a webhook GET request with the requested Accept header.
 async fn get(url: &str, accept: Option<&str>) -> (StatusCode, Option<String>, String) {
     let client = reqwest::Client::new();
     let mut request = client.get(url);
@@ -147,6 +155,7 @@ async fn get(url: &str, accept: Option<&str>) -> (StatusCode, Option<String>, St
     (status, content_type, response.text().await.unwrap())
 }
 
+/// Send a JSON webhook POST request and collect the response.
 async fn post(url: &str, body: Value) -> (StatusCode, String) {
     let response = reqwest::Client::new()
         .post(url)
@@ -159,10 +168,11 @@ async fn post(url: &str, body: Value) -> (StatusCode, String) {
     (status, response.text().await.unwrap())
 }
 
+/// Verify that negotiate forwards bearer token and returns domain filter.
 #[tokio::test]
 async fn negotiate_forwards_bearer_token_and_returns_domain_filter() {
-    let (zones, records, changes) = ok_mock_bodies();
-    let mock = spawn_mock(zones, records, changes).await;
+    let (domains, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
     let (status, content_type, body) = get(&base, Some(MEDIA_TYPE)).await;
@@ -177,26 +187,28 @@ async fn negotiate_forwards_bearer_token_and_returns_domain_filter() {
 
     let recorded = mock.recorded();
     assert_eq!(recorded.len(), 1);
-    assert_eq!(recorded[0].0, "/external-dns/zones");
+    assert_eq!(recorded[0].0, "/external-dns/domains");
     assert_eq!(recorded[0].1.as_deref(), Some("Bearer test-token"));
 }
 
+/// Verify that `negotiate` rejects a token with no manageable names.
 #[tokio::test]
-async fn negotiate_rejects_a_token_with_no_manageable_zones() {
+async fn negotiate_rejects_a_token_with_no_manageable_names() {
     let (_, records, changes) = ok_mock_bodies();
-    let mock = spawn_mock((200, json!({"zones": []})), records, changes).await;
+    let mock = spawn_mock((200, json!({"domains": []})), records, changes).await;
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
     let (status, _, body) = get(&base, Some(MEDIA_TYPE)).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert!(body.contains("no manageable zones"));
+    assert!(body.contains("no manageable names"));
 }
 
+/// Verify that `negotiate` rejects unsupported accept without calling bindizr.
 #[tokio::test]
 async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
-    let (zones, records, changes) = ok_mock_bodies();
-    let mock = spawn_mock(zones, records, changes).await;
+    let (domains, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, None).await;
 
     let (status, _, _) = get(&base, Some("application/xml")).await;
@@ -205,6 +217,7 @@ async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
     assert!(mock.recorded().is_empty());
 }
 
+/// Verify that `list_records` maps records to endpoints.
 #[tokio::test]
 async fn list_records_maps_records_to_endpoints() {
     let records = json!({"records": [
@@ -214,7 +227,7 @@ async fn list_records_maps_records_to_endpoints() {
          "values": ["\"heritage=external-dns,external-dns/owner=default\""]}
     ]});
     let mock = spawn_mock(
-        (200, json!({"zones": []})),
+        (200, json!({"domains": []})),
         (200, records),
         (200, json!({})),
     )
@@ -237,10 +250,11 @@ async fn list_records_maps_records_to_endpoints() {
     );
 }
 
+/// Verify that apply changes posts one bindizr change set and returns 204.
 #[tokio::test]
 async fn apply_changes_posts_one_bindizr_change_set_and_returns_204() {
-    let (zones, records, changes) = ok_mock_bodies();
-    let mock = spawn_mock(zones, records, changes).await;
+    let (domains, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, Some("test-token")).await;
 
     let (status, _) = post(
@@ -280,10 +294,11 @@ async fn apply_changes_posts_one_bindizr_change_set_and_returns_204() {
     );
 }
 
+/// Verify that `apply_changes` rejects invalid input without calling bindizr.
 #[tokio::test]
 async fn apply_changes_rejects_invalid_input_without_calling_bindizr() {
-    let (zones, records, changes) = ok_mock_bodies();
-    let mock = spawn_mock(zones, records, changes).await;
+    let (domains, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, None).await;
 
     let (status, body) = post(
@@ -300,10 +315,11 @@ async fn apply_changes_rejects_invalid_input_without_calling_bindizr() {
     assert!(mock.recorded().is_empty());
 }
 
+/// Verify that `apply_changes` passes bindizr 4xx through as permanent error.
 #[tokio::test]
 async fn apply_changes_passes_bindizr_4xx_through_as_permanent_error() {
     let mock = spawn_mock(
-        (200, json!({"zones": []})),
+        (200, json!({"domains": []})),
         (200, json!({"records": []})),
         (
             403,
@@ -323,10 +339,11 @@ async fn apply_changes_passes_bindizr_4xx_through_as_permanent_error() {
     assert!(body.contains("not enabled for ExternalDNS"));
 }
 
+/// Verify that `apply_changes` maps bindizr 5xx and unreachable to retryable 502.
 #[tokio::test]
 async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
     let mock = spawn_mock(
-        (200, json!({"zones": []})),
+        (200, json!({"domains": []})),
         (200, json!({"records": []})),
         (
             500,
@@ -349,11 +366,12 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
     assert_eq!(status, StatusCode::BAD_GATEWAY);
 }
 
+/// Verify that adjustendpoints forwards records and returns merged endpoints.
 #[tokio::test]
 async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
-    let (zones, records, changes) = ok_mock_bodies();
+    let (domains, records, changes) = ok_mock_bodies();
     let mock = spawn_mock_with_adjust(
-        zones,
+        domains,
         records,
         changes,
         (
@@ -400,10 +418,11 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     );
 }
 
+/// Verify that adjustendpoints rejects invalid endpoints without calling bindizr.
 #[tokio::test]
 async fn adjustendpoints_rejects_invalid_endpoints_without_calling_bindizr() {
-    let (zones, records, changes) = ok_mock_bodies();
-    let mock = spawn_mock(zones, records, changes).await;
+    let (domains, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock(domains, records, changes).await;
     let base = spawn_adapter(mock.addr, None).await;
 
     let (status, body) = post(
@@ -417,12 +436,13 @@ async fn adjustendpoints_rejects_invalid_endpoints_without_calling_bindizr() {
     assert!(mock.recorded().is_empty());
 }
 
+/// Verify that healthz reflects bindizr reachability.
 #[tokio::test]
 async fn healthz_reflects_bindizr_reachability() {
-    let (zones, records, changes) = ok_mock_bodies();
-    let mock = spawn_mock(zones, records, changes).await;
+    let (domains, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock(domains, records, changes).await;
 
-    let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2).unwrap();
+    let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
     let state = Arc::new(AppState { upstream });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -440,6 +460,7 @@ async fn healthz_reflects_bindizr_reachability() {
     assert!(body.contains("bindizr_external_dns_requests_total"));
 }
 
+/// Verify that endpoint label tracks head with get and skips unrouted methods.
 #[test]
 fn endpoint_label_tracks_head_with_get_and_skips_unrouted_methods() {
     use axum::http::Method;

@@ -9,6 +9,7 @@ pub(crate) struct PostgresTsigKeyRepository {
 }
 
 impl PostgresTsigKeyRepository {
+    /// Create a repository for TSIG keys using the supplied pool.
     pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -16,6 +17,7 @@ impl PostgresTsigKeyRepository {
 
 #[async_trait]
 impl TsigKeyRepository for PostgresTsigKeyRepository {
+    /// Insert a TSIG key.
     async fn create(&self, mut key: TsigKey) -> Result<TsigKey, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -41,6 +43,7 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         Ok(key)
     }
 
+    /// Find a TSIG key by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -54,6 +57,7 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         Ok(key)
     }
 
+    /// List all TSIG keys.
     async fn list_all(&self) -> Result<Vec<TsigKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -66,6 +70,7 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         Ok(keys)
     }
 
+    /// Delete a TSIG key by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

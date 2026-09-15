@@ -13,6 +13,10 @@ data:
     metrics_enabled = {{ .Values.bindizr.api.metricsEnabled }}
     external_dns_enabled = {{ .Values.bindizr.api.externalDnsEnabled }}
     openapi_enabled = {{ .Values.bindizr.api.openapiEnabled }}
+    {{- with .Values.bindizr.api.tls.existingSecret }}
+    tls_cert_file = "/etc/bindizr/tls/tls.crt"
+    tls_key_file = "/etc/bindizr/tls/tls.key"
+    {{- end }}
 
     [database]
     type = "{{ .Values.bindizr.database.type }}"
@@ -37,6 +41,14 @@ data:
     zone_cache = {{ .Values.bindizr.dns.zoneCache }}
     zone_cache_max_records = {{ .Values.bindizr.dns.zoneCacheMaxRecords }}
     journal_retention_days = {{ .Values.bindizr.dns.journalRetentionDays }}
+    maintenance_interval_secs = {{ .Values.bindizr.dns.maintenanceIntervalSecs }}
+
+    [dns.zone_defaults]
+    ttl = {{ .Values.bindizr.zoneDefaults.ttl }}
+    refresh = {{ .Values.bindizr.zoneDefaults.refresh }}
+    retry = {{ .Values.bindizr.zoneDefaults.retry }}
+    expire = {{ int64 .Values.bindizr.zoneDefaults.expire }}
+    minimum_ttl = {{ .Values.bindizr.zoneDefaults.minimumTtl }}
 
     [logging]
     log_level = "{{ .Values.bindizr.logging.level }}"

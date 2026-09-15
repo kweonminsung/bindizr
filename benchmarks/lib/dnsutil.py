@@ -45,11 +45,13 @@ def _transfer(zone: str, server: str, port: int, qtype: str,
 
 
 def axfr(zone: str, server: str, port: int, timeout: int = 300) -> tuple[float, int, int]:
+    """Run an AXFR and report its duration, record count, and output size."""
     return _transfer(zone, server, port, "AXFR", timeout)
 
 
 def ixfr(zone: str, server: str, port: int, from_serial: int,
          timeout: int = 60) -> tuple[float, int, int]:
+    """Run an IXFR from a serial and report its duration and transfer size."""
     return _transfer(zone, server, port, f"IXFR={from_serial}", timeout)
 
 

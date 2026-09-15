@@ -31,7 +31,8 @@ Every `create`, `list`, `get`, and `update` command prints a table and takes
 # Start bindizr on foreground
 $ bindizr start
 
-# Start with a custom configuration file
+# Start with a custom configuration file. `start`, `doctor`, and `config check`
+# all take `-c` and fall back to $BINDIZR_CONFIG_PATH
 $ bindizr start -c <FILE>
 
 # Stop the running daemon, or restart it in place
@@ -45,11 +46,14 @@ $ bindizr status
 $ bindizr doctor
 
 # Validate a configuration file without starting bindizr (defaults to /etc/bindizr/bindizr.conf.toml)
-$ bindizr config check [<FILE>]
+$ bindizr config check [-c <FILE>]
 
 # Show the configuration loaded by the running daemon, or one value by dotted key
 $ bindizr config list
 $ bindizr config get dns.secondary_addrs
+
+# Re-read the configuration file without restarting (SIGHUP does the same)
+$ bindizr config reload
 ```
 
 ## Zones and records
@@ -67,10 +71,18 @@ $ bindizr zone delete example.com
 # Update a zone, changing only the fields you pass
 $ bindizr zone update <ZONE_NAME> --refresh 300 --retry 60
 
+# Stop serving a zone without deleting it: it leaves the catalog and answers no
+# transfer, so secondaries drop it, while its records stay editable here
+$ bindizr zone update example.com --enabled false --description "paused for migration"
+$ bindizr zone list --enabled false
+$ bindizr zone update example.com --enabled true
+
 # Create, list, inspect, and delete records (TTL defaults to the zone's; one TTL per name and type)
 $ bindizr record create --zone example.com --name www --type A --value 192.0.2.1 --ttl 300
 $ bindizr record create --zone example.com --name @ --type TXT --value v=spf1 --value ~all  # repeat --value for TXT segments
 $ bindizr record list --zone example.com
+$ bindizr record list --zone example.com --sort ttl --order desc
+$ bindizr zone list --min-serial 100 --signed --sort created_at
 $ bindizr record get <RECORD_ID>
 $ bindizr record delete <RECORD_ID>
 
@@ -108,13 +120,24 @@ transfer):
 $ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --dry-run
 ```
 
+A zone file written for BIND often carries record types bindizr does not
+store, and one of them fails the whole import. `--skip-unsupported` passes
+over those lines instead, reporting each one:
+
+```bash
+$ bindizr zone import <ZONE_NAME> zone.txt --skip-unsupported
+```
+
 Over HTTP, `POST /zones/{name}/import` takes either `content` (zone file
-text) or `from_server` the same way.
+text) or `from_server` the same way, and `skip_unsupported` alongside them.
 
 ## Zone history
 
 Every SOA serial has a version behind it, so a zone can be diffed and rolled
-back.
+back, and each version records who made the change: the API token or TSIG key
+it was made under (`system` for the DNSSEC maintenance scheduler, `local` for
+the daemon socket or a request made while authentication is disabled). The
+name is copied into the version, so it still answers after the token is gone.
 
 ```bash
 # List a zone's versions (SOA serials are a plain counter starting at 1)
@@ -138,8 +161,9 @@ without parsing the message.
 | Code | Meaning |
 | --- | --- |
 | `0` | Success |
-| `1` | Failure, including an unreachable daemon and invalid input |
+| `1` | Failure, including invalid input |
 | `2` | Usage error, such as an unknown command or a missing argument |
 | `3` | Not found: no such zone, record, token, version, key, or policy |
 | `4` | Conflict: the name is taken, or the object is in use or in the wrong state |
 | `5` | Denied: the token is missing, invalid, or lacks a grant |
+| `6` | Unavailable: the daemon is not running, so the command never reached it |

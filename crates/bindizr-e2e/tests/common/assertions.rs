@@ -1,3 +1,4 @@
+/// Assert that a CLI command completed successfully, showing output on failure.
 pub(crate) fn assert_cli_success(args: &[&str], output: &std::process::Output) {
     assert!(
         output.status.success(),
@@ -8,6 +9,7 @@ pub(crate) fn assert_cli_success(args: &[&str], output: &std::process::Output) {
     );
 }
 
+/// Assert that a CLI command failed with the expected error text.
 pub(crate) fn assert_cli_failure_contains(
     args: &[&str],
     output: &std::process::Output,

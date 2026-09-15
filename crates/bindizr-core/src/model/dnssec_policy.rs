@@ -26,6 +26,7 @@ impl DnssecDenial {
 }
 
 impl std::fmt::Display for DnssecDenial {
+    /// Write the DNSSEC denial in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -34,6 +35,7 @@ impl std::fmt::Display for DnssecDenial {
 impl std::str::FromStr for DnssecDenial {
     type Err = String;
 
+    /// Parse a DNSSEC denial from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "nsec" => Ok(DnssecDenial::Nsec),
@@ -48,6 +50,8 @@ impl std::str::FromStr for DnssecDenial {
 
 impl TryFrom<String> for DnssecDenial {
     type Error = String;
+
+    /// Validate and convert the stored value into a DNSSEC denial.
     fn try_from(s: String) -> Result<Self, Self::Error> {
         s.parse()
     }
@@ -76,12 +80,5 @@ pub struct DnssecPolicy {
     /// Days an active ZSK may sign before the scheduler rolls it; 0 disables
     /// scheduled rolls.
     pub zsk_lifetime_days: i32,
-    /// How long a pre-published key stays visible before it may start
-    /// signing (caches must have learned the DNSKEY). ZSKs auto-advance
-    /// after this; for CSK/KSK it is the least wait before `rollover ds-seen`.
-    pub rollover_publish_holddown_secs: i64,
-    /// How long a retired key stays published before removal (caches must
-    /// have drained its signatures and the parent its DS).
-    pub rollover_retire_holddown_secs: i64,
     pub created_at: DateTime<Utc>,
 }

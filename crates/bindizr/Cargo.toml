@@ -26,12 +26,13 @@ bindizr-core = { path = "../bindizr-core", version = "0.1.0-beta.7" }
 bindizr-db = { path = "../bindizr-db", version = "0.1.0-beta.7" }
 bindizr-service = { path = "../bindizr-service", version = "0.1.0-beta.7" }
 axum.workspace = true
+axum-server.workspace = true
 chrono.workspace = true
 clap.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
+serde_norway.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tabled.workspace = true
@@ -40,6 +41,8 @@ tower-http.workspace = true
 utoipa.workspace = true
 
 [dev-dependencies]
+# `test-util` so a write deadline is asserted on a paused clock, not in real time.
+tokio = { workspace = true, features = ["test-util"] }
 tempfile.workspace = true
 
 [lints]

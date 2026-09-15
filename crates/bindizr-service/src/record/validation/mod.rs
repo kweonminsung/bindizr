@@ -18,8 +18,7 @@ use crate::{
     repository::{RepositoryService, RepositoryTx},
 };
 
-/// Core value validation with the error mapped to `INVALID_RECORD_VALUE`.
-/// A record TTL is non-negative (RFC 2181, Section 8); the zone's default
+/// Reject a negative record TTL (RFC 2181, Section 8); the zone's default
 /// stands in for an omitted one.
 pub(crate) fn validate_record_ttl(ttl: i32) -> Result<(), ServiceError> {
     if ttl < 0 {
@@ -28,12 +27,14 @@ pub(crate) fn validate_record_ttl(ttl: i32) -> Result<(), ServiceError> {
     Ok(())
 }
 
+/// Parse a supported record type from request text.
 pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
     value
         .parse::<RecordType>()
         .map_err(|_| ServiceError::invalid_input(format!("invalid record type: {}", value)))
 }
 
+/// Validate and normalize a record owner relative to its zone.
 pub(crate) fn normalize_record_owner_name(
     input_name: &str,
     zone_name: &ZoneName,
@@ -57,10 +58,9 @@ fn has_matching_rdata<'a>(
     value: &str,
     priority: Option<i32>,
 ) -> bool {
-    records.into_iter().any(|r| {
-        r.record_type == *record_type
-            && record_type.values_equal(&r.value, r.priority, value, priority)
-    })
+    records
+        .into_iter()
+        .any(|r| r.record_type == *record_type && r.has_rdata(value, priority))
 }
 
 /// Validate an add whose owner name has already been normalized to `stored_name`.
@@ -156,6 +156,20 @@ pub(crate) fn validate_record_add_constraints_normalized(
     }
 
     Ok(())
+}
+
+/// Refuse a stored name that no longer fits the wire under `zone_name`, the
+/// zone a rename or a rollback pairs it with.
+pub(crate) fn validate_record_name_in_zone(
+    name: &OwnerName,
+    zone_name: &ZoneName,
+) -> Result<(), ServiceError> {
+    name.to_wire(zone_name).map(|_| ()).map_err(|e| {
+        ServiceError::invalid_record_name(format!(
+            "record name '{}' under zone '{}' {}",
+            name, zone_name, e
+        ))
+    })
 }
 
 /// Reject deletions of the SOA record or the NS record referenced by `mname`.

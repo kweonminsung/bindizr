@@ -8,7 +8,10 @@ use crate::{
     model::record::{Record, RecordWithZone},
     repository::{
         LockLevel, RecordFilter, RecordRepository, RepositoryTx,
-        sql::{apex_owner_sql, like_pattern, lock_clause, name_like_types_sql, trim_partial_value},
+        sql::{
+            apex_owner_sql, concat_fn, grant_record_match_sql, like_pattern, lock_clause,
+            name_like_types_sql, record_order_by_sql, trim_partial_value,
+        },
     },
 };
 
@@ -17,6 +20,7 @@ pub(crate) struct MySqlRecordRepository {
 }
 
 impl MySqlRecordRepository {
+    /// Create a repository for records using the supplied pool.
     pub(crate) fn new(pool: Pool<MySql>) -> Self {
         MySqlRecordRepository { pool }
     }
@@ -24,6 +28,7 @@ impl MySqlRecordRepository {
 
 #[async_trait]
 impl RecordRepository for MySqlRecordRepository {
+    /// Insert a record in the current transaction.
     async fn create_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -54,6 +59,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
+    /// Insert a batch of records in the current transaction.
     async fn create_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -116,6 +122,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(out)
     }
 
+    /// Find a record by ID.
     async fn get(&self, id: i32) -> Result<Option<Record>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -128,6 +135,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
+    /// Find a record with its zone metadata.
     async fn get_with_zone(&self, id: i32) -> Result<Option<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -147,6 +155,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
+    /// Find a record by ID in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -163,6 +172,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
+    /// List records for a zone in the current transaction.
     async fn list_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -172,7 +182,7 @@ impl RecordRepository for MySqlRecordRepository {
         let mysql_tx = tx.as_mysql()?;
 
         let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
-            format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name{}",
+            format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name, id{}",
             lock_clause(lock_level),
         )))
         .bind(zone_id)
@@ -182,6 +192,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(records)
     }
 
+    /// List records at an owner name in a zone in the current transaction.
     async fn list_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -194,7 +205,7 @@ impl RecordRepository for MySqlRecordRepository {
         // Bind the canonical stored form as given: re-folding it here would miss
         // its own row, and the bare column lets idx_records_zone_name apply.
         let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
-            format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name{}",
+            format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name, id{}",
             lock_clause(lock_level),
         )))
         .bind(zone_id)
@@ -205,6 +216,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(records)
     }
 
+    /// Find an owner with a DS record but no NS delegation in the current transaction.
     async fn get_ds_name_without_ns_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -223,6 +235,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(name)
     }
 
+    /// List records at the requested owner names in a zone in the current transaction.
     async fn list_by_names_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -261,6 +274,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(out)
     }
 
+    /// List matching records with their zone metadata.
     async fn list_by_filter_with_zone(
         &self,
         filter: RecordFilter,
@@ -271,6 +285,8 @@ impl RecordRepository for MySqlRecordRepository {
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
+        let order_by = record_order_by_sql(filter.sort, filter.order);
+        let grant_match = grant_record_match_sql("r", Some("record_type"), concat_fn);
         let query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
             SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
@@ -305,11 +321,10 @@ impl RecordRepository for MySqlRecordRepository {
               AND (
                     ? IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = ? AND p.zone_id = r.zone_id)
+                               WHERE p.api_token_id = ? AND p.zone_id = r.zone_id
+                                 AND {grant_match})
               )
-            -- every type at one name shares r.name, so without r.id a plan change
-            -- between two pages could drop or repeat a row.
-            ORDER BY r.name, r.id
+            {order_by}
             LIMIT ? OFFSET ?
             "#
         )))
@@ -357,6 +372,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(records)
     }
 
+    /// Count records matching the filter.
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
         let value = filter.value.as_deref().map(trim_partial_value);
@@ -364,6 +380,7 @@ impl RecordRepository for MySqlRecordRepository {
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
+        let grant_match = grant_record_match_sql("r", Some("record_type"), concat_fn);
         let query = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
             r#"
             SELECT COUNT(*)
@@ -397,7 +414,8 @@ impl RecordRepository for MySqlRecordRepository {
               AND (
                     ? IS NULL
                     OR EXISTS (SELECT 1 FROM token_grants p
-                               WHERE p.api_token_id = ? AND p.zone_id = r.zone_id)
+                               WHERE p.api_token_id = ? AND p.zone_id = r.zone_id
+                                 AND {grant_match})
               )
             "#
         )))
@@ -436,6 +454,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(count as u64)
     }
 
+    /// Update a record in the current transaction.
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -464,6 +483,7 @@ impl RecordRepository for MySqlRecordRepository {
         Ok(record)
     }
 
+    /// Delete the records with the supplied IDs in the current transaction.
     async fn delete_many_tx(
         &self,
         tx: &mut RepositoryTx<'_>,

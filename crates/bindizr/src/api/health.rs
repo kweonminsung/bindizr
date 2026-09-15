@@ -6,6 +6,8 @@ use bindizr_service::{types::HealthResponse, zone::ZoneService};
 /// Orchestrator probes expect a prompt 503, not a hang on a wedged database.
 const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// Minimal database round-trip, kept cheap and side-effect free because
+/// probes run frequently.
 #[utoipa::path(
         get,
         path = "/health",
@@ -18,8 +20,6 @@ const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
             (status = 503, description = "Service unhealthy", body = HealthResponse)
         )
 )]
-/// Minimal database round-trip, kept cheap and side-effect free because
-/// probes run frequently.
 pub(crate) async fn get_health() -> impl IntoResponse {
     match tokio::time::timeout(DB_PROBE_TIMEOUT, ZoneService::ping()).await {
         Ok(Ok(())) => (

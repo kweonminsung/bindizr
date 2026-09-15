@@ -1,5 +1,6 @@
 use super::{TxtContent, TxtRecordValue};
 
+/// Verify that raw TXT RDATA round-trips through the row form.
 #[test]
 fn raw_txt_rdata_round_trips_through_the_row_form() {
     let rdata = [2, b'a', b'b', 1, b'c'];
@@ -14,6 +15,7 @@ fn raw_txt_rdata_round_trips_through_the_row_form() {
     );
 }
 
+/// Verify that TXT segment encoding is reversible.
 #[test]
 fn txt_segments_encode_reversible() {
     let rdata = TxtRecordValue::from_segments(["a", "bc"]).unwrap();
@@ -27,6 +29,7 @@ fn txt_segments_encode_reversible() {
     );
 }
 
+/// Verify that TXT segments reject empty lists.
 #[test]
 fn txt_segments_reject_empty_lists() {
     assert_eq!(
@@ -35,12 +38,14 @@ fn txt_segments_reject_empty_lists() {
     );
 }
 
+/// Verify that `from_rdata` rejects empty or broken charstring chains.
 #[test]
 fn from_rdata_rejects_empty_or_broken_charstring_chains() {
     assert!(TxtRecordValue::from_rdata(&[]).is_err());
     assert!(TxtRecordValue::from_rdata(&[5, b'a']).is_err());
 }
 
+/// Verify that TXT segments allow single empty segment.
 #[test]
 fn txt_segments_allow_single_empty_segment() {
     let rdata = TxtRecordValue::from_segments([""]).unwrap();
@@ -49,6 +54,7 @@ fn txt_segments_allow_single_empty_segment() {
     assert_eq!(rdata.to_content(), Some(TxtContent::Single(String::new())));
 }
 
+/// Verify that TXT string splits long values.
 #[test]
 fn txt_string_splits_long_values() {
     let rdata = TxtRecordValue::from_string(&"a".repeat(300));
@@ -67,6 +73,7 @@ fn txt_string_splits_long_values() {
     );
 }
 
+/// Verify that TXT string splits on UTF8 boundaries.
 #[test]
 fn txt_string_splits_on_utf8_boundaries() {
     let rdata = TxtRecordValue::from_string(&format!("{}{}", "a".repeat(254), "é"));
@@ -77,12 +84,14 @@ fn txt_string_splits_on_utf8_boundaries() {
     );
 }
 
+/// Verify that `from_presentation` rejects unquoted values.
 #[test]
 fn from_presentation_rejects_unquoted_values() {
     assert!(TxtRecordValue::from_presentation("v=spf1 -all").is_none());
     assert!(TxtRecordValue::from_presentation("bindizr:txt-rdata:v1:A2Fi").is_none());
 }
 
+/// Verify that `parse` reads quoted segments.
 #[test]
 fn parse_reads_quoted_segments() {
     assert_eq!(
@@ -108,6 +117,7 @@ fn parse_reads_quoted_segments() {
     );
 }
 
+/// Verify that `parse` unescapes quotes backslashes and ddd.
 #[test]
 fn parse_unescapes_quotes_backslashes_and_ddd() {
     assert_eq!(
@@ -118,6 +128,7 @@ fn parse_unescapes_quotes_backslashes_and_ddd() {
     );
 }
 
+/// Verify that `parse` treats bare value as content.
 #[test]
 fn parse_treats_bare_value_as_content() {
     assert_eq!(
@@ -126,6 +137,7 @@ fn parse_treats_bare_value_as_content() {
     );
 }
 
+/// Verify that `parse` keeps bare value whitespace.
 #[test]
 fn parse_keeps_bare_value_whitespace() {
     assert_eq!(
@@ -145,6 +157,7 @@ fn parse_keeps_bare_value_whitespace() {
     );
 }
 
+/// Verify that `parse` splits long bare value.
 #[test]
 fn parse_splits_long_bare_value() {
     assert_eq!(
@@ -155,6 +168,7 @@ fn parse_splits_long_bare_value() {
     );
 }
 
+/// Verify that `parse` rejects malformed values.
 #[test]
 fn parse_rejects_malformed_values() {
     assert!(TxtRecordValue::parse("").is_err());
@@ -165,8 +179,19 @@ fn parse_rejects_malformed_values() {
     assert!(TxtRecordValue::parse(&format!("\"{}\"", "a".repeat(256))).is_err());
 }
 
+/// Verify that `to_presentation` round-trips ownership records.
 #[test]
 fn to_presentation_round_trips_ownership_records() {
+    assert_eq!(
+        TxtRecordValue::from_string("v=spf1 \"x\\y\"").to_presentation(),
+        "\"v=spf1 \\\"x\\\\y\\\"\""
+    );
+    // Control bytes are escaped as \DDD per RFC 1035, Section 5.1.
+    assert_eq!(
+        TxtRecordValue::from_string("a\u{1}b").to_presentation(),
+        "\"a\\001b\""
+    );
+
     let ownership = r#""heritage=external-dns,external-dns/owner=default,external-dns/resource=ingress/default/app""#;
     assert_eq!(
         TxtRecordValue::parse(ownership).unwrap().to_presentation(),
@@ -183,6 +208,7 @@ fn to_presentation_round_trips_ownership_records() {
     );
 }
 
+/// Verify that `validate` rejects data that cannot fit one DNS message.
 #[test]
 fn validate_rejects_data_that_cannot_fit_one_dns_message() {
     let segment = "a".repeat(255);

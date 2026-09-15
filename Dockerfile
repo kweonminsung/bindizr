@@ -5,7 +5,7 @@ WORKDIR /usr/src/bindizr
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
-RUN cargo build --release --bin bindizr --bin bindizr-external-dns
+RUN cargo build --locked --release --bin bindizr --bin bindizr-external-dns
 
 FROM debian:bookworm-slim AS runtime
 
@@ -26,5 +26,10 @@ RUN setcap cap_net_bind_service=+ep /usr/local/bin/bindizr
 USER bindizr
 
 EXPOSE 8000/tcp 53/tcp 53/udp
+
+# The daemon's own socket answers this, so the image needs no HTTP client, and
+# a database outage does not restart the container into a crash loop.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["bindizr", "status"]
 
 CMD ["bindizr", "start"]

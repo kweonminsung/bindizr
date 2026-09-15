@@ -9,8 +9,8 @@ use bindizr_service::{
     external_dns::ExternalDnsService,
     types::{
         ErrorResponse, ExternalDnsAdjustRequest, ExternalDnsAdjustResponse,
-        ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsRecordsResponse,
-        ExternalDnsZonesResponse,
+        ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsDomainsResponse,
+        ExternalDnsRecordsResponse,
     },
 };
 
@@ -24,9 +24,13 @@ use crate::api::{
 pub(crate) struct ExternalDnsApi;
 
 impl ExternalDnsApi {
+    /// Build the external DNS API routes.
     pub(crate) async fn routes() -> Router {
         Router::new()
-            .route("/external-dns/zones", routing::get(list_external_dns_zones))
+            .route(
+                "/external-dns/domains",
+                routing::get(list_external_dns_domains),
+            )
             .route(
                 "/external-dns/records",
                 routing::get(list_external_dns_records),
@@ -47,26 +51,27 @@ impl ExternalDnsApi {
     }
 }
 
+/// List the names the ExternalDNS caller may manage.
 #[utoipa::path(
         get,
-        path = "/external-dns/zones",
+        path = "/external-dns/domains",
         tag = "ExternalDNS",
-        summary = "List the zones ExternalDNS may manage",
-        description = "Zones the calling token may manage: every zone for a global token, otherwise the zones its grants cover.",
+        summary = "List the names ExternalDNS may manage",
+        description = "The ExternalDNS domain filter the calling token's grants come to: every zone name for a global token, otherwise one name per writable grant — the zone where the grant covers every name, the granted subtree where it does not. Each entry covers itself and everything under it, so a grant narrowed by record type or to one exact name reads wider here than it is.",
         responses(
-            (status = 200, description = "Allowed zones", body = ExternalDnsZonesResponse),
+            (status = 200, description = "Manageable names", body = ExternalDnsDomainsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List the zones the ExternalDNS caller may manage.
-pub(crate) async fn list_external_dns_zones(
+pub(crate) async fn list_external_dns_domains(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
-    let zones = ExternalDnsService::list_zone_names(&caller).await?;
-    Ok((StatusCode::OK, Json(ExternalDnsZonesResponse { zones })).into_response())
+    let domains = ExternalDnsService::list_managed_domains(&caller).await?;
+    Ok((StatusCode::OK, Json(ExternalDnsDomainsResponse { domains })).into_response())
 }
 
+/// List the records of every zone the ExternalDNS caller may manage.
 #[utoipa::path(
         get,
         path = "/external-dns/records",
@@ -79,7 +84,6 @@ pub(crate) async fn list_external_dns_zones(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// List the records of every zone the ExternalDNS caller may manage.
 pub(crate) async fn list_external_dns_records(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
@@ -87,6 +91,7 @@ pub(crate) async fn list_external_dns_records(
     Ok((StatusCode::OK, Json(ExternalDnsRecordsResponse { records })).into_response())
 }
 
+/// Canonicalize desired records for the ExternalDNS adapter's adjust step.
 #[utoipa::path(
         post,
         path = "/external-dns/adjust",
@@ -102,7 +107,6 @@ pub(crate) async fn list_external_dns_records(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Canonicalize desired records for the ExternalDNS adapter's adjust step.
 pub(crate) async fn adjust_external_dns_records(
     RequestCaller(_caller): RequestCaller,
     JsonBody(body): JsonBody<ExternalDnsAdjustRequest>,
@@ -111,6 +115,7 @@ pub(crate) async fn adjust_external_dns_records(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Apply an ExternalDNS change set atomically across its target zones.
 #[utoipa::path(
         post,
         path = "/external-dns/changes",
@@ -129,7 +134,6 @@ pub(crate) async fn adjust_external_dns_records(
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
-/// Apply an ExternalDNS change set atomically across its target zones.
 pub(crate) async fn apply_external_dns_changes(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<ExternalDnsChangesRequest>,

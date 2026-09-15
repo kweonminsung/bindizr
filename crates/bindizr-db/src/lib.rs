@@ -21,7 +21,6 @@ pub(crate) use bindizr_core::{config, log_error, log_info, log_warn};
 use error::DatabaseError;
 
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
-static INITIALIZE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Debug)]
 pub(crate) enum DatabasePool {
@@ -37,18 +36,8 @@ pub(crate) enum DatabaseType {
     SQLite,
 }
 
-/// Initialize the global database pool from configuration. Idempotent.
+/// Build the global database pool from configuration; the daemon calls this once.
 pub async fn initialize() -> Result<(), DatabaseError> {
-    if is_initialized() {
-        return Ok(());
-    }
-
-    let initialize_guard = INITIALIZE_LOCK.lock().await;
-
-    if is_initialized() {
-        return Ok(());
-    }
-
     let bindizr_config = config::bindizr_config();
 
     let database_type = match bindizr_config.database.database_type {
@@ -70,18 +59,12 @@ pub async fn initialize() -> Result<(), DatabaseError> {
         DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await?,
     };
 
-    // Cannot fail: the pool is set only here, under INITIALIZE_LOCK.
     DATABASE_POOL
         .set(pool)
-        .expect("database pool initialized twice");
+        .map_err(|_| DatabaseError::PoolError("database pool initialized twice".to_string()))?;
 
-    drop(initialize_guard);
     log_info!("Database pool initialized");
     Ok(())
-}
-
-fn is_initialized() -> bool {
-    DATABASE_POOL.get().is_some()
 }
 
 /// Return the global database pool, panicking if not yet initialized.
@@ -89,9 +72,32 @@ pub(crate) fn get_pool() -> &'static DatabasePool {
     DATABASE_POOL.get().expect("Database pool not initialized")
 }
 
-/// Max pooled connections, scaled to the host; sqlx's default is a flat 10.
-/// SQLite shares it: under WAL the pool bounds read concurrency rather than
-/// contention for the writer slot.
+/// How full the connection pool is. sqlx counts held connections, not waiters,
+/// so saturation shows as `connections` reaching `max`.
+pub struct PoolStats {
+    /// Connections the pool holds, idle and handed out alike.
+    pub connections: u32,
+    pub idle: u32,
+    pub max: u32,
+}
+
+/// The pool's occupancy, or `None` before [`initialize`].
+pub fn pool_stats() -> Option<PoolStats> {
+    let (connections, idle) = match DATABASE_POOL.get()? {
+        DatabasePool::MySQL(pool) => (pool.size(), pool.num_idle()),
+        DatabasePool::PostgreSQL(pool) => (pool.size(), pool.num_idle()),
+        DatabasePool::SQLite(pool) => (pool.size(), pool.num_idle()),
+    };
+
+    Some(PoolStats {
+        connections,
+        idle: idle as u32,
+        max: pool_max_connections(),
+    })
+}
+
+/// Max pooled connections, scaled to the host instead of sqlx's flat 10.
+/// SQLite shares it: under WAL the pool bounds readers, not the one writer.
 fn pool_max_connections() -> u32 {
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -161,6 +167,7 @@ impl DatabasePool {
 
         Ok(database_pool)
     }
+
     /// Connect to SQLite, create tables, and return the pool.
     pub(crate) async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
         // A clean install points at a database file that does not exist yet.
@@ -176,15 +183,15 @@ impl DatabasePool {
                     sqlx::query("PRAGMA foreign_keys = ON")
                         .execute(&mut *conn)
                         .await?;
-                    // SQLite's busy handler polls unfairly, so a short timeout starves
-                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY. Set before the
-                    // WAL switch below, which takes a lock of its own.
+                    // SQLite's busy handler polls unfairly: a short timeout starves
+                    // BEGIN IMMEDIATE waiters into SQLITE_BUSY. Set before the WAL
+                    // switch, which locks too.
                     sqlx::query("PRAGMA busy_timeout = 15000")
                         .execute(&mut *conn)
                         .await?;
-                    // WAL keeps readers off the writer's lock; being a file
-                    // property this re-asserts it per connection. SQLite answers
-                    // with the mode in force, not an error, if WAL cannot apply.
+                    // WAL keeps readers off the writer's lock; a file property, so
+                    // each connection re-asserts it. SQLite reports the mode in
+                    // force instead of failing when WAL cannot apply.
                     let mode = sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
                         .fetch_one(&mut *conn)
                         .await?;
@@ -212,6 +219,7 @@ impl DatabasePool {
         Ok(database_pool)
     }
 
+    /// Create the application schema in the selected database backend.
     async fn create_tables(&self) -> Result<(), String> {
         match self {
             DatabasePool::MySQL(pool) => {
@@ -282,66 +290,79 @@ impl DatabasePool {
     }
 }
 
+/// Return the initialized zone repository.
 pub fn get_zone_repository() -> Box<dyn repository::ZoneRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_repository(pool)
 }
 
+/// Return the initialized record repository.
 pub fn get_record_repository() -> Box<dyn repository::RecordRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_record_repository(pool)
 }
 
+/// Return the initialized DNSSEC policy repository.
 pub fn get_dnssec_policy_repository() -> Box<dyn repository::DnssecPolicyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_dnssec_policy_repository(pool)
 }
 
+/// Return the initialized TSIG key repository.
 pub fn get_tsig_key_repository() -> Box<dyn repository::TsigKeyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_tsig_key_repository(pool)
 }
 
+/// Return the initialized TSIG grant repository.
 pub fn get_tsig_grant_repository() -> Box<dyn repository::TsigGrantRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_tsig_grant_repository(pool)
 }
 
+/// Return the initialized token grant repository.
 pub fn get_token_grant_repository() -> Box<dyn repository::TokenGrantRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_token_grant_repository(pool)
 }
 
+/// Return the initialized API token repository.
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_api_token_repository(pool)
 }
 
+/// Return the initialized zone change repository.
 pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_change_repository(pool)
 }
 
+/// Return the initialized zone version repository.
 pub fn get_zone_version_repository() -> Box<dyn repository::ZoneVersionRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_zone_version_repository(pool)
 }
 
+/// Return the initialized catalog zone state repository.
 pub fn get_catalog_zone_state_repository() -> Box<dyn repository::CatalogZoneStateRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_catalog_zone_state_repository(pool)
 }
 
+/// Return the initialized DNSSEC withdrawal repository.
 pub fn get_dnssec_withdrawal_repository() -> Box<dyn repository::DnssecWithdrawalRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_dnssec_withdrawal_repository(pool)
 }
 
+/// Return the initialized DNSSEC key repository.
 pub fn get_dnssec_key_repository() -> Box<dyn repository::DnssecKeyRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_dnssec_key_repository(pool)
 }
 
+/// Return the initialized DNSSEC record repository.
 pub fn get_dnssec_record_repository() -> Box<dyn repository::DnssecRecordRepository> {
     let pool = get_pool();
     repository::RepositoryFactory::create_dnssec_record_repository(pool)

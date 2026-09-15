@@ -2,7 +2,6 @@
 //! authentication, and building the response. Applying the changes is the
 //! service layer's.
 
-pub mod auth;
 pub mod parser;
 #[cfg(test)]
 mod tests;
@@ -19,6 +18,7 @@ use domain::{
 /// (RFC 8945, Section 10 suggested default).
 pub const DEFAULT_FUDGE: u16 = 300;
 
+/// Check whether a DNS message uses the UPDATE opcode.
 pub fn is_nsupdate(message: &[u8]) -> bool {
     Message::from_octets(message).is_ok_and(|message| message.header().opcode() == Opcode::UPDATE)
 }
@@ -29,7 +29,7 @@ pub fn is_nsupdate(message: &[u8]) -> bool {
 pub fn build_response(
     query_data: &[u8],
     rcode: Rcode,
-    signer: Option<auth::ResponseSigner>,
+    signer: Option<crate::dns::tsig::ResponseSigner>,
     fudge: u16,
 ) -> Option<Vec<u8>> {
     let msg = Message::from_octets(query_data).ok()?;

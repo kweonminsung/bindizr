@@ -12,10 +12,11 @@ use bindizr_core::{
         nsupdate::{DEFAULT_FUDGE, build_response},
     },
     log_info, log_warn,
-    metrics::metrics,
+    metrics::{NsupdateResult, track_nsupdate},
 };
 use tokio::net::{TcpStream, UdpSocket};
 
+/// Apply a dynamic update received over TCP and send its response.
 pub(crate) async fn handle_tcp_nsupdate(
     stream: &mut TcpStream,
     query_data: &[u8],
@@ -32,6 +33,7 @@ pub(crate) async fn handle_tcp_nsupdate(
         .map_err(|e| format!("Failed to write NSUPDATE TCP response: {}", e))
 }
 
+/// Apply a dynamic update received over UDP and return its response.
 pub(crate) async fn handle_udp_nsupdate(
     socket: &UdpSocket,
     query_data: &[u8],
@@ -62,7 +64,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         Ok(req) => req,
         Err(e) => {
             log_warn!("NSUPDATE parse error from {}: {}", client_addr, e);
-            track_nsupdate("formerr");
+            track_nsupdate(NsupdateResult::Rcode(Rcode::FORMERR));
             return build_response(query_data, Rcode::FORMERR, None, DEFAULT_FUDGE);
         }
     };
@@ -87,7 +89,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         // request's TSIG record (RFC 8945, Sections 5.2–5.3).
         Err(update::UpdateError::TsigFailed { msg, response }) => {
             log_warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
-            track_nsupdate("tsig_failed");
+            track_nsupdate(NsupdateResult::TsigFailed);
             return Some(response);
         }
         Err(update::UpdateError::Refused(msg)) => {
@@ -120,29 +122,6 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         }
     };
 
-    track_nsupdate(rcode_label(rcode));
+    track_nsupdate(NsupdateResult::Rcode(rcode));
     build_response(query_data, rcode, signer, fudge)
-}
-
-fn track_nsupdate(result: &str) {
-    metrics()
-        .nsupdate_requests_total
-        .with_label_values(&[result])
-        .inc();
-}
-
-// Bounded label values from the response code, never the free-form message.
-fn rcode_label(rcode: Rcode) -> &'static str {
-    match rcode {
-        Rcode::NOERROR => "noerror",
-        Rcode::FORMERR => "formerr",
-        Rcode::REFUSED => "refused",
-        Rcode::YXDOMAIN => "yxdomain",
-        Rcode::YXRRSET => "yxrrset",
-        Rcode::NXDOMAIN => "nxdomain",
-        Rcode::NXRRSET => "nxrrset",
-        Rcode::NOTZONE => "notzone",
-        Rcode::SERVFAIL => "servfail",
-        _ => "other",
-    }
 }

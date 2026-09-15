@@ -6,11 +6,13 @@ pub struct NsRecordValue<'a> {
 }
 
 impl<'a> NsRecordValue<'a> {
+    /// Parse and validate a NS record value.
     pub fn parse(value: &'a str) -> Result<Self, String> {
         validate_domain_record_value("NS record value", value)?;
         Ok(Self { target: value })
     }
 
+    /// Render the NS value in canonical text form.
     pub fn canonical(&self) -> String {
         to_fqdn_lowercase(self.target)
     }

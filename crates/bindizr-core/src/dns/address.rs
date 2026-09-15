@@ -10,6 +10,7 @@ pub enum ParsedAddress {
     HostPort(String),
 }
 
+/// Parse an address target and supply the default port when needed.
 pub fn parse_address_target(value: &str, default_port: u16) -> ParsedAddress {
     if let Ok(addr) = value.parse::<SocketAddr>() {
         return ParsedAddress::SocketAddr(addr);
@@ -52,6 +53,7 @@ pub fn is_address_target(value: &str) -> bool {
     }
 }
 
+/// Check whether a hostname uses valid domain labels.
 fn is_hostname(value: &str) -> bool {
     let name = value.strip_suffix('.').unwrap_or(value);
     !name.is_empty()
@@ -61,6 +63,7 @@ fn is_hostname(value: &str) -> bool {
             .all(|label| classify_domain_label(label, true).is_ok())
 }
 
+/// Check whether an address target includes a valid explicit port.
 fn has_explicit_port(value: &str) -> bool {
     if let Some((_, rest)) = value.strip_prefix('[').and_then(|v| v.split_once(']')) {
         return rest.strip_prefix(':').is_some_and(is_valid_port);
@@ -72,6 +75,7 @@ fn has_explicit_port(value: &str) -> bool {
     }
 }
 
+/// Check whether text represents a nonzero 16-bit port.
 fn is_valid_port(value: &str) -> bool {
     value.parse::<u16>().is_ok_and(|port| port != 0)
 }
@@ -80,8 +84,8 @@ fn is_valid_port(value: &str) -> bool {
 mod tests {
     use super::*;
 
-    // Tag the variant alongside the rendered value so a SocketAddr/HostPort
-    // regression cannot slip through when both render to the same string.
+    /// Render a parsed address with its variant so identical text cannot hide a
+    /// SocketAddr/HostPort mismatch.
     fn target_to_string(target: ParsedAddress) -> String {
         match target {
             ParsedAddress::SocketAddr(addr) => format!("SocketAddr({addr})"),
@@ -89,6 +93,7 @@ mod tests {
         }
     }
 
+    /// Verify that `parse_address_target` defaults plain ip addresses to default port.
     #[test]
     fn parse_address_target_defaults_plain_ip_addresses_to_default_port() {
         assert_eq!(
@@ -105,6 +110,7 @@ mod tests {
         );
     }
 
+    /// Verify that `parse_address_target` preserves explicit ports.
     #[test]
     fn parse_address_target_preserves_explicit_ports() {
         assert_eq!(
@@ -121,6 +127,7 @@ mod tests {
         );
     }
 
+    /// Verify that `is_address_target` accepts host port forms and rejects the rest.
     #[test]
     fn is_address_target_accepts_host_port_forms_and_rejects_the_rest() {
         for value in [
@@ -154,6 +161,7 @@ mod tests {
         }
     }
 
+    /// Verify that `parse_address_target` defaults hostname to default port.
     #[test]
     fn parse_address_target_defaults_hostname_to_default_port() {
         assert_eq!(

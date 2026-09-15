@@ -8,8 +8,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use base64::Engine;
 
 use super::{
-    CaaRecordValue, DsRrValue, MxRecordValue, SrvRecordValue, SshfpRecordValue, TlsaRecordValue,
-    TxtRecordValue,
+    CaaRecordValue, DsRrValue, MxRecordValue, NaptrRecordValue, SrvRecordValue, SshfpRecordValue,
+    TlsaRecordValue, TxtRecordValue,
 };
 use crate::{dns::name::encode_name, model::record::RecordType};
 
@@ -19,6 +19,7 @@ use crate::{dns::name::encode_name, model::record::RecordType};
 pub struct Rdata(Vec<u8>);
 
 impl Rdata {
+    /// Wrap wire-format record data after checking its length limit.
     pub fn new(bytes: Vec<u8>) -> Result<Self, String> {
         if bytes.len() > u16::MAX as usize {
             return Err(format!(
@@ -30,10 +31,12 @@ impl Rdata {
         Ok(Self(bytes))
     }
 
+    /// Borrow the wire-format record data bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
+    /// Consume the record data and return its bytes.
     pub(crate) fn into_bytes(self) -> Vec<u8> {
         self.0
     }
@@ -50,10 +53,12 @@ impl<DB: sqlx::Database> sqlx::Type<DB> for Rdata
 where
     Vec<u8>: sqlx::Type<DB>,
 {
+    /// Return the SQL type used to store this value.
     fn type_info() -> DB::TypeInfo {
         <Vec<u8> as sqlx::Type<DB>>::type_info()
     }
 
+    /// Check whether the SQL type can store this value.
     fn compatible(ty: &DB::TypeInfo) -> bool {
         <Vec<u8> as sqlx::Type<DB>>::compatible(ty)
     }
@@ -63,6 +68,7 @@ impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for Rdata
 where
     Vec<u8>: sqlx::Encode<'q, DB>,
 {
+    /// Encode this value using its database representation.
     fn encode_by_ref(
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
@@ -75,6 +81,7 @@ impl<'r, DB: sqlx::Database> sqlx::Decode<'r, DB> for Rdata
 where
     Vec<u8>: sqlx::Decode<'r, DB>,
 {
+    /// Decode the stored bytes into record data.
     fn decode(
         value: <DB as sqlx::Database>::ValueRef<'r>,
     ) -> Result<Self, sqlx::error::BoxDynError> {
@@ -112,11 +119,12 @@ impl EncodedRdata {
                 Rdata::new(addr.octets().to_vec())?
             }
             RecordType::CAA => CaaRecordValue::parse(value)?.to_rdata()?,
-            RecordType::CNAME | RecordType::NS | RecordType::PTR => {
+            RecordType::CNAME | RecordType::DNAME | RecordType::NS | RecordType::PTR => {
                 Rdata::new(encode_name(value)?)?
             }
             RecordType::DS => DsRrValue::parse(value)?.to_rdata()?,
             RecordType::MX => MxRecordValue::parse(value, priority)?.to_rdata()?,
+            RecordType::NAPTR => NaptrRecordValue::parse(value)?.to_rdata()?,
             // Stored TXT is always the presentation form; every entry path
             // writes it, so anything else here is corruption, not a plain string.
             RecordType::TXT => Rdata::new(

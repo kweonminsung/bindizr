@@ -6,6 +6,7 @@ pub mod name;
 pub mod nsupdate;
 pub mod query;
 pub mod record;
+pub mod tsig;
 pub mod zonefile;
 
 pub(crate) use catalog_zone::zone_name_to_member_id;

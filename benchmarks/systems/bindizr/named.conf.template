@@ -1,7 +1,5 @@
-// BIND9 secondary for the Bindizr benchmark.
-// Zones are auto-configured via Bindizr's catalog zone (RFC 9432); the only
-// static config is the catalog secondary itself, pointing at the Bindizr XFR
-// server at a fixed compose IP.
+// The catalog discovers member zones (RFC 9432); only catalog.bind is declared here.
+// Compose substitutes the resolved Bindizr IP at container startup.
 options {
     directory "/var/cache/bind";
     listen-on port 53 { any; };

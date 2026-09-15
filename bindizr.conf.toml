@@ -5,6 +5,9 @@ require_authentication = true # Enable API authentication (true/false)
 metrics_enabled = true        # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only)
 external_dns_enabled = false  # Register the ExternalDNS provider API at /external-dns
 openapi_enabled = false       # Serve the OpenAPI document at GET /openapi.json and /openapi.yaml (unauthenticated)
+# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # PEM certificate chain; set with tls_key_file to serve HTTPS
+# tls_key_file = "/etc/bindizr/tls/tls.key"   # PEM private key. Without both, the API is plain HTTP and its
+                                              # bearer tokens travel in the clear
 
 [database]
 type = "mysql"                # Database type: mysql, sqlite, postgresql
@@ -27,12 +30,20 @@ notify_after_update = true    # Send DNS NOTIFY after zone changes
 notify_mode = "sync"          # "sync": NOTIFY runs inline; "async": queued to a background worker
 notify_batch_ms = 50          # async only: window to batch NOTIFYs into one per zone (0 disables the wait)
 zone_cache = true             # Cache each zone's records by serial so repeated AXFRs skip the DB read
-zone_cache_max_records = 500000 # Records the cache may hold; a larger zone is served uncached (a record costs roughly 130-900 bytes)
+zone_cache_max_records = 500000 # Records the cache may hold; a larger zone is served uncached
 notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
 notify_retries = 3            # Retry count after the initial NOTIFY attempt
 notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
-nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from this host only (TSIG keys/policies are managed via CLI or HTTP API)
+nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from this host only (TSIG keys/grants are managed via CLI or HTTP API)
 journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
+maintenance_interval_secs = 3600 # Seconds between maintenance passes: signature refresh, journal retention, rollover steps (0 = no pass on this instance)
+
+[dns.zone_defaults]             # Applied when a zone-creation request omits the field
+ttl = 3600                    # Default record TTL (seconds)
+refresh = 300                 # SOA refresh; NOTIFY drives propagation, so this only bounds a lost one
+retry = 60                    # SOA retry
+expire = 3600000              # SOA expire
+minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
 log_level = "debug"           # Log level: error, warn, info, debug, trace

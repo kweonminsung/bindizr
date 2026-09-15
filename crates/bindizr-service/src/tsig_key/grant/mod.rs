@@ -1,37 +1,43 @@
-//! nsupdate grants for TSIG keys, in the spirit of BIND's `update-policy`.
-//! A grant belongs to its key and names the zone it covers.
+//! Zone grants for TSIG keys: name/type scopes for updates, whole-zone grants
+//! for transfers, and optional read-only access.
 
 use std::collections::HashMap;
 
 use bindizr_core::dns::name::OwnerName;
+use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
 use super::TsigKeyService;
 use crate::{
+    RepositoryTx,
     authorization::Caller,
     error::ServiceError,
-    grant_pattern::{matches_name, matches_types, normalize_pattern, normalize_types},
+    grant_pattern::{MATCH_ANY, matches_name, matches_types, normalize_pattern, normalize_types},
     model::{
         record::RecordType,
         tsig_grant::{TsigGrant, TsigGrantWithNames},
+        tsig_key::TsigKey,
+        zone::Zone,
     },
     repository::RepositoryService,
+    types::{GetTsigGrantResponse, PageFilter, PaginatedResponse},
     zone::ZoneService,
 };
 
-/// Grants and revokes zone nsupdate rights for TSIG keys.
+/// Grants and revokes update and transfer rights for TSIG keys.
 pub struct TsigGrantService;
 
 impl TsigGrantService {
-    /// Grant `key_name` nsupdate rights in `zone_name`, optionally restricted
-    /// to a record name pattern and/or record types. Global keys are rejected:
-    /// they already cover every zone and never carry grants.
+    /// Grant `key_name` rights in `zone_name`, optionally restricted to a
+    /// record name pattern and/or record types, and to transfers alone. Global
+    /// keys are rejected: they already cover every zone and never carry grants.
     pub async fn grant(
         caller: &Caller,
         key_name: &str,
         zone_name: &str,
         record_name_pattern: Option<&str>,
         record_types: Option<&str>,
+        can_write: bool,
     ) -> Result<TsigGrantWithNames, ServiceError> {
         caller.require_global("manage TSIG keys and grants")?;
 
@@ -53,6 +59,7 @@ impl TsigGrantService {
             tsig_key_id: key.id,
             record_name_pattern,
             record_types,
+            can_write,
             created_at: Utc::now(),
         })
         .await?;
@@ -68,7 +75,8 @@ impl TsigGrantService {
     pub async fn list_by_key(
         caller: &Caller,
         key_name: &str,
-    ) -> Result<Vec<TsigGrantWithNames>, ServiceError> {
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
         caller.require_global("manage TSIG keys and grants")?;
 
         let key = TsigKeyService::lookup_by_name(key_name).await?;
@@ -80,21 +88,28 @@ impl TsigGrantService {
             .map(|zone| (zone.id, zone.name.to_string()))
             .collect();
 
-        Ok(grants
-            .into_iter()
-            .map(|grant| TsigGrantWithNames {
-                zone_name: zone_names.get(&grant.zone_id).cloned().unwrap_or_default(),
-                tsig_key_name: key.name.clone(),
-                grant,
-            })
-            .collect())
+        PaginatedResponse::from_collection(
+            grants
+                .into_iter()
+                .map(|grant| {
+                    GetTsigGrantResponse::from_grant(&TsigGrantWithNames {
+                        zone_name: zone_names.get(&grant.zone_id).cloned().unwrap_or_default(),
+                        tsig_key_name: key.name.clone(),
+                        grant,
+                    })
+                })
+                .collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
     /// Every grant that applies to `zone_name`, with the key each belongs to.
     pub async fn list_by_zone(
         caller: &Caller,
         zone_name: &str,
-    ) -> Result<Vec<TsigGrantWithNames>, ServiceError> {
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
         caller.require_global("manage TSIG keys and grants")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
@@ -106,17 +121,44 @@ impl TsigGrantService {
             .map(|key| (key.id, key.name))
             .collect();
 
-        Ok(grants
-            .into_iter()
-            .map(|grant| TsigGrantWithNames {
-                tsig_key_name: key_names
-                    .get(&grant.tsig_key_id)
-                    .cloned()
-                    .unwrap_or_default(),
-                zone_name: zone.name.to_string(),
-                grant,
-            })
-            .collect())
+        PaginatedResponse::from_collection(
+            grants
+                .into_iter()
+                .map(|grant| {
+                    GetTsigGrantResponse::from_grant(&TsigGrantWithNames {
+                        tsig_key_name: key_names
+                            .get(&grant.tsig_key_id)
+                            .cloned()
+                            .unwrap_or_default(),
+                        zone_name: zone.name.to_string(),
+                        grant,
+                    })
+                })
+                .collect(),
+            page.limit,
+            page.offset,
+        )
+    }
+
+    /// Whether `key` may transfer `zone`: a global key covers every zone, a
+    /// scoped one needs a grant over the whole zone, read-only or not. The
+    /// grants are share-locked so a revocation waits for the read they gate.
+    pub(crate) async fn authorize_transfer_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        key: &TsigKey,
+    ) -> Result<bool, ServiceError> {
+        if key.is_global {
+            return Ok(true);
+        }
+        let grants = RepositoryService::list_tsig_grants_by_zone_id_and_key_id_tx(
+            tx,
+            zone.id,
+            key.id,
+            LockLevel::Shared,
+        )
+        .await?;
+        Ok(covers_whole_zone(&grants))
     }
 
     /// Revoke one of `key_name`'s grants by id. An id that belongs to another
@@ -146,10 +188,40 @@ pub(crate) fn authorize_update(
     relative_name: &OwnerName,
     record_type: Option<&RecordType>,
 ) -> bool {
-    grants.iter().any(|grant| {
-        matches_name(&grant.record_name_pattern, relative_name)
-            && matches_types(&grant.record_types, record_type)
-    })
+    grants
+        .iter()
+        .any(|grant| grant.can_write && matches_grant(grant, relative_name, record_type))
+}
+
+/// Whether any grant reaches the records a prerequisite names: a read, so a
+/// read-only grant suffices; a whole-name one (`None`) needs unrestricted types.
+pub(crate) fn authorize_prerequisite(
+    grants: &[TsigGrant],
+    relative_name: &OwnerName,
+    record_type: Option<&RecordType>,
+) -> bool {
+    grants
+        .iter()
+        .any(|grant| matches_grant(grant, relative_name, record_type))
+}
+
+/// Whether one grant's name pattern and type list cover `record_type` at the
+/// relative owner name.
+fn matches_grant(
+    grant: &TsigGrant,
+    relative_name: &OwnerName,
+    record_type: Option<&RecordType>,
+) -> bool {
+    matches_name(&grant.record_name_pattern, relative_name)
+        && matches_types(&grant.record_types, record_type)
+}
+
+/// Whether any grant covers the zone whole. A transfer hands the zone over
+/// whole, so a grant narrowed to part of it authorizes none.
+fn covers_whole_zone(grants: &[TsigGrant]) -> bool {
+    grants
+        .iter()
+        .any(|grant| grant.record_name_pattern == MATCH_ANY && grant.record_types == MATCH_ANY)
 }
 
 #[cfg(test)]

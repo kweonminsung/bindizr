@@ -35,6 +35,7 @@ pub(crate) struct SqliteZoneVersionRepository {
 }
 
 impl SqliteZoneVersionRepository {
+    /// Create a repository for zone versions using the supplied pool.
     pub(crate) fn new(pool: Pool<Sqlite>) -> Self {
         Self { pool }
     }
@@ -42,6 +43,7 @@ impl SqliteZoneVersionRepository {
 
 #[async_trait]
 impl ZoneVersionRepository for SqliteZoneVersionRepository {
+    /// Insert or update a zone version in the current transaction.
     async fn upsert_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -51,8 +53,8 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(zone_id, serial)
             DO UPDATE SET
                 mname = excluded.mname,
@@ -61,7 +63,9 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
                 refresh = excluded.refresh,
                 retry = excluded.retry,
                 expire = excluded.expire,
-                minimum_ttl = excluded.minimum_ttl
+                minimum_ttl = excluded.minimum_ttl,
+                change_source = excluded.change_source,
+                changed_by = excluded.changed_by
             "#,
         )
         .bind(version.zone_id)
@@ -73,6 +77,8 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .bind(version.retry)
         .bind(version.expire)
         .bind(version.minimum_ttl)
+        .bind(version.change_source.as_str())
+        .bind(&version.changed_by)
         .bind(Utc::now())
         .execute(&mut **sqlite_tx)
         .await
@@ -85,6 +91,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
             })
     }
 
+    /// Find a zone version by zone ID and serial.
     async fn get_by_serial(
         &self,
         zone_id: i32,
@@ -92,7 +99,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
     ) -> Result<Option<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial = ?
             "#,
@@ -104,6 +111,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// List zone versions in the closed interval `[from_serial, to_serial]`.
     async fn list_in_serial_range(
         &self,
         zone_id: i32,
@@ -112,7 +120,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
     ) -> Result<Vec<ZoneVersion>, DatabaseError> {
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial >= ? AND serial <= ?
             "#,
@@ -125,6 +133,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// List zone versions for a zone.
     async fn list(
         &self,
         zone_id: i32,
@@ -139,7 +148,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         };
         let mut query = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ?{filter}
             ORDER BY serial DESC
@@ -158,6 +167,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
             .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
+    /// Count zone versions using the requested change filter.
     async fn count(&self, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError> {
         let filter = if user_changes_only {
             USER_CHANGES_FILTER
@@ -178,6 +188,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         Ok(count as u64)
     }
 
+    /// Find a zone version by zone ID and serial in the current transaction.
     async fn get_by_serial_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -189,7 +200,7 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
 
         sqlx::query_as::<_, ZoneVersion>(
             r#"
-            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, created_at
+            SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial = ?
             "#,
@@ -201,27 +212,28 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    async fn prune_older_than_tx(
+    /// Prune one zone's old versions, keeping its newest, in the current transaction.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // Each zone's newest version survives regardless of age: the IXFR
+        // The zone's newest version survives regardless of age: the IXFR
         // up-to-date response reads it. SQLite compares timestamps as text;
         // sqlx's RFC 3339 sorts chronologically.
         let result = sqlx::query(
             r#"
             DELETE FROM zone_versions
-            WHERE created_at < ?
-              AND serial < (
-                  SELECT MAX(newest.serial) FROM zone_versions newest
-                  WHERE newest.zone_id = zone_versions.zone_id
-              )
+            WHERE zone_id = ? AND created_at < ?
+              AND serial < (SELECT MAX(serial) FROM zone_versions WHERE zone_id = ?)
             "#,
         )
+        .bind(zone_id)
         .bind(cutoff)
+        .bind(zone_id)
         .execute(&mut **sqlite_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;

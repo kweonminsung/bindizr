@@ -3,8 +3,8 @@ use bindizr_service::{
     error::ServiceError,
     record::RecordService,
     types::{
-        CreateBulkRecordsRequest, CreateRecordRequest, GetRecordResponse, GetRecordsFilter,
-        RecordResponse,
+        CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter, GetRecordResponse,
+        GetRecordsFilter, RecordResponse,
     },
 };
 
@@ -13,7 +13,7 @@ use crate::socket::{
     types::{DaemonResponse, RecordIdParams, UpdateRecordParams},
 };
 
-/// Handle the `GetRecord` command by returning a record by ID.
+/// Return the requested record.
 pub(crate) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: RecordIdParams = parse_params(data)?;
 
@@ -26,7 +26,7 @@ pub(crate) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
     })
 }
 
-/// Handle the `ListRecords` command by returning records matching the filter.
+/// Return records matching the request filters.
 pub(crate) async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let filter: GetRecordsFilter = if data.is_null() {
         GetRecordsFilter::default()
@@ -42,7 +42,7 @@ pub(crate) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
     })
 }
 
-/// Handle the `CreateRecord` command by creating a new record.
+/// Create a record from the control request.
 pub(crate) async fn create_record(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -57,7 +57,7 @@ pub(crate) async fn create_record(
     })
 }
 
-/// Handle the `UpdateRecord` command by applying a partial update.
+/// Update the requested record.
 pub(crate) async fn update_record(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -72,8 +72,7 @@ pub(crate) async fn update_record(
     })
 }
 
-/// Handle the `BulkCreateRecords` command by inserting records into a zone in
-/// a single transaction.
+/// Preview or apply the requested batch of new records.
 pub(crate) async fn bulk_create_records(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -101,7 +100,7 @@ pub(crate) async fn bulk_create_records(
     })
 }
 
-/// Handle the `DeleteRecord` command by deleting a record by ID.
+/// Delete the requested record.
 pub(crate) async fn delete_record(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
@@ -111,5 +110,22 @@ pub(crate) async fn delete_record(
     Ok(DaemonResponse {
         message: format!("Record '{}' deleted successfully", params.id),
         data: serde_json::Value::Null,
+    })
+}
+
+/// Delete records matching the requested owner, type, and value filters.
+pub(crate) async fn delete_records_matching(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let filter: DeleteRecordsFilter = parse_params(data)?;
+    let response = RecordService::delete_matching(&Caller::Global, &filter).await?;
+
+    Ok(DaemonResponse {
+        message: if response.dry_run {
+            format!("{} record(s) would be deleted", response.deleted)
+        } else {
+            format!("{} record(s) deleted", response.deleted)
+        },
+        data: to_response_data(response)?,
     })
 }

@@ -23,8 +23,10 @@ cargo +nightly fmt                                         # format (needs night
 - `rustfmt.toml` enables unstable features (`imports_granularity`,
   `group_imports`), so formatting requires the **nightly** toolchain. On stable
   `cargo fmt` runs but silently ignores those options.
-- `bindizr-e2e` tests drive real DB/BIND9 containers and need Docker; the other
-  crates' `--lib` tests run without external services.
+- `bindizr-e2e` uses temporary SQLite databases and local processes by default.
+  Set `BINDIZR_E2E_VERIFY_DNS=true` to run against DB/BIND9 containers with Docker
+  (also set `BINDIZR_E2E_ARM=true` on ARM). The other crates' `--lib` tests run
+  without external services.
 
 ## Architecture — workspace crates
 
@@ -104,6 +106,16 @@ One locking model covers the service layer; keep new code on it:
   ExternalDNS apply resolves authoritative zones from committed state inside
   its transaction; the residual race with concurrent zone creation is
   accepted.
+- **The row lock and the constraint are the whole guarantee.** The service
+  layer never re-guards the gap between an unlocked pre-read and the locked
+  read after it: no fingerprint or "changed meanwhile" comparison, no
+  snapshot carried across a network wait, no in-process mutex or
+  singleflight around a cache miss. Such a guard means something only if
+  every path carries it, and none does. Work whose answer the transaction
+  acts on — a parent-DS probe included — runs inside it under the zone
+  lock; a read-only path runs it outside and accepts drift. The duplicate
+  pre-check above is an integrity check the constraint backstops, not a
+  concurrency guard.
 
 ### Names are labels, not strings
 
@@ -117,10 +129,13 @@ Do not answer a question about names with string operations. `ends_with`,
 it reads `evil\.example.com` as inside `example.com`. Use `OwnerName`'s
 methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or `is_label_suffix`.
 
-Names are canonical by construction: labels are lowercased (RFC 4343) and
-rendered back with only `.` and `\` escaped, so one name has one spelling.
-That is what lets the record-filter SQL compare owner names as text and
-concatenate them into FQDNs.
+Names are canonical by construction: labels are printable ASCII (an
+internationalized label arrives as its `xn--` A-label), lowercased
+(RFC 4343), and rendered back with the in-label dot as `\046` and the
+master-file metacharacters escaped, so one name has one spelling and a `.`
+in rendered text is always a label boundary. That is what lets the
+record-filter SQL compare owner names as text under a bytewise collation,
+match a grant's subtree with `LIKE`, and concatenate them into FQDNs.
 
 The row form is the type's, not a caller's: `from_row` decodes it and
 `sqlx::Encode` renders it, so bind an `OwnerName` itself rather than a string
@@ -268,7 +283,7 @@ Every other helper starts with one of these verbs:
   argument (`to_fqdn(name)`, `to_sqlite_url(path)`, `to_response_data(status)`).
   `<source>_to_<form>` only when the source carries the meaning: the form is
   a bare type (`serial_to_u32`), several sources reach the same form
-  (`rr_to_record_value` beside the text parser, `labels_to_wire`), or the
+  (`labels_to_wire` beside `encode_name`), or the
   source is the point (`zone_name_to_member_id`). Two or more inputs make an
   assembly, `build_`. `parse_<thing>` — text or wire bytes into a typed
   value, fallible; an infallible reading is `to_` (`to_record_value_request`
@@ -286,7 +301,7 @@ Every other helper starts with one of these verbs:
   (`verify_tsig`). `check_<thing>` — a doctor-style diagnostic that reports
   instead of failing.
 - Derivation: `build_<thing>` / `compute_<thing>` — assemble or derive a value
-  from several inputs (`build_record_diff`, `compute_zone_change_set`);
+  from several inputs (`build_record_diff`, `compute_import_plan`);
   `group_<things>` partitions into a keyed map; `normalize_<thing>` —
   service-layer trim + canonicalize + validate, returning the canonical value
   or a `ServiceError`; `generate_<thing>` — fresh key, secret, or serial
@@ -314,7 +329,7 @@ by what they build: the kind alone where the module builds one kind of
 thing (`unauthorized(message) -> Response` in the auth middleware,
 `ServiceError::unauthorized`), with `_error` / `_response` added only where
 one module builds several (`upstream_error_response`,
-`zone_name_race_error`). Names an external trait fixes (`Log::enabled`,
+`signed_error`). Names an external trait fixes (`Log::enabled`,
 `KeyStore::get_key`, sqlx's `compatible`) and serde default providers
 (`default_<field>`) are outside the vocabulary.
 
@@ -354,10 +369,28 @@ grep -rnE "\b(struct|type|enum) [A-Za-z]*Record\b" crates/bindizr-core/src/dns
 
 ### Comments
 
-Keep comments that explain **why**: non-obvious behavior or invariants,
-protocol/wire-format details, public-API contracts (`///`). State the reason in
-one or two lines, without spelling out consequences the reader can derive,
-restating an already-made point, or enumerating what the code shows.
+Give every named function a short purpose comment, even when its name already
+suggests what it does. This includes private helpers, constructors, methods,
+trait declarations and implementations, nested functions, test helpers, and
+test functions. Use one sentence describing the operation or result, not a
+walkthrough of the body. Keep an existing purpose comment instead of adding a
+second one. Use `///` for Rust functions, a docstring for Python functions, and
+`#` before shell functions; named Helm helpers use template comments. Anonymous
+closures and generated dependency code do not need separate purpose comments.
+
+Read the existing comments before adding a purpose sentence. Keep one coherent
+documentation block per function, with the purpose first and any distinct
+rationale in a following paragraph. Merge overlapping sentences. Put Rust
+documentation before the function's attributes, and leave a blank line between
+documented items. Put explanations shared by a module in its module documentation;
+keep comments about individual steps beside those steps. Python docstrings come
+first in the body; do not strand an existing function explanation above `def`.
+
+Keep explanations of **why** as well: non-obvious behavior or invariants,
+protocol/wire-format details, and public-API contracts. State each reason in
+one or two lines, without spelling out consequences the reader can derive or
+enumerating what the code shows. A purpose sentence and a necessary constraint
+can share the same function documentation.
 
 This includes short **in-function** comments giving the business or protocol
 reason for a step — e.g. `// Increment zone serial so IXFR consumers can detect
@@ -365,11 +398,16 @@ this change`. Keep them even when the statement is obvious: they carry which
 downstream system or invariant depends on the step. Do not strip them when
 trimming.
 
-The same applies in tests: the test **name** states *what* is verified (never
-restate it in a comment); comments are for *why* the case exists when that
-isn't derivable — the regression or protocol rule it guards (cite the RFC
-section for wire-format cases), format assumptions the test relies on, and
-phase markers in long multi-step e2e flows.
+Keep shell comments that mark workflow phases, such as validation, build,
+installation, cleanup, and execution, including numbered steps. They help readers
+follow execution order even when nearby commands or output describe the same
+operation; the section-label restriction below does not apply to them.
+
+Test functions also keep a short purpose comment stating what they verify;
+overlap with the test name is fine. Within the body, comments explain why the
+case exists — the regression or protocol rule it guards (cite the RFC section
+for wire-format cases), format assumptions, and phase markers in long multi-step
+e2e flows. Do not repeat each assertion in an inline comment.
 
 Specifically avoid:
 
@@ -413,8 +451,12 @@ A module with submodules is a directory containing `mod.rs`
 next to `wire/`). The community leans the other way, so the uniformity is
 deliberate — do not "modernize" it.
 
-Unit tests usually drive this: small ones stay inline as `#[cfg(test)] mod
-tests { … }`, larger ones move to `<module>/tests.rs` declared from `mod.rs`.
+Unit tests usually drive this: a `#[cfg(test)] mod tests` stays inline while
+it is under **100 lines**, counting the module's own braces, and moves to
+`<module>/tests.rs` once it reaches that — making the module a directory if it
+was not one. The number is the rule, so a module that crosses it moves rather
+than being argued over; `mod.rs` then declares it as `#[cfg(test)] mod tests;`
+and the file opens with `use super::*;`.
 
 ### Visibility records usage
 
@@ -480,7 +522,7 @@ never bare `pub`):
    `nsupdate/parser/tests.rs::minimal_update_with_ztype`). No crate-wide
    `test_util` grab-bag modules.
 3. **e2e suite**: shared helpers live in `tests/common/` as `pub(crate)`
-   (`pub(super)` for common-internal ones); the single harness `e2e.rs`
+   (private when only their own module needs them); the single harness `e2e.rs`
    declares plain private `mod`s. `common/` holds helpers only — test
    functions belong under `api/` / `cli/`.
 4. **Never across crates**: no `test-util` features or helper crates;

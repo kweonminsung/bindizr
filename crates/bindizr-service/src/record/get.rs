@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, join_labels};
 use bindizr_db::repository::{DnssecRecordFilter, RecordFilter};
 
 use super::{ListedRecord, RecordService};
@@ -11,7 +11,9 @@ use crate::{
         record::{RecordType, RecordWithZone},
     },
     repository::RepositoryService,
-    types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse, normalize_page_limit},
+    types::{
+        GetRecordResponse, GetRecordsFilter, PaginatedResponse, normalize_page_limit, parse_setting,
+    },
     zone::{ZoneService, validation::normalize_zone_name},
 };
 
@@ -41,20 +43,12 @@ impl RecordService {
         RepositoryService::count_records_by_filter(RecordFilter::default()).await
     }
 
-    /// Count the records visible to `caller`.
-    pub async fn count(caller: &Caller) -> Result<u64, ServiceError> {
-        RepositoryService::count_records_by_filter(RecordFilter {
-            scope_token_id: caller.scope_token_id(),
-            ..RecordFilter::default()
-        })
-        .await
-    }
-
-    /// List records with their zone name matching `filter`, restricted to the
-    /// caller's visible zones in SQL so pagination stays database-side. A
-    /// filter naming an unknown or invisible zone reads as an empty page.
+    /// List records with their zone name matching `filter`, restricted to what
+    /// the caller's grants carry in SQL so pagination stays database-side.
+    /// Scoped callers see an unknown or invisible zone as an empty page.
     /// With `signed`, the derived DNSSEC plane pages after the user records;
-    /// value, search, and priority filters keep the listing user-plane only.
+    /// searches reach their names, value filters are refused, and priority filters
+    /// exclude the derived plane.
     pub async fn list_with_zone_by_filter(
         caller: &Caller,
         filter: GetRecordsFilter,
@@ -80,13 +74,19 @@ impl RecordService {
         let name = build_record_name_filter(filter.name, zone_name.as_ref());
         let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
 
+        // A derived row's rdata is wire bytes, so no `LIKE` reaches it; asking
+        // for both would answer a narrower question than the one put.
+        if signed && filter.value.is_some() {
+            return Err(ServiceError::invalid_input(
+                "value cannot narrow the derived DNSSEC records; drop value, or drop signed",
+            ));
+        }
+
         let user_plane = derived_type.is_none();
-        // Derived rows carry no value, priority, or search text, so those
-        // filters leave only the user plane in the listing.
+        // A derived row carries no priority, so a priority filter answers
+        // "none of them" — which is what leaving the plane out returns.
         let derived_plane = signed
             && user_type.is_none()
-            && filter.value.is_none()
-            && filter.search.is_none()
             && filter.priority.is_none()
             && filter.min_priority.is_none()
             && filter.max_priority.is_none();
@@ -103,8 +103,10 @@ impl RecordService {
             priority: filter.priority,
             min_priority: filter.min_priority,
             max_priority: filter.max_priority,
-            search: filter.search,
+            search: filter.search.clone(),
             scope_token_id,
+            sort: parse_setting(filter.sort.as_deref())?,
+            order: parse_setting(filter.order.as_deref())?,
             limit,
             offset,
         };
@@ -115,6 +117,7 @@ impl RecordService {
             ttl: filter.ttl,
             min_ttl: filter.min_ttl,
             max_ttl: filter.max_ttl,
+            search: filter.search.clone(),
             scope_token_id,
             limit: None,
             offset: None,
@@ -166,8 +169,8 @@ impl RecordService {
         ))
     }
 
-    /// Fetch a record with its zone name by id. A record in a zone the caller
-    /// cannot see reads as `NotFound`, so ids cannot be probed.
+    /// Fetch a record with its zone name by id. A record the caller's grants
+    /// do not reach reads as `NotFound`, so ids cannot be probed.
     pub async fn get_with_zone(
         caller: &Caller,
         record_id: i32,
@@ -181,13 +184,14 @@ impl RecordService {
             }
         };
 
-        if !caller.zone_visible(record.zone_id) {
+        if !caller.record_visible(record.zone_id, &record.name, Some(&record.record_type)) {
             return Err(ServiceError::record_not_found(record_id));
         }
         Ok(record)
     }
 }
 
+/// Normalize a name filter for stored-owner and FQDN comparisons.
 fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) -> Option<String> {
     name.and_then(|name| {
         let trimmed = name.trim();
@@ -202,7 +206,19 @@ fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) 
             if trimmed == OwnerName::APEX {
                 return Some(OwnerName::apex().to_stored());
             }
-            return Some(trimmed.to_string());
+            // Rendered as rows hold it: a relative name against the owner, an
+            // absolute one against the FQDN the query builds.
+            return Some(match decode_name_labels(trimmed) {
+                Ok((labels, absolute)) => {
+                    let rendered = join_labels(&labels);
+                    if absolute {
+                        format!("{rendered}.")
+                    } else {
+                        rendered
+                    }
+                }
+                Err(_) => trimmed.to_string(),
+            });
         };
 
         // The query compares the filter against both the stored owner and the

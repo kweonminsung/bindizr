@@ -3,7 +3,7 @@ use clap::Subcommand;
 
 use crate::{
     cli::{error::CliError, output::color},
-    socket::client::DaemonSocketClient,
+    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
 };
 
 /// Subcommands for inspecting and validating configuration.
@@ -12,11 +12,19 @@ pub(crate) enum ConfigCommand {
     /// Validate a configuration file without starting bindizr
     Check {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
-        file: Option<String>,
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<String>,
     },
     /// Show the configuration loaded by the running daemon
     #[command(alias = "ls")]
     List,
+    /// Re-read the configuration file in the running daemon
+    #[command(after_help = "\
+Settings bound to something built at startup — the `api` section, the
+`database` section, and the DNS listen address and port — are fixed while
+bindizr runs. A file that changes one of them is refused whole, so the
+running configuration always describes the running process.")]
+    Reload,
     /// Show a single configuration value by dotted key (e.g. api.listen_port)
     Get {
         /// Dotted configuration key, e.g. dns.secondary_addrs
@@ -27,12 +35,23 @@ pub(crate) enum ConfigCommand {
 /// Handle the `config` subcommand.
 pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliError> {
     match subcommand {
-        ConfigCommand::Check { file } => check_config(file.as_deref()),
+        ConfigCommand::Check { config } => check_config(config.as_deref()),
         ConfigCommand::List => print_config_list().await,
+        ConfigCommand::Reload => reload_config().await,
         ConfigCommand::Get { key } => print_config_value(&key).await,
     }
 }
 
+/// Ask the daemon to reload its configuration.
+async fn reload_config() -> Result<(), CliError> {
+    let response = DaemonSocketClient::new()
+        .send_command(DaemonCommandKind::ConfigReload, ())
+        .await?;
+    println!("{}", response.message);
+    Ok(())
+}
+
+/// Validate the local configuration file.
 fn check_config(file: Option<&str>) -> Result<(), CliError> {
     let path = config::resolve_config_path(file);
     println!("Checking configuration file: {}", path);
@@ -43,12 +62,14 @@ fn check_config(file: Option<&str>) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Print all effective configuration values.
 async fn print_config_list() -> Result<(), CliError> {
     let config = DaemonSocketClient::new().config().await?;
     print_config(&config);
     Ok(())
 }
 
+/// Print one effective configuration value by key.
 async fn print_config_value(key: &str) -> Result<(), CliError> {
     let config = DaemonSocketClient::new().config().await?;
     let value = serde_json::to_value(&config)
@@ -71,6 +92,7 @@ async fn print_config_value(key: &str) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Print configuration values grouped by section.
 fn print_config(config: &BindizrConfig) {
     print_section("api");
     print_value("listen_addr", config.api.listen_addr);
@@ -79,6 +101,8 @@ fn print_config(config: &BindizrConfig) {
     print_value("metrics_enabled", config.api.metrics_enabled);
     print_value("external_dns_enabled", config.api.external_dns_enabled);
     print_value("openapi_enabled", config.api.openapi_enabled);
+    print_optional("tls_cert_file", config.api.tls_cert_file.as_deref());
+    print_optional("tls_key_file", config.api.tls_key_file.as_deref());
     println!();
 
     print_section("database");
@@ -113,16 +137,37 @@ fn print_config(config: &BindizrConfig) {
         "nsupdate_allow_unsigned",
         config.dns.nsupdate_allow_unsigned,
     );
+    print_value("journal_retention_days", config.dns.journal_retention_days);
+    print_value(
+        "maintenance_interval_secs",
+        config.dns.maintenance_interval_secs,
+    );
+    println!();
+
+    print_section("dns.zone_defaults");
+    print_value("ttl", config.dns.zone_defaults.ttl);
+    print_value("refresh", config.dns.zone_defaults.refresh);
+    print_value("retry", config.dns.zone_defaults.retry);
+    print_value("expire", config.dns.zone_defaults.expire);
+    print_value("minimum_ttl", config.dns.zone_defaults.minimum_ttl);
     println!();
 
     print_section("logging");
     print_value("log_level", config.logging.log_level);
 }
 
+/// Print a configuration section heading.
 fn print_section(name: &str) {
     println!("{}", color::cyan(&format!("[{}]", name)));
 }
 
+/// A value the configuration may leave out, shown as unset rather than absent
+/// so the list says what the daemon actually holds.
+fn print_optional(key: &str, value: Option<&str>) {
+    print_value(key, value.unwrap_or("(unset)"));
+}
+
+/// Print one configuration key and its value.
 fn print_value(key: &str, value: impl std::fmt::Display) {
     println!("  {} = {}", color::yellow(&format!("{:<24}", key)), value);
 }

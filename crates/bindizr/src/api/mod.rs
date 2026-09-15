@@ -15,9 +15,10 @@ pub(crate) mod token;
 pub(crate) mod tsig_key;
 pub(crate) mod zone;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use axum::{extract::FromRequestParts, http::request::Parts};
+use axum_server::{Handle, tls_rustls::RustlsConfig};
 use bindizr_core::{config, log_error, log_info, model::api_token::ApiToken};
 use bindizr_service::{authorization::Caller, error::ServiceError};
 use error::ApiError;
@@ -49,6 +50,7 @@ where
 {
     type Rejection = ApiError;
 
+    /// Extract the authorized caller from request extensions.
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
         parts
             .extensions
@@ -70,6 +72,7 @@ where
 {
     type Rejection = ApiError;
 
+    /// Extract the authenticated API token from request extensions.
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, ApiError> {
         parts
             .extensions
@@ -79,9 +82,13 @@ where
     }
 }
 
-/// Bind the HTTP API listener and spawn the axum server in the background. The
-/// returned handle finishes once `shutdown` fires and in-flight requests are
-/// answered.
+/// How long a TLS shutdown waits for in-flight requests before dropping the
+/// connections; the plain-HTTP path waits without a deadline, as axum does.
+const TLS_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+
+/// Bind the HTTP API listener and spawn the server in the background, over TLS
+/// when `api.tls_cert_file` and `api.tls_key_file` name a pair. The returned
+/// handle finishes once `shutdown` fires and in-flight requests are answered.
 pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, String> {
     let bindizr_config = config::bindizr_config();
     let addr = SocketAddr::from((
@@ -89,16 +96,55 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, St
         bindizr_config.api.listen_port,
     ));
 
+    // Bound here rather than inside the server so a taken port fails startup
+    // instead of surfacing in a background task.
     let listener = TcpListener::bind(addr)
         .await
         .map_err(|e| format!("Failed to bind the HTTP API to {}: {}", addr, e))?;
 
-    log_info!("HTTP API server listening on http://{}", addr);
+    let Some((cert_file, key_file)) = bindizr_config.api.tls_files() else {
+        log_info!("HTTP API server listening on http://{}", addr);
+        let stop = shutdown.waiter();
+        return Ok(tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, ApiRouter::routes().await)
+                .with_graceful_shutdown(stop)
+                .await
+            {
+                log_error!("API server error: {:?}", e);
+            }
+        }));
+    };
 
+    let tls = RustlsConfig::from_pem_file(cert_file, key_file)
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to read the API TLS certificate '{}' and key '{}': {}",
+                cert_file, key_file, e
+            )
+        })?;
+    let listener = listener.into_std().map_err(|e| {
+        format!(
+            "Failed to hand the HTTP API listener to the TLS server: {}",
+            e
+        )
+    })?;
+    let server = axum_server::from_tcp_rustls(listener, tls)
+        .map_err(|e| format!("Failed to start the HTTPS API server on {}: {}", addr, e))?;
+
+    log_info!("HTTP API server listening on https://{}", addr);
+
+    let handle = Handle::new();
     let stop = shutdown.waiter();
+    let stopping = handle.clone();
+    tokio::spawn(async move {
+        stop.await;
+        stopping.graceful_shutdown(Some(TLS_SHUTDOWN_GRACE));
+    });
     Ok(tokio::spawn(async move {
-        if let Err(e) = axum::serve(listener, ApiRouter::routes().await)
-            .with_graceful_shutdown(stop)
+        if let Err(e) = server
+            .handle(handle)
+            .serve(ApiRouter::routes().await.into_make_service())
             .await
         {
             log_error!("API server error: {:?}", e);

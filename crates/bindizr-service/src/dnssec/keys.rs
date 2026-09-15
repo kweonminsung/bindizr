@@ -1,7 +1,7 @@
 //! Importing and exporting raw key material in BIND key-file form. Reached
 //! only over the daemon socket: private keys never transit the HTTP API.
 
-use bindizr_core::dns::dnssec::import_key;
+use bindizr_core::dns::dnssec::{import_key, to_bind_private_file};
 use chrono::Utc;
 
 use super::{DnssecService, notify_zone, status::build_status_tx, to_key_layout};
@@ -11,7 +11,7 @@ use crate::{
     dnssec_policy::normalize_policy_name,
     error::ServiceError,
     model::{
-        dnssec_key::{DnssecKey, DnssecKeyRole},
+        dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
         dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME,
         zone::Zone,
     },
@@ -52,7 +52,7 @@ impl DnssecService {
                             key.algorithm.to_int(),
                             key.public_key
                         ),
-                        private_key: key.private_key.clone(),
+                        private_key: to_bind_private_file(key),
                     })
                     .collect(),
             })
@@ -61,9 +61,10 @@ impl DnssecService {
         RepositoryService::finish_tx(tx, result, "failed to export DNSSEC keys").await
     }
 
-    /// Import an unsigned zone's complete key set from BIND key pairs and
-    /// sign it: one CSK pair, or a KSK pair and a ZSK pair under a split-key
-    /// policy. The migration path for a zone signed elsewhere.
+    /// Import BIND key pairs into an unsigned zone and sign it under the chosen policy.
+    ///
+    /// The set needs an active CSK or active KSK and ZSK keys; published and retired
+    /// rollover keys may accompany them.
     pub async fn import_keys(
         caller: &Caller,
         zone_name: &str,
@@ -126,19 +127,28 @@ impl DnssecService {
                 }
                 keys.push(key);
             }
-            // The layout typed each SEP key; a split set still needs both halves.
-            if policy.split_keys
-                && !(keys.iter().any(|key| key.role == DnssecKeyRole::Ksk)
-                    && keys.iter().any(|key| key.role == DnssecKeyRole::Zsk))
-            {
+            // The timing placed each key in its rollover; every role the
+            // layout names still needs the active key that signs for it.
+            let has_active = |role: DnssecKeyRole| {
+                keys.iter()
+                    .any(|key| key.role == role && key.state == DnssecKeyState::Active)
+            };
+            let signed = if policy.split_keys {
+                has_active(DnssecKeyRole::Ksk) && has_active(DnssecKeyRole::Zsk)
+            } else {
+                has_active(DnssecKeyRole::Csk)
+            };
+            if !signed {
                 return Err(ServiceError::invalid_input(format!(
-                    "key set does not match policy '{}' ({}); import a KSK pair and a ZSK \
-                     pair together",
+                    "key set does not match policy '{}' ({}); import an active pair for \
+                     every role it names, together with any published or retired pairs the \
+                     rollover still holds",
                     policy.name,
                     to_key_layout(policy.split_keys)
                 )));
             }
 
+            // Store the validated key set and its first signed view together.
             RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id))
                 .await?;
             let zone = Zone {
@@ -150,9 +160,16 @@ impl DnssecService {
                 stored.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
             }
 
-            let new_serial = Self::resign_zone_tx(&mut tx, &zone, &policy, &stored, false)
-                .await?
-                .unwrap_or(zone.serial);
+            let new_serial = Self::resign_zone_tx(
+                &mut tx,
+                &zone,
+                &policy,
+                &stored,
+                false,
+                &caller.change_subject(),
+            )
+            .await?
+            .unwrap_or(zone.serial);
 
             build_status_tx(&mut tx, &zone, Some(&policy), &stored, new_serial).await
         }
@@ -161,6 +178,8 @@ impl DnssecService {
             RepositoryService::finish_tx(tx, result, "failed to import DNSSEC keys").await?;
 
         crate::log_info!("event=dnssec_import_keys zone={}", response.zone_name);
+
+        // Announce the imported keys only after their signed records are committed.
         notify_zone(&response.zone_name).await;
         Ok(response)
     }

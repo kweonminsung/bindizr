@@ -42,6 +42,7 @@ class BindizrAdapter(DnsAdapter):
                  notify_batch_ms: int | None = None,
                  zone_cache: bool | None = None,
                  log_level: str | None = None):
+        """Initialize the adapter with its benchmark configuration and project."""
         super().__init__(cfg, project)
         # b07 passes db_type; every other benchmark takes the env knob so it can
         # be pointed at any backend.
@@ -83,6 +84,7 @@ class BindizrAdapter(DnsAdapter):
         self.compose = dockerutil.Compose(HERE / "compose.yml", project, env=env)
 
     async def setup(self) -> None:
+        """Start the benchmark system and wait for it to become ready."""
         self.compose.down()  # clean slate: remove any leftovers from a prior run
         services = ["bindizr", "bind9"]
         if self.db_type == "mysql":
@@ -94,6 +96,7 @@ class BindizrAdapter(DnsAdapter):
         await self._wait_api()
 
     async def _wait_api(self, timeout: int = 60) -> None:
+        """Wait until the system API is ready."""
         for _ in range(timeout * 2):
             try:
                 async with self.session.get(self.base + "/", timeout=aiohttp.ClientTimeout(total=2)) as r:
@@ -105,11 +108,13 @@ class BindizrAdapter(DnsAdapter):
         raise RuntimeError("Bindizr API did not become ready")
 
     async def teardown(self) -> None:
+        """Stop the benchmark system and release its resources."""
         if self.session:
             await self.session.close()
         self.compose.down()
 
     async def create_zone(self, zone: str) -> None:
+        """Create the zone used by the benchmark."""
         z = zone.rstrip(".")
         body = {
             "name": z,
@@ -122,13 +127,16 @@ class BindizrAdapter(DnsAdapter):
                 raise RuntimeError(f"create_zone failed: {r.status} {await r.text()}")
 
     async def delete_zone(self, zone: str) -> None:
+        """Remove the benchmark zone and its records."""
         async with self.session.delete(self.base + f"/zones/{zone.rstrip('.')}") as r:
             await r.read()
 
     def _record_body(self, zone: str, rec: dict) -> dict:
+        """Build a bindizr record request from a benchmark record."""
         return {**self._bulk_item(rec), "zone_name": zone.rstrip(".")}
 
     async def create_record(self, zone: str, rec: dict) -> str:
+        """Create a record and return its adapter-specific handle."""
         async with self.session.post(self.base + "/records", json=self._record_body(zone, rec)) as r:
             if r.status not in (200, 201):
                 raise RuntimeError(f"create_record {r.status}: {await r.text()}")
@@ -136,22 +144,26 @@ class BindizrAdapter(DnsAdapter):
             return str(data["record"]["id"])
 
     async def get_record(self, zone: str, handle: str) -> bool:
+        """Check whether the record identified by the handle is present."""
         async with self.session.get(self.base + f"/records/{handle}") as r:
             await r.read()
             return r.status == 200
 
     async def update_record(self, zone: str, handle: str, rec: dict) -> bool:
+        """Replace the record identified by the handle with the supplied value."""
         body = self._bulk_item(rec)
         async with self.session.put(self.base + f"/records/{handle}", json=body) as r:
             await r.read()
             return r.status == 200
 
     async def delete_record(self, zone: str, handle: str) -> bool:
+        """Delete the record identified by the handle."""
         async with self.session.delete(self.base + f"/records/{handle}") as r:
             await r.read()
             return r.status == 200
 
     def _bulk_item(self, rec: dict) -> dict:
+        """Build one record entry for the bindizr bulk API."""
         item = {
             "name": rec["name"],
             "record_type": rec["type"],
@@ -199,6 +211,7 @@ class BindizrAdapter(DnsAdapter):
             self.bulk_errors += await self._post_with_retry(url, body, len(chunk))
 
     def _zone_line(self, rec: dict) -> str:
+        """Render a benchmark record as a zone-file line."""
         ttl = rec.get("ttl", 3600)
         rdata = rec["value"]
         if rec["type"] == "TXT":
@@ -220,4 +233,5 @@ class BindizrAdapter(DnsAdapter):
                 url, body, len(chunk), check_applied=True)
 
     def dns_endpoint(self) -> Endpoint:
+        """Return the DNS endpoint that serves the managed zone."""
         return Endpoint("127.0.0.1", DNS_PORT)

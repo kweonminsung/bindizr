@@ -11,6 +11,7 @@ pub(crate) enum OutputFormat {
 impl std::str::FromStr for OutputFormat {
     type Err = String;
 
+    /// Parse an output format from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "json" => Ok(OutputFormat::Json),
@@ -51,8 +52,7 @@ where
     Ok(())
 }
 
-/// A table shows no pagination, so a short page reads as the whole listing
-/// unless it says otherwise.
+/// Print the number of omitted rows so a table page is not mistaken for the complete listing.
 fn print_page_remainder(data: &serde_json::Value) {
     let (Some(total), Some(shown)) = (
         data["pagination"]["total"].as_u64(),
@@ -73,7 +73,7 @@ fn print_page_remainder(data: &serde_json::Value) {
 /// Print the payload as JSON or YAML, for a command that renders its own table.
 pub(crate) fn print_payload(data: &serde_json::Value, format: OutputFormat) -> Result<(), String> {
     let rendered = match format {
-        OutputFormat::Yaml => serde_yaml::to_string(data)
+        OutputFormat::Yaml => serde_norway::to_string(data)
             .map_err(|e| format!("Failed to serialize to YAML: {}", e))?,
         OutputFormat::Json | OutputFormat::Table => serde_json::to_string_pretty(data)
             .map_err(|e| format!("Failed to serialize to JSON: {}", e))?,

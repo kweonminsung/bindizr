@@ -13,6 +13,7 @@ pub(crate) struct PostgresDnssecPolicyRepository {
 }
 
 impl PostgresDnssecPolicyRepository {
+    /// Create a repository for DNSSEC policies using the supplied pool.
     pub(crate) fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
     }
@@ -20,14 +21,15 @@ impl PostgresDnssecPolicyRepository {
 
 #[async_trait]
 impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
+    /// Insert a DNSSEC policy.
     async fn create(&self, mut policy: DnssecPolicy) -> Result<DnssecPolicy, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id
             "#,
         )
@@ -38,8 +40,6 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         .bind(policy.signature_validity_days)
         .bind(policy.signature_refresh_days)
         .bind(policy.zsk_lifetime_days)
-        .bind(policy.rollover_publish_holddown_secs)
-        .bind(policy.rollover_retire_holddown_secs)
         .bind(now)
         .fetch_one(&mut *conn)
         .await?;
@@ -49,6 +49,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         Ok(policy)
     }
 
+    /// Find a DNSSEC policy by ID in the current transaction.
     async fn get_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -58,7 +59,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         let postgres_tx = tx.as_postgres()?;
 
         let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
-            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at FROM dnssec_policies WHERE id = $1{}",
+            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = $1{}",
             lock_clause(lock_level)
         )))
         .bind(id)
@@ -68,11 +69,12 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         Ok(policy)
     }
 
+    /// Find a DNSSEC policy by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<DnssecPolicy>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let policy = sqlx::query_as::<_, DnssecPolicy>(
-            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at FROM dnssec_policies WHERE name = $1",
+            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = $1",
         )
         .bind(name)
         .fetch_optional(&mut *conn)
@@ -81,6 +83,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         Ok(policy)
     }
 
+    /// Find a DNSSEC policy by name in the current transaction.
     async fn get_by_name_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -90,7 +93,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         let postgres_tx = tx.as_postgres()?;
 
         let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
-            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at FROM dnssec_policies WHERE name = $1{}",
+            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = $1{}",
             lock_clause(lock_level)
         )))
         .bind(name)
@@ -100,11 +103,12 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         Ok(policy)
     }
 
+    /// List all DNSSEC policies.
     async fn list_all(&self) -> Result<Vec<DnssecPolicy>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let policies = sqlx::query_as::<_, DnssecPolicy>(
-            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, rollover_publish_holddown_secs, rollover_retire_holddown_secs, created_at FROM dnssec_policies ORDER BY name",
+            "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies ORDER BY name",
         )
         .fetch_all(&mut *conn)
         .await?;
@@ -112,6 +116,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         Ok(policies)
     }
 
+    /// Update a DNSSEC policy in the current transaction.
     async fn update_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
@@ -122,16 +127,13 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         sqlx::query(
             r#"
             UPDATE dnssec_policies
-            SET signature_validity_days = $1, signature_refresh_days = $2, zsk_lifetime_days = $3,
-                rollover_publish_holddown_secs = $4, rollover_retire_holddown_secs = $5
-            WHERE id = $6
+            SET signature_validity_days = $1, signature_refresh_days = $2, zsk_lifetime_days = $3
+            WHERE id = $4
             "#,
         )
         .bind(policy.signature_validity_days)
         .bind(policy.signature_refresh_days)
         .bind(policy.zsk_lifetime_days)
-        .bind(policy.rollover_publish_holddown_secs)
-        .bind(policy.rollover_retire_holddown_secs)
         .bind(policy.id)
         .execute(&mut **postgres_tx)
         .await?;
@@ -139,6 +141,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
         Ok(policy)
     }
 
+    /// Delete a DNSSEC policy by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 

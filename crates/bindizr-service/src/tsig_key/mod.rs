@@ -8,13 +8,14 @@ use crate::{
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
     repository::RepositoryService,
+    types::{GetTsigKeyResponse, PageFilter, PaginatedResponse},
 };
 
 /// Byte length of generated secrets; matches `tsig-keygen`'s default for
 /// HMAC-SHA256 and is sufficient entropy for the larger algorithms too.
 const GENERATED_SECRET_LEN: usize = 32;
 
-/// Creates, lists, and deletes TSIG keys used for nsupdate authentication.
+/// Manages TSIG credentials shared by update and transfer authentication.
 pub struct TsigKeyService;
 
 impl TsigKeyService {
@@ -59,10 +60,18 @@ impl TsigKeyService {
     }
 
     /// List all TSIG keys.
-    pub async fn list(caller: &Caller) -> Result<Vec<TsigKey>, ServiceError> {
+    pub async fn list(
+        caller: &Caller,
+        page: PageFilter,
+    ) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
         caller.require_global("manage TSIG keys and grants")?;
 
-        RepositoryService::list_tsig_keys().await
+        let keys = RepositoryService::list_tsig_keys().await?;
+        PaginatedResponse::from_collection(
+            keys.iter().map(GetTsigKeyResponse::from_key).collect(),
+            page.limit,
+            page.offset,
+        )
     }
 
     /// Fetch one TSIG key by name, including its secret.
@@ -81,8 +90,8 @@ impl TsigKeyService {
             .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
     }
 
-    /// Look up the key an incoming TSIG record names. The nsupdate path
-    /// authenticates before it opens its transaction, so this is a plain read.
+    /// Look up the key an incoming TSIG record names. Authentication precedes
+    /// any zone transaction, so this is a plain read.
     pub async fn find_by_wire_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
         // Canonicalize like storage does; an unparseable name matches no key.
         let Ok(name) = normalize_key_name(name) else {
@@ -106,10 +115,21 @@ impl TsigKeyService {
     }
 }
 
+/// The rendered name must fit the `tsig_keys.name` VARCHAR(255) column.
+const MAX_KEY_NAME_LEN: usize = 255;
+
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
 pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
-    to_lookup_name(value).map_err(|e| ServiceError::invalid_input(format!("TSIG key name {}", e)))
+    let name = to_lookup_name(value)
+        .map_err(|e| ServiceError::invalid_input(format!("TSIG key name {}", e)))?;
+    if name.len() > MAX_KEY_NAME_LEN {
+        return Err(ServiceError::invalid_input(format!(
+            "TSIG key name must be {} characters or fewer in its canonical spelling",
+            MAX_KEY_NAME_LEN
+        )));
+    }
+    Ok(name)
 }
 
 /// HMAC security degrades to the key length, so refuse imports under 128 bits.
@@ -117,6 +137,7 @@ const MIN_IMPORTED_SECRET_BYTES: usize = 16;
 /// The base64 form must fit the `tsig_keys.secret` VARCHAR(255) column.
 const MAX_SECRET_BASE64_LEN: usize = 255;
 
+/// Validate and normalize a base64-encoded TSIG secret.
 fn normalize_secret(value: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
@@ -144,6 +165,7 @@ fn normalize_secret(value: &str) -> Result<String, ServiceError> {
     Ok(trimmed.to_string())
 }
 
+/// Generate a base64-encoded random TSIG secret.
 fn generate_secret() -> String {
     let bytes: [u8; GENERATED_SECRET_LEN] = rand::rng().random();
     base64::engine::general_purpose::STANDARD.encode(bytes)

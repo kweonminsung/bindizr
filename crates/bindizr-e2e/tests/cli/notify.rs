@@ -1,5 +1,6 @@
 use crate::common::{TestApp, assert_cli_failure_contains};
 
+/// Verify CLI notification of all zones or one named zone.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn notify_all_zones_and_one_zone() {
