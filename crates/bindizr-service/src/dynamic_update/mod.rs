@@ -25,7 +25,7 @@ use crate::{
     record::{AddOutcome, RecordService, matches_record, validate_delete_constraints},
     repository::RepositoryService,
     serial::generate_serial,
-    tsig_key::grant::authorize_update,
+    tsig_key::grant::{authorize_prerequisite, authorize_update},
     zone::{ZoneService, version::ChangeSubject},
 };
 
@@ -161,7 +161,14 @@ impl DynamicUpdateService {
                         ))
                     })?;
 
-            authorize_key(&mut tx, &zone, update.key.as_ref(), &update.updates).await?;
+            authorize_key(
+                &mut tx,
+                &zone,
+                update.key.as_ref(),
+                &update.prerequisites,
+                &update.updates,
+            )
+            .await?;
             evaluate_prerequisites_tx(&mut tx, &zone, &update.prerequisites).await?;
 
             // An exhausted serial cannot advance, so refuse rather than commit
@@ -213,13 +220,15 @@ impl DynamicUpdateService {
     }
 }
 
-/// Authorize an authenticated request: global keys may update anything, other
-/// keys need a grant matching every update RR. `key` is `None` for an
-/// accepted unsigned request, which skips authorization entirely.
+/// Authorize an authenticated request: global keys may do anything, other
+/// keys need a grant reaching every prerequisite and every update RR. `key`
+/// is `None` for an accepted unsigned request, which skips authorization
+/// entirely.
 async fn authorize_key(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
     key: Option<&TsigKey>,
+    prerequisites: &[Prerequisite],
     updates: &[UpdateOp],
 ) -> Result<(), DynamicUpdateError> {
     let key = match key {
@@ -243,6 +252,29 @@ async fn authorize_key(
             "TSIG key '{}' is not authorized for zone '{}'",
             key.name, zone.name
         )));
+    }
+
+    // A prerequisite reads what it names, so the grant is checked before it
+    // is evaluated, ahead of where RFC 2136, Section 3.3 puts permissions.
+    for prerequisite in prerequisites {
+        let (name, record_type) = match prerequisite {
+            Prerequisite::NameInUse { name } | Prerequisite::NameNotInUse { name } => (name, None),
+            Prerequisite::RrsetInUse { name, record_type }
+            | Prerequisite::RrsetNotInUse { name, record_type }
+            | Prerequisite::RrInUse {
+                name, record_type, ..
+            } => (name, Some(record_type)),
+        };
+        let owner = parse_owner_in_zone(name, &zone.name)?;
+        if !authorize_prerequisite(&grants, &owner, record_type) {
+            return Err(DynamicUpdateError::Refused(format!(
+                "TSIG key '{}' is not authorized to read '{}' ({}) in zone '{}'",
+                key.name,
+                owner,
+                record_type.map_or("ANY", RecordType::as_str),
+                zone.name
+            )));
+        }
     }
 
     for op in updates {

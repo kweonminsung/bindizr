@@ -89,3 +89,37 @@ fn a_read_only_grant_authorizes_no_update() {
         Some(&RecordType::A)
     ));
 }
+
+/// Verify that `authorize_prerequisite` narrows a read to the grant's names
+/// and types but accepts a read-only grant.
+#[test]
+fn authorize_prerequisite_reaches_only_what_the_grant_covers() {
+    let grants = vec![read_only_grant("*.dyn", "A")];
+
+    assert!(authorize_prerequisite(
+        &grants,
+        &OwnerName::from_row("host.dyn"),
+        Some(&RecordType::A)
+    ));
+    assert!(!authorize_prerequisite(
+        &grants,
+        &OwnerName::from_row("host.dyn"),
+        Some(&RecordType::TXT)
+    ));
+    assert!(!authorize_prerequisite(
+        &grants,
+        &OwnerName::from_row("secret"),
+        Some(&RecordType::A)
+    ));
+    // A whole-name prerequisite asks about every type at the name.
+    assert!(!authorize_prerequisite(
+        &grants,
+        &OwnerName::from_row("host.dyn"),
+        None
+    ));
+    assert!(authorize_prerequisite(
+        &[read_only_grant("*", "*")],
+        &OwnerName::from_row("secret"),
+        None
+    ));
+}

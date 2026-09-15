@@ -188,11 +188,32 @@ pub(crate) fn authorize_update(
     relative_name: &OwnerName,
     record_type: Option<&RecordType>,
 ) -> bool {
-    grants.iter().any(|grant| {
-        grant.can_write
-            && matches_name(&grant.record_name_pattern, relative_name)
-            && matches_types(&grant.record_types, record_type)
-    })
+    grants
+        .iter()
+        .any(|grant| grant.can_write && matches_grant(grant, relative_name, record_type))
+}
+
+/// Whether any grant reaches the records a prerequisite names: a read, so a
+/// read-only grant suffices; a whole-name one (`None`) needs unrestricted types.
+pub(crate) fn authorize_prerequisite(
+    grants: &[TsigGrant],
+    relative_name: &OwnerName,
+    record_type: Option<&RecordType>,
+) -> bool {
+    grants
+        .iter()
+        .any(|grant| matches_grant(grant, relative_name, record_type))
+}
+
+/// Whether one grant's name pattern and type list cover `record_type` at the
+/// relative owner name.
+fn matches_grant(
+    grant: &TsigGrant,
+    relative_name: &OwnerName,
+    record_type: Option<&RecordType>,
+) -> bool {
+    matches_name(&grant.record_name_pattern, relative_name)
+        && matches_types(&grant.record_types, record_type)
 }
 
 /// Whether any grant covers the zone whole. A transfer hands the zone over

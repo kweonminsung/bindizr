@@ -356,20 +356,38 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     };
 
     // No grant gives this key anything in the zone.
-    let rcode = send_signed_update(port, &zone_name, &[add(format!("a.{zone_name}."))], &key)
-        .expect("send");
+    let rcode = send_signed_update(
+        port,
+        &zone_name,
+        &[],
+        &[add(format!("a.{zone_name}."))],
+        &key,
+    )
+    .expect("send");
     assert_eq!(rcode, Rcode::REFUSED);
 
     // Granting only `a` leaves every other owner name refused.
     app.run_cli_success(&["tsig-key", "grant", &key.name, &zone_name, "--pattern", "a"])
         .await;
 
-    let rcode = send_signed_update(port, &zone_name, &[add(format!("b.{zone_name}."))], &key)
-        .expect("send");
+    let rcode = send_signed_update(
+        port,
+        &zone_name,
+        &[],
+        &[add(format!("b.{zone_name}."))],
+        &key,
+    )
+    .expect("send");
     assert_eq!(rcode, Rcode::REFUSED);
 
-    let rcode = send_signed_update(port, &zone_name, &[add(format!("a.{zone_name}."))], &key)
-        .expect("send");
+    let rcode = send_signed_update(
+        port,
+        &zone_name,
+        &[],
+        &[add(format!("a.{zone_name}."))],
+        &key,
+    )
+    .expect("send");
     assert_eq!(rcode, Rcode::NOERROR);
 
     assert!(
@@ -392,6 +410,69 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     assert_eq!(status, reqwest::StatusCode::OK, "{body}");
     assert_eq!(body["items"][0]["change_source"], "nsupdate", "{body}");
     assert_eq!(body["items"][0]["changed_by"], key.name, "{body}");
+}
+
+/// Verify that a signed prerequisite needs a grant reaching what it names.
+#[tokio::test]
+#[serial]
+async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
+    let app = TestApp::start_local().await;
+    let zone_name = app.zone_name("nsupdate-prereq.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    let port = app.dns_port();
+    let key = create_key(&app, "nsupdate-prereq-key").await;
+    app.run_cli_success(&[
+        "tsig-key",
+        "grant",
+        &key.name,
+        &zone_name,
+        "--pattern",
+        "*.dyn",
+        "--types",
+        "A",
+    ])
+    .await;
+
+    // The answer must not depend on whether `secret` exists.
+    let secret = || PrereqRr::NameNotInUse {
+        name: format!("secret.{zone_name}."),
+    };
+    let rcode = send_signed_update(port, &zone_name, &[secret()], &[], &key).expect("send");
+    assert_eq!(rcode, Rcode::REFUSED);
+
+    let (status, body) = app
+        .request(
+            reqwest::Method::POST,
+            "/records",
+            Some(serde_json::json!({
+                "name": "secret",
+                "record_type": "A",
+                "value": "192.0.2.1",
+                "zone_name": zone_name,
+            })),
+        )
+        .await;
+    assert_eq!(status, reqwest::StatusCode::CREATED, "{body}");
+    let rcode = send_signed_update(port, &zone_name, &[secret()], &[], &key).expect("send");
+    assert_eq!(rcode, Rcode::REFUSED);
+
+    // Inside the grant the prerequisite is answered, before and after the add.
+    let host = format!("host.dyn.{zone_name}.");
+    let equals = || PrereqRr::AEquals {
+        name: host.clone(),
+        addr: "192.0.2.60".to_string(),
+    };
+    let rcode = send_signed_update(port, &zone_name, &[equals()], &[], &key).expect("send");
+    assert_eq!(rcode, Rcode::NXRRSET);
+    let add = UpdateRr::AddA {
+        name: host.clone(),
+        ttl: 300,
+        addr: "192.0.2.60".to_string(),
+    };
+    let rcode = send_signed_update(port, &zone_name, &[], &[add], &key).expect("send");
+    assert_eq!(rcode, Rcode::NOERROR);
+    let rcode = send_signed_update(port, &zone_name, &[equals()], &[], &key).expect("send");
+    assert_eq!(rcode, Rcode::NOERROR);
 }
 
 /// Verify that dynamic updates map the input apex `@` to the empty stored owner.

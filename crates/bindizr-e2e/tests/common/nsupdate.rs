@@ -60,10 +60,11 @@ pub(crate) fn send_update(
 pub(crate) fn send_signed_update(
     port: u16,
     zone: &str,
+    prerequisites: &[PrereqRr],
     updates: &[UpdateRr],
     key: &SigningKey,
 ) -> Result<Rcode, String> {
-    send(port, zone, &[], updates, Some(key))
+    send(port, zone, prerequisites, updates, Some(key))
 }
 
 /// Send a dynamic update with optional TSIG and return the response code.

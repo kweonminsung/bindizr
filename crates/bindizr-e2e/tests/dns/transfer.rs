@@ -135,6 +135,7 @@ async fn a_transfer_only_grant_pulls_the_zone_without_changing_it() {
     let rcode = crate::common::nsupdate::send_signed_update(
         app.dns_port(),
         zone_name,
+        &[],
         &[crate::common::nsupdate::UpdateRr::AddA {
             name: format!("www.{zone_name}."),
             ttl: 300,
