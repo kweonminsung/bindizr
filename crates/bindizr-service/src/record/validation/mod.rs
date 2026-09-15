@@ -159,6 +159,20 @@ pub(crate) fn validate_record_add_constraints_normalized(
     Ok(())
 }
 
+/// Refuse a stored name that no longer fits the wire under `zone_name`, the
+/// zone a rename or a rollback pairs it with.
+pub(crate) fn validate_record_name_in_zone(
+    name: &OwnerName,
+    zone_name: &ZoneName,
+) -> Result<(), ServiceError> {
+    name.to_wire(zone_name).map(|_| ()).map_err(|e| {
+        ServiceError::invalid_record_name(format!(
+            "record name '{}' under zone '{}' {}",
+            name, zone_name, e
+        ))
+    })
+}
+
 /// Reject deletions of the SOA record or the NS record referenced by `mname`.
 pub(crate) fn validate_delete_constraints(
     zone: &Zone,

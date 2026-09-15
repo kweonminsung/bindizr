@@ -2,7 +2,6 @@
 
 use super::{
     MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, has_whitespace_or_control,
-    push_decimal_escape,
 };
 
 /// A record's owner name as its decoded labels, relative to its zone; the apex
@@ -257,14 +256,15 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
     Ok(labels)
 }
 
-/// Decode a completed label as UTF-8 and fold its ASCII case.
+/// Decode a completed label as ASCII text and fold its case; an
+/// internationalized label arrives as its A-label (RFC 5890).
 fn finish_label(label: Vec<u8>) -> Result<String, ParseNameError> {
-    String::from_utf8(label)
-        .map(|mut label| {
-            label.make_ascii_lowercase();
-            label
-        })
-        .map_err(|_| ParseNameError::NonUtf8Label)
+    if !label.is_ascii() {
+        return Err(ParseNameError::NonAscii);
+    }
+    let mut label: String = label.into_iter().map(char::from).collect();
+    label.make_ascii_lowercase();
+    Ok(label)
 }
 
 /// Validate a decoded owner label consistently across name constructors.
@@ -304,24 +304,23 @@ fn classify_wire_len(owner: &[String], zone: &[String]) -> Result<(), ParseNameE
 /// origin, and the master-file metacharacters that would end the owner field.
 const ESCAPED_IN_LABEL: [char; 8] = ['.', '\\', '@', ';', '(', ')', '"', '$'];
 
-/// Inverse of [`decode_labels`] for one label, in printable ASCII: the dot and
-/// every non-ASCII byte take the decimal form `\DDD`, so a `.` in rendered text
-/// is always a label boundary and an ASCII column compares bytewise.
+/// Inverse of [`decode_labels`] for one label. The dot takes its decimal form,
+/// `\046`, so a `.` in rendered text is always a label boundary and SQL can
+/// match a subtree by text.
 pub(crate) fn escape_label(label: &str) -> std::borrow::Cow<'_, str> {
-    if label.is_ascii() && !label.contains(ESCAPED_IN_LABEL) {
+    if !label.contains(ESCAPED_IN_LABEL) {
         return std::borrow::Cow::Borrowed(label);
     }
 
     let mut escaped = String::with_capacity(label.len() + 4);
-    for byte in label.bytes() {
-        match byte {
-            b'.' => escaped.push_str(r"\046"),
-            byte if !byte.is_ascii() => push_decimal_escape(&mut escaped, byte),
-            byte if ESCAPED_IN_LABEL.contains(&char::from(byte)) => {
+    for c in label.chars() {
+        match c {
+            '.' => escaped.push_str(r"\046"),
+            c if ESCAPED_IN_LABEL.contains(&c) => {
                 escaped.push('\\');
-                escaped.push(char::from(byte));
+                escaped.push(c);
             }
-            byte => escaped.push(char::from(byte)),
+            c => escaped.push(c),
         }
     }
     std::borrow::Cow::Owned(escaped)

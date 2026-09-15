@@ -1,9 +1,9 @@
 //! Table-creation DDL for each backend, run at startup to bring the schema up.
 //!
-//! Name columns hold the printable-ASCII rendering of RFC 1035, Section 5.1,
-//! whose `\DDD` escapes can quadruple a name inside the 255-octet wire limit,
-//! hence `VARCHAR(1024)`; MySQL compares them under `ascii_bin`, since its
-//! default collation folds accents that the label comparison keeps apart.
+//! Name columns hold the RFC 1035, Section 5.1 rendering, whose `\046` escape
+//! can quadruple a name inside the 255-octet wire limit, hence `VARCHAR(1024)`.
+//! MySQL compares them under `utf8mb4_bin`, and `idx_records_zone_name` takes a
+//! 255-character prefix: a utf8mb4 VARCHAR(1024) exceeds InnoDB's 3,072-byte key.
 //!
 //! No timestamp column carries a `DEFAULT CURRENT_TIMESTAMP`: an insert that
 //! forgets to bind one must fail rather than take the database server's clock.
@@ -27,7 +27,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS zones (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            name VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin UNIQUE NOT NULL,
+            name VARCHAR(255) COLLATE utf8mb4_bin UNIQUE NOT NULL,
             mname VARCHAR(255) NOT NULL,
             rname VARCHAR(255) NOT NULL,
             default_ttl INT NOT NULL,
@@ -48,7 +48,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS records (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            name VARCHAR(1024) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            name VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             value TEXT NOT NULL,
             display_value TEXT NOT NULL,
@@ -58,7 +58,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             zone_id INT NOT NULL,
             CHECK ((record_type IN ('MX', 'SRV')) = (priority IS NOT NULL)),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            INDEX idx_records_zone_name (zone_id, name),
+            INDEX idx_records_zone_name (zone_id, name(255)),
             INDEX idx_records_zone_type (zone_id, record_type)
         );
         "#,
@@ -68,7 +68,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             zone_id INT NOT NULL,
             serial INT NOT NULL,
             operation VARCHAR(10) NOT NULL,
-            record_name VARCHAR(1024) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            record_name VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
             record_type VARCHAR(50) NOT NULL,
             record_value TEXT,
             record_rdata BLOB,
@@ -131,7 +131,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
         r#"
         CREATE TABLE IF NOT EXISTS tsig_keys (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            name VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin UNIQUE NOT NULL,
+            name VARCHAR(255) COLLATE utf8mb4_bin UNIQUE NOT NULL,
             algorithm VARCHAR(32) NOT NULL,
             secret VARCHAR(255) NOT NULL,
             is_global BOOLEAN NOT NULL DEFAULT FALSE,
@@ -143,7 +143,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             id INT PRIMARY KEY AUTO_INCREMENT,
             zone_id INT NOT NULL,
             tsig_key_id INT NOT NULL,
-            record_name_pattern VARCHAR(1024) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            record_name_pattern VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
             record_types VARCHAR(255) NOT NULL,
             can_write BOOLEAN NOT NULL,
             created_at DATETIME NOT NULL,
@@ -158,7 +158,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             id INT PRIMARY KEY AUTO_INCREMENT,
             zone_id INT NOT NULL,
             api_token_id INT NOT NULL,
-            record_name_pattern VARCHAR(1024) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            record_name_pattern VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
             record_types VARCHAR(255) NOT NULL,
             can_write BOOLEAN NOT NULL,
             created_at DATETIME NOT NULL,
@@ -190,7 +190,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
         CREATE TABLE IF NOT EXISTS dnssec_records (
             id INT PRIMARY KEY AUTO_INCREMENT,
             zone_id INT NOT NULL,
-            name VARCHAR(1024) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            name VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
             record_type INT NOT NULL,
             covered_record_type INT,
             ttl INT NOT NULL,

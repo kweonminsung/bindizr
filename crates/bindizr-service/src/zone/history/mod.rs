@@ -30,6 +30,7 @@ use crate::{
     },
     record::{
         RecordService, validate_delete_constraints, validate_record_add_constraints_normalized,
+        validate_record_name_in_zone,
     },
     repository::RepositoryService,
     serial::generate_serial,
@@ -330,6 +331,9 @@ impl ZoneService {
             }
             let mut to_insert: Vec<Record> = Vec::with_capacity(to_add.len());
             for target in &to_add {
+                // The history predates the zone's current name, which may no
+                // longer fit the names it restores.
+                validate_record_name_in_zone(&target.name, &zone.name)?;
                 let records_at_name = records_by_name.entry(target.name.clone()).or_default();
                 validate_record_add_constraints_normalized(
                     records_at_name,

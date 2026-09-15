@@ -10,7 +10,7 @@ use crate::{
         LockLevel, RecordFilter, RecordRepository, RepositoryTx,
         sql::{
             apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern, lock_clause,
-            name_like_pattern, name_like_types_sql, record_order_by_sql, trim_partial_value,
+            name_like_types_sql, record_order_by_sql, trim_partial_value,
         },
     },
 };
@@ -287,7 +287,6 @@ impl RecordRepository for PostgresRecordRepository {
         let value = filter.value.as_deref().map(trim_partial_value);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
-        let name_search = name_like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
 
@@ -356,9 +355,9 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(filter.max_priority)
         .bind(filter.max_priority)
         .bind(&search)
-        .bind(&name_search)
-        .bind(&name_search)
-        .bind(&name_search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
         .bind(&search)
         .bind(&search)
         .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
@@ -382,7 +381,6 @@ impl RecordRepository for PostgresRecordRepository {
         let value = filter.value.as_deref().map(trim_partial_value);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
-        let name_search = name_like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
 
@@ -447,9 +445,9 @@ impl RecordRepository for PostgresRecordRepository {
         .bind(filter.max_priority)
         .bind(filter.max_priority)
         .bind(&search)
-        .bind(&name_search)
-        .bind(&name_search)
-        .bind(&name_search)
+        .bind(&search)
+        .bind(&search)
+        .bind(&search)
         .bind(&search)
         .bind(&search)
         .bind(filter.scope_token_id)

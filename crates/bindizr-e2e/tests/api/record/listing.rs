@@ -250,7 +250,7 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
 
     for (name, record_type, value) in [
         ("foo;bar", "A", "192.0.2.1"),
-        ("caf\u{e9}", "A", "192.0.2.2"),
+        (r"a\.b", "A", "192.0.2.2"),
         ("note", "TXT", "caf\u{e9}"),
     ] {
         let (status, body) = app
@@ -268,15 +268,15 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
         assert_eq!(status, StatusCode::CREATED, "{body}");
     }
 
-    // Without a zone the filter is still rendered as rows hold it, a
-    // non-ASCII label in its `\DDD` escapes.
+    // Without a zone the filter is still rendered as rows hold it: a relative
+    // name against the owner, an absolute one against the FQDN.
     for spelling in [
         "foo;bar",
         r"foo\;bar",
         &format!("foo;bar.{zone_name}."),
-        "caf\u{e9}",
-        r"caf\195\169",
-        &format!("caf\u{e9}.{zone_name}."),
+        r"a\.b",
+        r"a\046b",
+        &format!(r"a\.b.{zone_name}."),
     ] {
         let (status, body) = app
             .request(
@@ -293,7 +293,7 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
         );
     }
 
-    // One search reaches a name and a value spelled the same way.
+    // A search term is text: a TXT value holding it is found as typed.
     let (status, body) = app
         .request(
             Method::GET,
@@ -305,7 +305,7 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["items"].as_array().map(Vec::len), Some(2), "{body}");
+    assert_eq!(body["items"].as_array().map(Vec::len), Some(1), "{body}");
 }
 
 /// Percent-encode a query value byte by byte; `;`, `\` and UTF-8 would

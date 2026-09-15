@@ -1,6 +1,6 @@
 use super::{
-    OwnerName, ParseNameError, ZoneName, decode_name_labels, encode_name, escape_non_ascii,
-    is_label_suffix, to_lookup_name,
+    OwnerName, ParseNameError, ZoneName, decode_name_labels, encode_name, is_label_suffix,
+    to_lookup_name,
 };
 
 /// Build the test zone or its DNS name.
@@ -57,7 +57,7 @@ fn decode_rejects_malformed_escapes() {
         (r"bad.example.com\", ParseNameError::DanglingEscape),
         (r"a\04.example.com", ParseNameError::InvalidEscape),
         (r"a\300.example.com", ParseNameError::InvalidEscape),
-        (r"a\255b.example.com", ParseNameError::NonUtf8Label),
+        (r"a\255b.example.com", ParseNameError::NonAscii),
         ("bad..example.com", ParseNameError::EmptyLabel),
     ] {
         assert_eq!(decode_name_labels(name).unwrap_err(), expected, "{name:?}");
@@ -201,28 +201,18 @@ fn a_rendered_dot_is_always_a_label_boundary() {
     assert_eq!(OwnerName::from_row(r"a\\.sub").to_stored(), r"a\\.sub");
 }
 
-/// Verify that `escape_non_ascii` renders free text as name columns hold it.
+/// Verify that a non-ASCII label is refused.
 #[test]
-fn escape_non_ascii_renders_free_text_as_name_columns_hold_it() {
-    assert_eq!(
-        escape_non_ascii("caf\u{e9}.example"),
-        r"caf\195\169.example"
-    );
-    // ASCII text is left as typed, dots and escapes included: a search term
-    // is not a name, so nothing in it is a label to render.
-    assert_eq!(escape_non_ascii(r"a\.b_c%"), r"a\.b_c%");
-}
-
-/// Verify that a non-ASCII label renders in decimal escapes.
-#[test]
-fn a_non_ascii_label_renders_in_decimal_escapes() {
+fn a_non_ascii_label_is_refused() {
     let zone = ZoneName::parse("example.com").unwrap();
 
-    // Printable ASCII, as BIND writes it, so an ASCII column compares the row
-    // bytewise; the escapes decode back to the same label.
-    let owner = OwnerName::parse_in_zone("café", &zone).unwrap();
-    assert_eq!(owner.to_stored(), r"caf\195\169");
-    assert_eq!(OwnerName::from_row(&owner.to_stored()), owner);
+    // The wire carries an internationalized label as its A-label (RFC 5890),
+    // and one text vocabulary keeps rows, filters and search terms comparable.
+    assert_eq!(
+        OwnerName::parse_in_zone("caf\u{e9}", &zone).unwrap_err(),
+        ParseNameError::NonAscii
+    );
+    assert!(OwnerName::parse_in_zone("xn--caf-dma", &zone).is_ok());
 }
 
 /// Verify that owner name parse enforces the length limit on both paths.

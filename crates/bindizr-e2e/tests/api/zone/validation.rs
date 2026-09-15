@@ -3,6 +3,137 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify that a rename keeps every record inside the wire limit.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_rename_keeps_every_record_inside_the_wire_limit() {
+    let app = TestApp::start().await;
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": "a.co",
+                "mname": "ns.a.co",
+                "rname": "admin@a.co",
+                "default_ttl": 3600
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // 249 wire octets under `a.co`; any longer zone name pushes it past 255.
+    let owner = [
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(50),
+    ]
+    .join(".");
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": owner,
+                "record_type": "A",
+                "value": "192.0.2.1",
+                "zone_name": "a.co"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // The record was validated under `a.co`; the rename must re-check it, or
+    // the zone would commit a name its transfers cannot encode.
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            "/zones/a.co",
+            Some(json!({ "name": "rename-length.example" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.to_string().contains("bytes or fewer"), "{body}");
+    let (status, _) = app.request(Method::GET, "/zones/a.co", None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = app
+        .request(Method::PUT, "/zones/a.co", Some(json!({ "name": "b.co" })))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+/// Verify that a rollback keeps every restored record inside the wire limit.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_rollback_keeps_every_restored_record_inside_the_wire_limit() {
+    let app = TestApp::start().await;
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": "c.co",
+                "mname": "ns.c.co",
+                "rname": "admin@c.co",
+                "default_ttl": 3600
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let owner = [
+        "a".repeat(63),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(50),
+    ]
+    .join(".");
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": owner,
+                "record_type": "A",
+                "value": "192.0.2.1",
+                "zone_name": "c.co"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let record_id = body["record"]["id"].as_i64().unwrap();
+    let (_, zone_at_target) = app.request(Method::GET, "/zones/c.co", None).await;
+    let target_serial = zone_at_target["zone"]["serial"].as_i64().unwrap();
+
+    // With the long name gone the rename passes; the history still holds it.
+    let (status, _) = app
+        .request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .await;
+    assert!(status.is_success(), "{status}");
+    let (status, body) = app
+        .request(
+            Method::PUT,
+            "/zones/c.co",
+            Some(json!({ "name": "rollback-length.example" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Restoring that serial would bring the name back under a zone it no
+    // longer fits, so the rollback is refused whole.
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/zones/rollback-length.example/versions/{target_serial}/rollback"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.to_string().contains("bytes or fewer"), "{body}");
+}
+
 /// Verify zone-field validation and normalization.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

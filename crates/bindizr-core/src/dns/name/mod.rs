@@ -80,30 +80,6 @@ pub fn join_labels(labels: &[String]) -> String {
         .join(".")
 }
 
-/// Append `byte` as the `\DDD` escape of RFC 1035, Section 5.1.
-pub(crate) fn push_decimal_escape(out: &mut String, byte: u8) {
-    out.push('\\');
-    out.push_str(&format!("{byte:03}"));
-}
-
-/// Render free text the way name columns hold it, every non-ASCII byte as
-/// `\DDD`, so a search term reaches a name held in an ASCII column.
-pub fn escape_non_ascii(value: &str) -> std::borrow::Cow<'_, str> {
-    if value.is_ascii() {
-        return std::borrow::Cow::Borrowed(value);
-    }
-
-    let mut escaped = String::with_capacity(value.len() + 8);
-    for byte in value.bytes() {
-        if byte.is_ascii() {
-            escaped.push(char::from(byte));
-        } else {
-            push_decimal_escape(&mut escaped, byte);
-        }
-    }
-    std::borrow::Cow::Owned(escaped)
-}
-
 /// Return `value` as a lowercase, trailing-dot FQDN: labels decoded and
 /// re-escaped canonically, so a `\.` stays inside its label. A value that does
 /// not decode keeps its own spelling — this renders, it does not validate.

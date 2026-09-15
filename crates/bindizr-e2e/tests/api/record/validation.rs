@@ -3,6 +3,51 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
+/// Verify that a non-ASCII label is refused with the punycode advice.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_non_ascii_label_is_refused_with_punycode_advice() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // Owner names and the names inside values take the A-label form the wire
+    // carries (RFC 5890): the raw label is refused, its A-label accepted.
+    for (name, record_type, value, expected) in [
+        ("caf\u{e9}", "A", "192.0.2.1", StatusCode::BAD_REQUEST),
+        (
+            "alias",
+            "CNAME",
+            "caf\u{e9}.example.",
+            StatusCode::BAD_REQUEST,
+        ),
+        ("xn--caf-dma", "A", "192.0.2.1", StatusCode::CREATED),
+        (
+            "alias",
+            "CNAME",
+            "xn--caf-dma.example.",
+            StatusCode::CREATED,
+        ),
+    ] {
+        let (status, body) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": name,
+                    "record_type": record_type,
+                    "value": value,
+                    "zone_name": zone_name,
+                })),
+            )
+            .await;
+        assert_eq!(status, expected, "{name} {record_type} {value}: {body}");
+        if expected == StatusCode::BAD_REQUEST {
+            assert!(body.to_string().contains("punycode"), "{body}");
+        }
+    }
+}
+
 /// Verify that invalid record values are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

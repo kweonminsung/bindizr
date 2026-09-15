@@ -9,7 +9,9 @@ mod validation;
 
 use bindizr_core::dns::dnssec::rdata_presentation;
 pub(crate) use matching::matches_record;
-pub(crate) use validation::{AddOutcome, validate_delete_constraints, validate_record_ttl};
+pub(crate) use validation::{
+    AddOutcome, validate_delete_constraints, validate_record_name_in_zone, validate_record_ttl,
+};
 
 use crate::{
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},

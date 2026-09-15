@@ -11,7 +11,7 @@ use crate::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    record::RecordService,
+    record::{RecordService, validate_record_name_in_zone},
     repository::RepositoryService,
     serial::generate_serial,
     types::{CreateZoneRequest, UpdateZoneRequest},
@@ -130,6 +130,16 @@ impl ZoneService {
 
             let request = build(&existing_zone);
             let validated = normalize_create_zone_request(&request)?;
+
+            // A longer zone name lengthens every record's wire name, so the
+            // records must still fit under it or the zone stops transferring.
+            if validated.name != existing_zone.name {
+                let records =
+                    RepositoryService::list_records_tx(&mut tx, zone_id, LockLevel::None).await?;
+                for record in &records {
+                    validate_record_name_in_zone(&record.name, &validated.name)?;
+                }
+            }
 
             let timers = normalize_soa_timers(
                 &request,
