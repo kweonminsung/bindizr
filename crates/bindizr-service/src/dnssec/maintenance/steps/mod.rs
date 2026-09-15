@@ -13,16 +13,31 @@ use crate::{
     zone::version::ChangeSubject,
 };
 
-/// Prune journal and version rows older than `cutoff` in one transaction: a
-/// serial pruned from one table but not the other would read to IXFR clients
-/// as a journal gap or a missing SOA. Returns (journal, version) rows deleted.
-pub(crate) async fn prune_zone_history(cutoff: DateTime<Utc>) -> Result<(u64, u64), ServiceError> {
+/// Prune one zone's journal and version rows older than `cutoff` in its own
+/// transaction, under the zone lock the history readers hold, so a reader
+/// never sees the current records under a past serial. Both tables go
+/// together: a serial pruned from one alone reads to IXFR clients as a gap
+/// or a missing SOA. Returns (journal, version) rows deleted.
+pub(crate) async fn prune_zone_history_by_zone_id(
+    zone_id: i32,
+    cutoff: DateTime<Utc>,
+) -> Result<(u64, u64), ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to prune zone history").await?;
     let result = async {
-        let journal_rows =
-            RepositoryService::prune_zone_changes_older_than_tx(&mut tx, cutoff).await?;
-        let version_rows =
-            RepositoryService::prune_zone_versions_older_than_tx(&mut tx, cutoff).await?;
+        if RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive)
+            .await?
+            .is_none()
+        {
+            return Ok((0, 0));
+        }
+        let journal_rows = RepositoryService::prune_zone_changes_by_zone_id_older_than_tx(
+            &mut tx, zone_id, cutoff,
+        )
+        .await?;
+        let version_rows = RepositoryService::prune_zone_versions_by_zone_id_older_than_tx(
+            &mut tx, zone_id, cutoff,
+        )
+        .await?;
         Ok::<_, ServiceError>((journal_rows, version_rows))
     }
     .await;

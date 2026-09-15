@@ -48,6 +48,41 @@ async fn a_non_ascii_label_is_refused_with_punycode_advice() {
     }
 }
 
+/// Verify that a control character in a TXT value is stored escaped.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_control_character_in_a_txt_value_is_stored_escaped() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // RFC 1035, Section 5.1 lets a TXT carry any octet; the display column
+    // holds the NUL as `\000`, which is also how a search reaches it.
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "nul",
+                "record_type": "TXT",
+                "value": "a\u{0}b",
+                "zone_name": zone_name,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let (status, body) = app
+        .request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&record_type=TXT&search=%5C000"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["items"].as_array().map(Vec::len), Some(1), "{body}");
+}
+
 /// Verify that invalid record values are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

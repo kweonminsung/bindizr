@@ -199,29 +199,25 @@ impl ZoneVersionRepository for PostgresZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    /// Prune old zone versions while retaining each zone's newest version in the current
-    /// transaction.
-    async fn prune_older_than_tx(
+    /// Prune one zone's old versions, keeping its newest, in the current transaction.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
         let pg_tx = tx.as_postgres()?;
 
-        // Each zone's newest version survives regardless of age: the IXFR
+        // The zone's newest version survives regardless of age: the IXFR
         // up-to-date response reads it.
         let result = sqlx::query(
             r#"
-            DELETE FROM zone_versions h
-            USING (
-                SELECT zone_id AS newest_zone_id, MAX(serial) AS newest_serial
-                FROM zone_versions
-                GROUP BY zone_id
-            ) newest
-            WHERE newest.newest_zone_id = h.zone_id
-              AND h.created_at < $1 AND h.serial < newest.newest_serial
+            DELETE FROM zone_versions
+            WHERE zone_id = $1 AND created_at < $2
+              AND serial < (SELECT MAX(serial) FROM zone_versions WHERE zone_id = $1)
             "#,
         )
+        .bind(zone_id)
         .bind(cutoff)
         .execute(&mut **pg_tx)
         .await

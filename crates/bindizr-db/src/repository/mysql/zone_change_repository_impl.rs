@@ -141,28 +141,32 @@ impl ZoneChangeRepository for MySqlZoneChangeRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    /// Prune old journal entries while preserving complete serials in the current transaction.
-    async fn prune_older_than_tx(
+    /// Prune one zone's journal rows older than `cutoff` in the current transaction.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        // Delete whole serials only: everything up to the highest serial whose
-        // newest row predates the cutoff, so remaining IXFR steps stay complete.
+        // Delete whole serials only: everything up to the highest serial with
+        // a row older than the cutoff, so remaining IXFR steps stay complete.
+        // MySQL reads a DELETE's own table only through a derived table.
         let result = sqlx::query(
             r#"
-            DELETE zc FROM zone_journal zc
-            JOIN (
-                SELECT zone_id AS cutoff_zone_id, MAX(serial) AS cutoff_serial
-                FROM zone_journal
-                WHERE created_at < ?
-                GROUP BY zone_id
-            ) boundaries
-              ON boundaries.cutoff_zone_id = zc.zone_id AND zc.serial <= boundaries.cutoff_serial
+            DELETE FROM zone_journal
+            WHERE zone_id = ?
+              AND serial <= (
+                  SELECT cutoff_serial FROM (
+                      SELECT MAX(serial) AS cutoff_serial FROM zone_journal
+                      WHERE zone_id = ? AND created_at < ?
+                  ) boundary
+              )
             "#,
         )
+        .bind(zone_id)
+        .bind(zone_id)
         .bind(cutoff)
         .execute(&mut **mysql_tx)
         .await

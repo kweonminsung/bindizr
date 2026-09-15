@@ -436,12 +436,13 @@ pub trait ZoneChangeRepository: Send + Sync {
         lock_level: LockLevel,
     ) -> Result<Vec<ZoneChange>, DatabaseError>;
 
-    /// Prune journal rows older than `cutoff`, whole serials at a time so the
-    /// remaining chain stays contiguous; requests below it fall back to AXFR.
-    /// Returns the number of rows deleted.
-    async fn prune_older_than_tx(
+    /// Prune one zone's journal rows older than `cutoff`, whole serials at a
+    /// time so the remaining chain stays contiguous; requests below it fall
+    /// back to AXFR. Returns the number of rows deleted.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: DateTime<Utc>,
     ) -> Result<u64, DatabaseError>;
 }
@@ -494,11 +495,12 @@ pub trait ZoneVersionRepository: Send + Sync {
         lock_level: LockLevel,
     ) -> Result<Option<ZoneVersion>, DatabaseError>;
 
-    /// Prune versions older than `cutoff`, always keeping each zone's newest
-    /// (the IXFR up-to-date response reads it). Returns rows deleted.
-    async fn prune_older_than_tx(
+    /// Prune one zone's versions older than `cutoff`, always keeping its
+    /// newest (the IXFR up-to-date response reads it). Returns rows deleted.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: DateTime<Utc>,
     ) -> Result<u64, DatabaseError>;
 }

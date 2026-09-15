@@ -22,7 +22,8 @@ async fn a_rename_keeps_every_record_inside_the_wire_limit() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    // 249 wire octets under `a.co`; any longer zone name pushes it past 255.
+    // 249 wire octets under `a.co`, six short of the limit; the seventeen
+    // more of `rename-length.example` make it 266.
     let owner = [
         "a".repeat(63),
         "b".repeat(63),

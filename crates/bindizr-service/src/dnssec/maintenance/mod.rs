@@ -12,7 +12,7 @@ use bindizr_core::{
 use chrono::{Duration, Utc};
 
 use self::steps::{
-    promote_sep_keys_by_zone_id, promote_zsks_by_zone_id, prune_zone_history,
+    promote_sep_keys_by_zone_id, promote_zsks_by_zone_id, prune_zone_history_by_zone_id,
     remove_retired_keys_by_zone_id, sign_zone_by_zone_id, start_zsk_rollover_by_zone_id,
 };
 use super::notify_zone;
@@ -74,12 +74,26 @@ async fn run_maintenance_pass() {
     let config = bindizr_config();
     let mut failed = false;
 
-    // Bound retained IXFR and rollback history before maintaining signed zones.
+    // Bound retained IXFR and rollback history before maintaining signed zones,
+    // one zone per transaction under its lock, like every other step here.
     let retention_days = config.dns.journal_retention_days;
     if retention_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(retention_days));
-        match prune_zone_history(cutoff).await {
-            Ok((journal_rows, version_rows)) => {
+        match RepositoryService::list_zones().await {
+            Ok(zones) => {
+                let (mut journal_rows, mut version_rows) = (0u64, 0u64);
+                for zone in zones {
+                    match prune_zone_history_by_zone_id(zone.id, cutoff).await {
+                        Ok((journal, versions)) => {
+                            journal_rows += journal;
+                            version_rows += versions;
+                        }
+                        Err(e) => {
+                            failed = true;
+                            log_error!("Zone history pruning for zone id {} failed: {}", zone.id, e)
+                        }
+                    }
+                }
                 track_pruned_rows(journal_rows, version_rows);
                 if journal_rows > 0 || version_rows > 0 {
                     log_info!(
@@ -91,7 +105,7 @@ async fn run_maintenance_pass() {
             }
             Err(e) => {
                 failed = true;
-                log_error!("Zone history pruning failed: {}", e)
+                log_error!("Zone history pruning scan failed: {}", e)
             }
         }
     }

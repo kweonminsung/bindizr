@@ -155,28 +155,28 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    /// Prune old journal entries while preserving complete serials in the current transaction.
-    async fn prune_older_than_tx(
+    /// Prune one zone's journal rows older than `cutoff` in the current transaction.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
         let pg_tx = tx.as_postgres()?;
 
-        // Delete whole serials only: everything up to the highest serial whose
-        // newest row predates the cutoff, so remaining IXFR steps stay complete.
+        // Delete whole serials only: everything up to the highest serial with
+        // a row older than the cutoff, so remaining IXFR steps stay complete.
         let result = sqlx::query(
             r#"
-            DELETE FROM zone_journal zc
-            USING (
-                SELECT zone_id AS cutoff_zone_id, MAX(serial) AS cutoff_serial
-                FROM zone_journal
-                WHERE created_at < $1
-                GROUP BY zone_id
-            ) boundaries
-            WHERE boundaries.cutoff_zone_id = zc.zone_id AND zc.serial <= boundaries.cutoff_serial
+            DELETE FROM zone_journal
+            WHERE zone_id = $1
+              AND serial <= (
+                  SELECT MAX(serial) FROM zone_journal
+                  WHERE zone_id = $1 AND created_at < $2
+              )
             "#,
         )
+        .bind(zone_id)
         .bind(cutoff)
         .execute(&mut **pg_tx)
         .await

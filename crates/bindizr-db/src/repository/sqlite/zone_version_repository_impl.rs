@@ -212,29 +212,28 @@ impl ZoneVersionRepository for SqliteZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    /// Prune old zone versions while retaining each zone's newest version in the current
-    /// transaction.
-    async fn prune_older_than_tx(
+    /// Prune one zone's old versions, keeping its newest, in the current transaction.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // Each zone's newest version survives regardless of age: the IXFR
+        // The zone's newest version survives regardless of age: the IXFR
         // up-to-date response reads it. SQLite compares timestamps as text;
         // sqlx's RFC 3339 sorts chronologically.
         let result = sqlx::query(
             r#"
             DELETE FROM zone_versions
-            WHERE created_at < ?
-              AND serial < (
-                  SELECT MAX(newest.serial) FROM zone_versions newest
-                  WHERE newest.zone_id = zone_versions.zone_id
-              )
+            WHERE zone_id = ? AND created_at < ?
+              AND serial < (SELECT MAX(serial) FROM zone_versions WHERE zone_id = ?)
             "#,
         )
+        .bind(zone_id)
         .bind(cutoff)
+        .bind(zone_id)
         .execute(&mut **sqlite_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;

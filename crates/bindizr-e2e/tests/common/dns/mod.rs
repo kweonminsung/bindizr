@@ -409,15 +409,17 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> String {
     out
 }
 
-/// Quote a CAA value the way the record types render it, so a value carrying
-/// `"` or `\` still matches what the API reports.
+/// Quote a value the way the record types render it: `"` and `\` escaped,
+/// control and non-ASCII bytes as `\DDD`, so it matches what the API reports.
 fn to_quoted_string(text: &str) -> String {
     let mut out = String::from("\"");
-    for c in text.chars() {
-        if c == '"' || c == '\\' {
-            out.push('\\');
+    for byte in text.bytes() {
+        match byte {
+            b'"' => out.push_str("\\\""),
+            b'\\' => out.push_str("\\\\"),
+            0x20..=0x7e => out.push(char::from(byte)),
+            _ => out.push_str(&format!("\\{byte:03}")),
         }
-        out.push(c);
     }
     out.push('"');
     out

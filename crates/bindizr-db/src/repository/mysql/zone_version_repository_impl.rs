@@ -211,30 +211,32 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
     }
 
-    /// Prune old zone versions while retaining each zone's newest version in the current
-    /// transaction.
-    async fn prune_older_than_tx(
+    /// Prune one zone's old versions, keeping its newest, in the current transaction.
+    async fn prune_by_zone_id_older_than_tx(
         &self,
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<u64, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        // Each zone's newest version survives regardless of age: the IXFR
-        // up-to-date response reads it.
+        // The zone's newest version survives regardless of age: the IXFR
+        // up-to-date response reads it. MySQL reads a DELETE's own table only
+        // through a derived table.
         let result = sqlx::query(
             r#"
-            DELETE h FROM zone_versions h
-            JOIN (
-                SELECT zone_id AS newest_zone_id, MAX(serial) AS newest_serial
-                FROM zone_versions
-                GROUP BY zone_id
-            ) newest
-              ON newest.newest_zone_id = h.zone_id
-            WHERE h.created_at < ? AND h.serial < newest.newest_serial
+            DELETE FROM zone_versions
+            WHERE zone_id = ? AND created_at < ?
+              AND serial < (
+                  SELECT newest_serial FROM (
+                      SELECT MAX(serial) AS newest_serial FROM zone_versions WHERE zone_id = ?
+                  ) newest
+              )
             "#,
         )
+        .bind(zone_id)
         .bind(cutoff)
+        .bind(zone_id)
         .execute(&mut **mysql_tx)
         .await
         .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;

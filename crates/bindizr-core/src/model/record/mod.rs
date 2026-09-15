@@ -388,8 +388,8 @@ impl RecordType {
             return match TxtRecordValue::from_presentation(value)
                 .and_then(|rdata| rdata.to_content())
             {
-                Some(TxtContent::Single(value)) => value,
-                Some(TxtContent::Segments(segments)) => segments.join(""),
+                Some(TxtContent::Single(value)) => to_display_text(&value),
+                Some(TxtContent::Segments(segments)) => to_display_text(&segments.join("")),
                 None => value.to_string(),
             };
         }
@@ -429,6 +429,24 @@ impl RecordType {
     pub fn is_external_dns_supported(&self) -> bool {
         EXTERNAL_DNS_RECORD_TYPES.contains(self)
     }
+}
+
+/// TXT text for the display column: control characters as `\DDD`, since a
+/// text column cannot hold a NUL, and everything else as typed, for search.
+fn to_display_text(text: &str) -> String {
+    if !text.chars().any(|c| c.is_ascii_control()) {
+        return text.to_string();
+    }
+
+    let mut out = String::with_capacity(text.len() + 4);
+    for c in text.chars() {
+        if c.is_ascii_control() {
+            out.push_str(&format!("\\{:03}", c as u8));
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Types whose display form is a domain name, so their values compare

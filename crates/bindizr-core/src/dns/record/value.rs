@@ -1,5 +1,6 @@
 //! Shared field parsing/validation helpers for stored record values.
 
+use super::txt::TxtRecordValue;
 use crate::dns::{
     DNS_TCP_MAX_SIZE,
     name::{MAX_DOMAIN_LEN, decode_name_labels, has_whitespace_or_control},
@@ -137,17 +138,10 @@ pub(crate) fn parse_char_string<'a>(
     Ok((text, rest))
 }
 
-/// A string in the quoted form the rdata grammars store.
+/// A string in the quoted form the rdata grammars store: the TXT rendering,
+/// so a control or non-ASCII byte is a `\DDD` escape a text column can hold.
 pub(crate) fn to_quoted_string(text: &str) -> String {
-    let mut out = String::from("\"");
-    for c in text.chars() {
-        if c == '"' || c == '\\' {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out.push('"');
-    out
+    TxtRecordValue::to_quoted_charstr(text.as_bytes())
 }
 
 /// Validate a domain-name record value with the same decoded-label rules as an owner name.
@@ -181,7 +175,17 @@ pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::validate_domain_record_value;
+    use super::{to_quoted_string, validate_domain_record_value};
+
+    /// Verify that `to_quoted_string` escapes control and non-ASCII bytes.
+    #[test]
+    fn to_quoted_string_escapes_control_and_non_ascii_bytes() {
+        // RFC 1035, Section 5.1 spells such octets `\DDD`, and a raw NUL is
+        // what a PostgreSQL text column refuses.
+        assert_eq!(to_quoted_string("a\u{0}b"), r#""a\000b""#);
+        assert_eq!(to_quoted_string("caf\u{e9}"), r#""caf\195\169""#);
+        assert_eq!(to_quoted_string(r#"say "hi"\"#), r#""say \"hi\"\\""#);
+    }
 
     /// Verify that domain-name record values accept the same labels as owner names.
     ///

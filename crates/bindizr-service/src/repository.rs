@@ -378,13 +378,15 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load zone changes: {}", e)))
     }
 
-    /// Prune old journal entries while preserving complete serials in the current transaction.
-    pub(crate) async fn prune_zone_changes_older_than_tx(
+    /// Prune one zone's old journal entries, whole serials at a time, in the
+    /// current transaction.
+    pub(crate) async fn prune_zone_changes_by_zone_id_older_than_tx(
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: DateTime<Utc>,
     ) -> Result<u64, ServiceError> {
         get_zone_change_repository()
-            .prune_older_than_tx(tx, cutoff)
+            .prune_by_zone_id_older_than_tx(tx, zone_id, cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to prune zone changes: {}", e)))
     }
@@ -400,14 +402,15 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to save version: {}", e)))
     }
 
-    /// Prune old zone versions while retaining each zone's newest version in the current
+    /// Prune one zone's old versions, keeping its newest, in the current
     /// transaction.
-    pub(crate) async fn prune_zone_versions_older_than_tx(
+    pub(crate) async fn prune_zone_versions_by_zone_id_older_than_tx(
         tx: &mut RepositoryTx<'_>,
+        zone_id: i32,
         cutoff: DateTime<Utc>,
     ) -> Result<u64, ServiceError> {
         get_zone_version_repository()
-            .prune_older_than_tx(tx, cutoff)
+            .prune_by_zone_id_older_than_tx(tx, zone_id, cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to prune versions: {}", e)))
     }

@@ -4,6 +4,8 @@
 //! can quadruple a name inside the 255-octet wire limit, hence `VARCHAR(1024)`.
 //! MySQL compares them under `utf8mb4_bin`, and `idx_records_zone_name` takes a
 //! 255-character prefix: a utf8mb4 VARCHAR(1024) exceeds InnoDB's 3,072-byte key.
+//! Record values are MEDIUMTEXT there: a TXT rendered with `\DDD` escapes can
+//! quadruple its 65,535-octet RDATA past what TEXT holds.
 //!
 //! No timestamp column carries a `DEFAULT CURRENT_TIMESTAMP`: an insert that
 //! forgets to bind one must fail rather than take the database server's clock.
@@ -50,8 +52,8 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             id INT PRIMARY KEY AUTO_INCREMENT,
             name VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
             record_type VARCHAR(50) NOT NULL,
-            value TEXT NOT NULL,
-            display_value TEXT NOT NULL,
+            value MEDIUMTEXT NOT NULL,
+            display_value MEDIUMTEXT NOT NULL,
             ttl INT NOT NULL,
             priority INT,
             created_at DATETIME NOT NULL,
@@ -70,7 +72,7 @@ pub(crate) fn mysql_table_creation_queries() -> Vec<&'static str> {
             operation VARCHAR(10) NOT NULL,
             record_name VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
             record_type VARCHAR(50) NOT NULL,
-            record_value TEXT,
+            record_value MEDIUMTEXT,
             record_rdata BLOB,
             record_ttl INT NOT NULL,
             record_priority INT,

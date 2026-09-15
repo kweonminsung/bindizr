@@ -283,3 +283,15 @@ fn validate_value_rejects_priority_on_types_without_one() {
         assert!(record_type.validate_value(value, None).is_ok());
     }
 }
+
+/// Verify that a TXT display value escapes control characters.
+#[test]
+fn txt_display_value_escapes_control_characters() {
+    // The stored value already spells the NUL as `\000`; the display column
+    // must not decode it back into a byte a text column refuses.
+    assert_eq!(RecordType::TXT.display_value(r#""a\000b""#), r"a\000b");
+    assert_eq!(
+        RecordType::TXT.display_value(r#""caf\195\169""#),
+        "caf\u{e9}"
+    );
+}
