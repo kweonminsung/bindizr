@@ -88,6 +88,11 @@ minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 log_level = "debug"           # Log level: error, warn, info, debug, trace
 ```
 
+A reserved character in the user, password, or database of `server_url`
+(`#`, `@`, `:`, `/`, `?`, a space) is percent-encoded, `p@ss` as `p%40ss`;
+bindizr decodes the components before connecting. The Helm chart encodes
+the credentials it assembles from the bundled database's `auth` values.
+
 Whether a zone is signed, and the signing parameters it uses, are not
 configuration: enable DNSSEC per zone under a DNSSEC policy managed through
 the API or CLI — see [DNSSEC](dnssec.md).

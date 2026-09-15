@@ -83,6 +83,58 @@ async fn a_control_character_in_a_txt_value_is_stored_escaped() {
     assert_eq!(body["items"].as_array().map(Vec::len), Some(1), "{body}");
 }
 
+/// Verify that a NAPTR regexp BIND refuses is rejected.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_naptr_regexp_bind_refuses_is_rejected() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // BIND checks the regexp on receipt, and one record it refuses fails the
+    // whole zone transfer, so what it refuses must not be stored. A backslash
+    // in the regexp is spelled `\\` in the quoted form (RFC 1035, Section 5.1).
+    for (value, expected) in [
+        (
+            "10 10 \"u\" \"E2U+sip\" \"garbage\" .",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "10 10 \"u\" \"E2U+sip\" \"!^.*$!sip:a\\000b@example.com!\" .",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "10 10 \"u\" \"E2U+sip\" \"!^.*$!sip:info@example.com!x\" .",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "10 10 \"u\" \"E2U+sip\" \"!^.*$!sip:\\\\1@example.com!\" .",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "10 10 \"u\" \"E2U+sip\" \"!^\\\\+1(.*)$!sip:\\\\1@example.com!i\" .",
+            StatusCode::CREATED,
+        ),
+    ] {
+        let (status, body) = app
+            .request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "name": "probe",
+                    "record_type": "NAPTR",
+                    "value": value,
+                    "zone_name": zone_name,
+                })),
+            )
+            .await;
+        assert_eq!(status, expected, "{value}: {body}");
+        if expected == StatusCode::BAD_REQUEST {
+            assert!(body.to_string().contains("NAPTR regexp"), "{body}");
+        }
+    }
+}
+
 /// Verify that invalid record values are rejected.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

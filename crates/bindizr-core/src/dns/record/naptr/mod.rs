@@ -1,3 +1,7 @@
+mod regexp;
+
+use regexp::validate_naptr_regexp;
+
 use super::{
     Rdata,
     value::{
@@ -65,6 +69,8 @@ impl<'a> NaptrRecordValue<'a> {
 
     /// Validate the fields of this NAPTR value.
     pub fn validate(&self) -> Result<(), String> {
+        validate_naptr_regexp(&self.regexp)?;
+
         // The replacement is a name or the root, which ends the rewrite chain.
         if self.replacement == "." {
             return Ok(());
@@ -169,6 +175,15 @@ mod tests {
         let parsed = NaptrRecordValue::parse(r#"1 1 "u" "E2U+sip" "!\"a\"!sip:b!" ."#).unwrap();
 
         assert_eq!(parsed.canonical(), r#"1 1 "u" "E2U+sip" "!\"a\"!sip:b!" ."#);
+    }
+
+    /// Verify that a regexp BIND refuses fails validation, not just parsing.
+    #[test]
+    fn a_regexp_bind_refuses_fails_validation() {
+        let parsed = NaptrRecordValue::parse("10 10 \"u\" \"E2U+sip\" \"garbage\" .").unwrap();
+
+        let err = parsed.validate().unwrap_err();
+        assert!(err.starts_with("NAPTR regexp"), "{err}");
     }
 
     /// Verify rejection of NAPTR values with missing fields.

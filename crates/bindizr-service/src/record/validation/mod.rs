@@ -18,8 +18,7 @@ use crate::{
     repository::{RepositoryService, RepositoryTx},
 };
 
-/// Core value validation with the error mapped to `INVALID_RECORD_VALUE`.
-/// A record TTL is non-negative (RFC 2181, Section 8); the zone's default
+/// Reject a negative record TTL (RFC 2181, Section 8); the zone's default
 /// stands in for an omitted one.
 pub(crate) fn validate_record_ttl(ttl: i32) -> Result<(), ServiceError> {
     if ttl < 0 {

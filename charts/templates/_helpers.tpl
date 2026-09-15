@@ -67,19 +67,24 @@ per-pod headless names instead of the load-balanced service. */ -}}
 {{- printf "%s-postgresql" (include "bindizr-chart.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- /* Percent-encode one component of an assembled database URL; urlquery's + for a space would stay a literal + in userinfo. */ -}}
+{{- define "bindizr-chart.urlComponent" -}}
+{{- . | urlquery | replace "+" "%20" -}}
+{{- end -}}
+
 {{- /* Build the database connection URL from explicit or bundled-server settings. */ -}}
 {{- define "bindizr-chart.databaseUrl" -}}
 {{- if .Values.bindizr.database.serverUrl -}}
 {{- .Values.bindizr.database.serverUrl -}}
 {{- else if eq .Values.bindizr.database.type "mysql" -}}
 {{- if .Values.mysql.enabled -}}
-{{- printf "mysql://%s:%s@%s:%v/%s" .Values.mysql.auth.username .Values.mysql.auth.password (include "bindizr-chart.mysql.fullname" .) .Values.mysql.service.port .Values.mysql.auth.database -}}
+{{- printf "mysql://%s:%s@%s:%v/%s" (include "bindizr-chart.urlComponent" .Values.mysql.auth.username) (include "bindizr-chart.urlComponent" .Values.mysql.auth.password) (include "bindizr-chart.mysql.fullname" .) .Values.mysql.service.port (include "bindizr-chart.urlComponent" .Values.mysql.auth.database) -}}
 {{- else -}}
 {{- required "Set bindizr.database.serverUrl, bindizr.database.existingSecret, or enable mysql.enabled when bindizr.database.type is mysql" .Values.bindizr.database.serverUrl -}}
 {{- end -}}
 {{- else if eq .Values.bindizr.database.type "postgresql" -}}
 {{- if .Values.postgresql.enabled -}}
-{{- printf "postgresql://%s:%s@%s:%v/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "bindizr-chart.postgresql.fullname" .) .Values.postgresql.service.port .Values.postgresql.auth.database -}}
+{{- printf "postgresql://%s:%s@%s:%v/%s" (include "bindizr-chart.urlComponent" .Values.postgresql.auth.username) (include "bindizr-chart.urlComponent" .Values.postgresql.auth.password) (include "bindizr-chart.postgresql.fullname" .) .Values.postgresql.service.port (include "bindizr-chart.urlComponent" .Values.postgresql.auth.database) -}}
 {{- else -}}
 {{- required "Set bindizr.database.serverUrl, bindizr.database.existingSecret, or enable postgresql.enabled when bindizr.database.type is postgresql" .Values.bindizr.database.serverUrl -}}
 {{- end -}}
