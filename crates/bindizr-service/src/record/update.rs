@@ -146,8 +146,13 @@ impl RecordService {
                     }
                 };
 
-            // Invisible zones read as 404 so scoped tokens cannot probe ids.
-            if !caller.zone_visible(zone.id) {
+            // A record the caller's grants do not reach reads as 404, as it
+            // does on GET, so ids cannot be probed.
+            if !caller.record_visible(
+                zone.id,
+                &existing_record.name,
+                Some(&existing_record.record_type),
+            ) {
                 return Err(ServiceError::record_not_found(record_id));
             }
 

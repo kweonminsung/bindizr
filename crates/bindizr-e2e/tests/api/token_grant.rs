@@ -244,6 +244,76 @@ async fn token_grants_enforce_name_patterns_and_types() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
+/// Verify that a delete filter outside the grant is refused whether or not
+/// it matches a record, and that such a record reads as absent by id.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        require_authentication: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token.clone());
+
+    let zone_name = app.zone_name("example.com");
+    create_zone(&app, &zone_name).await;
+
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&[
+        "token",
+        "grant",
+        &scoped_name,
+        &zone_name,
+        "--pattern",
+        "*.dyn",
+        "--types",
+        "A,TXT",
+    ])
+    .await;
+
+    // The answer must not depend on whether the record exists.
+    let filter = format!("/records?zone_name={zone_name}&name=www&record_type=A");
+    let paths = [filter.clone(), format!("{filter}&dry_run=true")];
+    app.set_auth_token(scoped_token.clone());
+    for path in &paths {
+        let (status, body) = app.request(Method::DELETE, path, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {body}");
+    }
+
+    app.set_auth_token(global_token);
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "www", "A", "192.0.2.1")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let record_id = body["record"]["id"].as_i64().unwrap();
+
+    app.set_auth_token(scoped_token);
+    for path in &paths {
+        let (status, body) = app.request(Method::DELETE, path, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {body}");
+    }
+
+    // Addressed by id, the record reads as absent, as it does on GET.
+    let (status, _) = app
+        .request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = app
+        .request(
+            Method::PUT,
+            &format!("/records/{record_id}"),
+            Some(json!({ "ttl": 600 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
 /// Verify that scoped token without grants sees nothing.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

@@ -82,8 +82,13 @@ impl RecordService {
                     }
                 };
 
-            // Invisible zones read as 404 so scoped tokens cannot probe ids.
-            if !caller.zone_visible(zone.id) {
+            // A record the caller's grants do not reach reads as 404, as it
+            // does on GET, so ids cannot be probed.
+            if !caller.record_visible(
+                zone.id,
+                &existing_record.name,
+                Some(&existing_record.record_type),
+            ) {
                 return Err(ServiceError::record_not_found(record_id));
             }
             caller
@@ -182,6 +187,19 @@ impl RecordService {
             .await?;
             let owner = normalize_record_owner_name(&filter.name, &zone.name)?;
 
+            // Authorize the request, not the rows it matches: an answer that
+            // depended on the match would reveal what lies outside the grant.
+            caller
+                .authorize_record_writes_tx(
+                    &mut tx,
+                    &zone,
+                    &[RecordWrite {
+                        relative_name: owner.clone(),
+                        record_type: record_type.as_ref(),
+                    }],
+                )
+                .await?;
+
             let existing = RepositoryService::list_records_by_name_tx(
                 &mut tx,
                 zone.id,
@@ -201,17 +219,6 @@ impl RecordService {
                 })
                 .cloned()
                 .collect();
-
-            let writes: Vec<RecordWrite<'_>> = matched
-                .iter()
-                .map(|record| RecordWrite {
-                    relative_name: record.name.clone(),
-                    record_type: Some(&record.record_type),
-                })
-                .collect();
-            caller
-                .authorize_record_writes_tx(&mut tx, &zone, &writes)
-                .await?;
             validate_delete_constraints(&zone, &matched)?;
 
             // Build the preview from the validated rows; dry runs and empty matches

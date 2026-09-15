@@ -75,6 +75,13 @@ impl<'a> NaptrRecordValue<'a> {
         if self.replacement == "." {
             return Ok(());
         }
+        // RFC 3403, Section 4.1: the two are mutually exclusive.
+        if !self.regexp.is_empty() {
+            return Err(
+                "NAPTR record replacement must be '.' when the regexp is set (RFC 3403, Section 4.1)"
+                    .to_string(),
+            );
+        }
 
         validate_domain_record_value("NAPTR record replacement", self.replacement)
     }
@@ -184,6 +191,17 @@ mod tests {
 
         let err = parsed.validate().unwrap_err();
         assert!(err.starts_with("NAPTR regexp"), "{err}");
+    }
+
+    /// Verify that a regexp and a replacement name together are rejected.
+    #[test]
+    fn a_regexp_and_a_replacement_name_together_are_rejected() {
+        // RFC 3403, Section 4.1 makes the two mutually exclusive.
+        let parsed =
+            NaptrRecordValue::parse("10 10 \"u\" \"E2U+sip\" \"!^.*$!sip:x!\" next.example.")
+                .unwrap();
+
+        assert!(parsed.validate().is_err());
     }
 
     /// Verify rejection of NAPTR values with missing fields.
