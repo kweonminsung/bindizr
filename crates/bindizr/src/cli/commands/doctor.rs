@@ -1,9 +1,9 @@
-use std::{fmt, net::SocketAddr, time::Duration};
+use std::{fmt, io::ErrorKind, net::SocketAddr, path::Path, time::Duration};
 
-use bindizr_core::config;
+use bindizr_core::config::{self, BindizrConfig, DatabaseType};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
+    net::{TcpListener, TcpStream, UdpSocket},
 };
 
 use crate::{
@@ -16,6 +16,8 @@ use crate::{
 };
 
 const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+/// A database that does not answer must become a failed check, not a hang.
+const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Tallies check outcomes so the exit code can reflect them.
 struct Report {
@@ -48,19 +50,34 @@ pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), Cl
     let mut report = Report { failures: 0 };
 
     let path = config::resolve_config_path(config_file.as_deref());
-    match config::load_config_file(&path) {
-        Ok(_) => report.ok(format!("Config valid: {}", path)),
-        Err(e) => report.fail(format!("Config invalid: {}", e)),
-    }
+    let file_config = match config::load_config_file(&path) {
+        Ok(config) => {
+            report.ok(format!("Config valid: {}", path));
+            Some(config)
+        }
+        Err(e) => {
+            report.fail(format!("Config invalid: {}", e));
+            None
+        }
+    };
     if check_daemon(&mut report).await {
         match client::fetch_config().await {
             Ok(config) => check_api(&config, &mut report).await,
             Err(e) => report.fail(format!("Daemon config not readable: {}", e.message)),
         }
         check_daemon_side(&mut report).await;
+    } else if let Some(config) = &file_config {
+        // What a daemon that failed to start most likely hit.
+        report.skip("API check skipped: daemon is not running");
+        check_database_offline(config, &mut report).await;
+        check_listen_ports(config, &mut report).await;
     } else {
-        report.skip("API, database, and DNS checks skipped: daemon is not running");
+        report.skip("API, database, and port checks skipped: no valid configuration");
     }
+    check_bind_catalog(
+        file_config.as_ref().map(|config| config.dns.listen_port),
+        &mut report,
+    );
 
     println!();
     if report.failures == 0 {
@@ -72,6 +89,134 @@ pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), Cl
             report.failures
         )))
     }
+}
+
+/// Connect to the configured database from here, with no daemon to ask.
+async fn check_database_offline(config: &BindizrConfig, report: &mut Report) {
+    let database = &config.database;
+    if database.database_type == DatabaseType::Sqlite {
+        let file_path = Path::new(&database.sqlite.file_path);
+        // Only the service knows what a relative path resolves against.
+        if !file_path.is_absolute() {
+            report.skip(format!(
+                "Database check skipped: SQLite path '{}' is relative to the service's working directory",
+                database.sqlite.file_path
+            ));
+            return;
+        }
+        if !file_path.exists() {
+            report.skip(format!(
+                "Database check skipped: SQLite file '{}' is created on first start",
+                database.sqlite.file_path
+            ));
+            return;
+        }
+    }
+
+    match tokio::time::timeout(DB_CHECK_TIMEOUT, bindizr_db::probe_connection(database)).await {
+        Ok(Ok(())) => report.ok(format!("Database reachable: {}", database.database_type)),
+        Ok(Err(e)) => report.fail(format!("Database not reachable: {}", e)),
+        Err(_) => report.fail(format!(
+            "Database not reachable: timed out after {} seconds",
+            DB_CHECK_TIMEOUT.as_secs()
+        )),
+    }
+}
+
+/// Try binding the DNS and API listen addresses.
+async fn check_listen_ports(config: &BindizrConfig, report: &mut Report) {
+    let dns = SocketAddr::new(config.dns.listen_addr, config.dns.listen_port);
+    let bound = async {
+        let _tcp = TcpListener::bind(dns).await?;
+        let _udp = UdpSocket::bind(dns).await?;
+        Ok::<(), std::io::Error>(())
+    };
+    match bound.await {
+        Ok(()) => report.ok(format!("DNS port free: {}", dns)),
+        Err(e) if e.kind() == ErrorKind::AddrInUse => report.fail(format!(
+            "DNS port in use: {} (BIND on this host? change dns.listen_port)",
+            dns
+        )),
+        Err(e) if e.kind() == ErrorKind::PermissionDenied => report.skip(format!(
+            "DNS port check skipped: binding {} needs root",
+            dns
+        )),
+        Err(e) => report.fail(format!("DNS port not bindable: {} ({})", dns, e)),
+    }
+
+    let api = SocketAddr::new(config.api.listen_addr, config.api.listen_port);
+    match TcpListener::bind(api).await {
+        Ok(_) => report.ok(format!("API port free: {}", api)),
+        Err(e) if e.kind() == ErrorKind::AddrInUse => {
+            report.fail(format!("API port in use: {} (change api.listen_port)", api))
+        }
+        Err(e) if e.kind() == ErrorKind::PermissionDenied => report.skip(format!(
+            "API port check skipped: binding {} needs root",
+            api
+        )),
+        Err(e) => report.fail(format!("API port not bindable: {} ({})", api, e)),
+    }
+}
+
+/// Check this host's BIND configuration for the catalog zone and its port.
+fn check_bind_catalog(listen_port: Option<u16>, report: &mut Report) {
+    // The layout detection setup_bind.sh uses.
+    let (main_conf, options_file) = if Path::new("/etc/bind").is_dir() {
+        ("/etc/bind/named.conf", "/etc/bind/named.conf.options")
+    } else if Path::new("/etc/named").is_dir() {
+        ("/etc/named.conf", "/etc/named.conf")
+    } else {
+        report.skip("BIND check skipped: no BIND configuration on this host");
+        return;
+    };
+    let (main, options) = match (
+        std::fs::read_to_string(main_conf),
+        std::fs::read_to_string(options_file),
+    ) {
+        (Ok(main), Ok(options)) => (main, options),
+        (Err(e), _) | (_, Err(e)) => {
+            report.skip(format!(
+                "BIND check skipped: cannot read {} ({})",
+                main_conf, e
+            ));
+            return;
+        }
+    };
+
+    if !main.contains("zone \"catalog.bind\"") || !options.contains("catalog-zones") {
+        report.fail(format!(
+            "BIND catalog zone not configured in {}: run /usr/share/bindizr/setup_bind.sh",
+            main_conf
+        ));
+        return;
+    }
+    match (primaries_port(&options), listen_port) {
+        (Some(port), Some(expected)) if port != expected => report.fail(format!(
+            "BIND fetches the catalog from port {} but bindizr listens on {}: rerun setup_bind.sh",
+            port, expected
+        )),
+        (Some(port), _) => report.ok(format!(
+            "BIND catalog zone configured: {} (primaries port {})",
+            main_conf, port
+        )),
+        (None, _) => report.ok(format!("BIND catalog zone configured: {}", main_conf)),
+    }
+}
+
+/// The port on the catalog zone's `default-primaries` line, if it names one.
+fn primaries_port(options: &str) -> Option<u16> {
+    let rest = &options[options.find("default-primaries")?..];
+    let mut tokens = rest.split_whitespace();
+    while let Some(token) = tokens.next() {
+        if token == "port" {
+            return tokens.next()?.trim_end_matches(';').parse().ok();
+        }
+        // No port before the list closed: BIND's default.
+        if token.starts_with('}') {
+            return Some(53);
+        }
+    }
+    None
 }
 
 /// Check whether the daemon responds through its control socket.
@@ -235,5 +380,25 @@ async fn check_daemon_side(report: &mut Report) {
             None => report.ok(format!("NOTIFY accepted: {}", notify.address)),
             Some(e) => report.fail(format!("NOTIFY rejected: {} ({})", notify.address, e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify that the primaries port is read from both layouts and defaults to 53.
+    #[test]
+    fn primaries_port_reads_the_catalog_zone_line() {
+        let one_line = "catalog-zones {\n    zone \"catalog.bind\" default-primaries { 127.0.0.1 port 5300; };\n};";
+        assert_eq!(primaries_port(one_line), Some(5300));
+
+        let nested = "catalog-zones {\n  zone \"catalog.bind\" {\n    default-primaries { 10.0.0.5 port 53; };\n  };\n};";
+        assert_eq!(primaries_port(nested), Some(53));
+
+        let no_port = "catalog-zones { zone \"catalog.bind\" default-primaries { 127.0.0.1; }; };";
+        assert_eq!(primaries_port(no_port), Some(53));
+
+        assert_eq!(primaries_port("options { };"), None);
     }
 }

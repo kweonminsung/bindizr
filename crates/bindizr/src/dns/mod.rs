@@ -51,10 +51,10 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
 
     let tcp_listener = TcpListener::bind(listen_addr)
         .await
-        .map_err(|e| format!("Failed to bind DNS TCP listener on {}: {}", listen_addr, e))?;
+        .map_err(|e| bind_error("TCP listener", listen_addr, &e))?;
     let udp_socket = UdpSocket::bind(listen_addr)
         .await
-        .map_err(|e| format!("Failed to bind DNS UDP socket on {}: {}", listen_addr, e))?;
+        .map_err(|e| bind_error("UDP socket", listen_addr, &e))?;
 
     log::info!("DNS TCP server listening on {}", listen_addr);
     log::info!("DNS UDP server listening on {}", listen_addr);
@@ -312,4 +312,14 @@ async fn send_udp_response(socket: &UdpSocket, client_addr: SocketAddr, response
     if let Err(e) = socket.send_to(response, client_addr).await {
         log::warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);
     }
+}
+
+/// The bind failure, naming the usual cause when the port is already taken.
+fn bind_error(socket: &str, addr: SocketAddr, e: &std::io::Error) -> String {
+    let hint = if e.kind() == std::io::ErrorKind::AddrInUse {
+        " (BIND on this host? change dns.listen_port)"
+    } else {
+        ""
+    };
+    format!("Failed to bind DNS {} on {}: {}{}", socket, addr, e, hint)
 }

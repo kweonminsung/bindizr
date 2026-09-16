@@ -7,7 +7,7 @@ external_dns_enabled = false
 openapi_enabled = false
 
 [database]
-type = "mysql"
+type = "sqlite"
 
 [database.mysql]
 url = ""

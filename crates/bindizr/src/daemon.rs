@@ -61,9 +61,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
         }
     }
 
-    log::info!("Bindizr is running in foreground mode.");
-    log::info!("For production use, please run bindizr as a systemd service:");
-    log::info!("# systemctl start bindizr");
+    log::info!("Bindizr is running.");
 
     let mut control_rx = socket::server::control::init();
     let socket_task = socket::server::initialize(&shutdown).await?;

@@ -13,7 +13,7 @@ TimeoutStopSec=30
 User=bindizr
 Group=bindizr
 
-# The DNS listener defaults to port 53; nothing else here needs privilege.
+# The DNS listener may be put on port 53; nothing else here needs privilege.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 

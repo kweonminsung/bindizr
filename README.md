@@ -65,6 +65,15 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --version 0.1.0-beta.7 --set postgresql.enabled=true
 ```
 
+### Docker Compose
+
+Builds the image from the working tree and brings up Bindizr, PostgreSQL, and
+two BIND9 secondaries on one host.
+
+```bash
+$ docker compose -f examples/compose/docker-compose.yml up -d --build
+```
+
 ### Docker Swarm
 
 Brings up Bindizr, PostgreSQL, and BIND9 on an overlay network.
@@ -76,16 +85,17 @@ $ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
 ### Package install
 
 ```bash
-$ sudo dpkg -i bindizr_*_amd64.deb    # Debian, Ubuntu
-$ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL
+$ sudo dpkg -i bindizr_*_amd64.deb    # Debian, Ubuntu (bindizr_*_arm64.deb on arm64)
+$ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL (bindizr-*.aarch64.rpm on arm64)
 ```
 
-The package ships a placeholder database URL, so set yours in
-`/etc/bindizr/bindizr.conf.toml` before starting. BIND9 has to be pointed at the
-catalog zone as well — the manual installation guide covers both.
+The package runs on SQLite out of the box and serves zone transfers on port
+5300, leaving 53 to BIND9. Point BIND9 at the catalog zone with the bundled
+script, then start.
 
 ```bash
-$ sudo systemctl enable --now bindizr
+$ sudo /usr/share/bindizr/setup_bind.sh && sudo systemctl restart named   # bind9 on Debian
+$ sudo systemctl start bindizr
 ```
 
 ---

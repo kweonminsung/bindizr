@@ -50,7 +50,7 @@ openapi_enabled = false       # Serve the OpenAPI document at GET /openapi.json 
                                               # bearer tokens travel in the clear
 
 [database]
-type = "mysql"                # Database type: mysql, sqlite, postgresql
+type = "sqlite"               # Database type: sqlite, mysql, postgresql
 
 [database.mysql]
 url = "mysql://user:password@hostname:port/database"
@@ -63,7 +63,7 @@ url = "postgresql://user:password@hostname:port/database"
 
 [dns]
 listen_addr = "127.0.0.1"     # DNS server listen address
-listen_port = 53              # DNS server listen port (UDP and TCP)
+listen_port = 5300            # DNS server listen port (UDP and TCP); BIND on the same host keeps 53
 secondary_addrs = ""          # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53");
                               # they receive NOTIFY and are the only clients allowed to pull zones
 nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from any client; testing only

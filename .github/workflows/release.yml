@@ -4,14 +4,23 @@ on:
   push:
     tags:
       - 'v*'
-  
+
 permissions:
   contents: write
 
 jobs:
-  release:
-    name: Create Release
-    runs-on: ubuntu-latest
+  build:
+    name: Build packages (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - arch: aarch64
+            target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout code
@@ -32,13 +41,32 @@ jobs:
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: stable
-          target: x86_64-unknown-linux-musl
+          target: ${{ matrix.target }}
 
+      # Each target builds on a host of its own architecture, so musl-gcc links natively.
       - name: Build packages
-        run: |
-          export CC_x86_64_unknown_linux_musl=musl-gcc
-          export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
-          ./packaging/scripts/build_packages.sh
+        run: TARGET=${{ matrix.target }} ./packaging/scripts/build_packages.sh
+
+      - name: Upload packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: packages-${{ matrix.arch }}
+          path: |
+            bindizr_*.deb
+            bindizr-*.rpm
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: packages-*
+          merge-multiple: true
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3

@@ -15,8 +15,9 @@ else
 fi
 
 # bindizr's DNS endpoint: setup_bind.sh [host] [port], or BINDIZR_DNS_HOST/BINDIZR_DNS_PORT.
+# 5300 matches the package config, which leaves 53 to BIND.
 HOST="${1:-${BINDIZR_DNS_HOST:-127.0.0.1}}"
-PORT="${2:-${BINDIZR_DNS_PORT:-53}}"
+PORT="${2:-${BINDIZR_DNS_PORT:-5300}}"
 
 # Report an invalid primary-server host and stop setup.
 invalid_host() {

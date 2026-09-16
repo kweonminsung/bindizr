@@ -30,7 +30,7 @@ For building from source, see the
 === "Debian Packages (DPKG)"
 
     ```bash
-    # Install using dpkg
+    # Install using dpkg (bindizr_*_arm64.deb on arm64)
     $ sudo dpkg -i bindizr_*_amd64.deb
 
     # Verify installation
@@ -40,7 +40,7 @@ For building from source, see the
 === "Red Hat Packages (RPM)"
 
     ```bash
-    # Install the .rpm package
+    # Install the .rpm package (bindizr-*.aarch64.rpm on arm64)
     $ sudo rpm -i bindizr-*.x86_64.rpm
 
     # Verify installation
@@ -59,22 +59,25 @@ both; the manual steps below do the same thing by hand.
 
 ### Recommended: automated setup script
 
-This script automatically detects your BIND configuration directory and
-configures BIND to use Bindizr's catalog zone for automatic zone discovery.
+The package installs the script at `/usr/share/bindizr/setup_bind.sh`. It
+finds the BIND configuration and points it at Bindizr's catalog zone; rerun it
+after changing the host or port.
 
 ```bash
-$ SETUP_URL=https://raw.githubusercontent.com/kweonminsung/bindizr/main/packaging/scripts/setup_bind.sh
-
-# Defaults to bindizr DNS at 127.0.0.1 port 53
-$ wget -qO- "$SETUP_URL" | sudo bash
+# Defaults to bindizr DNS at 127.0.0.1 port 5300, where the package configuration listens
+$ sudo /usr/share/bindizr/setup_bind.sh
 
 # Or pass the bindizr DNS host and port when bindizr runs elsewhere
-$ wget -qO- "$SETUP_URL" | sudo bash -s -- 10.0.0.5 5353
+$ sudo /usr/share/bindizr/setup_bind.sh 10.0.0.5 5300
 
 # Restart bind service
 $ sudo systemctl restart bind9  # For Debian-based systems
 $ sudo systemctl restart named  # For Red Hat-based systems
 ```
+
+Without the package, the same script is
+[`packaging/scripts/setup_bind.sh`](https://github.com/kweonminsung/bindizr/blob/main/packaging/scripts/setup_bind.sh)
+in the repository.
 
 ### Alternative: manual setup
 
@@ -107,7 +110,7 @@ options {
     allow-notify { any; };
     ixfr-from-differences yes;
     catalog-zones {
-        zone "catalog.bind" default-primaries { 127.0.0.1 port 53; };
+        zone "catalog.bind" default-primaries { 127.0.0.1 port 5300; };
     };
 };
 ```
@@ -126,7 +129,7 @@ cat <<EOF | sudo tee -a "$BIND_MAIN_CONF"
 
 zone "catalog.bind" {
     type secondary;
-    primaries { 127.0.0.1 port 53; };
+    primaries { 127.0.0.1 port 5300; };
     file "$BIND_CACHE_DIR/catalog.bind.zone";
     allow-notify { any; };
     ixfr-from-differences yes;
@@ -153,20 +156,17 @@ $ sudo systemctl restart named  # For Red Hat-based systems
 
 ## 4. Configure Bindizr options
 
-Create `/etc/bindizr/bindizr.conf.toml` using the
-[Configuration](../configuration.md) reference, adjusting values to match your
-environment. The package installs it `0640 root:bindizr`, since it carries
-database credentials and the service reads it as the unprivileged `bindizr`
-user the install created.
-
-A relative `database.sqlite.file_path` resolves against `/var/lib/bindizr`,
-the state directory systemd creates for the service.
+The package installs `/etc/bindizr/bindizr.conf.toml` ready to run: SQLite in
+`/var/lib/bindizr` (where a relative `database.sqlite.file_path` lands) and
+zone transfers on port 5300, leaving 53 to BIND. For MySQL or PostgreSQL, set
+`database.type` and that backend's `url`; see [Configuration](../configuration.md)
+for every option. The file is `0640 root:bindizr` because it carries database
+credentials and the service reads it as the `bindizr` user.
 
 ## 5. Start the Bindizr service
 
 ```bash
-# Start Bindizr service
-$ sudo systemctl enable bindizr
+# Start Bindizr service (the package already enabled it at boot)
 $ sudo systemctl start bindizr
 
 # Create an admin API token for authentication. The control socket belongs to
@@ -179,3 +179,20 @@ Then confirm the whole path works end to end:
 ```bash
 $ sudo bindizr doctor
 ```
+
+## 6. Create a zone and query it
+
+```bash
+$ sudo bindizr zone create --name example.com --mname ns1.example.com --rname admin@example.com
+$ sudo bindizr record create --zone example.com --name www --type A --value 192.0.2.1
+
+# BIND learned the zone through the catalog and pulled it; it answers on 53
+$ dig @127.0.0.1 www.example.com A +short
+192.0.2.1
+
+# Which serial each secondary serves, against Bindizr's
+$ sudo bindizr zone status example.com
+```
+
+From here the [CLI](../cli/index.md) and the [HTTP API](../http-api/index.md)
+cover the rest.
