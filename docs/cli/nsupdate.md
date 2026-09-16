@@ -23,14 +23,14 @@ type). Otherwise the whole update is refused and nothing is partially applied.
 
 ```bash
 # Create a key (the secret is generated and printed once; use `get` to re-read it)
-$ bindizr tsig-key create --name update-key
+$ bindizr tsig-key create update-key
 
 # Or import an existing base64 secret / pick another HMAC algorithm
-$ bindizr tsig-key create --name legacy-key --algorithm hmac-sha512 --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
+$ bindizr tsig-key create legacy-key --algorithm hmac-sha512 --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
 
 # Or create a global key that may update every zone, including future ones,
 # without any grant. This is write access to all DNS data — use sparingly.
-$ bindizr tsig-key create --name admin-key --global
+$ bindizr tsig-key create admin-key --global
 
 # Grant a (non-global) key update rights in a zone (pattern/types default to '*')
 $ bindizr tsig-key grant update-key example.com

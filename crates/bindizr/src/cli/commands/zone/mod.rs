@@ -35,11 +35,11 @@ pub(crate) enum ZoneCommand {
     /// Create a zone
     #[command(after_help = "\
 Examples:
-  bindizr zone create --name example.com --mname ns1.example.com
-  bindizr zone create --name example.com --mname ns1.example.com --rname admin@example.com --default-ttl 300")]
+  bindizr zone create example.com --mname ns1.example.com
+  bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --default-ttl 300")]
     Create {
         /// Zone name
-        #[arg(long, value_name = "ZONE_NAME")]
+        #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// SOA MNAME: the zone's public primary nameserver, usually a BIND secondary (e.g. ns1.example.com)
         #[arg(long)]

@@ -28,7 +28,7 @@ external_dns_enabled = true
 zones must already exist — ExternalDNS never creates or deletes zones:
 
 ```bash
-$ bindizr token create --name external-dns
+$ bindizr token create external-dns
 $ bindizr token grant external-dns example.com
 $ kubectl -n external-dns create secret generic bindizr-external-dns \
     --from-literal=api-token=<token>

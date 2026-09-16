@@ -171,7 +171,7 @@ $ sudo systemctl start bindizr
 
 # Create an admin API token for authentication. The control socket belongs to
 # the service user and is owner-only, so the CLI needs sudo.
-$ sudo bindizr token create --name admin --global
+$ sudo bindizr token create admin --global
 ```
 
 Then confirm the whole path works end to end:
@@ -186,7 +186,7 @@ the fix for the common ones.
 ## 6. Create a zone and query it
 
 ```bash
-$ sudo bindizr zone create --name example.com --mname ns1.example.com
+$ sudo bindizr zone create example.com --mname ns1.example.com
 $ sudo bindizr record create --zone example.com --name www --type A --value 192.0.2.1
 
 # BIND learned the zone through the catalog and pulled it; it answers on 53
@@ -197,5 +197,9 @@ $ dig @127.0.0.1 www.example.com A +short
 $ sudo bindizr zone status example.com
 ```
 
+The package also installs shell completions and `man bindizr`, so the command
+surface is reachable without the docs.
+
 From here the [CLI](../cli/index.md) and the [HTTP API](../http-api/index.md)
-cover the rest.
+cover the rest. To move zones from a nameserver you already run, see
+[Migrating an Existing Primary](migrating.md).

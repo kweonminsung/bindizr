@@ -14,6 +14,9 @@ Whichever you pick, the shape is the same: Bindizr owns the zone data and serves
 it over AXFR/IXFR, and one or more BIND9 secondaries discover zones through the
 catalog zone and answer client queries.
 
+Zones already served by another nameserver move over without exporting files
+by hand — see [Migrating an Existing Primary](migrating.md).
+
 Every deployment reads the same set of options — see
 [Configuration](../configuration.md) for the full reference, including the
 environment-variable form used by the container deployments.

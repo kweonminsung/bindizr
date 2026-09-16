@@ -320,8 +320,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
 
 /// Create a TSIG key fixture for signed update requests.
 async fn create_key(app: &TestApp, name: &str) -> SigningKey {
-    app.run_cli_success(&["tsig-key", "create", "--name", name])
-        .await;
+    app.run_cli_success(&["tsig-key", "create", name]).await;
     let fetched = app
         .run_cli_success(&["tsig-key", "get", name, "--output", "json"])
         .await;

@@ -87,9 +87,9 @@ helm upgrade bindizr charts -n bindizr -f examples/kind/values.yaml \
 kubectl -n bindizr rollout restart deploy/bindizr
 
 # 2. Create the zone ExternalDNS will manage, and a token granted to it.
-kubectl -n bindizr exec deploy/bindizr -- bindizr zone create --name example.com \
+kubectl -n bindizr exec deploy/bindizr -- bindizr zone create example.com \
   --mname ns.example.com --rname admin@example.com --default-ttl 3600
-kubectl -n bindizr exec deploy/bindizr -- bindizr token create --name external-dns
+kubectl -n bindizr exec deploy/bindizr -- bindizr token create external-dns
 kubectl -n bindizr exec deploy/bindizr -- bindizr token grant external-dns example.com
 kubectl -n bindizr create secret generic bindizr-external-dns --from-literal=api-token=<token>
 

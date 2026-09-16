@@ -26,7 +26,6 @@ async fn zone_create_takes_soa_timers() {
         .run_cli_success(&[
             "zone",
             "create",
-            "--name",
             &zone_name,
             "--mname",
             &mname,
@@ -189,7 +188,6 @@ async fn zone_reject_invalid_name_and_ttl() {
         let args = [
             "zone",
             "create",
-            "--name",
             name,
             "--mname",
             &mname,

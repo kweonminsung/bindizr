@@ -17,7 +17,7 @@ async fn transfer_app() -> TestApp {
 
 /// Create a TSIG key fixture with the requested global access.
 async fn create_key(app: &TestApp, name: &str, global: bool) -> SigningKey {
-    let mut args = vec!["tsig-key", "create", "--name", name];
+    let mut args = vec!["tsig-key", "create", name];
     if global {
         args.push("--global");
     }

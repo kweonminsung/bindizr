@@ -22,7 +22,7 @@ pub(crate) enum DnssecPolicyCommand {
     /// Create a DNSSEC policy (omitted options take the built-in defaults)
     Create {
         /// Policy name (letters, digits, '-', '_', '.')
-        #[arg(long, value_name = "POLICY_NAME")]
+        #[arg(value_name = "POLICY_NAME")]
         name: String,
         /// Signing algorithm: ecdsap256sha256 (default), ecdsap384sha384, ed25519, ed448, rsasha256, or rsasha512. Fixed at creation
         #[arg(long, value_name = "ALG")]

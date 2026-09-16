@@ -11,13 +11,13 @@ Tokens are identified by a unique name, fixed at creation.
 ```bash
 # Create a scoped API token (no access until it is granted zones); the
 # plaintext token is shown once, here
-$ bindizr token create --name external-dns
+$ bindizr token create external-dns
 
 # Create a global (admin) API token
-$ bindizr token create --name admin --global
+$ bindizr token create admin --global
 
 # Create a token with expiration
-$ bindizr token create --name temp --expires-in-days 30
+$ bindizr token create temp --expires-in-days 30
 
 # List all API tokens
 $ bindizr token list

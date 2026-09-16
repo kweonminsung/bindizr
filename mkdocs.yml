@@ -95,6 +95,7 @@ nav:
       - Helm: deployment/helm.md
       - Docker Compose: deployment/docker-compose.md
       - Manual Installation: deployment/manual.md
+      - Migrating an Existing Primary: deployment/migrating.md
   - Configuration: configuration.md
   - DNSSEC: dnssec.md
   - ExternalDNS: external-dns.md

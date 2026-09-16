@@ -1,3 +1,4 @@
+pub(crate) mod completion;
 pub(crate) mod config;
 pub(crate) mod dnssec;
 pub(crate) mod dnssec_policy;

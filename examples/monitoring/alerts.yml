@@ -1,0 +1,93 @@
+# Alerting rules for the metrics documented at
+# https://kweonminsung.github.io/bindizr/http-api/metrics/
+groups:
+  - name: bindizr
+    rules:
+      - alert: BindizrDown
+        expr: up{job="bindizr"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Bindizr is not answering its metrics endpoint"
+          description: "The control plane is unreachable; secondaries keep serving their last transfer."
+
+      # Expired signatures make part of a signed zone bogus.
+      - alert: BindizrDnssecSignaturesExpired
+        expr: bindizr_dnssec_rrsigs_expired_total > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} DNSSEC signatures have expired"
+          description: "Validating resolvers are failing part of a signed zone. Check `bindizr dnssec status <zone>` and the scheduler (dns.scheduler_interval_secs)."
+
+      # Normal for one pass; persisting means re-signing is not keeping up.
+      - alert: BindizrDnssecResigningBehind
+        expr: bindizr_dnssec_rrsigs_expiring_total > 0
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "DNSSEC re-signing is falling behind"
+          description: "Signatures have sat inside the refresh window for six hours. Check bindizr_dnssec_maintenance_runs_total{result!=\"ok\"}."
+
+      - alert: BindizrMaintenancePassFailing
+        expr: increase(bindizr_dnssec_maintenance_runs_total{result!="ok"}[1h]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "The background scheduler pass is failing"
+          description: "Signature renewal, key rollovers, and history pruning all ride on this pass."
+
+      # Secondaries then sit on an old serial until their refresh timer fires.
+      - alert: BindizrNotifyFailing
+        expr: increase(bindizr_notify_sent_total{result!="success"}[15m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "NOTIFY delivery to a secondary is failing"
+          description: "Check dns.secondary_addrs and BIND's allow-notify; `bindizr doctor` reports both."
+
+      # The client is outside the ACL, or signs with an unknown key.
+      - alert: BindizrTransfersRefused
+        expr: increase(bindizr_xfr_total{result="refused"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Zone transfers are being refused"
+          description: "A client outside dns.secondary_addrs, or one signing with an unknown TSIG key, is asking for a transfer."
+
+      # Zero pruning while zones change means the tables grow without bound.
+      - alert: BindizrHistoryNotPruned
+        expr: increase(bindizr_pruned_rows_total[24h]) == 0 and increase(bindizr_zone_serial_bumps_total[24h]) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Zone history is not being pruned"
+          description: "Zones keep changing but no rows were pruned in 24h. Check dns.zone_history_retention_days and the scheduler."
+
+      - alert: BindizrApiErrors
+        expr: |
+          sum(rate(bindizr_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(bindizr_http_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over 5% of API requests are failing with 5xx"
+
+      # The working set no longer fits, so transfers reach the database.
+      - alert: BindizrTransferCacheThrashing
+        expr: |
+          increase(bindizr_zone_cache_evictions_total[15m]) > 0
+            and sum(rate(bindizr_zone_cache_lookups_total{result="hit"}[15m]))
+              / sum(rate(bindizr_zone_cache_lookups_total[15m])) < 0.5
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "The transfer cache is evicting with a low hit ratio"
+          description: "Raise dns.transfer_cache.max_records, or accept that transfers read the database."

@@ -102,7 +102,7 @@ impl TestApp {
     /// auth) and return its `(name, plaintext token)`.
     pub(crate) async fn create_api_token(&self) -> (String, String) {
         let name = format!("{}-global", self.namespace);
-        self.create_token_with(&["token", "create", "--name", &name, "--global"])
+        self.create_token_with(&["token", "create", &name, "--global"])
             .await
     }
 
@@ -110,8 +110,7 @@ impl TestApp {
     /// grant zones with `token grant`.
     pub(crate) async fn create_scoped_api_token(&self) -> (String, String) {
         let name = format!("{}-scoped", self.namespace);
-        self.create_token_with(&["token", "create", "--name", &name])
-            .await
+        self.create_token_with(&["token", "create", &name]).await
     }
 
     /// Create a test API token using the supplied CLI options.
@@ -279,7 +278,6 @@ impl TestApp {
         self.run_cli_success(&[
             "zone",
             "create",
-            "--name",
             zone_name,
             "--mname",
             &mname,

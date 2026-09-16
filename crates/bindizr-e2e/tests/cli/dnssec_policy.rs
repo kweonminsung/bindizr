@@ -13,7 +13,6 @@ async fn dnssec_policy_lifecycle_via_cli() {
         .run_cli_success(&[
             "dnssec-policy",
             "create",
-            "--name",
             &policy_name,
             "--algorithm",
             "ecdsap384sha384",

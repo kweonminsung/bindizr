@@ -9,9 +9,7 @@ async fn tsig_key_create_list_get_delete() {
     let app = TestApp::start().await;
 
     let created = app
-        .run_cli_success(&[
-            "tsig-key", "create", "--name", "cli-key", "--output", "json",
-        ])
+        .run_cli_success(&["tsig-key", "create", "cli-key", "--output", "json"])
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
     assert_eq!(created["tsig_key"]["name"], "cli-key");
@@ -51,7 +49,7 @@ async fn tsig_key_grant_grants_revoke() {
 
     app.create_zone_cli(&zone_name, "3600").await;
 
-    app.run_cli_success(&["tsig-key", "create", "--name", "cli-grant-key"])
+    app.run_cli_success(&["tsig-key", "create", "cli-grant-key"])
         .await;
 
     let granted = app
@@ -113,7 +111,7 @@ async fn tsig_key_grant_grants_revoke() {
 async fn global_tsig_key_create_list_delete() {
     let app = TestApp::start().await;
 
-    let args = ["tsig-key", "create", "--name", "cli-global-key", "--global"];
+    let args = ["tsig-key", "create", "cli-global-key", "--global"];
     let created = app.run_cli(&args).await;
     assert!(created.status.success(), "{created:?}");
     let stdout = String::from_utf8(created.stdout).expect("CLI stdout was not UTF-8");

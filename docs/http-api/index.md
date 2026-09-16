@@ -60,7 +60,7 @@ one, and a `value` filter is refused rather than answered without them.
 Bootstrap the first token with the CLI:
 
 ```bash
-$ bindizr token create --name admin --global
+$ bindizr token create admin --global
 ```
 
 Tokens are scoped by default and act only on the zones they are

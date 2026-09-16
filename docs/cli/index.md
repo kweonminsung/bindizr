@@ -55,6 +55,24 @@ $ bindizr config get dns.secondary_addrs
 
 # Re-read the configuration file without restarting (`systemctl reload bindizr` or SIGHUP does the same)
 $ bindizr config reload
+
+# doctor also answers as one JSON document, for a cron job or CI check
+$ bindizr doctor -o json
+```
+
+## Completions and the man page
+
+A package install puts both in place already. Elsewhere the binary prints
+them, generated from the same command it parses with:
+
+```bash
+# Shell completion: bash, zsh, fish, elvish, or powershell
+$ bindizr completion bash | sudo tee /usr/share/bash-completion/completions/bindizr
+$ bindizr completion zsh  | sudo tee /usr/share/zsh/site-functions/_bindizr
+$ bindizr completion fish > ~/.config/fish/completions/bindizr.fish
+
+# Man page
+$ bindizr man | sudo tee /usr/share/man/man1/bindizr.1 > /dev/null
 ```
 
 ## Zones and records
@@ -62,7 +80,7 @@ $ bindizr config reload
 ```bash
 # Create a zone (--rname defaults to hostmaster@<zone>; the SOA serial starts at 1
 # unless --serial is given; --refresh, --retry, --expire, and --minimum-ttl set the other SOA timers)
-$ bindizr zone create --name example.com --mname ns1.example.com --default-ttl 3600
+$ bindizr zone create example.com --mname ns1.example.com --default-ttl 3600
 
 # List, inspect, and delete zones
 $ bindizr zone list
@@ -115,7 +133,8 @@ $ bindizr zone import <ZONE_NAME> zone.txt --dry-run
 
 A zone served elsewhere imports without exporting a file first —
 `--from-server` pulls the records over AXFR (the source must allow the
-transfer):
+transfer); [Migrating an Existing Primary](../deployment/migrating.md) walks
+through a whole cutover:
 
 ```bash
 $ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --dry-run

@@ -9,41 +9,95 @@ mod offline;
 use std::fmt;
 
 use bindizr_core::config;
+use serde::Serialize;
 
 use crate::{
-    cli::{error::CliError, output::color},
+    cli::{
+        error::CliError,
+        output::{OutputFormat, color, print_payload},
+    },
     socket::client,
 };
 
-/// Tallies check outcomes so the exit code can reflect them.
+/// One check's outcome.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum CheckStatus {
+    Ok,
+    Fail,
+    Skip,
+}
+
+/// One check in the reported document.
+#[derive(Serialize)]
+struct Check {
+    status: CheckStatus,
+    message: String,
+}
+
+/// The whole run, as `--output json` reports it.
+#[derive(Serialize)]
+struct DoctorReport {
+    healthy: bool,
+    failures: usize,
+    checks: Vec<Check>,
+}
+
+/// Collects check outcomes for the exit code, printing each as it lands
+/// unless the caller asked for one document.
 pub(crate) struct Report {
+    format: OutputFormat,
+    checks: Vec<Check>,
     failures: usize,
 }
 
 impl Report {
-    /// Print a successful diagnostic check.
+    /// Record a successful diagnostic check.
     pub(crate) fn ok(&mut self, message: impl fmt::Display) {
-        println!("[{}] {}", color::green("OK"), message);
+        self.push(CheckStatus::Ok, message);
     }
 
-    /// Print a failed diagnostic check and increment the failure count.
+    /// Record a failed diagnostic check and increment the failure count.
     pub(crate) fn fail(&mut self, message: impl fmt::Display) {
         self.failures += 1;
-        println!("[{}] {}", color::red("FAIL"), message);
+        self.push(CheckStatus::Fail, message);
     }
 
-    /// Print a skipped diagnostic check.
+    /// Record a skipped diagnostic check.
     pub(crate) fn skip(&mut self, message: impl fmt::Display) {
-        println!("[{}] {}", color::yellow("SKIP"), message);
+        self.push(CheckStatus::Skip, message);
+    }
+
+    /// Store one check, printing it now in table form.
+    fn push(&mut self, status: CheckStatus, message: impl fmt::Display) {
+        let message = message.to_string();
+        if self.format == OutputFormat::Table {
+            let label = match status {
+                CheckStatus::Ok => color::green("OK"),
+                CheckStatus::Fail => color::red("FAIL"),
+                CheckStatus::Skip => color::yellow("SKIP"),
+            };
+            println!("[{}] {}", label, message);
+        }
+        self.checks.push(Check { status, message });
     }
 }
 
 /// Handle the `doctor` subcommand by verifying the installation end to end.
-pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), CliError> {
-    println!("Bindizr Doctor");
-    println!();
+pub(crate) async fn handle_command(
+    config_file: Option<String>,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    if format == OutputFormat::Table {
+        println!("Bindizr Doctor");
+        println!();
+    }
 
-    let mut report = Report { failures: 0 };
+    let mut report = Report {
+        format,
+        checks: Vec::new(),
+        failures: 0,
+    };
 
     let path = config::resolve_config_path(config_file.as_deref());
     let file_config = match config::load_config_file(&path) {
@@ -75,11 +129,26 @@ pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), Cl
         &mut report,
     );
 
-    println!();
+    if format == OutputFormat::Table {
+        println!();
+        if report.failures == 0 {
+            println!("Result: installation looks {}", color::green("healthy"));
+        }
+    } else {
+        let document = DoctorReport {
+            healthy: report.failures == 0,
+            failures: report.failures,
+            checks: report.checks,
+        };
+        let value = serde_json::to_value(&document)
+            .map_err(|e| format!("Failed to render the report: {}", e))?;
+        print_payload(&value, format)?;
+    }
+
     if report.failures == 0 {
-        println!("Result: installation looks {}", color::green("healthy"));
         Ok(())
     } else {
+        // To stderr, leaving a JSON document alone on stdout.
         Err(CliError::from(format!(
             "installation has {} failing check(s)",
             report.failures

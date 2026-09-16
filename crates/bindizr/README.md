@@ -98,8 +98,8 @@ Use the CLI to inspect and manage resources:
 
 ```bash
 bindizr status
-bindizr token create --name admin --global
-bindizr zone create --name example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
+bindizr token create admin --global
+bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
 bindizr zone list
 bindizr zone import example.com db.example.com --mode upsert
 bindizr zone version list example.com

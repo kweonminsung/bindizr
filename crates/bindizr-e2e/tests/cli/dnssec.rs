@@ -47,7 +47,6 @@ async fn zone_dnssec_lifecycle_via_cli() {
     app.run_cli_success(&[
         "dnssec-policy",
         "create",
-        "--name",
         &policy_name,
         "--signature-validity-days",
         "30",
@@ -110,15 +109,8 @@ async fn zone_dnssec_nsec3_rollover_via_cli() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let policy_name = format!("{}-nsec3", app.namespace());
-    app.run_cli_success(&[
-        "dnssec-policy",
-        "create",
-        "--name",
-        &policy_name,
-        "--denial",
-        "nsec3",
-    ])
-    .await;
+    app.run_cli_success(&["dnssec-policy", "create", &policy_name, "--denial", "nsec3"])
+        .await;
     let enabled = app
         .run_cli_success(&[
             "dnssec",
@@ -231,14 +223,8 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     // Under a split-key policy the lone SEP key is a KSK with no ZSK, so the
     // import is refused before anything is stored.
     let split_policy = format!("{}-split", app.namespace());
-    app.run_cli_success(&[
-        "dnssec-policy",
-        "create",
-        "--name",
-        &split_policy,
-        "--split-keys",
-    ])
-    .await;
+    app.run_cli_success(&["dnssec-policy", "create", &split_policy, "--split-keys"])
+        .await;
     let refused = app
         .run_cli(&[
             "dnssec",
@@ -280,14 +266,8 @@ async fn zone_dnssec_split_key_import_restores_both_roles() {
     let zone_name = app.zone_name("dnssec-split.example");
     app.create_zone_cli(&zone_name, "3600").await;
     let policy_name = format!("{}-split", app.namespace());
-    app.run_cli_success(&[
-        "dnssec-policy",
-        "create",
-        "--name",
-        &policy_name,
-        "--split-keys",
-    ])
-    .await;
+    app.run_cli_success(&["dnssec-policy", "create", &policy_name, "--split-keys"])
+        .await;
     app.run_cli_success(&[
         "dnssec",
         "enable",

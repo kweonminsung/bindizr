@@ -19,7 +19,7 @@ key layout, or timing.
 
 ```sh
 bindizr dnssec-policy list
-bindizr dnssec-policy create --name strict --algorithm ed25519 --denial nsec3 \
+bindizr dnssec-policy create strict --algorithm ed25519 --denial nsec3 \
     --signature-validity-days 7 --signature-refresh-days 3
 bindizr dnssec-policy get strict
 bindizr dnssec-policy update strict --zsk-lifetime-days 90

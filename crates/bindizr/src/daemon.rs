@@ -54,7 +54,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     if config::bindizr_config().api.require_authentication {
         match service::token::TokenService::count_all().await {
             Ok(0) => log::warn!(
-                "API authentication is on and no API tokens exist; create one with `bindizr token create --name admin --global`"
+                "API authentication is on and no API tokens exist; create one with `bindizr token create admin --global`"
             ),
             Ok(_) => {}
             Err(e) => log::warn!("Could not count API tokens: {}", e),

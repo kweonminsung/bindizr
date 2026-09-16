@@ -23,7 +23,7 @@ pub(crate) enum TsigKeyCommand {
     /// Create a TSIG key (generates a secret unless one is provided)
     Create {
         /// Key name; appears on the wire in the TSIG record (e.g. "update-key")
-        #[arg(long, value_name = "KEY_NAME")]
+        #[arg(value_name = "KEY_NAME")]
         name: String,
         /// HMAC algorithm: hmac-sha256 (default), hmac-sha384, hmac-sha512
         #[arg(long, value_name = "ALG")]

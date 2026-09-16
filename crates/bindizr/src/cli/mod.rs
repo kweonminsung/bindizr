@@ -7,11 +7,16 @@ pub(crate) mod error;
 mod output;
 
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 
 use crate::{
-    cli::commands::{
-        config::ConfigCommand, dnssec::DnssecCommand, dnssec_policy::DnssecPolicyCommand,
-        record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
+    cli::{
+        commands::{
+            config::ConfigCommand, dnssec::DnssecCommand, dnssec_policy::DnssecPolicyCommand,
+            record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand,
+            zone::ZoneCommand,
+        },
+        output::OutputFormat,
     },
     daemon,
 };
@@ -45,6 +50,9 @@ pub(crate) enum Command {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
     /// Inspect and validate configuration
     Config {
@@ -88,6 +96,22 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: DnssecCommand,
     },
+    /// Print a shell completion script on stdout
+    #[command(after_help = "\
+Examples:
+  bindizr completion bash | sudo tee /usr/share/bash-completion/completions/bindizr
+  bindizr completion zsh  | sudo tee /usr/share/zsh/site-functions/_bindizr
+  bindizr completion fish > ~/.config/fish/completions/bindizr.fish")]
+    Completion {
+        /// Shell to generate for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+    /// Print the bindizr man page (roff) on stdout
+    #[command(after_help = "\
+Example:
+  bindizr man | sudo tee /usr/share/man/man1/bindizr.1 > /dev/null")]
+    Man,
 }
 
 /// Parse CLI arguments and dispatch to the matching command handler.
@@ -101,7 +125,9 @@ pub async fn execute() {
         Command::Stop => commands::stop::handle_command().await,
         Command::Restart => commands::restart::handle_command().await,
         Command::Status => commands::status::handle_command().await,
-        Command::Doctor { config } => commands::doctor::handle_command(config).await,
+        Command::Doctor { config, output } => {
+            commands::doctor::handle_command(config, output).await
+        }
         Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
         Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
@@ -112,6 +138,8 @@ pub async fn execute() {
             commands::dnssec_policy::handle_command(subcommand).await
         }
         Command::Dnssec { subcommand } => commands::dnssec::handle_command(subcommand).await,
+        Command::Completion { shell } => commands::completion::handle_command(shell),
+        Command::Man => commands::completion::handle_man_command(),
     } {
         eprintln!("Error: {}", e.message);
         if let Some(hint) = e.hint() {
