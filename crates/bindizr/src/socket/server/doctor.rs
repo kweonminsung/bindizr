@@ -49,7 +49,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         loopback_if_unspecified(config.dns.listen_addr),
         config.dns.listen_port,
     );
-    let timeout = Duration::from_secs(config.dns.notify_timeout_secs);
+    let timeout = Duration::from_secs(config.dns.notify.timeout_secs);
 
     let (dns_server, catalog_serial) =
         match probe::probe_server(dns_addr, CATALOG_ZONE_NAME, timeout).await {

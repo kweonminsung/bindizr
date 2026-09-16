@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A/B the Bindizr `zone_cache` (stored records cached by zone id and serial) on the AXFR path.
+"""A/B the Bindizr transfer cache (stored records cached by zone id and serial) on the AXFR path.
 
 The suite's Benchmark 4 pulls AXFR from the BIND9 *secondary*, so it never
 exercises Bindizr's own XFR server. Here we AXFR straight at Bindizr from inside
@@ -46,17 +46,17 @@ def axfr_from_bind9(cid: str) -> tuple[float | None, int]:
     return ms, len(lines)
 
 
-async def run_variant(zone_cache: bool) -> dict:
-    """Run the transfer workload with one zone-cache configuration."""
-    label = "on" if zone_cache else "off"
+async def run_variant(transfer_cache: bool) -> dict:
+    """Run the transfer workload with one transfer-cache configuration."""
+    label = "on" if transfer_cache else "off"
     proj = f"bench-zc-{label}"
     adapter = registry.build("bindizr", {"resources": {"sample_interval_secs": 1}}, proj,
-                             notify_after_update=False, zone_cache=zone_cache)
+                             notify_after_update=False, transfer_cache=transfer_cache)
     try:
-        print(f"[zone_cache={label}] setup...", flush=True)
+        print(f"[transfer_cache={label}] setup...", flush=True)
         await adapter.setup()
         await adapter.create_zone(ZONE)
-        print(f"[zone_cache={label}] importing {RECORDS} records...", flush=True)
+        print(f"[transfer_cache={label}] importing {RECORDS} records...", flush=True)
         await adapter.bulk_import(ZONE, generate(RECORDS, 1337, ZONE))
 
         bind9_cid = adapter.compose.container_id("bind9")
@@ -78,7 +78,7 @@ async def run_variant(zone_cache: bool) -> dict:
         # Report the first transfer separately from the subsequent warm samples.
         cold, warm = samples[0], samples[1:]
         return {
-            "zone_cache": label,
+            "transfer_cache": label,
             "records": counts[0],
             "cold_ms": cold,
             "warm_mean_ms": statistics.fmean(warm),
@@ -94,7 +94,7 @@ async def main() -> None:
     """Compare the transfer workload with the zone cache enabled and disabled."""
     results = [await run_variant(False), await run_variant(True)]
     off, on = results
-    print("\n=== zone_cache A/B (AXFR from bind9 -> bindizr, "
+    print("\n=== transfer_cache A/B (AXFR from bind9 -> bindizr, "
           f"{off['records']} record lines, {AXFRS} transfers) ===")
     print(f"{'metric':<18}{'off':>12}{'on':>12}{'delta':>12}")
     print("-" * 54)

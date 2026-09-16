@@ -13,32 +13,35 @@ openapi_enabled = false       # Serve the OpenAPI document at GET /openapi.json 
 type = "mysql"                # Database type: mysql, sqlite, postgresql
 
 [database.mysql]
-server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
+url = "mysql://user:password@hostname:port/database"
 
 [database.sqlite]
 file_path = "bindizr.db"      # SQLite database file path
 
 [database.postgresql]
-server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
+url = "postgresql://user:password@hostname:port/database"
 
 [dns]
 listen_addr = "127.0.0.1"     # DNS server listen address
 listen_port = 53              # DNS server listen port (UDP and TCP)
-secondary_addrs = ""          # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53").
-                              # Both the NOTIFY targets and the clients allowed to poll SOA and pull AXFR/IXFR.
-notify_after_update = true    # Send DNS NOTIFY after zone changes
-notify_mode = "sync"          # "sync": NOTIFY runs inline; "async": queued to a background worker
-notify_batch_ms = 50          # async only: window to batch NOTIFYs into one per zone (0 disables the wait)
-zone_cache = true             # Cache each zone's records by serial so repeated AXFRs skip the DB read
-zone_cache_max_records = 500000 # Records the cache may hold; a larger zone is served uncached
-notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
-notify_retries = 3            # Retry count after the initial NOTIFY attempt
-notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
-nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from this host only (TSIG keys/grants are managed via CLI or HTTP API)
-journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
-maintenance_interval_secs = 3600 # Seconds between maintenance passes: signature refresh, journal retention, rollover steps (0 = no pass on this instance)
+secondary_addrs = ""          # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53");
+                              # they receive NOTIFY and are the only clients allowed to pull zones
+nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from any client; testing only
+# zone_history_retention_days = 365 # Days of zone history kept for rollback and secondary catch-up (0 = unlimited)
+# scheduler_interval_secs = 3600    # Seconds between background passes: signature renewal, key rollovers, history pruning (0 = none on this instance)
 
-[dns.zone_defaults]             # Applied when a zone-creation request omits the field
+[dns.notify]                  # DNS NOTIFY to the secondaries
+after_update = true           # Send NOTIFY after zone changes
+on_startup = false            # Send NOTIFY for every zone when bindizr starts
+# batch_ms = 0                # Window to batch one zone's NOTIFYs, sent after the write is answered (0 = send before answering)
+# retries = 3                 # Retry count after the initial NOTIFY attempt
+# timeout_secs = 3            # Timeout in seconds for each NOTIFY send/response wait
+
+[dns.transfer_cache]          # Zone records cached per serial so repeated transfers skip the database
+# enabled = true
+# max_records = 500000        # Records the cache may hold; a larger zone is served uncached
+
+[dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)
 refresh = 300                 # SOA refresh; NOTIFY drives propagation, so this only bounds a lost one
 retry = 60                    # SOA retry
@@ -46,4 +49,4 @@ expire = 3600000              # SOA expire
 minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
-log_level = "debug"           # Log level: error, warn, info, debug, trace
+level = "debug"               # Log level: error, warn, info, debug, trace

@@ -208,7 +208,7 @@ impl DynamicUpdateService {
             );
 
             // Queue through the service like every other mutation path, so
-            // `dns.notify_mode` governs RFC 2136 writes too.
+            // `dns.notify.batch_ms` governs RFC 2136 writes too.
             if let Err(e) = crate::notify::send_notify_after_update(Some(zone.name.as_str())).await
             {
                 log::error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);

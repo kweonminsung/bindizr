@@ -25,11 +25,11 @@ static MAINTENANCE_SCHEDULER: OnceLock<()> = OnceLock::new();
 
 /// Start the periodic maintenance task. Called once from the daemon after
 /// the database is initialized; later calls are no-ops. A zero
-/// `dns.maintenance_interval_secs` leaves this instance without one.
+/// `dns.scheduler_interval_secs` leaves this instance without one.
 pub fn init_maintenance_scheduler() {
-    let interval_secs = bindizr_config().dns.maintenance_interval_secs;
+    let interval_secs = bindizr_config().dns.scheduler_interval_secs;
     if interval_secs == 0 {
-        log::info!("Maintenance scheduler disabled by dns.maintenance_interval_secs = 0");
+        log::info!("Maintenance scheduler disabled by dns.scheduler_interval_secs = 0");
         return;
     }
     if MAINTENANCE_SCHEDULER.set(()).is_err() {
@@ -42,7 +42,7 @@ pub fn init_maintenance_scheduler() {
         loop {
             interval.tick().await;
             // A reload can change the period, or stand this instance down.
-            let configured = bindizr_config().dns.maintenance_interval_secs;
+            let configured = bindizr_config().dns.scheduler_interval_secs;
             if configured == 0 {
                 continue;
             }
@@ -75,7 +75,7 @@ async fn run_maintenance_pass() {
 
     // Bound retained IXFR and rollback history before maintaining signed zones,
     // one zone per transaction under its lock, like every other step here.
-    let retention_days = config.dns.journal_retention_days;
+    let retention_days = config.dns.zone_history_retention_days;
     if retention_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(retention_days));
         match RepositoryService::list_zones().await {

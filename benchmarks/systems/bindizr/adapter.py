@@ -38,9 +38,8 @@ class BindizrAdapter(DnsAdapter):
 
     def __init__(self, cfg: dict, project: str, db_type: str | None = None,
                  notify_after_update: bool = True,
-                 notify_mode: str | None = None,
                  notify_batch_ms: int | None = None,
-                 zone_cache: bool | None = None,
+                 transfer_cache: bool | None = None,
                  log_level: str | None = None):
         """Initialize the adapter with its benchmark configuration and project."""
         super().__init__(cfg, project)
@@ -56,12 +55,11 @@ class BindizrAdapter(DnsAdapter):
         elif db_type == "postgresql":
             self.resource_services.append("postgres")
         self.notify_after_update = notify_after_update
-        # None => Bindizr's own defaults (sync / 50 / true); see compose.yml.
-        self.notify_mode = notify_mode or os.environ.get("BENCH_BINDIZR_NOTIFY_MODE", "sync")
+        # None => Bindizr's own defaults (0 / true); see compose.yml.
         self.notify_batch_ms = notify_batch_ms if notify_batch_ms is not None else int(
-            os.environ.get("BENCH_BINDIZR_NOTIFY_BATCH_MS", "50"))
-        self.zone_cache = zone_cache if zone_cache is not None else (
-            os.environ.get("BENCH_BINDIZR_ZONE_CACHE", "true").lower() == "true")
+            os.environ.get("BENCH_BINDIZR_NOTIFY_BATCH_MS", "0"))
+        self.transfer_cache = transfer_cache if transfer_cache is not None else (
+            os.environ.get("BENCH_BINDIZR_TRANSFER_CACHE", "true").lower() == "true")
         # Raise to "debug" to surface the server's per-stage timing lines
         # (event=record_bulk_create_timing / event=zone_import_timing).
         self.log_level = log_level or os.environ.get("BENCH_BINDIZR_LOG_LEVEL", "info")
@@ -73,9 +71,8 @@ class BindizrAdapter(DnsAdapter):
         self.session: aiohttp.ClientSession | None = None
         env = {"BINDIZR_DB_TYPE": db_type,
                "BINDIZR_NOTIFY_AFTER_UPDATE": "true" if notify_after_update else "false",
-               "BINDIZR_NOTIFY_MODE": self.notify_mode,
                "BINDIZR_NOTIFY_BATCH_MS": str(self.notify_batch_ms),
-               "BINDIZR_ZONE_CACHE": "true" if self.zone_cache else "false",
+               "BINDIZR_TRANSFER_CACHE": "true" if self.transfer_cache else "false",
                "BINDIZR_LOG_LEVEL": self.log_level}
         if db_type == "mysql":
             env["COMPOSE_PROFILES"] = "mysql"

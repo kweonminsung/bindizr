@@ -34,7 +34,8 @@ would need a restart and leaves the running configuration alone.
 ## Configuration file
 
 For manual installation, create the configuration file and adjust the values to
-match your environment:
+match your environment. Commented-out keys show their default and can be left
+out.
 
 ```toml title="/etc/bindizr/bindizr.conf.toml"
 [api]
@@ -52,32 +53,35 @@ openapi_enabled = false       # Serve the OpenAPI document at GET /openapi.json 
 type = "mysql"                # Database type: mysql, sqlite, postgresql
 
 [database.mysql]
-server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
+url = "mysql://user:password@hostname:port/database"
 
 [database.sqlite]
 file_path = "bindizr.db"      # SQLite database file path
 
 [database.postgresql]
-server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
+url = "postgresql://user:password@hostname:port/database"
 
 [dns]
 listen_addr = "127.0.0.1"     # DNS server listen address
 listen_port = 53              # DNS server listen port (UDP and TCP)
-secondary_addrs = ""          # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53").
-                              # Both the NOTIFY targets and the clients allowed to poll SOA and pull AXFR/IXFR.
-notify_after_update = true    # Send DNS NOTIFY after zone changes
-notify_mode = "sync"          # "sync": NOTIFY runs inline; "async": queued to a background worker
-notify_batch_ms = 50          # async only: window to batch NOTIFYs into one per zone (0 disables the wait)
-zone_cache = true             # Cache each zone's records by serial so repeated AXFRs skip the DB read
-zone_cache_max_records = 500000 # Records the cache may hold; a larger zone is served uncached
-notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
-notify_retries = 3            # Retry count after the initial NOTIFY attempt
-notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
-nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from this host only (TSIG keys/grants are managed via CLI or HTTP API)
-journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
-maintenance_interval_secs = 3600 # Seconds between maintenance passes: signature refresh, journal retention, rollover steps (0 = no pass on this instance)
+secondary_addrs = ""          # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53");
+                              # they receive NOTIFY and are the only clients allowed to pull zones
+nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from any client; testing only
+# zone_history_retention_days = 365 # Days of zone history kept for rollback and secondary catch-up (0 = unlimited)
+# scheduler_interval_secs = 3600    # Seconds between background passes: signature renewal, key rollovers, history pruning (0 = none on this instance)
 
-[dns.zone_defaults]             # Applied when a zone-creation request omits the field
+[dns.notify]                  # DNS NOTIFY to the secondaries
+after_update = true           # Send NOTIFY after zone changes
+on_startup = false            # Send NOTIFY for every zone when bindizr starts
+# batch_ms = 0                # Window to batch one zone's NOTIFYs, sent after the write is answered (0 = send before answering)
+# retries = 3                 # Retry count after the initial NOTIFY attempt
+# timeout_secs = 3            # Timeout in seconds for each NOTIFY send/response wait
+
+[dns.transfer_cache]          # Zone records cached per serial so repeated transfers skip the database
+# enabled = true
+# max_records = 500000        # Records the cache may hold; a larger zone is served uncached
+
+[dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)
 refresh = 300                 # SOA refresh; NOTIFY drives propagation, so this only bounds a lost one
 retry = 60                    # SOA retry
@@ -85,10 +89,10 @@ expire = 3600000              # SOA expire
 minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
-log_level = "debug"           # Log level: error, warn, info, debug, trace
+level = "debug"               # Log level: error, warn, info, debug, trace
 ```
 
-A reserved character in the user, password, or database of `server_url`
+A reserved character in the user, password, or database of a database `url`
 (`#`, `@`, `:`, `/`, `?`, a space) is percent-encoded, `p@ss` as `p%40ss`;
 bindizr decodes the components before connecting. The Helm chart encodes
 the credentials it assembles from the bundled database's `auth` values.
@@ -99,11 +103,14 @@ the API or CLI — see [DNSSEC](dnssec.md).
 
 ## Environment variables
 
+A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
+`dns.notify.batch_ms` is `BINDIZR_DNS_NOTIFY_BATCH_MS`.
+
 | Variable | Sets | Notes |
 | --- | --- | --- |
 | `BINDIZR_CONFIG_PATH` | config file path | Falls back to `/etc/bindizr/bindizr.conf.toml` |
 | `BINDIZR_API_LISTEN_ADDR` | `api.listen_addr` | |
-| `BINDIZR_API_PORT` | `api.listen_port` | |
+| `BINDIZR_API_LISTEN_PORT` | `api.listen_port` | |
 | `BINDIZR_API_REQUIRE_AUTHENTICATION` | `api.require_authentication` | |
 | `BINDIZR_API_METRICS_ENABLED` | `api.metrics_enabled` | |
 | `BINDIZR_API_EXTERNAL_DNS_ENABLED` | `api.external_dns_enabled` | See [ExternalDNS](external-dns.md) |
@@ -112,52 +119,51 @@ the API or CLI — see [DNSSEC](dnssec.md).
 | `BINDIZR_API_TLS_KEY_FILE` | `api.tls_key_file` | Empty clears it |
 | `BINDIZR_DATABASE_TYPE` | `database.type` | `mysql`, `postgresql`, or `sqlite` |
 | `BINDIZR_DATABASE_URL` | the URL for the selected backend | Ignored when the type is `sqlite` |
-| `BINDIZR_MYSQL_SERVER_URL` | `database.mysql.server_url` | |
-| `BINDIZR_POSTGRESQL_SERVER_URL` | `database.postgresql.server_url` | |
-| `BINDIZR_SQLITE_FILE_PATH` | `database.sqlite.file_path` | |
+| `BINDIZR_DATABASE_MYSQL_URL` | `database.mysql.url` | |
+| `BINDIZR_DATABASE_POSTGRESQL_URL` | `database.postgresql.url` | |
+| `BINDIZR_DATABASE_SQLITE_FILE_PATH` | `database.sqlite.file_path` | |
 | `BINDIZR_DNS_LISTEN_ADDR` | `dns.listen_addr` | |
-| `BINDIZR_DNS_PORT` | `dns.listen_port` | |
-| `BINDIZR_SECONDARY_ADDRS` | `dns.secondary_addrs` | |
-| `BINDIZR_NOTIFY_AFTER_UPDATE` | `dns.notify_after_update` | |
-| `BINDIZR_NOTIFY_ON_STARTUP` | `dns.notify_on_startup` | |
-| `BINDIZR_NOTIFY_RETRIES` | `dns.notify_retries` | |
-| `BINDIZR_NOTIFY_TIMEOUT_SECS` | `dns.notify_timeout_secs` | |
-| `BINDIZR_NOTIFY_MODE` | `dns.notify_mode` | `sync` or `async` |
-| `BINDIZR_NOTIFY_BATCH_MS` | `dns.notify_batch_ms` | `async` mode only |
-| `BINDIZR_ZONE_CACHE` | `dns.zone_cache` | |
-| `BINDIZR_ZONE_CACHE_MAX_RECORDS` | `dns.zone_cache_max_records` | see [Sizing the zone cache](#sizing-the-zone-cache) |
-| `BINDIZR_NSUPDATE_ALLOW_UNSIGNED` | `dns.nsupdate_allow_unsigned` | |
-| `BINDIZR_JOURNAL_RETENTION_DAYS` | `dns.journal_retention_days` | `0` keeps history forever |
-| `BINDIZR_MAINTENANCE_INTERVAL_SECS` | `dns.maintenance_interval_secs` | `0` runs no maintenance pass on this instance |
-| `BINDIZR_ZONE_DEFAULT_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
-| `BINDIZR_ZONE_REFRESH` | `dns.zone_defaults.refresh` | |
-| `BINDIZR_ZONE_RETRY` | `dns.zone_defaults.retry` | |
-| `BINDIZR_ZONE_EXPIRE` | `dns.zone_defaults.expire` | |
-| `BINDIZR_ZONE_MINIMUM_TTL` | `dns.zone_defaults.minimum_ttl` | |
-| `BINDIZR_LOG_LEVEL` | `logging.log_level` | |
+| `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
+| `BINDIZR_DNS_SECONDARY_ADDRS` | `dns.secondary_addrs` | |
+| `BINDIZR_DNS_NSUPDATE_ALLOW_UNSIGNED` | `dns.nsupdate_allow_unsigned` | Testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
+| `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
+| `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
+| `BINDIZR_DNS_NOTIFY_AFTER_UPDATE` | `dns.notify.after_update` | |
+| `BINDIZR_DNS_NOTIFY_ON_STARTUP` | `dns.notify.on_startup` | |
+| `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](#batching-notify) |
+| `BINDIZR_DNS_NOTIFY_RETRIES` | `dns.notify.retries` | |
+| `BINDIZR_DNS_NOTIFY_TIMEOUT_SECS` | `dns.notify.timeout_secs` | |
+| `BINDIZR_DNS_TRANSFER_CACHE_ENABLED` | `dns.transfer_cache.enabled` | |
+| `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer_cache.max_records` | see [Sizing the transfer cache](#sizing-the-transfer-cache) |
+| `BINDIZR_DNS_ZONE_DEFAULTS_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
+| `BINDIZR_DNS_ZONE_DEFAULTS_REFRESH` | `dns.zone_defaults.refresh` | |
+| `BINDIZR_DNS_ZONE_DEFAULTS_RETRY` | `dns.zone_defaults.retry` | |
+| `BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE` | `dns.zone_defaults.expire` | |
+| `BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL` | `dns.zone_defaults.minimum_ttl` | |
+| `BINDIZR_LOGGING_LEVEL` | `logging.level` | |
 
 `BINDIZR_DATABASE_URL` is a convenience for container deployments where the URL
 arrives from one secret regardless of backend: it writes to whichever
 backend `BINDIZR_DATABASE_TYPE` selected.
 
-## Notify mode
+## Batching NOTIFY
 
-`notify_mode` controls what happens on the write path once a change is committed.
+`dns.notify.batch_ms` decides what happens on the write path once a change is
+committed.
 
-`sync`
-:   The zone reload and NOTIFY run inline, so the API call does not return until
-    secondaries have been notified. Lowest latency to visibility, and the
-    default.
+`0` (the default)
+:   Every change sends its own NOTIFY before the write is answered. Lowest
+    latency to visibility.
 
-`async`
-:   The change is committed and the reload/NOTIFY is queued to a background
-    worker. Writes return sooner, and `notify_batch_ms` collapses NOTIFYs for the
-    same zone into one per window — worth it when many records change at once.
+a window in milliseconds
+:   The write is answered at commit; changes to the same zone inside the
+    window collapse into one NOTIFY, sent from a queue. Worth it when many
+    records change at once.
 
-## Sizing the zone cache
+## Sizing the transfer cache
 
-`dns.zone_cache_max_records` counts records, not bytes, so converting a memory
-budget takes one step. A cached record costs roughly:
+`dns.transfer_cache.max_records` counts records, not bytes, so converting a
+memory budget takes one step. A cached record costs roughly:
 
 | Record | Cost |
 | --- | --- |

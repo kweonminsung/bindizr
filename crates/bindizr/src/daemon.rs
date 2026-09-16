@@ -24,7 +24,7 @@ static DAEMON_EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock
 pub(crate) fn reload_config() -> Result<Vec<String>, String> {
     let changed = config::reload()?;
     // The installed logger reads its level per record, so this is enough.
-    logger::set_level(config::bindizr_config().logging.log_level);
+    logger::set_level(config::bindizr_config().logging.level);
     // A no-op unless this instance had no scheduler, which a zero interval
     // leaves it without.
     service::dnssec::init_maintenance_scheduler();
@@ -54,7 +54,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     let shutdown = Shutdown::new();
     dns::initialize(&shutdown).await?;
 
-    if config::bindizr_config().dns.notify_on_startup {
+    if config::bindizr_config().dns.notify.on_startup {
         match service::notify::send_notify(None).await {
             Ok(()) => log::info!("Startup DNS NOTIFY completed."),
             Err(e) => log::error!("Startup DNS NOTIFY failed: {}", e),

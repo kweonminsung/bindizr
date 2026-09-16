@@ -5,7 +5,7 @@ derives the `DNSKEY`, `CDS`/`CDNSKEY`, denial-of-existence, and `RRSIG`
 records, and serves them over the same AXFR/IXFR path — secondaries need
 **no configuration changes**. Every record change re-signs exactly what
 changed in the same transaction, and a maintenance pass — hourly by default,
-set by `dns.maintenance_interval_secs` — renews signatures before they expire
+set by `dns.scheduler_interval_secs` — renews signatures before they expire
 and carries key rollovers through, asking the parent about the DS when one is
 waiting on it.
 
@@ -178,7 +178,7 @@ Signatures are valid for the policy's `signature_validity_days` (default 14)
 and renewed once fewer than `signature_refresh_days` (default 5) remain; the
 maintenance pass handles this with no operator action. Every instance runs the
 whole pass, so a deployment of several can set
-`dns.maintenance_interval_secs = 0` on all but one — at least one must keep
+`dns.scheduler_interval_secs = 0` on all but one — at least one must keep
 it, or signatures expire. `bindizr dnssec
 sign example.com` forces a full re-sign if stored signatures are ever
 doubted.

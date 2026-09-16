@@ -20,7 +20,7 @@ listen_port = 5300
 secondary_addrs = ""
 
 [logging]
-log_level = "info"
+level = "info"
 "#;
 
 /// Run `bindizr config check` against the host binary directly: the command is
@@ -119,6 +119,7 @@ async fn config_list_and_get_show_loaded_config() {
     assert!(listed.contains("[api]"));
     assert!(listed.contains("[dns]"));
     assert!(listed.contains("nsupdate_allow_unsigned"));
+    assert!(listed.contains("[dns.notify]"));
 
     let value = app
         .run_cli_success(&["config", "get", "api.require_authentication"])
@@ -139,7 +140,7 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
     let original = std::fs::read_to_string(&path).expect("config file");
 
     assert_eq!(
-        app.run_cli_success(&["config", "get", "logging.log_level"])
+        app.run_cli_success(&["config", "get", "logging.level"])
             .await
             .trim(),
         "error"
@@ -147,13 +148,13 @@ async fn config_reload_takes_the_file_again_and_refuses_what_it_cannot_adopt() {
 
     std::fs::write(
         &path,
-        original.replace(r#"log_level = "error""#, r#"log_level = "warn""#),
+        original.replace(r#"level = "error""#, r#"level = "warn""#),
     )
     .expect("rewrite config");
     let reloaded = app.run_cli_success(&["config", "reload"]).await;
     assert!(reloaded.contains("logging"), "{reloaded}");
     assert_eq!(
-        app.run_cli_success(&["config", "get", "logging.log_level"])
+        app.run_cli_success(&["config", "get", "logging.level"])
             .await
             .trim(),
         "warn"

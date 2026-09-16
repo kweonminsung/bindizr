@@ -2,8 +2,6 @@
 //! TSIG verification, the wire shapes RFC 2136 fixes for each section, and
 //! rdata parsing. Everything that touches zone data lives in the service.
 
-use std::net::IpAddr;
-
 use bindizr_core::{
     config,
     dns::{
@@ -82,7 +80,6 @@ impl From<DynamicUpdateError> for UpdateError {
 pub(crate) async fn apply_update(
     request: UpdateRequest,
     query_data: &[u8],
-    client_ip: IpAddr,
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
     let result = async {
@@ -99,7 +96,7 @@ pub(crate) async fn apply_update(
 
         // Authenticate before anything zone-specific: keys are zone-independent,
         // and this lets even NOTZONE/REFUSED responses be signed.
-        let key = authenticate_request(&request, query_data, client_ip, &mut signer).await?;
+        let key = authenticate_request(&request, query_data, &mut signer).await?;
 
         let update = DynamicUpdate {
             zone_name,
@@ -130,17 +127,15 @@ pub(crate) async fn apply_update(
 async fn authenticate_request(
     request: &UpdateRequest,
     query_data: &[u8],
-    client_ip: IpAddr,
     signer: &mut Option<ResponseSigner>,
 ) -> Result<Option<TsigKey>, UpdateError> {
     let tsig = match &request.tsig {
         Some(tsig) => tsig,
         None => {
-            // An unsigned update carries no identity a remote sender could prove.
-            // A v4 client on a `::` listener arrives mapped, so canonicalize first.
-            if config::bindizr_config().dns.nsupdate_allow_unsigned
-                && client_ip.to_canonical().is_loopback()
-            {
+            // An unsigned update carries no identity, so the setting admits
+            // every client that reaches the listener — the same trade
+            // `api.require_authentication = false` makes for the API.
+            if config::bindizr_config().dns.nsupdate_allow_unsigned {
                 return Ok(None);
             }
             return Err(UpdateError::Refused(

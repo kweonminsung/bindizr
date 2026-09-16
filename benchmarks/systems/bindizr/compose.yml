@@ -10,26 +10,25 @@ services:
     image: bindizr:local
     environment:
       BINDIZR_DATABASE_TYPE: ${BINDIZR_DB_TYPE:-sqlite}
-      BINDIZR_SQLITE_FILE_PATH: /var/lib/bindizr/bindizr.db?mode=rwc
-      BINDIZR_MYSQL_SERVER_URL: ${BINDIZR_MYSQL_URL:-mysql://bindizr:bindizr@mysql:3306/bindizr}
-      BINDIZR_POSTGRESQL_SERVER_URL: ${BINDIZR_PG_URL:-postgresql://bindizr:bindizr@postgres:5432/bindizr}
+      BINDIZR_DATABASE_SQLITE_FILE_PATH: /var/lib/bindizr/bindizr.db?mode=rwc
+      BINDIZR_DATABASE_MYSQL_URL: ${BINDIZR_MYSQL_URL:-mysql://bindizr:bindizr@mysql:3306/bindizr}
+      BINDIZR_DATABASE_POSTGRESQL_URL: ${BINDIZR_PG_URL:-postgresql://bindizr:bindizr@postgres:5432/bindizr}
       BINDIZR_API_LISTEN_ADDR: "0.0.0.0"
-      BINDIZR_API_PORT: "8000"
+      BINDIZR_API_LISTEN_PORT: "8000"
       BINDIZR_API_REQUIRE_AUTHENTICATION: "false"
       BINDIZR_DNS_LISTEN_ADDR: "0.0.0.0"
-      BINDIZR_DNS_PORT: "53"
-      BINDIZR_SECONDARY_ADDRS: bind9:53
-      BINDIZR_NOTIFY_AFTER_UPDATE: ${BINDIZR_NOTIFY_AFTER_UPDATE:-true}
-      # sync = NOTIFY inline on the write path; async = queued to a
-      # background worker that coalesces NOTIFYs per zone over notify_batch_ms.
-      BINDIZR_NOTIFY_MODE: ${BINDIZR_NOTIFY_MODE:-sync}
-      BINDIZR_NOTIFY_BATCH_MS: ${BINDIZR_NOTIFY_BATCH_MS:-50}
+      BINDIZR_DNS_LISTEN_PORT: "53"
+      BINDIZR_DNS_SECONDARY_ADDRS: bind9:53
+      BINDIZR_DNS_NOTIFY_AFTER_UPDATE: ${BINDIZR_NOTIFY_AFTER_UPDATE:-true}
+      # 0 = NOTIFY inline on the write path; a window (ms) answers the write at
+      # commit and coalesces NOTIFYs per zone over that window from a queue.
+      BINDIZR_DNS_NOTIFY_BATCH_MS: ${BINDIZR_NOTIFY_BATCH_MS:-0}
       # Cache both stored record planes by serial so repeated AXFRs skip the DB read.
-      BINDIZR_ZONE_CACHE: ${BINDIZR_ZONE_CACHE:-true}
-      BINDIZR_NOTIFY_RETRIES: "3"
-      BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
+      BINDIZR_DNS_TRANSFER_CACHE_ENABLED: ${BINDIZR_TRANSFER_CACHE:-true}
+      BINDIZR_DNS_NOTIFY_RETRIES: "3"
+      BINDIZR_DNS_NOTIFY_TIMEOUT_SECS: "3"
       # debug surfaces the per-stage timing lines (event=*_timing) from bulk/import.
-      BINDIZR_LOG_LEVEL: ${BINDIZR_LOG_LEVEL:-info}
+      BINDIZR_LOGGING_LEVEL: ${BINDIZR_LOG_LEVEL:-info}
     ports:
       - "${BINDIZR_API_HOST_PORT:-18000}:8000/tcp"
     volumes:

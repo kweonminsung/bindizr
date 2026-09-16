@@ -108,7 +108,7 @@ fn print_config(config: &BindizrConfig) {
     println!();
 
     print_section("database.mysql");
-    print_value("server_url", &config.database.mysql.server_url);
+    print_value("url", &config.database.mysql.url);
     println!();
 
     print_section("database.sqlite");
@@ -116,30 +116,38 @@ fn print_config(config: &BindizrConfig) {
     println!();
 
     print_section("database.postgresql");
-    print_value("server_url", &config.database.postgresql.server_url);
+    print_value("url", &config.database.postgresql.url);
     println!();
 
     print_section("dns");
     print_value("listen_addr", config.dns.listen_addr);
     print_value("listen_port", config.dns.listen_port);
     print_value("secondary_addrs", &config.dns.secondary_addrs);
-    print_value("notify_after_update", config.dns.notify_after_update);
-    print_value("notify_mode", config.dns.notify_mode);
-    print_value("notify_batch_ms", config.dns.notify_batch_ms);
-    print_value("zone_cache", config.dns.zone_cache);
-    print_value("zone_cache_max_records", config.dns.zone_cache_max_records);
-    print_value("notify_on_startup", config.dns.notify_on_startup);
-    print_value("notify_retries", config.dns.notify_retries);
-    print_value("notify_timeout_secs", config.dns.notify_timeout_secs);
     print_value(
         "nsupdate_allow_unsigned",
         config.dns.nsupdate_allow_unsigned,
     );
-    print_value("journal_retention_days", config.dns.journal_retention_days);
     print_value(
-        "maintenance_interval_secs",
-        config.dns.maintenance_interval_secs,
+        "zone_history_retention_days",
+        config.dns.zone_history_retention_days,
     );
+    print_value(
+        "scheduler_interval_secs",
+        config.dns.scheduler_interval_secs,
+    );
+    println!();
+
+    print_section("dns.notify");
+    print_value("after_update", config.dns.notify.after_update);
+    print_value("on_startup", config.dns.notify.on_startup);
+    print_value("batch_ms", config.dns.notify.batch_ms);
+    print_value("retries", config.dns.notify.retries);
+    print_value("timeout_secs", config.dns.notify.timeout_secs);
+    println!();
+
+    print_section("dns.transfer_cache");
+    print_value("enabled", config.dns.transfer_cache.enabled);
+    print_value("max_records", config.dns.transfer_cache.max_records);
     println!();
 
     print_section("dns.zone_defaults");
@@ -151,7 +159,7 @@ fn print_config(config: &BindizrConfig) {
     println!();
 
     print_section("logging");
-    print_value("log_level", config.logging.log_level);
+    print_value("level", config.logging.level);
 }
 
 /// Print a configuration section heading.

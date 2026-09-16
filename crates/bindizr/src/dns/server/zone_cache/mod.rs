@@ -21,7 +21,7 @@ use bindizr_service::{
 
 /// Read the configured cache record budget, which counts records rather than bytes.
 fn max_records() -> usize {
-    config::bindizr_config().dns.zone_cache_max_records as usize
+    config::bindizr_config().dns.transfer_cache.max_records as usize
 }
 
 /// Everything a full transfer serves for one zone: the user records and the
@@ -68,7 +68,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
     zone_name: &str,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
-    if !config::bindizr_config().dns.zone_cache {
+    if !config::bindizr_config().dns.transfer_cache.enabled {
         return fetch_transfer_content(zone_name, key).await;
     }
 

@@ -71,7 +71,7 @@ impl From<config::LogLevel> for Level {
 
 /// Install the global logger using the configured log level.
 pub fn initialize() {
-    initialize_with_level(config::bindizr_config().logging.log_level);
+    initialize_with_level(config::bindizr_config().logging.level);
 }
 
 /// Install the global logger at an explicit level, for binaries that do not

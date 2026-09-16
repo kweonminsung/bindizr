@@ -39,7 +39,7 @@ For local testing, the chart can create Secrets from values:
 
 ```sh
 helm install bindizr ./charts \
-  --set bindizr.database.serverUrl='postgresql://user:password@postgresql:5432/bindizr'
+  --set bindizr.database.url='postgresql://user:password@postgresql:5432/bindizr'
 ```
 
 To run a bundled MySQL database for development:
@@ -71,7 +71,7 @@ helm install bindizr ./charts \
 
 - Bindizr and BIND9 do not call the Kubernetes API, so the chart creates no Role or RoleBinding.
 - Non-secret daemon settings come from the ConfigMap; the database URL comes from its Secret through `BINDIZR_DATABASE_URL`.
-- External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.serverUrl`.
+- External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.url`.
 - SQLite is not supported by this Helm chart.
 - nsupdate TSIG keys and their zone grants are managed at runtime (`bindizr tsig-key`, or the HTTP API), not through Helm values; `bindizr.dns.nsupdateAllowUnsigned` (default `false`) accepts unsigned updates and is not recommended in production.
 - BIND9 accepts NOTIFY from any source by default through `allow-notify { any; }`.

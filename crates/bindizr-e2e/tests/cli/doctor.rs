@@ -18,7 +18,7 @@ listen_port = 5300
 secondary_addrs = ""
 
 [logging]
-log_level = "info"
+level = "info"
 "#;
 
 /// Verify that `doctor` reports healthy installation.

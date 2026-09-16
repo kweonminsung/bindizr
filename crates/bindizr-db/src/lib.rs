@@ -47,8 +47,8 @@ pub async fn initialize() -> Result<(), DatabaseError> {
     };
 
     let database_url = match database_type {
-        DatabaseType::MySQL => bindizr_config.database.mysql.server_url.clone(),
-        DatabaseType::PostgreSQL => bindizr_config.database.postgresql.server_url.clone(),
+        DatabaseType::MySQL => bindizr_config.database.mysql.url.clone(),
+        DatabaseType::PostgreSQL => bindizr_config.database.postgresql.url.clone(),
         DatabaseType::SQLite => utils::to_sqlite_url(&bindizr_config.database.sqlite.file_path)
             .map_err(DatabaseError::PoolError)?,
     };

@@ -134,26 +134,28 @@ openapi_enabled = {openapi_enabled}
 type = "sqlite"
 
 [database.mysql]
-server_url = ""
+url = ""
 
 [database.sqlite]
 file_path = "{}"
 
 [database.postgresql]
-server_url = ""
+url = ""
 
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
 secondary_addrs = "{secondary_addrs}"
-notify_after_update = false
-notify_on_startup = false
-notify_retries = 0
-notify_timeout_secs = 1
 nsupdate_allow_unsigned = {nsupdate_allow_unsigned}
 
+[dns.notify]
+after_update = false
+on_startup = false
+retries = 0
+timeout_secs = 1
+
 [logging]
-log_level = "error"
+level = "error"
 "#,
         db_path.display(),
         require_authentication = options.require_authentication,

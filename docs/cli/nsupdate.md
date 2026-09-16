@@ -50,10 +50,9 @@ EOF
 A zone no key has been granted refuses nsupdate, except from global keys,
 which may update any zone.
 
-!!! warning "`nsupdate_allow_unsigned` covers local testing only"
+!!! warning "`nsupdate_allow_unsigned` covers testing only"
 
-    Setting `dns.nsupdate_allow_unsigned = true` accepts unsigned requests for
-    every zone, regardless of grants, but only from the host bindizr runs on.
-    An unsigned update carries no identity a remote sender could prove, so a
-    request from anywhere else is refused whatever the setting says. Signed
+    `dns.nsupdate_allow_unsigned = true` accepts unsigned requests for every
+    zone from any client that reaches the DNS listener, as
+    `api.require_authentication = false` does for the HTTP API. Signed
     requests are always verified.

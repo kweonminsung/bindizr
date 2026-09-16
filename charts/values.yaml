@@ -32,24 +32,26 @@ bindizr:
   dns:
     listenAddr: "0.0.0.0"
     port: 53
-    notifyAfterUpdate: true
-    notifyOnStartup: false
-    notifyRetries: 3
-    notifyTimeoutSecs: 3
-    # Accept unsigned nsupdate requests (not recommended in production). TSIG
-    # keys and grants are managed at runtime via the bindizr CLI or HTTP API.
+    # Accept unsigned nsupdate requests from any client; testing only.
     nsupdateAllowUnsigned: false
-    # "sync" runs the NOTIFY inline; "async" queues it to a background worker.
-    notifyMode: sync
-    # async only: window to batch NOTIFYs into one per zone (0 disables the wait).
-    notifyBatchMs: 50
-    # Cache each zone's records by serial so repeated AXFRs skip the DB read.
-    zoneCache: true
-    # Records the cache may hold; a larger zone is served uncached.
-    zoneCacheMaxRecords: 500000
-    # Days of IXFR journal/SOA history to keep (0 = unlimited).
-    journalRetentionDays: 365
-    maintenanceIntervalSecs: 3600
+    # Days of zone history kept for rollback and secondary catch-up (0 = unlimited).
+    zoneHistoryRetentionDays: 365
+    # Seconds between background passes (signature renewal, key rollovers,
+    # history pruning). 0 stands a replica down; at least one must keep it.
+    schedulerIntervalSecs: 3600
+    notify:
+      afterUpdate: true
+      onStartup: false
+      # Window (ms) to batch one zone's NOTIFYs after the write is answered;
+      # 0 sends before answering.
+      batchMs: 0
+      retries: 3
+      timeoutSecs: 3
+    # Zone records cached per serial so repeated transfers skip the DB.
+    transferCache:
+      enabled: true
+      # Records the cache may hold; a larger zone is served uncached.
+      maxRecords: 500000
     service:
       port: 53
 
@@ -63,7 +65,7 @@ bindizr:
     # Used only when existingSecret is empty. Prefer an existing Secret for production.
     # If this is empty and the matching bundled mysql/postgresql database is enabled,
     # the chart builds the URL from the bundled database auth values.
-    serverUrl: ""
+    url: ""
 
   podAnnotations: {}
   podSecurityContext:

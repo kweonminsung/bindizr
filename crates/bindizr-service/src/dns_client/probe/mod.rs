@@ -27,7 +27,7 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<ProbeReport>, Stri
     if raw.trim().is_empty() {
         return Ok(Vec::new());
     }
-    let timeout = Duration::from_secs(dns_config.notify_timeout_secs);
+    let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
 
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;

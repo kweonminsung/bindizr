@@ -1,5 +1,6 @@
-//! The async NOTIFY queue: committed writes enqueue a NOTIFY here and return,
-//! and the worker batches a burst into one NOTIFY per zone.
+//! The NOTIFY queue behind `dns.notify.batch_ms`: committed writes enqueue a
+//! NOTIFY here and return, and the worker batches a burst into one NOTIFY per
+//! zone.
 
 use std::{collections::HashSet, sync::OnceLock, time::Duration};
 
@@ -20,7 +21,7 @@ struct NotifyJob {
 static NOTIFY_QUEUE: OnceLock<UnboundedSender<NotifyJob>> = OnceLock::new();
 
 /// Spawn the background worker that drains queued NOTIFYs. First call wins;
-/// later calls are no-ops. Without it, async-mode writes fall back to inline.
+/// later calls are no-ops. Without it, writes fall back to sending inline.
 pub fn init_notify_worker() {
     let (tx, mut rx) = unbounded_channel::<NotifyJob>();
     if NOTIFY_QUEUE.set(tx).is_err() {
@@ -34,7 +35,7 @@ pub fn init_notify_worker() {
             let mut batch = NotifyBatch::default();
             batch.add(first);
 
-            let window = Duration::from_millis(config::bindizr_config().dns.notify_batch_ms);
+            let window = Duration::from_millis(config::bindizr_config().dns.notify.batch_ms);
             if !window.is_zero() {
                 let deadline = Instant::now() + window;
                 loop {
@@ -49,7 +50,8 @@ pub fn init_notify_worker() {
                     }
                 }
             }
-            // Drain anything already queued (covers a zero-length window too).
+            // Drain anything already queued (covers a window a reload has
+            // just dropped to zero, too).
             while let Ok(job) = rx.try_recv() {
                 batch.add(job);
             }
@@ -83,13 +85,13 @@ impl NotifyBatch {
         if self.all_zones {
             // Notifying all zones covers every per-zone entry in this batch.
             if let Err(e) = send_notify(None).await {
-                log::warn!("async notify: NOTIFY failed for zone <all>: {}", e);
+                log::warn!("queued notify: NOTIFY failed for zone <all>: {}", e);
             }
             return;
         }
         for zone in self.zones {
             if let Err(e) = send_notify(Some(&zone)).await {
-                log::warn!("async notify: NOTIFY failed for zone {}: {}", zone, e);
+                log::warn!("queued notify: NOTIFY failed for zone {}: {}", zone, e);
             }
         }
     }

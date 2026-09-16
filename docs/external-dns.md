@@ -137,5 +137,5 @@ recommended default.
 | `404 No zone is authoritative for '<name>'` | Either no zone covers the name, or the zone that does is not granted to the token; the two read alike so a token cannot probe for zones. Create the zone if it is missing (ExternalDNS never creates zones), otherwise grant it: `bindizr token grant <TOKEN_NAME> <zone>` |
 | `502` from the adapter | Bindizr unreachable or 5xx; external-dns retries automatically |
 | `503 no manageable names` at startup | The token has no writable zone grants (or no zones exist yet). Grant one: `bindizr token grant <TOKEN_NAME> <zone>`; negotiation recovers on its own |
-| `502` although the records were applied | With `notify_mode = "sync"`, NOTIFY retries to an unreachable secondary can outlast the adapter's timeout after the change already committed. Set `[dns] notify_mode = "async"` or raise `--timeout-secs`; the retried sync is a no-op |
+| `502` although the records were applied | With `dns.notify.batch_ms = 0`, NOTIFY retries to an unreachable secondary can outlast the adapter's timeout after the change already committed. Set a `dns.notify.batch_ms` window so the write is answered at commit, or raise `--timeout-secs`; the retried sync is a no-op |
 | external-dns exits over a content-type error | The webhook URL does not point at the adapter |

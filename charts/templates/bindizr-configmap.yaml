@@ -22,26 +22,29 @@ data:
     type = "{{ .Values.bindizr.database.type }}"
 
     [database.mysql]
-    server_url = ""
+    url = ""
 
     [database.postgresql]
-    server_url = ""
+    url = ""
 
     [dns]
     listen_addr = "{{ .Values.bindizr.dns.listenAddr }}"
     listen_port = {{ .Values.bindizr.dns.port }}
     secondary_addrs = "{{ include "bindizr-chart.secondaryAddrs" . }}"
-    notify_after_update = {{ .Values.bindizr.dns.notifyAfterUpdate }}
-    notify_on_startup = {{ .Values.bindizr.dns.notifyOnStartup }}
-    notify_retries = {{ .Values.bindizr.dns.notifyRetries }}
-    notify_timeout_secs = {{ .Values.bindizr.dns.notifyTimeoutSecs }}
     nsupdate_allow_unsigned = {{ .Values.bindizr.dns.nsupdateAllowUnsigned }}
-    notify_mode = "{{ .Values.bindizr.dns.notifyMode }}"
-    notify_batch_ms = {{ .Values.bindizr.dns.notifyBatchMs }}
-    zone_cache = {{ .Values.bindizr.dns.zoneCache }}
-    zone_cache_max_records = {{ .Values.bindizr.dns.zoneCacheMaxRecords }}
-    journal_retention_days = {{ .Values.bindizr.dns.journalRetentionDays }}
-    maintenance_interval_secs = {{ .Values.bindizr.dns.maintenanceIntervalSecs }}
+    zone_history_retention_days = {{ .Values.bindizr.dns.zoneHistoryRetentionDays }}
+    scheduler_interval_secs = {{ .Values.bindizr.dns.schedulerIntervalSecs }}
+
+    [dns.notify]
+    after_update = {{ .Values.bindizr.dns.notify.afterUpdate }}
+    on_startup = {{ .Values.bindizr.dns.notify.onStartup }}
+    batch_ms = {{ .Values.bindizr.dns.notify.batchMs }}
+    retries = {{ .Values.bindizr.dns.notify.retries }}
+    timeout_secs = {{ .Values.bindizr.dns.notify.timeoutSecs }}
+
+    [dns.transfer_cache]
+    enabled = {{ .Values.bindizr.dns.transferCache.enabled }}
+    max_records = {{ .Values.bindizr.dns.transferCache.maxRecords }}
 
     [dns.zone_defaults]
     ttl = {{ .Values.bindizr.zoneDefaults.ttl }}
@@ -51,4 +54,4 @@ data:
     minimum_ttl = {{ .Values.bindizr.zoneDefaults.minimumTtl }}
 
     [logging]
-    log_level = "{{ .Values.bindizr.logging.level }}"
+    level = "{{ .Values.bindizr.logging.level }}"

@@ -8,7 +8,7 @@
 //! by maintenance or `ds-seen`. Retired keys remain until their cache deadlines.
 //! A parent probe runs inside the transaction that acts on its answer, under
 //! the zone lock, so the answer is about the keys and parent it then moves;
-//! `notify_timeout_secs` bounds each exchange.
+//! `dns.notify.timeout_secs` bounds each exchange.
 
 mod delegation;
 mod keys;
