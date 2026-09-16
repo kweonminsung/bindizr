@@ -4,9 +4,9 @@ use serde_json::json;
 use crate::common::TestApp;
 
 /// Create a named zone fixture through the API.
-async fn create_named_zone(app: &TestApp, zone_name: &str) {
+async fn create_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/zones",
             Some(json!({
@@ -26,10 +26,10 @@ async fn create_named_zone(app: &TestApp, zone_name: &str) {
 async fn tsig_grant_lifecycle_and_delete_guard() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("tsig-zone.example");
-    create_named_zone(&app, &zone_name).await;
+    create_zone(&app, &zone_name).await;
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys",
             Some(json!({ "name": "grant-key" })),
@@ -38,7 +38,7 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys/grant-key/grants",
             Some(json!({
@@ -56,7 +56,7 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
     let grant_id = body["tsig_grant"]["id"].as_i64().unwrap();
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys/grant-key/grants",
             Some(json!({ "zone_name": zone_name })),
@@ -68,13 +68,13 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
 
     // Both grants show from the key's side and from the zone's.
     let (status, body) = app
-        .request(Method::GET, "/tsig-keys/grant-key/grants", None)
+        .send_request(Method::GET, "/tsig-keys/grant-key/grants", None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 2);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{zone_name}/tsig-grants"),
             None,
@@ -84,7 +84,7 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
     assert_eq!(body["items"].as_array().unwrap().len(), 2);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys/no-such-key/grants",
             Some(json!({ "zone_name": zone_name })),
@@ -93,7 +93,7 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys/grant-key/grants",
             Some(json!({ "zone_name": zone_name, "record_name_pattern": "a*b" })),
@@ -102,7 +102,7 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys/grant-key/grants",
             Some(json!({ "zone_name": zone_name, "record_types": "A,BOGUS" })),
@@ -112,12 +112,12 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
 
     // The key cannot be deleted while it still holds grants.
     let (status, _) = app
-        .request(Method::DELETE, "/tsig-keys/grant-key", None)
+        .send_request(Method::DELETE, "/tsig-keys/grant-key", None)
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/tsig-keys/grant-key/grants/{grant_id}"),
             None,
@@ -127,12 +127,12 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
 
     // Deleting the zone cascades its remaining grants, freeing the key.
     let (status, _) = app
-        .request(Method::DELETE, &format!("/zones/{zone_name}"), None)
+        .send_request(Method::DELETE, &format!("/zones/{zone_name}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .request(Method::DELETE, "/tsig-keys/grant-key", None)
+        .send_request(Method::DELETE, "/tsig-keys/grant-key", None)
         .await;
     assert_eq!(status, StatusCode::OK);
 }

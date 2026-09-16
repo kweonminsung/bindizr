@@ -8,6 +8,7 @@ use bindizr_core::{
     config,
     dns::{
         message::{Class, Rtype},
+        name::ZoneName,
         nsupdate::parser::{UpdateRequest, UpdateRr},
         tsig::{ResponseSigner, TsigError},
     },
@@ -85,24 +86,23 @@ pub(crate) async fn apply_update(
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
     let mut signer = None;
     let result = async {
-        // The parser's presentation form appends exactly one root dot; strip
-        // only it, so an escaped trailing dot inside the last label stays data.
-        let zone_name = request
-            .zone_name
-            .strip_suffix('.')
-            .unwrap_or(&request.zone_name);
-        if zone_name.is_empty() {
+        // The parser renders the zone absolute; decoding it into labels here
+        // leaves no string test to decide where its root dot ends the name.
+        if request.zone_name == "." {
             return Err(UpdateError::NotZone(
                 "root zone is not supported".to_string(),
             ));
         }
+        let zone_name = ZoneName::parse(&request.zone_name).map_err(|e| {
+            UpdateError::NotZone(format!("'{}' is not a zone name: {}", request.zone_name, e))
+        })?;
 
         // Authenticate before anything zone-specific: keys are zone-independent,
         // and this lets even NOTZONE/REFUSED responses be signed.
         let key = authenticate_request(&request, query_data, client_ip, &mut signer).await?;
 
         let update = DynamicUpdate {
-            zone_name: zone_name.to_string(),
+            zone_name,
             key,
             prerequisites: request
                 .prerequisites
@@ -155,10 +155,7 @@ async fn authenticate_request(
 
     // An unknown key still runs validation: the empty key store makes it
     // produce the BADKEY error response.
-    let domain_key = key
-        .as_ref()
-        .map(bindizr_core::dns::tsig::to_domain_key)
-        .transpose()?;
+    let domain_key = key.as_ref().map(TsigKey::to_domain_key).transpose()?;
     *signer = Some(bindizr_core::dns::tsig::verify_tsig(
         query_data, domain_key,
     )?);
@@ -191,11 +188,11 @@ fn decode_prerequisite(rr: &UpdateRr, query_data: &[u8]) -> Result<Prerequisite,
                 (false, Rtype::ANY) => Prerequisite::NameNotInUse { name },
                 (true, rr_type) => Prerequisite::RrsetInUse {
                     name,
-                    record_type: RecordType::from_rtype(rr_type)?,
+                    record_type: RecordType::try_from(rr_type)?,
                 },
                 (false, rr_type) => Prerequisite::RrsetNotInUse {
                     name,
-                    record_type: RecordType::from_rtype(rr_type)?,
+                    record_type: RecordType::try_from(rr_type)?,
                 },
             })
         }
@@ -247,7 +244,7 @@ fn decode_update(rr: &UpdateRr, query_data: &[u8]) -> Result<UpdateOp, UpdateErr
             Ok(UpdateOp::DeleteRrset {
                 name,
                 record_type: (rr.rr_type != Rtype::ANY)
-                    .then(|| RecordType::from_rtype(rr.rr_type))
+                    .then(|| RecordType::try_from(rr.rr_type))
                     .transpose()?,
             })
         }
@@ -300,4 +297,79 @@ fn validate_delete_shape(rr: &UpdateRr, is_rrset_delete: bool) -> Result<(), Upd
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    //! ANY-class deletions require zero TTL and empty RDATA (RFC 2136, Section 2.5.2).
+    //! NONE-class deletions require zero TTL and identify a specific record through
+    //! RDATA (RFC 2136, Section 2.5.4).
+
+    use bindizr_core::dns::{
+        message::{Class, Rtype},
+        nsupdate::parser::UpdateRr,
+    };
+
+    use super::{UpdateError, validate_delete_shape};
+
+    /// Verify that an ANY-class deletion accepts zero TTL and empty RDATA.
+    #[test]
+    fn validate_delete_shape_accepts_any_class_rrset_delete() {
+        let rr = update_rr(Rtype::A, Class::ANY, 0, Vec::new());
+
+        validate_delete_shape(&rr, true).unwrap();
+    }
+
+    /// Verify that a NONE-class deletion accepts a specific record's RDATA.
+    #[test]
+    fn validate_delete_shape_accepts_none_class_exact_delete() {
+        let rr = update_rr(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1]);
+
+        validate_delete_shape(&rr, false).unwrap();
+    }
+
+    /// Verify that deletions reject a nonzero TTL.
+    #[test]
+    fn validate_delete_shape_rejects_delete_with_nonzero_ttl() {
+        let rr = update_rr(Rtype::A, Class::ANY, 60, Vec::new());
+        let err = validate_delete_shape(&rr, true).unwrap_err();
+
+        assert!(matches!(err, UpdateError::Refused(_)));
+    }
+
+    /// Verify that an ANY-class deletion rejects RDATA.
+    #[test]
+    fn validate_delete_shape_rejects_any_class_delete_with_rdata() {
+        let rr = update_rr(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]);
+        let err = validate_delete_shape(&rr, true).unwrap_err();
+
+        assert!(matches!(err, UpdateError::Refused(_)));
+    }
+
+    /// Verify that a NONE-class deletion requires RDATA.
+    #[test]
+    fn validate_delete_shape_rejects_none_class_delete_without_rdata() {
+        let rr = update_rr(Rtype::A, Class::NONE, 0, Vec::new());
+        let err = validate_delete_shape(&rr, false).unwrap_err();
+
+        assert!(matches!(err, UpdateError::Refused(_)));
+    }
+
+    /// Verify that a NONE-class deletion requires a specific record type.
+    #[test]
+    fn validate_delete_shape_rejects_none_class_delete_with_type_any() {
+        let rr = update_rr(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]);
+        let err = validate_delete_shape(&rr, false).unwrap_err();
+
+        assert!(matches!(err, UpdateError::Refused(_)));
+    }
+
+    /// Build a dynamic update record with the requested wire fields.
+    fn update_rr(rr_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRr {
+        UpdateRr {
+            name: "www.example.com.".to_string(),
+            rr_type,
+            class,
+            ttl,
+            rdata,
+            rdata_start: 0,
+        }
+    }
+}

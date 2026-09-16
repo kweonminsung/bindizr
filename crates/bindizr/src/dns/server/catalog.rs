@@ -3,7 +3,6 @@ use std::collections::HashMap;
 pub(crate) use bindizr_core::dns::{CATALOG_ZONE_NAME, is_catalog_zone};
 use bindizr_core::{
     dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
-    log_info,
     model::zone::Zone,
 };
 use bindizr_service::zone::ZoneService;
@@ -15,7 +14,7 @@ use crate::dns::error::XfrError;
 
 /// Generates the catalog zone and its member zone list.
 pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
-    log_info!("Generating catalog zone: {}", CATALOG_ZONE_NAME);
+    log::info!("Generating catalog zone: {}", CATALOG_ZONE_NAME);
 
     let all_zones = ZoneService::list().await?;
 
@@ -27,7 +26,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
         .map(|name| name.to_string())
         .collect();
 
-    log_info!("Catalog zone contains {} member zones", member_zones.len());
+    log::info!("Catalog zone contains {} member zones", member_zones.len());
 
     // The catalog zone is virtual (no DB row).
     let digest = catalog_digest(&member_zones, &all_zones);
@@ -85,13 +84,13 @@ fn catalog_digest(member_zones: &[String], zones: &[Zone]) -> String {
 }
 
 /// Send a catalog zone transfer using the requested question type.
-pub(crate) async fn handle_catalog_axfr_with_qtype(
+pub(crate) async fn handle_catalog_axfr(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     response_qtype: Rtype,
     signer: Option<TransferSigner>,
 ) -> Result<(), XfrError> {
-    log_info!("AXFR request for catalog zone: {}", CATALOG_ZONE_NAME);
+    log::info!("AXFR request for catalog zone: {}", CATALOG_ZONE_NAME);
 
     // Materialize the virtual catalog from the current member zones.
     let (catalog_zone, member_zones) = generate_catalog_zone().await?;
@@ -149,7 +148,7 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
     .await?;
     messages_sent += crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
 
-    log_info!(
+    log::info!(
         "Catalog AXFR completed: sent {} member zones in {} DNS message(s)",
         member_zones.len(),
         messages_sent
@@ -159,4 +158,58 @@ pub(crate) async fn handle_catalog_axfr_with_qtype(
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use bindizr_core::dns::name::ZoneName;
+
+    use super::*;
+
+    /// Verify that catalog digest changes when members change.
+    #[test]
+    fn catalog_digest_changes_when_members_change() {
+        let zones = vec![
+            Zone {
+                id: 1,
+                name: ZoneName::from_row("example.com"),
+                mname: "ns1.example.com".to_string(),
+                rname: "admin.example.com".to_string(),
+                default_ttl: 3600,
+                serial: 100,
+                refresh: 3600,
+                retry: 3600,
+                expire: 604800,
+                minimum_ttl: 3600,
+                dnssec_policy_id: None,
+                parent_ns_addrs: None,
+                enabled: true,
+                description: None,
+                created_at: Utc::now(),
+            },
+            Zone {
+                id: 2,
+                name: ZoneName::from_row("test.com"),
+                mname: "ns1.test.com".to_string(),
+                rname: "admin.test.com".to_string(),
+                default_ttl: 3600,
+                serial: 200,
+                refresh: 3600,
+                retry: 3600,
+                expire: 604800,
+                minimum_ttl: 3600,
+                dnssec_policy_id: None,
+                parent_ns_addrs: None,
+                enabled: true,
+                description: None,
+                created_at: Utc::now(),
+            },
+        ];
+
+        let member_zones = zones
+            .iter()
+            .map(|zone| zone.name.to_string())
+            .collect::<Vec<_>>();
+        let original = catalog_digest(&member_zones, &zones);
+        let updated_members = vec!["example.com".to_string()];
+
+        assert_ne!(original, catalog_digest(&updated_members, &zones));
+    }
+}

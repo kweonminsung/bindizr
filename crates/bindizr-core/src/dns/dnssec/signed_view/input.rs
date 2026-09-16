@@ -20,13 +20,7 @@ use domain::{
 };
 
 use super::{SignRr, SignedViewParams, Signer, WireName, to_rdata};
-use crate::{
-    dns::{
-        dnssec::{rdata::ds_rdata_for, to_wire_name},
-        record::EncodedRdata,
-    },
-    model::dnssec_policy::DnssecDenial,
-};
+use crate::{dns::record::EncodedRdata, model::dnssec_policy::DnssecDenial};
 
 impl SignedViewParams<'_> {
     /// User records, the synthesized SOA, and the apex key RRsets in canonical
@@ -58,7 +52,9 @@ impl SignedViewParams<'_> {
             if signer.key.wants_parent_ds() && !self.withdraw_parent_ds {
                 let cds = UnknownRecordData::from_octets(
                     Rtype::CDS,
-                    ds_rdata_for(signer.key, apex, signer.key.algorithm.ds_digest_type())?
+                    signer
+                        .key
+                        .ds_rdata(apex, signer.key.algorithm.ds_digest_type())?
                         .into_bytes(),
                 )
                 .map_err(|e| format!("invalid CDS rdata: {}", e))?;
@@ -110,7 +106,7 @@ impl SignedViewParams<'_> {
             let data =
                 UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
                     .map_err(|e| format!("invalid record rdata: {}", e))?;
-            let owner = to_wire_name(record.name.to_wire(&zone.name))?;
+            let owner = record.name.to_wire_name(&zone.name)?;
             input.push(WireRecord::new(
                 owner,
                 Class::IN,

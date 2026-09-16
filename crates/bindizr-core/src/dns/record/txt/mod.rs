@@ -127,25 +127,9 @@ impl TxtRecordValue {
         let chunks = char_strings(&self.0).expect("TXT RDATA validated at construction");
         chunks
             .iter()
-            .map(|chunk| Self::to_quoted_charstr(chunk))
+            .map(|chunk| to_quoted_charstr(chunk))
             .collect::<Vec<_>>()
             .join(" ")
-    }
-
-    /// Render bytes as a quoted TXT character-string, escaping `"`/`\` and any
-    /// non-printable byte as a `\DDD` decimal escape (RFC 1035, Section 5.1).
-    pub fn to_quoted_charstr(bytes: &[u8]) -> String {
-        let mut out = String::from("\"");
-        for &byte in bytes {
-            match byte {
-                b'"' => out.push_str("\\\""),
-                b'\\' => out.push_str("\\\\"),
-                0x20..=0x7e => out.push(byte as char),
-                _ => out.push_str(&format!("\\{:03}", byte)),
-            }
-        }
-        out.push('"');
-        out
     }
 
     /// Consume the TXT segments and encode their length-prefixed wire data.
@@ -234,6 +218,22 @@ fn char_strings(rdata: &[u8]) -> Option<Vec<&[u8]>> {
         pos += len;
     }
     Some(segments)
+}
+
+/// Render bytes as a quoted TXT character-string, escaping `"`/`\` and any
+/// non-printable byte as a `\DDD` decimal escape (RFC 1035, Section 5.1).
+pub fn to_quoted_charstr(bytes: &[u8]) -> String {
+    let mut out = String::from("\"");
+    for &byte in bytes {
+        match byte {
+            b'"' => out.push_str("\\\""),
+            b'\\' => out.push_str("\\\\"),
+            0x20..=0x7e => out.push(byte as char),
+            _ => out.push_str(&format!("\\{:03}", byte)),
+        }
+    }
+    out.push('"');
+    out
 }
 
 #[cfg(test)]

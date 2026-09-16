@@ -118,7 +118,7 @@ fn recompute_against_stored_plane_is_empty() {
         expiration_jitter_secs: 0,
         force: false,
     });
-    let stored = as_stored(&initial.added);
+    let stored = to_stored(&initial.added);
 
     // Same serial: the signed content, SOA included, is unchanged.
     let diff = compute(ComputeArgs {
@@ -163,7 +163,7 @@ fn record_change_reuses_unaffected_signatures() {
         expiration_jitter_secs: 0,
         force: false,
     });
-    let stored = as_stored(&initial.added);
+    let stored = to_stored(&initial.added);
 
     let mut records_after: Vec<Record> = records.to_vec();
     records_after.push(test_record("zzz", RecordType::A, "192.0.2.11", 300));
@@ -253,7 +253,7 @@ fn signature_inside_refresh_window_is_resigned() {
         expiration_jitter_secs: 0,
         force: false,
     });
-    let stored = as_stored(&initial.added);
+    let stored = to_stored(&initial.added);
     let stored_rrsigs = records_of_type(&stored, DnssecRecordType::Rrsig).len();
 
     let diff = compute(ComputeArgs {
@@ -304,7 +304,7 @@ fn force_resigns_every_rrset() {
         expiration_jitter_secs: 0,
         force: false,
     });
-    let stored = as_stored(&initial.added);
+    let stored = to_stored(&initial.added);
     let stored_rrsigs = records_of_type(&stored, DnssecRecordType::Rrsig).len();
 
     let diff = compute(ComputeArgs {

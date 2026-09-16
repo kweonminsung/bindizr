@@ -43,8 +43,6 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
 /// Verify that p384 keys advertise a sha384 DS digest.
 #[test]
 fn p384_keys_advertise_a_sha384_ds_digest() {
-    use crate::dns::dnssec::{ds_rdata_for, to_wire_name};
-
     let zone = test_zone();
     let key = generate_key(
         &zone,
@@ -56,18 +54,16 @@ fn p384_keys_advertise_a_sha384_ds_digest() {
     )
     .unwrap();
 
-    let apex = to_wire_name(zone.name.to_wire()).unwrap();
-    let rdata = ds_rdata_for(&key, &apex, key.algorithm.ds_digest_type()).unwrap();
+    let apex = zone.name.to_wire_name().unwrap();
+    let rdata = key.ds_rdata(&apex, key.algorithm.ds_digest_type()).unwrap();
     // RFC 6605, Section 4 pairs P-384 with a SHA-384 (type 4) DS digest.
     assert_eq!(rdata.as_bytes()[3], 4);
     assert_eq!(rdata.as_bytes().len(), 4 + 48);
 }
 
-/// Verify that `ds_rdata_for` pairs the key with each supported digest.
+/// Verify that `DnssecKey::ds_rdata` pairs the key with each supported digest.
 #[test]
-fn ds_rdata_for_pairs_the_key_with_each_supported_digest() {
-    use crate::dns::dnssec::{ds_rdata_for, to_wire_name};
-
+fn ds_rdata_pairs_the_key_with_each_supported_digest() {
     let zone = test_zone();
     let key = generate_key(
         &zone,
@@ -78,20 +74,20 @@ fn ds_rdata_for_pairs_the_key_with_each_supported_digest() {
         fixed_now(),
     )
     .unwrap();
-    let apex = to_wire_name(zone.name.to_wire()).unwrap();
+    let apex = zone.name.to_wire_name().unwrap();
 
-    let sha384 = ds_rdata_for(&key, &apex, 4).unwrap();
+    let sha384 = key.ds_rdata(&apex, 4).unwrap();
     // A parent registering the SHA-256 form of the same key is as valid.
-    let sha256 = ds_rdata_for(&key, &apex, 2).unwrap();
+    let sha256 = key.ds_rdata(&apex, 2).unwrap();
     assert_eq!(&sha256.as_bytes()[..3], &sha384.as_bytes()[..3]);
     assert_eq!(sha256.as_bytes()[3], 2);
     assert_eq!(sha256.as_bytes().len(), 4 + 32);
     // A SHA-1 DS a parent still serves must match too (RFC 8624, Section 3.3).
-    let sha1 = ds_rdata_for(&key, &apex, 1).unwrap();
+    let sha1 = key.ds_rdata(&apex, 1).unwrap();
     assert_eq!(&sha1.as_bytes()[..3], &sha384.as_bytes()[..3]);
     assert_eq!(sha1.as_bytes()[3], 1);
     assert_eq!(sha1.as_bytes().len(), 4 + 20);
-    assert!(ds_rdata_for(&key, &apex, 3).is_err());
+    assert!(key.ds_rdata(&apex, 3).is_err());
 }
 
 /// Verify that ed448 keys generate and sign.

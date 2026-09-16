@@ -3,7 +3,7 @@ use clap::Subcommand;
 
 use crate::{
     cli::{error::CliError, output::color},
-    socket::{client::DaemonSocketClient, types::DaemonCommandKind},
+    socket::{client, types::DaemonCommandKind},
 };
 
 /// Subcommands for inspecting and validating configuration.
@@ -35,7 +35,7 @@ running configuration always describes the running process.")]
 /// Handle the `config` subcommand.
 pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliError> {
     match subcommand {
-        ConfigCommand::Check { config } => check_config(config.as_deref()),
+        ConfigCommand::Check { config } => validate_config(config.as_deref()),
         ConfigCommand::List => print_config_list().await,
         ConfigCommand::Reload => reload_config().await,
         ConfigCommand::Get { key } => print_config_value(&key).await,
@@ -44,15 +44,13 @@ pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliE
 
 /// Ask the daemon to reload its configuration.
 async fn reload_config() -> Result<(), CliError> {
-    let response = DaemonSocketClient::new()
-        .send_command(DaemonCommandKind::ConfigReload, ())
-        .await?;
+    let response = client::send_command(DaemonCommandKind::ReloadConfig, ()).await?;
     println!("{}", response.message);
     Ok(())
 }
 
 /// Validate the local configuration file.
-fn check_config(file: Option<&str>) -> Result<(), CliError> {
+fn validate_config(file: Option<&str>) -> Result<(), CliError> {
     let path = config::resolve_config_path(file);
     println!("Checking configuration file: {}", path);
 
@@ -64,14 +62,14 @@ fn check_config(file: Option<&str>) -> Result<(), CliError> {
 
 /// Print all effective configuration values.
 async fn print_config_list() -> Result<(), CliError> {
-    let config = DaemonSocketClient::new().config().await?;
+    let config = client::fetch_config().await?;
     print_config(&config);
     Ok(())
 }
 
 /// Print one effective configuration value by key.
 async fn print_config_value(key: &str) -> Result<(), CliError> {
-    let config = DaemonSocketClient::new().config().await?;
+    let config = client::fetch_config().await?;
     let value = serde_json::to_value(&config)
         .map_err(|e| format!("Failed to serialize configuration: {}", e))?;
 

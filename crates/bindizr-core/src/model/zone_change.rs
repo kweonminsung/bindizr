@@ -49,16 +49,32 @@ impl ChangeOperation {
     }
 }
 
+impl std::fmt::Display for ChangeOperation {
+    /// Write the change operation in its display form.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ChangeOperation {
+    type Err = String;
+
+    /// Parse the stored text of a change operation.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "ADD" => Ok(ChangeOperation::Add),
+            "DEL" => Ok(ChangeOperation::Del),
+            other => Err(format!("unknown journal operation '{}'", other)),
+        }
+    }
+}
+
 impl TryFrom<String> for ChangeOperation {
     type Error = String;
 
     /// Validate and convert the stored value into a change operation.
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.as_str() {
-            "ADD" => Ok(ChangeOperation::Add),
-            "DEL" => Ok(ChangeOperation::Del),
-            other => Err(format!("unknown journal operation '{}'", other)),
-        }
+        value.parse()
     }
 }
 

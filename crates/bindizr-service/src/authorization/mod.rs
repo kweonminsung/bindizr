@@ -19,7 +19,6 @@ use crate::{
     RepositoryTx,
     error::ServiceError,
     grant_pattern::{MATCH_ANY, matches_name, matches_types},
-    log_error,
     model::{
         api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone,
         zone_version::ChangeSource,
@@ -121,7 +120,7 @@ impl Caller {
     }
 
     /// Whether the caller may see `zone_id`.
-    pub(crate) fn zone_visible(&self, zone_id: i32) -> bool {
+    pub(crate) fn sees_zone(&self, zone_id: i32) -> bool {
         match self {
             Caller::Global | Caller::GlobalToken { .. } => true,
             Caller::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
@@ -131,7 +130,7 @@ impl Caller {
     /// 404 for zones the caller cannot see, so scoped tokens cannot probe zone
     /// existence.
     pub(crate) fn ensure_zone_visible(&self, zone: &Zone) -> Result<(), ServiceError> {
-        if self.zone_visible(zone.id) {
+        if self.sees_zone(zone.id) {
             Ok(())
         } else {
             Err(ServiceError::zone_not_found(zone.name.as_str()))
@@ -170,7 +169,7 @@ impl Caller {
 
     /// Whether the caller may read a record of this name and type: a grant
     /// narrows reads the same way it narrows writes.
-    pub(crate) fn record_visible(
+    pub(crate) fn sees_record(
         &self,
         zone_id: i32,
         name: &OwnerName,
@@ -252,7 +251,7 @@ async fn authenticate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
             ));
         }
         Err(e) => {
-            log_error!("Failed to validate token: {}", e);
+            log::error!("Failed to validate token: {}", e);
             return Err(ServiceError::internal(
                 "Failed to validate token".to_string(),
             ));
@@ -278,7 +277,7 @@ async fn authenticate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
     })
     .await
     .map_err(|e| {
-        log_error!("Failed to update last_used_at: {}", e);
+        log::error!("Failed to update last_used_at: {}", e);
         ServiceError::internal("Failed to update last_used_at")
     })?;
 

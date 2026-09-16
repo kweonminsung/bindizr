@@ -19,7 +19,6 @@ use std::{
     path::Path,
 };
 
-use bindizr_core::{log_error, log_info, log_warn};
 use bindizr_service::{error::ServiceError, types::ErrorResponse};
 use tokio::{
     fs,
@@ -59,43 +58,41 @@ async fn handle_client(stream: UnixStream) {
             Ok(cmd) => match cmd.command {
                 DaemonCommandKind::Status => status::status(),
                 DaemonCommandKind::Config => status::config(),
-                DaemonCommandKind::ConfigReload => status::reload_config(),
-                DaemonCommandKind::TokenCreate => token::create_token(&cmd.data).await,
-                DaemonCommandKind::TokenList => token::list_tokens().await,
-                DaemonCommandKind::TokenDelete => token::delete_token(&cmd.data).await,
-                DaemonCommandKind::TsigKeyCreate => tsig_key::create_tsig_key(&cmd.data).await,
-                DaemonCommandKind::TsigKeyList => tsig_key::list_tsig_keys().await,
-                DaemonCommandKind::TsigKeyGet => tsig_key::get_tsig_key(&cmd.data).await,
-                DaemonCommandKind::TsigKeyDelete => tsig_key::delete_tsig_key(&cmd.data).await,
-                DaemonCommandKind::DnssecPolicyCreate => {
+                DaemonCommandKind::ReloadConfig => status::reload_config(),
+                DaemonCommandKind::CreateToken => token::create_token(&cmd.data).await,
+                DaemonCommandKind::ListTokens => token::list_tokens().await,
+                DaemonCommandKind::DeleteToken => token::delete_token(&cmd.data).await,
+                DaemonCommandKind::CreateTsigKey => tsig_key::create_tsig_key(&cmd.data).await,
+                DaemonCommandKind::ListTsigKeys => tsig_key::list_tsig_keys().await,
+                DaemonCommandKind::GetTsigKey => tsig_key::get_tsig_key(&cmd.data).await,
+                DaemonCommandKind::DeleteTsigKey => tsig_key::delete_tsig_key(&cmd.data).await,
+                DaemonCommandKind::CreateDnssecPolicy => {
                     dnssec_policy::create_dnssec_policy(&cmd.data).await
                 }
-                DaemonCommandKind::DnssecPolicyList => dnssec_policy::list_dnssec_policies().await,
-                DaemonCommandKind::DnssecPolicyGet => {
+                DaemonCommandKind::ListDnssecPolicies => {
+                    dnssec_policy::list_dnssec_policies().await
+                }
+                DaemonCommandKind::GetDnssecPolicy => {
                     dnssec_policy::get_dnssec_policy(&cmd.data).await
                 }
-                DaemonCommandKind::DnssecPolicyUpdate => {
+                DaemonCommandKind::UpdateDnssecPolicy => {
                     dnssec_policy::update_dnssec_policy(&cmd.data).await
                 }
-                DaemonCommandKind::DnssecPolicyDelete => {
+                DaemonCommandKind::DeleteDnssecPolicy => {
                     dnssec_policy::delete_dnssec_policy(&cmd.data).await
                 }
-                DaemonCommandKind::TsigGrantCreate => tsig_key::create_tsig_grant(&cmd.data).await,
-                DaemonCommandKind::TsigGrantListByKey => {
-                    tsig_key::list_tsig_grants_by_key(&cmd.data).await
+                DaemonCommandKind::CreateTsigGrant => tsig_key::create_tsig_grant(&cmd.data).await,
+                DaemonCommandKind::ListTsigGrants => tsig_key::list_tsig_grants(&cmd.data).await,
+                DaemonCommandKind::ListZoneTsigGrants => {
+                    tsig_key::list_zone_tsig_grants(&cmd.data).await
                 }
-                DaemonCommandKind::TsigGrantListByZone => {
-                    tsig_key::list_tsig_grants_by_zone(&cmd.data).await
+                DaemonCommandKind::DeleteTsigGrant => tsig_key::delete_tsig_grant(&cmd.data).await,
+                DaemonCommandKind::CreateTokenGrant => token::create_token_grant(&cmd.data).await,
+                DaemonCommandKind::ListTokenGrants => token::list_token_grants(&cmd.data).await,
+                DaemonCommandKind::ListZoneTokenGrants => {
+                    token::list_zone_token_grants(&cmd.data).await
                 }
-                DaemonCommandKind::TsigGrantDelete => tsig_key::delete_tsig_grant(&cmd.data).await,
-                DaemonCommandKind::TokenGrantCreate => token::create_token_grant(&cmd.data).await,
-                DaemonCommandKind::TokenGrantListByToken => {
-                    token::list_token_grants_by_token(&cmd.data).await
-                }
-                DaemonCommandKind::TokenGrantListByZone => {
-                    token::list_token_grants_by_zone(&cmd.data).await
-                }
-                DaemonCommandKind::TokenGrantDelete => token::delete_token_grant(&cmd.data).await,
+                DaemonCommandKind::DeleteTokenGrant => token::delete_token_grant(&cmd.data).await,
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
@@ -105,8 +102,8 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
                 DaemonCommandKind::UpdateRecord => record::update_record(&cmd.data).await,
-                DaemonCommandKind::BulkCreateRecords => {
-                    record::bulk_create_records(&cmd.data).await
+                DaemonCommandKind::CreateRecordsBulk => {
+                    record::create_records_bulk(&cmd.data).await
                 }
                 DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
                 DaemonCommandKind::DeleteRecordsMatching => {
@@ -115,43 +112,39 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::NotifyAllZones => notify::notify_all_zones(&cmd.data).await,
                 DaemonCommandKind::NotifyZone => notify::notify_zone(&cmd.data).await,
                 DaemonCommandKind::ImportZone => zone::import_zone(&cmd.data).await,
-                DaemonCommandKind::ExportZoneFile => zone::export_zone(&cmd.data).await,
+                DaemonCommandKind::ExportZone => zone::export_zone(&cmd.data).await,
                 DaemonCommandKind::ListZoneVersions => zone::list_zone_versions(&cmd.data).await,
                 DaemonCommandKind::GetZoneVersion => zone::get_zone_version(&cmd.data).await,
                 DaemonCommandKind::DiffZoneVersions => zone::diff_zone_versions(&cmd.data).await,
                 DaemonCommandKind::RollbackZone => zone::rollback_zone(&cmd.data).await,
-                DaemonCommandKind::ZoneStatus => zone::zone_status(&cmd.data).await,
-                DaemonCommandKind::ZoneDnssecEnable => dnssec::enable_dnssec(&cmd.data).await,
-                DaemonCommandKind::ZoneDnssecDisable => dnssec::disable_dnssec(&cmd.data).await,
-                DaemonCommandKind::ZoneDnssecStatus => dnssec::get_dnssec_status(&cmd.data).await,
-                DaemonCommandKind::ZoneDnssecSign => dnssec::sign_zone(&cmd.data).await,
-                DaemonCommandKind::ZoneDnssecRolloverStart => {
-                    dnssec::rollover_start(&cmd.data).await
+                DaemonCommandKind::GetZoneStatus => zone::get_zone_status(&cmd.data).await,
+                DaemonCommandKind::EnableDnssec => dnssec::enable_dnssec(&cmd.data).await,
+                DaemonCommandKind::DisableDnssec => dnssec::disable_dnssec(&cmd.data).await,
+                DaemonCommandKind::GetDnssecStatus => dnssec::get_dnssec_status(&cmd.data).await,
+                DaemonCommandKind::SignZone => dnssec::sign_zone(&cmd.data).await,
+                DaemonCommandKind::StartDnssecRollover => {
+                    dnssec::start_dnssec_rollover(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneDnssecWithdraw => dnssec::withdraw_dnssec(&cmd.data).await,
-                DaemonCommandKind::ZoneDnssecWithdrawCancel => {
+                DaemonCommandKind::WithdrawDnssec => dnssec::withdraw_dnssec(&cmd.data).await,
+                DaemonCommandKind::CancelDnssecWithdrawal => {
                     dnssec::cancel_dnssec_withdrawal(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneDnssecUpdateSettings => {
+                DaemonCommandKind::UpdateDnssecSettings => {
                     dnssec::update_dnssec_settings(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneDnssecCheckDs => dnssec::check_dnssec_ds(&cmd.data).await,
-                DaemonCommandKind::ZoneDnssecKeysExport => {
-                    dnssec::export_dnssec_keys(&cmd.data).await
+                DaemonCommandKind::CheckDnssecDs => dnssec::check_dnssec_ds(&cmd.data).await,
+                DaemonCommandKind::ExportDnssecKeys => dnssec::export_dnssec_keys(&cmd.data).await,
+                DaemonCommandKind::ImportDnssecKeys => dnssec::import_dnssec_keys(&cmd.data).await,
+                DaemonCommandKind::DsSeenDnssecRollover => {
+                    dnssec::ds_seen_dnssec_rollover(&cmd.data).await
                 }
-                DaemonCommandKind::ZoneDnssecKeysImport => {
-                    dnssec::import_dnssec_key(&cmd.data).await
-                }
-                DaemonCommandKind::ZoneDnssecRolloverDsSeen => {
-                    dnssec::rollover_ds_seen(&cmd.data).await
-                }
-                DaemonCommandKind::Doctor => doctor::doctor().await,
+                DaemonCommandKind::Doctor => doctor::check_installation().await,
                 DaemonCommandKind::Shutdown => control::shutdown(),
                 DaemonCommandKind::Restart => control::restart(),
             },
 
             Err(e) => {
-                log_error!("Failed to parse command: {}", e);
+                log::error!("Failed to parse command: {}", e);
                 Err(ServiceError::invalid_input("Failed to parse command"))
             }
         };
@@ -175,7 +168,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, St
     status::mark_start_time();
     let (socket_path, listener) = bind_daemon_socket().await?;
 
-    log_info!("Daemon socket server listening on {}", socket_path);
+    log::info!("Daemon socket server listening on {}", socket_path);
 
     let stop = shutdown.waiter();
     Ok(tokio::spawn(async move {
@@ -194,16 +187,16 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, St
                     });
                 }
                 Err(e) => {
-                    log_error!("Error accepting connection: {}", e);
+                    log::error!("Error accepting connection: {}", e);
                 }
             }
         }
 
         drop(listener);
         if let Err(e) = fs::remove_file(&socket_path).await {
-            log_warn!("Failed to remove the daemon socket {}: {}", socket_path, e);
+            log::warn!("Failed to remove the daemon socket {}: {}", socket_path, e);
         }
-        log_info!("Daemon socket server stopped");
+        log::info!("Daemon socket server stopped");
     }))
 }
 
@@ -224,7 +217,7 @@ async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
         };
 
         if let Some(next) = SOCKET_PATH_CANDIDATES.get(i + 1) {
-            log_warn!(
+            log::warn!(
                 "Cannot use Unix socket path '{}': {}. Falling back to '{}'.",
                 path,
                 err,

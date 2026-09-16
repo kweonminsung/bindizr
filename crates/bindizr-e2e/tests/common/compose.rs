@@ -40,6 +40,8 @@ impl TestApp {
     }
 }
 
+/// The Docker Compose project hosting bindizr and its BIND9 secondaries for
+/// the DNS-verified run.
 pub(crate) struct ComposeStack {
     project_name: String,
     compose_dir: PathBuf,
@@ -53,7 +55,7 @@ impl ComposeStack {
             compose_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")),
         };
 
-        if compose_services_are_reachable() {
+        if is_compose_stack_reachable() {
             eprintln!("Reusing the running Docker Compose DNS E2E stack...");
         } else {
             eprintln!("Starting Docker Compose DNS E2E stack...");
@@ -130,7 +132,7 @@ impl ComposeStack {
 }
 
 /// Check whether the expected Compose service ports are reachable.
-fn compose_services_are_reachable() -> bool {
+fn is_compose_stack_reachable() -> bool {
     [8000, SECONDARY_PORTS[0], SECONDARY_PORTS[1]]
         .into_iter()
         .all(|port| {

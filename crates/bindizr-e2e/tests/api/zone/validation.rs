@@ -9,7 +9,7 @@ use crate::common::TestApp;
 async fn a_rename_keeps_every_record_inside_the_wire_limit() {
     let app = TestApp::start().await;
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/zones",
             Some(json!({
@@ -32,7 +32,7 @@ async fn a_rename_keeps_every_record_inside_the_wire_limit() {
     ]
     .join(".");
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -48,7 +48,7 @@ async fn a_rename_keeps_every_record_inside_the_wire_limit() {
     // The record was validated under `a.co`; the rename must re-check it, or
     // the zone would commit a name its transfers cannot encode.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             "/zones/a.co",
             Some(json!({ "name": "rename-length.example" })),
@@ -56,11 +56,11 @@ async fn a_rename_keeps_every_record_inside_the_wire_limit() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body.to_string().contains("bytes or fewer"), "{body}");
-    let (status, _) = app.request(Method::GET, "/zones/a.co", None).await;
+    let (status, _) = app.send_request(Method::GET, "/zones/a.co", None).await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, body) = app
-        .request(Method::PUT, "/zones/a.co", Some(json!({ "name": "b.co" })))
+        .send_request(Method::PUT, "/zones/a.co", Some(json!({ "name": "b.co" })))
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 }
@@ -71,7 +71,7 @@ async fn a_rename_keeps_every_record_inside_the_wire_limit() {
 async fn a_rollback_keeps_every_restored_record_inside_the_wire_limit() {
     let app = TestApp::start().await;
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/zones",
             Some(json!({
@@ -92,7 +92,7 @@ async fn a_rollback_keeps_every_restored_record_inside_the_wire_limit() {
     ]
     .join(".");
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -105,16 +105,16 @@ async fn a_rollback_keeps_every_restored_record_inside_the_wire_limit() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let record_id = body["record"]["id"].as_i64().unwrap();
-    let (_, zone_at_target) = app.request(Method::GET, "/zones/c.co", None).await;
+    let (_, zone_at_target) = app.send_request(Method::GET, "/zones/c.co", None).await;
     let target_serial = zone_at_target["zone"]["serial"].as_i64().unwrap();
 
     // With the long name gone the rename passes; the history still holds it.
     let (status, _) = app
-        .request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .send_request(Method::DELETE, &format!("/records/{record_id}"), None)
         .await;
     assert!(status.is_success(), "{status}");
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             "/zones/c.co",
             Some(json!({ "name": "rollback-length.example" })),
@@ -125,7 +125,7 @@ async fn a_rollback_keeps_every_restored_record_inside_the_wire_limit() {
     // Restoring that serial would bring the name back under a zone it no
     // longer fits, so the rollback is refused whole.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/rollback-length.example/versions/{target_serial}/rollback"),
             None,
@@ -160,7 +160,7 @@ async fn zone_validate_and_normalize() {
         }),
     ] {
         let (status, _) = app
-            .request(Method::POST, "/zones", Some(invalid_rname))
+            .send_request(Method::POST, "/zones", Some(invalid_rname))
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
@@ -172,7 +172,7 @@ async fn zone_validate_and_normalize() {
         "default_ttl": 3600
     });
     let (status, body) = app
-        .request(Method::POST, "/zones", Some(create_zone_request))
+        .send_request(Method::POST, "/zones", Some(create_zone_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["zone"]["name"], zone_name);
@@ -188,7 +188,7 @@ async fn zone_validate_and_normalize() {
         "default_ttl": 3600
     });
     let (status, _) = app
-        .request(Method::POST, "/zones", Some(duplicate_zone_request))
+        .send_request(Method::POST, "/zones", Some(duplicate_zone_request))
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
 
@@ -198,7 +198,9 @@ async fn zone_validate_and_normalize() {
         "rname": "hostmaster@example.com",
         "default_ttl": 3600
     });
-    let (status, _) = app.request(Method::POST, "/zones", Some(second_zone)).await;
+    let (status, _) = app
+        .send_request(Method::POST, "/zones", Some(second_zone))
+        .await;
     assert_eq!(status, StatusCode::CREATED);
 
     let normalize_update = json!({
@@ -208,7 +210,7 @@ async fn zone_validate_and_normalize() {
         "default_ttl": 7200
     });
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}"),
             Some(normalize_update),
@@ -226,7 +228,7 @@ async fn zone_validate_and_normalize() {
         "default_ttl": 3600
     });
     let (status, _) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}"),
             Some(rename_onto_existing),
@@ -249,7 +251,7 @@ async fn zone_validate_and_normalize() {
         }),
     ] {
         let (status, _) = app
-            .request(
+            .send_request(
                 Method::PUT,
                 &format!("/zones/{zone_name}"),
                 Some(invalid_update),
@@ -310,7 +312,7 @@ async fn zone_reject_invalid_name_and_ttl() {
         }),
     ] {
         let (status, _) = app
-            .request(Method::POST, "/zones", Some(invalid_zone))
+            .send_request(Method::POST, "/zones", Some(invalid_zone))
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
@@ -331,7 +333,9 @@ async fn zone_reject_invalid_name_and_ttl() {
             "default_ttl": 3600
         }),
     ] {
-        let (status, _) = app.request(Method::POST, "/zones", Some(valid_zone)).await;
+        let (status, _) = app
+            .send_request(Method::POST, "/zones", Some(valid_zone))
+            .await;
         assert_eq!(status, StatusCode::CREATED);
     }
 }

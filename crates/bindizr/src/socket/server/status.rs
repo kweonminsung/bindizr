@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use bindizr_core::{config, log_info};
+use bindizr_core::config;
 use bindizr_service::error::ServiceError;
 
 use crate::socket::{
@@ -50,7 +50,7 @@ pub(crate) fn reload_config() -> Result<DaemonResponse, ServiceError> {
     } else {
         format!("Configuration reloaded: {} changed", changed.join(", "))
     };
-    log_info!("event=config_reload changed={}", changed.join(","));
+    log::info!("event=config_reload changed={}", changed.join(","));
     Ok(DaemonResponse {
         message,
         data: serde_json::Value::Null,

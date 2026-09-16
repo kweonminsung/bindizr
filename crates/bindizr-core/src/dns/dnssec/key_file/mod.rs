@@ -14,40 +14,42 @@ use crate::model::{
     zone::Zone,
 };
 
-/// The key's `K*.private` contents: the stored key material, plus the timing
-/// fields BIND and [`import_key`] read a rollover from, so an export
-/// re-imports where it left off.
-pub fn to_bind_private_file(key: &DnssecKey) -> String {
-    let timing = match key.state {
-        DnssecKeyState::Published => vec![
-            ("Publish", key.state_changed_at),
-            ("Activate", key.eligible_at),
-        ],
-        DnssecKeyState::Active => vec![
-            ("Publish", key.created_at),
-            ("Activate", key.state_changed_at),
-        ],
-        // The original activation is not kept; creation stands in for it,
-        // since only Inactive and Delete decide a retired key's fate.
-        DnssecKeyState::Retired => vec![
-            ("Publish", key.created_at),
-            ("Activate", key.created_at),
-            ("Inactive", key.state_changed_at),
-            ("Delete", key.eligible_at),
-        ],
-    };
+impl DnssecKey {
+    /// The key's `K*.private` contents: the stored key material, plus the timing
+    /// fields BIND and [`import_key`] read a rollover from, so an export
+    /// re-imports where it left off.
+    pub fn to_bind_private_file(&self) -> String {
+        let timing = match self.state {
+            DnssecKeyState::Published => vec![
+                ("Publish", self.state_changed_at),
+                ("Activate", self.eligible_at),
+            ],
+            DnssecKeyState::Active => vec![
+                ("Publish", self.created_at),
+                ("Activate", self.state_changed_at),
+            ],
+            // The original activation is not kept; creation stands in for it,
+            // since only Inactive and Delete decide a retired key's fate.
+            DnssecKeyState::Retired => vec![
+                ("Publish", self.created_at),
+                ("Activate", self.created_at),
+                ("Inactive", self.state_changed_at),
+                ("Delete", self.eligible_at),
+            ],
+        };
 
-    let mut file = key.private_key.trim_end().to_string();
-    for (field, at) in [("Created", key.created_at)].into_iter().chain(timing) {
-        file.push_str(&format!("\n{}: {}", field, at.format("%Y%m%d%H%M%S")));
+        let mut file = self.private_key.trim_end().to_string();
+        for (field, at) in [("Created", self.created_at)].into_iter().chain(timing) {
+            file.push_str(&format!("\n{}: {}", field, at.format("%Y%m%d%H%M%S")));
+        }
+        file.push('\n');
+        file
     }
-    file.push('\n');
-    file
 }
 
 /// One of BIND's key timing fields from a `K*.private` file, written by
 /// `dnssec-keygen` and `dnssec-settime` as UTC `YYYYMMDDHHMMSS`.
-fn bind_key_time(private_key: &str, field: &str) -> Result<Option<DateTime<Utc>>, String> {
+fn parse_bind_key_time(private_key: &str, field: &str) -> Result<Option<DateTime<Utc>>, String> {
     let Some(value) = private_key.lines().find_map(|line| {
         line.split_once(':')
             .filter(|(name, _)| name.trim() == field)
@@ -68,7 +70,7 @@ fn bind_key_phase(
     default_ttl: i32,
     now: DateTime<Utc>,
 ) -> Result<(DnssecKeyState, DateTime<Utc>, DateTime<Utc>), String> {
-    let time = |field| bind_key_time(private_key, field);
+    let time = |field| parse_bind_key_time(private_key, field);
     let (publish, activate, inactive, delete) = (
         time("Publish")?,
         time("Activate")?,

@@ -3,7 +3,7 @@
 use bindizr_core::dns::is_catalog_zone;
 
 use super::ZoneService;
-use crate::{authorization::Caller, error::ServiceError, log_info};
+use crate::{authorization::Caller, error::ServiceError};
 
 impl ZoneService {
     /// Send a manual NOTIFY for one zone or all zones, optionally forcing a
@@ -23,7 +23,7 @@ impl ZoneService {
             Some(name) if is_catalog_zone(name) => {
                 caller.require_global("send NOTIFY for the catalog zone")?;
                 if force {
-                    log_info!("Skipping forced serial increment for virtual catalog zone");
+                    log::info!("Skipping forced serial increment for virtual catalog zone");
                 }
             }
             // Resolving the zone for `caller` is also the visibility check.

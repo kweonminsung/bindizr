@@ -625,7 +625,7 @@ pub trait DnssecRecordRepository: Send + Sync {
 
     /// Rows whose expiration has already passed `cutoff`: signatures no
     /// resolver will accept any more.
-    async fn count_expired(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
+    async fn count_expired_before(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError>;
 
     /// List matching derived DNSSEC records with their zone metadata.
     async fn list_by_filter_with_zone(
@@ -694,12 +694,10 @@ pub trait CatalogZoneStateRepository: Send + Sync {
     ) -> Result<i32, DatabaseError>;
 }
 
-pub(crate) struct RepositoryFactory;
-
-impl RepositoryFactory {
-    /// Create the zone repository for the configured database backend.
-    pub(crate) fn create_zone_repository(pool: &DatabasePool) -> Box<dyn ZoneRepository> {
-        match pool {
+impl DatabasePool {
+    /// The zone repository for this pool's backend.
+    pub(crate) fn zone_repository(&self) -> Box<dyn ZoneRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlZoneRepository::new(mysql_pool.clone()))
             }
@@ -712,9 +710,9 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create the record repository for the configured database backend.
-    pub(crate) fn create_record_repository(pool: &DatabasePool) -> Box<dyn RecordRepository> {
-        match pool {
+    /// The record repository for this pool's backend.
+    pub(crate) fn record_repository(&self) -> Box<dyn RecordRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlRecordRepository::new(mysql_pool.clone()))
             }
@@ -727,11 +725,9 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create the DNSSEC policy repository for the configured database backend.
-    pub(crate) fn create_dnssec_policy_repository(
-        pool: &DatabasePool,
-    ) -> Box<dyn DnssecPolicyRepository> {
-        match pool {
+    /// The DNSSEC policy repository for this pool's backend.
+    pub(crate) fn dnssec_policy_repository(&self) -> Box<dyn DnssecPolicyRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlDnssecPolicyRepository::new(mysql_pool.clone()))
             }
@@ -744,9 +740,9 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create the TSIG key repository for the configured database backend.
-    pub(crate) fn create_tsig_key_repository(pool: &DatabasePool) -> Box<dyn TsigKeyRepository> {
-        match pool {
+    /// The TSIG key repository for this pool's backend.
+    pub(crate) fn tsig_key_repository(&self) -> Box<dyn TsigKeyRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlTsigKeyRepository::new(mysql_pool.clone()))
             }
@@ -759,11 +755,9 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create the TSIG grant repository for the configured database backend.
-    pub(crate) fn create_tsig_grant_repository(
-        pool: &DatabasePool,
-    ) -> Box<dyn TsigGrantRepository> {
-        match pool {
+    /// The TSIG grant repository for this pool's backend.
+    pub(crate) fn tsig_grant_repository(&self) -> Box<dyn TsigGrantRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlTsigGrantRepository::new(mysql_pool.clone()))
             }
@@ -776,11 +770,9 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create the token grant repository for the configured database backend.
-    pub(crate) fn create_token_grant_repository(
-        pool: &DatabasePool,
-    ) -> Box<dyn TokenGrantRepository> {
-        match pool {
+    /// The token grant repository for this pool's backend.
+    pub(crate) fn token_grant_repository(&self) -> Box<dyn TokenGrantRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlTokenGrantRepository::new(mysql_pool.clone()))
             }
@@ -793,9 +785,9 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create the API token repository for the configured database backend.
-    pub(crate) fn create_api_token_repository(pool: &DatabasePool) -> Box<dyn ApiTokenRepository> {
-        match pool {
+    /// The API token repository for this pool's backend.
+    pub(crate) fn api_token_repository(&self) -> Box<dyn ApiTokenRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlApiTokenRepository::new(mysql_pool.clone()))
             }
@@ -808,11 +800,9 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create the zone change repository for the configured database backend.
-    pub(crate) fn create_zone_change_repository(
-        pool: &DatabasePool,
-    ) -> Box<dyn ZoneChangeRepository> {
-        match pool {
+    /// The zone change repository for this pool's backend.
+    pub(crate) fn zone_change_repository(&self) -> Box<dyn ZoneChangeRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlZoneChangeRepository::new(mysql_pool.clone()))
             }
@@ -825,11 +815,9 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create the zone version repository for the configured database backend.
-    pub(crate) fn create_zone_version_repository(
-        pool: &DatabasePool,
-    ) -> Box<dyn ZoneVersionRepository> {
-        match pool {
+    /// The zone version repository for this pool's backend.
+    pub(crate) fn zone_version_repository(&self) -> Box<dyn ZoneVersionRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlZoneVersionRepository::new(mysql_pool.clone()))
             }
@@ -842,33 +830,27 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create the catalog zone state repository for the configured database backend.
-    pub(crate) fn create_catalog_zone_state_repository(
-        pool: &DatabasePool,
-    ) -> Box<dyn CatalogZoneStateRepository> {
-        match pool {
+    /// The catalog zone state repository for this pool's backend.
+    pub(crate) fn catalog_zone_state_repository(&self) -> Box<dyn CatalogZoneStateRepository> {
+        match self {
             DatabasePool::MySQL(_) => Box::new(mysql::MySqlCatalogZoneStateRepository),
             DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresCatalogZoneStateRepository),
             DatabasePool::SQLite(_) => Box::new(sqlite::SqliteCatalogZoneStateRepository),
         }
     }
 
-    /// Create the DNSSEC withdrawal repository for the configured database backend.
-    pub(crate) fn create_dnssec_withdrawal_repository(
-        pool: &DatabasePool,
-    ) -> Box<dyn DnssecWithdrawalRepository> {
-        match pool {
+    /// The DNSSEC withdrawal repository for this pool's backend.
+    pub(crate) fn dnssec_withdrawal_repository(&self) -> Box<dyn DnssecWithdrawalRepository> {
+        match self {
             DatabasePool::MySQL(_) => Box::new(mysql::MySqlDnssecWithdrawalRepository),
             DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresDnssecWithdrawalRepository),
             DatabasePool::SQLite(_) => Box::new(sqlite::SqliteDnssecWithdrawalRepository),
         }
     }
 
-    /// Create the DNSSEC key repository for the configured database backend.
-    pub(crate) fn create_dnssec_key_repository(
-        pool: &DatabasePool,
-    ) -> Box<dyn DnssecKeyRepository> {
-        match pool {
+    /// The DNSSEC key repository for this pool's backend.
+    pub(crate) fn dnssec_key_repository(&self) -> Box<dyn DnssecKeyRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlDnssecKeyRepository::new(mysql_pool.clone()))
             }
@@ -881,11 +863,9 @@ impl RepositoryFactory {
         }
     }
 
-    /// Create the DNSSEC record repository for the configured database backend.
-    pub(crate) fn create_dnssec_record_repository(
-        pool: &DatabasePool,
-    ) -> Box<dyn DnssecRecordRepository> {
-        match pool {
+    /// The DNSSEC record repository for this pool's backend.
+    pub(crate) fn dnssec_record_repository(&self) -> Box<dyn DnssecRecordRepository> {
+        match self {
             DatabasePool::MySQL(mysql_pool) => {
                 Box::new(mysql::MySqlDnssecRecordRepository::new(mysql_pool.clone()))
             }

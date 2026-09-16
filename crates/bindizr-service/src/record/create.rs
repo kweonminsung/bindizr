@@ -11,7 +11,6 @@ use crate::{
     authorization::{Caller, RecordWrite},
     dnssec::DnssecService,
     error::ServiceError,
-    log_error, log_info, log_warn,
     model::record::{Record, RecordWithZone},
     repository::RepositoryService,
     serial::generate_serial,
@@ -75,7 +74,7 @@ impl RecordService {
             {
                 Ok(records) => records,
                 Err(e) => {
-                    log_error!("Failed to check existing records: {}", e);
+                    log::error!("Failed to check existing records: {}", e);
                     return Err(ServiceError::internal(
                         "Failed to create record".to_string(),
                     ));
@@ -116,7 +115,7 @@ impl RecordService {
             .await?
             .pop()
             .ok_or_else(|| {
-                log_error!("Record insert returned no row");
+                log::error!("Record insert returned no row");
                 ServiceError::internal("Failed to create record")
             })?;
 
@@ -132,7 +131,7 @@ impl RecordService {
         let (created_record, zone_name) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create record").await?;
 
-        log_info!(
+        log::info!(
             "event=record_create zone={} name={} type={} ttl={} priority={} record_id={}",
             zone_name,
             create_record_request.name,
@@ -148,7 +147,7 @@ impl RecordService {
 
         // Request secondary transfers only after the new record is committed.
         if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
-            log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
         Ok(RecordWithZone::new(created_record, zone_name))

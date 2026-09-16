@@ -13,11 +13,10 @@ use chrono::{Duration, Utc};
 
 use self::steps::{
     promote_sep_keys_by_zone_id, promote_zsks_by_zone_id, prune_zone_history_by_zone_id,
-    remove_retired_keys_by_zone_id, sign_zone_by_zone_id, start_zsk_rollover_by_zone_id,
+    remove_retired_keys_by_zone_id, resign_zone_by_zone_id, start_zsk_rollover_by_zone_id,
 };
 use super::notify_zone;
 use crate::{
-    log_error, log_info,
     model::dnssec_key::{DnssecKeyRole, DnssecKeyState},
     repository::RepositoryService,
 };
@@ -30,7 +29,7 @@ static MAINTENANCE_SCHEDULER: OnceLock<()> = OnceLock::new();
 pub fn init_maintenance_scheduler() {
     let interval_secs = bindizr_config().dns.maintenance_interval_secs;
     if interval_secs == 0 {
-        log_info!("Maintenance scheduler disabled by dns.maintenance_interval_secs = 0");
+        log::info!("Maintenance scheduler disabled by dns.maintenance_interval_secs = 0");
         return;
     }
     if MAINTENANCE_SCHEDULER.set(()).is_err() {
@@ -39,7 +38,7 @@ pub fn init_maintenance_scheduler() {
 
     tokio::spawn(async move {
         let mut period = interval_secs;
-        let mut interval = new_interval(period);
+        let mut interval = maintenance_interval(period);
         loop {
             interval.tick().await;
             // A reload can change the period, or stand this instance down.
@@ -49,12 +48,12 @@ pub fn init_maintenance_scheduler() {
             }
             if configured != period {
                 period = configured;
-                interval = new_interval(period);
+                interval = maintenance_interval(period);
                 continue;
             }
             // A panic in the pass would otherwise unwind the scheduler itself.
             if let Err(e) = tokio::spawn(run_maintenance_pass()).await {
-                log_error!("DNSSEC maintenance pass did not finish: {}", e);
+                log::error!("DNSSEC maintenance pass did not finish: {}", e);
                 track_dnssec_maintenance(MaintenanceResult::Panic);
             }
         }
@@ -62,7 +61,7 @@ pub fn init_maintenance_scheduler() {
 }
 
 /// Create the configured DNSSEC maintenance timer.
-fn new_interval(period_secs: u64) -> tokio::time::Interval {
+fn maintenance_interval(period_secs: u64) -> tokio::time::Interval {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(period_secs));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     interval
@@ -90,13 +89,17 @@ async fn run_maintenance_pass() {
                         }
                         Err(e) => {
                             failed = true;
-                            log_error!("Zone history pruning for zone id {} failed: {}", zone.id, e)
+                            log::error!(
+                                "Zone history pruning for zone id {} failed: {}",
+                                zone.id,
+                                e
+                            )
                         }
                     }
                 }
                 track_pruned_rows(journal_rows, version_rows);
                 if journal_rows > 0 || version_rows > 0 {
-                    log_info!(
+                    log::info!(
                         "Pruned {} journal and {} version rows",
                         journal_rows,
                         version_rows
@@ -105,7 +108,7 @@ async fn run_maintenance_pass() {
             }
             Err(e) => {
                 failed = true;
-                log_error!("Zone history pruning scan failed: {}", e)
+                log::error!("Zone history pruning scan failed: {}", e)
             }
         }
     }
@@ -114,22 +117,22 @@ async fn run_maintenance_pass() {
     match RepositoryService::list_rrsig_zone_ids_expiring_within_refresh(Utc::now()).await {
         Ok(zone_ids) => {
             for zone_id in zone_ids {
-                match sign_zone_by_zone_id(zone_id).await {
+                match resign_zone_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
-                        log_info!("Re-signed zone {} ahead of signature expiry", zone_name);
+                        log::info!("Re-signed zone {} ahead of signature expiry", zone_name);
                         notify_zone(&zone_name).await;
                     }
                     Ok(None) => {}
                     Err(e) => {
                         failed = true;
-                        log_error!("Re-signing zone id {} failed: {}", zone_id, e)
+                        log::error!("Re-signing zone id {} failed: {}", zone_id, e)
                     }
                 }
             }
         }
         Err(e) => {
             failed = true;
-            log_error!("Re-signing scan failed: {}", e)
+            log::error!("Re-signing scan failed: {}", e)
         }
     }
 
@@ -146,13 +149,13 @@ async fn run_maintenance_pass() {
             for zone_id in zone_ids {
                 match start_zsk_rollover_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
-                        log_info!("Started scheduled ZSK rollover for zone {}", zone_name);
+                        log::info!("Started scheduled ZSK rollover for zone {}", zone_name);
                         notify_zone(&zone_name).await;
                     }
                     Ok(None) => {}
                     Err(e) => {
                         failed = true;
-                        log_error!(
+                        log::error!(
                             "Scheduled ZSK rollover for zone id {} failed: {}",
                             zone_id,
                             e
@@ -163,7 +166,7 @@ async fn run_maintenance_pass() {
         }
         Err(e) => {
             failed = true;
-            log_error!("ZSK lifetime scan failed: {}", e)
+            log::error!("ZSK lifetime scan failed: {}", e)
         }
     }
 
@@ -185,13 +188,13 @@ async fn run_maintenance_pass() {
             for zone_id in zone_ids {
                 match promote_zsks_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
-                        log_info!("Promoted pre-published ZSK for zone {}", zone_name);
+                        log::info!("Promoted pre-published ZSK for zone {}", zone_name);
                         notify_zone(&zone_name).await;
                     }
                     Ok(None) => {}
                     Err(e) => {
                         failed = true;
-                        log_error!("ZSK promotion for zone id {} failed: {}", zone_id, e)
+                        log::error!("ZSK promotion for zone id {} failed: {}", zone_id, e)
                     }
                 }
             }
@@ -208,7 +211,7 @@ async fn run_maintenance_pass() {
             for zone_id in zone_ids {
                 match promote_sep_keys_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
-                        log_info!(
+                        log::info!(
                             "Promoted pre-published SEP key for zone {}: the parent serves its DS",
                             zone_name
                         );
@@ -217,14 +220,14 @@ async fn run_maintenance_pass() {
                     Ok(None) => {}
                     Err(e) => {
                         failed = true;
-                        log_error!("SEP key promotion for zone id {} failed: {}", zone_id, e)
+                        log::error!("SEP key promotion for zone id {} failed: {}", zone_id, e)
                     }
                 }
             }
         }
         Err(e) => {
             failed = true;
-            log_error!("Rollover promotion scan failed: {}", e)
+            log::error!("Rollover promotion scan failed: {}", e)
         }
     }
 
@@ -242,20 +245,20 @@ async fn run_maintenance_pass() {
             for zone_id in zone_ids {
                 match remove_retired_keys_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
-                        log_info!("Removed retired DNSSEC key(s) for zone {}", zone_name);
+                        log::info!("Removed retired DNSSEC key(s) for zone {}", zone_name);
                         notify_zone(&zone_name).await;
                     }
                     Ok(None) => {}
                     Err(e) => {
                         failed = true;
-                        log_error!("Retired-key removal for zone id {} failed: {}", zone_id, e)
+                        log::error!("Retired-key removal for zone id {} failed: {}", zone_id, e)
                     }
                 }
             }
         }
         Err(e) => {
             failed = true;
-            log_error!("Retired-key scan failed: {}", e)
+            log::error!("Retired-key scan failed: {}", e)
         }
     }
 

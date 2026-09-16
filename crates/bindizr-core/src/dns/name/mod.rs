@@ -58,7 +58,7 @@ pub(crate) fn classify_domain_label(
 
 /// Normalize a name to lookup form: trimmed, no trailing dot, lowercase, and
 /// re-escaped canonically so two spellings of one name compare equal as text.
-pub fn to_lookup_name(value: &str) -> Result<String, ParseNameError> {
+pub fn parse_lookup_name(value: &str) -> Result<String, ParseNameError> {
     let trimmed = value.trim();
 
     if trimmed.trim_end_matches('.').is_empty() {
@@ -68,11 +68,15 @@ pub fn to_lookup_name(value: &str) -> Result<String, ParseNameError> {
         return Err(ParseNameError::Whitespace);
     }
 
-    Ok(join_labels(&decode_name_labels(trimmed)?.0))
+    Ok(render_labels(&decode_name_labels(trimmed)?.0))
 }
 
 /// Render decoded labels back to presentation form.
-pub fn join_labels(labels: &[String]) -> String {
+pub fn render_labels(labels: &[String]) -> String {
+    // Most owners are one label, which needs no join buffer.
+    if let [label] = labels {
+        return owner_name::escape_label(label).into_owned();
+    }
     labels
         .iter()
         .map(|label| owner_name::escape_label(label))
@@ -84,7 +88,7 @@ pub fn join_labels(labels: &[String]) -> String {
 /// re-escaped canonically, so a `\.` stays inside its label. A value that does
 /// not decode keeps its own spelling — this renders, it does not validate.
 pub(crate) fn to_fqdn_lowercase(value: &str) -> String {
-    match to_lookup_name(value) {
+    match parse_lookup_name(value) {
         Ok(name) => format!("{name}."),
         Err(_) => format!(
             "{}.",
@@ -93,9 +97,11 @@ pub(crate) fn to_fqdn_lowercase(value: &str) -> String {
     }
 }
 
-/// Return `value` with a single trailing dot, preserving case.
+/// Return `value` with a single trailing dot, preserving case. Only the one
+/// root dot is stripped, so an escaped trailing dot inside the last label
+/// stays data.
 pub fn to_fqdn(value: &str) -> String {
-    format!("{}.", value.trim_end_matches('.'))
+    format!("{}.", value.strip_suffix('.').unwrap_or(value))
 }
 
 /// Encode a presentation-form name as uncompressed wire labels, mapping
@@ -114,9 +120,7 @@ pub fn encode_name(name: &str) -> Result<Vec<u8>, String> {
 /// Length-prefixed wire labels plus the root. Limits are re-checked at this
 /// one emitter, so a row edited outside bindizr cannot smuggle a label past
 /// the length octet.
-pub(crate) fn labels_to_wire<'a>(
-    labels: impl Iterator<Item = &'a str>,
-) -> Result<Vec<u8>, ParseNameError> {
+fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, ParseNameError> {
     let mut wire = Vec::new();
     for label in labels {
         if label.is_empty() {

@@ -1,4 +1,4 @@
-//! The async apply queue: committed writes enqueue a NOTIFY here and return,
+//! The async NOTIFY queue: committed writes enqueue a NOTIFY here and return,
 //! and the worker batches a burst into one NOTIFY per zone.
 
 use std::{collections::HashSet, sync::OnceLock, time::Duration};
@@ -10,21 +10,20 @@ use tokio::{
 };
 
 use super::send_notify;
-use crate::log_warn;
 
 /// A queued propagation job: send NOTIFY for one zone, or for all zones (`None`).
 #[derive(Debug)]
-struct ApplyJob {
+struct NotifyJob {
     zone_name: Option<String>,
 }
 
-static APPLY_QUEUE: OnceLock<UnboundedSender<ApplyJob>> = OnceLock::new();
+static NOTIFY_QUEUE: OnceLock<UnboundedSender<NotifyJob>> = OnceLock::new();
 
 /// Spawn the background worker that drains queued NOTIFYs. First call wins;
 /// later calls are no-ops. Without it, async-mode writes fall back to inline.
 pub fn init_notify_worker() {
-    let (tx, mut rx) = unbounded_channel::<ApplyJob>();
-    if APPLY_QUEUE.set(tx).is_err() {
+    let (tx, mut rx) = unbounded_channel::<NotifyJob>();
+    if NOTIFY_QUEUE.set(tx).is_err() {
         return;
     }
 
@@ -70,7 +69,7 @@ struct NotifyBatch {
 
 impl NotifyBatch {
     /// Add a zone to the pending NOTIFY batch.
-    fn add(&mut self, job: ApplyJob) {
+    fn add(&mut self, job: NotifyJob) {
         match job.zone_name {
             Some(name) => {
                 self.zones.insert(name);
@@ -84,13 +83,13 @@ impl NotifyBatch {
         if self.all_zones {
             // Notifying all zones covers every per-zone entry in this batch.
             if let Err(e) = send_notify(None).await {
-                log_warn!("async apply: NOTIFY failed for zone <all>: {}", e);
+                log::warn!("async notify: NOTIFY failed for zone <all>: {}", e);
             }
             return;
         }
         for zone in self.zones {
             if let Err(e) = send_notify(Some(&zone)).await {
-                log_warn!("async apply: NOTIFY failed for zone {}: {}", zone, e);
+                log::warn!("async notify: NOTIFY failed for zone {}: {}", zone, e);
             }
         }
     }
@@ -99,9 +98,9 @@ impl NotifyBatch {
 /// Queue a NOTIFY for later delivery. Returns `false` if the worker was never
 /// started, so the caller can fall back to sending inline.
 pub(crate) fn enqueue_notify(zone_name: Option<&str>) -> bool {
-    match APPLY_QUEUE.get() {
+    match NOTIFY_QUEUE.get() {
         Some(tx) => tx
-            .send(ApplyJob {
+            .send(NotifyJob {
                 zone_name: zone_name.map(str::to_string),
             })
             .is_ok(),

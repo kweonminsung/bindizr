@@ -11,7 +11,7 @@ async fn dnssec_policy_create_read_update_delete() {
     let policy_name = format!("{}-strict", app.namespace());
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/dnssec-policies",
             Some(json!({
@@ -35,7 +35,7 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(policy["zsk_lifetime_days"], 90);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/dnssec-policies",
             Some(json!({ "name": policy_name })),
@@ -45,7 +45,7 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(body["code"], "DNSSEC_POLICY_CONFLICT");
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/dnssec-policies/{policy_name}"),
             None,
@@ -55,7 +55,9 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(body["dnssec_policy"]["algorithm"], "ed25519");
 
     // The seeded `default` policy is always listed alongside.
-    let (status, body) = app.request(Method::GET, "/dnssec-policies", None).await;
+    let (status, body) = app
+        .send_request(Method::GET, "/dnssec-policies", None)
+        .await;
     assert_eq!(status, StatusCode::OK);
     let names: Vec<&str> = body["items"]
         .as_array()
@@ -67,7 +69,7 @@ async fn dnssec_policy_create_read_update_delete() {
     assert!(names.contains(&policy_name.as_str()), "{names:?}");
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/dnssec-policies/{policy_name}"),
             Some(json!({ "signature_validity_days": 30 })),
@@ -82,7 +84,7 @@ async fn dnssec_policy_create_read_update_delete() {
     // A refresh window at least as long as the validity would re-sign on
     // every maintenance pass.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/dnssec-policies/{policy_name}"),
             Some(json!({ "signature_refresh_days": 30 })),
@@ -92,7 +94,7 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(body["code"], "INVALID_INPUT");
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/dnssec-policies/{policy_name}"),
             None,
@@ -101,7 +103,7 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(status, StatusCode::OK);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/dnssec-policies/{policy_name}"),
             None,
@@ -112,12 +114,12 @@ async fn dnssec_policy_create_read_update_delete() {
 
     // `default` is the by-name fallback of enable and import: editable, never deleted.
     let (status, body) = app
-        .request(Method::DELETE, "/dnssec-policies/default", None)
+        .send_request(Method::DELETE, "/dnssec-policies/default", None)
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["code"], "INVALID_INPUT");
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             "/dnssec-policies/default",
             Some(json!({ "signature_validity_days": 14 })),
@@ -134,7 +136,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
     let app = TestApp::start().await;
     let policy_name = format!("{}-in-use", app.namespace());
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/dnssec-policies",
             Some(json!({ "name": policy_name })),
@@ -147,7 +149,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
 
     // A missing policy cannot establish the zone's signing configuration.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": format!("{}-missing", app.namespace()) , "parent_ns_addrs": "127.0.0.1:9"})),
@@ -158,7 +160,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
 
     // Once the zone uses the policy, deletion must respect that reference.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
@@ -168,7 +170,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
     assert_eq!(body["dnssec"]["policy"]["name"], policy_name);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/dnssec-policies/{policy_name}"),
             None,
@@ -179,7 +181,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
 
     // Release the zone's policy reference by disabling DNSSEC, then delete the policy.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/zones/{zone_name}/dnssec?skip_ds_check=true"),
             None,
@@ -188,7 +190,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/dnssec-policies/{policy_name}"),
             None,
@@ -206,7 +208,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
@@ -219,7 +221,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     // through an algorithm rollover (RFC 6840, Section 5.11).
     let ed25519_policy = format!("{}-ed25519", app.namespace());
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/dnssec-policies",
             Some(json!({ "name": ed25519_policy, "algorithm": "ed25519" })),
@@ -228,7 +230,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": ed25519_policy })),
@@ -253,7 +255,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
 
     // Moving to the same policy is a no-op that reports the current state.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": ed25519_policy })),
@@ -276,7 +278,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
 
     let nsec_policy = format!("{}-nsec", app.namespace());
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/dnssec-policies",
             Some(json!({ "name": nsec_policy, "denial": "nsec" })),
@@ -285,7 +287,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": nsec_policy, "parent_ns_addrs": "127.0.0.1:9"})),
@@ -296,7 +298,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
 
     let denial_types = async |app: &TestApp| -> Vec<String> {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::GET,
                 &format!("/records?zone_name={zone_name}&signed=true&limit=1000"),
                 None,
@@ -320,7 +322,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
     // Section 2), so the chain is replaced under one serial with no key roll.
     let nsec3_policy = format!("{}-nsec3", app.namespace());
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/dnssec-policies",
             Some(json!({ "name": nsec3_policy, "denial": "nsec3" })),
@@ -329,7 +331,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": nsec3_policy })),
@@ -343,7 +345,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
 
     // And back: neither direction needs a key roll.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": nsec_policy })),

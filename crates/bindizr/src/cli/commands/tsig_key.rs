@@ -1,4 +1,3 @@
-use bindizr_core::log_debug;
 use bindizr_service::types::{
     CreateTsigGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
     PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
@@ -11,7 +10,7 @@ use crate::{
         output::{OutputFormat, TsigGrantRow, TsigKeyRow, parse_response, print_response},
     },
     socket::{
-        client::DaemonSocketClient,
+        client,
         types::{
             CreateTsigGrantParams, DaemonCommandKind, DeleteTsigGrantParams, TsigKeyNameParams,
         },
@@ -114,8 +113,6 @@ pub(crate) enum TsigKeyCommand {
 
 /// Handle the `tsig-key` subcommand by dispatching to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), CliError> {
-    let client = DaemonSocketClient::new();
-
     match subcommand {
         TsigKeyCommand::Create {
             name,
@@ -124,19 +121,18 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             global,
             output,
         } => {
-            let res = client
-                .send_command(
-                    DaemonCommandKind::TsigKeyCreate,
-                    CreateTsigKeyRequest {
-                        name,
-                        algorithm,
-                        secret,
-                        global,
-                    },
-                )
-                .await?;
+            let res = client::send_command(
+                DaemonCommandKind::CreateTsigKey,
+                CreateTsigKeyRequest {
+                    name,
+                    algorithm,
+                    secret,
+                    global,
+                },
+            )
+            .await?;
 
-            log_debug!("TSIG key creation result: {:?}", res);
+            log::debug!("TSIG key creation result: {:?}", res);
 
             let created: TsigKeyResponse = parse_response(&res.data)?;
             // stderr, so `--output json` stays parseable.
@@ -148,11 +144,9 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             })?;
         }
         TsigKeyCommand::List { output } => {
-            let res = client
-                .send_command(DaemonCommandKind::TsigKeyList, ())
-                .await?;
+            let res = client::send_command(DaemonCommandKind::ListTsigKeys, ()).await?;
 
-            log_debug!("TSIG key list result: {:?}", res);
+            log::debug!("TSIG key list result: {:?}", res);
 
             print_response(
                 &res.data,
@@ -163,29 +157,29 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             )?;
         }
         TsigKeyCommand::Get { name, output } => {
-            let res = client
-                .send_command(DaemonCommandKind::TsigKeyGet, TsigKeyNameParams { name })
-                .await?;
+            let res =
+                client::send_command(DaemonCommandKind::GetTsigKey, TsigKeyNameParams { name })
+                    .await?;
 
-            log_debug!("TSIG key get result: {:?}", res);
+            log::debug!("TSIG key get result: {:?}", res);
 
             print_response(&res.data, output, |key: &TsigKeyResponse| {
                 vec![TsigKeyRow::from(key)]
             })?;
         }
         TsigKeyCommand::Export { name } => {
-            let res = client
-                .send_command(DaemonCommandKind::TsigKeyGet, TsigKeyNameParams { name })
-                .await?;
+            let res =
+                client::send_command(DaemonCommandKind::GetTsigKey, TsigKeyNameParams { name })
+                    .await?;
             let key: TsigKeyResponse = parse_response(&res.data).map_err(CliError::from)?;
             print_bind_key(&key);
         }
         TsigKeyCommand::Delete { name } => {
-            let res = client
-                .send_command(DaemonCommandKind::TsigKeyDelete, TsigKeyNameParams { name })
-                .await?;
+            let res =
+                client::send_command(DaemonCommandKind::DeleteTsigKey, TsigKeyNameParams { name })
+                    .await?;
 
-            log_debug!("TSIG key deletion result: {:?}", res);
+            log::debug!("TSIG key deletion result: {:?}", res);
 
             println!("{}", res.message);
         }
@@ -197,31 +191,29 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             read_only,
             output,
         } => {
-            let res = client
-                .send_command(
-                    DaemonCommandKind::TsigGrantCreate,
-                    CreateTsigGrantParams {
-                        key_name: name,
-                        request: CreateTsigGrantRequest {
-                            zone_name: zone,
-                            record_name_pattern: pattern,
-                            record_types: types,
-                            can_write: !read_only,
-                        },
+            let res = client::send_command(
+                DaemonCommandKind::CreateTsigGrant,
+                CreateTsigGrantParams {
+                    key_name: name,
+                    request: CreateTsigGrantRequest {
+                        zone_name: zone,
+                        record_name_pattern: pattern,
+                        record_types: types,
+                        can_write: !read_only,
                     },
-                )
-                .await?;
+                },
+            )
+            .await?;
             print_response(&res.data, output, |response: &TsigGrantResponse| {
                 vec![TsigGrantRow::from(&response.tsig_grant)]
             })?;
         }
         TsigKeyCommand::Grants { name, output } => {
-            let res = client
-                .send_command(
-                    DaemonCommandKind::TsigGrantListByKey,
-                    TsigKeyNameParams { name },
-                )
-                .await?;
+            let res = client::send_command(
+                DaemonCommandKind::ListTsigGrants,
+                TsigKeyNameParams { name },
+            )
+            .await?;
             print_response(
                 &res.data,
                 output,
@@ -231,12 +223,11 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             )?;
         }
         TsigKeyCommand::Revoke { name, id } => {
-            let res = client
-                .send_command(
-                    DaemonCommandKind::TsigGrantDelete,
-                    DeleteTsigGrantParams { key_name: name, id },
-                )
-                .await?;
+            let res = client::send_command(
+                DaemonCommandKind::DeleteTsigGrant,
+                DeleteTsigGrantParams { key_name: name, id },
+            )
+            .await?;
             println!("{}", res.message);
         }
     }

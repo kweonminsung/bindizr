@@ -47,10 +47,7 @@ impl RecordValueRequest {
 
 /// A stored value as the record APIs display it: TXT decoded to string/segments,
 /// other types rendered with trailing-dot FQDNs. Priority stays a separate field.
-pub(crate) fn display_record_value_request(
-    value: &str,
-    record_type: &RecordType,
-) -> RecordValueRequest {
+pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> RecordValueRequest {
     if *record_type != RecordType::TXT {
         return RecordValueRequest::String(record_type.display_value(value));
     }
@@ -249,7 +246,7 @@ impl GetRecordResponse {
             id: Some(record.id),
             name: record.name.to_fqdn(zone_name),
             record_type: record.record_type.to_string(),
-            value: display_record_value_request(&record.value, &record.record_type),
+            value: build_display_value(&record.value, &record.record_type),
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,

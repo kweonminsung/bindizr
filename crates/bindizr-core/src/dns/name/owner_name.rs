@@ -89,7 +89,7 @@ impl OwnerName {
             // the row was edited outside bindizr; one literal label matches
             // nothing rather than re-splitting into a name it never was.
             Err(e) => {
-                crate::log_error!("undecodable owner name in a record row: {} ({})", value, e);
+                log::error!("undecodable owner name in a record row: {} ({})", value, e);
                 Self(vec![value.to_ascii_lowercase()])
             }
         }
@@ -128,15 +128,7 @@ impl OwnerName {
 
     /// Render DNS labels with the required presentation escapes.
     fn render_labels(&self) -> String {
-        // Most owners are one label, which needs no join buffer.
-        if let [label] = self.0.as_slice() {
-            return escape_label(label).into_owned();
-        }
-        self.0
-            .iter()
-            .map(|label| escape_label(label))
-            .collect::<Vec<_>>()
-            .join(".")
+        super::render_labels(&self.0)
     }
 
     /// Whether this owner is `other` or sits under it, compared label by label.
@@ -225,7 +217,7 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
 
     while let Some(c) = chars.next() {
         match c {
-            '.' => labels.push(finish_label(std::mem::take(&mut label))?),
+            '.' => labels.push(decode_label(std::mem::take(&mut label))?),
             '\\' => match chars.peek() {
                 None => return Err(ParseNameError::DanglingEscape),
                 Some(d) if d.is_ascii_digit() => {
@@ -252,13 +244,13 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
         }
     }
 
-    labels.push(finish_label(label)?);
+    labels.push(decode_label(label)?);
     Ok(labels)
 }
 
 /// Decode a completed label as ASCII text and fold its case; an
 /// internationalized label arrives as its A-label (RFC 5890).
-fn finish_label(label: Vec<u8>) -> Result<String, ParseNameError> {
+fn decode_label(label: Vec<u8>) -> Result<String, ParseNameError> {
     if !label.is_ascii() {
         return Err(ParseNameError::NonAscii);
     }
@@ -267,7 +259,7 @@ fn finish_label(label: Vec<u8>) -> Result<String, ParseNameError> {
     Ok(label)
 }
 
-/// Validate a decoded owner label consistently across name constructors.
+/// Classify a decoded owner label consistently across name constructors.
 ///
 /// Owner labels may contain `_` and `*`; reject whitespace and control octets even when
 /// supplied through `\DDD` escapes.

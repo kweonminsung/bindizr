@@ -8,8 +8,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use base64::Engine;
 
 use super::{
-    CaaRecordValue, DsRrValue, MxRecordValue, NaptrRecordValue, SrvRecordValue, SshfpRecordValue,
-    TlsaRecordValue, TxtRecordValue,
+    CaaRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, SrvRecordValue,
+    SshfpRecordValue, TlsaRecordValue, TxtRecordValue,
 };
 use crate::{dns::name::encode_name, model::record::RecordType};
 
@@ -91,9 +91,9 @@ where
 }
 
 /// A stored record's wire RR type number and RDATA bytes.
-pub struct EncodedRdata {
-    pub record_type: u16,
-    pub rdata: Rdata,
+pub(crate) struct EncodedRdata {
+    pub(crate) record_type: u16,
+    pub(crate) rdata: Rdata,
 }
 
 impl EncodedRdata {
@@ -122,7 +122,7 @@ impl EncodedRdata {
             RecordType::CNAME | RecordType::DNAME | RecordType::NS | RecordType::PTR => {
                 Rdata::new(encode_name(value)?)?
             }
-            RecordType::DS => DsRrValue::parse(value)?.to_rdata()?,
+            RecordType::DS => DsRecordValue::parse(value)?.to_rdata()?,
             RecordType::MX => MxRecordValue::parse(value, priority)?.to_rdata()?,
             RecordType::NAPTR => NaptrRecordValue::parse(value)?.to_rdata()?,
             // Stored TXT is always the presentation form; every entry path

@@ -8,7 +8,7 @@ use domain::{
 
 use super::{DNS_TCP_MAX_SIZE, DnsMessageBuilder, ParsedQuery, encode_tcp_message, is_response};
 use crate::{
-    dns::tsig::{to_domain_key, verify_tsig_sequence},
+    dns::tsig::verify_tsig_sequence,
     model::{record::RecordType, tsig_key::TsigAlgorithm},
 };
 
@@ -124,17 +124,16 @@ fn signed_axfr_query(key: Arc<Key>) -> (Vec<u8>, ClientSequence<Arc<Key>>) {
 }
 
 /// Strip the 2-byte length prefix a TCP frame carries.
-fn frame_message(frame: Vec<u8>) -> Vec<u8> {
+fn strip_frame_length(frame: Vec<u8>) -> Vec<u8> {
     frame[2..].to_vec()
 }
 
 /// Verify that every envelope of a signed transfer carries a verifiable mac.
 #[test]
 fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
-    let key = to_domain_key(&crate::dns::tsig::tests::test_key(
-        TsigAlgorithm::HmacSha256,
-    ))
-    .unwrap();
+    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
+        .to_domain_key()
+        .unwrap();
     let (query, mut client) = signed_axfr_query(key.clone());
 
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
@@ -164,7 +163,7 @@ fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
     assert!(frames.len() >= 2, "expected a multi-message transfer");
 
     for frame in frames {
-        let mut message = Message::from_octets(frame_message(frame)).unwrap();
+        let mut message = Message::from_octets(strip_frame_length(frame)).unwrap();
         client
             .answer(&mut message, Time48::now())
             .expect("envelope did not verify against the request's key");
@@ -175,10 +174,9 @@ fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
 /// Verify that a signed message reserves room for its TSIG record.
 #[test]
 fn a_signed_message_reserves_room_for_its_tsig_record() {
-    let key = to_domain_key(&crate::dns::tsig::tests::test_key(
-        TsigAlgorithm::HmacSha256,
-    ))
-    .unwrap();
+    let key = crate::dns::tsig::tests::test_key(TsigAlgorithm::HmacSha256)
+        .to_domain_key()
+        .unwrap();
     let (query, _) = signed_axfr_query(key.clone());
     let qname = Name::<Vec<u8>>::from_str("example.com.").unwrap();
 

@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn txt_rejects_non_utf8_octets() {
     // `\255\254` decode to bytes 0xFF 0xFE, which are not valid UTF-8.
-    let parsed = parse_zone_file("weird IN TXT \"\\255\\254\"\n", "example.com", 3600);
+    let parsed = ParsedZoneFile::parse("weird IN TXT \"\\255\\254\"\n", "example.com", 3600);
     assert!(
         parsed.errors.iter().any(|e| e.contains("not valid UTF-8")),
         "expected a UTF-8 error, got: {:?}",
@@ -27,7 +27,7 @@ fn txt_rejects_non_utf8_octets() {
 fn parse_error_names_the_line_of_the_submitted_text() {
     // An unknown rtype is caught where it sits; an rdata error is reported
     // at the end of the entry, which would blur what this pins down.
-    let parsed = parse_zone_file(
+    let parsed = ParsedZoneFile::parse(
         "ok IN A 192.0.2.1\nbad !!! IN A 192.0.2.2\n",
         "example.com",
         3600,
@@ -42,7 +42,7 @@ fn parse_error_names_the_line_of_the_submitted_text() {
 /// Verify that TXT UTF8 multi segment parses as segments.
 #[test]
 fn txt_utf8_multi_segment_parses_as_segments() {
-    let parsed = parse_zone_file("multi IN TXT \"foo\" \"bar\"\n", "example.com", 3600);
+    let parsed = ParsedZoneFile::parse("multi IN TXT \"foo\" \"bar\"\n", "example.com", 3600);
     assert!(
         parsed.errors.is_empty(),
         "unexpected errors: {:?}",
@@ -64,7 +64,7 @@ fn txt_utf8_multi_segment_parses_as_segments() {
 fn a_ttl_written_with_units_is_refused() {
     // RFC 1035, Section 5.1 defines the TTL as a decimal integer; the suffix
     // is a BIND extension, and `named-compilezone` writes it back as seconds.
-    let parsed = parse_zone_file(
+    let parsed = ParsedZoneFile::parse(
         "www IN A 192.0.2.1\nmail 1h IN A 192.0.2.2\n",
         "example.com",
         300,
@@ -84,7 +84,7 @@ fn a_ttl_written_with_units_is_refused() {
 fn reads_a_naptr_record_in_its_own_presentation_form() {
     // `domain` renders a root replacement as `..`, so the value comes from
     // the parsed fields rather than its display form.
-    let parsed = parse_zone_file(
+    let parsed = ParsedZoneFile::parse(
         concat!(
             "tel IN NAPTR 200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" .\n",
             "sip IN NAPTR 100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.Example.COM.\n",

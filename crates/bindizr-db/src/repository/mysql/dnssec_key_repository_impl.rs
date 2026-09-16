@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
-    repository::{DnssecKeyRepository, LockLevel, RepositoryTx, sql::lock_clause},
+    repository::{DnssecKeyRepository, LockLevel, RepositoryTx},
 };
 
 pub(crate) struct MySqlDnssecKeyRepository {
@@ -72,7 +72,7 @@ impl DnssecKeyRepository for MySqlDnssecKeyRepository {
             WHERE zone_id = ?
             ORDER BY id
             "#,
-            lock_clause(lock_level)
+            lock_level.clause()
         )))
         .bind(zone_id)
         .fetch_all(&mut **mysql_tx)

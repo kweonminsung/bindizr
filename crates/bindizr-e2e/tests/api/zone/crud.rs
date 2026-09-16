@@ -23,7 +23,7 @@ async fn zone_create_read_update_delete() {
     });
 
     let (status, body) = app
-        .request(Method::POST, "/zones", Some(create_zone_request))
+        .send_request(Method::POST, "/zones", Some(create_zone_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
@@ -31,7 +31,7 @@ async fn zone_create_read_update_delete() {
     assert_eq!(created_zone_name, zone_name);
 
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{created_zone_name}"), None)
+        .send_request(Method::GET, &format!("/zones/{created_zone_name}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["zone"]["name"], zone_name);
@@ -49,7 +49,7 @@ async fn zone_create_read_update_delete() {
     });
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{created_zone_name}"),
             Some(update_zone_request),
@@ -61,7 +61,7 @@ async fn zone_create_read_update_delete() {
 
     // Address the renamed zone and change only TTL; omitted settings must survive.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{actual_updated_zone_name}"),
             Some(json!({ "default_ttl": 300 })),
@@ -75,7 +75,7 @@ async fn zone_create_read_update_delete() {
 
     // Delete using the new identity and verify that it no longer resolves through the API.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/zones/{actual_updated_zone_name}"),
             None,
@@ -84,7 +84,7 @@ async fn zone_create_read_update_delete() {
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{actual_updated_zone_name}"),
             None,
@@ -109,7 +109,9 @@ async fn zone_seed_and_reject_out_of_range_serial() {
         "default_ttl": 3600,
         "serial": 2026072501i64
     });
-    let (status, body) = app.request(Method::POST, "/zones", Some(seeded_zone)).await;
+    let (status, body) = app
+        .send_request(Method::POST, "/zones", Some(seeded_zone))
+        .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["zone"]["serial"], 2026072501i64);
 
@@ -120,7 +122,7 @@ async fn zone_seed_and_reject_out_of_range_serial() {
         "default_ttl": 7200
     });
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}"),
             Some(update_zone_request),
@@ -140,7 +142,7 @@ async fn zone_seed_and_reject_out_of_range_serial() {
             "serial": out_of_range_serial
         });
         let (status, _) = app
-            .request(Method::POST, "/zones", Some(out_of_range_zone))
+            .send_request(Method::POST, "/zones", Some(out_of_range_zone))
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
@@ -159,7 +161,9 @@ async fn zone_auto_serial_starts_at_one_and_update_rejects_explicit_serial() {
         "rname": "hostmaster@counter.example",
         "default_ttl": 3600
     });
-    let (status, body) = app.request(Method::POST, "/zones", Some(request)).await;
+    let (status, body) = app
+        .send_request(Method::POST, "/zones", Some(request))
+        .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["zone"]["serial"].as_i64().unwrap(), 1);
 
@@ -167,10 +171,12 @@ async fn zone_auto_serial_starts_at_one_and_update_rejects_explicit_serial() {
         "name": "www", "record_type": "A", "value": "192.0.2.70",
         "ttl": 300, "zone_name": zone_name
     });
-    let (status, _) = app.request(Method::POST, "/records", Some(record)).await;
+    let (status, _) = app
+        .send_request(Method::POST, "/records", Some(record))
+        .await;
     assert_eq!(status, StatusCode::CREATED);
     let (_, after) = app
-        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
     assert_eq!(after["zone"]["serial"].as_i64().unwrap(), 2);
 
@@ -182,7 +188,7 @@ async fn zone_auto_serial_starts_at_one_and_update_rejects_explicit_serial() {
         "serial": 99
     });
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}"),
             Some(update_with_serial),
@@ -209,7 +215,7 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let (status, detail) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{zone_name}/versions/{}", zone["serial"]),
             None,
@@ -231,7 +237,7 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
         .expect("apex NS row");
     for spelling in ["@", zone_name] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::PUT,
                 &format!("/records/{}", ns["id"].as_i64().unwrap()),
                 Some(json!({

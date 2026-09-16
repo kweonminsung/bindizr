@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dns::address::is_address_target;
 
-pub(crate) const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
+const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 /// Swappable so `reload` can replace it; readers take a snapshot, so a
 /// request decides on one version throughout even if a reload lands mid-way.
@@ -237,7 +237,8 @@ fn default_journal_retention_days() -> u32 {
     365
 }
 
-/// Plenty next to the day-scale windows a pass enforces.
+/// Return the default maintenance interval setting: plenty next to the
+/// day-scale windows a pass enforces.
 fn default_maintenance_interval_secs() -> u64 {
     3_600
 }
@@ -484,6 +485,21 @@ impl BindizrConfig {
 
         Ok(bindizr_config)
     }
+
+    /// Reject overlapping API and DNS endpoints so both servers can bind at startup.
+    fn validate_listeners(&self) -> Result<(), String> {
+        if self.api.listen_port == self.dns.listen_port
+            && (self.api.listen_addr == self.dns.listen_addr
+                || self.api.listen_addr.is_unspecified()
+                || self.dns.listen_addr.is_unspecified())
+        {
+            return Err(format!(
+                "api and dns cannot share port {}",
+                self.api.listen_port
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl DatabaseConfig {
@@ -528,23 +544,6 @@ impl ApiConfig {
             (None, Some(_)) => Err("api.tls_key_file needs api.tls_cert_file".to_string()),
             _ => Ok(()),
         }
-    }
-}
-
-impl BindizrConfig {
-    /// Reject overlapping API and DNS endpoints so both servers can bind at startup.
-    fn validate_listeners(&self) -> Result<(), String> {
-        if self.api.listen_port == self.dns.listen_port
-            && (self.api.listen_addr == self.dns.listen_addr
-                || self.api.listen_addr.is_unspecified()
-                || self.dns.listen_addr.is_unspecified())
-        {
-            return Err(format!(
-                "api and dns cannot share port {}",
-                self.api.listen_port
-            ));
-        }
-        Ok(())
     }
 }
 

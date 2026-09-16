@@ -4,7 +4,7 @@
 use std::{io::IsTerminal, sync::OnceLock};
 
 /// Check whether terminal output should use ANSI colors.
-fn enabled() -> bool {
+fn is_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
         std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())
@@ -14,7 +14,7 @@ fn enabled() -> bool {
 
 /// Wrap text in the requested ANSI color when colors are enabled.
 fn paint(code: &str, text: &str) -> String {
-    if enabled() {
+    if is_enabled() {
         format!("\x1b[{}m{}\x1b[0m", code, text)
     } else {
         text.to_string()

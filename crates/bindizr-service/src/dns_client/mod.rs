@@ -9,14 +9,7 @@ pub mod probe;
 
 use std::{net::SocketAddr, time::Duration};
 
-use bindizr_core::{
-    dns::{
-        address::{ParsedAddress, parse_address_target},
-        message::encode_tcp_message,
-        query::is_truncated,
-    },
-    log_error,
-};
+use bindizr_core::dns::{address::ParsedAddress, message::encode_tcp_message, query::is_truncated};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, UdpSocket, lookup_host},
@@ -34,16 +27,16 @@ pub(crate) async fn exchange_with_tcp_fallback(
     request: &[u8],
     what: &str,
 ) -> Result<Vec<u8>, String> {
-    let (received, response) = udp_exchange(server_addr, timeout, request, what).await?;
+    let (received, response) = exchange_over_udp(server_addr, timeout, request, what).await?;
     if !is_truncated(&response[..received]) {
         return Ok(response[..received].to_vec());
     }
-    tcp_exchange(server_addr, timeout, request, what).await
+    exchange_over_tcp(server_addr, timeout, request, what).await
 }
 
 /// Send one DNS message over TCP, length-prefixed (RFC 1035, Section
 /// 4.2.2), and read the single response; `timeout` covers the whole exchange.
-pub(crate) async fn tcp_exchange(
+pub(crate) async fn exchange_over_tcp(
     server_addr: SocketAddr,
     timeout: Duration,
     request: &[u8],
@@ -80,7 +73,7 @@ pub(crate) async fn read_tcp_message(stream: &mut TcpStream) -> Result<Vec<u8>, 
 /// Send one UDP DNS message and wait for a single response, with `timeout`
 /// applied to both directions. `what` names the operation in error messages
 /// (e.g. "NOTIFY").
-pub(crate) async fn udp_exchange(
+pub(crate) async fn exchange_over_udp(
     server_addr: SocketAddr,
     timeout: Duration,
     request: &[u8],
@@ -139,7 +132,7 @@ pub(crate) async fn resolve_address_entries(
             continue;
         }
 
-        let result = match parse_address_target(trimmed, 53) {
+        let result = match ParsedAddress::parse(trimmed, 53) {
             ParsedAddress::SocketAddr(addr) => Ok(vec![addr]),
             ParsedAddress::HostPort(host_port) => {
                 match tokio::time::timeout(resolve_timeout, lookup_host(&host_port)).await {
@@ -152,11 +145,11 @@ pub(crate) async fn resolve_address_entries(
                         }
                     }
                     Ok(Err(e)) => {
-                        log_error!("Invalid server address '{}': {}", trimmed, e);
+                        log::error!("Invalid server address '{}': {}", trimmed, e);
                         Err(e.to_string())
                     }
                     Err(_) => {
-                        log_error!(
+                        log::error!(
                             "Resolving server address '{}' timed out after {} seconds",
                             trimmed,
                             resolve_timeout.as_secs()

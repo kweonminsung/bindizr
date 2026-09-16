@@ -6,7 +6,7 @@ use crate::common::{TestApp, TestAppOptions};
 /// Populate a zone with records before testing an import.
 async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records/bulk",
             Some(json!({ "zone_name": zone_name, "records": records })),
@@ -27,7 +27,7 @@ async fn zone_import_zone_file_dry_run_then_apply() {
 
     // Dry run: reports the plan without applying it.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content, "dry_run": true })),
@@ -41,7 +41,7 @@ async fn zone_import_zone_file_dry_run_then_apply() {
 
     // Nothing applied yet.
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}"),
             None,
@@ -51,7 +51,7 @@ async fn zone_import_zone_file_dry_run_then_apply() {
 
     // Real apply.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content })),
@@ -62,7 +62,7 @@ async fn zone_import_zone_file_dry_run_then_apply() {
     assert_eq!(body["summary"]["added"], 3);
 
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}"),
             None,
@@ -72,7 +72,7 @@ async fn zone_import_zone_file_dry_run_then_apply() {
 
     // Re-applying in append mode is idempotent: everything is unchanged.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content })),
@@ -105,7 +105,7 @@ async fn zone_import_zone_file_replace_mode() {
     // Replace: keep stays (same value), drop is removed, add is created.
     let content = "keep IN A 192.0.2.1\nadd IN A 192.0.2.3\n";
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content, "mode": "replace" })),
@@ -118,7 +118,7 @@ async fn zone_import_zone_file_replace_mode() {
     assert_eq!(body["summary"]["unchanged"], 1);
 
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=drop"),
             None,
@@ -127,7 +127,7 @@ async fn zone_import_zone_file_replace_mode() {
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=add"),
             None,
@@ -161,7 +161,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     // Only the `www` A RRset appears in the file, so only it is replaced.
     let content = "www IN A 192.0.2.3\n";
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content, "mode": "upsert" })),
@@ -184,7 +184,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     };
 
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=www&record_type=A"),
             None,
@@ -194,7 +194,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
 
     // Same owner, different type: untouched.
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=www&record_type=TXT"),
             None,
@@ -204,7 +204,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
 
     // Different owner entirely: untouched.
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=other"),
             None,
@@ -239,7 +239,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
     // A TTL-only upsert is reported as an update and must change the stored TTL.
     let content = "www 600 IN A 192.0.2.1\n";
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content, "mode": "upsert" })),
@@ -253,7 +253,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
     assert_eq!(body["summary"]["unchanged"], 0);
 
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=www"),
             None,
@@ -264,7 +264,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
 
     // Re-importing the same TTL is idempotent: nothing to reconcile.
     let (_, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content, "mode": "upsert" })),
@@ -275,7 +275,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
 
     // Append never modifies already-present records, TTL included.
     let (_, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": "www 900 IN A 192.0.2.1\n", "mode": "append" })),
@@ -285,7 +285,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
     assert_eq!(body["summary"]["unchanged"], 1);
 
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=www"),
             None,
@@ -307,7 +307,7 @@ async fn zone_import_from_server_over_http() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": "www IN A 192.0.2.30\nmail 300 IN MX 10 mx.example.com.\n" })),
@@ -318,7 +318,7 @@ async fn zone_import_from_server_over_http() {
     // A transfer of the zone's own content replaces it with itself.
     let server = format!("127.0.0.1:{}", app.dns_port());
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "from_server": server, "mode": "replace" })),
@@ -337,7 +337,7 @@ async fn zone_import_from_server_over_http() {
         json!({ "from_server": "127.0.0.1:1,127.0.0.1:2", "mode": "replace" }),
     ] {
         let (status, _) = app
-            .request(
+            .send_request(
                 Method::POST,
                 &format!("/zones/{zone_name}/import"),
                 Some(request),

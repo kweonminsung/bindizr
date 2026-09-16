@@ -3,7 +3,7 @@ use chrono::Utc;
 
 use super::{
     change_set::{ZoneOps, adjust_rrset, group_ops_by_zone, parse_changes_request, parse_rrset_op},
-    policy::{find_authoritative_zone, normalize_lookup_name},
+    policy::{authoritative_zone, normalize_lookup_name},
 };
 use crate::{
     authorization::Caller,
@@ -70,26 +70,26 @@ fn find_authoritative_zone_picks_most_specific_match() {
     ];
 
     assert_eq!(
-        find_authoritative_zone(&zones, "api.internal.example.com").map(|z| z.id),
+        authoritative_zone(&zones, "api.internal.example.com").map(|z| z.id),
         Some(2)
     );
     assert_eq!(
-        find_authoritative_zone(&zones, "www.example.com").map(|z| z.id),
+        authoritative_zone(&zones, "www.example.com").map(|z| z.id),
         Some(1)
     );
     assert_eq!(
-        find_authoritative_zone(&zones, "internal.example.com").map(|z| z.id),
+        authoritative_zone(&zones, "internal.example.com").map(|z| z.id),
         Some(2)
     );
 }
 
-/// Verify that `find_authoritative_zone` requires label boundary.
+/// Verify that `authoritative_zone` requires label boundary.
 #[test]
 fn find_authoritative_zone_requires_label_boundary() {
     let zones = vec![test_zone(1, "example.com")];
 
-    assert!(find_authoritative_zone(&zones, "notexample.com").is_none());
-    assert!(find_authoritative_zone(&zones, "example.org").is_none());
+    assert!(authoritative_zone(&zones, "notexample.com").is_none());
+    assert!(authoritative_zone(&zones, "example.org").is_none());
 }
 
 /// Verify that an escaped dot does not put a name inside the zone it spells.
@@ -101,7 +101,7 @@ fn an_escaped_dot_does_not_put_a_name_inside_the_zone_it_spells() {
     let name = normalize_lookup_name(r"evil\.example.com").unwrap();
 
     assert_eq!(name, r"evil\046example.com");
-    assert!(find_authoritative_zone(&zones, &name).is_none());
+    assert!(authoritative_zone(&zones, &name).is_none());
 }
 
 /// Verify that `normalize_lookup_name` lowercases and strips trailing dot.

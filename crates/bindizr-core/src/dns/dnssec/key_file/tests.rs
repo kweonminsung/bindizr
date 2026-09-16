@@ -148,7 +148,7 @@ fn an_exported_key_file_re_imports_in_the_state_it_left() {
             &test_zone(),
             true,
             BIND_DNSKEY,
-            &to_bind_private_file(&key),
+            &key.to_bind_private_file(),
             now(),
         )
         .unwrap();

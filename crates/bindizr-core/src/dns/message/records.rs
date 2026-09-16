@@ -10,6 +10,7 @@ use crate::{
         dnssec_record::DnssecRecord,
         record::{Record, RecordType},
         zone::Zone,
+        zone_change::{JournalRecordType, ZoneChange},
     },
 };
 
@@ -17,6 +18,40 @@ use crate::{
 const SOA_WIRE_TYPE: u16 = 6;
 
 impl DnsMessageBuilder {
+    /// Append one journal change to a DNS transfer message.
+    pub fn add_change(&mut self, change: &ZoneChange, zone_name: &ZoneName) -> Result<(), String> {
+        match &change.record_type {
+            JournalRecordType::Derived(record_type) => {
+                let rdata = change
+                    .record_rdata
+                    .clone()
+                    .ok_or_else(|| "derived change carries no wire rdata".to_string())?;
+                self.add_raw_rdata(
+                    change.record_name.to_wire(zone_name),
+                    record_type.wire_type(),
+                    change.record_ttl as u32,
+                    rdata,
+                )
+            }
+            JournalRecordType::User(record_type) => {
+                let value = change
+                    .record_value
+                    .as_deref()
+                    .ok_or_else(|| "user change carries no record value".to_string())?;
+                self.add_record_parts(
+                    zone_name,
+                    &change.record_name,
+                    record_type,
+                    value,
+                    change.record_ttl,
+                    change.record_priority,
+                )
+            }
+            // The delta's SOA boundaries come from the version rows above.
+            JournalRecordType::Soa => Ok(()),
+        }
+    }
+
     /// Append the zone's synthesized SOA answer.
     pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), String> {
         let rdata = zone.soa_rdata(serial)?;

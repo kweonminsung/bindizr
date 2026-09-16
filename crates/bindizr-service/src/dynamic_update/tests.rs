@@ -4,7 +4,7 @@ use super::{DynamicUpdateError, parse_owner_in_zone};
 
 /// Verify that owner in zone reduces an in zone owner to its stored form.
 #[test]
-fn owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
+fn parse_owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
     assert_eq!(
         parse_owner_in_zone("www.example.com.", &ZoneName::from_row("example.com"))
             .unwrap()
@@ -28,9 +28,9 @@ fn owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
     );
 }
 
-/// Verify that `owner_in_zone` rejects owners outside the zone.
+/// Verify that `parse_owner_in_zone` rejects owners outside the zone.
 #[test]
-fn owner_in_zone_rejects_owners_outside_the_zone() {
+fn parse_owner_in_zone_rejects_owners_outside_the_zone() {
     for owner in [
         "aexample.com.",
         "badexample.com.",

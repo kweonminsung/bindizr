@@ -11,7 +11,6 @@ use crate::{
     authorization::{Caller, RecordWrite},
     dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
-    log_error, log_info, log_warn,
     model::record::Record,
     repository::RepositoryService,
     serial::generate_serial,
@@ -44,7 +43,7 @@ impl RecordService {
                 return Err(ServiceError::record_not_found(record_id));
             }
             Err(e) => {
-                log_error!("Failed to fetch record: {}", e);
+                log::error!("Failed to fetch record: {}", e);
                 return Err(ServiceError::internal("Failed to fetch record"));
             }
         };
@@ -63,7 +62,7 @@ impl RecordService {
                     ));
                 }
                 Err(e) => {
-                    log_error!("Failed to fetch zone: {}", e);
+                    log::error!("Failed to fetch zone: {}", e);
                     return Err(ServiceError::internal("Failed to fetch zone"));
                 }
             };
@@ -77,14 +76,14 @@ impl RecordService {
                         return Err(ServiceError::record_not_found(record_id));
                     }
                     Err(e) => {
-                        log_error!("Failed to fetch record: {}", e);
+                        log::error!("Failed to fetch record: {}", e);
                         return Err(ServiceError::internal("Failed to fetch record"));
                     }
                 };
 
             // A record the caller's grants do not reach reads as 404, as it
             // does on GET, so ids cannot be probed.
-            if !caller.record_visible(
+            if !caller.sees_record(
                 zone.id,
                 &existing_record.name,
                 Some(&existing_record.record_type),
@@ -137,7 +136,7 @@ impl RecordService {
             record_id,
         } = RepositoryService::finish_tx(tx, apply_result, "Failed to delete record").await?;
 
-        log_info!(
+        log::info!(
             "event=record_delete zone={} name={} type={} value={} record_id={}",
             zone_name,
             record_name,
@@ -147,7 +146,7 @@ impl RecordService {
         );
 
         if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
-            log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
         Ok(())
@@ -264,7 +263,7 @@ impl RecordService {
 
         let response = RepositoryService::finish_tx(tx, result, "Failed to delete records").await?;
 
-        log_info!(
+        log::info!(
             "event=record_delete_matching zone={} name={} type={:?} deleted={} applied={}",
             zone_name,
             filter.name,
@@ -277,7 +276,7 @@ impl RecordService {
         if response.applied
             && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {
-            log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
         Ok(response)

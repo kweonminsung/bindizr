@@ -30,7 +30,7 @@ async fn a_non_ascii_label_is_refused_with_punycode_advice() {
         ),
     ] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
@@ -59,7 +59,7 @@ async fn a_control_character_in_a_txt_value_is_stored_escaped() {
     // RFC 1035, Section 5.1 lets a TXT carry any octet; the display column
     // holds the NUL as `\000`, which is also how a search reaches it.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -73,7 +73,7 @@ async fn a_control_character_in_a_txt_value_is_stored_escaped() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=TXT&search=%5C000"),
             None,
@@ -117,7 +117,7 @@ async fn a_naptr_regexp_bind_refuses_is_rejected() {
         ),
     ] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
@@ -160,7 +160,9 @@ async fn record_reject_invalid_values() {
             "zone_name": zone["name"]
         });
 
-        let (status, body) = app.request(Method::POST, "/records", Some(request)).await;
+        let (status, body) = app
+            .send_request(Method::POST, "/records", Some(request))
+            .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(
@@ -178,7 +180,7 @@ async fn record_reject_invalid_values() {
         "zone_name": zone["name"]
     });
     let (status, body) = app
-        .request(Method::POST, "/records", Some(valid_request))
+        .send_request(Method::POST, "/records", Some(valid_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let record_id = body["record"]["id"].as_i64().unwrap();
@@ -190,7 +192,7 @@ async fn record_reject_invalid_values() {
         "ttl": 1800
     });
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/records/{record_id}"),
             Some(invalid_update),
@@ -215,7 +217,9 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
         "ttl": 300,
         "zone_name": zone["name"]
     });
-    let (status, _) = app.request(Method::POST, "/records", Some(first)).await;
+    let (status, _) = app
+        .send_request(Method::POST, "/records", Some(first))
+        .await;
     assert_eq!(status, StatusCode::CREATED);
 
     // RFC 2181, Section 5.2: one TTL per RRset.
@@ -227,7 +231,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
         "zone_name": zone["name"]
     });
     let (status, body) = app
-        .request(Method::POST, "/records", Some(differing_ttl))
+        .send_request(Method::POST, "/records", Some(differing_ttl))
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert!(
@@ -244,7 +248,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
         "zone_name": zone["name"]
     });
     let (status, _) = app
-        .request(Method::POST, "/records", Some(matching_ttl))
+        .send_request(Method::POST, "/records", Some(matching_ttl))
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
@@ -257,7 +261,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
         "zone_name": zone["name"]
     });
     let (status, _) = app
-        .request(Method::POST, "/records", Some(other_rrset))
+        .send_request(Method::POST, "/records", Some(other_rrset))
         .await;
     assert_eq!(status, StatusCode::CREATED);
 }
@@ -270,7 +274,7 @@ async fn record_reject_negative_ttl_on_create_and_update() {
     let zone = app.create_test_zone().await;
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -286,7 +290,7 @@ async fn record_reject_negative_ttl_on_create_and_update() {
     assert!(body["error"].as_str().unwrap().contains("TTL"), "{body}");
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -300,7 +304,7 @@ async fn record_reject_negative_ttl_on_create_and_update() {
     assert_eq!(status, StatusCode::CREATED);
     let record_id = body["record"]["id"].as_i64().unwrap();
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/records/{record_id}"),
             Some(json!({ "ttl": -1 })),
@@ -332,7 +336,9 @@ async fn record_reject_priority_on_types_without_one() {
             "priority": 10,
             "zone_name": zone["name"]
         });
-        let (status, body) = app.request(Method::POST, "/records", Some(request)).await;
+        let (status, body) = app
+            .send_request(Method::POST, "/records", Some(request))
+            .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{record_type}");
         assert!(
             body["error"].as_str().unwrap().contains("priority"),
@@ -349,7 +355,7 @@ async fn record_reject_priority_on_types_without_one() {
         "priority": 10,
         "zone_name": zone["name"]
     });
-    let (status, _) = app.request(Method::POST, "/records", Some(mx)).await;
+    let (status, _) = app.send_request(Method::POST, "/records", Some(mx)).await;
     assert_eq!(status, StatusCode::CREATED);
 
     // An update is held to the same rule.
@@ -360,11 +366,11 @@ async fn record_reject_priority_on_types_without_one() {
         "ttl": 3600,
         "zone_name": zone["name"]
     });
-    let (status, body) = app.request(Method::POST, "/records", Some(a)).await;
+    let (status, body) = app.send_request(Method::POST, "/records", Some(a)).await;
     assert_eq!(status, StatusCode::CREATED);
     let record_id = body["record"]["id"].as_i64().unwrap();
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/records/{record_id}"),
             Some(json!({ "priority": 10 })),
@@ -397,13 +403,13 @@ async fn record_preserve_txt_segments_and_case() {
         });
 
         let (status, _) = app
-            .request(Method::POST, "/records", Some(create_record_request))
+            .send_request(Method::POST, "/records", Some(create_record_request))
             .await;
         assert_eq!(status, StatusCode::CREATED);
     }
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&value=Token=abc"),
             None,
@@ -421,7 +427,9 @@ async fn record_preserve_txt_segments_and_case() {
         "ttl": 1800,
         "zone_name": zone["name"]
     });
-    let (status, body) = app.request(Method::POST, "/records", Some(segmented)).await;
+    let (status, body) = app
+        .send_request(Method::POST, "/records", Some(segmented))
+        .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["record"]["value"], json!(["a", "bc"]));
 
@@ -433,7 +441,7 @@ async fn record_preserve_txt_segments_and_case() {
         "zone_name": zone["name"]
     });
     let (status, body) = app
-        .request(Method::POST, "/records", Some(empty_segments))
+        .send_request(Method::POST, "/records", Some(empty_segments))
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(
@@ -452,7 +460,9 @@ async fn record_preserve_txt_segments_and_case() {
         "ttl": 1800,
         "zone_name": zone["name"]
     });
-    let (status, body) = app.request(Method::POST, "/records", Some(long_txt)).await;
+    let (status, body) = app
+        .send_request(Method::POST, "/records", Some(long_txt))
+        .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(
         body["record"]["value"],
@@ -476,7 +486,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
         "zone_name": zone["name"]
     });
     let (status, body) = app
-        .request(Method::POST, "/records", Some(create_record_request))
+        .send_request(Method::POST, "/records", Some(create_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["record"]["name"], format!("a1.{zone_name}."));
@@ -491,7 +501,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
         "zone_name": zone["name"]
     });
     let (status, _) = app
-        .request(Method::POST, "/records", Some(in_bailiwick_duplicate))
+        .send_request(Method::POST, "/records", Some(in_bailiwick_duplicate))
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
 
@@ -503,7 +513,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
         "zone_name": zone["name"]
     });
     let (status, body) = app
-        .request(Method::POST, "/records", Some(in_bailiwick_different_value))
+        .send_request(Method::POST, "/records", Some(in_bailiwick_different_value))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["record"]["name"], format!("a1.{zone_name}."));
@@ -524,7 +534,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
             "zone_name": zone["name"]
         });
         let (status, _) = app
-            .request(Method::POST, "/records", Some(out_of_bailiwick))
+            .send_request(Method::POST, "/records", Some(out_of_bailiwick))
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{name} should be rejected");
     }
@@ -537,7 +547,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
     });
     let record_id = body["record"]["id"].as_i64().unwrap();
     let (status, _) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/records/{record_id}"),
             Some(update_out_of_bailiwick),
@@ -586,7 +596,7 @@ async fn record_create_supported_types() {
         });
 
         let (status, body) = app
-            .request(Method::POST, "/records", Some(create_request))
+            .send_request(Method::POST, "/records", Some(create_request))
             .await;
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(body["record"]["record_type"], record_type);
@@ -607,7 +617,7 @@ async fn record_create_supported_types() {
     }
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}"),
             None,
@@ -642,7 +652,7 @@ async fn record_reject_cname_conflicts() {
         "zone_name": zone["name"]
     });
     let (status, _) = app
-        .request(Method::POST, "/records", Some(a_record_request))
+        .send_request(Method::POST, "/records", Some(a_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
@@ -654,7 +664,7 @@ async fn record_reject_cname_conflicts() {
         "zone_name": zone["name"]
     });
     let (status, _) = app
-        .request(Method::POST, "/records", Some(cname_record_request))
+        .send_request(Method::POST, "/records", Some(cname_record_request))
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
 
@@ -666,7 +676,7 @@ async fn record_reject_cname_conflicts() {
         "zone_name": zone["name"]
     });
     let (status, body) = app
-        .request(Method::POST, "/records", Some(cname_record_request))
+        .send_request(Method::POST, "/records", Some(cname_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let cname_record_id = body["record"]["id"].as_i64().unwrap();
@@ -679,7 +689,7 @@ async fn record_reject_cname_conflicts() {
         "zone_name": zone["name"]
     });
     let (status, _) = app
-        .request(Method::POST, "/records", Some(a_record_request))
+        .send_request(Method::POST, "/records", Some(a_record_request))
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
 
@@ -692,7 +702,7 @@ async fn record_reject_cname_conflicts() {
         "ttl": 3600
     });
     let (status, _) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/records/{cname_record_id}"),
             Some(update_cname_request),

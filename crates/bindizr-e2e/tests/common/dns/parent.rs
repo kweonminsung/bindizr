@@ -107,6 +107,7 @@ impl ServedDs {
     }
 }
 
+/// A parent nameserver on loopback, serving whatever DS records the test hands it.
 pub(crate) struct FakeParent {
     addr: SocketAddr,
     ds: Arc<Mutex<Vec<ServedDs>>>,

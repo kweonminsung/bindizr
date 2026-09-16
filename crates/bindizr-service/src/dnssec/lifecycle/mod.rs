@@ -5,8 +5,7 @@ use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
 use super::{
-    DnssecService, notify_zone, parent_ns_addrs::normalize_parent_ns_addrs,
-    status::build_status_tx, to_key_layout,
+    DnssecService, notify_zone, parent_ns_addrs::normalize_parent_ns_addrs, status::build_status_tx,
 };
 use crate::{
     authorization::Caller,
@@ -40,9 +39,9 @@ fn validate_policy_move(
             "policy '{}' uses {} but zone '{}' signs with {}; the key layout is fixed while \
              signed, so disable DNSSEC and re-enable under the new policy",
             target.name,
-            to_key_layout(target.split_keys),
+            target.key_layout(),
             zone.name.as_str(),
-            to_key_layout(current.split_keys)
+            current.key_layout()
         )));
     }
 
@@ -137,7 +136,7 @@ impl DnssecService {
         .await;
         let response = RepositoryService::finish_tx(tx, result, "failed to enable DNSSEC").await?;
 
-        crate::log_info!("event=dnssec_enable zone={}", response.zone_name);
+        log::info!("event=dnssec_enable zone={}", response.zone_name);
 
         // Secondaries can fetch the signed view only after the transaction commits.
         notify_zone(&response.zone_name).await;
@@ -239,7 +238,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to update DNSSEC settings").await?;
 
-        crate::log_info!("event=dnssec_update_settings zone={}", response.zone_name);
+        log::info!("event=dnssec_update_settings zone={}", response.zone_name);
         // Only a policy move changes zone data; parent nameservers are not served.
         if policy_name.is_some() {
             notify_zone(&response.zone_name).await;
@@ -308,9 +307,9 @@ impl DnssecService {
             RepositoryService::finish_tx(tx, result, "failed to disable DNSSEC").await?;
 
         if skip_ds_check {
-            crate::log_warn!("event=dnssec_disable_ds_check_skipped zone={}", zone_name);
+            log::warn!("event=dnssec_disable_ds_check_skipped zone={}", zone_name);
         }
-        crate::log_info!("event=dnssec_disable zone={}", zone_name);
+        log::info!("event=dnssec_disable zone={}", zone_name);
         notify_zone(&zone_name).await;
         Ok(())
     }
@@ -338,7 +337,7 @@ impl DnssecService {
         .await;
         let zone_name = RepositoryService::finish_tx(tx, result, "failed to sign zone").await?;
 
-        crate::log_info!("event=dnssec_sign zone={}", zone_name);
+        log::info!("event=dnssec_sign zone={}", zone_name);
         notify_zone(&zone_name).await;
         Ok(())
     }

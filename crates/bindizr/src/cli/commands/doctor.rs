@@ -10,7 +10,7 @@ use crate::{
     cli::{error::CliError, output::color},
     net::loopback_if_unspecified,
     socket::{
-        client::DaemonSocketClient,
+        client,
         types::{DaemonCommandKind, DaemonDoctorResponse},
     },
 };
@@ -52,14 +52,12 @@ pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), Cl
         Ok(_) => report.ok(format!("Config valid: {}", path)),
         Err(e) => report.fail(format!("Config invalid: {}", e)),
     }
-
-    let client = DaemonSocketClient::new();
-    if check_daemon(&client, &mut report).await {
-        match client.config().await {
+    if check_daemon(&mut report).await {
+        match client::fetch_config().await {
             Ok(config) => check_api(&config, &mut report).await,
             Err(e) => report.fail(format!("Daemon config not readable: {}", e.message)),
         }
-        check_daemon_side(&client, &mut report).await;
+        check_daemon_side(&mut report).await;
     } else {
         report.skip("API, database, and DNS checks skipped: daemon is not running");
     }
@@ -77,8 +75,8 @@ pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), Cl
 }
 
 /// Check whether the daemon responds through its control socket.
-async fn check_daemon(client: &DaemonSocketClient, report: &mut Report) -> bool {
-    match client.status().await {
+async fn check_daemon(report: &mut Report) -> bool {
+    match client::fetch_status().await {
         Ok(status) => {
             let pid = status
                 .pid
@@ -167,8 +165,8 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
 }
 
 /// Check database, DNS listener, and secondary status through the daemon.
-async fn check_daemon_side(client: &DaemonSocketClient, report: &mut Report) {
-    let res = match client.send_command(DaemonCommandKind::Doctor, ()).await {
+async fn check_daemon_side(report: &mut Report) {
+    let res = match client::send_command(DaemonCommandKind::Doctor, ()).await {
         Ok(res) => res,
         Err(e) => {
             report.fail(format!("Daemon-side checks failed: {}", e.message));

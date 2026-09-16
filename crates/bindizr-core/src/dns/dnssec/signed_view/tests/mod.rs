@@ -81,7 +81,7 @@ fn default_expiration() -> DateTime<Utc> {
 
 /// Stored form of a computed plane: rows get distinct ids like the database
 /// would assign.
-fn as_stored(records: &[DnssecRecord]) -> Vec<DnssecRecord> {
+fn to_stored(records: &[DnssecRecord]) -> Vec<DnssecRecord> {
     records
         .iter()
         .enumerate()

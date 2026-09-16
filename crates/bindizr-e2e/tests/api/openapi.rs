@@ -11,7 +11,7 @@ async fn openapi_document_is_absent_unless_enabled() {
     let app = TestApp::start_local().await;
 
     for path in ["/openapi.json", "/openapi.yaml"] {
-        let (status, _) = app.request(Method::GET, path, None).await;
+        let (status, _) = app.send_request(Method::GET, path, None).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
     }
 }
@@ -26,12 +26,12 @@ async fn openapi_document_is_served_when_enabled() {
     })
     .await;
 
-    let (status, body) = app.request(Method::GET, "/openapi.json", None).await;
+    let (status, body) = app.send_request(Method::GET, "/openapi.json", None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["paths"]["/zones"]["get"].is_object());
 
     // YAML is not JSON, so the harness hands it back as a plain string.
-    let (status, body) = app.request(Method::GET, "/openapi.yaml", None).await;
+    let (status, body) = app.send_request(Method::GET, "/openapi.yaml", None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.as_str().is_some_and(|yaml| yaml.contains("openapi:")),
@@ -51,6 +51,6 @@ async fn openapi_document_needs_no_token() {
     })
     .await;
 
-    let (status, _) = app.request(Method::GET, "/openapi.json", None).await;
+    let (status, _) = app.send_request(Method::GET, "/openapi.json", None).await;
     assert_eq!(status, StatusCode::OK);
 }

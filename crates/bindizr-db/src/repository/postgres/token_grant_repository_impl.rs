@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 use crate::{
     error::DatabaseError,
     model::token_grant::TokenGrant,
-    repository::{LockLevel, RepositoryTx, TokenGrantRepository, sql::lock_clause},
+    repository::{LockLevel, RepositoryTx, TokenGrantRepository},
 };
 
 pub(crate) struct PostgresTokenGrantRepository {
@@ -88,7 +88,7 @@ impl TokenGrantRepository for PostgresTokenGrantRepository {
 
         let grants = sqlx::query_as::<_, TokenGrant>(AssertSqlSafe(
             format!("SELECT id, zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at FROM token_grants WHERE zone_id = $1 AND api_token_id = $2 ORDER BY id{}",
-            lock_clause(lock_level),
+            lock_level.clause(),
         )))
         .bind(zone_id)
         .bind(api_token_id)

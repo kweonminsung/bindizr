@@ -73,7 +73,7 @@ pub(crate) async fn update_record(
 }
 
 /// Preview or apply the requested batch of new records.
-pub(crate) async fn bulk_create_records(
+pub(crate) async fn create_records_bulk(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateBulkRecordsRequest = parse_params(data)?;

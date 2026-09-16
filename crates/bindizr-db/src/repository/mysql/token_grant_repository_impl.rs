@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::token_grant::TokenGrant,
-    repository::{LockLevel, RepositoryTx, TokenGrantRepository, sql::lock_clause},
+    repository::{LockLevel, RepositoryTx, TokenGrantRepository},
 };
 
 pub(crate) struct MySqlTokenGrantRepository {
@@ -87,7 +87,7 @@ impl TokenGrantRepository for MySqlTokenGrantRepository {
 
         let grants = sqlx::query_as::<_, TokenGrant>(AssertSqlSafe(
             format!("SELECT id, zone_id, api_token_id, record_name_pattern, record_types, can_write, created_at FROM token_grants WHERE zone_id = ? AND api_token_id = ? ORDER BY id{}",
-            lock_clause(lock_level),
+            lock_level.clause(),
         )))
         .bind(zone_id)
         .bind(api_token_id)

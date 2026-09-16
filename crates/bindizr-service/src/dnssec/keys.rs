@@ -1,10 +1,10 @@
 //! Importing and exporting raw key material in BIND key-file form. Reached
 //! only over the daemon socket: private keys never transit the HTTP API.
 
-use bindizr_core::dns::dnssec::{import_key, to_bind_private_file};
+use bindizr_core::dns::dnssec::import_key;
 use chrono::Utc;
 
-use super::{DnssecService, notify_zone, status::build_status_tx, to_key_layout};
+use super::{DnssecService, notify_zone, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -52,7 +52,7 @@ impl DnssecService {
                             key.algorithm.to_int(),
                             key.public_key
                         ),
-                        private_key: to_bind_private_file(key),
+                        private_key: key.to_bind_private_file(),
                     })
                     .collect(),
             })
@@ -144,7 +144,7 @@ impl DnssecService {
                      every role it names, together with any published or retired pairs the \
                      rollover still holds",
                     policy.name,
-                    to_key_layout(policy.split_keys)
+                    policy.key_layout()
                 )));
             }
 
@@ -177,7 +177,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to import DNSSEC keys").await?;
 
-        crate::log_info!("event=dnssec_import_keys zone={}", response.zone_name);
+        log::info!("event=dnssec_import_keys zone={}", response.zone_name);
 
         // Announce the imported keys only after their signed records are committed.
         notify_zone(&response.zone_name).await;

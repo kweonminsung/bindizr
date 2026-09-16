@@ -21,14 +21,14 @@ async fn record_bulk_insert() {
         ]
     });
     let (status, body) = app
-        .request(Method::POST, "/records/bulk", Some(bulk_request))
+        .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["inserted"], 4);
     assert_eq!(body["records"].as_array().unwrap().len(), 4);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=A"),
             None,
@@ -54,7 +54,7 @@ async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
         ]
     });
     let (status, body) = app
-        .request(Method::POST, "/records/bulk", Some(bulk_request))
+        .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["inserted"], 2);
@@ -80,7 +80,7 @@ async fn record_bulk_dry_run_rejects_a_ds_without_delegation_ns() {
         "dry_run": true
     });
     let (status, body) = app
-        .request(Method::POST, "/records/bulk", Some(bulk_request))
+        .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert!(
@@ -106,12 +106,12 @@ async fn record_bulk_insert_is_all_or_nothing() {
         ]
     });
     let (status, _) = app
-        .request(Method::POST, "/records/bulk", Some(bulk_request))
+        .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=ok"),
             None,
@@ -133,7 +133,7 @@ async fn record_bulk_insert_unknown_zone_returns_not_found() {
         "records": [ { "name": "a", "record_type": "A", "value": "192.0.2.1" } ]
     });
     let (status, _) = app
-        .request(Method::POST, "/records/bulk", Some(bulk_request))
+        .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -156,7 +156,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
         "dry_run": true
     });
     let (status, body) = app
-        .request(Method::POST, "/records/bulk", Some(bulk_request))
+        .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], false);
@@ -165,7 +165,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(body["records"].as_array().unwrap().len(), 2);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=A"),
             None,
@@ -183,7 +183,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
         ]
     });
     let (status, body) = app
-        .request(Method::POST, "/records/bulk", Some(bulk_request))
+        .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["applied"], true);
@@ -191,7 +191,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(body["inserted"], 2);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=A"),
             None,

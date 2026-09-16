@@ -1,5 +1,5 @@
 use base64::Engine;
-use bindizr_core::dns::name::to_lookup_name;
+use bindizr_core::dns::name::parse_lookup_name;
 use chrono::Utc;
 use rand::RngExt;
 
@@ -121,7 +121,7 @@ const MAX_KEY_NAME_LEN: usize = 255;
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
 pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
-    let name = to_lookup_name(value)
+    let name = parse_lookup_name(value)
         .map_err(|e| ServiceError::invalid_input(format!("TSIG key name {}", e)))?;
     if name.len() > MAX_KEY_NAME_LEN {
         return Err(ServiceError::invalid_input(format!(

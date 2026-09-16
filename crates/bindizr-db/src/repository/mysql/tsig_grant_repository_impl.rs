@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::tsig_grant::TsigGrant,
-    repository::{LockLevel, RepositoryTx, TsigGrantRepository, sql::lock_clause},
+    repository::{LockLevel, RepositoryTx, TsigGrantRepository},
 };
 
 pub(crate) struct MySqlTsigGrantRepository {
@@ -87,7 +87,7 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
 
         let grants = sqlx::query_as::<_, TsigGrant>(AssertSqlSafe(
             format!("SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE zone_id = ? AND tsig_key_id = ? ORDER BY id{}",
-            lock_clause(lock_level),
+            lock_level.clause(),
         )))
         .bind(zone_id)
         .bind(tsig_key_id)

@@ -9,8 +9,8 @@ use super::print_status;
 use crate::{
     cli::{error::CliError, output::parse_response},
     socket::{
-        client::DaemonSocketClient,
-        types::{DaemonCommandKind, ImportZoneDnssecKeyParams, ZoneNameParams},
+        client,
+        types::{DaemonCommandKind, ImportZoneDnssecKeysParams, ZoneNameParams},
     },
 };
 
@@ -48,18 +48,12 @@ pub(crate) enum DnssecKeysCommand {
 }
 
 /// Run the requested DNSSEC key import or export command.
-pub(crate) async fn handle_command(
-    client: &DaemonSocketClient,
-    subcommand: DnssecKeysCommand,
-) -> Result<(), CliError> {
+pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), CliError> {
     match subcommand {
         DnssecKeysCommand::Export { name } => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::ZoneDnssecKeysExport,
-                    ZoneNameParams { name },
-                )
-                .await?;
+            let response =
+                client::send_command(DaemonCommandKind::ExportDnssecKeys, ZoneNameParams { name })
+                    .await?;
             let exported: ExportDnssecKeysResponse =
                 parse_response(&response.data).map_err(CliError::from)?;
             print_key_material(&exported);
@@ -88,15 +82,14 @@ pub(crate) async fn handle_command(
                     private_key,
                 });
             }
-            let response = client
-                .send_command(
-                    DaemonCommandKind::ZoneDnssecKeysImport,
-                    ImportZoneDnssecKeyParams {
-                        zone_name: name,
-                        request: ImportDnssecKeyRequest { keys, policy },
-                    },
-                )
-                .await?;
+            let response = client::send_command(
+                DaemonCommandKind::ImportDnssecKeys,
+                ImportZoneDnssecKeysParams {
+                    zone_name: name,
+                    request: ImportDnssecKeyRequest { keys, policy },
+                },
+            )
+            .await?;
             print_status(&response.data)?;
         }
     }

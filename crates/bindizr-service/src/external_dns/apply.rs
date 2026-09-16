@@ -12,7 +12,6 @@ use crate::{
     authorization::{Caller, RecordWrite},
     dnssec::DnssecService,
     error::ServiceError,
-    log_info, log_warn,
     record::RecordService,
     repository::RepositoryService,
     serial::generate_serial,
@@ -34,7 +33,7 @@ impl ExternalDnsService {
         let requested_ops = ops.len();
 
         if ops.is_empty() {
-            log_info!("event=external_dns_apply zones= ops=0 added=0 deleted=0 noop=true ms=0.0");
+            log::info!("event=external_dns_apply zones= ops=0 added=0 deleted=0 noop=true ms=0.0");
             return Ok(ExternalDnsChangesResponse {
                 changed_zones: Vec::new(),
                 records_added: 0,
@@ -145,11 +144,11 @@ impl ExternalDnsService {
         // Every affected zone must commit before any secondary is asked to transfer.
         for zone_name in &changed_zones {
             if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name)).await {
-                log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+                log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
             }
         }
 
-        log_info!(
+        log::info!(
             "event=external_dns_apply zones={} ops={} added={} deleted={} noop={} ms={:.1}",
             changed_zones.join(","),
             requested_ops,

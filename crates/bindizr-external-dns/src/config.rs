@@ -15,21 +15,21 @@ use clap::Parser;
 pub(crate) struct Cli {
     /// Base URL of the bindizr HTTP API, e.g. http://bindizr:8000
     #[arg(long, env = "BINDIZR_URL", value_name = "URL")]
-    pub(crate) bindizr_url: String,
+    bindizr_url: String,
 
     /// Bindizr API token; prefer --token-file so the token stays out of the
     /// process list
     #[arg(long, env = "BINDIZR_API_TOKEN", hide_env_values = true)]
-    pub(crate) token: Option<String>,
+    token: Option<String>,
 
     /// File containing the bindizr API token (takes precedence over --token)
     #[arg(long, env = "BINDIZR_API_TOKEN_FILE", value_name = "FILE")]
-    pub(crate) token_file: Option<String>,
+    token_file: Option<String>,
 
     /// PEM CA certificate to trust on top of the system roots, for a bindizr
     /// serving a private or self-signed certificate
     #[arg(long, env = "BINDIZR_CA_FILE", value_name = "FILE")]
-    pub(crate) ca_file: Option<String>,
+    ca_file: Option<String>,
 
     /// Webhook listener address; keep it on localhost so only the
     /// external-dns container in the same pod can reach it
@@ -38,7 +38,7 @@ pub(crate) struct Cli {
         env = "BINDIZR_EXTERNAL_DNS_LISTEN_ADDR",
         default_value = "127.0.0.1:8888"
     )]
-    pub(crate) listen_addr: SocketAddr,
+    listen_addr: SocketAddr,
 
     /// Health and metrics listener address, exposed for Kubernetes probes
     #[arg(
@@ -46,19 +46,20 @@ pub(crate) struct Cli {
         env = "BINDIZR_EXTERNAL_DNS_HEALTH_ADDR",
         default_value = "0.0.0.0:8080"
     )]
-    pub(crate) health_listen_addr: SocketAddr,
+    health_listen_addr: SocketAddr,
 
     /// Timeout in seconds for each bindizr API request; keep it under the
     /// external-dns webhook write timeout (10s by default) so the mapped
     /// 502 still reaches the caller when bindizr stalls
     #[arg(long, env = "BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS", default_value_t = 8)]
-    pub(crate) timeout_secs: u64,
+    timeout_secs: u64,
 
     /// Log level (error, warn, info, debug, trace)
     #[arg(long, env = "BINDIZR_EXTERNAL_DNS_LOG_LEVEL", default_value = "info")]
-    pub(crate) log_level: String,
+    log_level: String,
 }
 
+/// The validated adapter settings the listeners and the upstream client start from.
 #[derive(Debug)]
 pub(crate) struct AdapterConfig {
     /// Normalized base URL without a trailing slash.
@@ -126,8 +127,8 @@ mod tests {
 
     use super::{AdapterConfig, Cli};
 
-    /// Parse CLI arguments for configuration tests.
-    fn parse(args: &[&str]) -> Cli {
+    /// Build the `Cli` a configuration test starts from, panicking on a parse failure.
+    fn to_cli(args: &[&str]) -> Cli {
         Cli::try_parse_from(std::iter::once("bindizr-external-dns").chain(args.iter().copied()))
             .unwrap()
     }
@@ -135,7 +136,7 @@ mod tests {
     /// Verify that listener defaults to localhost only.
     #[test]
     fn listener_defaults_to_localhost_only() {
-        let cli = parse(&["--bindizr-url", "http://bindizr:8000"]);
+        let cli = to_cli(&["--bindizr-url", "http://bindizr:8000"]);
         assert_eq!(cli.listen_addr.to_string(), "127.0.0.1:8888");
         assert_eq!(cli.health_listen_addr.to_string(), "0.0.0.0:8080");
         // Below external-dns's 10s webhook write deadline, so a stalled
@@ -147,11 +148,11 @@ mod tests {
     #[test]
     fn config_normalizes_url_and_requires_http_scheme() {
         let config =
-            AdapterConfig::from_cli(parse(&["--bindizr-url", "http://bindizr:8000/"])).unwrap();
+            AdapterConfig::from_cli(to_cli(&["--bindizr-url", "http://bindizr:8000/"])).unwrap();
         assert_eq!(config.bindizr_url, "http://bindizr:8000");
         assert!(config.token.is_none());
 
-        assert!(AdapterConfig::from_cli(parse(&["--bindizr-url", "bindizr:8000"])).is_err());
+        assert!(AdapterConfig::from_cli(to_cli(&["--bindizr-url", "bindizr:8000"])).is_err());
     }
 
     /// Verify that `config` rejects unusable base urls.
@@ -164,14 +165,14 @@ mod tests {
             "http://bindizr:8000#api",
         ] {
             assert!(
-                AdapterConfig::from_cli(parse(&["--bindizr-url", url])).is_err(),
+                AdapterConfig::from_cli(to_cli(&["--bindizr-url", url])).is_err(),
                 "accepted '{}'",
                 url
             );
         }
 
         let config =
-            AdapterConfig::from_cli(parse(&["--bindizr-url", "http://bindizr:8000/api"])).unwrap();
+            AdapterConfig::from_cli(to_cli(&["--bindizr-url", "http://bindizr:8000/api"])).unwrap();
         assert_eq!(config.bindizr_url, "http://bindizr:8000/api");
     }
 
@@ -182,7 +183,7 @@ mod tests {
         let path = dir.path().join("token");
         std::fs::write(&path, "secret-token\n").unwrap();
 
-        let config = AdapterConfig::from_cli(parse(&[
+        let config = AdapterConfig::from_cli(to_cli(&[
             "--bindizr-url",
             "http://bindizr:8000",
             "--token",
@@ -198,7 +199,7 @@ mod tests {
     /// Verify that missing token resolves to none.
     #[test]
     fn missing_token_resolves_to_none() {
-        let config = AdapterConfig::from_cli(parse(&[
+        let config = AdapterConfig::from_cli(to_cli(&[
             "--bindizr-url",
             "http://bindizr:8000",
             "--token",

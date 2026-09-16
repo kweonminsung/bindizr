@@ -4,7 +4,7 @@
 use crate::common::{FakeParent, ServedDs, TestApp, assert_cli_failure_contains};
 
 /// Read a test zone's DNSSEC status through the CLI.
-async fn dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
+async fn read_dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
     let status = app
         .run_cli_success(&["dnssec", "status", zone_name, "--output", "json"])
         .await;
@@ -35,7 +35,7 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
         enabled.contains(&format!("Parent nameservers: {parent_addr}")),
         "{enabled}"
     );
-    let status = dnssec_status(&app, &zone_name).await;
+    let status = read_dnssec_status(&app, &zone_name).await;
     let key_tag = status["dnssec"]["keys"][0]["key_tag"].as_u64().unwrap() as u16;
     parent.set_ds(vec![ServedDs::from_status(
         &status["dnssec"],

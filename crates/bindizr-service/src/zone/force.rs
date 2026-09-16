@@ -2,8 +2,8 @@ use bindizr_db::repository::LockLevel;
 
 use super::ZoneService;
 use crate::{
-    dnssec::DnssecService, error::ServiceError, log_error, log_info, model::zone::Zone,
-    repository::RepositoryService, serial::generate_serial, zone::version::ChangeSubject,
+    dnssec::DnssecService, error::ServiceError, model::zone::Zone, repository::RepositoryService,
+    serial::generate_serial, zone::version::ChangeSubject,
 };
 
 impl ZoneService {
@@ -56,7 +56,7 @@ impl ZoneService {
             )
             .await
             .map_err(|e| {
-                log_error!("Failed to force increment zone serial: {}", e);
+                log::error!("Failed to force increment zone serial: {}", e);
                 ServiceError::internal("Failed to force increment zone serial")
             })?;
 
@@ -73,7 +73,7 @@ impl ZoneService {
             RepositoryService::finish_tx(tx, apply_result, "Failed to force increment zone serial")
                 .await?;
 
-        log_info!(
+        log::info!(
             "event=zone_force_serial zone={} new_serial={} zone_id={}",
             updated_zone.name,
             updated_zone.serial,

@@ -10,7 +10,6 @@ use std::{future::Future, io::ErrorKind, net::SocketAddr, sync::Arc, time::Durat
 use bindizr_core::{
     config,
     dns::message::{self, Opcode, Rcode, Rtype},
-    log_error, log_info, log_warn,
 };
 use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
@@ -30,7 +29,19 @@ const MAX_TCP_CONNECTIONS: usize = 128;
 
 /// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
 pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
-    server::initialize().await;
+    // The catalog zone must exist before a secondary asks for it.
+    match server::catalog::generate_catalog_zone().await {
+        Ok((catalog, _)) => {
+            log::info!(
+                "Catalog zone '{}' is ready (serial: {})",
+                server::catalog::CATALOG_ZONE_NAME,
+                catalog.serial
+            );
+        }
+        Err(e) => {
+            log::warn!("Failed to generate catalog zone: {}", e);
+        }
+    }
 
     let bindizr_config = config::bindizr_config();
     let listen_addr = SocketAddr::new(
@@ -45,20 +56,20 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
         .await
         .map_err(|e| format!("Failed to bind DNS UDP socket on {}: {}", listen_addr, e))?;
 
-    log_info!("DNS TCP server listening on {}", listen_addr);
-    log_info!("DNS UDP server listening on {}", listen_addr);
+    log::info!("DNS TCP server listening on {}", listen_addr);
+    log::info!("DNS UDP server listening on {}", listen_addr);
 
     let tcp_stop = shutdown.waiter();
     tokio::spawn(async move {
         if let Err(e) = run_tcp_server(tcp_listener, tcp_stop).await {
-            log_error!("DNS TCP server error: {}", e);
+            log::error!("DNS TCP server error: {}", e);
         }
     });
 
     let udp_stop = shutdown.waiter();
     tokio::spawn(async move {
         if let Err(e) = run_udp_server(udp_socket, udp_stop).await {
-            log_error!("DNS UDP server error: {}", e);
+            log::error!("DNS UDP server error: {}", e);
         }
     });
 
@@ -78,7 +89,7 @@ async fn run_tcp_server(
         let permit = tokio::select! {
             permit = open.clone().acquire_owned() => permit.map_err(|e| e.to_string())?,
             () = &mut stop => {
-                log_info!("DNS TCP server stopping");
+                log::info!("DNS TCP server stopping");
                 return Ok(());
             }
         };
@@ -86,7 +97,7 @@ async fn run_tcp_server(
         let accepted = tokio::select! {
             accepted = listener.accept() => accepted,
             () = &mut stop => {
-                log_info!("DNS TCP server stopping");
+                log::info!("DNS TCP server stopping");
                 return Ok(());
             }
         };
@@ -95,13 +106,13 @@ async fn run_tcp_server(
             Ok((stream, client_addr)) => {
                 tokio::spawn(async move {
                     if let Err(e) = handle_tcp_connection(stream, client_addr).await {
-                        log_error!("DNS TCP connection error from {}: {}", client_addr, e);
+                        log::error!("DNS TCP connection error from {}: {}", client_addr, e);
                     }
                     drop(permit);
                 });
             }
             Err(e) => {
-                log_error!("Failed to accept DNS TCP connection: {}", e);
+                log::error!("Failed to accept DNS TCP connection: {}", e);
             }
         }
     }
@@ -127,7 +138,7 @@ async fn handle_tcp_connection(
             }
             Ok(Err(e)) => return Err(format!("Failed to read DNS TCP message: {}", e)),
             Err(_) => {
-                log_info!(
+                log::info!(
                     "Closing idle DNS TCP connection from {} after {:?}",
                     client_addr,
                     TCP_IDLE_TIMEOUT
@@ -149,7 +160,7 @@ async fn dispatch_tcp_query(
     query_data: &[u8],
 ) -> Result<(), String> {
     if message::is_response(query_data) {
-        log_warn!("Ignoring a DNS TCP response from {}", client_addr);
+        log::warn!("Ignoring a DNS TCP response from {}", client_addr);
         return Ok(());
     }
 
@@ -162,13 +173,13 @@ async fn dispatch_tcp_query(
     let query = match message::ParsedQuery::parse(query_data) {
         Ok(query) => query,
         Err(e) => {
-            log_warn!("Failed to parse DNS TCP query from {}: {}", client_addr, e);
+            log::warn!("Failed to parse DNS TCP query from {}: {}", client_addr, e);
             return Ok(());
         }
     };
 
     if query.opcode != Opcode::QUERY {
-        log_info!(
+        log::info!(
             "Refusing DNS TCP opcode {:?} from {}",
             query.opcode,
             client_addr
@@ -184,12 +195,12 @@ async fn dispatch_tcp_query(
             .await
             .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
     } else if server::is_xfr_query_type(query.qtype) {
-        server::handle_tcp_query(stream, client_addr, &query, query_data)
+        server::handle_tcp_xfr(stream, client_addr, &query, query_data)
             .await
             .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
     } else {
         // bindizr answers secondaries, not resolvers.
-        log_info!(
+        log::info!(
             "Refusing out-of-scope DNS TCP query from {} (qtype={:?})",
             client_addr,
             query.qtype
@@ -214,7 +225,7 @@ async fn run_udp_server(socket: UdpSocket, stop: impl Future<Output = ()>) -> Re
         let received = tokio::select! {
             received = socket.recv_from(&mut buf) => received,
             () = &mut stop => {
-                log_info!("DNS UDP server stopping");
+                log::info!("DNS UDP server stopping");
                 return Ok(());
             }
         };
@@ -222,7 +233,7 @@ async fn run_udp_server(socket: UdpSocket, stop: impl Future<Output = ()>) -> Re
         let (len, client_addr) = match received {
             Ok(v) => v,
             Err(e) => {
-                log_error!("Failed to receive DNS UDP packet: {}", e);
+                log::error!("Failed to receive DNS UDP packet: {}", e);
                 continue;
             }
         };
@@ -230,7 +241,7 @@ async fn run_udp_server(socket: UdpSocket, stop: impl Future<Output = ()>) -> Re
         // Drop excess datagrams instead of queuing work; each handler holds its
         // permit until dispatch finishes.
         let Ok(permit) = in_flight.clone().try_acquire_owned() else {
-            log_warn!(
+            log::warn!(
                 "Dropping DNS UDP query from {}: {} already in flight",
                 client_addr,
                 MAX_UDP_IN_FLIGHT
@@ -250,14 +261,14 @@ async fn run_udp_server(socket: UdpSocket, stop: impl Future<Output = ()>) -> Re
 /// Dispatch UDP UPDATE, SOA, and XFR queries, refusing unsupported query types.
 async fn dispatch_udp_query(socket: &UdpSocket, client_addr: SocketAddr, query_data: &[u8]) {
     if message::is_response(query_data) {
-        log_warn!("Ignoring a DNS UDP response from {}", client_addr);
+        log::warn!("Ignoring a DNS UDP response from {}", client_addr);
         return;
     }
 
     if server::nsupdate::is_nsupdate(query_data) {
         if let Err(e) = server::nsupdate::handle_udp_nsupdate(socket, query_data, client_addr).await
         {
-            log_error!("NSUPDATE UDP handler failed for {}: {}", client_addr, e);
+            log::error!("NSUPDATE UDP handler failed for {}: {}", client_addr, e);
         }
         return;
     }
@@ -267,7 +278,7 @@ async fn dispatch_udp_query(socket: &UdpSocket, client_addr: SocketAddr, query_d
     };
 
     if query.opcode != Opcode::QUERY {
-        log_info!(
+        log::info!(
             "Refusing DNS UDP opcode {:?} from {}",
             query.opcode,
             client_addr
@@ -278,15 +289,15 @@ async fn dispatch_udp_query(socket: &UdpSocket, client_addr: SocketAddr, query_d
 
     if query.qtype == Rtype::SOA {
         if let Err(e) = server::soa::handle_udp_soa(socket, client_addr, &query, query_data).await {
-            log_warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
+            log::warn!("Failed to handle SOA UDP query from {}: {}", client_addr, e);
         }
         return;
     }
 
     let response = if server::is_xfr_query_type(query.qtype) {
-        server::handle_udp_query(client_addr, &query, query_data).await
+        server::handle_udp_xfr(client_addr, &query, query_data).await
     } else {
-        log_info!(
+        log::info!(
             "Refusing out-of-scope DNS UDP query from {} (qtype={:?})",
             client_addr,
             query.qtype
@@ -299,6 +310,6 @@ async fn dispatch_udp_query(socket: &UdpSocket, client_addr: SocketAddr, query_d
 /// Send a DNS response datagram to the requesting peer.
 async fn send_udp_response(socket: &UdpSocket, client_addr: SocketAddr, response: &[u8]) {
     if let Err(e) = socket.send_to(response, client_addr).await {
-        log_warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);
+        log::warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);
     }
 }

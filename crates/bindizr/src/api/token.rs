@@ -46,7 +46,7 @@ impl TokenApi {
 
 #[derive(Deserialize)]
 pub(crate) struct TokenNameParam {
-    pub(crate) name: String,
+    name: String,
 }
 
 /// List all API tokens (secrets omitted).

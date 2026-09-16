@@ -6,12 +6,12 @@ use bindizr_core::{
 };
 use chrono::Utc;
 
-use super::{Cache, ZoneContent};
+use super::{Cache, CachedTransferContent};
 
 const MAX_RECORDS: usize = 500_000;
 
 /// Build cached zone content with the requested record count.
-fn zone_content(records: usize) -> ZoneContent {
+fn zone_content(records: usize) -> CachedTransferContent {
     let records = (0..records)
         .map(|i| Record {
             id: i as i32,
@@ -24,7 +24,7 @@ fn zone_content(records: usize) -> ZoneContent {
             zone_id: 1,
         })
         .collect();
-    ZoneContent {
+    CachedTransferContent {
         records: std::sync::Arc::new(records),
         dnssec_records: std::sync::Arc::new(Vec::new()),
     }

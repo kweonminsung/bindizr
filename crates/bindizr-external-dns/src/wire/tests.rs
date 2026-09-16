@@ -120,7 +120,7 @@ fn changes_to_bindizr_pairs_updates_and_maps_ttl() {
     }))
     .unwrap();
 
-    let bindizr = changes.to_bindizr().unwrap();
+    let bindizr = changes.to_bindizr_changes().unwrap();
 
     assert_eq!(bindizr.creates.len(), 1);
     assert_eq!(bindizr.creates[0].ttl, Some(300));
@@ -140,5 +140,5 @@ fn changes_to_bindizr_rejects_mismatched_update_pairs() {
     }))
     .unwrap();
 
-    assert!(changes.to_bindizr().is_err());
+    assert!(changes.to_bindizr_changes().is_err());
 }

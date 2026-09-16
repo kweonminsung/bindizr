@@ -18,26 +18,26 @@ pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
 pub struct Metrics {
     registry: Registry,
     pub database_up: IntGauge,
-    pub db_connections: IntGaugeVec,
-    pub db_connections_max: IntGauge,
+    db_connections: IntGaugeVec,
+    db_connections_max: IntGauge,
     pub zones_total: IntGauge,
     pub records_total: IntGauge,
     pub http_requests_total: IntCounterVec,
     pub http_request_duration_seconds: HistogramVec,
-    pub xfr_total: IntCounterVec,
-    pub soa_queries_total: IntCounterVec,
-    pub notify_sent_total: IntCounterVec,
-    pub nsupdate_requests_total: IntCounterVec,
-    pub zone_serial_bumps_total: IntCounter,
-    pub pruned_rows_total: IntCounterVec,
+    xfr_total: IntCounterVec,
+    soa_queries_total: IntCounterVec,
+    notify_sent_total: IntCounterVec,
+    nsupdate_requests_total: IntCounterVec,
+    zone_serial_bumps_total: IntCounter,
+    pruned_rows_total: IntCounterVec,
     pub dnssec_zones_total: IntGauge,
     pub dnssec_keys_total: IntGaugeVec,
     pub dnssec_rrsigs_expiring_total: IntGauge,
     pub dnssec_rrsigs_expired_total: IntGauge,
-    pub dnssec_maintenance_runs_total: IntCounterVec,
-    pub zone_cache_lookups_total: IntCounterVec,
-    pub zone_cache_evictions_total: IntCounter,
-    pub zone_cache_records: IntGauge,
+    dnssec_maintenance_runs_total: IntCounterVec,
+    zone_cache_lookups_total: IntCounterVec,
+    zone_cache_evictions_total: IntCounter,
+    zone_cache_records: IntGauge,
 }
 
 static METRICS: OnceLock<Metrics> = OnceLock::new();
@@ -275,20 +275,20 @@ impl Metrics {
         // event. Every label set here is small and fully known.
         for result in XfrResult::ALL {
             for xfr_type in ["axfr", "ixfr"] {
-                xfr_total.with_label_values(&[xfr_type, result.as_str()]);
+                xfr_total.with_label_values(&[xfr_type, result.label()]);
             }
         }
         for result in SoaResult::ALL {
-            soa_queries_total.with_label_values(&[result.as_str()]);
+            soa_queries_total.with_label_values(&[result.label()]);
         }
         for result in NsupdateResult::ALL {
-            nsupdate_requests_total.with_label_values(&[result.as_str()]);
+            nsupdate_requests_total.with_label_values(&[result.label()]);
         }
         for result in NotifyResult::ALL {
-            notify_sent_total.with_label_values(&[result.as_str()]);
+            notify_sent_total.with_label_values(&[result.label()]);
         }
         for result in MaintenanceResult::ALL {
-            dnssec_maintenance_runs_total.with_label_values(&[result.as_str()]);
+            dnssec_maintenance_runs_total.with_label_values(&[result.label()]);
         }
         for table in ["journal", "version"] {
             pruned_rows_total.with_label_values(&[table]);
@@ -349,8 +349,8 @@ impl XfrResult {
         Self::Error,
     ];
 
-    /// Return the text representation of this xfr result.
-    fn as_str(&self) -> &'static str {
+    /// The metric label value of this xfr result.
+    fn label(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Refused => "refused",
@@ -371,7 +371,7 @@ pub fn track_xfr(qtype: Rtype, result: XfrResult) {
     };
     metrics()
         .xfr_total
-        .with_label_values(&[xfr_type, result.as_str()])
+        .with_label_values(&[xfr_type, result.label()])
         .inc();
 }
 
@@ -385,8 +385,8 @@ pub enum SoaResult {
 impl SoaResult {
     const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Error];
 
-    /// Return the text representation of this SOA result.
-    fn as_str(&self) -> &'static str {
+    /// The metric label value of this SOA result.
+    fn label(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Refused => "refused",
@@ -401,7 +401,7 @@ impl SoaResult {
 pub fn track_soa(result: SoaResult) {
     metrics()
         .soa_queries_total
-        .with_label_values(&[result.as_str()])
+        .with_label_values(&[result.label()])
         .inc();
 }
 
@@ -429,8 +429,8 @@ impl NsupdateResult {
         Self::Rcode(Rcode::NOTIMP),
     ];
 
-    /// Return the text representation of this nsupdate result.
-    fn as_str(&self) -> &'static str {
+    /// The metric label value of this nsupdate result.
+    fn label(&self) -> &'static str {
         let rcode = match self {
             Self::TsigFailed => return "tsig_failed",
             Self::Rcode(rcode) => *rcode,
@@ -454,7 +454,7 @@ impl NsupdateResult {
 pub fn track_nsupdate(result: NsupdateResult) {
     metrics()
         .nsupdate_requests_total
-        .with_label_values(&[result.as_str()])
+        .with_label_values(&[result.label()])
         .inc();
 }
 
@@ -469,8 +469,8 @@ pub enum NotifyResult {
 impl NotifyResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::ResolveError];
 
-    /// Return the text representation of this notify result.
-    fn as_str(&self) -> &'static str {
+    /// The metric label value of this notify result.
+    fn label(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Error => "error",
@@ -483,7 +483,7 @@ impl NotifyResult {
 pub fn track_notify(result: NotifyResult) {
     metrics()
         .notify_sent_total
-        .with_label_values(&[result.as_str()])
+        .with_label_values(&[result.label()])
         .inc();
 }
 
@@ -516,8 +516,8 @@ pub enum MaintenanceResult {
 impl MaintenanceResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::Panic];
 
-    /// Return the text representation of this maintenance result.
-    fn as_str(&self) -> &'static str {
+    /// The metric label value of this maintenance result.
+    fn label(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Error => "error",
@@ -530,7 +530,7 @@ impl MaintenanceResult {
 pub fn track_dnssec_maintenance(result: MaintenanceResult) {
     metrics()
         .dnssec_maintenance_runs_total
-        .with_label_values(&[result.as_str()])
+        .with_label_values(&[result.label()])
         .inc();
 }
 

@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::zone_version::ZoneVersion,
-    repository::{LockLevel, RepositoryTx, ZoneVersionRepository, sql::lock_clause},
+    repository::{LockLevel, RepositoryTx, ZoneVersionRepository},
 };
 
 /// Hides serials whose journal carries only signer-generated changes
@@ -202,7 +202,7 @@ impl ZoneVersionRepository for MySqlZoneVersionRepository {
             SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
             FROM zone_versions
             WHERE zone_id = ? AND serial = ?
-            "#, lock_clause(lock_level))),
+            "#, lock_level.clause())),
         )
         .bind(zone_id)
         .bind(serial)

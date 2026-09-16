@@ -8,7 +8,6 @@ use crate::{
     database::repository::LockLevel,
     dnssec::{DnssecService, rollover::promotable_sep_key_ids},
     error::ServiceError,
-    log_warn,
     repository::RepositoryService,
     zone::version::ChangeSubject,
 };
@@ -47,7 +46,7 @@ pub(crate) async fn prune_zone_history_by_zone_id(
 /// Re-sign one zone in its own transaction, bumping the serial only when the
 /// pass actually replaced signatures. `None` when there was nothing to do
 /// (zone deleted or unsigned meanwhile, or a concurrent mutation re-signed it).
-pub(crate) async fn sign_zone_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
+pub(crate) async fn resign_zone_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to sign zone").await?;
     let result = async {
         let Some((zone, policy, keys)) =
@@ -190,7 +189,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
         let delegation = match DnssecService::probe_delegation(&zone, &keys).await {
             Ok(delegation) => delegation,
             Err(e) => {
-                log_warn!(
+                log::warn!(
                     "Parent of zone {} could not be asked for its DS, so the rollover waits: {}",
                     zone.name.as_str(),
                     e.message
@@ -206,7 +205,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             .filter(|key| awaiting.contains(&key.id));
         if !confirmed.clone().all(|key| key.ds_published) {
             if confirmed.clone().any(|key| key.ds_digest_unsupported) {
-                log_warn!(
+                log::warn!(
                     "Parent of zone {} answers only in a DS digest bindizr cannot compute, so \
                      the rollover waits",
                     zone.name.as_str()
@@ -242,7 +241,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
 /// either another key of that algorithm still signs zone data, or the whole
 /// algorithm is leaving at once (RFC 6840, Section 5.11 keeps an algorithm's
 /// DNSKEYs and its signatures together).
-pub(crate) fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<i32> {
+fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<i32> {
     keys.iter()
         .filter(|key| {
             if key.state != DnssecKeyState::Retired || key.eligible_at > now {

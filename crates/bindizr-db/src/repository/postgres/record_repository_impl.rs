@@ -9,8 +9,8 @@ use crate::{
     repository::{
         LockLevel, RecordFilter, RecordRepository, RepositoryTx,
         sql::{
-            apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern, lock_clause,
-            name_like_types_sql, record_order_by_sql, trim_partial_value,
+            apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern,
+            name_like_types_sql, partial_term,
         },
     },
 };
@@ -165,7 +165,7 @@ impl RecordRepository for PostgresRecordRepository {
     ) -> Result<Option<Record>, DatabaseError> {
         let postgres_tx = tx.as_postgres()?;
 
-        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1{}",lock_clause(lock_level))))
+        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1{}",lock_level.clause())))
             .bind(id)
             .fetch_optional(&mut **postgres_tx)
             .await?;
@@ -184,7 +184,7 @@ impl RecordRepository for PostgresRecordRepository {
 
         let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
             format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name, id{}",
-            lock_clause(lock_level),
+            lock_level.clause(),
         )))
         .bind(zone_id)
         .fetch_all(&mut **postgres_tx)
@@ -207,7 +207,7 @@ impl RecordRepository for PostgresRecordRepository {
         // its own row, and the bare column lets idx_records_zone_name apply.
         let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
             format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name, id{}",
-            lock_clause(lock_level),
+            lock_level.clause(),
         )))
         .bind(zone_id)
         .bind(name)
@@ -266,7 +266,7 @@ impl RecordRepository for PostgresRecordRepository {
                 sql.push_str(&format!("${}", i + 2));
             }
             sql.push(')');
-            sql.push_str(lock_clause(lock_level));
+            sql.push_str(lock_level.clause());
 
             let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
             for name in chunk {
@@ -284,13 +284,13 @@ impl RecordRepository for PostgresRecordRepository {
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-        let value = filter.value.as_deref().map(trim_partial_value);
+        let value = filter.value.as_deref().map(partial_term);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
 
-        let order_by = record_order_by_sql(filter.sort, filter.order);
+        let order_by = filter.sort.order_by_sql(filter.order);
         let grant_match = grant_record_match_sql("r", Some("record_type"), concat_pipes);
         let records = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
@@ -378,7 +378,7 @@ impl RecordRepository for PostgresRecordRepository {
     /// Count records matching the filter.
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-        let value = filter.value.as_deref().map(trim_partial_value);
+        let value = filter.value.as_deref().map(partial_term);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();

@@ -44,7 +44,7 @@ pub(crate) const MAX_TSIG_RR: usize =
     (MAX_DOMAIN_LEN + 2) + (2 + 2 + 4 + 2) + (13 + 6 + 2 + 2 + 64 + 2 + 2 + 2 + 6);
 
 /// Bytes a signed message must leave for its TSIG record.
-pub fn signature_len(signer: &TransferSigner) -> usize {
+pub(crate) fn signature_len(signer: &TransferSigner) -> usize {
     usize::from(signer.key().compose_len())
 }
 
@@ -61,31 +61,34 @@ impl KeyStore for DbKeyStore {
     }
 }
 
-/// Converts a stored TSIG key into a `domain` signing key.
-pub fn to_domain_key(key: &TsigKey) -> Result<Arc<Key>, TsigError> {
-    let name = KeyName::from_str(&key.name)
-        .map_err(|e| TsigError::Internal(format!("invalid TSIG key name '{}': {}", key.name, e)))?;
-
-    let algorithm = match key.algorithm {
-        TsigAlgorithm::HmacSha256 => Algorithm::Sha256,
-        TsigAlgorithm::HmacSha384 => Algorithm::Sha384,
-        TsigAlgorithm::HmacSha512 => Algorithm::Sha512,
-    };
-
-    let secret = base64::engine::general_purpose::STANDARD
-        .decode(&key.secret)
-        .map_err(|e| {
-            TsigError::Internal(format!("stored TSIG secret is not valid base64: {}", e))
+impl TsigKey {
+    /// Convert this stored TSIG key into a `domain` signing key.
+    pub fn to_domain_key(&self) -> Result<Arc<Key>, TsigError> {
+        let name = KeyName::from_str(&self.name).map_err(|e| {
+            TsigError::Internal(format!("invalid TSIG key name '{}': {}", self.name, e))
         })?;
-    if secret.is_empty() {
-        return Err(TsigError::Internal(
-            "stored TSIG secret decodes to an empty key".to_string(),
-        ));
-    }
 
-    Key::new(algorithm, &secret, name, None, None)
-        .map(Arc::new)
-        .map_err(|e| TsigError::Internal(format!("invalid TSIG key '{}': {}", key.name, e)))
+        let algorithm = match self.algorithm {
+            TsigAlgorithm::HmacSha256 => Algorithm::Sha256,
+            TsigAlgorithm::HmacSha384 => Algorithm::Sha384,
+            TsigAlgorithm::HmacSha512 => Algorithm::Sha512,
+        };
+
+        let secret = base64::engine::general_purpose::STANDARD
+            .decode(&self.secret)
+            .map_err(|e| {
+                TsigError::Internal(format!("stored TSIG secret is not valid base64: {}", e))
+            })?;
+        if secret.is_empty() {
+            return Err(TsigError::Internal(
+                "stored TSIG secret decodes to an empty key".to_string(),
+            ));
+        }
+
+        Key::new(algorithm, &secret, name, None, None)
+            .map(Arc::new)
+            .map_err(|e| TsigError::Internal(format!("invalid TSIG key '{}': {}", self.name, e)))
+    }
 }
 
 /// Verify a TSIG-signed request against the key it names (RFC 8945) and return

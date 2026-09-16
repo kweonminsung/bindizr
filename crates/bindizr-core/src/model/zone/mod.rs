@@ -53,7 +53,7 @@ impl Zone {
 
     /// Whether the record is the apex NS this zone's `mname` names. One
     /// such row must exist for the zone to stay self-consistent.
-    pub fn is_mname(&self, record_type: &RecordType, name: &OwnerName, value: &str) -> bool {
+    pub fn mname_matches(&self, record_type: &RecordType, name: &OwnerName, value: &str) -> bool {
         is_apex_ns(record_type, name)
             && matches!(
                 (decode_name_labels(value), decode_name_labels(&self.mname)),
@@ -85,7 +85,7 @@ impl Zone {
             || self.minimum_ttl != other.minimum_ttl
     }
 
-    /// The apex NS row that satisfies [`Self::is_mname`].
+    /// The apex NS row that satisfies [`Self::mname_matches`].
     pub fn mname_record(&self, ttl: i32) -> Record {
         Record {
             id: 0,

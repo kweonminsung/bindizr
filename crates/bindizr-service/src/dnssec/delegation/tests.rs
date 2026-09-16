@@ -42,11 +42,12 @@ fn csk() -> DnssecKey {
 
 /// The DS the parent would serve for `key`, in the digest type given.
 fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRr {
-    let apex = to_wire_name(zone().name.to_wire()).unwrap();
+    let apex = zone().name.to_wire_name().unwrap();
     DsRr {
         key_tag: key.key_tag as u16,
         digest_type,
-        rdata: ds_rdata_for(key, &apex, digest_type)
+        rdata: key
+            .ds_rdata(&apex, digest_type)
             .unwrap()
             .as_bytes()
             .to_vec(),
@@ -68,7 +69,7 @@ fn parent(answers: Vec<Option<DsRrset>>) -> ParentDs {
 
 /// Compute delegation information for a key and simulated parent answers.
 fn info(key: &DnssecKey, answers: Vec<Option<DsRrset>>) -> DnssecDelegationInfo {
-    to_delegation_info(&zone(), std::slice::from_ref(key), parent(answers)).unwrap()
+    build_delegation_info(&zone(), std::slice::from_ref(key), parent(answers)).unwrap()
 }
 
 /// Verify that promotion waits until every server serves the DS.
@@ -174,7 +175,7 @@ fn the_ttl_reported_is_the_longest_any_server_serves() {
     ];
 
     assert_eq!(
-        to_delegation_info(&zone(), &[key], parent(answers))
+        build_delegation_info(&zone(), &[key], parent(answers))
             .unwrap()
             .ds_ttl,
         Some(86400)

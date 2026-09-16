@@ -1,7 +1,7 @@
 use crate::common::{TestApp, assert_cli_failure_contains};
 
-/// The key tag of the zone's first signing key, read from `dnssec status`.
-async fn dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
+/// Read a test zone's DNSSEC status through the CLI.
+async fn read_dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
     let status = app
         .run_cli_success(&["dnssec", "status", zone_name, "--output", "json"])
         .await;
@@ -9,8 +9,8 @@ async fn dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
 }
 
 /// Read the active signing key tag for a test zone.
-async fn signing_key_tag(app: &TestApp, zone_name: &str) -> u64 {
-    dnssec_status(app, zone_name).await["dnssec"]["keys"][0]["key_tag"]
+async fn read_signing_key_tag(app: &TestApp, zone_name: &str) -> u64 {
+    read_dnssec_status(app, zone_name).await["dnssec"]["keys"][0]["key_tag"]
         .as_u64()
         .expect("status lists the signing key")
 }
@@ -36,7 +36,7 @@ async fn zone_dnssec_lifecycle_via_cli() {
 
     let status = app.run_cli_success(&["dnssec", "status", &zone_name]).await;
     assert!(status.contains("DNSSEC enabled"));
-    let key_tag = signing_key_tag(&app, &zone_name).await;
+    let key_tag = read_signing_key_tag(&app, &zone_name).await;
     assert!(key_tag > 0);
 
     assert!(status.contains(&format!("IN DS {key_tag} ")), "{status}");
@@ -190,7 +190,7 @@ async fn zone_dnssec_key_export_import_round_trip_via_cli() {
     ])
     .await;
 
-    let key_tag = signing_key_tag(&app, &zone_name).await;
+    let key_tag = read_signing_key_tag(&app, &zone_name).await;
 
     let exported = app
         .run_cli_success(&["dnssec", "keys", "export", &zone_name])
@@ -398,7 +398,7 @@ async fn a_zone_exported_mid_rollover_imports_still_mid_rollover() {
     app.run_cli_success(&["dnssec", "rollover", "start", &zone_name])
         .await;
 
-    let before = key_states(&app, &zone_name).await;
+    let before = read_key_states(&app, &zone_name).await;
     assert_eq!(before.len(), 2, "{before:?}");
     assert!(
         before.iter().any(|(_, state)| state == "active"),
@@ -423,7 +423,7 @@ async fn a_zone_exported_mid_rollover_imports_still_mid_rollover() {
 
     // Without the timing BIND writes into the private files, both keys would
     // land active and the rollover would be gone.
-    assert_eq!(key_states(&app, &zone_name).await, before);
+    assert_eq!(read_key_states(&app, &zone_name).await, before);
     let refused = app
         .run_cli(&["dnssec", "rollover", "start", &zone_name])
         .await;
@@ -433,8 +433,8 @@ async fn a_zone_exported_mid_rollover_imports_still_mid_rollover() {
 }
 
 /// Each key's `(tag, state)` from `dnssec status`, sorted so two runs compare.
-async fn key_states(app: &TestApp, zone_name: &str) -> Vec<(u64, String)> {
-    let mut states: Vec<(u64, String)> = dnssec_status(app, zone_name).await["dnssec"]["keys"]
+async fn read_key_states(app: &TestApp, zone_name: &str) -> Vec<(u64, String)> {
+    let mut states: Vec<(u64, String)> = read_dnssec_status(app, zone_name).await["dnssec"]["keys"]
         .as_array()
         .expect("status lists the keys")
         .iter()

@@ -1,7 +1,6 @@
 //! Assembling the status a signed zone reports: its policy, key inventory,
 //! and the DS records the parent needs.
 
-use bindizr_core::dns::dnssec::{ds_rdata_for, to_wire_name};
 use chrono::{DateTime, Duration, Utc};
 
 use super::DnssecService;
@@ -63,7 +62,7 @@ impl DnssecService {
     /// Signatures already past their expiration across every zone; any at all
     /// mean resolvers are failing part of one right now.
     pub async fn count_rrsigs_expired(now: DateTime<Utc>) -> Result<u64, ServiceError> {
-        RepositoryService::count_rrsig_dnssec_records_expired(now).await
+        RepositoryService::count_rrsig_dnssec_records_expired_before(now).await
     }
 }
 
@@ -143,10 +142,13 @@ pub(crate) async fn build_status_tx(
 }
 
 /// The key's DS form, decoded from the same RDATA the CDS records carry.
-pub(crate) fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
-    let apex = to_wire_name(zone.name.to_wire())
+fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceError> {
+    let apex = zone
+        .name
+        .to_wire_name()
         .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
-    let rdata = ds_rdata_for(key, &apex, key.algorithm.ds_digest_type())
+    let rdata = key
+        .ds_rdata(&apex, key.algorithm.ds_digest_type())
         .map_err(ServiceError::dnssec_signing_failed)?;
     let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
 

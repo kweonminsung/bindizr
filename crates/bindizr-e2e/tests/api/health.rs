@@ -8,7 +8,7 @@ use crate::common::{TestApp, TestAppOptions};
 async fn health_reports_healthy_with_database_available() {
     let app = TestApp::start().await;
 
-    let (status, body) = app.request(Method::GET, "/health", None).await;
+    let (status, body) = app.send_request(Method::GET, "/health", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "healthy");
 }
@@ -19,7 +19,7 @@ async fn health_reports_healthy_with_database_available() {
 async fn home_reports_running_message() {
     let app = TestApp::start().await;
 
-    let (status, body) = app.request(Method::GET, "/", None).await;
+    let (status, body) = app.send_request(Method::GET, "/", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["message"], "bindizr API running");
 }
@@ -37,7 +37,7 @@ async fn the_api_serves_over_tls_and_nothing_over_plain_http() {
 
     // The harness reached the daemon over https to get here, certificate
     // verified against the pair generated for this run.
-    let (status, body) = app.request(Method::GET, "/health", None).await;
+    let (status, body) = app.send_request(Method::GET, "/health", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["status"], "healthy", "{body}");
 

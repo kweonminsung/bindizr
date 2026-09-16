@@ -10,8 +10,7 @@ use bindizr_core::{
         is_catalog_zone,
         message::{ParsedQuery, Rcode},
         tsig::{
-            RequestSignature, TransferSigner, TsigError, request_signature, to_domain_key,
-            verify_tsig_sequence,
+            RequestSignature, TransferSigner, TsigError, request_signature, verify_tsig_sequence,
         },
     },
     model::tsig_key::TsigKey,
@@ -110,10 +109,10 @@ pub(crate) async fn authenticate_transfer(
         .map_err(|e| TransferRefusal::refused(format!("failed to load TSIG key: {}", e), None))?;
     let domain_key = key
         .as_ref()
-        .map(to_domain_key)
+        .map(TsigKey::to_domain_key)
         .transpose()
-        .map_err(to_refusal)?;
-    let signer = verify_tsig_sequence(query_data, domain_key).map_err(to_refusal)?;
+        .map_err(TransferRefusal::from)?;
+    let signer = verify_tsig_sequence(query_data, domain_key).map_err(TransferRefusal::from)?;
 
     let key = key.expect("verification succeeded, so the key is known");
     if is_catalog_zone(zone_name) && !key.is_global {
@@ -131,16 +130,18 @@ pub(crate) async fn authenticate_transfer(
     })
 }
 
-/// Translate a TSIG error into a transfer refusal with its required response.
-fn to_refusal(error: TsigError) -> TransferRefusal {
-    match error {
-        TsigError::Failed { message, response } => TransferRefusal {
-            reason: message,
-            response: Some(response),
-            signer: None,
-        },
-        TsigError::Malformed(message) | TsigError::Internal(message) => {
-            TransferRefusal::refused(message, None)
+impl From<TsigError> for TransferRefusal {
+    /// Translate a TSIG error into a transfer refusal with its required response.
+    fn from(error: TsigError) -> Self {
+        match error {
+            TsigError::Failed { message, response } => TransferRefusal {
+                reason: message,
+                response: Some(response),
+                signer: None,
+            },
+            TsigError::Malformed(message) | TsigError::Internal(message) => {
+                TransferRefusal::refused(message, None)
+            }
         }
     }
 }

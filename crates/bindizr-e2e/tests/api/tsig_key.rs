@@ -4,9 +4,9 @@ use serde_json::json;
 use crate::common::TestApp;
 
 /// Create a named zone fixture through the API.
-async fn create_named_zone(app: &TestApp, zone_name: &str) {
+async fn create_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/zones",
             Some(json!({
@@ -27,7 +27,7 @@ async fn tsig_key_create_read_delete() {
     let app = TestApp::start().await;
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys",
             Some(json!({ "name": "update-key" })),
@@ -41,20 +41,20 @@ async fn tsig_key_create_read_delete() {
 
     // The generated secret is returned again on a single-key read...
     let (status, body) = app
-        .request(Method::GET, "/tsig-keys/update-key", None)
+        .send_request(Method::GET, "/tsig-keys/update-key", None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["secret"], generated_secret.as_str());
 
     // ...but omitted from the list response.
-    let (status, body) = app.request(Method::GET, "/tsig-keys", None).await;
+    let (status, body) = app.send_request(Method::GET, "/tsig-keys", None).await;
     assert_eq!(status, StatusCode::OK);
     let keys = body["items"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
     assert!(keys[0].get("secret").is_none());
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys",
             Some(json!({ "name": "update-key" })),
@@ -63,12 +63,12 @@ async fn tsig_key_create_read_delete() {
     assert_eq!(status, StatusCode::CONFLICT);
 
     let (status, _) = app
-        .request(Method::DELETE, "/tsig-keys/update-key", None)
+        .send_request(Method::DELETE, "/tsig-keys/update-key", None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .request(Method::GET, "/tsig-keys/update-key", None)
+        .send_request(Method::GET, "/tsig-keys/update-key", None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -80,7 +80,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
     let app = TestApp::start().await;
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys",
             Some(json!({
@@ -98,7 +98,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
     );
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys",
             Some(json!({ "name": "bad-secret", "secret": "not base64!!" })),
@@ -108,7 +108,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
 
     // Secrets under 16 decoded bytes are refused.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys",
             Some(json!({ "name": "short-secret", "secret": "c2VjcmV0" })),
@@ -119,7 +119,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
     // hmac-md5 is a valid TSIG algorithm on the wire (RFC 8945) but is
     // deliberately unsupported here.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys",
             Some(json!({ "name": "bad-alg", "algorithm": "hmac-md5" })),
@@ -135,7 +135,7 @@ async fn global_tsig_key_lifecycle() {
     let app = TestApp::start().await;
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys",
             Some(json!({ "name": "global-key", "global": true })),
@@ -145,7 +145,7 @@ async fn global_tsig_key_lifecycle() {
     assert_eq!(body["tsig_key"]["global"], true);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys",
             Some(json!({ "name": "scoped-key" })),
@@ -154,7 +154,7 @@ async fn global_tsig_key_lifecycle() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["tsig_key"]["global"], false);
 
-    let (status, body) = app.request(Method::GET, "/tsig-keys", None).await;
+    let (status, body) = app.send_request(Method::GET, "/tsig-keys", None).await;
     assert_eq!(status, StatusCode::OK);
     let keys = body["items"].as_array().unwrap();
     let global = keys.iter().find(|k| k["name"] == "global-key").unwrap();
@@ -162,10 +162,10 @@ async fn global_tsig_key_lifecycle() {
 
     // A global key already covers every zone, so it cannot be granted one.
     let zone_name = app.zone_name("global-key.example");
-    create_named_zone(&app, &zone_name).await;
+    create_zone(&app, &zone_name).await;
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tsig-keys/global-key/grants",
             Some(json!({ "zone_name": zone_name })),
@@ -175,12 +175,12 @@ async fn global_tsig_key_lifecycle() {
 
     // A global key holds no grants, so it deletes without a guard.
     let (status, _) = app
-        .request(Method::DELETE, "/tsig-keys/global-key", None)
+        .send_request(Method::DELETE, "/tsig-keys/global-key", None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .request(Method::DELETE, "/tsig-keys/scoped-key", None)
+        .send_request(Method::DELETE, "/tsig-keys/scoped-key", None)
         .await;
     assert_eq!(status, StatusCode::OK);
 }

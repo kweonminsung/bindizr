@@ -3,30 +3,27 @@ use chrono::{DateTime, Utc};
 
 use super::error::{ErrorCode, ServiceError};
 pub(crate) use crate::database::repository::RepositoryTx;
-use crate::{
-    database::{
-        get_api_token_repository, get_catalog_zone_state_repository, get_dnssec_key_repository,
-        get_dnssec_policy_repository, get_dnssec_record_repository,
-        get_dnssec_withdrawal_repository, get_record_repository, get_token_grant_repository,
-        get_tsig_grant_repository, get_tsig_key_repository, get_zone_change_repository,
-        get_zone_repository, get_zone_version_repository,
-        model::{
-            api_token::ApiToken,
-            dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
-            dnssec_policy::DnssecPolicy,
-            dnssec_record::{DnssecRecord, DnssecRecordWithZone},
-            record::{Record, RecordWithZone},
-            token_grant::TokenGrant,
-            tsig_grant::TsigGrant,
-            tsig_key::TsigKey,
-            zone::Zone,
-            zone_change::ZoneChange,
-            zone_version::ZoneVersion,
-        },
-        repository as db_repository,
-        repository::{DnssecRecordFilter, LockLevel, RecordFilter, ZoneFilter},
+use crate::database::{
+    get_api_token_repository, get_catalog_zone_state_repository, get_dnssec_key_repository,
+    get_dnssec_policy_repository, get_dnssec_record_repository, get_dnssec_withdrawal_repository,
+    get_record_repository, get_token_grant_repository, get_tsig_grant_repository,
+    get_tsig_key_repository, get_zone_change_repository, get_zone_repository,
+    get_zone_version_repository,
+    model::{
+        api_token::ApiToken,
+        dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
+        dnssec_policy::DnssecPolicy,
+        dnssec_record::{DnssecRecord, DnssecRecordWithZone},
+        record::{Record, RecordWithZone},
+        token_grant::TokenGrant,
+        tsig_grant::TsigGrant,
+        tsig_key::TsigKey,
+        zone::Zone,
+        zone_change::ZoneChange,
+        zone_version::ZoneVersion,
     },
-    log_error,
+    repository as db_repository,
+    repository::{DnssecRecordFilter, LockLevel, RecordFilter, ZoneFilter},
 };
 
 pub(crate) struct RepositoryService;
@@ -37,7 +34,7 @@ impl RepositoryService {
         internal_msg: &'static str,
     ) -> Result<RepositoryTx<'static>, ServiceError> {
         db_repository::begin_tx().await.map_err(|e| {
-            log_error!("Failed to begin transaction: {}", e);
+            log::error!("Failed to begin transaction: {}", e);
             ServiceError::internal(internal_msg)
         })
     }
@@ -48,7 +45,7 @@ impl RepositoryService {
         internal_msg: &'static str,
     ) -> Result<RepositoryTx<'static>, ServiceError> {
         db_repository::begin_read_tx().await.map_err(|e| {
-            log_error!("Failed to begin transaction: {}", e);
+            log::error!("Failed to begin transaction: {}", e);
             ServiceError::internal(internal_msg)
         })
     }
@@ -64,14 +61,14 @@ impl RepositoryService {
         match apply_result {
             Ok(value) => {
                 tx.commit().await.map_err(|e| {
-                    log_error!("Failed to commit transaction: {}", e);
+                    log::error!("Failed to commit transaction: {}", e);
                     E::from(ServiceError::internal(internal_msg))
                 })?;
                 Ok(value)
             }
             Err(err) => {
                 if let Err(e) = tx.rollback().await {
-                    log_error!("Failed to rollback transaction: {}", e);
+                    log::error!("Failed to rollback transaction: {}", e);
                 }
                 Err(err)
             }
@@ -500,12 +497,12 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
     }
 
-    /// Count signatures that have already expired.
-    pub(crate) async fn count_rrsig_dnssec_records_expired(
+    /// Count signatures whose expiration already passed `cutoff`.
+    pub(crate) async fn count_rrsig_dnssec_records_expired_before(
         cutoff: DateTime<Utc>,
     ) -> Result<u64, ServiceError> {
         get_dnssec_record_repository()
-            .count_expired(cutoff)
+            .count_expired_before(cutoff)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to count DNSSEC records: {}", e)))
     }
@@ -756,7 +753,8 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load versions: {}", e)))
     }
 
-    /// List zone versions for a zone.
+    /// List zone versions for a zone, only those a user change produced when
+    /// `user_changes_only`.
     pub(crate) async fn list_zone_versions(
         zone_id: i32,
         user_changes_only: bool,

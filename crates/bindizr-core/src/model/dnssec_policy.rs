@@ -82,3 +82,25 @@ pub struct DnssecPolicy {
     pub zsk_lifetime_days: i32,
     pub created_at: DateTime<Utc>,
 }
+
+impl DnssecPolicy {
+    /// Describe the policy's key layout for validation errors.
+    pub fn key_layout(&self) -> &'static str {
+        if self.split_keys {
+            "split KSK/ZSK keys"
+        } else {
+            "a single CSK"
+        }
+    }
+
+    /// The window the per-RRset expirations spread over, so a pass does not
+    /// come due for the whole zone at once and push an IXFR the size of it.
+    /// Half the room the policy leaves, which keeps even the earliest
+    /// signature outside its own refresh window.
+    pub fn expiration_jitter_secs(&self) -> i64 {
+        let validity = i64::from(self.signature_validity_days) * 86_400;
+        let refresh = i64::from(self.signature_refresh_days) * 86_400;
+
+        (validity - refresh).max(0) / 2
+    }
+}

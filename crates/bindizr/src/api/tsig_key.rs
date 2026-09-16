@@ -45,7 +45,7 @@ impl TsigKeyApi {
 
 #[derive(Deserialize)]
 pub(crate) struct TsigKeyNameParam {
-    pub(crate) name: String,
+    name: String,
 }
 
 /// List all TSIG keys (secrets omitted).

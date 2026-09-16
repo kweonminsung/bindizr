@@ -10,14 +10,6 @@ pub struct MxRecordValue<'a> {
 }
 
 impl<'a> MxRecordValue<'a> {
-    /// Whether a stored value plus its priority column denotes a null MX
-    /// (RFC 7505): priority 0 with target `.`.
-    pub fn is_null_value(value: &str, priority: Option<i32>) -> bool {
-        MxRecordValue::parse(value, priority)
-            .map(|parsed| parsed.is_null())
-            .unwrap_or(false)
-    }
-
     /// The value is the target host only; the priority comes from the priority
     /// field (default 10), never inline.
     pub fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
@@ -66,7 +58,7 @@ impl<'a> MxRecordValue<'a> {
     }
 
     /// The value column's form: the target host as a lowercase FQDN.
-    pub fn encoded(&self) -> String {
+    pub fn to_stored(&self) -> String {
         to_fqdn_lowercase(self.target)
     }
 }

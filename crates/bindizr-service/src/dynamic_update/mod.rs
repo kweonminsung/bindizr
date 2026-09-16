@@ -16,7 +16,6 @@ use crate::{
     RepositoryTx,
     dnssec::DnssecService,
     error::ServiceError,
-    log_error, log_info,
     model::{
         record::{Record, RecordType},
         tsig_key::TsigKey,
@@ -133,7 +132,7 @@ impl UpdateOp {
 /// A decoded UPDATE message: the zone it targets, the key that signed it, and
 /// the sections to evaluate and apply.
 pub struct DynamicUpdate {
-    pub zone_name: String,
+    pub zone_name: ZoneName,
     /// The verified signing key, or `None` for a request accepted unsigned.
     pub key: Option<TsigKey>,
     pub prerequisites: Vec<Prerequisite>,
@@ -151,17 +150,17 @@ impl DynamicUpdateService {
         let mut tx = RepositoryService::begin_tx("failed to begin NSUPDATE transaction").await?;
 
         let apply_result: Result<(bool, Zone, i32), DynamicUpdateError> = async {
-            let zone =
-                ZoneService::find_by_name_tx(&mut tx, &update.zone_name, LockLevel::Exclusive)
-                    .await?
-                    .ok_or_else(|| {
-                        DynamicUpdateError::NotZone(format!(
-                            "zone '{}' not found",
-                            update.zone_name
-                        ))
-                    })?;
+            let zone = ZoneService::find_by_name_tx(
+                &mut tx,
+                update.zone_name.as_str(),
+                LockLevel::Exclusive,
+            )
+            .await?
+            .ok_or_else(|| {
+                DynamicUpdateError::NotZone(format!("zone '{}' not found", update.zone_name))
+            })?;
 
-            authorize_key(
+            authorize_key_tx(
                 &mut tx,
                 &zone,
                 update.key.as_ref(),
@@ -177,7 +176,7 @@ impl DynamicUpdateService {
             let mut changed = false;
 
             for op in &update.updates {
-                changed |= apply_op(&mut tx, &zone, op, new_serial).await?;
+                changed |= apply_op_tx(&mut tx, &zone, op, new_serial).await?;
             }
 
             if changed {
@@ -202,7 +201,7 @@ impl DynamicUpdateService {
                 .await?;
 
         if changed {
-            log_info!(
+            log::info!(
                 "event=nsupdate_apply zone={} serial={}",
                 zone.name,
                 new_serial
@@ -212,7 +211,7 @@ impl DynamicUpdateService {
             // `dns.notify_mode` governs RFC 2136 writes too.
             if let Err(e) = crate::notify::send_notify_after_update(Some(zone.name.as_str())).await
             {
-                log_error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
+                log::error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
             }
         }
 
@@ -224,7 +223,7 @@ impl DynamicUpdateService {
 /// keys need a grant reaching every prerequisite and every update RR. `key`
 /// is `None` for an accepted unsigned request, which skips authorization
 /// entirely.
-async fn authorize_key(
+async fn authorize_key_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
     key: Option<&TsigKey>,
@@ -294,7 +293,7 @@ async fn authorize_key(
 }
 
 /// Apply one authorized dynamic update operation in the current transaction.
-async fn apply_op(
+async fn apply_op_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
     op: &UpdateOp,
@@ -361,7 +360,7 @@ async fn apply_op(
             Ok(true)
         }
         UpdateOp::DeleteRrset { name, record_type } => {
-            delete_matching(tx, zone, name, record_type.as_ref(), None, None, new_serial).await
+            delete_matching_tx(tx, zone, name, record_type.as_ref(), None, None, new_serial).await
         }
         UpdateOp::DeleteRr {
             name,
@@ -369,7 +368,7 @@ async fn apply_op(
             value,
             priority,
         } => {
-            delete_matching(
+            delete_matching_tx(
                 tx,
                 zone,
                 name,
@@ -385,7 +384,7 @@ async fn apply_op(
 
 /// Delete every record at `name` matching the given type and (optionally)
 /// rdata. `record_type` is `None` for a whole-name delete.
-async fn delete_matching(
+async fn delete_matching_tx(
     tx: &mut RepositoryTx<'_>,
     zone: &Zone,
     name: &str,

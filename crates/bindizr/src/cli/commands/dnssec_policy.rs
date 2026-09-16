@@ -1,4 +1,3 @@
-use bindizr_core::log_debug;
 use bindizr_service::types::{
     CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, PaginatedResponse,
     UpdateDnssecPolicyRequest,
@@ -11,7 +10,7 @@ use crate::{
         output::{DnssecPolicyRow, OutputFormat, print_response},
     },
     socket::{
-        client::DaemonSocketClient,
+        client,
         types::{DaemonCommandKind, DnssecPolicyNameParams, UpdateDnssecPolicyParams},
     },
 };
@@ -98,8 +97,6 @@ pub(crate) enum DnssecPolicyCommand {
 /// Handle the `dnssec-policy` subcommand by dispatching to the daemon over
 /// the socket.
 pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<(), CliError> {
-    let client = DaemonSocketClient::new();
-
     match subcommand {
         DnssecPolicyCommand::Create {
             name,
@@ -111,31 +108,28 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             zsk_lifetime_days,
             output,
         } => {
-            let res = client
-                .send_command(
-                    DaemonCommandKind::DnssecPolicyCreate,
-                    CreateDnssecPolicyRequest {
-                        name,
-                        algorithm,
-                        denial,
-                        split_keys,
-                        signature_validity_days,
-                        signature_refresh_days,
-                        zsk_lifetime_days,
-                    },
-                )
-                .await?;
+            let res = client::send_command(
+                DaemonCommandKind::CreateDnssecPolicy,
+                CreateDnssecPolicyRequest {
+                    name,
+                    algorithm,
+                    denial,
+                    split_keys,
+                    signature_validity_days,
+                    signature_refresh_days,
+                    zsk_lifetime_days,
+                },
+            )
+            .await?;
 
-            log_debug!("DNSSEC policy creation result: {:?}", res);
+            log::debug!("DNSSEC policy creation result: {:?}", res);
 
             print_policy(&res.data, output)?;
         }
         DnssecPolicyCommand::List { output } => {
-            let res = client
-                .send_command(DaemonCommandKind::DnssecPolicyList, ())
-                .await?;
+            let res = client::send_command(DaemonCommandKind::ListDnssecPolicies, ()).await?;
 
-            log_debug!("DNSSEC policy list result: {:?}", res);
+            log::debug!("DNSSEC policy list result: {:?}", res);
 
             print_response(
                 &res.data,
@@ -146,14 +140,13 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             )?;
         }
         DnssecPolicyCommand::Get { name, output } => {
-            let res = client
-                .send_command(
-                    DaemonCommandKind::DnssecPolicyGet,
-                    DnssecPolicyNameParams { name },
-                )
-                .await?;
+            let res = client::send_command(
+                DaemonCommandKind::GetDnssecPolicy,
+                DnssecPolicyNameParams { name },
+            )
+            .await?;
 
-            log_debug!("DNSSEC policy get result: {:?}", res);
+            log::debug!("DNSSEC policy get result: {:?}", res);
 
             print_policy(&res.data, output)?;
         }
@@ -164,33 +157,31 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             zsk_lifetime_days,
             output,
         } => {
-            let res = client
-                .send_command(
-                    DaemonCommandKind::DnssecPolicyUpdate,
-                    UpdateDnssecPolicyParams {
-                        name,
-                        request: UpdateDnssecPolicyRequest {
-                            signature_validity_days,
-                            signature_refresh_days,
-                            zsk_lifetime_days,
-                        },
+            let res = client::send_command(
+                DaemonCommandKind::UpdateDnssecPolicy,
+                UpdateDnssecPolicyParams {
+                    name,
+                    request: UpdateDnssecPolicyRequest {
+                        signature_validity_days,
+                        signature_refresh_days,
+                        zsk_lifetime_days,
                     },
-                )
-                .await?;
+                },
+            )
+            .await?;
 
-            log_debug!("DNSSEC policy update result: {:?}", res);
+            log::debug!("DNSSEC policy update result: {:?}", res);
 
             print_policy(&res.data, output)?;
         }
         DnssecPolicyCommand::Delete { name } => {
-            let res = client
-                .send_command(
-                    DaemonCommandKind::DnssecPolicyDelete,
-                    DnssecPolicyNameParams { name },
-                )
-                .await?;
+            let res = client::send_command(
+                DaemonCommandKind::DeleteDnssecPolicy,
+                DnssecPolicyNameParams { name },
+            )
+            .await?;
 
-            log_debug!("DNSSEC policy deletion result: {:?}", res);
+            log::debug!("DNSSEC policy deletion result: {:?}", res);
 
             println!("{}", res.message);
         }

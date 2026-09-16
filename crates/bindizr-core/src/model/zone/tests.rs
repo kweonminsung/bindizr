@@ -27,35 +27,35 @@ fn test_zone() -> Zone {
     }
 }
 
-/// Verify that `is_mname` matches the apex NS naming mname.
+/// Verify that `mname_matches` matches the apex NS naming mname.
 #[test]
 fn is_mname_matches_the_apex_ns_naming_mname() {
     let zone = test_zone();
 
-    assert!(zone.is_mname(&RecordType::NS, &OwnerName::apex(), "ns1.example.com"));
+    assert!(zone.mname_matches(&RecordType::NS, &OwnerName::apex(), "ns1.example.com"));
     // Trailing-dot and case differences name the same host.
-    assert!(zone.is_mname(&RecordType::NS, &OwnerName::apex(), "NS1.Example.Com."));
+    assert!(zone.mname_matches(&RecordType::NS, &OwnerName::apex(), "NS1.Example.Com."));
     // These take the stored owner name, which is relative and holds the apex
     // as the empty name; a spelled-out zone name is a label under it.
-    assert!(!zone.is_mname(
+    assert!(!zone.mname_matches(
         &RecordType::NS,
         &OwnerName::from_row("example.com."),
         "ns1.example.com"
     ));
 }
 
-/// Verify that `is_mname` rejects other rows.
+/// Verify that `mname_matches` rejects other rows.
 #[test]
 fn is_mname_rejects_other_rows() {
     let zone = test_zone();
 
-    assert!(!zone.is_mname(&RecordType::NS, &OwnerName::apex(), "ns2.example.com"));
-    assert!(!zone.is_mname(
+    assert!(!zone.mname_matches(&RecordType::NS, &OwnerName::apex(), "ns2.example.com"));
+    assert!(!zone.mname_matches(
         &RecordType::NS,
         &OwnerName::from_row("sub"),
         "ns1.example.com"
     ));
-    assert!(!zone.is_mname(&RecordType::A, &OwnerName::apex(), "ns1.example.com"));
+    assert!(!zone.mname_matches(&RecordType::A, &OwnerName::apex(), "ns1.example.com"));
 }
 
 /// Verify that `apex_ns_rrset_ttl` joins the existing apex NS RRSET.
@@ -98,7 +98,7 @@ fn mname_record_builds_the_apex_row_for_the_zone() {
     let zone = test_zone();
     let record = zone.mname_record(600);
 
-    assert!(zone.is_mname(&record.record_type, &record.name, &record.value));
+    assert!(zone.mname_matches(&record.record_type, &record.name, &record.value));
     assert!(record.name.is_apex());
     assert_eq!(record.ttl, 600);
     assert_eq!(record.zone_id, zone.id);

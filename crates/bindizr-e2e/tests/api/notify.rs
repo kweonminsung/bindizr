@@ -11,7 +11,7 @@ async fn notify_zone_all_and_bump_serial() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let (status, body) = app
-        .request(Method::POST, &format!("/zones/{zone_name}/notify"), None)
+        .send_request(Method::POST, &format!("/zones/{zone_name}/notify"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -19,19 +19,19 @@ async fn notify_zone_all_and_bump_serial() {
         format!("NOTIFY sent successfully for zone: {zone_name}")
     );
 
-    let (status, body) = app.request(Method::POST, "/notify", None).await;
+    let (status, body) = app.send_request(Method::POST, "/notify", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["message"], "NOTIFY sent successfully for all zones");
 
     let (status, before) = app
-        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     let before_serial = before["zone"]["serial"].as_i64().unwrap();
 
     // bump_serial makes secondaries transfer even when nothing changed.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/notify?bump_serial=true"),
             None,
@@ -44,7 +44,7 @@ async fn notify_zone_all_and_bump_serial() {
     );
 
     let (status, after) = app
-        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     let after_serial = after["zone"]["serial"].as_i64().unwrap();
@@ -52,7 +52,7 @@ async fn notify_zone_all_and_bump_serial() {
 
     let missing_zone_name = app.zone_name("missing.example.com");
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{missing_zone_name}/notify"),
             None,
@@ -84,13 +84,13 @@ async fn scoped_token_cannot_notify_the_catalog_zone() {
     app.set_auth_token(scoped_token);
 
     let (status, _) = app
-        .request(Method::POST, "/zones/catalog.bind/notify", None)
+        .send_request(Method::POST, "/zones/catalog.bind/notify", None)
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     app.set_auth_token(global_token);
     let (status, _) = app
-        .request(Method::POST, "/zones/catalog.bind/notify", None)
+        .send_request(Method::POST, "/zones/catalog.bind/notify", None)
         .await;
     assert_eq!(status, StatusCode::OK);
 }

@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres};
 use crate::{
     error::DatabaseError,
     model::zone_change::ZoneChange,
-    repository::{LockLevel, RepositoryTx, ZoneChangeRepository, sql::lock_clause},
+    repository::{LockLevel, RepositoryTx, ZoneChangeRepository},
 };
 
 pub(crate) struct PostgresZoneChangeRepository {
@@ -145,7 +145,7 @@ impl ZoneChangeRepository for PostgresZoneChangeRepository {
             FROM zone_journal
             WHERE zone_id = $1 AND serial > $2 AND serial <= $3
             ORDER BY serial, id
-            "#, lock_clause(lock_level)))
+            "#, lock_level.clause()))
         )
         .bind(zone_id)
         .bind(from_serial)

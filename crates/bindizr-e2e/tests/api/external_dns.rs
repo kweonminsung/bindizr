@@ -8,7 +8,7 @@ const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 /// Create a zone fixture through the API.
 async fn create_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/zones",
             Some(json!({
@@ -47,12 +47,12 @@ async fn external_dns_routes_are_not_registered_when_disabled() {
     let app = TestApp::start_local().await;
 
     let (status, _) = app
-        .request(Method::GET, "/external-dns/domains", None)
+        .send_request(Method::GET, "/external-dns/domains", None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (status, _) = app
-        .request(Method::POST, "/external-dns/changes", Some(json!({})))
+        .send_request(Method::POST, "/external-dns/changes", Some(json!({})))
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -80,7 +80,7 @@ async fn external_dns_domain_listing_reflects_token_grants() {
 
     // A global token sees every zone.
     let (status, body) = app
-        .request(Method::GET, "/external-dns/domains", None)
+        .send_request(Method::GET, "/external-dns/domains", None)
         .await;
     assert_eq!(status, StatusCode::OK);
     let domains = body["domains"].as_array().expect("domains array");
@@ -90,7 +90,7 @@ async fn external_dns_domain_listing_reflects_token_grants() {
     // A scoped token sees only its grants (this feeds the DomainFilter).
     app.set_auth_token(scoped_token);
     let (status, body) = app
-        .request(Method::GET, "/external-dns/domains", None)
+        .send_request(Method::GET, "/external-dns/domains", None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["domains"], json!([granted_zone]));
@@ -127,7 +127,7 @@ async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
     // first record outside the grant.
     app.set_auth_token(scoped_token);
     let (status, body) = app
-        .request(Method::GET, "/external-dns/domains", None)
+        .send_request(Method::GET, "/external-dns/domains", None)
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
@@ -148,7 +148,7 @@ async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
     ])
     .await;
     let (status, body) = app
-        .request(Method::GET, "/external-dns/domains", None)
+        .send_request(Method::GET, "/external-dns/domains", None)
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
@@ -169,7 +169,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     .await;
     let zone_name = app.zone_name("example.com");
     create_zone(&app, &zone_name).await;
-    let base_serial = app.zone_serial(&zone_name).await;
+    let base_serial = app.read_zone_serial(&zone_name).await;
 
     let create = json!({
         "creates": [
@@ -181,23 +181,23 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     });
 
     let (status, body) = app
-        .request(Method::POST, "/external-dns/changes", Some(create.clone()))
+        .send_request(Method::POST, "/external-dns/changes", Some(create.clone()))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["changed_zones"], json!([zone_name]));
     assert_eq!(body["records_added"], json!(3));
-    assert_eq!(app.zone_serial(&zone_name).await, base_serial + 1);
+    assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 1);
 
     // Same create again: no-op, no serial bump.
     let (status, body) = app
-        .request(Method::POST, "/external-dns/changes", Some(create))
+        .send_request(Method::POST, "/external-dns/changes", Some(create))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["changed_zones"], json!([]));
-    assert_eq!(app.zone_serial(&zone_name).await, base_serial + 1);
+    assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 1);
 
     let (status, body) = app
-        .request(Method::GET, "/external-dns/records", None)
+        .send_request(Method::GET, "/external-dns/records", None)
         .await;
     assert_eq!(status, StatusCode::OK);
     let app_fqdn = format!("app.{zone_name}");
@@ -213,7 +213,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
 
     // Update replacing one target: one more serial bump.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/external-dns/changes",
             Some(json!({
@@ -229,7 +229,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["records_added"], json!(1));
     assert_eq!(body["records_deleted"], json!(1));
-    assert_eq!(app.zone_serial(&zone_name).await, base_serial + 2);
+    assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 2);
 
     // Delete, then delete again as a no-op.
     let delete = json!({
@@ -237,18 +237,18 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
                      "values": ["192.0.2.1", "192.0.2.3"]}]
     });
     let (status, body) = app
-        .request(Method::POST, "/external-dns/changes", Some(delete.clone()))
+        .send_request(Method::POST, "/external-dns/changes", Some(delete.clone()))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["records_deleted"], json!(2));
-    assert_eq!(app.zone_serial(&zone_name).await, base_serial + 3);
+    assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 3);
 
     let (status, body) = app
-        .request(Method::POST, "/external-dns/changes", Some(delete))
+        .send_request(Method::POST, "/external-dns/changes", Some(delete))
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["changed_zones"], json!([]));
-    assert_eq!(app.zone_serial(&zone_name).await, base_serial + 3);
+    assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 3);
 }
 
 /// Verify that external DNS changes reject ungranted zones atomically.
@@ -268,14 +268,14 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
     let ungranted_zone = app.zone_name("blocked.com");
     create_zone(&app, &granted_zone).await;
     create_zone(&app, &ungranted_zone).await;
-    let base_serial = app.zone_serial(&granted_zone).await;
+    let base_serial = app.read_zone_serial(&granted_zone).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     grant_zone(&app, &granted_zone, &scoped_name).await;
 
     app.set_auth_token(scoped_token);
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/external-dns/changes",
             Some(json!({
@@ -296,9 +296,9 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
 
     // Nothing was applied for the granted zone either.
     app.set_auth_token(global_token);
-    assert_eq!(app.zone_serial(&granted_zone).await, base_serial);
+    assert_eq!(app.read_zone_serial(&granted_zone).await, base_serial);
     let (_, body) = app
-        .request(Method::GET, "/external-dns/records", None)
+        .send_request(Method::GET, "/external-dns/records", None)
         .await;
     assert!(record_values(&body, &format!("a.{granted_zone}"), "A").is_empty());
 }
@@ -327,7 +327,7 @@ async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent(
     // The name resolves to the (ungranted) child zone, never the parent.
     app.set_auth_token(scoped_token);
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/external-dns/changes",
             Some(json!({
@@ -346,7 +346,7 @@ async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent(
 
     // A name with no authoritative zone is rejected, not auto-created.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/external-dns/changes",
             Some(json!({
@@ -372,7 +372,7 @@ async fn external_dns_changes_enforce_record_validation() {
     create_zone(&app, &zone_name).await;
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/external-dns/changes",
             Some(json!({
@@ -385,7 +385,7 @@ async fn external_dns_changes_enforce_record_validation() {
 
     // CNAME exclusivity against the existing A record.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/external-dns/changes",
             Some(json!({
@@ -399,7 +399,7 @@ async fn external_dns_changes_enforce_record_validation() {
 
     // Unsupported record types are rejected explicitly.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/external-dns/changes",
             Some(json!({
@@ -551,7 +551,7 @@ async fn external_dns_record_listing_spans_read_pages() {
         })
         .collect();
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": zone_file, "mode": "upsert" })),
@@ -561,7 +561,7 @@ async fn external_dns_record_listing_spans_read_pages() {
     assert_eq!(body["applied"], true, "{body}");
 
     let (status, body) = app
-        .request(Method::GET, "/external-dns/records", None)
+        .send_request(Method::GET, "/external-dns/records", None)
         .await;
     assert_eq!(status, StatusCode::OK);
 

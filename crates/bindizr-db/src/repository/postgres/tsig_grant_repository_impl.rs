@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 use crate::{
     error::DatabaseError,
     model::tsig_grant::TsigGrant,
-    repository::{LockLevel, RepositoryTx, TsigGrantRepository, sql::lock_clause},
+    repository::{LockLevel, RepositoryTx, TsigGrantRepository},
 };
 
 pub(crate) struct PostgresTsigGrantRepository {
@@ -88,7 +88,7 @@ impl TsigGrantRepository for PostgresTsigGrantRepository {
 
         let grants = sqlx::query_as::<_, TsigGrant>(AssertSqlSafe(
             format!("SELECT id, zone_id, tsig_key_id, record_name_pattern, record_types, can_write, created_at FROM tsig_grants WHERE zone_id = $1 AND tsig_key_id = $2 ORDER BY id{}",
-            lock_clause(lock_level),
+            lock_level.clause(),
         )))
         .bind(zone_id)
         .bind(tsig_key_id)

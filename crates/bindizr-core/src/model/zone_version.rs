@@ -52,17 +52,33 @@ impl ChangeSource {
     }
 }
 
-impl TryFrom<String> for ChangeSource {
-    type Error = String;
+impl std::fmt::Display for ChangeSource {
+    /// Write the change source in its display form.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
-    /// Validate and convert the stored value into a change source.
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.as_str() {
+impl std::str::FromStr for ChangeSource {
+    type Err = String;
+
+    /// Parse the stored text of a change source.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
             "token" => Ok(ChangeSource::Token),
             "nsupdate" => Ok(ChangeSource::Nsupdate),
             "system" => Ok(ChangeSource::System),
             "local" => Ok(ChangeSource::Local),
             other => Err(format!("unknown change source '{}'", other)),
         }
+    }
+}
+
+impl TryFrom<String> for ChangeSource {
+    type Error = String;
+
+    /// Validate and convert the stored value into a change source.
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }

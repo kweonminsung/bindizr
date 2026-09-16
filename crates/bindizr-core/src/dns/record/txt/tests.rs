@@ -1,4 +1,4 @@
-use super::{TxtContent, TxtRecordValue};
+use super::{TxtContent, TxtRecordValue, to_quoted_charstr};
 
 /// Verify that raw TXT RDATA round-trips through the row form.
 #[test]
@@ -220,4 +220,17 @@ fn validate_rejects_data_that_cannot_fit_one_dns_message() {
             .validate()
             .is_ok()
     );
+}
+
+/// Verify that `to_quoted_charstr` escapes control and non-ASCII bytes.
+#[test]
+fn to_quoted_charstr_escapes_control_and_non_ascii_bytes() {
+    // RFC 1035, Section 5.1 spells such octets `\DDD`, and a raw NUL is
+    // what a PostgreSQL text column refuses.
+    assert_eq!(to_quoted_charstr(b"a\0b"), r#""a\000b""#);
+    assert_eq!(
+        to_quoted_charstr("caf\u{e9}".as_bytes()),
+        r#""caf\195\169""#
+    );
+    assert_eq!(to_quoted_charstr(br#"say "hi"\"#), r#""say \"hi\"\\""#);
 }

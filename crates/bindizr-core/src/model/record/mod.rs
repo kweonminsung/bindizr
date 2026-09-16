@@ -8,7 +8,7 @@ use crate::dns::{
     name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{
         ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
-        DnameRecordValue, DsRrValue, MxRecordValue, NaptrRecordValue, NsRecordValue,
+        DnameRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, NsRecordValue,
         PtrRecordValue, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtContent,
         TxtRecordValue,
     },
@@ -41,15 +41,15 @@ impl Record {
 /// A [`Record`] joined with the name of its owning zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RecordWithZone {
-    pub(crate) id: i32,
+    id: i32,
     #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
-    pub(crate) value: String,
-    pub(crate) ttl: i32,
-    pub(crate) priority: Option<i32>,
-    pub(crate) created_at: DateTime<Utc>,
+    value: String,
+    ttl: i32,
+    priority: Option<i32>,
+    created_at: DateTime<Utc>,
     pub zone_id: i32,
     #[sqlx(try_from = "String")]
     pub zone_name: ZoneName,
@@ -104,12 +104,14 @@ pub enum RecordType {
     SSHFP,
     TLSA,
 }
+
 impl std::fmt::Display for RecordType {
     /// Write the record type in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
+
 impl TryFrom<String> for RecordType {
     type Error = String;
 
@@ -174,6 +176,32 @@ impl std::str::FromStr for RecordType {
     }
 }
 
+impl TryFrom<Rtype> for RecordType {
+    type Error = String;
+
+    /// The RR types bindizr stores as user records, keyed by wire RR type.
+    /// SOA is excluded because it is managed through the zone's own fields.
+    fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
+        match rtype {
+            Rtype::A => Ok(RecordType::A),
+            Rtype::NS => Ok(RecordType::NS),
+            Rtype::CNAME => Ok(RecordType::CNAME),
+            Rtype::DNAME => Ok(RecordType::DNAME),
+            Rtype::PTR => Ok(RecordType::PTR),
+            Rtype::CAA => Ok(RecordType::CAA),
+            Rtype::DS => Ok(RecordType::DS),
+            Rtype::SSHFP => Ok(RecordType::SSHFP),
+            Rtype::TLSA => Ok(RecordType::TLSA),
+            Rtype::MX => Ok(RecordType::MX),
+            Rtype::NAPTR => Ok(RecordType::NAPTR),
+            Rtype::TXT => Ok(RecordType::TXT),
+            Rtype::AAAA => Ok(RecordType::AAAA),
+            Rtype::SRV => Ok(RecordType::SRV),
+            _ => Err(format!("unsupported record type: {}", rtype)),
+        }
+    }
+}
+
 impl RecordType {
     /// Return the record type's presentation-format mnemonic (e.g. `"A"`).
     pub fn as_str(&self) -> &'static str {
@@ -192,28 +220,6 @@ impl RecordType {
             RecordType::PTR => "PTR",
             RecordType::SSHFP => "SSHFP",
             RecordType::TLSA => "TLSA",
-        }
-    }
-
-    /// The RR types bindizr stores as user records, keyed by wire RR type.
-    /// SOA is excluded because it is managed through the zone's own fields.
-    pub fn from_rtype(rtype: Rtype) -> Result<RecordType, String> {
-        match rtype {
-            Rtype::A => Ok(RecordType::A),
-            Rtype::NS => Ok(RecordType::NS),
-            Rtype::CNAME => Ok(RecordType::CNAME),
-            Rtype::DNAME => Ok(RecordType::DNAME),
-            Rtype::PTR => Ok(RecordType::PTR),
-            Rtype::CAA => Ok(RecordType::CAA),
-            Rtype::DS => Ok(RecordType::DS),
-            Rtype::SSHFP => Ok(RecordType::SSHFP),
-            Rtype::TLSA => Ok(RecordType::TLSA),
-            Rtype::MX => Ok(RecordType::MX),
-            Rtype::NAPTR => Ok(RecordType::NAPTR),
-            Rtype::TXT => Ok(RecordType::TXT),
-            Rtype::AAAA => Ok(RecordType::AAAA),
-            Rtype::SRV => Ok(RecordType::SRV),
-            _ => Err(format!("unsupported record type: {}", rtype)),
         }
     }
 
@@ -251,7 +257,7 @@ impl RecordType {
             RecordType::CAA => CaaRecordValue::parse(value)?.validate(),
             RecordType::CNAME => CnameRecordValue::parse(value).map(|_| ()),
             RecordType::DNAME => DnameRecordValue::parse(value).map(|_| ()),
-            RecordType::DS => DsRrValue::parse(value)?.validate(),
+            RecordType::DS => DsRecordValue::parse(value)?.validate(),
             RecordType::MX => MxRecordValue::parse(value, priority)?.validate(),
             RecordType::NAPTR => NaptrRecordValue::parse(value)?.validate(),
             // Stored TXT is always the presentation form.
@@ -308,7 +314,7 @@ impl RecordType {
             RecordType::CNAME | RecordType::DNAME | RecordType::NS | RecordType::PTR => {
                 Cow::Owned(to_fqdn_lowercase(value))
             }
-            RecordType::DS => DsRrValue::parse(value)
+            RecordType::DS => DsRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
             RecordType::MX => MxRecordValue::parse(value, fallback_priority)
@@ -347,14 +353,14 @@ impl RecordType {
             RecordType::CNAME => CnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::DNAME => DnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::DS => {
-                let parsed = DsRrValue::parse(trimmed)?;
+                let parsed = DsRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
             RecordType::MX => {
                 let parsed = MxRecordValue::parse(trimmed, priority)?;
                 parsed.validate()?;
-                Ok(parsed.encoded())
+                Ok(parsed.to_stored())
             }
             RecordType::NAPTR => {
                 let parsed = NaptrRecordValue::parse(trimmed)?;
@@ -366,7 +372,7 @@ impl RecordType {
             RecordType::SRV => {
                 let parsed = SrvRecordValue::parse(trimmed, priority)?;
                 parsed.validate()?;
-                Ok(parsed.encoded())
+                Ok(parsed.to_stored())
             }
             RecordType::PTR => PtrRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
             RecordType::SSHFP => {
@@ -403,7 +409,7 @@ impl RecordType {
     }
 
     /// Whether this type's display form is a domain name.
-    pub(crate) fn is_name_like(&self) -> bool {
+    fn is_name_like(&self) -> bool {
         NAME_LIKE_RECORD_TYPES.contains(self)
     }
 
