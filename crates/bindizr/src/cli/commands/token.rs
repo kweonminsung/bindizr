@@ -21,6 +21,10 @@ use crate::{
 #[derive(Subcommand, Debug)]
 pub(crate) enum TokenCommand {
     /// Create a new API token; the plaintext token is shown once, here
+    #[command(after_help = "\
+Examples:
+  bindizr token create --name admin --global
+  bindizr token create --name ci --expires-in-days 90 && bindizr token grant ci example.com")]
     Create {
         /// Unique name (letters, digits, '.', '_', '-'); how other commands refer to it
         #[arg(long, value_name = "TOKEN_NAME")]

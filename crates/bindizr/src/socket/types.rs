@@ -268,6 +268,16 @@ pub(crate) struct DaemonStatusResponse {
     /// Restart detection marker: exec keeps the PID, so a new start time is
     /// the only signal that the daemon was replaced.
     pub(crate) started_at_ms: u64,
+    pub(crate) api_url: String,
+    pub(crate) api_authentication: bool,
+    pub(crate) dns_addr: String,
+    pub(crate) database_type: String,
+    /// Configured secondary addresses.
+    pub(crate) secondaries: usize,
+    /// `None`, with `database_error` set, when the database did not answer;
+    /// the container health check still needs a running-daemon answer.
+    pub(crate) zones: Option<u64>,
+    pub(crate) database_error: Option<String>,
 }
 
 /// Daemon-side installation checks returned by the `Doctor` command.

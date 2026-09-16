@@ -139,6 +139,19 @@ fn from_toml_defaults_fields_of_an_empty_sub_table() {
     assert_eq!(parsed.dns.transfer_cache.max_records, 10);
 }
 
+/// Verify that `from_toml` rejects a key it does not know.
+#[test]
+fn from_toml_rejects_an_unknown_key() {
+    // A mistyped key would otherwise be dropped and the default applied.
+    let err = parse_config(&TestConfigToml {
+        dns_extra: "listen_prot = 5300",
+        ..Default::default()
+    })
+    .unwrap_err();
+
+    assert!(err.contains("unknown field `listen_prot`"), "{}", err);
+}
+
 /// Verify that `from_toml` defaults unselected database sections.
 #[test]
 fn from_toml_defaults_unselected_database_sections() {

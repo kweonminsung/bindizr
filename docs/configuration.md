@@ -35,7 +35,7 @@ would need a restart and leaves the running configuration alone.
 
 For manual installation, create the configuration file and adjust the values to
 match your environment. Commented-out keys show their default and can be left
-out.
+out; a key bindizr does not know is an error, so `config check` catches a typo.
 
 ```toml title="/etc/bindizr/bindizr.conf.toml"
 [api]

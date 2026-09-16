@@ -56,7 +56,7 @@ async fn handle_client(stream: UnixStream) {
 
         let raw_response = match parsed {
             Ok(cmd) => match cmd.command {
-                DaemonCommandKind::Status => status::status(),
+                DaemonCommandKind::Status => status::status().await,
                 DaemonCommandKind::Config => status::config(),
                 DaemonCommandKind::ReloadConfig => status::reload_config(),
                 DaemonCommandKind::CreateToken => token::create_token(&cmd.data).await,

@@ -48,6 +48,17 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     database::initialize().await.map_err(|e| e.to_string())?;
 
+    // A fresh install with authentication on answers 401 until a token exists.
+    if config::bindizr_config().api.require_authentication {
+        match service::token::TokenService::count_all().await {
+            Ok(0) => log::warn!(
+                "API authentication is on and no API tokens exist; create one with `bindizr token create --name admin --global`"
+            ),
+            Ok(_) => {}
+            Err(e) => log::warn!("Could not count API tokens: {}", e),
+        }
+    }
+
     service::dnssec::init_maintenance_scheduler();
 
     // DNS must be listening before startup NOTIFY can prompt secondary transfers.

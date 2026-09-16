@@ -23,6 +23,11 @@ use crate::{
 #[derive(Subcommand, Debug)]
 pub(crate) enum RecordCommand {
     /// Create a record
+    #[command(after_help = "\
+Examples:
+  bindizr record create -z example.com --name www --type A --value 192.0.2.1
+  bindizr record create -z example.com --name @ --type MX --priority 10 --value mail.example.com
+  bindizr record create -z example.com --name @ --type TXT --value v=spf1 --value ~all")]
     Create {
         /// Record name
         #[arg(long, value_name = "RECORD_NAME")]

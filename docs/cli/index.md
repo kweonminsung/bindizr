@@ -59,9 +59,9 @@ $ bindizr config reload
 ## Zones and records
 
 ```bash
-# Create a zone (the SOA serial starts at 1 unless --serial is given; --refresh,
-# --retry, --expire, and --minimum-ttl set the other SOA timers)
-$ bindizr zone create --name example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
+# Create a zone (--rname defaults to hostmaster@<zone>; the SOA serial starts at 1
+# unless --serial is given; --refresh, --retry, --expire, and --minimum-ttl set the other SOA timers)
+$ bindizr zone create --name example.com --mname ns1.example.com --default-ttl 3600
 
 # List, inspect, and delete zones
 $ bindizr zone list

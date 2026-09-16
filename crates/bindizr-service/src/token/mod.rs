@@ -86,6 +86,11 @@ impl TokenService {
         )
     }
 
+    /// Every API token, for the daemon's startup hint.
+    pub async fn count_all() -> Result<u64, ServiceError> {
+        Ok(RepositoryService::list_api_tokens().await?.len() as u64)
+    }
+
     /// Delete the API token with the given name, returning `NotFound` if it
     /// is absent.
     pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {

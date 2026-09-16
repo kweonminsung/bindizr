@@ -33,16 +33,20 @@ use crate::{
 #[derive(Subcommand, Debug)]
 pub(crate) enum ZoneCommand {
     /// Create a zone
+    #[command(after_help = "\
+Examples:
+  bindizr zone create --name example.com --mname ns1.example.com
+  bindizr zone create --name example.com --mname ns1.example.com --rname admin@example.com --default-ttl 300")]
     Create {
         /// Zone name
         #[arg(long, value_name = "ZONE_NAME")]
         name: String,
-        /// SOA MNAME (primary name server)
+        /// SOA MNAME: the zone's public primary nameserver, usually a BIND secondary (e.g. ns1.example.com)
         #[arg(long)]
         mname: String,
-        /// SOA RNAME, as an email address
+        /// SOA RNAME, as an email address (default: hostmaster@<zone>)
         #[arg(long)]
-        rname: String,
+        rname: Option<String>,
         /// Default record TTL (seconds; defaults to dns.zone_defaults.ttl)
         #[arg(long)]
         default_ttl: Option<i32>,
@@ -333,6 +337,8 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             description,
             output,
         } => {
+            // The RFC 2142 convention, so a first zone needs no address invented.
+            let rname = rname.unwrap_or_else(|| format!("hostmaster@{}", name));
             let data = client::send_command(
                 DaemonCommandKind::CreateZone,
                 CreateZoneRequest {

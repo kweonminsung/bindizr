@@ -71,6 +71,11 @@ pub(crate) enum TsigKeyCommand {
     },
     /// Grant a TSIG key rights in a zone: nsupdate, and — over the whole
     /// zone — transfers
+    #[command(after_help = "\
+Examples:
+  bindizr tsig-key grant update-key example.com
+  bindizr tsig-key grant acme-key example.com --pattern '_acme-challenge.*' --types TXT
+  bindizr tsig-key grant xfer-key example.com --read-only")]
     Grant {
         /// Name of an existing non-global key (global keys already cover every zone)
         #[arg(value_name = "KEY_NAME")]

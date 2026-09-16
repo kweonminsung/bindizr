@@ -12,6 +12,9 @@ async fn status_reports_running_daemon() {
     let status = app.run_cli_success(&["status"]).await;
     assert!(status.contains("BINDIZR STATUS"));
     assert!(status.contains("Running"));
+    assert!(status.contains("Uptime:"), "{status}");
+    assert!(status.contains("API: http://"), "{status}");
+    assert!(status.contains("zones)"), "{status}");
 }
 
 /// Verify that restart reexecs daemon in place.

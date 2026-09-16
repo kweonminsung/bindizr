@@ -26,6 +26,7 @@ static CONFIG_PATH: OnceLock<String> = OnceLock::new();
 
 /// Top-level bindizr configuration.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BindizrConfig {
     pub api: ApiConfig,
     pub database: DatabaseConfig,
@@ -35,6 +36,7 @@ pub struct BindizrConfig {
 
 /// HTTP API server settings.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
@@ -66,6 +68,7 @@ fn default_metrics_enabled() -> bool {
 
 /// Database backend selection and per-backend connection settings.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
     #[serde(rename = "type")]
     pub database_type: DatabaseType,
@@ -114,24 +117,28 @@ impl std::str::FromStr for DatabaseType {
 
 /// MySQL connection settings.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct MysqlConfig {
     pub url: String,
 }
 
 /// SQLite connection settings.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SqliteConfig {
     pub file_path: String,
 }
 
 /// PostgreSQL connection settings.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostgresqlConfig {
     pub url: String,
 }
 
 /// DNS server settings; NOTIFY and the transfer cache sit in sub-tables.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DnsConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
@@ -162,6 +169,7 @@ pub struct DnsConfig {
 
 /// When NOTIFY reaches the secondaries.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NotifyConfig {
     #[serde(default = "default_notify_after_update")]
     pub after_update: bool,
@@ -194,6 +202,7 @@ impl Default for NotifyConfig {
 /// The cache of each zone's transfer content, keyed by serial, so repeated
 /// AXFRs skip the database read.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct TransferCacheConfig {
     #[serde(default = "default_transfer_cache_enabled")]
     pub enabled: bool,
@@ -216,6 +225,7 @@ impl Default for TransferCacheConfig {
 /// What a zone takes when its creation request leaves a field out. Only the
 /// creation reads these: afterwards the values are the zone's own columns.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ZoneDefaultsConfig {
     #[serde(default = "default_zone_ttl")]
     pub ttl: i32,
@@ -308,6 +318,7 @@ fn default_notify_timeout_secs() -> u64 {
 
 /// Logging settings.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct LoggingConfig {
     pub level: LogLevel,
 }

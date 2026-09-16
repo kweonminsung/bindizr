@@ -1,11 +1,12 @@
 use std::{
+    net::SocketAddr,
     process,
     sync::OnceLock,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use bindizr_core::config;
-use bindizr_service::error::ServiceError;
+use bindizr_service::{error::ServiceError, zone::ZoneService};
 
 use crate::socket::{
     server::to_response_data,
@@ -13,6 +14,9 @@ use crate::socket::{
 };
 
 static STARTED_AT_MS: OnceLock<u64> = OnceLock::new();
+
+/// A silent database must not keep status from answering.
+const DB_COUNT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Mark the daemon start time; restart detection compares it across execs.
 pub(crate) fn mark_start_time() {
@@ -25,13 +29,45 @@ pub(crate) fn mark_start_time() {
 }
 
 /// Return the daemon's current status as JSON.
-pub(crate) fn status() -> Result<DaemonResponse, ServiceError> {
-    let pid = Some(process::id());
-    let version = env!("CARGO_PKG_VERSION");
+pub(crate) async fn status() -> Result<DaemonResponse, ServiceError> {
+    let config = config::bindizr_config();
+    let (zones, database_error) =
+        match tokio::time::timeout(DB_COUNT_TIMEOUT, ZoneService::count_all()).await {
+            Ok(Ok(zones)) => (Some(zones), None),
+            Ok(Err(e)) => (None, Some(e.to_string())),
+            Err(_) => (
+                None,
+                Some(format!(
+                    "timed out after {} seconds",
+                    DB_COUNT_TIMEOUT.as_secs()
+                )),
+            ),
+        };
+    let scheme = if config.api.tls_files().is_some() {
+        "https"
+    } else {
+        "http"
+    };
     let status = DaemonStatusResponse {
-        pid,
-        version: version.to_string(),
+        pid: Some(process::id()),
+        version: env!("CARGO_PKG_VERSION").to_string(),
         started_at_ms: STARTED_AT_MS.get().copied().unwrap_or(0),
+        api_url: format!(
+            "{}://{}",
+            scheme,
+            SocketAddr::new(config.api.listen_addr, config.api.listen_port)
+        ),
+        api_authentication: config.api.require_authentication,
+        dns_addr: SocketAddr::new(config.dns.listen_addr, config.dns.listen_port).to_string(),
+        database_type: config.database.database_type.to_string(),
+        secondaries: config
+            .dns
+            .secondary_addrs
+            .split(',')
+            .filter(|entry| !entry.trim().is_empty())
+            .count(),
+        zones,
+        database_error,
     };
 
     let response = DaemonResponse {
