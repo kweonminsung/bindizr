@@ -35,7 +35,7 @@ fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> s
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_sees_and_writes_only_granted_zones() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -184,7 +184,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
 #[serial_test::serial(bindizr_e2e)]
 async fn token_grants_enforce_name_patterns_and_types() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -250,7 +250,7 @@ async fn token_grants_enforce_name_patterns_and_types() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -319,7 +319,7 @@ async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches(
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_without_grants_sees_nothing() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -351,7 +351,7 @@ async fn scoped_token_without_grants_sees_nothing() {
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -404,7 +404,7 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -440,7 +440,7 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
 #[serial_test::serial(bindizr_e2e)]
 async fn global_token_grant_management_over_http() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -522,7 +522,7 @@ async fn global_token_grant_management_over_http() {
 #[serial_test::serial(bindizr_e2e)]
 async fn tokens_self_grants_lists_the_bearers_own_grants() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -577,7 +577,7 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
 #[serial_test::serial(bindizr_e2e)]
 async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -622,7 +622,7 @@ async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_narrowed_grant_reads_only_what_it_may_write() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -713,7 +713,7 @@ async fn a_narrowed_grant_reads_only_what_it_may_write() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -766,7 +766,7 @@ async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_grants_pattern_and_types_narrow_the_count_too() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;

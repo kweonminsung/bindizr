@@ -57,7 +57,7 @@ pub(crate) async fn status() -> Result<DaemonResponse, ServiceError> {
             scheme,
             SocketAddr::new(config.api.listen_addr, config.api.listen_port)
         ),
-        api_authentication: config.api.require_authentication,
+        api_authentication: config.api.authentication.required,
         dns_addr: SocketAddr::new(config.dns.listen_addr, config.dns.listen_port).to_string(),
         database_type: config.database.database_type.to_string(),
         secondaries: config

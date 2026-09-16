@@ -40,7 +40,8 @@ pub struct BindizrConfig {
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
-    pub require_authentication: bool,
+    #[serde(default)]
+    pub authentication: AuthenticationConfig,
     /// Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
     #[serde(default = "default_metrics_enabled")]
     pub metrics_enabled: bool,
@@ -59,6 +60,27 @@ pub struct ApiConfig {
     pub tls_cert_file: Option<String>,
     #[serde(default)]
     pub tls_key_file: Option<String>,
+}
+
+/// Who the API answers: whether a token is required, and the first one.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthenticationConfig {
+    pub required: bool,
+    /// Secret of a global token created at startup when the database holds
+    /// none; ignored once any token exists.
+    #[serde(default)]
+    pub initial_token: Option<String>,
+}
+
+impl Default for AuthenticationConfig {
+    /// Build the default authentication settings.
+    fn default() -> Self {
+        Self {
+            required: true,
+            initial_token: None,
+        }
+    }
 }
 
 /// Return the default metrics enabled setting.
@@ -143,11 +165,6 @@ pub struct DnsConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
     pub secondary_addrs: String,
-    /// Accept unsigned nsupdate requests from any client, the way
-    /// `api.require_authentication = false` opens the API. Not recommended in
-    /// production; signed requests are always verified.
-    #[serde(default)]
-    pub nsupdate_allow_unsigned: bool,
     /// Days of zone history to keep (0 = unlimited): the IXFR journal and the
     /// versions rollback can reach. A secondary asking for a pruned serial
     /// falls back to AXFR.
@@ -160,11 +177,49 @@ pub struct DnsConfig {
     #[serde(default = "default_scheduler_interval_secs")]
     pub scheduler_interval_secs: u64,
     #[serde(default)]
+    pub nsupdate: NsupdateConfig,
+    #[serde(default)]
     pub notify: NotifyConfig,
     #[serde(default)]
     pub transfer_cache: TransferCacheConfig,
     #[serde(default)]
     pub zone_defaults: ZoneDefaultsConfig,
+}
+
+/// Who may send RFC 2136 updates: [`AuthenticationConfig`] for the DNS plane.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NsupdateConfig {
+    /// Require a TSIG signature; `false` accepts updates from any client, the
+    /// way `api.authentication.required = false` opens the API. Signed
+    /// requests are verified either way.
+    pub tsig_required: bool,
+    #[serde(default)]
+    pub initial_key: Option<InitialTsigKeyConfig>,
+}
+
+impl Default for NsupdateConfig {
+    /// Build the default nsupdate settings.
+    fn default() -> Self {
+        Self {
+            tsig_required: true,
+            initial_key: None,
+        }
+    }
+}
+
+/// A TSIG key created at startup when the database holds none. It is global:
+/// it may update every zone without a grant.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InitialTsigKeyConfig {
+    /// The name the client signs with, carried on the wire.
+    pub name: String,
+    /// Base64 HMAC secret, as the client has it.
+    pub secret: String,
+    /// `hmac-sha256` (the default), `hmac-sha384`, or `hmac-sha512`.
+    #[serde(default)]
+    pub algorithm: Option<String>,
 }
 
 /// When NOTIFY reaches the secondaries.

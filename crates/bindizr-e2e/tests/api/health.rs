@@ -29,7 +29,7 @@ async fn home_reports_running_message() {
 #[serial_test::serial(bindizr_e2e)]
 async fn the_api_serves_over_tls_and_nothing_over_plain_http() {
     let app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         tls: true,
         ..Default::default()
     })

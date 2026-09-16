@@ -41,6 +41,10 @@ pub struct ImportZoneRequest {
     /// file; they are counted as skipped and listed in `skipped_records`.
     #[serde(default)]
     pub skip_unsupported: bool,
+    /// Create the zone from the file's SOA when it does not exist yet.
+    /// Without this a missing zone is an error, so a typo creates nothing.
+    #[serde(default)]
+    pub create: bool,
 }
 
 /// Result of a zone import, including a summary and any validation errors.

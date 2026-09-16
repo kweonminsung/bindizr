@@ -62,7 +62,7 @@ async fn external_dns_routes_are_not_registered_when_disabled() {
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_domain_listing_reflects_token_grants() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })
@@ -101,7 +101,7 @@ async fn external_dns_domain_listing_reflects_token_grants() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })
@@ -256,7 +256,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_reject_ungranted_zones_atomically() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })
@@ -308,7 +308,7 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })
@@ -416,7 +416,7 @@ async fn external_dns_changes_enforce_record_validation() {
 #[serial_test::serial(bindizr_e2e)]
 async fn adapter_serves_webhook_protocol_with_scoped_token() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })

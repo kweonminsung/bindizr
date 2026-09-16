@@ -551,7 +551,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
 #[serial_test::serial(bindizr_e2e)]
 async fn dnssec_enable_requires_a_global_token() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..TestAppOptions::default()
     })
     .await;

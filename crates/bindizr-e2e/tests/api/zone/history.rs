@@ -392,7 +392,7 @@ async fn zone_rollback_rejects_bad_serials() {
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_versions_record_who_made_each_change() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;

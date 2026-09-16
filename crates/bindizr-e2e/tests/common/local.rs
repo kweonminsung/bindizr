@@ -126,10 +126,13 @@ fn write_config(
 [api]
 listen_addr = "127.0.0.1"
 listen_port = {api_port}
-require_authentication = {require_authentication}
 external_dns_enabled = {external_dns_enabled}
 openapi_enabled = {openapi_enabled}
 {tls}
+[api.authentication]
+required = {authentication_required}
+{initial_token}
+
 [database]
 type = "sqlite"
 
@@ -146,7 +149,10 @@ url = ""
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
 secondary_addrs = "{secondary_addrs}"
-nsupdate_allow_unsigned = {nsupdate_allow_unsigned}
+
+[dns.nsupdate]
+tsig_required = {nsupdate_tsig_required}
+{initial_key}
 
 [dns.notify]
 after_update = false
@@ -158,9 +164,18 @@ timeout_secs = 1
 level = "error"
 "#,
         db_path.display(),
-        require_authentication = options.require_authentication,
+        authentication_required = options.authentication_required,
+        initial_token = match &options.initial_token {
+            Some(secret) => format!("initial_token = \"{secret}\""),
+            None => String::new(),
+        },
         external_dns_enabled = options.external_dns_enabled,
-        nsupdate_allow_unsigned = options.nsupdate_allow_unsigned,
+        nsupdate_tsig_required = options.nsupdate_tsig_required,
+        initial_key = match &options.initial_key {
+            Some((name, secret)) =>
+                format!("\n[dns.nsupdate.initial_key]\nname = \"{name}\"\nsecret = \"{secret}\""),
+            None => String::new(),
+        },
         openapi_enabled = options.openapi_enabled,
         tls = match options.tls {
             true => {
@@ -182,7 +197,7 @@ level = "error"
 /// stderr, the only place a daemon that dies before listening says why.
 async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Result<(), String> {
     // /health sits outside the auth layer, so readiness ignores
-    // require_authentication.
+    // authentication_required.
     let health_url = format!("{base_url}/health");
     let mut attempts = 0;
     let failure = loop {

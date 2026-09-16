@@ -7,7 +7,7 @@ use crate::config::{
 /// sqlite config.
 struct TestConfigToml {
     api_listen_addr: &'static str,
-    require_authentication: bool,
+    authentication_required: bool,
     database_type: &'static str,
     /// Include the `[database.mysql]` / `[database.postgresql]` sections.
     unselected_databases: bool,
@@ -24,7 +24,7 @@ impl Default for TestConfigToml {
     fn default() -> Self {
         Self {
             api_listen_addr: "127.0.0.1",
-            require_authentication: false,
+            authentication_required: false,
             database_type: "sqlite",
             unselected_databases: true,
             secondary_addrs: "",
@@ -48,7 +48,9 @@ impl TestConfigToml {
 [api]
 listen_addr = "{api_listen_addr}"
 listen_port = {api_listen_port}
-require_authentication = {require_authentication}
+
+[api.authentication]
+required = {authentication_required}
 
 [database]
 type = "{database_type}"
@@ -65,7 +67,7 @@ secondary_addrs = "{secondary_addrs}"
 level = "debug"
 "#,
             api_listen_addr = self.api_listen_addr,
-            require_authentication = self.require_authentication,
+            authentication_required = self.authentication_required,
             database_type = self.database_type,
             secondary_addrs = self.secondary_addrs,
             dns_extra = self.dns_extra,
@@ -85,7 +87,7 @@ fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
 fn from_toml_accepts_valid_config() {
     let parsed = parse_config(&TestConfigToml {
         secondary_addrs: "127.0.0.1:53",
-        dns_extra: "nsupdate_allow_unsigned = true\n\n[dns.notify]\nafter_update = false\non_startup = true\nretries = 4\ntimeout_secs = 9",
+        dns_extra: "[dns.nsupdate]\ntsig_required = false\n\n[dns.notify]\nafter_update = false\non_startup = true\nretries = 4\ntimeout_secs = 9",
         ..Default::default()
     })
     .unwrap();
@@ -101,7 +103,7 @@ fn from_toml_accepts_valid_config() {
     assert!(parsed.dns.notify.on_startup);
     assert_eq!(parsed.dns.notify.retries, 4);
     assert_eq!(parsed.dns.notify.timeout_secs, 9);
-    assert!(parsed.dns.nsupdate_allow_unsigned);
+    assert!(!parsed.dns.nsupdate.tsig_required);
 }
 
 /// Verify that `from_toml` defaults missing optional fields.
@@ -119,7 +121,8 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.notify.timeout_secs, 3);
     assert!(parsed.dns.transfer_cache.enabled);
     assert_eq!(parsed.dns.transfer_cache.max_records, 500_000);
-    assert!(!parsed.dns.nsupdate_allow_unsigned);
+    assert!(parsed.dns.nsupdate.tsig_required);
+    assert!(parsed.dns.nsupdate.initial_key.is_none());
     assert_eq!(parsed.dns.zone_history_retention_days, 365);
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
     assert_eq!(parsed.logging.format, LogFormat::Text);
@@ -199,7 +202,7 @@ fn from_toml_rejects_empty_selected_database_url() {
 #[test]
 fn apply_env_overrides_replaces_config_values_before_validation() {
     let mut overridden = parse_config(&TestConfigToml {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .unwrap();
@@ -208,7 +211,8 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         .apply_env_overrides(|name| match name {
             "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
             "BINDIZR_API_LISTEN_PORT" => Some("8000".to_string()),
-            "BINDIZR_API_REQUIRE_AUTHENTICATION" => Some("false".to_string()),
+            "BINDIZR_API_AUTHENTICATION_REQUIRED" => Some("false".to_string()),
+            "BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN" => Some("a-16-plus-secret".to_string()),
             "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
             "BINDIZR_API_EXTERNAL_DNS_ENABLED" => Some("true".to_string()),
             "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
@@ -216,7 +220,9 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
             "BINDIZR_DNS_LISTEN_PORT" => Some("5353".to_string()),
             "BINDIZR_DNS_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
-            "BINDIZR_DNS_NSUPDATE_ALLOW_UNSIGNED" => Some("true".to_string()),
+            "BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED" => Some("false".to_string()),
+            "BINDIZR_DNS_NSUPDATE_INITIAL_KEY_NAME" => Some("update-key".to_string()),
+            "BINDIZR_DNS_NSUPDATE_INITIAL_KEY_SECRET" => Some("c2VjcmV0".to_string()),
             "BINDIZR_DNS_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
             "BINDIZR_DNS_NOTIFY_ON_STARTUP" => Some("true".to_string()),
             "BINDIZR_DNS_NOTIFY_BATCH_MS" => Some("50".to_string()),
@@ -234,7 +240,11 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
 
     assert_eq!(overridden.api.listen_addr.to_string(), "0.0.0.0");
     assert_eq!(overridden.api.listen_port, 8000);
-    assert!(!overridden.api.require_authentication);
+    assert!(!overridden.api.authentication.required);
+    assert_eq!(
+        overridden.api.authentication.initial_token.as_deref(),
+        Some("a-16-plus-secret")
+    );
     assert!(!overridden.api.metrics_enabled);
     assert!(overridden.api.external_dns_enabled);
     assert!(matches!(
@@ -251,7 +261,12 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         overridden.dns.secondary_addrs,
         "192.0.2.10:53,192.0.2.11:53"
     );
-    assert!(overridden.dns.nsupdate_allow_unsigned);
+    assert!(!overridden.dns.nsupdate.tsig_required);
+    let initial_key = overridden.dns.nsupdate.initial_key.expect("initial key");
+    assert_eq!(initial_key.name, "update-key");
+    assert_eq!(initial_key.secret, "c2VjcmV0");
+    // Omitted, so the service takes its default algorithm.
+    assert_eq!(initial_key.algorithm, None);
     assert!(!overridden.dns.notify.after_update);
     assert!(overridden.dns.notify.on_startup);
     assert_eq!(overridden.dns.notify.batch_ms, 50);
@@ -360,7 +375,7 @@ fn from_toml_rejects_an_unparseable_secondary_address() {
 /// Verify that a reload refuses what a running process cannot adopt.
 #[test]
 fn a_reload_refuses_what_a_running_process_cannot_adopt() {
-    // require_authentication is in the list because the router is built
+    // authentication.required is in the list because the router is built
     // once: a section is fixed whole, not field by field.
     let current = parse_config(&TestConfigToml::default()).unwrap();
 
@@ -369,7 +384,7 @@ fn a_reload_refuses_what_a_running_process_cannot_adopt() {
     assert_eq!(current.fixed_settings_changed(&api_moved), ["api"]);
 
     let mut auth_toggled = current.clone();
-    auth_toggled.api.require_authentication = !current.api.require_authentication;
+    auth_toggled.api.authentication.required = !current.api.authentication.required;
     assert_eq!(current.fixed_settings_changed(&auth_toggled), ["api"]);
 
     let mut db_moved = current.clone();

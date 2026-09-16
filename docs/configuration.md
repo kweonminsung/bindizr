@@ -39,47 +39,56 @@ out; a key bindizr does not know is an error, so `config check` catches a typo.
 
 ```toml title="/etc/bindizr/bindizr.conf.toml"
 [api]
-listen_addr = "127.0.0.1"     # HTTP API listen address
-listen_port = 3000            # HTTP API listen port
-require_authentication = true # Enable API authentication (true/false)
-metrics_enabled = true        # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only)
-external_dns_enabled = false  # Register the ExternalDNS provider API at /external-dns
-openapi_enabled = false       # Serve the OpenAPI document at GET /openapi.json and /openapi.yaml (unauthenticated)
-# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # PEM certificate chain; set with tls_key_file to serve HTTPS
-# tls_key_file = "/etc/bindizr/tls/tls.key"   # PEM private key. Without both, the API is plain HTTP and its
-                                              # bearer tokens travel in the clear
+listen_addr = "127.0.0.1"
+listen_port = 3000
+metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
+external_dns_enabled = false  # ExternalDNS provider API at /external-dns
+openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
+# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # Set both to serve HTTPS; without them the API is
+# tls_key_file = "/etc/bindizr/tls/tls.key"   # plain HTTP and its tokens travel in the clear
+
+[api.authentication]
+required = true               # Require an API token
+# initial_token = ""          # Secret of the first global token, created when none exist (16+ characters)
 
 [database]
-type = "sqlite"               # Database type: sqlite, mysql, postgresql
+type = "sqlite"               # sqlite, mysql, or postgresql
 
 [database.mysql]
 url = "mysql://user:password@hostname:port/database"
 
 [database.sqlite]
-file_path = "/var/lib/bindizr/bindizr.db" # SQLite database file path
+file_path = "/var/lib/bindizr/bindizr.db"
 
 [database.postgresql]
 url = "postgresql://user:password@hostname:port/database"
 
 [dns]
-listen_addr = "127.0.0.1"     # DNS server listen address
-listen_port = 5300            # DNS server listen port (UDP and TCP); BIND on the same host keeps 53
-secondary_addrs = ""          # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53");
-                              # they receive NOTIFY and are the only clients allowed to pull zones
-nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from any client; testing only
-# zone_history_retention_days = 365 # Days of zone history kept for rollback and secondary catch-up (0 = unlimited)
-# scheduler_interval_secs = 3600    # Seconds between background passes: signature renewal, key rollovers, history pruning (0 = none on this instance)
+listen_addr = "127.0.0.1"
+listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
+secondary_addrs = ""          # Secondary servers, comma-separated (e.g. "192.168.1.2:53"); they
+                              # receive NOTIFY and are the only clients allowed to pull zones
+# zone_history_retention_days = 365 # Days of history kept for rollback and secondary catch-up (0 = forever)
+# scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
 
-[dns.notify]                  # DNS NOTIFY to the secondaries
-after_update = true           # Send NOTIFY after zone changes
-on_startup = false            # Send NOTIFY for every zone when bindizr starts
-# batch_ms = 0                # Window to batch one zone's NOTIFYs, sent after the write is answered (0 = send before answering)
-# retries = 3                 # Retry count after the initial NOTIFY attempt
-# timeout_secs = 3            # Timeout in seconds for each NOTIFY send/response wait
+[dns.nsupdate]                # RFC 2136 dynamic updates
+tsig_required = true          # Require a TSIG signature; false accepts updates from anyone (testing only)
 
-[dns.transfer_cache]          # Zone records cached per serial so repeated transfers skip the database
+# [dns.nsupdate.initial_key]  # The first TSIG key, created when none exist. It may update every zone.
+# name = "update-key"         # Name the client signs with
+# secret = ""                 # Base64 HMAC secret
+# algorithm = "hmac-sha256"   # hmac-sha256 (default), hmac-sha384, hmac-sha512
+
+[dns.notify]                  # NOTIFY to the secondaries
+after_update = true           # Notify after zone changes
+on_startup = false            # Notify for every zone at startup
+# batch_ms = 0                # Window to batch a zone's NOTIFYs, sent after the write is answered (0 = before)
+# retries = 3                 # Retries after the first attempt
+# timeout_secs = 3            # Seconds to wait for each NOTIFY
+
+[dns.transfer_cache]          # Zone records cached per serial, so repeated transfers skip the database
 # enabled = true
-# max_records = 500000        # Records the cache may hold; a larger zone is served uncached
+# max_records = 500000        # Records the cache holds; a larger zone is served uncached
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)
@@ -89,8 +98,8 @@ expire = 3600000              # SOA expire
 minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
-level = "debug"               # Log level: error, warn, info, debug, trace
-# format = "text"             # Log format: text or json (one object per line)
+level = "debug"               # error, warn, info, debug, trace
+# format = "text"             # text, or json for one object per line
 ```
 
 A reserved character in the user, password, or database of a database `url`
@@ -112,7 +121,8 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_CONFIG_PATH` | config file path | Falls back to `/etc/bindizr/bindizr.conf.toml` |
 | `BINDIZR_API_LISTEN_ADDR` | `api.listen_addr` | |
 | `BINDIZR_API_LISTEN_PORT` | `api.listen_port` | |
-| `BINDIZR_API_REQUIRE_AUTHENTICATION` | `api.require_authentication` | |
+| `BINDIZR_API_AUTHENTICATION_REQUIRED` | `api.authentication.required` | |
+| `BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN` | `api.authentication.initial_token` | The first global token, for a deployment that cannot run the CLI |
 | `BINDIZR_API_METRICS_ENABLED` | `api.metrics_enabled` | |
 | `BINDIZR_API_EXTERNAL_DNS_ENABLED` | `api.external_dns_enabled` | See [ExternalDNS](external-dns.md) |
 | `BINDIZR_API_OPENAPI_ENABLED` | `api.openapi_enabled` | Describes the whole API surface; off by default |
@@ -126,7 +136,10 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_LISTEN_ADDR` | `dns.listen_addr` | |
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
 | `BINDIZR_DNS_SECONDARY_ADDRS` | `dns.secondary_addrs` | |
-| `BINDIZR_DNS_NSUPDATE_ALLOW_UNSIGNED` | `dns.nsupdate_allow_unsigned` | Testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
+| `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate.tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
+| `BINDIZR_DNS_NSUPDATE_INITIAL_KEY_NAME` | `dns.nsupdate.initial_key.name` | With the secret below, seeds the first TSIG key |
+| `BINDIZR_DNS_NSUPDATE_INITIAL_KEY_SECRET` | `dns.nsupdate.initial_key.secret` | Base64 HMAC secret |
+| `BINDIZR_DNS_NSUPDATE_INITIAL_KEY_ALGORITHM` | `dns.nsupdate.initial_key.algorithm` | Defaults to `hmac-sha256` |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
 | `BINDIZR_DNS_NOTIFY_AFTER_UPDATE` | `dns.notify.after_update` | |

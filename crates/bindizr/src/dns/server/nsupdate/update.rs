@@ -122,7 +122,7 @@ pub(crate) async fn apply_update(
 
 /// Verify the request's TSIG signature and record the response-signing
 /// context. Returns the signing key, or `None` for an unsigned request
-/// accepted via `dns.nsupdate_allow_unsigned` (not recommended in
+/// accepted because `dns.nsupdate.tsig_required` is off (not recommended in
 /// production); signed requests are always verified.
 async fn authenticate_request(
     request: &UpdateRequest,
@@ -132,10 +132,10 @@ async fn authenticate_request(
     let tsig = match &request.tsig {
         Some(tsig) => tsig,
         None => {
-            // An unsigned update carries no identity, so the setting admits
-            // every client that reaches the listener — the same trade
-            // `api.require_authentication = false` makes for the API.
-            if config::bindizr_config().dns.nsupdate_allow_unsigned {
+            // An unsigned update carries no identity, so this admits every
+            // client that reaches the listener — the same trade
+            // `api.authentication.required = false` makes for the API.
+            if !config::bindizr_config().dns.nsupdate.tsig_required {
                 return Ok(None);
             }
             return Err(UpdateError::Refused(

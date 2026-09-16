@@ -95,12 +95,19 @@ fn print_config(config: &BindizrConfig) {
     print_section("api");
     print_value("listen_addr", config.api.listen_addr);
     print_value("listen_port", config.api.listen_port);
-    print_value("require_authentication", config.api.require_authentication);
     print_value("metrics_enabled", config.api.metrics_enabled);
     print_value("external_dns_enabled", config.api.external_dns_enabled);
     print_value("openapi_enabled", config.api.openapi_enabled);
     print_optional("tls_cert_file", config.api.tls_cert_file.as_deref());
     print_optional("tls_key_file", config.api.tls_key_file.as_deref());
+    println!();
+
+    print_section("api.authentication");
+    print_value("required", config.api.authentication.required);
+    print_optional(
+        "initial_token",
+        config.api.authentication.initial_token.as_deref(),
+    );
     println!();
 
     print_section("database");
@@ -124,10 +131,6 @@ fn print_config(config: &BindizrConfig) {
     print_value("listen_port", config.dns.listen_port);
     print_value("secondary_addrs", &config.dns.secondary_addrs);
     print_value(
-        "nsupdate_allow_unsigned",
-        config.dns.nsupdate_allow_unsigned,
-    );
-    print_value(
         "zone_history_retention_days",
         config.dns.zone_history_retention_days,
     );
@@ -135,6 +138,15 @@ fn print_config(config: &BindizrConfig) {
         "scheduler_interval_secs",
         config.dns.scheduler_interval_secs,
     );
+    println!();
+
+    print_section("dns.nsupdate");
+    print_value("tsig_required", config.dns.nsupdate.tsig_required);
+    if let Some(key) = &config.dns.nsupdate.initial_key {
+        print_value("initial_key.name", &key.name);
+        print_value("initial_key.secret", &key.secret);
+        print_optional("initial_key.algorithm", key.algorithm.as_deref());
+    }
     println!();
 
     print_section("dns.notify");

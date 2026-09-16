@@ -54,6 +54,28 @@ spec:
                 secretKeyRef:
                   name: {{ include "bindizr-chart.databaseSecretName" . }}
                   key: {{ .Values.bindizr.database.secretKey }}
+            {{- with .Values.bindizr.api.authentication.initialToken }}
+            {{- if or .existingSecret .value }}
+            - name: BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bindizr-chart.initialTokenSecretName" $ }}
+                  key: {{ .secretKey }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.bindizr.dns.nsupdate.initialKey }}
+            {{- if .name }}
+            - name: BINDIZR_DNS_NSUPDATE_INITIAL_KEY_NAME
+              value: {{ .name | quote }}
+            - name: BINDIZR_DNS_NSUPDATE_INITIAL_KEY_ALGORITHM
+              value: {{ .algorithm | quote }}
+            - name: BINDIZR_DNS_NSUPDATE_INITIAL_KEY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bindizr-chart.initialKeySecretName" $ }}
+                  key: {{ .secretKey }}
+            {{- end }}
+            {{- end }}
           {{- with .Values.bindizr.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}

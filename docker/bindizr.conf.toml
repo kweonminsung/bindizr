@@ -1,10 +1,12 @@
 [api]
 listen_addr = "0.0.0.0"
 listen_port = 8000
-require_authentication = true
 metrics_enabled = true
 external_dns_enabled = false
 openapi_enabled = false
+
+[api.authentication]
+required = true
 
 [database]
 type = "sqlite"
@@ -22,9 +24,11 @@ url = ""
 listen_addr = "0.0.0.0"
 listen_port = 53
 secondary_addrs = ""
-nsupdate_allow_unsigned = false
 zone_history_retention_days = 365
 scheduler_interval_secs = 3600
+
+[dns.nsupdate]
+tsig_required = true
 
 [dns.notify]
 after_update = true

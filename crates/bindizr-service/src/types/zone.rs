@@ -1,11 +1,12 @@
 //! Zone request, patch, filter, and response payloads.
 
+use bindizr_core::dns::{record::SoaMailbox, zonefile::ZoneFileSoa};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::record::GetRecordResponse;
-use crate::model::zone::Zone;
+use crate::{error::ServiceError, model::zone::Zone};
 
 /// API representation of a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
@@ -84,6 +85,34 @@ pub struct CreateZoneRequest {
     /// Free-text note for operators, at most 255 characters.
     #[schema(example = "customer A, migrated 2026-01")]
     pub description: Option<String>,
+}
+
+impl CreateZoneRequest {
+    /// Build the request a zone file's SOA describes. The serial carries over
+    /// so secondaries holding the old primary's serial accept the transfer;
+    /// one past bindizr's ceiling starts fresh instead.
+    pub(crate) fn from_zone_file_soa(
+        zone_name: &str,
+        soa: &ZoneFileSoa,
+    ) -> Result<Self, ServiceError> {
+        let rname = SoaMailbox::from_encoded(soa.rname.trim_end_matches('.'))
+            .to_email()
+            .map_err(|e| {
+                ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", e))
+            })?;
+        Ok(CreateZoneRequest {
+            name: zone_name.to_string(),
+            mname: soa.mname.clone(),
+            rname,
+            default_ttl: None,
+            serial: i32::try_from(soa.serial).ok().filter(|serial| *serial > 0),
+            refresh: Some(soa.refresh),
+            retry: Some(soa.retry),
+            expire: Some(soa.expire),
+            minimum_ttl: Some(soa.minimum_ttl),
+            description: None,
+        })
+    }
 }
 
 /// Query filters and pagination for listing zones.

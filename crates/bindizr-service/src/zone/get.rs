@@ -15,7 +15,7 @@ use crate::{
 impl ZoneService {
     /// The DNS plane's view of a zone: a disabled one is absent rather than
     /// served. The nsupdate apply and the transfer authorization read it.
-    pub(crate) async fn find_by_name_tx(
+    pub(crate) async fn find_served_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
         lock_level: LockLevel,
@@ -26,6 +26,18 @@ impl ZoneService {
                 .await?
                 .filter(|zone| zone.enabled),
         )
+    }
+
+    /// Fetch a zone by name within the caller's transaction at `lock_level`,
+    /// whether or not it is served. The import reads it this way because a
+    /// disabled zone still takes records.
+    pub(crate) async fn find_by_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_name: &str,
+        lock_level: LockLevel,
+    ) -> Result<Option<Zone>, ServiceError> {
+        let lookup_name = normalize_zone_name(zone_name)?;
+        RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str(), lock_level).await
     }
 
     /// Count journal rows in `(from_serial, to_serial]` for the IXFR size estimate.

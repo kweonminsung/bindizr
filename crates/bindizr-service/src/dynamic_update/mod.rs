@@ -150,7 +150,7 @@ impl DynamicUpdateService {
         let mut tx = RepositoryService::begin_tx("failed to begin NSUPDATE transaction").await?;
 
         let apply_result: Result<(bool, Zone, i32), DynamicUpdateError> = async {
-            let zone = ZoneService::find_by_name_tx(
+            let zone = ZoneService::find_served_by_name_tx(
                 &mut tx,
                 update.zone_name.as_str(),
                 LockLevel::Exclusive,

@@ -4,7 +4,7 @@
 
 use std::fmt;
 
-use super::{BindizrConfig, DatabaseType};
+use super::{BindizrConfig, DatabaseType, InitialTsigKeyConfig};
 
 impl BindizrConfig {
     /// Apply the `BINDIZR_*` environment variables to the loaded configuration.
@@ -18,9 +18,12 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_API_LISTEN_PORT") {
             self.api.listen_port = parse_env_value("BINDIZR_API_LISTEN_PORT", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_API_REQUIRE_AUTHENTICATION") {
-            self.api.require_authentication =
-                parse_env_value("BINDIZR_API_REQUIRE_AUTHENTICATION", &value)?;
+        if let Some(value) = get_env("BINDIZR_API_AUTHENTICATION_REQUIRED") {
+            self.api.authentication.required =
+                parse_env_value("BINDIZR_API_AUTHENTICATION_REQUIRED", &value)?;
+        }
+        if let Some(value) = get_env("BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN") {
+            self.api.authentication.initial_token = to_optional_setting(value);
         }
         if let Some(value) = get_env("BINDIZR_API_METRICS_ENABLED") {
             self.api.metrics_enabled = parse_env_value("BINDIZR_API_METRICS_ENABLED", &value)?;
@@ -33,10 +36,10 @@ impl BindizrConfig {
             self.api.openapi_enabled = parse_env_value("BINDIZR_API_OPENAPI_ENABLED", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_API_TLS_CERT_FILE") {
-            self.api.tls_cert_file = to_optional_path(value);
+            self.api.tls_cert_file = to_optional_setting(value);
         }
         if let Some(value) = get_env("BINDIZR_API_TLS_KEY_FILE") {
-            self.api.tls_key_file = to_optional_path(value);
+            self.api.tls_key_file = to_optional_setting(value);
         }
         if let Some(value) = get_env("BINDIZR_DATABASE_TYPE") {
             self.database.database_type = parse_env_value("BINDIZR_DATABASE_TYPE", &value)?;
@@ -68,9 +71,24 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_DNS_SECONDARY_ADDRS") {
             self.dns.secondary_addrs = value;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_NSUPDATE_ALLOW_UNSIGNED") {
-            self.dns.nsupdate_allow_unsigned =
-                parse_env_value("BINDIZR_DNS_NSUPDATE_ALLOW_UNSIGNED", &value)?;
+        if let Some(value) = get_env("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED") {
+            self.dns.nsupdate.tsig_required =
+                parse_env_value("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED", &value)?;
+        }
+        // Three variables rather than one, because the key's name is part of
+        // the contract: the client signs with it.
+        if let Some(name) =
+            get_env("BINDIZR_DNS_NSUPDATE_INITIAL_KEY_NAME").and_then(to_optional_setting)
+        {
+            let secret = get_env("BINDIZR_DNS_NSUPDATE_INITIAL_KEY_SECRET")
+                .and_then(to_optional_setting)
+                .ok_or("BINDIZR_DNS_NSUPDATE_INITIAL_KEY_NAME needs BINDIZR_DNS_NSUPDATE_INITIAL_KEY_SECRET")?;
+            self.dns.nsupdate.initial_key = Some(InitialTsigKeyConfig {
+                name,
+                secret,
+                algorithm: get_env("BINDIZR_DNS_NSUPDATE_INITIAL_KEY_ALGORITHM")
+                    .and_then(to_optional_setting),
+            });
         }
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS") {
             self.dns.zone_history_retention_days =
@@ -135,9 +153,9 @@ impl BindizrConfig {
     }
 }
 
-/// Convert an environment path override to an optional path, treating an empty value as unset
-/// so containers can leave the variable unfilled.
-fn to_optional_path(value: String) -> Option<String> {
+/// Read an optional setting from an environment override, treating an empty
+/// value as unset so containers can leave the variable unfilled.
+fn to_optional_setting(value: String) -> Option<String> {
     Some(value.trim().to_string()).filter(|path| !path.is_empty())
 }
 

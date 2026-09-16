@@ -30,6 +30,42 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --set postgresql.enabled=true
 ```
 
+## The first credentials
+
+Authentication is on by default, so the API answers `401` until a token
+exists. Rather than `kubectl exec` into the pod, hand the chart a secret and
+bindizr creates a global token with it on the first start that finds none:
+
+```bash
+$ kubectl create secret generic bindizr-initial-token --from-literal=api-token="$(openssl rand -hex 24)"
+
+$ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
+  --reuse-values \
+  --set bindizr.api.authentication.initialToken.existingSecret=bindizr-initial-token
+```
+
+It seeds rather than resets: once any token exists, later starts ignore it.
+Rotate by creating a normal token and deleting `initial`.
+
+nsupdate takes the same shape. A cluster whose clients sign RFC 2136 updates —
+cert-manager's DNS-01 solver, a DHCP server — needs a TSIG key before any of
+them can write, and `bindizr.dns.nsupdate.initialKey` seeds one:
+
+```bash
+$ kubectl create secret generic bindizr-initial-key \
+  --from-literal=secret="$(openssl rand -base64 32)"
+
+$ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
+  --reuse-values \
+  --set bindizr.dns.nsupdate.initialKey.name=update-key \
+  --set bindizr.dns.nsupdate.initialKey.existingSecret=bindizr-initial-key
+```
+
+That key is global: it may update every zone without a grant, which is the
+only useful shape for a key created before any grant exists. Where the API is
+reachable, create a scoped key and grant it instead — see
+[Dynamic Updates](../cli/nsupdate.md).
+
 ## Serving the API over TLS
 
 The API is `ClusterIP` and carries bearer tokens, so anything reaching it from

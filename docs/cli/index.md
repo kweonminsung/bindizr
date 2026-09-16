@@ -133,11 +133,13 @@ $ bindizr zone import <ZONE_NAME> zone.txt --dry-run
 
 A zone served elsewhere imports without exporting a file first —
 `--from-server` pulls the records over AXFR (the source must allow the
-transfer); [Migrating an Existing Primary](../deployment/migrating.md) walks
-through a whole cutover:
+transfer), and `--create` builds the zone from the file's SOA, carrying its
+timers and serial, when it does not exist yet;
+[Migrating an Existing Primary](../deployment/migrating.md) walks through a
+whole cutover:
 
 ```bash
-$ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --dry-run
+$ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --create --dry-run
 ```
 
 A zone file written for BIND often carries record types bindizr does not

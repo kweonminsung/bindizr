@@ -11,19 +11,27 @@ bindizr:
   api:
     listenAddr: "0.0.0.0"
     port: 8000
-    requireAuthentication: true
-    # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
+    # Prometheus metrics at /metrics (unauthenticated).
     metricsEnabled: true
-    # ExternalDNS provider API (/external-dns), consumed by the
-    # bindizr-external-dns adapter running next to external-dns.
+    # ExternalDNS provider API at /external-dns, for the adapter sidecar.
     externalDnsEnabled: false
-    # Serve the OpenAPI document at GET /openapi.json and /openapi.yaml
-    # (unauthenticated; describes the whole API surface).
+    # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated).
     openapiEnabled: false
+    authentication:
+      # Require an API token.
+      required: true
+      # The first global token, created when none exist, so the first one
+      # needs no `kubectl exec`.
+      initialToken:
+        # A Secret holding the token, or leave empty and set `value`.
+        existingSecret: ""
+        secretKey: api-token
+        # Used only without existingSecret; at least 16 characters.
+        value: ""
     tls:
-      # Serve the API over HTTPS from an existing Secret holding tls.crt and
-      # tls.key (a cert-manager Certificate makes one). Leave empty to serve
-      # plain HTTP, which is what an Ingress terminating TLS in front expects.
+      # A Secret holding tls.crt and tls.key (a cert-manager Certificate makes
+      # one) to serve HTTPS. Empty serves plain HTTP, for an Ingress that
+      # terminates TLS in front.
       existingSecret: ""
     service:
       type: ClusterIP
@@ -32,25 +40,40 @@ bindizr:
   dns:
     listenAddr: "0.0.0.0"
     port: 53
-    # Accept unsigned nsupdate requests from any client; testing only.
-    nsupdateAllowUnsigned: false
-    # Days of zone history kept for rollback and secondary catch-up (0 = unlimited).
+    # Days of history kept for rollback and secondary catch-up (0 = forever).
     zoneHistoryRetentionDays: 365
-    # Seconds between background passes (signature renewal, key rollovers,
-    # history pruning). 0 stands a replica down; at least one must keep it.
+    # Seconds between background passes: signing, key rollover, history
+    # pruning. Every replica runs the whole pass; 0 stands one down, but at
+    # least one must keep it.
     schedulerIntervalSecs: 3600
+    # RFC 2136 dynamic updates.
+    nsupdate:
+      # Require a TSIG signature; false accepts updates from anyone (testing only).
+      tsigRequired: true
+      # The first TSIG key, created when none exist. It may update every zone.
+      initialKey:
+        # Set the name to create it; empty creates nothing.
+        name: ""
+        algorithm: hmac-sha256
+        # A Secret holding the key, or leave empty and set `value`.
+        existingSecret: ""
+        secretKey: secret
+        # Used only without existingSecret; base64.
+        value: ""
+    # NOTIFY to the secondaries.
     notify:
+      # Notify after zone changes, and for every zone at startup.
       afterUpdate: true
       onStartup: false
-      # Window (ms) to batch one zone's NOTIFYs after the write is answered;
-      # 0 sends before answering.
+      # Window (ms) to batch a zone's NOTIFYs, sent after the write is
+      # answered; 0 sends before answering.
       batchMs: 0
       retries: 3
       timeoutSecs: 3
-    # Zone records cached per serial so repeated transfers skip the DB.
+    # Zone records cached per serial, so repeated transfers skip the database.
     transferCache:
       enabled: true
-      # Records the cache may hold; a larger zone is served uncached.
+      # Records the cache holds; a larger zone is served uncached.
       maxRecords: 500000
     service:
       port: 53
@@ -64,9 +87,9 @@ bindizr:
     type: postgresql
     existingSecret: ""
     secretKey: database-url
-    # Used only when existingSecret is empty. Prefer an existing Secret for production.
-    # If this is empty and the matching bundled mysql/postgresql database is enabled,
-    # the chart builds the URL from the bundled database auth values.
+    # Used only without existingSecret, which production should prefer. Left
+    # empty with a bundled mysql/postgresql enabled, the chart builds the URL
+    # from that database's auth values.
     url: ""
 
   podAnnotations: {}
@@ -88,7 +111,7 @@ bindizr:
         - NET_BIND_SERVICE
 
   # Applied when a zone-creation request omits the field; afterwards the
-  # values are the zone's own columns.
+  # values are the zone's own.
   zoneDefaults:
     ttl: 3600
     refresh: 300

@@ -3353,7 +3353,9 @@ components:
           - integer
           - 'null'
           format: int32
-          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
+          description: |-
+            MX and SRV priority, set here rather than inline in the value; other
+            record types reject it. Omitted, it is served and compared as 10.
           example: 10
         record_type:
           type: string
@@ -4399,6 +4401,11 @@ components:
           example: |
             www IN A 192.0.2.1
             mail IN A 192.0.2.2
+        create:
+          type: boolean
+          description: |-
+            Create the zone from the file's SOA when it does not exist yet.
+            Without this a missing zone is an error, so a typo creates nothing.
         dry_run:
           type: boolean
           description: When true, parse and validate without applying any change.
@@ -5027,7 +5034,9 @@ components:
           - integer
           - 'null'
           format: int32
-          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
+          description: |-
+            MX and SRV priority, set here rather than inline in the value; other
+            record types reject it. Omitted, it is served and compared as 10.
           example: 10
         record_type:
           type: string

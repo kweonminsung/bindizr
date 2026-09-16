@@ -69,7 +69,8 @@ pub struct CreateRecordRequest {
     /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
-    /// MX and SRV priority, set here rather than inline in the value; other record types reject it.
+    /// MX and SRV priority, set here rather than inline in the value; other
+    /// record types reject it. Omitted, it is served and compared as 10.
     #[schema(example = 10)]
     pub priority: Option<i32>,
     #[schema(example = "example.com")]
@@ -88,7 +89,8 @@ pub struct RecordItem {
     /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
-    /// MX and SRV priority, set here rather than inline in the value; other record types reject it.
+    /// MX and SRV priority, set here rather than inline in the value; other
+    /// record types reject it. Omitted, it is served and compared as 10.
     #[schema(example = 10)]
     pub priority: Option<i32>,
 }

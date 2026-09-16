@@ -89,7 +89,8 @@ impl ZoneService {
         zone_name: &str,
         key: Option<&TsigKey>,
     ) -> Result<TransferAccess<Zone>, ServiceError> {
-        let Some(zone) = Self::find_by_name_tx(tx, zone_name, LockLevel::Shared).await? else {
+        let Some(zone) = Self::find_served_by_name_tx(tx, zone_name, LockLevel::Shared).await?
+        else {
             return Ok(TransferAccess::NotZone);
         };
         if let Some(key) = key

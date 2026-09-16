@@ -45,7 +45,7 @@ async fn openapi_document_is_served_when_enabled() {
 #[serial_test::serial(bindizr_e2e)]
 async fn openapi_document_needs_no_token() {
     let app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         openapi_enabled: true,
         ..Default::default()
     })

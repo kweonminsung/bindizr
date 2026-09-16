@@ -59,6 +59,37 @@ impl TsigKeyService {
         .await
     }
 
+    /// Create the configured key as a global key, unless the database holds
+    /// one already. Takes no caller: the daemon runs it before any front end
+    /// is up.
+    pub async fn seed_initial(
+        name: &str,
+        algorithm: Option<&str>,
+        secret: &str,
+    ) -> Result<bool, ServiceError> {
+        if !RepositoryService::list_tsig_keys().await?.is_empty() {
+            return Ok(false);
+        }
+
+        let name = normalize_key_name(name)?;
+        let algorithm = match algorithm {
+            None => TsigAlgorithm::default(),
+            Some(raw) => raw.parse().map_err(ServiceError::invalid_input)?,
+        };
+
+        RepositoryService::create_tsig_key(TsigKey {
+            id: 0,
+            name,
+            algorithm,
+            secret: normalize_secret(secret)?,
+            // A key with no grant updates nothing, and granting needs the API.
+            is_global: true,
+            created_at: Utc::now(),
+        })
+        .await?;
+        Ok(true)
+    }
+
     /// List all TSIG keys.
     pub async fn list(
         caller: &Caller,

@@ -51,7 +51,34 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     database::initialize().await.map_err(|e| e.to_string())?;
 
     // A fresh install with authentication on answers 401 until a token exists.
-    if config::bindizr_config().api.require_authentication {
+    let config = config::bindizr_config();
+    if let Some(key) = &config.dns.nsupdate.initial_key {
+        match service::tsig_key::TsigKeyService::seed_initial(
+            &key.name,
+            key.algorithm.as_deref(),
+            &key.secret,
+        )
+        .await
+        {
+            Ok(true) => log::info!(
+                "Created the global TSIG key '{}' from dns.nsupdate.initial_key",
+                key.name
+            ),
+            Ok(false) => {}
+            Err(e) => return Err(format!("Failed to create the initial TSIG key: {}", e)),
+        }
+    }
+
+    let authentication = &config.api.authentication;
+    if let Some(secret) = &authentication.initial_token {
+        match service::token::TokenService::seed_initial(secret).await {
+            Ok(true) => log::info!(
+                "Created the global API token 'initial' from api.authentication.initial_token"
+            ),
+            Ok(false) => {}
+            Err(e) => return Err(format!("Failed to create the initial API token: {}", e)),
+        }
+    } else if authentication.required {
         match service::token::TokenService::count_all().await {
             Ok(0) => log::warn!(
                 "API authentication is on and no API tokens exist; create one with `bindizr token create admin --global`"

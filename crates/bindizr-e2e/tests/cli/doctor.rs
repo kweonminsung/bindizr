@@ -6,7 +6,9 @@ const VALID_CONFIG: &str = r#"
 [api]
 listen_addr = "127.0.0.1"
 listen_port = 8000
-require_authentication = false
+
+[api.authentication]
+required = false
 
 [database]
 type = "sqlite"

@@ -44,7 +44,7 @@ Examples:
         /// TTL in seconds, defaulting to the zone TTL (records sharing a name and type share one TTL)
         #[arg(long)]
         ttl: Option<i32>,
-        /// Priority (MX and SRV only)
+        /// Priority, MX and SRV only (default: 10)
         #[arg(long)]
         priority: Option<i32>,
         /// Output format (json, yaml, table)
@@ -61,7 +61,7 @@ Input format (JSON or YAML): an array of records, or an object with a
                SSHFP, TLSA, TXT (required)
   value        record value; TXT also accepts an array of strings (required)
   ttl          seconds (optional; defaults to the zone TTL)
-  priority     MX/SRV priority (optional)
+  priority     MX/SRV priority (optional; defaults to 10)
 
 JSON example:
   [{\"name\": \"www\", \"record_type\": \"A\", \"value\": \"192.0.2.1\", \"ttl\": 300},

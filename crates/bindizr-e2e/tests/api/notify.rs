@@ -73,7 +73,7 @@ async fn notify_zone_all_and_bump_serial() {
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_cannot_notify_the_catalog_zone() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..TestAppOptions::default()
     })
     .await;

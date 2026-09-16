@@ -48,16 +48,37 @@ pub(crate) struct TestApp {
 }
 
 /// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
-#[derive(Default)]
 pub(crate) struct TestAppOptions {
-    pub(crate) require_authentication: bool,
+    pub(crate) authentication_required: bool,
+    /// Seed this secret as the first global token.
+    pub(crate) initial_token: Option<String>,
     pub(crate) external_dns_enabled: bool,
-    pub(crate) nsupdate_allow_unsigned: bool,
+    /// `false` accepts unsigned nsupdate requests.
+    pub(crate) nsupdate_tsig_required: bool,
+    /// Seed this `(name, base64 secret)` as the first global TSIG key.
+    pub(crate) initial_key: Option<(String, String)>,
     pub(crate) openapi_enabled: bool,
     /// Also the zone-transfer ACL; NOTIFY stays off in tests.
     pub(crate) secondary_addrs: String,
     /// Serve the API over HTTPS with a certificate generated for this run.
     pub(crate) tls: bool,
+}
+
+impl Default for TestAppOptions {
+    /// Build the options `start()` uses: authentication off for convenience,
+    /// and the daemon's own answer for everything else.
+    fn default() -> Self {
+        Self {
+            authentication_required: false,
+            initial_token: None,
+            external_dns_enabled: false,
+            nsupdate_tsig_required: true,
+            initial_key: None,
+            openapi_enabled: false,
+            secondary_addrs: String::new(),
+            tls: false,
+        }
+    }
 }
 
 /// Where the daemon under test runs: a process this test spawned, or the shared Compose stack.

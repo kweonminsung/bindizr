@@ -346,3 +346,94 @@ async fn zone_import_from_server_over_http() {
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }
+
+/// Verify that `create` builds the zone from the file's SOA, and that a dry
+/// run of the same import leaves no zone behind.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_creates_the_zone_from_the_files_soa() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-create.example");
+    // A migrated zone's serial has to carry over, or a secondary holding the
+    // old primary's higher serial ignores the transfer.
+    let content = format!(
+        "@ IN SOA ns1.old.example. hostmaster.{zone_name}. (2026091601 7200 1800 1209600 300)\n\
+         @ IN NS ns1.old.example.\n\
+         www IN A 192.0.2.10\n"
+    );
+
+    // A dry run plans against a zone it creates in the same transaction, and
+    // discards both.
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content, "create": true, "dry_run": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], false);
+    assert_eq!(body["summary"]["added"], 1);
+
+    let (status, _) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content, "create": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["applied"], true);
+
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let zone = &body["zone"];
+    assert_eq!(zone["mname"], "ns1.old.example");
+    assert_eq!(zone["rname"], format!("hostmaster@{zone_name}"));
+    assert_eq!(zone["refresh"], 7200);
+    assert_eq!(zone["retry"], 1800);
+    assert_eq!(zone["expire"], 1209600);
+    assert_eq!(zone["minimum_ttl"], 300);
+    // The import advanced it once for the records it added.
+    assert!(
+        zone["serial"].as_i64().unwrap() >= 2026091601,
+        "serial did not carry over: {}",
+        zone["serial"]
+    );
+}
+
+/// Verify that a missing zone is an error unless `create` says otherwise.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_refuses_a_missing_zone_without_create() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-nocreate.example");
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": "www IN A 192.0.2.10\n" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "ZONE_NOT_FOUND");
+
+    // `create` needs an SOA to build the zone from.
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": "www IN A 192.0.2.10\n", "create": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("no SOA"), "{body}");
+}

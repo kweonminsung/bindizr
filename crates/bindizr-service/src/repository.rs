@@ -75,6 +75,17 @@ impl RepositoryService {
         }
     }
 
+    /// Roll back however the work ended: a preview writes only to plan against.
+    pub(crate) async fn discard_tx<T, E: From<ServiceError>>(
+        tx: RepositoryTx<'static>,
+        apply_result: Result<T, E>,
+    ) -> Result<T, E> {
+        if let Err(e) = tx.rollback().await {
+            log::error!("Failed to rollback transaction: {}", e);
+        }
+        apply_result
+    }
+
     /// Find a zone by name.
     pub(crate) async fn get_zone_by_name(name: &str) -> Result<Option<Zone>, ServiceError> {
         get_zone_repository()

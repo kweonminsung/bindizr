@@ -25,6 +25,12 @@ pub(crate) fn hash_token(token: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Name the configured initial token is created under.
+const INITIAL_TOKEN_NAME: &str = "initial";
+
+/// Shortest initial secret accepted; the generated ones are 32 characters.
+const INITIAL_TOKEN_MIN_LEN: usize = 16;
+
 impl TokenService {
     /// Create an API token; the secret comes back beside it, shown this once.
     pub async fn create(
@@ -84,6 +90,36 @@ impl TokenService {
             page.limit,
             page.offset,
         )
+    }
+
+    /// Create the configured secret as a global token named `initial`, unless
+    /// the database holds one already. Takes no caller: the daemon runs it
+    /// before any front end is up.
+    pub async fn seed_initial(secret: &str) -> Result<bool, ServiceError> {
+        let secret = secret.trim();
+        // A short secret is guessable, and this token may manage every zone.
+        if secret.len() < INITIAL_TOKEN_MIN_LEN {
+            return Err(ServiceError::invalid_input(format!(
+                "api.authentication.initial_token must be at least {} characters",
+                INITIAL_TOKEN_MIN_LEN
+            )));
+        }
+        if Self::count_all().await? > 0 {
+            return Ok(false);
+        }
+
+        RepositoryService::create_api_token(ApiToken {
+            id: 0,
+            name: normalize_token_name(INITIAL_TOKEN_NAME)?,
+            token: hash_token(secret),
+            description: Some("Created from api.authentication.initial_token".to_string()),
+            is_global: true,
+            expires_at: None,
+            created_at: Utc::now(),
+            last_used_at: None,
+        })
+        .await?;
+        Ok(true)
     }
 
     /// Every API token, for the daemon's startup hint.

@@ -235,6 +235,9 @@ TTLs are decimal seconds (RFC 1035). A file using BIND's unit suffixes
         /// the whole file
         #[arg(long)]
         skip_unsupported: bool,
+        /// Create the zone from the file's SOA when it does not exist yet
+        #[arg(long)]
+        create: bool,
     },
 
     /// Export a zone as BIND master-file text
@@ -511,6 +514,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             mode,
             dry_run,
             skip_unsupported,
+            create,
         } => {
             let content = file.map(|file| super::read_input(&file)).transpose()?;
             let response = client::send_command(
@@ -523,6 +527,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                         mode: mode.into(),
                         dry_run,
                         skip_unsupported,
+                        create,
                     },
                 },
             )

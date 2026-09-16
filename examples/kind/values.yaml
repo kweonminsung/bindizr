@@ -14,9 +14,11 @@ fullnameOverride: bindizr
 
 bindizr:
   api:
-    requireAuthentication: false
+    authentication:
+      required: false
   dns:
-    nsupdateAllowUnsigned: true
+    nsupdate:
+      tsigRequired: false
   database:
     type: postgresql
 

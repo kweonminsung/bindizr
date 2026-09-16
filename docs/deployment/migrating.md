@@ -27,25 +27,20 @@ Check it from the bindizr host before going further:
 $ dig @<old-primary> example.com AXFR | head
 ```
 
-## 2. Create the zone in bindizr
+## 2. Import the zone, dry run first
 
-Create it empty first; the import fills it. `--mname` is the name secondaries
-will publish as the zone's primary, which is usually one of them rather than
-bindizr itself.
-
-```bash
-$ bindizr zone create example.com --mname ns1.example.com
-```
-
-## 3. Import the records, dry run first
+`--create` builds the zone from the transferred SOA — its primary nameserver,
+contact, timers, and **serial** — so the zone does not have to exist first.
+Carrying the serial over matters: a secondary that already holds the old
+primary's higher serial would ignore a zone that started from 1.
 
 `--from-server` pulls over AXFR instead of reading a file, and `--mode
 replace` makes the zone match the source exactly. `--dry-run` reports what
-would change and writes nothing:
+would change and writes nothing, not even the zone:
 
 ```bash
-$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace --dry-run
-$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace
+$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create --dry-run
+$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create
 ```
 
 A zone file written for BIND often carries record types bindizr does not
@@ -54,18 +49,18 @@ over those lines and lists each one, so you can decide whether what it skipped
 matters:
 
 ```bash
-$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace --skip-unsupported --dry-run
+$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create --skip-unsupported --dry-run
 ```
 
-SOA lines are ignored on import: the SOA is bindizr's, built from the zone's
-own fields and a serial it manages. Set the timers explicitly if the old
-zone's mattered:
+Where the source has no SOA to build from, or its fields are not what you want
+to keep, create the zone yourself first and import without `--create`:
 
 ```bash
-$ bindizr zone update example.com --refresh 300 --retry 60 --expire 3600000 --minimum-ttl 86400
+$ bindizr zone create example.com --mname ns1.example.com --serial 2026091601
+$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace
 ```
 
-## 4. Compare before cutting over
+## 3. Compare before cutting over
 
 Export what bindizr now serves and diff it against the source:
 
@@ -78,7 +73,7 @@ $ diff <(sort /tmp/old.zone) <(sort /tmp/new.zone)
 Expect the SOA line and record ordering to differ. Anything else is a record
 that did not survive the import.
 
-## 5. Point the secondaries at bindizr
+## 4. Point the secondaries at bindizr
 
 Only now do the secondaries change. Each one drops its old `zone` statements
 and takes bindizr's catalog zone instead, after which created and deleted

@@ -1,9 +1,12 @@
 //! Reading BIND master-file text into records the record API can accept.
 
 use domain::{
-    base::iana::{Class, Rtype},
+    base::{
+        Ttl,
+        iana::{Class, Rtype},
+    },
     rdata::ZoneRecordData,
-    zonefile::inplace::{Entry, Error as ZoneFileError, Zonefile},
+    zonefile::inplace::{Entry, Error as ZoneFileError, ScannedRecord, Zonefile},
 };
 
 use crate::{
@@ -30,9 +33,23 @@ pub struct ZoneFileRr {
     pub priority: Option<i32>,
 }
 
+/// The zone fields a file's SOA carries, for creating a zone from it. The
+/// record itself is never stored: a zone's SOA is built from its own columns.
+pub struct ZoneFileSoa {
+    pub mname: String,
+    pub rname: String,
+    pub serial: u32,
+    pub refresh: i32,
+    pub retry: i32,
+    pub expire: i32,
+    pub minimum_ttl: i32,
+}
+
 /// What a zone file yielded: its usable records, and what it could not use.
 pub struct ParsedZoneFile {
     pub rrs: Vec<ZoneFileRr>,
+    /// The apex SOA's fields, when the file carried one.
+    pub soa: Option<ZoneFileSoa>,
     /// Human-readable problems (parse failure, out-of-range TTL, unsupported
     /// directive).
     pub errors: Vec<String>,
@@ -43,8 +60,9 @@ pub struct ParsedZoneFile {
 
 impl ParsedZoneFile {
     /// Parse BIND zone file text relative to `zone_name`. Relative names resolve
-    /// against the origin, missing TTLs fall back to `default_ttl`, and SOA records
-    /// are ignored (the zone's SOA comes from its own fields).
+    /// against the origin, missing TTLs fall back to `default_ttl`, and the SOA
+    /// is kept apart in `soa` rather than stored (the zone's SOA comes from its
+    /// own fields).
     pub fn parse(content: &str, zone_name: &str, default_ttl: i32) -> Self {
         let origin_fqdn = to_fqdn_lowercase(zone_name);
 
@@ -63,6 +81,7 @@ impl ParsedZoneFile {
         let mut rrs = Vec::new();
         let mut errors = Vec::new();
         let mut unsupported = Vec::new();
+        let mut soa = None;
 
         loop {
             match zonefile.next_entry() {
@@ -77,7 +96,14 @@ impl ParsedZoneFile {
                     }
 
                     let record_type = match rr.rtype() {
-                        Rtype::SOA => continue, // managed via zone fields
+                        // Not stored as a record; `soa` carries its fields for
+                        // a zone created from this file.
+                        Rtype::SOA => {
+                            if soa.is_none() {
+                                soa = to_zone_file_soa(&rr);
+                            }
+                            continue;
+                        }
                         other => match RecordType::try_from(other) {
                             Ok(record_type) => record_type,
                             Err(_) => {
@@ -195,10 +221,31 @@ impl ParsedZoneFile {
 
         ParsedZoneFile {
             rrs,
+            soa,
             errors,
             unsupported,
         }
     }
+}
+
+/// Read an SOA record's fields, or `None` when a timer does not fit the i32
+/// columns a zone stores them in.
+fn to_zone_file_soa(rr: &ScannedRecord) -> Option<ZoneFileSoa> {
+    let ZoneRecordData::Soa(soa) = rr.data() else {
+        return None;
+    };
+    let secs = |value: Ttl| i32::try_from(value.as_secs()).ok();
+    Some(ZoneFileSoa {
+        mname: soa.mname().to_string(),
+        // The mailbox is rendered in its SOA form (`admin.example.com.`); the
+        // service turns it back into an address.
+        rname: soa.rname().to_string(),
+        serial: soa.serial().into_int(),
+        refresh: secs(soa.refresh())?,
+        retry: secs(soa.retry())?,
+        expire: secs(soa.expire())?,
+        minimum_ttl: secs(soa.minimum())?,
+    })
 }
 
 /// Directives `ParsedZoneFile::parse` prepends before handing the text to the parser.

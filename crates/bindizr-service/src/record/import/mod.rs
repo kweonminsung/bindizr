@@ -29,8 +29,8 @@ use crate::{
     serial::generate_serial,
     timing::elapsed_ms,
     types::{
-        ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, RecordDiff,
-        RecordValueRequest,
+        CreateZoneRequest, ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse,
+        RecordDiff, RecordValueRequest,
     },
     zone::{ZoneService, version::ChangeSubject},
 };
@@ -78,8 +78,11 @@ impl RecordService {
                     ));
                 }
                 // The zone's existence precedes the outbound fetch, so a
-                // mistyped name cannot start a transfer.
-                ZoneService::lookup_by_name(zone_name).await?;
+                // mistyped name cannot start a transfer. With `create` there is
+                // no zone yet, and the transfer itself refuses an unknown one.
+                if !request.create {
+                    ZoneService::lookup_by_name(zone_name).await?;
+                }
                 let content = crate::dns_client::axfr::fetch_zone_file(server, zone_name)
                     .await
                     .map_err(|e| {
@@ -102,18 +105,21 @@ impl RecordService {
             request.mode,
             request.dry_run,
             request.skip_unsupported,
+            request.create.then_some(caller),
             &caller.change_subject(),
         )
         .await
     }
 
-    /// Preview or apply a zone-file reconciliation in its own transaction.
+    /// Preview or apply a zone-file reconciliation in its own transaction,
+    /// creating the zone from the file's SOA when `create_as` says to.
     async fn reconcile_zone_file(
         zone_name: &str,
         content: &str,
         mode: ImportMode,
         dry_run: bool,
         skip_unsupported: bool,
+        create_as: Option<&Caller>,
         subject: &ChangeSubject,
     ) -> Result<ImportZoneResponse, ServiceError> {
         let t_total = Instant::now();
@@ -124,8 +130,30 @@ impl RecordService {
 
         let apply_result: Result<AppliedImport, ServiceError> = async {
             let t = Instant::now();
-            let zone =
-                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            let zone = match (
+                ZoneService::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?,
+                create_as,
+            ) {
+                (Some(zone), _) => zone,
+                // Created in this transaction, so a dry run rolls it back with
+                // the records and an apply commits both at once.
+                (None, Some(caller)) => {
+                    let soa = ParsedZoneFile::parse(content, zone_name, 0)
+                        .soa
+                        .ok_or_else(|| {
+                            ServiceError::invalid_input(
+                                "the zone file carries no SOA to create the zone from; create it with `zone create` first",
+                            )
+                        })?;
+                    ZoneService::create_tx(
+                        &mut tx,
+                        caller,
+                        &CreateZoneRequest::from_zone_file_soa(zone_name, &soa)?,
+                    )
+                    .await?
+                }
+                (None, None) => return Err(ServiceError::zone_not_found(zone_name)),
+            };
             timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
@@ -391,11 +419,17 @@ impl RecordService {
         }
         .await;
 
+        // A dry run writes nothing, so its transaction is discarded rather
+        // than committed: a zone created to plan against goes with it.
         let AppliedImport {
             response,
             zone_name,
             changed,
-        } = RepositoryService::finish_tx(tx, apply_result, "Failed to import zone file").await?;
+        } = if dry_run {
+            RepositoryService::discard_tx(tx, apply_result).await?
+        } else {
+            RepositoryService::finish_tx(tx, apply_result, "Failed to import zone file").await?
+        };
 
         log::info!(
             "event=zone_import zone={} mode={:?} applied={} added={} deleted={} updated={} unchanged={} skipped={} errors={}",

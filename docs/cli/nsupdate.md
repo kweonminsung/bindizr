@@ -50,9 +50,27 @@ EOF
 A zone no key has been granted refuses nsupdate, except from global keys,
 which may update any zone.
 
-!!! warning "`nsupdate_allow_unsigned` covers testing only"
+!!! warning "Turning off `tsig_required` covers testing only"
 
-    `dns.nsupdate_allow_unsigned = true` accepts unsigned requests for every
+    `dns.nsupdate.tsig_required = false` accepts unsigned requests for every
     zone from any client that reaches the DNS listener, as
-    `api.require_authentication = false` does for the HTTP API. Signed
-    requests are always verified.
+    `api.authentication.required = false` does for the HTTP API. Signed
+    requests are always verified either way.
+
+## The first key
+
+Where the CLI cannot be run — a container image without a shell, an automated
+rollout — `[dns.nsupdate.initial_key]` names a key created on the first start
+that finds none:
+
+```toml
+[dns.nsupdate.initial_key]
+name = "update-key"
+secret = "<base64>"
+# algorithm = "hmac-sha256"
+```
+
+The key is **global**: it may update every zone without a grant, which is the
+only useful shape for a key created before any grant can be made. It is
+ignored once any key exists, so it seeds rather than resets. Where the CLI or
+the API is reachable, create a scoped key and grant it instead.
