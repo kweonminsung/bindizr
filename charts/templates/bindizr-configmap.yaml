@@ -55,3 +55,4 @@ data:
 
     [logging]
     level = "{{ .Values.bindizr.logging.level }}"
+    format = "{{ .Values.bindizr.logging.format }}"

@@ -321,6 +321,42 @@ fn default_notify_timeout_secs() -> u64 {
 #[serde(deny_unknown_fields)]
 pub struct LoggingConfig {
     pub level: LogLevel,
+    /// `json` writes one object per line for log pipelines.
+    #[serde(default)]
+    pub format: LogFormat,
+}
+
+/// The shape of each log line.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogFormat {
+    #[default]
+    Text,
+    Json,
+}
+
+impl fmt::Display for LogFormat {
+    /// Write the log format in its display form.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            LogFormat::Text => "text",
+            LogFormat::Json => "json",
+        };
+        write!(f, "{}", value)
+    }
+}
+
+impl std::str::FromStr for LogFormat {
+    type Err = String;
+
+    /// Parse a log format from its text representation.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "text" => Ok(LogFormat::Text),
+            "json" => Ok(LogFormat::Json),
+            _ => Err("expected text or json".to_string()),
+        }
+    }
 }
 
 /// Console log verbosity levels.

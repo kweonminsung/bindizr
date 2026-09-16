@@ -23,8 +23,10 @@ static DAEMON_EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock
 /// the settings whose readers captured them at startup.
 pub(crate) fn reload_config() -> Result<Vec<String>, String> {
     let changed = config::reload()?;
-    // The installed logger reads its level per record, so this is enough.
-    logger::set_level(config::bindizr_config().logging.level);
+    // The installed logger reads its level and format per record, so this is enough.
+    let config = config::bindizr_config();
+    logger::set_level(config.logging.level);
+    logger::set_format(config.logging.format);
     // A no-op unless this instance had no scheduler, which a zero interval
     // leaves it without.
     service::dnssec::init_maintenance_scheduler();

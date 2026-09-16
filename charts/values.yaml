@@ -57,6 +57,8 @@ bindizr:
 
   logging:
     level: info
+    # text or json (one object per line).
+    format: json
 
   database:
     type: postgresql

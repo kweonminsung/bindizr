@@ -18,8 +18,8 @@ $ bindizr config reload           # re-read the file in the running daemon
 
 ## Reloading
 
-`bindizr config reload`, or `SIGHUP` to the daemon, re-reads the file and
-applies it without a restart. What a running process cannot adopt is refused
+`bindizr config reload`, `systemctl reload bindizr`, or `SIGHUP` to the
+daemon re-reads the file and applies it without a restart. What a running process cannot adopt is refused
 **whole** — the file is not partly applied — so the running configuration
 always describes the running process:
 
@@ -56,7 +56,7 @@ type = "sqlite"               # Database type: sqlite, mysql, postgresql
 url = "mysql://user:password@hostname:port/database"
 
 [database.sqlite]
-file_path = "bindizr.db"      # SQLite database file path
+file_path = "/var/lib/bindizr/bindizr.db" # SQLite database file path
 
 [database.postgresql]
 url = "postgresql://user:password@hostname:port/database"
@@ -90,6 +90,7 @@ minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
 level = "debug"               # Log level: error, warn, info, debug, trace
+# format = "text"             # Log format: text or json (one object per line)
 ```
 
 A reserved character in the user, password, or database of a database `url`
@@ -141,6 +142,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE` | `dns.zone_defaults.expire` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL` | `dns.zone_defaults.minimum_ttl` | |
 | `BINDIZR_LOGGING_LEVEL` | `logging.level` | |
+| `BINDIZR_LOGGING_FORMAT` | `logging.format` | `text` or `json` |
 
 `BINDIZR_DATABASE_URL` is a convenience for container deployments where the URL
 arrives from one secret regardless of backend: it writes to whichever

@@ -16,7 +16,7 @@ type = "sqlite"               # Database type: sqlite, mysql, postgresql
 url = "mysql://user:password@hostname:port/database"
 
 [database.sqlite]
-file_path = "bindizr.db"      # SQLite database file path
+file_path = "/var/lib/bindizr/bindizr.db" # SQLite database file path
 
 [database.postgresql]
 url = "postgresql://user:password@hostname:port/database"
@@ -50,3 +50,4 @@ minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
 level = "debug"               # Log level: error, warn, info, debug, trace
+# format = "text"             # Log format: text or json (one object per line)

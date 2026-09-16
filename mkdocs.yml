@@ -109,5 +109,6 @@ nav:
       # Redocly renders this into site/api/ after mkdocs runs, so it is a link
       # rather than a page.
       - API Reference: https://kweonminsung.github.io/bindizr/api/
+  - Troubleshooting: troubleshooting.md
   - Benchmarks: benchmarks.md
   - Contributing: contributing.md

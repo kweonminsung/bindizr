@@ -160,6 +160,7 @@ fn print_config(config: &BindizrConfig) {
 
     print_section("logging");
     print_value("level", config.logging.level);
+    print_value("format", config.logging.format);
 }
 
 /// Print a configuration section heading.

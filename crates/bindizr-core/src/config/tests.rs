@@ -1,5 +1,6 @@
 use crate::config::{
-    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogLevel, resolve_config_path_with_env,
+    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogFormat, LogLevel,
+    resolve_config_path_with_env,
 };
 
 /// Deviations from the base config TOML; the default renders a minimal valid
@@ -121,6 +122,7 @@ fn from_toml_defaults_missing_optional_fields() {
     assert!(!parsed.dns.nsupdate_allow_unsigned);
     assert_eq!(parsed.dns.zone_history_retention_days, 365);
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
+    assert_eq!(parsed.logging.format, LogFormat::Text);
 }
 
 /// Verify that `from_toml` defaults the fields of a sub-table left empty.
@@ -225,6 +227,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DNS_SCHEDULER_INTERVAL_SECS" => Some("0".to_string()),
             "BINDIZR_DNS_ZONE_DEFAULTS_TTL" => Some("600".to_string()),
             "BINDIZR_LOGGING_LEVEL" => Some("info".to_string()),
+            "BINDIZR_LOGGING_FORMAT" => Some("json".to_string()),
             _ => None,
         })
         .unwrap();
@@ -260,6 +263,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.dns.scheduler_interval_secs, 0);
     assert_eq!(overridden.dns.zone_defaults.ttl, 600);
     assert!(matches!(overridden.logging.level, LogLevel::Info));
+    assert_eq!(overridden.logging.format, LogFormat::Json);
 }
 
 /// Verify that `apply_env_overrides` rejects invalid values.

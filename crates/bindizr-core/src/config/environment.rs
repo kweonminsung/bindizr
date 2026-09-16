@@ -127,6 +127,9 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_LOGGING_LEVEL") {
             self.logging.level = parse_env_value("BINDIZR_LOGGING_LEVEL", &value)?;
         }
+        if let Some(value) = get_env("BINDIZR_LOGGING_FORMAT") {
+            self.logging.format = parse_env_value("BINDIZR_LOGGING_FORMAT", &value)?;
+        }
 
         Ok(())
     }

@@ -39,10 +39,11 @@ $ bindizr start -c <FILE>
 $ bindizr stop
 $ bindizr restart
 
-# Check the current status of bindizr service
+# Whether the daemon runs, where it listens, its database and zone count, and its secondaries
 $ bindizr status
 
-# Verify the installation end to end (config, daemon, API, database, DNS, secondaries)
+# Check the installation end to end; without a daemon it checks the database, the
+# listen ports, and BIND's catalog setup itself
 $ bindizr doctor
 
 # Validate a configuration file without starting bindizr (defaults to /etc/bindizr/bindizr.conf.toml)
@@ -52,7 +53,7 @@ $ bindizr config check [-c <FILE>]
 $ bindizr config list
 $ bindizr config get dns.secondary_addrs
 
-# Re-read the configuration file without restarting (SIGHUP does the same)
+# Re-read the configuration file without restarting (`systemctl reload bindizr` or SIGHUP does the same)
 $ bindizr config reload
 ```
 

@@ -46,3 +46,4 @@ minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
 level = "info"
+format = "text"

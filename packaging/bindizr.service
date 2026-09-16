@@ -5,6 +5,7 @@ After=network.target named.service
 [Service]
 Type=simple
 ExecStart=/usr/bin/bindizr start
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartPreventExitStatus=1
 RestartSec=5
