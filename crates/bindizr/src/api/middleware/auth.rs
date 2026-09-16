@@ -4,7 +4,6 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use bindizr_core::log_debug;
 use bindizr_service::{authorization::Caller, error::ServiceError};
 
 use crate::api::{AuthenticatedToken, error::ApiError};
@@ -39,7 +38,7 @@ pub(crate) async fn auth_middleware(
             Ok(next.run(req).await)
         }
         Err(err) => {
-            log_debug!("Token validation error: {}", err);
+            log::debug!("Token validation error: {}", err);
             Ok(ApiError::from(err).into_response())
         }
     }

@@ -24,7 +24,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap().to_string();
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -39,7 +39,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
 
     // Phase 2: enable DNSSEC.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
@@ -57,9 +57,9 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
     // Phase 4: a record mutation on the signed zone re-signs in the same
     // transaction; the harness's DNS verification waits for the new A record
     // on both secondaries, so this exercises the signed IXFR delta.
-    let serial_before = app.zone_serial(&zone_name).await;
+    let serial_before = app.read_zone_serial(&zone_name).await;
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -71,13 +71,13 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(app.zone_serial(&zone_name).await, serial_before + 1);
+    assert_eq!(app.read_zone_serial(&zone_name).await, serial_before + 1);
 
     // Phase 5: both secondaries converge on the bumped serial.
     let mut attempts = 0;
     loop {
         let (_, body) = app
-            .request(Method::GET, &format!("/zones/{zone_name}/status"), None)
+            .send_request(Method::GET, &format!("/zones/{zone_name}/status"), None)
             .await;
         let all_in_sync = body["secondaries"]
             .as_array()
@@ -106,7 +106,7 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap().to_string();
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -121,7 +121,7 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
 
     let policy_name = format!("{}-nsec3", app.namespace());
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/dnssec-policies",
             Some(json!({ "name": policy_name, "denial": "nsec3" })),
@@ -129,7 +129,7 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),

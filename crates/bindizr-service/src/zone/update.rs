@@ -6,7 +6,6 @@ use crate::{
     authorization::Caller,
     dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
-    log_error, log_info, log_warn,
     model::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
@@ -157,7 +156,7 @@ impl ZoneService {
             if validated.name != existing_zone.name {
                 match RepositoryService::get_zone_by_name(validated.name.as_str()).await {
                     Ok(Some(zone)) if zone.id != zone_id => {
-                        log_error!("Zone with name {} already exists", validated.name);
+                        log::error!("Zone with name {} already exists", validated.name);
                         return Err(ServiceError::zone_conflict(format!(
                             "Zone with name '{}' already exists",
                             validated.name
@@ -165,7 +164,7 @@ impl ZoneService {
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        log_error!("Failed to check existing zone: {}", e);
+                        log::error!("Failed to check existing zone: {}", e);
                         return Err(ServiceError::internal("Failed to update zone"));
                     }
                 }
@@ -195,7 +194,7 @@ impl ZoneService {
             )
             .await
             .map_err(|e| {
-                log_error!("Failed to update zone: {}", e);
+                log::error!("Failed to update zone: {}", e);
                 // Keep the conflict mapped from the UNIQUE(name) backstop; it
                 // covers renames that raced past the pre-check above.
                 if e.code == ErrorCode::ZoneConflict {
@@ -215,12 +214,12 @@ impl ZoneService {
             )
             .await
             .map_err(|e| {
-                log_error!("Failed to fetch apex records: {}", e);
+                log::error!("Failed to fetch apex records: {}", e);
                 ServiceError::internal("Failed to update zone")
             })?;
             let has_mname = apex_records
                 .iter()
-                .any(|r| updated_zone.is_mname(&r.record_type, &r.name, &r.value));
+                .any(|r| updated_zone.mname_matches(&r.record_type, &r.name, &r.value));
 
             if !has_mname {
                 let mname_record = updated_zone.mname_record(
@@ -239,7 +238,7 @@ impl ZoneService {
                 )
                 .await
                 .map_err(|e| {
-                    log_error!("Failed to create mname NS record during update: {}", e);
+                    log::error!("Failed to create mname NS record during update: {}", e);
                     ServiceError::internal("Failed to keep mname NS consistency")
                 })?;
             }
@@ -251,7 +250,7 @@ impl ZoneService {
             RepositoryService::create_zone_changes_tx(&mut tx, &changes)
                 .await
                 .map_err(|e| {
-                    log_error!("Failed to create zone changes: {}", e);
+                    log::error!("Failed to create zone changes: {}", e);
                     ServiceError::internal("Failed to create zone change")
                 })?;
 
@@ -273,7 +272,7 @@ impl ZoneService {
             new_serial,
         } = RepositoryService::finish_tx(tx, apply_result, "Failed to update zone").await?;
 
-        log_info!(
+        log::info!(
             "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",
             updated_zone.name,
             zone_name,
@@ -285,7 +284,7 @@ impl ZoneService {
         if let Err(e) =
             crate::notify::send_notify_after_update(Some(updated_zone.name.as_str())).await
         {
-            log_warn!(
+            log::warn!(
                 "Failed to send NOTIFY for zone {}: {}",
                 updated_zone.name,
                 e
@@ -296,7 +295,7 @@ impl ZoneService {
         if catalog_changed
             && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
         {
-            log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
+            log::warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
         }
 
         Ok(updated_zone)

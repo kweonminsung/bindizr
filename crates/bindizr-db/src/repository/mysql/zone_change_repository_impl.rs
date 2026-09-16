@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, MySql, Pool};
 use crate::{
     error::DatabaseError,
     model::zone_change::ZoneChange,
-    repository::{LockLevel, RepositoryTx, ZoneChangeRepository, sql::lock_clause},
+    repository::{LockLevel, RepositoryTx, ZoneChangeRepository},
 };
 
 pub(crate) struct MySqlZoneChangeRepository {
@@ -131,7 +131,7 @@ impl ZoneChangeRepository for MySqlZoneChangeRepository {
             FROM zone_journal
             WHERE zone_id = ? AND serial > ? AND serial <= ?
             ORDER BY serial, id
-            "#, lock_clause(lock_level)))
+            "#, lock_level.clause()))
         )
         .bind(zone_id)
         .bind(from_serial)

@@ -20,7 +20,7 @@ const LIKE_ESCAPE: char = '#';
 
 /// Escape a stored name for use as a `LIKE` pattern: the escape character
 /// first, so the ones it adds are not escaped again.
-fn escaped_for_like(expression: &str) -> String {
+fn like_escaped_sql(expression: &str) -> String {
     let mut escaped = expression.to_string();
     for character in [LIKE_ESCAPE, '%', '_'] {
         escaped = format!("REPLACE({escaped}, '{character}', '{LIKE_ESCAPE}{character}')");
@@ -41,7 +41,7 @@ pub(crate) fn grant_record_match_sql(
 ) -> String {
     let apex = apex_owner_sql();
     let suffix = "SUBSTR(p.record_name_pattern, 3)";
-    let under = concat(&["'%.'", &escaped_for_like(suffix)]);
+    let under = concat(&["'%.'", &like_escaped_sql(suffix)]);
     let name = format!(
         "(p.record_name_pattern = '*' \
           OR (p.record_name_pattern = '@' AND {alias}.name = {apex}) \

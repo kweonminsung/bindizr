@@ -19,8 +19,6 @@ pub mod tsig_key;
 pub mod types;
 pub mod zone;
 
-pub(crate) use bindizr_core::{
-    log_debug, log_debug_enabled, log_error, log_info, log_warn, metrics, model,
-};
+pub(crate) use bindizr_core::{metrics, model};
 pub(crate) use bindizr_db as database;
 pub(crate) use repository::RepositoryTx;

@@ -18,7 +18,9 @@ async fn record_scope_by_zone() {
         "rname": "admin@example.net",
         "default_ttl": 3600
     });
-    let (status, _) = app.request(Method::POST, "/zones", Some(second_zone)).await;
+    let (status, _) = app
+        .send_request(Method::POST, "/zones", Some(second_zone))
+        .await;
     assert_eq!(status, StatusCode::CREATED);
 
     let mut second_record_id = None;
@@ -35,7 +37,7 @@ async fn record_scope_by_zone() {
         });
 
         let (status, body) = app
-            .request(Method::POST, "/records", Some(create_record_request))
+            .send_request(Method::POST, "/records", Some(create_record_request))
             .await;
         assert_eq!(status, StatusCode::CREATED);
         if zone_name == second_zone_name {
@@ -46,13 +48,13 @@ async fn record_scope_by_zone() {
     let second_record_id = second_record_id.unwrap();
 
     let (status, body) = app
-        .request(Method::GET, &format!("/records/{second_record_id}"), None)
+        .send_request(Method::GET, &format!("/records/{second_record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["record"]["value"], "192.0.2.20");
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/records/{second_record_id}"),
             None,
@@ -61,7 +63,7 @@ async fn record_scope_by_zone() {
     assert_eq!(status, StatusCode::OK);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={first_zone_name}"),
             None,
@@ -80,7 +82,7 @@ async fn record_scope_by_zone() {
     );
 
     let (status, _) = app
-        .request(Method::GET, &format!("/records/{second_record_id}"), None)
+        .send_request(Method::GET, &format!("/records/{second_record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -117,12 +119,14 @@ async fn record_filter_and_paginate() {
             "zone_name": zone["name"]
         }),
     ] {
-        let (status, _) = app.request(Method::POST, "/records", Some(request)).await;
+        let (status, _) = app
+            .send_request(Method::POST, "/records", Some(request))
+            .await;
         assert_eq!(status, StatusCode::CREATED);
     }
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&value=168.1&min_ttl=1000&max_ttl=2000"),
             None,
@@ -134,7 +138,7 @@ async fn record_filter_and_paginate() {
     assert_eq!(records[0]["name"], format!("api.{zone_name}."));
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&search=mail&min_priority=5&max_priority=15"),
             None,
@@ -148,7 +152,7 @@ async fn record_filter_and_paginate() {
     // The CNAME was created as "Target.Example.Com": the value filter matches
     // against the normalized (lowercased, dot-terminated) stored value.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&value=target.example.com"),
             None,
@@ -162,7 +166,7 @@ async fn record_filter_and_paginate() {
     // Filters accept denormalized inputs too: a trailing-dot zone name and an
     // owner in FQDN form without the trailing dot.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}.&name=api.{zone_name}"),
             None,
@@ -174,7 +178,7 @@ async fn record_filter_and_paginate() {
     assert_eq!(records[0]["name"], format!("api.{zone_name}."));
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&limit=1&offset=2"),
             None,
@@ -188,7 +192,9 @@ async fn record_filter_and_paginate() {
     assert_eq!(body["pagination"]["limit"], 1);
     assert_eq!(body["pagination"]["offset"], 2);
 
-    let (status, _) = app.request(Method::GET, "/records?offset=-1", None).await;
+    let (status, _) = app
+        .send_request(Method::GET, "/records?offset=-1", None)
+        .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -202,7 +208,7 @@ async fn record_filter_matches_every_spelling_of_an_owner_name() {
 
     for name in ["www", "foo;bar"] {
         let (status, _) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
@@ -225,7 +231,7 @@ async fn record_filter_matches_every_spelling_of_an_owner_name() {
         r"foo\;bar",
     ] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::GET,
                 &format!("/records?zone_name={zone_name}&name={}", encode(spelling)),
                 None,
@@ -254,7 +260,7 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
         ("note", "TXT", "caf\u{e9}"),
     ] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
@@ -279,7 +285,7 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
         &format!(r"a\.b.{zone_name}."),
     ] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::GET,
                 &format!("/records?name={}", encode(spelling)),
                 None,
@@ -295,7 +301,7 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
 
     // A search term is text: a TXT value holding it is found as typed.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!(
                 "/records?zone_name={zone_name}&search={}",
@@ -334,7 +340,7 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let (status, scoped) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=@"),
             None,
@@ -347,7 +353,7 @@ async fn apex_filter_finds_apex_records_without_a_zone_filter() {
         "zone has no apex record to find: {scoped}"
     );
 
-    let (status, unscoped) = app.request(Method::GET, "/records?name=@", None).await;
+    let (status, unscoped) = app.send_request(Method::GET, "/records?name=@", None).await;
     assert_eq!(status, StatusCode::OK);
     let names: Vec<&str> = unscoped["items"]
         .as_array()
@@ -371,7 +377,7 @@ async fn empty_name_filter_is_no_filter_not_the_apex() {
 
     for (name, value) in [("www", "192.0.2.1"), ("mail", "192.0.2.2")] {
         let (status, _) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
@@ -386,7 +392,7 @@ async fn empty_name_filter_is_no_filter_not_the_apex() {
     let count = |body: &serde_json::Value| body["items"].as_array().unwrap().len();
 
     let (_, unfiltered) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}"),
             None,
@@ -396,7 +402,7 @@ async fn empty_name_filter_is_no_filter_not_the_apex() {
     // Rows hold the apex as the empty string, so an empty filter left to fall
     // through would select exactly the apex rows instead of every row.
     let (status, empty) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name="),
             None,
@@ -423,7 +429,7 @@ async fn search_treats_like_wildcards_as_literal_text() {
         ("underdecoy", "axb"),
     ] {
         let (status, _) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
@@ -439,7 +445,7 @@ async fn search_treats_like_wildcards_as_literal_text() {
     async fn search(app: &TestApp, zone_name: &str, term: &str) -> Vec<String> {
         let q = term.replace('%', "%25").replace('_', "%5F");
         let (_, body) = app
-            .request(
+            .send_request(
                 Method::GET,
                 &format!("/records?zone_name={zone_name}&search={q}"),
                 None,
@@ -480,7 +486,7 @@ async fn record_listing_sorts_by_the_field_asked_for() {
 
     for (name, ttl) in [("c-rec", 300), ("a-rec", 900), ("b-rec", 60)] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
@@ -494,7 +500,7 @@ async fn record_listing_sorts_by_the_field_asked_for() {
 
     let listed = async |app: &TestApp, query: &str| -> Vec<String> {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::GET,
                 &format!("/records?zone_name={zone_name}&record_type=A&limit=1000&{query}"),
                 None,
@@ -521,7 +527,7 @@ async fn record_listing_sorts_by_the_field_asked_for() {
     assert!(by_name[0].starts_with("a-rec"), "{by_name:?}");
 
     let (status, body) = app
-        .request(Method::GET, "/records?order=sideways", None)
+        .send_request(Method::GET, "/records?order=sideways", None)
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(

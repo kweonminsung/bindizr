@@ -19,7 +19,7 @@ async fn record_create_read_update_delete() {
         "zone_name": zone_name
     });
     let (status, body) = app
-        .request(Method::POST, "/records", Some(create_record_request))
+        .send_request(Method::POST, "/records", Some(create_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
@@ -28,13 +28,13 @@ async fn record_create_read_update_delete() {
     assert_eq!(body["record"]["record_type"], "A");
 
     let (status, body) = app
-        .request(Method::GET, &format!("/records/{record_id}"), None)
+        .send_request(Method::GET, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["record"]["name"], format!("api.{zone_name}."));
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=A"),
             None,
@@ -46,7 +46,7 @@ async fn record_create_read_update_delete() {
     // The type filter parses at the service boundary, so junk is a 400
     // rather than an empty page.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=BOGUS"),
             None,
@@ -61,7 +61,7 @@ async fn record_create_read_update_delete() {
         "ttl": 3600
     });
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/records/{record_id}"),
             Some(update_record_request),
@@ -72,7 +72,7 @@ async fn record_create_read_update_delete() {
     assert_eq!(body["record"]["value"], "192.168.1.202");
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/records/{record_id}"),
             Some(json!({ "ttl": 600 })),
@@ -84,12 +84,12 @@ async fn record_create_read_update_delete() {
     assert_eq!(body["record"]["value"], "192.168.1.202");
 
     let (status, _) = app
-        .request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .send_request(Method::DELETE, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .request(Method::GET, &format!("/records/{record_id}"), None)
+        .send_request(Method::GET, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -108,7 +108,7 @@ async fn record_normalize_zone_name() {
         "default_ttl": 3600
     });
     let (status, body) = app
-        .request(Method::POST, "/zones", Some(create_zone_request))
+        .send_request(Method::POST, "/zones", Some(create_zone_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["zone"]["name"], zone_name);
@@ -121,7 +121,7 @@ async fn record_normalize_zone_name() {
         "zone_name": format!("{}.", zone_name.to_ascii_uppercase())
     });
     let (status, body) = app
-        .request(Method::POST, "/records", Some(create_record_request))
+        .send_request(Method::POST, "/records", Some(create_record_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["record"]["name"], format!("api.{zone_name}."));

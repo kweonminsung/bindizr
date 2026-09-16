@@ -1,6 +1,6 @@
 use super::{
     OwnerName, ParseNameError, ZoneName, decode_name_labels, encode_name, is_label_suffix,
-    to_lookup_name,
+    parse_lookup_name,
 };
 
 /// Build the test zone or its DNS name.
@@ -70,22 +70,22 @@ fn lookup_name_canonicalizes_spelling_and_case() {
     // Two spellings of one name must reach the database as one string: the
     // record filter compares them as text.
     assert_eq!(
-        to_lookup_name(r"A\046B.Example.COM.").unwrap(),
+        parse_lookup_name(r"A\046B.Example.COM.").unwrap(),
         r"a\046b.example.com"
     );
     assert_eq!(
-        to_lookup_name(r"a\.b.example.com").unwrap(),
+        parse_lookup_name(r"a\.b.example.com").unwrap(),
         r"a\046b.example.com"
     );
     assert_eq!(
-        to_lookup_name("  app.example.com  ").unwrap(),
+        parse_lookup_name("  app.example.com  ").unwrap(),
         "app.example.com"
     );
 
-    assert_eq!(to_lookup_name("").unwrap_err(), ParseNameError::Empty);
-    assert_eq!(to_lookup_name(".").unwrap_err(), ParseNameError::Empty);
+    assert_eq!(parse_lookup_name("").unwrap_err(), ParseNameError::Empty);
+    assert_eq!(parse_lookup_name(".").unwrap_err(), ParseNameError::Empty);
     assert_eq!(
-        to_lookup_name("bad name.example.com").unwrap_err(),
+        parse_lookup_name("bad name.example.com").unwrap_err(),
         ParseNameError::Whitespace
     );
 }

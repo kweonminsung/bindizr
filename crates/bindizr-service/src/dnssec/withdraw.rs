@@ -47,7 +47,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
 
-        crate::log_info!("event=dnssec_withdraw zone={}", response.zone_name);
+        log::info!("event=dnssec_withdraw zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
     }
@@ -89,7 +89,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
 
-        crate::log_info!("event=dnssec_withdraw_cancel zone={}", response.zone_name);
+        log::info!("event=dnssec_withdraw_cancel zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
     }

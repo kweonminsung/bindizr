@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::record::{RecordValueRequest, display_record_value_request};
+use super::record::{RecordValueRequest, build_display_value};
 use crate::{
     error::ServiceError, model::zone_version::ZoneVersion, zone::history::ReconstructedRecord,
 };
@@ -59,7 +59,7 @@ impl ZoneVersionResponse {
             retry: version.retry,
             expire: version.expire,
             minimum_ttl: version.minimum_ttl,
-            change_source: version.change_source.as_str().to_string(),
+            change_source: version.change_source.to_string(),
             changed_by: version.changed_by.clone(),
             created_at: version.created_at,
         })
@@ -88,7 +88,7 @@ impl From<ReconstructedRecord> for VersionRecordResponse {
             name: record.name.to_string(),
             record_type: record.record_type.to_string(),
             // Decode TXT out of its stored form, as the record endpoints do.
-            value: display_record_value_request(&record.value, &record.record_type),
+            value: build_display_value(&record.value, &record.record_type),
             ttl: record.ttl,
             priority: record.priority,
         }

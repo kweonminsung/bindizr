@@ -8,11 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bindizr_core::{
-    config,
-    dns::address::{ParsedAddress, parse_address_target},
-    log_warn,
-};
+use bindizr_core::{config, dns::address::ParsedAddress};
 use tokio::{net::lookup_host, time::timeout};
 
 /// How long a resolved hostname is reused; an address changes rarely.
@@ -51,8 +47,8 @@ impl SecondaryAcl {
         false
     }
 
-    /// Parse configured secondary addresses into ACL entries.
-    fn parse(raw: &str) -> Self {
+    /// The ACL the configured `secondary_addrs` list names.
+    fn from_addrs(raw: &str) -> Self {
         let entries = raw
             .split(',')
             .filter_map(|item| {
@@ -61,7 +57,7 @@ impl SecondaryAcl {
                     return None;
                 }
 
-                match parse_address_target(trimmed, 53) {
+                match ParsedAddress::parse(trimmed, 53) {
                     ParsedAddress::SocketAddr(addr) => Some(SecondaryAclEntry::Ip(addr.ip())),
                     ParsedAddress::HostPort(host_port) => {
                         Some(SecondaryAclEntry::HostPort(host_port))
@@ -107,7 +103,7 @@ fn locked_cache() -> std::sync::MutexGuard<'static, HashMap<String, CachedAddrs>
 /// on the next transfer; parsing a short list costs nothing next to the
 /// hostname resolution it may avoid.
 pub(crate) async fn is_client_allowed(client_ip: IpAddr) -> bool {
-    SecondaryAcl::parse(&config::bindizr_config().dns.secondary_addrs)
+    SecondaryAcl::from_addrs(&config::bindizr_config().dns.secondary_addrs)
         .allows(client_ip)
         .await
 }
@@ -124,11 +120,11 @@ async fn resolve_acl_host(host_port: &str) -> Vec<IpAddr> {
             RESOLVED_TTL,
         ),
         Ok(Err(e)) => {
-            log_warn!("Failed to resolve DNS ACL host '{}': {}", host_port, e);
+            log::warn!("Failed to resolve DNS ACL host '{}': {}", host_port, e);
             (Vec::new(), RESOLVE_FAILURE_TTL)
         }
         Err(_) => {
-            log_warn!(
+            log::warn!(
                 "Timed out resolving DNS ACL host '{}' after {:?}",
                 host_port,
                 RESOLVE_TIMEOUT
@@ -155,7 +151,7 @@ mod tests {
     #[test]
     fn secondary_acl_keeps_hostnames_for_runtime_resolution() {
         assert_eq!(
-            SecondaryAcl::parse("192.0.2.10:53, bind9-0.bind9-headless:53").entries,
+            SecondaryAcl::from_addrs("192.0.2.10:53, bind9-0.bind9-headless:53").entries,
             vec![
                 SecondaryAclEntry::Ip("192.0.2.10".parse().unwrap()),
                 SecondaryAclEntry::HostPort("bind9-0.bind9-headless:53".to_string()),
@@ -167,7 +163,7 @@ mod tests {
     #[tokio::test]
     async fn literal_entries_answer_without_resolving() {
         // The unresolvable entry proves no lookup happened.
-        let acl = SecondaryAcl::parse("192.0.2.10, no-such-host.invalid:53");
+        let acl = SecondaryAcl::from_addrs("192.0.2.10, no-such-host.invalid:53");
 
         assert!(acl.allows("192.0.2.10".parse().unwrap()).await);
         assert!(locked_cache().is_empty());
@@ -177,7 +173,7 @@ mod tests {
     #[test]
     fn secondary_acl_defaults_hostname_ports() {
         assert_eq!(
-            SecondaryAcl::parse("bind9-0.bind9-headless").entries,
+            SecondaryAcl::from_addrs("bind9-0.bind9-headless").entries,
             vec![SecondaryAclEntry::HostPort(
                 "bind9-0.bind9-headless:53".to_string()
             )]

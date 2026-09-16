@@ -97,7 +97,7 @@ pub(crate) async fn create_tsig_grant(
 }
 
 /// List the requested TSIG grants for a TSIG key.
-pub(crate) async fn list_tsig_grants_by_key(
+pub(crate) async fn list_tsig_grants(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: TsigKeyNameParams = parse_params(data)?;
@@ -112,7 +112,7 @@ pub(crate) async fn list_tsig_grants_by_key(
 }
 
 /// List the requested TSIG grants for a zone.
-pub(crate) async fn list_tsig_grants_by_zone(
+pub(crate) async fn list_zone_tsig_grants(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;

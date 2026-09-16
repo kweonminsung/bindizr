@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use bindizr_core::{config, log_error, log_info, logger};
+use bindizr_core::{config, logger};
 use bindizr_db as database;
 use bindizr_service as service;
 use tokio::signal::unix::{SignalKind, signal};
@@ -56,14 +56,14 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     if config::bindizr_config().dns.notify_on_startup {
         match service::notify::send_notify(None).await {
-            Ok(()) => log_info!("Startup DNS NOTIFY completed."),
-            Err(e) => log_error!("Startup DNS NOTIFY failed: {}", e),
+            Ok(()) => log::info!("Startup DNS NOTIFY completed."),
+            Err(e) => log::error!("Startup DNS NOTIFY failed: {}", e),
         }
     }
 
-    log_info!("Bindizr is running in foreground mode.");
-    log_info!("For production use, please run bindizr as a systemd service:");
-    log_info!("# systemctl start bindizr");
+    log::info!("Bindizr is running in foreground mode.");
+    log::info!("For production use, please run bindizr as a systemd service:");
+    log::info!("# systemctl start bindizr");
 
     let mut control_rx = socket::server::control::init();
     let socket_task = socket::server::initialize(&shutdown).await?;
@@ -79,22 +79,22 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
         let control = tokio::select! {
             result = tokio::signal::ctrl_c() => {
                 result.map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
-                log_info!("Interrupt received, shutting down...");
+                log::info!("Interrupt received, shutting down...");
                 break;
             }
             _ = terminate.recv() => {
-                log_info!("SIGTERM received, shutting down...");
+                log::info!("SIGTERM received, shutting down...");
                 break;
             }
             _ = hangup.recv() => {
                 match reload_config() {
                     Ok(changed) if changed.is_empty() => {
-                        log_info!("SIGHUP received, nothing changed.")
+                        log::info!("SIGHUP received, nothing changed.")
                     }
                     Ok(changed) => {
-                        log_info!("SIGHUP received, reloaded: {}", changed.join(", "))
+                        log::info!("SIGHUP received, reloaded: {}", changed.join(", "))
                     }
-                    Err(e) => log_error!("SIGHUP received, nothing reloaded: {}", e),
+                    Err(e) => log::error!("SIGHUP received, nothing reloaded: {}", e),
                 }
                 continue;
             }
@@ -103,13 +103,13 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
         match control {
             Some(socket::server::control::DaemonControl::Restart) => {
-                log_info!("Restart requested, re-executing bindizr...");
+                log::info!("Restart requested, re-executing bindizr...");
                 // reexec only returns on failure; the listeners are still
                 // serving, so keep running instead of turning it into an outage.
-                log_error!("{}. Continuing with the current process.", reexec());
+                log::error!("{}. Continuing with the current process.", reexec());
             }
             _ => {
-                log_info!("Shutdown requested, exiting gracefully...");
+                log::info!("Shutdown requested, exiting gracefully...");
                 break;
             }
         }
@@ -125,7 +125,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
     })
     .await;
     if drained.is_err() {
-        log_error!(
+        log::error!(
             "Servers did not finish within {:?}, exiting anyway.",
             DRAIN_TIMEOUT
         );

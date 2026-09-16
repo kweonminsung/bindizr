@@ -83,7 +83,7 @@ pub(crate) async fn get_zone_status(
 
 #[derive(Deserialize)]
 pub(crate) struct ExportZoneQuery {
-    pub(crate) signed: Option<bool>,
+    signed: Option<bool>,
 }
 
 /// Render a zone as BIND master-file text.

@@ -7,10 +7,7 @@ use crate::{
     model::dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     repository::{
         DnssecRecordFilter, DnssecRecordRepository, LockLevel, RepositoryTx,
-        sql::{
-            apex_owner_sql, concat_fn, grant_record_match_sql, like_pattern, lock_clause,
-            refresh_bound,
-        },
+        sql::{apex_owner_sql, concat_fn, grant_record_match_sql, like_pattern, refresh_bound},
     },
 };
 
@@ -82,7 +79,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
             WHERE zone_id = ?
             ORDER BY id
             "#,
-            lock_clause(lock_level)
+            lock_level.clause()
         )))
         .bind(zone_id)
         .fetch_all(&mut **mysql_tx)
@@ -229,7 +226,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
     }
 
     /// Count signatures that have already expired.
-    async fn count_expired(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError> {
+    async fn count_expired_before(&self, cutoff: DateTime<Utc>) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
 
         let count = sqlx::query_scalar::<_, i64>(

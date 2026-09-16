@@ -2,7 +2,6 @@
 
 use std::time::Duration;
 
-use bindizr_core::log_error;
 use serde::Deserialize;
 
 use crate::wire::{BindizrChanges, BindizrRecord};
@@ -18,11 +17,14 @@ pub(crate) enum UpstreamError {
     Unreachable(String),
 }
 
+/// The `error` message a bindizr API error response carries.
 #[derive(Deserialize)]
 struct UpstreamErrorBody {
     error: String,
 }
 
+/// HTTP client for the bindizr `/external-dns` API, sending the Bearer token
+/// with every request.
 pub(crate) struct UpstreamClient {
     http: reqwest::Client,
     base_url: String,
@@ -167,7 +169,7 @@ impl UpstreamClient {
             .unwrap_or_else(|_| format!("bindizr responded with status {}", status.as_u16()));
 
         if status.as_u16() == 401 || status.as_u16() == 403 {
-            log_error!(
+            log::error!(
                 "bindizr rejected the request with {} ({}); check the API token and its grants",
                 status.as_u16(),
                 message

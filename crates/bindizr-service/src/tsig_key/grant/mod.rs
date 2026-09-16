@@ -143,7 +143,7 @@ impl TsigGrantService {
     /// Whether `key` may transfer `zone`: a global key covers every zone, a
     /// scoped one needs a grant over the whole zone, read-only or not. The
     /// grants are share-locked so a revocation waits for the read they gate.
-    pub(crate) async fn authorize_transfer_tx(
+    pub(crate) async fn authorize_whole_zone_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
         key: &TsigKey,

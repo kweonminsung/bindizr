@@ -22,7 +22,7 @@ pub(crate) async fn get_metrics() -> Response {
 
     // A failed probe still serves the instrumentation counters; only
     // database_up drops to 0.
-    match tokio::time::timeout(DB_PROBE_TIMEOUT, refresh_db_gauges()).await {
+    match tokio::time::timeout(DB_PROBE_TIMEOUT, track_db_gauges()).await {
         Ok(Ok(())) => metrics.database_up.set(1),
         _ => metrics.database_up.set(0),
     }
@@ -35,10 +35,10 @@ pub(crate) async fn get_metrics() -> Response {
         .into_response()
 }
 
-/// Refresh database counts and pool gauges for a metrics scrape.
+/// Set the database count and pool gauges for a metrics scrape.
 ///
 /// Count directly: fetching even a one-record page still sorts the whole table.
-async fn refresh_db_gauges() -> Result<(), ServiceError> {
+async fn track_db_gauges() -> Result<(), ServiceError> {
     let metrics = metrics();
 
     // Run counts concurrently so the timeout budgets one round trip, not one per query.

@@ -5,10 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     model::zone::Zone,
-    types::{
-        RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue,
-        display_record_value_request,
-    },
+    types::{RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, build_display_value},
     zone::history::ReconstructedRecord,
 };
 
@@ -41,7 +38,7 @@ fn group_rrsets(
                 record.ttl,
             ),
             value: RecordDiffValue {
-                value: display_record_value_request(&record.value, &record.record_type),
+                value: build_display_value(&record.value, &record.record_type),
                 ttl: record.ttl,
                 priority: record.priority,
             },

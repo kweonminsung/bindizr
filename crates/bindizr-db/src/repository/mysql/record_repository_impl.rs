@@ -9,8 +9,8 @@ use crate::{
     repository::{
         LockLevel, RecordFilter, RecordRepository, RepositoryTx,
         sql::{
-            apex_owner_sql, concat_fn, grant_record_match_sql, like_pattern, lock_clause,
-            name_like_types_sql, record_order_by_sql, trim_partial_value,
+            apex_owner_sql, concat_fn, grant_record_match_sql, like_pattern, name_like_types_sql,
+            partial_term,
         },
     },
 };
@@ -164,7 +164,7 @@ impl RecordRepository for MySqlRecordRepository {
     ) -> Result<Option<Record>, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?{}",lock_clause(lock_level))))
+        let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?{}",lock_level.clause())))
             .bind(id)
             .fetch_optional(&mut **mysql_tx)
             .await?;
@@ -183,7 +183,7 @@ impl RecordRepository for MySqlRecordRepository {
 
         let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
             format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? ORDER BY name, id{}",
-            lock_clause(lock_level),
+            lock_level.clause(),
         )))
         .bind(zone_id)
         .fetch_all(&mut **mysql_tx)
@@ -206,7 +206,7 @@ impl RecordRepository for MySqlRecordRepository {
         // its own row, and the bare column lets idx_records_zone_name apply.
         let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
             format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = ? AND name = ? ORDER BY name, id{}",
-            lock_clause(lock_level),
+            lock_level.clause(),
         )))
         .bind(zone_id)
         .bind(name)
@@ -262,7 +262,7 @@ impl RecordRepository for MySqlRecordRepository {
                 sql.push_str(if i == 0 { "?" } else { ",?" });
             }
             sql.push(')');
-            sql.push_str(lock_clause(lock_level));
+            sql.push_str(lock_level.clause());
 
             let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
             for name in chunk {
@@ -280,12 +280,12 @@ impl RecordRepository for MySqlRecordRepository {
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-        let value = filter.value.as_deref().map(trim_partial_value);
+        let value = filter.value.as_deref().map(partial_term);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
-        let order_by = record_order_by_sql(filter.sort, filter.order);
+        let order_by = filter.sort.order_by_sql(filter.order);
         let grant_match = grant_record_match_sql("r", Some("record_type"), concat_fn);
         let query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
@@ -375,7 +375,7 @@ impl RecordRepository for MySqlRecordRepository {
     /// Count records matching the filter.
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-        let value = filter.value.as_deref().map(trim_partial_value);
+        let value = filter.value.as_deref().map(partial_term);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();

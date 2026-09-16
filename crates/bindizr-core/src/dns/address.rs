@@ -5,34 +5,37 @@ use std::net::{IpAddr, SocketAddr};
 
 use super::name::{MAX_DOMAIN_LEN, classify_domain_label};
 
+/// An address target: a socket address, or a host and port to resolve later.
 pub enum ParsedAddress {
     SocketAddr(SocketAddr),
     HostPort(String),
 }
 
-/// Parse an address target and supply the default port when needed.
-pub fn parse_address_target(value: &str, default_port: u16) -> ParsedAddress {
-    if let Ok(addr) = value.parse::<SocketAddr>() {
-        return ParsedAddress::SocketAddr(addr);
+impl ParsedAddress {
+    /// Parse an address target and supply the default port when needed.
+    pub fn parse(value: &str, default_port: u16) -> Self {
+        if let Ok(addr) = value.parse::<SocketAddr>() {
+            return ParsedAddress::SocketAddr(addr);
+        }
+
+        if let Ok(ip) = value.parse::<IpAddr>() {
+            return ParsedAddress::SocketAddr(SocketAddr::new(ip, default_port));
+        }
+
+        if let Some(bracketed) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+            && let Ok(ip) = bracketed.parse::<IpAddr>()
+        {
+            return ParsedAddress::SocketAddr(SocketAddr::new(ip, default_port));
+        }
+
+        let host_port = if has_explicit_port(value) || value.contains(':') {
+            value.to_string()
+        } else {
+            format!("{}:{}", value, default_port)
+        };
+
+        ParsedAddress::HostPort(host_port)
     }
-
-    if let Ok(ip) = value.parse::<IpAddr>() {
-        return ParsedAddress::SocketAddr(SocketAddr::new(ip, default_port));
-    }
-
-    if let Some(bracketed) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
-        && let Ok(ip) = bracketed.parse::<IpAddr>()
-    {
-        return ParsedAddress::SocketAddr(SocketAddr::new(ip, default_port));
-    }
-
-    let host_port = if has_explicit_port(value) || value.contains(':') {
-        value.to_string()
-    } else {
-        format!("{}:{}", value, default_port)
-    };
-
-    ParsedAddress::HostPort(host_port)
 }
 
 /// `host[:port]`, `ip[:port]`, or `[ipv6][:port]`: LDH labels (`_` allowed)
@@ -53,7 +56,8 @@ pub fn is_address_target(value: &str) -> bool {
     }
 }
 
-/// Check whether a hostname uses valid domain labels.
+/// Check whether a hostname uses valid domain labels. A resolver target is an
+/// LDH name with no escapes, so the dot is always a label boundary here.
 fn is_hostname(value: &str) -> bool {
     let name = value.strip_suffix('.').unwrap_or(value);
     !name.is_empty()
@@ -93,36 +97,36 @@ mod tests {
         }
     }
 
-    /// Verify that `parse_address_target` defaults plain ip addresses to default port.
+    /// Verify that `ParsedAddress::parse` defaults plain ip addresses to default port.
     #[test]
     fn parse_address_target_defaults_plain_ip_addresses_to_default_port() {
         assert_eq!(
-            target_to_string(parse_address_target("192.0.2.10", 53)),
+            target_to_string(ParsedAddress::parse("192.0.2.10", 53)),
             "SocketAddr(192.0.2.10:53)"
         );
         assert_eq!(
-            target_to_string(parse_address_target("2001:db8::1", 53)),
+            target_to_string(ParsedAddress::parse("2001:db8::1", 53)),
             "SocketAddr([2001:db8::1]:53)"
         );
         assert_eq!(
-            target_to_string(parse_address_target("[2001:db8::1]", 53)),
+            target_to_string(ParsedAddress::parse("[2001:db8::1]", 53)),
             "SocketAddr([2001:db8::1]:53)"
         );
     }
 
-    /// Verify that `parse_address_target` preserves explicit ports.
+    /// Verify that `ParsedAddress::parse` preserves explicit ports.
     #[test]
     fn parse_address_target_preserves_explicit_ports() {
         assert_eq!(
-            target_to_string(parse_address_target("192.0.2.10:5353", 53)),
+            target_to_string(ParsedAddress::parse("192.0.2.10:5353", 53)),
             "SocketAddr(192.0.2.10:5353)"
         );
         assert_eq!(
-            target_to_string(parse_address_target("[2001:db8::1]:5353", 53)),
+            target_to_string(ParsedAddress::parse("[2001:db8::1]:5353", 53)),
             "SocketAddr([2001:db8::1]:5353)"
         );
         assert_eq!(
-            target_to_string(parse_address_target("ns2.example.com:5353", 53)),
+            target_to_string(ParsedAddress::parse("ns2.example.com:5353", 53)),
             "HostPort(ns2.example.com:5353)"
         );
     }
@@ -161,11 +165,11 @@ mod tests {
         }
     }
 
-    /// Verify that `parse_address_target` defaults hostname to default port.
+    /// Verify that `ParsedAddress::parse` defaults hostname to default port.
     #[test]
     fn parse_address_target_defaults_hostname_to_default_port() {
         assert_eq!(
-            target_to_string(parse_address_target("ns2.example.com", 53)),
+            target_to_string(ParsedAddress::parse("ns2.example.com", 53)),
             "HostPort(ns2.example.com:53)"
         );
     }

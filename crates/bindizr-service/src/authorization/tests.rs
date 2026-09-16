@@ -157,10 +157,10 @@ fn token(grants: Vec<TokenGrant>) -> Caller {
 
 /// Check whether the test caller may read the requested record.
 fn visible(caller: &Caller, name: &str, record_type: Option<&RecordType>) -> bool {
-    caller.record_visible(1, &OwnerName::from_row(name), record_type)
+    caller.sees_record(1, &OwnerName::from_row(name), record_type)
 }
 
-/// Verify that `record_visible` narrows reads the way writes are narrowed.
+/// Verify that `sees_record` narrows reads the way writes are narrowed.
 #[test]
 fn record_visible_narrows_reads_the_way_writes_are_narrowed() {
     let caller = token(vec![grant("*.dyn", "A,TXT")]);
@@ -175,7 +175,7 @@ fn record_visible_narrows_reads_the_way_writes_are_narrowed() {
     assert!(visible(&token(vec![grant("*", "*")]), "host.dyn", None));
 }
 
-/// Verify that `record_visible` survives a read only grant.
+/// Verify that `sees_record` survives a read only grant.
 #[test]
 fn record_visible_survives_a_read_only_grant() {
     let mut read_only = grant("*", "*");

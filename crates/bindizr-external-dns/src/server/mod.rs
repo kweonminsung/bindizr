@@ -10,16 +10,17 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::{log_info, log_warn, metrics::TEXT_CONTENT_TYPE};
+use bindizr_core::metrics::TEXT_CONTENT_TYPE;
 
 use crate::{
     metrics::metrics,
     upstream::{UpstreamClient, UpstreamError},
     wire::{
-        Changes, DomainFilter, Endpoint, MEDIA_TYPE, merge_adjusted_endpoints, to_bindizr_records,
+        Changes, DomainFilter, Endpoint, MEDIA_TYPE, build_adjusted_endpoints, to_bindizr_records,
     },
 };
 
+/// State shared by both routers: the bindizr client every handler forwards to.
 pub(crate) struct AppState {
     pub(crate) upstream: UpstreamClient,
 }
@@ -42,7 +43,7 @@ pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
 /// Build the health/metrics router served on the exposed listener.
 pub(crate) fn health_router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/healthz", routing::get(healthz))
+        .route("/healthz", routing::get(get_health))
         .route("/metrics", routing::get(get_metrics))
         .with_state(state)
 }
@@ -156,7 +157,7 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
         )
             .into_response(),
         Ok(domains) => {
-            log_info!("event=negotiate domains={}", domains.len());
+            log::info!("event=negotiate domains={}", domains.len());
             json_response(&DomainFilter { include: domains })
         }
         Err(e) => upstream_error_response(e),
@@ -179,7 +180,7 @@ async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
                 .into_iter()
                 .map(Endpoint::from_bindizr_record)
                 .collect();
-            log_info!("event=records_get endpoints={}", endpoints.len());
+            log::info!("event=records_get endpoints={}", endpoints.len());
             json_response(&endpoints)
         }
         Err(e) => upstream_error_response(e),
@@ -201,17 +202,17 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
         }
     };
 
-    let bindizr_changes = match changes.to_bindizr() {
+    let bindizr_changes = match changes.to_bindizr_changes() {
         Ok(converted) => converted,
         Err(message) => {
-            log_warn!("event=records_apply rejected={}", message);
+            log::warn!("event=records_apply rejected={}", message);
             return (StatusCode::BAD_REQUEST, message).into_response();
         }
     };
 
     match state.upstream.apply_changes(&bindizr_changes).await {
         Ok(()) => {
-            log_info!(
+            log::info!(
                 "event=records_apply create={} update={} delete={} ms={:.1}",
                 changes.create.len(),
                 changes.update_new.len(),
@@ -241,7 +242,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
     let records = match to_bindizr_records(&endpoints) {
         Ok(records) => records,
         Err(message) => {
-            log_warn!("event=adjust_endpoints rejected={}", message);
+            log::warn!("event=adjust_endpoints rejected={}", message);
             return (StatusCode::BAD_REQUEST, message).into_response();
         }
     };
@@ -258,8 +259,8 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
         )
             .into_response(),
         Ok(adjusted) => {
-            log_info!("event=adjust_endpoints endpoints={}", endpoints.len());
-            json_response(&merge_adjusted_endpoints(endpoints, adjusted))
+            log::info!("event=adjust_endpoints endpoints={}", endpoints.len());
+            json_response(&build_adjusted_endpoints(endpoints, adjusted))
         }
         Err(e) => upstream_error_response(e),
     }
@@ -267,7 +268,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
 
 /// `GET /healthz` — this process is up and bindizr answers its
 /// (unauthenticated) health endpoint.
-async fn healthz(State(state): State<Arc<AppState>>) -> Response {
+async fn get_health(State(state): State<Arc<AppState>>) -> Response {
     match state.upstream.probe_health().await {
         Ok(()) => (StatusCode::OK, "ok").into_response(),
         Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "bindizr unreachable").into_response(),

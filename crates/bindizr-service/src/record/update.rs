@@ -12,7 +12,6 @@ use crate::{
     authorization::{Caller, RecordWrite},
     dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
-    log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType, RecordWithZone},
         zone::Zone,
@@ -108,7 +107,7 @@ impl RecordService {
             Ok(Some(record)) => record.zone_id,
             Ok(None) => return Err(ServiceError::record_not_found(record_id)),
             Err(e) => {
-                log_error!("Failed to fetch record: {}", e);
+                log::error!("Failed to fetch record: {}", e);
                 return Err(ServiceError::internal("Failed to fetch record"));
             }
         };
@@ -127,7 +126,7 @@ impl RecordService {
                     ));
                 }
                 Err(e) => {
-                    log_error!("Failed to fetch zone: {}", e);
+                    log::error!("Failed to fetch zone: {}", e);
                     return Err(ServiceError::internal("Failed to fetch zone"));
                 }
             };
@@ -141,14 +140,14 @@ impl RecordService {
                         return Err(ServiceError::record_not_found(record_id));
                     }
                     Err(e) => {
-                        log_error!("Failed to fetch record: {}", e);
+                        log::error!("Failed to fetch record: {}", e);
                         return Err(ServiceError::internal("Failed to fetch record"));
                     }
                 };
 
             // A record the caller's grants do not reach reads as 404, as it
             // does on GET, so ids cannot be probed.
-            if !caller.record_visible(
+            if !caller.sees_record(
                 zone.id,
                 &existing_record.name,
                 Some(&existing_record.record_type),
@@ -188,7 +187,7 @@ impl RecordService {
             {
                 Ok(records) => records,
                 Err(e) => {
-                    log_error!("Failed to load records: {}", e);
+                    log::error!("Failed to load records: {}", e);
                     return Err(ServiceError::internal(
                         "Failed to update record".to_string(),
                     ));
@@ -237,7 +236,7 @@ impl RecordService {
         let (updated_record, zone_name) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to update record").await?;
 
-        log_info!(
+        log::info!(
             "event=record_update zone={} name={} type={} ttl={} priority={} record_id={}",
             zone_name,
             updated_record.name,
@@ -251,7 +250,7 @@ impl RecordService {
 
         // Request secondary transfers only after the replacement is committed.
         if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
-            log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
         Ok(RecordWithZone::new(updated_record, zone_name))

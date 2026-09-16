@@ -4,11 +4,10 @@
 use std::collections::HashMap;
 
 use bindizr_core::{
-    dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
-    log_info,
+    dns::{message, message::Rtype, tsig::TransferSigner},
     model::{
         zone::Zone,
-        zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
+        zone_change::{ChangeOperation, ZoneChange},
         zone_version::ZoneVersion,
     },
 };
@@ -124,7 +123,7 @@ pub(crate) async fn send_ixfr_response(
                     &mut builder,
                     stream,
                     &mut messages_sent,
-                    |builder| add_change(builder, change, &zone.name),
+                    |builder| builder.add_change(change, &zone.name),
                 )
                 .await?;
             }
@@ -149,7 +148,7 @@ pub(crate) async fn send_ixfr_response(
                     &mut builder,
                     stream,
                     &mut messages_sent,
-                    |builder| add_change(builder, change, &zone.name),
+                    |builder| builder.add_change(change, &zone.name),
                 )
                 .await?;
             }
@@ -171,7 +170,7 @@ pub(crate) async fn send_ixfr_response(
 
     match result {
         Ok(()) => {
-            log_info!("IXFR: sent response in {} DNS message(s)", messages_sent);
+            log::info!("IXFR: sent response in {} DNS message(s)", messages_sent);
             Ok(())
         }
         // A failure after the first flush leaves the stream mid-transfer, and
@@ -183,43 +182,5 @@ pub(crate) async fn send_ixfr_response(
             error,
             signer: builder.take_signer().map(Box::new),
         }),
-    }
-}
-
-/// Append one journal change to a DNS transfer message.
-fn add_change(
-    builder: &mut message::DnsMessageBuilder,
-    change: &ZoneChange,
-    zone_name: &ZoneName,
-) -> Result<(), String> {
-    match &change.record_type {
-        JournalRecordType::Derived(record_type) => {
-            let rdata = change
-                .record_rdata
-                .clone()
-                .ok_or_else(|| "derived change carries no wire rdata".to_string())?;
-            builder.add_raw_rdata(
-                change.record_name.to_wire(zone_name),
-                record_type.wire_type(),
-                change.record_ttl as u32,
-                rdata,
-            )
-        }
-        JournalRecordType::User(record_type) => {
-            let value = change
-                .record_value
-                .as_deref()
-                .ok_or_else(|| "user change carries no record value".to_string())?;
-            builder.add_record_parts(
-                zone_name,
-                &change.record_name,
-                record_type,
-                value,
-                change.record_ttl,
-                change.record_priority,
-            )
-        }
-        // The delta's SOA boundaries come from the version rows above.
-        JournalRecordType::Soa => Ok(()),
     }
 }

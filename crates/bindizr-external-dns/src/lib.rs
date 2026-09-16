@@ -11,7 +11,7 @@ mod wire;
 
 use std::sync::Arc;
 
-use bindizr_core::{log_error, log_info, logger};
+use bindizr_core::logger;
 use clap::Parser;
 
 /// Parse arguments, start both listeners, and serve until interrupted.
@@ -25,7 +25,7 @@ pub async fn execute() {
     logger::initialize_with_level(adapter_config.log_level);
 
     if adapter_config.token.is_none() {
-        log_error!(
+        log::error!(
             "no bindizr API token configured (--token or --token-file); requests will be unauthenticated"
         );
     }
@@ -47,13 +47,13 @@ pub async fn execute() {
     let webhook_listener = tokio::net::TcpListener::bind(adapter_config.listen_addr)
         .await
         .unwrap_or_else(|e| {
-            log_error!("Failed to bind {}: {:?}", adapter_config.listen_addr, e);
+            log::error!("Failed to bind {}: {:?}", adapter_config.listen_addr, e);
             std::process::exit(1);
         });
     let health_listener = tokio::net::TcpListener::bind(adapter_config.health_listen_addr)
         .await
         .unwrap_or_else(|e| {
-            log_error!(
+            log::error!(
                 "Failed to bind {}: {:?}",
                 adapter_config.health_listen_addr,
                 e
@@ -61,12 +61,12 @@ pub async fn execute() {
             std::process::exit(1);
         });
 
-    log_info!(
+    log::info!(
         "ExternalDNS webhook listening on http://{} (bindizr: {})",
         adapter_config.listen_addr,
         adapter_config.bindizr_url
     );
-    log_info!(
+    log::info!(
         "Health endpoint listening on http://{}/healthz",
         adapter_config.health_listen_addr
     );
@@ -78,16 +78,16 @@ pub async fn execute() {
     tokio::select! {
         result = webhook => {
             if let Err(e) = result {
-                log_error!("Webhook server error: {:?}", e);
+                log::error!("Webhook server error: {:?}", e);
             }
         }
         result = health => {
             if let Err(e) = result {
-                log_error!("Health server error: {:?}", e);
+                log::error!("Health server error: {:?}", e);
             }
         }
         _ = tokio::signal::ctrl_c() => {
-            log_info!("Shutting down");
+            log::info!("Shutting down");
         }
     }
 }

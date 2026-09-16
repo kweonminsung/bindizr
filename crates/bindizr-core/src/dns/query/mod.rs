@@ -306,7 +306,7 @@ pub fn extract_ds_rrset(
     let message = parse_authoritative_answer(query_id, qname, Rtype::DS, response)?;
     match message.header().rcode() {
         Rcode::NOERROR => {}
-        Rcode::NXDOMAIN => return require_parent_soa(&message, qname).map(|_| None),
+        Rcode::NXDOMAIN => return validate_parent_soa(&message, qname).map(|_| None),
         rcode => return Err(format!("RCODE {}", rcode.to_int())),
     }
 
@@ -333,7 +333,7 @@ pub fn extract_ds_rrset(
         ttl = Some(ttl.map_or(rr.ttl().as_secs(), |t| t.min(rr.ttl().as_secs())));
     }
     let Some(ttl) = ttl else {
-        return require_parent_soa(&message, qname).map(|_| None);
+        return validate_parent_soa(&message, qname).map(|_| None);
     };
     records.sort();
     records.dedup();
@@ -344,7 +344,7 @@ pub fn extract_ds_rrset(
 /// answer (RFC 2308, Section 2).
 ///
 /// The child's own server can also answer NODATA authoritatively, so its SOA is insufficient.
-fn require_parent_soa(message: &Message<&[u8]>, qname: &Name<Vec<u8>>) -> Result<(), String> {
+fn validate_parent_soa(message: &Message<&[u8]>, qname: &Name<Vec<u8>>) -> Result<(), String> {
     let authority = message
         .authority()
         .map_err(|e| format!("malformed authority section: {}", e))?;

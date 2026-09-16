@@ -1,29 +1,5 @@
-//! Whether an incremental reply is possible at all: the two questions that
-//! send a client to a full transfer instead.
-
-use bindizr_core::model::zone::Zone;
-use bindizr_service::zone::ZoneService;
-
-use crate::dns::error::XfrError;
-
-/// RFC 1995, Section 2 lets a server answer with a full transfer once the
-/// incremental one stops being smaller. Counting first also keeps a long-absent
-/// secondary from pulling its whole absence into memory. Rows, not bytes:
-/// summing lengths would read the rows this decides whether to read.
-pub(crate) async fn is_delta_no_smaller_than_zone(
-    zone: &Zone,
-    client_serial: u32,
-    current_serial: u32,
-) -> Result<bool, XfrError> {
-    let delta_rows = ZoneService::count_journal_between_serials(
-        zone.id,
-        client_serial as i32,
-        current_serial as i32,
-    )
-    .await?;
-
-    Ok(delta_rows >= ZoneService::count_transfer_records(zone.name.as_str()).await?)
-}
+//! Whether an incremental reply can be replayed at all: the gap check that
+//! sends a client to a full transfer instead.
 
 /// Why the assembled delta cannot be replayed as an IXFR, or `None` when every
 /// step from the client's serial to the current one has both journal rows and

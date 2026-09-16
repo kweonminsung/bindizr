@@ -56,7 +56,7 @@ impl ZoneService {
     /// Both record planes of the zone `zone_name` names, read under the share
     /// lock that decides whether `key` may transfer it, so the serial, the
     /// signatures, and the grant all describe one row.
-    pub async fn find_transfer_content_by_name(
+    pub async fn authorize_transfer_content_by_name(
         zone_name: &str,
         key: Option<&TsigKey>,
     ) -> Result<TransferAccess<TransferContent>, ServiceError> {
@@ -93,7 +93,7 @@ impl ZoneService {
             return Ok(TransferAccess::NotZone);
         };
         if let Some(key) = key
-            && !TsigGrantService::authorize_transfer_tx(tx, &zone, key).await?
+            && !TsigGrantService::authorize_whole_zone_tx(tx, &zone, key).await?
         {
             return Ok(TransferAccess::Refused(format!(
                 "TSIG key '{}' is not granted zone '{}' whole",

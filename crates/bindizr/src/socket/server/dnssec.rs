@@ -6,7 +6,7 @@ use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
         DaemonResponse, DisableZoneDnssecParams, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
-        ImportZoneDnssecKeyParams, RolloverZoneDnssecParams, UpdateZoneDnssecSettingsParams,
+        ImportZoneDnssecKeysParams, RolloverZoneDnssecParams, UpdateZoneDnssecSettingsParams,
         ZoneNameParams,
     },
 };
@@ -72,7 +72,7 @@ pub(crate) async fn sign_zone(data: &serde_json::Value) -> Result<DaemonResponse
 }
 
 /// Start a DNSSEC key rollover for the requested zone.
-pub(crate) async fn rollover_start(
+pub(crate) async fn start_dnssec_rollover(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RolloverZoneDnssecParams = parse_params(data)?;
@@ -91,7 +91,7 @@ pub(crate) async fn rollover_start(
 }
 
 /// Confirm the parent DS and advance the requested rollover.
-pub(crate) async fn rollover_ds_seen(
+pub(crate) async fn ds_seen_dnssec_rollover(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DsSeenZoneDnssecParams = parse_params(data)?;
@@ -159,10 +159,10 @@ pub(crate) async fn export_dnssec_keys(
 }
 
 /// Import a DNSSEC key into the requested zone.
-pub(crate) async fn import_dnssec_key(
+pub(crate) async fn import_dnssec_keys(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ImportZoneDnssecKeyParams = parse_params(data)?;
+    let params: ImportZoneDnssecKeysParams = parse_params(data)?;
 
     let status =
         DnssecService::import_keys(&Caller::Global, &params.zone_name, params.request).await?;

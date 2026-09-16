@@ -4,7 +4,6 @@ use super::ZoneService;
 use crate::{
     RepositoryTx,
     error::ServiceError,
-    log_error,
     metrics::track_serial_bump,
     model::{
         zone::Zone,
@@ -51,7 +50,7 @@ impl ZoneService {
         RepositoryService::update_zone_serial_tx(tx, zone.id, new_serial)
             .await
             .map_err(|e| {
-                log_error!("Failed to update zone serial: {}", e);
+                log::error!("Failed to update zone serial: {}", e);
                 ServiceError::internal("Failed to update zone serial")
             })?;
 
@@ -108,7 +107,7 @@ impl ZoneService {
         )
         .await
         .map_err(|e| {
-            log_error!("Failed to save SOA version: {}", e);
+            log::error!("Failed to save SOA version: {}", e);
             ServiceError::internal("Failed to save SOA version")
         })?;
 

@@ -17,20 +17,20 @@ pub(crate) const MEDIA_TYPE: &str = "application/external.dns.webhook+json;versi
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Endpoint {
     #[serde(default)]
-    pub(crate) dns_name: String,
+    dns_name: String,
     #[serde(default)]
-    pub(crate) targets: Vec<String>,
+    targets: Vec<String>,
     #[serde(default)]
-    pub(crate) record_type: String,
+    record_type: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub(crate) set_identifier: String,
+    set_identifier: String,
     // The Go json tag is `recordTTL`, which rename_all would render `recordTtl`.
     #[serde(default, rename = "recordTTL", skip_serializing_if = "is_ttl_unset")]
-    pub(crate) record_ttl: i64,
+    record_ttl: i64,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub(crate) labels: BTreeMap<String, String>,
+    labels: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) provider_specific: Vec<ProviderSpecificProperty>,
+    provider_specific: Vec<ProviderSpecificProperty>,
 }
 
 /// Check whether an endpoint TTL uses the unset sentinel.
@@ -42,9 +42,9 @@ fn is_ttl_unset(ttl: &i64) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct ProviderSpecificProperty {
     #[serde(default)]
-    pub(crate) name: String,
+    name: String,
     #[serde(default)]
-    pub(crate) value: String,
+    value: String,
 }
 
 /// JSON shape of external-dns `plan.Changes` (`POST /records` body).
@@ -54,7 +54,7 @@ pub(crate) struct Changes {
     #[serde(default)]
     pub(crate) create: Vec<Endpoint>,
     #[serde(default)]
-    pub(crate) update_old: Vec<Endpoint>,
+    update_old: Vec<Endpoint>,
     #[serde(default)]
     pub(crate) update_new: Vec<Endpoint>,
     #[serde(default)]
@@ -72,29 +72,31 @@ pub(crate) struct DomainFilter {
 /// type (snake_case, internal shape).
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct BindizrRecord {
-    pub(crate) name: String,
-    pub(crate) record_type: String,
+    name: String,
+    record_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) ttl: Option<i32>,
-    pub(crate) values: Vec<String>,
+    ttl: Option<i32>,
+    values: Vec<String>,
 }
 
 /// `POST /external-dns/changes` request body of the bindizr API.
 #[derive(Debug, Serialize)]
 pub(crate) struct BindizrChanges {
-    pub(crate) creates: Vec<BindizrRecord>,
-    pub(crate) updates: Vec<BindizrRecordUpdate>,
-    pub(crate) deletes: Vec<BindizrRecord>,
+    creates: Vec<BindizrRecord>,
+    updates: Vec<BindizrRecordUpdate>,
+    deletes: Vec<BindizrRecord>,
 }
 
+/// One update of the bindizr change set: the record as stored and its
+/// replacement, paired positionally from `updateOld` and `updateNew`.
 #[derive(Debug, Serialize)]
 pub(crate) struct BindizrRecordUpdate {
-    pub(crate) old: BindizrRecord,
-    pub(crate) new: BindizrRecord,
+    old: BindizrRecord,
+    new: BindizrRecord,
 }
 
 /// The endpoint's record type, if bindizr's ExternalDNS API manages it.
-fn supported_record_type(record_type: &str) -> Option<RecordType> {
+fn parse_supported_record_type(record_type: &str) -> Option<RecordType> {
     let parsed = record_type.parse::<RecordType>().ok()?;
     parsed.is_external_dns_supported().then_some(parsed)
 }
@@ -119,7 +121,7 @@ impl Endpoint {
             return Err("dnsName must not be empty".to_string());
         }
 
-        let Some(record_type) = supported_record_type(&self.record_type) else {
+        let Some(record_type) = parse_supported_record_type(&self.record_type) else {
             return Err(format!(
                 "record type '{}' is not supported (supported: {})",
                 self.record_type,
@@ -179,7 +181,7 @@ impl Endpoint {
 impl Changes {
     /// Convert into one bindizr change-set request. `updateOld[i]` and
     /// `updateNew[i]` pair positionally, per the plan contract.
-    pub(crate) fn to_bindizr(&self) -> Result<BindizrChanges, String> {
+    pub(crate) fn to_bindizr_changes(&self) -> Result<BindizrChanges, String> {
         if self.update_old.len() != self.update_new.len() {
             return Err(format!(
                 "updateOld and updateNew must pair up ({} vs {} endpoints)",
@@ -220,7 +222,7 @@ pub(crate) fn to_bindizr_records(endpoints: &[Endpoint]) -> Result<Vec<BindizrRe
 /// identity (dnsName, labels) stays the caller's, type/TTL/targets are the
 /// server's. Dropping provider-specific properties declares them
 /// unsupported.
-pub(crate) fn merge_adjusted_endpoints(
+pub(crate) fn build_adjusted_endpoints(
     endpoints: Vec<Endpoint>,
     adjusted: Vec<BindizrRecord>,
 ) -> Vec<Endpoint> {

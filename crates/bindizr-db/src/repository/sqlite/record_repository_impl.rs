@@ -10,7 +10,7 @@ use crate::{
         LockLevel, RecordFilter, RecordRepository, RepositoryTx,
         sql::{
             apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern,
-            name_like_types_sql, record_order_by_sql, trim_partial_value,
+            name_like_types_sql, partial_term,
         },
     },
 };
@@ -269,12 +269,12 @@ impl RecordRepository for SqliteRecordRepository {
         filter: RecordFilter,
     ) -> Result<Vec<RecordWithZone>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-        let value = filter.value.as_deref().map(trim_partial_value);
+        let value = filter.value.as_deref().map(partial_term);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();
         let apex_owner = apex_owner_sql();
-        let order_by = record_order_by_sql(filter.sort, filter.order);
+        let order_by = filter.sort.order_by_sql(filter.order);
         let grant_match = grant_record_match_sql("r", Some("record_type"), concat_pipes);
         let query = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
             r#"
@@ -364,7 +364,7 @@ impl RecordRepository for SqliteRecordRepository {
     /// Count records matching the filter.
     async fn count_by_filter(&self, filter: RecordFilter) -> Result<u64, DatabaseError> {
         let mut conn = self.pool.acquire().await?;
-        let value = filter.value.as_deref().map(trim_partial_value);
+        let value = filter.value.as_deref().map(partial_term);
         let value_exact = filter.value.as_deref().map(str::trim);
         let search = like_pattern(filter.search.as_deref());
         let name_like_types = name_like_types_sql();

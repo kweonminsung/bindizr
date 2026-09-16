@@ -20,7 +20,7 @@ use domain::{
 use input::denial_rrs;
 use sha2::{Digest, Sha256};
 
-use super::{WireName, rdata::dnskey_for, to_wire_name};
+use super::WireName;
 use crate::{
     dns::{
         name::{OwnerName, ZoneName},
@@ -64,7 +64,7 @@ impl SignedViewParams<'_> {
     /// The RRset's slot in the jitter window, taken from its identity rather
     /// than drawn at random: [`Self::compute`] stays a function of its
     /// inputs, and an RRset keeps its slot across re-signings.
-    fn expiration_for(&self, owner: &WireName, covered: i32) -> DateTime<Utc> {
+    fn rrset_expiration(&self, owner: &WireName, covered: i32) -> DateTime<Utc> {
         if self.expiration_jitter_secs <= 0 {
             return self.expiration;
         }
@@ -84,7 +84,7 @@ impl SignedViewParams<'_> {
     /// Compute the signed DNSSEC view and its changes from the previous view.
     pub fn compute(&self) -> Result<SignedViewDiff, String> {
         let zone = self.zone;
-        let apex = to_wire_name(zone.name.to_wire())?;
+        let apex = zone.name.to_wire_name()?;
 
         let signers = self
             .keys
@@ -118,7 +118,7 @@ impl SignedViewParams<'_> {
                 id: 0,
                 zone_id: zone.id,
                 name: OwnerName::apex(),
-                record_type: derived_record_type(rr.rtype())?,
+                record_type: DnssecRecordType::try_from(rr.rtype())?,
                 covered_record_type: None,
                 ttl: rr.ttl().as_secs() as i32,
                 rdata: to_rdata(rr.data()),
@@ -130,8 +130,8 @@ impl SignedViewParams<'_> {
             new_rows.push(DnssecRecord {
                 id: 0,
                 zone_id: zone.id,
-                name: owner_in_zone(rr.owner(), &zone.name)?,
-                record_type: derived_record_type(rr.rtype())?,
+                name: parse_owner_in_zone(rr.owner(), &zone.name)?,
+                record_type: DnssecRecordType::try_from(rr.rtype())?,
                 covered_record_type: None,
                 ttl: rr.ttl().as_secs() as i32,
                 rdata: to_rdata(rr.data()),
@@ -188,7 +188,7 @@ impl SignedViewParams<'_> {
 
         let refresh_cutoff = self.now + chrono::Duration::seconds(self.refresh_secs);
         for rrset in &signable {
-            let owner = owner_in_zone(rrset[0].owner(), &zone.name)?;
+            let owner = parse_owner_in_zone(rrset[0].owner(), &zone.name)?;
             let covered = rrset[0].rtype().to_int() as i32;
             // The apex key RRsets must be signed by keys the parent DS names
             // (RFC 7344, Section 4.1 for CDS/CDNSKEY); everything else by the
@@ -226,7 +226,7 @@ impl SignedViewParams<'_> {
                     }
                 }
                 None => {
-                    let expiration = self.expiration_for(rrset[0].owner(), covered);
+                    let expiration = self.rrset_expiration(rrset[0].owner(), covered);
                     for signer in rrset_signers {
                         let rrsig = signer.sign_rrset(rrset, self.inception, expiration)?;
                         new_rows.push(DnssecRecord {
@@ -298,11 +298,6 @@ impl SignedViewDiff {
     }
 }
 
-/// Convert a wire record type into a stored DNSSEC record type.
-fn derived_record_type(rtype: Rtype) -> Result<DnssecRecordType, String> {
-    DnssecRecordType::try_from(rtype.to_int() as i32)
-}
-
 /// Check whether a type carries DNSKEY, CDS, or CDNSKEY data.
 fn is_key_rtype(rtype: Rtype) -> bool {
     matches!(rtype, Rtype::DNSKEY | Rtype::CDS | Rtype::CDNSKEY)
@@ -350,7 +345,7 @@ fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8
 }
 
 /// Convert a derived absolute owner to a name relative to its zone.
-fn owner_in_zone(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, String> {
+fn parse_owner_in_zone(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, String> {
     OwnerName::parse_absolute_in_zone(&owner.to_string(), zone_name).map_err(|e| {
         format!(
             "derived owner '{}' is not inside zone '{}': {}",
@@ -371,7 +366,7 @@ pub(crate) struct Signer<'a> {
 impl<'a> Signer<'a> {
     /// Load a stored DNSSEC key into a signer for the zone apex.
     fn new(apex: &WireName, key: &'a DnssecKey) -> Result<Self, String> {
-        let dnskey = dnskey_for(key)?;
+        let dnskey = key.to_dnskey()?;
         let secret = SecretKeyBytes::parse_from_bind(&key.private_key)
             .map_err(|e| format!("stored private key is invalid: {}", e))?;
         let key_pair = KeyPair::from_bytes(&secret, &dnskey)

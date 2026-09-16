@@ -66,7 +66,7 @@ impl DnssecAlgorithm {
     }
 
     /// All supported algorithm names, for error messages.
-    pub(crate) fn supported_names() -> &'static [&'static str] {
+    fn supported_names() -> &'static [&'static str] {
         &[
             "rsasha256",
             "rsasha512",
@@ -303,5 +303,17 @@ impl DnssecKey {
     /// tells the parent to drop their DS (RFC 7344).
     pub fn wants_parent_ds(&self) -> bool {
         self.role.is_sep() && self.state != DnssecKeyState::Retired
+    }
+
+    /// The wait before a retired key may be removed: the retire interval of
+    /// RFC 7583, Section 3.3.4. The key outlives the signatures it made,
+    /// cached for their RRset's TTL, and — for a key a DS names — the parent's
+    /// DS RRset, cached for the TTL the confirming probe saw.
+    pub fn retirement_interval_secs(&self, parent_ds_ttl: Option<u32>) -> i64 {
+        let signatures = i64::from(self.max_signed_ttl);
+        if !self.role.is_sep() {
+            return signatures;
+        }
+        signatures.max(i64::from(parent_ds_ttl.unwrap_or(0)))
     }
 }

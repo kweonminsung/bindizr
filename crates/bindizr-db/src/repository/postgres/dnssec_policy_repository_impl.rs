@@ -5,7 +5,7 @@ use sqlx::{AssertSqlSafe, Pool, Postgres, Row};
 use crate::{
     error::DatabaseError,
     model::dnssec_policy::DnssecPolicy,
-    repository::{DnssecPolicyRepository, LockLevel, RepositoryTx, sql::lock_clause},
+    repository::{DnssecPolicyRepository, LockLevel, RepositoryTx},
 };
 
 pub(crate) struct PostgresDnssecPolicyRepository {
@@ -60,7 +60,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
 
         let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
             "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE id = $1{}",
-            lock_clause(lock_level)
+            lock_level.clause()
         )))
         .bind(id)
         .fetch_optional(&mut **postgres_tx)
@@ -94,7 +94,7 @@ impl DnssecPolicyRepository for PostgresDnssecPolicyRepository {
 
         let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
             "SELECT id, name, algorithm, denial, split_keys, signature_validity_days, signature_refresh_days, zsk_lifetime_days, created_at FROM dnssec_policies WHERE name = $1{}",
-            lock_clause(lock_level)
+            lock_level.clause()
         )))
         .bind(name)
         .fetch_optional(&mut **postgres_tx)

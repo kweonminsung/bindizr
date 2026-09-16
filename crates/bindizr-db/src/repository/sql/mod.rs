@@ -9,9 +9,7 @@ use bindizr_core::dns::name::OwnerName;
 use chrono::{DateTime, TimeDelta, Utc};
 pub(crate) use grant::{concat_fn, concat_pipes, grant_record_match_sql};
 pub use sort::{RecordSort, SortOrder, ZoneSort};
-pub(crate) use sort::{record_order_by_sql, zone_order_by_sql};
 
-use super::LockLevel;
 use crate::model::record::NAME_LIKE_RECORD_TYPES;
 
 /// The latest expiry any policy's re-sign window can reach: the constant a
@@ -20,16 +18,6 @@ pub(crate) fn refresh_bound(cutoff: DateTime<Utc>, max_refresh_days: i32) -> Dat
     TimeDelta::try_days(i64::from(max_refresh_days))
         .and_then(|window| cutoff.checked_add_signed(window))
         .unwrap_or(DateTime::<Utc>::MAX_UTC)
-}
-
-/// The locking clause for `lock_level`, as a suffix appended after any
-/// `ORDER BY`. SQLite locks the whole database instead, so it never calls this.
-pub(crate) fn lock_clause(lock_level: LockLevel) -> &'static str {
-    match lock_level {
-        LockLevel::Exclusive => " FOR UPDATE",
-        LockLevel::Shared => " FOR SHARE",
-        LockLevel::None => "",
-    }
 }
 
 /// The owner name the apex is stored under, as an SQL literal.
@@ -46,21 +34,20 @@ pub(crate) fn name_like_types_sql() -> String {
         .join(",")
 }
 
-/// Trim a partial-match term; stored names carry no trailing root dot.
-pub(crate) fn trim_partial_value(value: &str) -> String {
+/// A partial-match term, trimmed; stored names carry no trailing root dot.
+pub(crate) fn partial_term(value: &str) -> String {
     value.trim().trim_end_matches('.').to_string()
 }
 
-/// Wrap the term for a contains-match, normalized like
-/// [`trim_partial_value`]. The LIKE wildcards are escaped: `%` and `_`
-/// are ordinary characters in rdata and `_dmarc`-style names.
+/// Wrap the [`partial_term`] for a contains-match, `None` when nothing remains.
+/// The LIKE wildcards are escaped: `%` and `_` are ordinary characters in
+/// rdata and `_dmarc`-style names.
 pub(crate) fn like_pattern(value: Option<&str>) -> Option<String> {
     value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| {
-            let escaped = value
-                .trim_end_matches('.')
+        .map(partial_term)
+        .filter(|term| !term.is_empty())
+        .map(|term| {
+            let escaped = term
                 .replace('\\', "\\\\")
                 .replace('%', "\\%")
                 .replace('_', "\\_");

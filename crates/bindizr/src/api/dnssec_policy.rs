@@ -42,7 +42,7 @@ impl DnssecPolicyApi {
 
 #[derive(Deserialize)]
 pub(crate) struct DnssecPolicyNameParam {
-    pub(crate) name: String,
+    name: String,
 }
 
 /// List all DNSSEC policies.

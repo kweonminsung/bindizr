@@ -196,7 +196,9 @@ pub(crate) async fn rollback_zone(
 }
 
 /// Return the requested zone's primary and secondary status.
-pub(crate) async fn zone_status(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn get_zone_status(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
     let response = ZoneService::get_status(&Caller::Global, &params.name).await?;

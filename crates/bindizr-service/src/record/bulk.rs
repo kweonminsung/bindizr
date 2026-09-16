@@ -16,7 +16,6 @@ use crate::{
     authorization::{Caller, RecordWrite},
     dnssec::DnssecService,
     error::ServiceError,
-    log_debug, log_debug_enabled, log_error, log_info, log_warn,
     model::{
         record::{Record, RecordType},
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
@@ -255,7 +254,7 @@ impl RecordService {
             {
                 Ok(records) => records,
                 Err(e) => {
-                    log_error!("Failed to load zone records: {}", e);
+                    log::error!("Failed to load zone records: {}", e);
                     return Err(ServiceError::internal(
                         "Failed to create records".to_string(),
                     ));
@@ -290,7 +289,7 @@ impl RecordService {
             // Time normalization and validation separately so validate_ms stays
             // comparable with zone import, which normalizes in an earlier pass;
             // debug-gated to keep the clock reads off the hot path.
-            let timing_enabled = log_debug_enabled!();
+            let timing_enabled = log::log_enabled!(log::Level::Debug);
             let mut normalize_dur = std::time::Duration::ZERO;
             let mut validate_dur = std::time::Duration::ZERO;
             let mut to_insert = Vec::with_capacity(prepared.len());
@@ -388,7 +387,7 @@ impl RecordService {
         let (created_records, zone_name, diff) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create records").await?;
 
-        log_info!(
+        log::info!(
             "event=record_bulk_create zone={} count={} dry_run={}",
             zone_name,
             created_records.len(),
@@ -399,13 +398,13 @@ impl RecordService {
         if !dry_run
             && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {
-            log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
         let notify_ms = elapsed_ms(t);
 
         // Per-stage breakdown for profiling; debug-gated so it stays out of
         // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
-        log_debug!(
+        log::debug!(
             "event=record_bulk_create_timing zone={} count={} prepare_ms={:.1} load_zone_ms={:.1} \
              load_existing_ms={:.1} build_index_ms={:.1} normalize_ms={:.1} validate_ms={:.1} \
              db_write_ms={:.1} serial_ms={:.1} notify_ms={:.1} total_ms={:.1}",

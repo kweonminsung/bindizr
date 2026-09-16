@@ -3,10 +3,8 @@ mod regexp;
 use regexp::validate_naptr_regexp;
 
 use super::{
-    Rdata,
-    value::{
-        parse_char_string, parse_u16_record_field, to_quoted_string, validate_domain_record_value,
-    },
+    Rdata, to_quoted_charstr,
+    value::{parse_char_string, parse_u16_record_field, validate_domain_record_value},
 };
 use crate::dns::name::{encode_name, to_fqdn_lowercase};
 
@@ -25,8 +23,8 @@ impl<'a> NaptrRecordValue<'a> {
     /// fields, so neither fits the single priority column.
     pub fn parse(value: &'a str) -> Result<Self, String> {
         let rest = value.trim_start();
-        let (order, rest) = split_field("NAPTR order", rest)?;
-        let (preference, rest) = split_field("NAPTR preference", rest)?;
+        let (order, rest) = parse_field("NAPTR order", rest)?;
+        let (preference, rest) = parse_field("NAPTR preference", rest)?;
         let (flags, rest) = parse_char_string("NAPTR flags", rest)?;
         let (services, rest) = parse_char_string("NAPTR services", rest)?;
         let (regexp, rest) = parse_char_string("NAPTR regexp", rest)?;
@@ -92,43 +90,42 @@ impl<'a> NaptrRecordValue<'a> {
             "{} {} {} {} {} {}",
             self.order,
             self.preference,
-            to_quoted_string(&self.flags),
-            to_quoted_string(&self.services),
-            to_quoted_string(&self.regexp),
+            to_quoted_charstr(self.flags.as_bytes()),
+            to_quoted_charstr(self.services.as_bytes()),
+            to_quoted_charstr(self.regexp.as_bytes()),
             to_fqdn_lowercase(self.replacement)
         )
     }
-}
 
-/// Presentation form for a record decoded off the wire, whose character-strings
-/// are still the raw octets of RFC 3403, Section 4.1.
-pub(crate) fn to_naptr_presentation(
-    order: u16,
-    preference: u16,
-    flags: &[u8],
-    services: &[u8],
-    regexp: &[u8],
-    replacement: &str,
-) -> Result<String, String> {
-    let to_text = |field: &str, bytes: &[u8]| {
-        std::str::from_utf8(bytes)
-            .map(str::to_string)
-            .map_err(|_| format!("{field} must be valid UTF-8"))
-    };
+    /// A record decoded off the wire, whose character-strings are still the raw
+    /// octets of RFC 3403, Section 4.1.
+    pub fn from_wire(
+        order: u16,
+        preference: u16,
+        flags: &[u8],
+        services: &[u8],
+        regexp: &[u8],
+        replacement: &'a str,
+    ) -> Result<Self, String> {
+        let to_text = |field: &str, bytes: &[u8]| {
+            std::str::from_utf8(bytes)
+                .map(str::to_string)
+                .map_err(|_| format!("{field} must be valid UTF-8"))
+        };
 
-    Ok(NaptrRecordValue {
-        order,
-        preference,
-        flags: to_text("NAPTR flags", flags)?,
-        services: to_text("NAPTR services", services)?,
-        regexp: to_text("NAPTR regexp", regexp)?,
-        replacement,
+        Ok(Self {
+            order,
+            preference,
+            flags: to_text("NAPTR flags", flags)?,
+            services: to_text("NAPTR services", services)?,
+            regexp: to_text("NAPTR regexp", regexp)?,
+            replacement,
+        })
     }
-    .canonical())
 }
 
 /// One whitespace-separated field and the rest of the value.
-fn split_field<'a>(field: &str, input: &'a str) -> Result<(&'a str, &'a str), String> {
+fn parse_field<'a>(field: &str, input: &'a str) -> Result<(&'a str, &'a str), String> {
     let end = input
         .find(char::is_whitespace)
         .ok_or_else(|| format!("NAPTR record value ends before {field}"))?;
@@ -138,7 +135,7 @@ fn split_field<'a>(field: &str, input: &'a str) -> Result<(&'a str, &'a str), St
 
 #[cfg(test)]
 mod tests {
-    use super::{NaptrRecordValue, to_naptr_presentation};
+    use super::NaptrRecordValue;
 
     /// Verify NAPTR parsing and replacement-name canonicalization.
     #[test]
@@ -167,11 +164,15 @@ mod tests {
     #[test]
     fn reads_a_wire_record_back_into_the_stored_form() {
         assert_eq!(
-            to_naptr_presentation(100, 10, b"S", b"SIP+D2U", b"", "_sip._udp.Example.COM").unwrap(),
+            NaptrRecordValue::from_wire(100, 10, b"S", b"SIP+D2U", b"", "_sip._udp.Example.COM")
+                .unwrap()
+                .canonical(),
             "100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.example.com."
         );
         assert_eq!(
-            to_naptr_presentation(200, 20, b"u", b"E2U+tel", b"!^.*$!tel:+1!", ".").unwrap(),
+            NaptrRecordValue::from_wire(200, 20, b"u", b"E2U+tel", b"!^.*$!tel:+1!", ".")
+                .unwrap()
+                .canonical(),
             "200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" ."
         );
     }

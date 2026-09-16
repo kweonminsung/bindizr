@@ -17,17 +17,21 @@ async fn zone_versions_list_and_get() {
         "name": "www", "record_type": "A", "value": "192.0.2.50",
         "ttl": 300, "zone_name": zone_name
     });
-    let (status, _) = app.request(Method::POST, "/records", Some(record_a)).await;
+    let (status, _) = app
+        .send_request(Method::POST, "/records", Some(record_a))
+        .await;
     assert_eq!(status, StatusCode::CREATED);
     let record_b = json!({
         "name": "mail", "record_type": "A", "value": "192.0.2.51",
         "ttl": 300, "zone_name": zone_name
     });
-    let (status, _) = app.request(Method::POST, "/records", Some(record_b)).await;
+    let (status, _) = app
+        .send_request(Method::POST, "/records", Some(record_b))
+        .await;
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     let items = body["items"].as_array().expect("missing version items");
@@ -44,7 +48,7 @@ async fn zone_versions_list_and_get() {
     assert!(items[0]["rname"].as_str().unwrap().contains('@'));
 
     let (status, page) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{zone_name}/versions?limit=1&offset=1"),
             None,
@@ -59,7 +63,7 @@ async fn zone_versions_list_and_get() {
 
     // At base_serial + 1 only record A existed.
     let (status, detail) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{zone_name}/versions/{}", base_serial + 1),
             None,
@@ -80,7 +84,7 @@ async fn zone_versions_list_and_get() {
     assert_eq!(a_records, ["www"]);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{zone_name}/versions/999999"),
             None,
@@ -91,7 +95,7 @@ async fn zone_versions_list_and_get() {
 
     let missing_zone = app.zone_name("missing.example");
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{missing_zone}/versions"),
             None,
@@ -112,7 +116,7 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
 
     for (name, value) in [("www", "192.0.2.80"), ("extra", "192.0.2.81")] {
         let (status, _) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
@@ -125,7 +129,7 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
     }
 
     let (status, diff) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!(
                 "/zones/{zone_name}/versions/diff?from={}&to={}",
@@ -148,7 +152,7 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
 
     // Omitting `to` compares against the current serial.
     let (status, diff) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{zone_name}/versions/diff?from={base_serial}"),
             None,
@@ -172,13 +176,13 @@ async fn zone_rollback_dry_run_then_apply() {
         "ttl": 300, "zone_name": zone_name
     });
     let (status, _) = app
-        .request(Method::POST, "/records", Some(keep_record))
+        .send_request(Method::POST, "/records", Some(keep_record))
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
     // Capture the state to roll back to.
     let (_, zone_at_target) = app
-        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
     let target_serial = zone_at_target["zone"]["serial"].as_i64().unwrap();
 
@@ -188,7 +192,7 @@ async fn zone_rollback_dry_run_then_apply() {
         "ttl": 300, "zone_name": zone_name
     });
     let (status, _) = app
-        .request(Method::POST, "/records", Some(extra_record))
+        .send_request(Method::POST, "/records", Some(extra_record))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let soa_update = json!({
@@ -198,7 +202,7 @@ async fn zone_rollback_dry_run_then_apply() {
         "default_ttl": 7200
     });
     let (status, _) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}"),
             Some(soa_update),
@@ -207,13 +211,13 @@ async fn zone_rollback_dry_run_then_apply() {
     assert_eq!(status, StatusCode::OK);
 
     let (_, current) = app
-        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
     let current_serial = current["zone"]["serial"].as_i64().unwrap();
 
     // Dry run: nothing applied.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/versions/{target_serial}/rollback?dry_run=true"),
             None,
@@ -224,7 +228,7 @@ async fn zone_rollback_dry_run_then_apply() {
     assert_eq!(body["dry_run"], true);
     assert_eq!(body["summary"]["soa_changed"], true);
     let (_, after_dry) = app
-        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
     assert_eq!(
         after_dry["zone"]["serial"].as_i64().unwrap(),
@@ -234,7 +238,7 @@ async fn zone_rollback_dry_run_then_apply() {
 
     // Real rollback: state returns to target, serial advances.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/versions/{target_serial}/rollback"),
             None,
@@ -246,7 +250,7 @@ async fn zone_rollback_dry_run_then_apply() {
     assert_eq!(body["new_serial"].as_i64().unwrap(), current_serial + 1);
 
     let (_, restored) = app
-        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
     assert_eq!(restored["zone"]["name"], zone_name);
     assert_eq!(
@@ -257,7 +261,7 @@ async fn zone_rollback_dry_run_then_apply() {
     assert_eq!(restored["zone"]["rname"], "admin@example.com");
 
     let (status, records) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=A"),
             None,
@@ -292,18 +296,20 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
             "ttl": 3600, "zone_name": zone_name
         }),
     ] {
-        let (status, _) = app.request(Method::POST, "/records", Some(request)).await;
+        let (status, _) = app
+            .send_request(Method::POST, "/records", Some(request))
+            .await;
         assert_eq!(status, StatusCode::CREATED);
     }
 
     let (_, zone_at_target) = app
-        .request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
         .await;
     let target_serial = zone_at_target["zone"]["serial"].as_i64().unwrap();
 
     for record_type in ["DS", "NS"] {
         let (_, listing) = app
-            .request(
+            .send_request(
                 Method::GET,
                 &format!("/records?zone_name={zone_name}&record_type={record_type}&name=sub"),
                 None,
@@ -311,14 +317,14 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
             .await;
         let id = listing["items"][0]["id"].as_i64().unwrap();
         let (status, _) = app
-            .request(Method::DELETE, &format!("/records/{id}"), None)
+            .send_request(Method::DELETE, &format!("/records/{id}"), None)
             .await;
         assert_eq!(status, StatusCode::OK);
     }
 
     // Restoring both at once must not depend on which validates first.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/versions/{target_serial}/rollback"),
             None,
@@ -329,7 +335,7 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
 
     for record_type in ["NS", "DS"] {
         let (_, listing) = app
-            .request(
+            .send_request(
                 Method::GET,
                 &format!("/records?zone_name={zone_name}&record_type={record_type}&name=sub"),
                 None,
@@ -370,7 +376,7 @@ async fn zone_rollback_rejects_bad_serials() {
         ),
     ] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::POST,
                 &format!("/zones/{zone_name}/versions/{serial}/rollback"),
                 None,
@@ -399,7 +405,7 @@ async fn zone_versions_record_who_made_each_change() {
 
     app.set_auth_token(token);
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -411,7 +417,7 @@ async fn zone_versions_record_who_made_each_change() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let items = body["items"].as_array().unwrap();

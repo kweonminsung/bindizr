@@ -16,8 +16,8 @@ pub mod repository;
 mod schema;
 mod utils;
 
+pub(crate) use bindizr_core::config;
 pub use bindizr_core::model;
-pub(crate) use bindizr_core::{config, log_error, log_info, log_warn};
 use error::DatabaseError;
 
 static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
@@ -63,12 +63,12 @@ pub async fn initialize() -> Result<(), DatabaseError> {
         .set(pool)
         .map_err(|_| DatabaseError::PoolError("database pool initialized twice".to_string()))?;
 
-    log_info!("Database pool initialized");
+    log::info!("Database pool initialized");
     Ok(())
 }
 
 /// Return the global database pool, panicking if not yet initialized.
-pub(crate) fn get_pool() -> &'static DatabasePool {
+pub(crate) fn pool() -> &'static DatabasePool {
     DATABASE_POOL.get().expect("Database pool not initialized")
 }
 
@@ -196,7 +196,7 @@ impl DatabasePool {
                         .fetch_one(&mut *conn)
                         .await?;
                     if !mode.eq_ignore_ascii_case("wal") {
-                        log_warn!(
+                        log::warn!(
                             "SQLite journal_mode is '{}', not WAL: readers will queue behind writes",
                             mode
                         );
@@ -224,12 +224,12 @@ impl DatabasePool {
         match self {
             DatabasePool::MySQL(pool) => {
                 let mut conn = pool.acquire().await.map_err(|e| {
-                    log_error!("Failed to acquire MySQL connection: {}", e);
+                    log::error!("Failed to acquire MySQL connection: {}", e);
                     e.to_string()
                 })?;
                 for query in schema::mysql_table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
-                        log_error!("Failed to execute query '{}': {}", query, e);
+                        log::error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
                     })?;
                 }
@@ -239,18 +239,18 @@ impl DatabasePool {
                     .execute(&mut *conn)
                     .await
                     .map_err(|e| {
-                        log_error!("Failed to execute query '{}': {}", seed, e);
+                        log::error!("Failed to execute query '{}': {}", seed, e);
                         e.to_string()
                     })?;
             }
             DatabasePool::PostgreSQL(pool) => {
                 let mut conn = pool.acquire().await.map_err(|e| {
-                    log_error!("Failed to acquire PostgreSQL connection: {}", e);
+                    log::error!("Failed to acquire PostgreSQL connection: {}", e);
                     e.to_string()
                 })?;
                 for query in schema::postgres_table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
-                        log_error!("Failed to execute query '{}': {}", query, e);
+                        log::error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
                     })?;
                 }
@@ -260,18 +260,18 @@ impl DatabasePool {
                     .execute(&mut *conn)
                     .await
                     .map_err(|e| {
-                        log_error!("Failed to execute query '{}': {}", seed, e);
+                        log::error!("Failed to execute query '{}': {}", seed, e);
                         e.to_string()
                     })?;
             }
             DatabasePool::SQLite(pool) => {
                 let mut conn = pool.acquire().await.map_err(|e| {
-                    log_error!("Failed to acquire SQLite connection: {}", e);
+                    log::error!("Failed to acquire SQLite connection: {}", e);
                     e.to_string()
                 })?;
                 for query in schema::sqlite_table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
-                        log_error!("Failed to execute query '{}': {}", query, e);
+                        log::error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
                     })?;
                 }
@@ -281,7 +281,7 @@ impl DatabasePool {
                     .execute(&mut *conn)
                     .await
                     .map_err(|e| {
-                        log_error!("Failed to execute query '{}': {}", seed, e);
+                        log::error!("Failed to execute query '{}': {}", seed, e);
                         e.to_string()
                     })?;
             }
@@ -292,78 +292,65 @@ impl DatabasePool {
 
 /// Return the initialized zone repository.
 pub fn get_zone_repository() -> Box<dyn repository::ZoneRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_zone_repository(pool)
+    pool().zone_repository()
 }
 
 /// Return the initialized record repository.
 pub fn get_record_repository() -> Box<dyn repository::RecordRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_record_repository(pool)
+    pool().record_repository()
 }
 
 /// Return the initialized DNSSEC policy repository.
 pub fn get_dnssec_policy_repository() -> Box<dyn repository::DnssecPolicyRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_dnssec_policy_repository(pool)
+    pool().dnssec_policy_repository()
 }
 
 /// Return the initialized TSIG key repository.
 pub fn get_tsig_key_repository() -> Box<dyn repository::TsigKeyRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_tsig_key_repository(pool)
+    pool().tsig_key_repository()
 }
 
 /// Return the initialized TSIG grant repository.
 pub fn get_tsig_grant_repository() -> Box<dyn repository::TsigGrantRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_tsig_grant_repository(pool)
+    pool().tsig_grant_repository()
 }
 
 /// Return the initialized token grant repository.
 pub fn get_token_grant_repository() -> Box<dyn repository::TokenGrantRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_token_grant_repository(pool)
+    pool().token_grant_repository()
 }
 
 /// Return the initialized API token repository.
 pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_api_token_repository(pool)
+    pool().api_token_repository()
 }
 
 /// Return the initialized zone change repository.
 pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_zone_change_repository(pool)
+    pool().zone_change_repository()
 }
 
 /// Return the initialized zone version repository.
 pub fn get_zone_version_repository() -> Box<dyn repository::ZoneVersionRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_zone_version_repository(pool)
+    pool().zone_version_repository()
 }
 
 /// Return the initialized catalog zone state repository.
 pub fn get_catalog_zone_state_repository() -> Box<dyn repository::CatalogZoneStateRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_catalog_zone_state_repository(pool)
+    pool().catalog_zone_state_repository()
 }
 
 /// Return the initialized DNSSEC withdrawal repository.
 pub fn get_dnssec_withdrawal_repository() -> Box<dyn repository::DnssecWithdrawalRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_dnssec_withdrawal_repository(pool)
+    pool().dnssec_withdrawal_repository()
 }
 
 /// Return the initialized DNSSEC key repository.
 pub fn get_dnssec_key_repository() -> Box<dyn repository::DnssecKeyRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_dnssec_key_repository(pool)
+    pool().dnssec_key_repository()
 }
 
 /// Return the initialized DNSSEC record repository.
 pub fn get_dnssec_record_repository() -> Box<dyn repository::DnssecRecordRepository> {
-    let pool = get_pool();
-    repository::RepositoryFactory::create_dnssec_record_repository(pool)
+    pool().dnssec_record_repository()
 }

@@ -10,8 +10,7 @@ use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 pub(crate) use reconstruction::ReconstructedRecord;
 use reconstruction::{
-    MatchKey, list_records_at_serial, reconstruct_records_at_serial, to_match_key,
-    to_record_match_key,
+    MatchKey, list_records_at_serial_tx, reconstruct_records_at_serial_tx, to_match_key,
 };
 
 use super::{
@@ -23,7 +22,6 @@ use crate::{
     authorization::Caller,
     dnssec::DnssecService,
     error::ServiceError,
-    log_info, log_warn,
     model::{
         record::{Record, RecordType},
         zone::Zone,
@@ -40,22 +38,22 @@ use crate::{
     },
 };
 
-/// A serial is diffable only if it is the current serial or has a version.
-async fn validate_serial_diffable(
-    tx: &mut RepositoryTx<'_>,
-    zone: &Zone,
-    serial: i32,
-) -> Result<(), ServiceError> {
-    if serial == zone.serial {
-        return Ok(());
-    }
-    RepositoryService::get_zone_version_by_serial_tx(tx, zone.id, serial, LockLevel::None)
-        .await?
-        .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
-    Ok(())
-}
-
 impl ZoneService {
+    /// A serial is diffable only if it is the current serial or has a version.
+    async fn validate_serial_diffable_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone: &Zone,
+        serial: i32,
+    ) -> Result<(), ServiceError> {
+        if serial == zone.serial {
+            return Ok(());
+        }
+        RepositoryService::get_zone_version_by_serial_tx(tx, zone.id, serial, LockLevel::None)
+            .await?
+            .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
+        Ok(())
+    }
+
     /// List a zone's versions (serial history), newest serial first. Unless
     /// `include_signer_serials`, signer-only serials (DNSSEC re-signs,
     /// rollovers) are skipped —
@@ -118,7 +116,7 @@ impl ZoneService {
             .await?
             .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
 
-            let records = list_records_at_serial(&mut tx, zone.id, serial, zone.serial).await?;
+            let records = list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?;
 
             Ok::<_, ServiceError>((version, records))
         }
@@ -155,13 +153,13 @@ impl ZoneService {
             caller.ensure_zone_unrestricted(&zone)?;
             let to_serial = to_serial.unwrap_or(zone.serial);
 
-            validate_serial_diffable(&mut tx, &zone, from_serial).await?;
-            validate_serial_diffable(&mut tx, &zone, to_serial).await?;
+            Self::validate_serial_diffable_tx(&mut tx, &zone, from_serial).await?;
+            Self::validate_serial_diffable_tx(&mut tx, &zone, to_serial).await?;
 
             let from_records =
-                list_records_at_serial(&mut tx, zone.id, from_serial, zone.serial).await?;
+                list_records_at_serial_tx(&mut tx, zone.id, from_serial, zone.serial).await?;
             let to_records =
-                list_records_at_serial(&mut tx, zone.id, to_serial, zone.serial).await?;
+                list_records_at_serial_tx(&mut tx, zone.id, to_serial, zone.serial).await?;
 
             Ok::<_, ServiceError>(VersionDiffResponse {
                 from_serial,
@@ -239,20 +237,18 @@ impl ZoneService {
             let current_records =
                 RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
             let target_records =
-                reconstruct_records_at_serial(&mut tx, zone.id, target_serial, zone.serial).await?;
+                reconstruct_records_at_serial_tx(&mut tx, zone.id, target_serial, zone.serial)
+                    .await?;
 
             // Diff current vs target, import-Replace style. Protection is
             // evaluated against the restored zone so the restored mname's
             // apex NS is kept and the newer one becomes deletable.
             let mut target_by_key: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
             for target in target_records {
-                let key = to_match_key(
-                    &target.name,
-                    &target.record_type,
-                    &target.value,
-                    target.priority,
-                );
-                target_by_key.entry(key).or_default().push(target);
+                target_by_key
+                    .entry(target.match_key())
+                    .or_default()
+                    .push(target);
             }
 
             let mut dels: Vec<Record> = Vec::new();
@@ -260,7 +256,7 @@ impl ZoneService {
             let mut to_add: Vec<ReconstructedRecord> = Vec::new();
 
             for record in &current_records {
-                let key = to_record_match_key(record);
+                let key = to_match_key(record);
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
                         // The DEL + ADD pair preserves the record's identity, so
@@ -292,10 +288,10 @@ impl ZoneService {
             let has_mname = current_records
                 .iter()
                 .filter(surviving)
-                .any(|r| restored_zone.is_mname(&r.record_type, &r.name, &r.value))
+                .any(|r| restored_zone.mname_matches(&r.record_type, &r.name, &r.value))
                 || to_add
                     .iter()
-                    .any(|r| restored_zone.is_mname(&r.record_type, &r.name, &r.value));
+                    .any(|r| restored_zone.mname_matches(&r.record_type, &r.name, &r.value));
             if !has_mname {
                 // Prefer a restored TTL: the restore is what this serial expresses.
                 let candidates = to_add
@@ -420,7 +416,7 @@ impl ZoneService {
 
         // Announce only an applied rollback after its new version has committed.
         if applied {
-            log_info!(
+            log::info!(
                 "event=zone_rollback zone={} target_serial={} new_serial={} added={} deleted={}",
                 zone_name,
                 response.target_serial,
@@ -430,7 +426,7 @@ impl ZoneService {
             );
             if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
             {
-                log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+                log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
             }
         }
 

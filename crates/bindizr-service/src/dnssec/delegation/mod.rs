@@ -1,9 +1,6 @@
 //! The parent side of a signed zone: asking its nameservers for the DS.
 
-use bindizr_core::dns::{
-    dnssec::{DS_DIGEST_TYPES, ds_rdata_for, to_wire_name},
-    query::DsRrset,
-};
+use bindizr_core::dns::{dnssec::DS_DIGEST_TYPES, query::DsRrset};
 use chrono::Utc;
 
 use super::{DnssecService, status::build_status_tx};
@@ -55,7 +52,7 @@ impl DnssecService {
             .await
             .map_err(|e| ServiceError::dnssec_ds_unverified(zone.name.as_str(), e))?;
 
-        to_delegation_info(zone, keys, parent)
+        build_delegation_info(zone, keys, parent)
     }
 }
 
@@ -63,7 +60,7 @@ impl DnssecService {
 /// promotion read them in opposite directions — a DS at any one server blocks
 /// a disable, promotion waits for every one — so a parent still propagating
 /// the change cannot move the zone the unsafe way in either direction.
-fn to_delegation_info(
+fn build_delegation_info(
     zone: &Zone,
     keys: &[DnssecKey],
     parent: ParentDs,
@@ -73,7 +70,9 @@ fn to_delegation_info(
     ds_key_tags.sort_unstable();
     ds_key_tags.dedup();
 
-    let apex = to_wire_name(zone.name.to_wire())
+    let apex = zone
+        .name
+        .to_wire_name()
         .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
 
     let mut delegation_keys = Vec::new();
@@ -108,7 +107,7 @@ fn to_delegation_info(
         let forms = digest_types
             .iter()
             .map(|digest_type| {
-                ds_rdata_for(key, &apex, *digest_type)
+                key.ds_rdata(&apex, *digest_type)
                     .map(|rdata| rdata.as_bytes().to_vec())
                     .map_err(ServiceError::dnssec_signing_failed)
             })

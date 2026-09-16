@@ -5,7 +5,6 @@ use super::ZoneService;
 use crate::{
     authorization::Caller,
     error::{ErrorCode, ServiceError},
-    log_error, log_info, log_warn,
     model::zone::Zone,
     repository::RepositoryService,
     serial::{generate_serial, validate_initial_serial},
@@ -37,7 +36,7 @@ impl ZoneService {
         // Names are stored normalized, so an exact lookup is enough to detect a collision.
         match RepositoryService::get_zone_by_name(validated.name.as_str()).await {
             Ok(Some(_)) => {
-                log_error!("Zone with name {} already exists", validated.name);
+                log::error!("Zone with name {} already exists", validated.name);
                 return Err(ServiceError::zone_conflict(format!(
                     "Zone with name '{}' already exists",
                     validated.name
@@ -45,7 +44,7 @@ impl ZoneService {
             }
             Ok(None) => {}
             Err(e) => {
-                log_error!("Failed to check existing zone: {}", e);
+                log::error!("Failed to check existing zone: {}", e);
                 return Err(ServiceError::internal("Failed to create zone"));
             }
         };
@@ -80,7 +79,7 @@ impl ZoneService {
             )
             .await
             .map_err(|e| {
-                log_error!("Failed to create zone: {}", e);
+                log::error!("Failed to create zone: {}", e);
                 // Keep the conflict mapped from the UNIQUE(name) backstop; it
                 // covers creates that raced past the pre-check above.
                 if e.code == ErrorCode::ZoneConflict {
@@ -98,7 +97,7 @@ impl ZoneService {
             )
             .await
             .map_err(|e| {
-                log_error!("Failed to create mname NS record: {}", e);
+                log::error!("Failed to create mname NS record: {}", e);
                 ServiceError::internal("Failed to create mname NS record")
             })?;
 
@@ -117,7 +116,7 @@ impl ZoneService {
         let created_zone =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create zone").await?;
 
-        log_info!(
+        log::info!(
             "event=zone_create zone={} mname={} serial={} zone_id={}",
             created_zone.name,
             created_zone.mname,
@@ -127,7 +126,7 @@ impl ZoneService {
 
         // Send catalog NOTIFY so secondaries pick up the new zone
         if let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await {
-            log_warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
+            log::warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
         }
 
         Ok(created_zone)

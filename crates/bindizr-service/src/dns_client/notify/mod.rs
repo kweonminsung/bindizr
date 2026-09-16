@@ -6,18 +6,17 @@ use bindizr_core::{
         message::{Name, Opcode, Rtype},
         query::validate_notify_response,
     },
-    log_error, log_info,
     metrics::{NotifyResult, track_notify},
 };
 
 /// Sends DNS NOTIFY to all configured secondary servers for one zone. Which
 /// zones to notify is the caller's decision.
-pub async fn send_notify(zone_name: &str) -> Result<(), String> {
-    log_info!("Sending NOTIFY for zone: {}", zone_name);
+pub(crate) async fn send_zone_notify(zone_name: &str) -> Result<(), String> {
+    log::info!("Sending NOTIFY for zone: {}", zone_name);
 
     let reports = notify_secondaries(zone_name).await?;
     if reports.is_empty() {
-        log_info!("No secondary DNS servers configured");
+        log::info!("No secondary DNS servers configured");
         return Ok(());
     }
 
@@ -81,12 +80,12 @@ pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, St
         for addr in addrs {
             let result = match send_notify_to_server(&qname, addr, timeout, retries).await {
                 Ok(()) => {
-                    log_info!("NOTIFY sent successfully to {}", addr);
+                    log::info!("NOTIFY sent successfully to {}", addr);
                     track_notify(NotifyResult::Ok);
                     Ok(())
                 }
                 Err(e) => {
-                    log_error!("Failed to send NOTIFY to {}: {}", addr, e);
+                    log::error!("Failed to send NOTIFY to {}: {}", addr, e);
                     track_notify(NotifyResult::Error);
                     Err(e)
                 }
@@ -116,7 +115,7 @@ async fn send_notify_to_server(
             Ok(()) => return Ok(()),
             Err(e) => {
                 if attempt < attempts {
-                    log_info!(
+                    log::info!(
                         "Retrying NOTIFY to {} ({}/{}) after error: {}",
                         server_addr,
                         attempt + 1,
@@ -142,9 +141,9 @@ async fn send_notify_to_server_once(
         bindizr_core::dns::query::build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA);
 
     let (received, response) =
-        super::udp_exchange(server_addr, timeout, &notify_message, "NOTIFY").await?;
+        super::exchange_over_udp(server_addr, timeout, &notify_message, "NOTIFY").await?;
 
-    log_info!(
+    log::info!(
         "NOTIFY message sent to {} ({} bytes)",
         server_addr,
         notify_message.len()

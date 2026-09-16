@@ -1,11 +1,11 @@
 use crate::{
     cli::{error::CliError, output::color},
-    socket::client::DaemonSocketClient,
+    socket::client,
 };
 
 /// Handle the `status` subcommand by querying the daemon and printing its status.
 pub(crate) async fn handle_command() -> Result<(), CliError> {
-    let status = DaemonSocketClient::new().status().await?;
+    let status = client::fetch_status().await?;
 
     println!("=== BINDIZR STATUS ===");
 

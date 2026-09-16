@@ -10,7 +10,7 @@ use crate::error::ServiceError;
 pub const DEFAULT_PAGE_LIMIT: u32 = 50;
 
 /// Bounds one call to a page rather than a whole table.
-pub(crate) const MAX_PAGE_LIMIT: u32 = 1000;
+const MAX_PAGE_LIMIT: u32 = 1000;
 
 /// The page size to query with, rejecting one past [`MAX_PAGE_LIMIT`].
 pub(crate) fn normalize_page_limit(limit: Option<u32>) -> Result<u32, ServiceError> {

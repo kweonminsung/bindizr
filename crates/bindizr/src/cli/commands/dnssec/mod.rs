@@ -16,7 +16,7 @@ use crate::{
         },
     },
     socket::{
-        client::DaemonSocketClient,
+        client,
         types::{
             DaemonCommandKind, DisableZoneDnssecParams, DsSeenZoneDnssecParams,
             EnableZoneDnssecParams, RolloverZoneDnssecParams, UpdateZoneDnssecSettingsParams,
@@ -164,34 +164,29 @@ pub(crate) enum DnssecWithdrawCommand {
 
 /// Run the requested DNSSEC lifecycle command.
 pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliError> {
-    let client = DaemonSocketClient::new();
     match subcommand {
         DnssecCommand::Enable {
             name,
             policy,
             parent_ns_addrs,
         } => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::ZoneDnssecEnable,
-                    EnableZoneDnssecParams {
-                        zone_name: name,
-                        request: EnableDnssecRequest {
-                            policy,
-                            parent_ns_addrs,
-                        },
+            let response = client::send_command(
+                DaemonCommandKind::EnableDnssec,
+                EnableZoneDnssecParams {
+                    zone_name: name,
+                    request: EnableDnssecRequest {
+                        policy,
+                        parent_ns_addrs,
                     },
-                )
-                .await?;
+                },
+            )
+            .await?;
             print_status(&response.data)?;
         }
         DnssecCommand::CheckDs { name } => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::ZoneDnssecCheckDs,
-                    ZoneNameParams { name },
-                )
-                .await?;
+            let response =
+                client::send_command(DaemonCommandKind::CheckDnssecDs, ZoneNameParams { name })
+                    .await?;
             print_status(&response.data)?;
         }
         DnssecCommand::Set {
@@ -199,74 +194,68 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             policy,
             parent_ns_addrs,
         } => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::ZoneDnssecUpdateSettings,
-                    UpdateZoneDnssecSettingsParams {
-                        zone_name: name,
-                        request: UpdateDnssecSettingsRequest {
-                            policy,
-                            parent_ns_addrs,
-                        },
+            let response = client::send_command(
+                DaemonCommandKind::UpdateDnssecSettings,
+                UpdateZoneDnssecSettingsParams {
+                    zone_name: name,
+                    request: UpdateDnssecSettingsRequest {
+                        policy,
+                        parent_ns_addrs,
                     },
-                )
-                .await?;
+                },
+            )
+            .await?;
             print_status(&response.data)?;
         }
         DnssecCommand::Withdraw { subcommand } => {
             let (kind, name) = match subcommand {
-                DnssecWithdrawCommand::Start { name } => {
-                    (DaemonCommandKind::ZoneDnssecWithdraw, name)
-                }
+                DnssecWithdrawCommand::Start { name } => (DaemonCommandKind::WithdrawDnssec, name),
                 DnssecWithdrawCommand::Cancel { name } => {
-                    (DaemonCommandKind::ZoneDnssecWithdrawCancel, name)
+                    (DaemonCommandKind::CancelDnssecWithdrawal, name)
                 }
             };
-            let response = client.send_command(kind, ZoneNameParams { name }).await?;
+            let response = client::send_command(kind, ZoneNameParams { name }).await?;
             print_status(&response.data)?;
         }
-        DnssecCommand::Keys { subcommand } => keys::handle_command(&client, subcommand).await?,
+        DnssecCommand::Keys { subcommand } => keys::handle_command(subcommand).await?,
         DnssecCommand::Disable {
             name,
             skip_ds_check,
         } => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::ZoneDnssecDisable,
-                    DisableZoneDnssecParams {
-                        zone_name: name,
-                        skip_ds_check,
-                    },
-                )
-                .await?;
+            let response = client::send_command(
+                DaemonCommandKind::DisableDnssec,
+                DisableZoneDnssecParams {
+                    zone_name: name,
+                    skip_ds_check,
+                },
+            )
+            .await?;
             println!("{}", response.message);
         }
         DnssecCommand::Status { name, output } => {
-            let response = client
-                .send_command(DaemonCommandKind::ZoneDnssecStatus, ZoneNameParams { name })
-                .await?;
+            let response =
+                client::send_command(DaemonCommandKind::GetDnssecStatus, ZoneNameParams { name })
+                    .await?;
             match output {
                 OutputFormat::Table => print_status(&response.data)?,
                 _ => print_payload(&response.data, output)?,
             }
         }
         DnssecCommand::Sign { name } => {
-            let response = client
-                .send_command(DaemonCommandKind::ZoneDnssecSign, ZoneNameParams { name })
-                .await?;
+            let response =
+                client::send_command(DaemonCommandKind::SignZone, ZoneNameParams { name }).await?;
             println!("{}", response.message);
         }
         DnssecCommand::Rollover { subcommand } => match subcommand {
             DnssecRolloverCommand::Start { name, role } => {
-                let response = client
-                    .send_command(
-                        DaemonCommandKind::ZoneDnssecRolloverStart,
-                        RolloverZoneDnssecParams {
-                            zone_name: name,
-                            request: RolloverDnssecRequest { role },
-                        },
-                    )
-                    .await?;
+                let response = client::send_command(
+                    DaemonCommandKind::StartDnssecRollover,
+                    RolloverZoneDnssecParams {
+                        zone_name: name,
+                        request: RolloverDnssecRequest { role },
+                    },
+                )
+                .await?;
                 print_status(&response.data)?;
             }
             DnssecRolloverCommand::DsSeen {
@@ -274,16 +263,15 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 skip_ds_check,
                 skip_holddown,
             } => {
-                let response = client
-                    .send_command(
-                        DaemonCommandKind::ZoneDnssecRolloverDsSeen,
-                        DsSeenZoneDnssecParams {
-                            zone_name: name,
-                            skip_ds_check,
-                            skip_holddown,
-                        },
-                    )
-                    .await?;
+                let response = client::send_command(
+                    DaemonCommandKind::DsSeenDnssecRollover,
+                    DsSeenZoneDnssecParams {
+                        zone_name: name,
+                        skip_ds_check,
+                        skip_holddown,
+                    },
+                )
+                .await?;
                 print_status(&response.data)?;
             }
         },
@@ -293,7 +281,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
 }
 
 /// Print the zone's DNSSEC status and key information.
-pub(crate) fn print_status(data: &serde_json::Value) -> Result<(), String> {
+fn print_status(data: &serde_json::Value) -> Result<(), String> {
     let status = parse_response::<DnssecStatusResponse>(data)?.dnssec;
     let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
         println!(

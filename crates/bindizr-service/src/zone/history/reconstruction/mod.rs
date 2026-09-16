@@ -8,7 +8,6 @@ use bindizr_db::repository::LockLevel;
 use crate::{
     RepositoryTx,
     error::ServiceError,
-    log_warn,
     model::{
         record::{Record, RecordType},
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
@@ -40,12 +39,19 @@ impl From<Record> for ReconstructedRecord {
     }
 }
 
+impl ReconstructedRecord {
+    /// The reconstruction identity of this record.
+    pub(crate) fn match_key(&self) -> MatchKey {
+        build_match_key(&self.name, &self.record_type, &self.value, self.priority)
+    }
+}
+
 /// Hash key identifying a record for set matching: lowercased owner name,
 /// type, and the canonical comparison form of the value(+priority).
 pub(crate) type MatchKey = (String, String, String);
 
 /// Build a canonical matching identity from a record's owner, type, and value.
-pub(crate) fn to_match_key(
+pub(crate) fn build_match_key(
     name: &OwnerName,
     record_type: &RecordType,
     value: &str,
@@ -59,8 +65,8 @@ pub(crate) fn to_match_key(
 }
 
 /// Build the reconstruction identity of a current record.
-pub(crate) fn to_record_match_key(record: &Record) -> MatchKey {
-    to_match_key(
+pub(crate) fn to_match_key(record: &Record) -> MatchKey {
+    build_match_key(
         &record.name,
         &record.record_type,
         &record.value,
@@ -71,7 +77,7 @@ pub(crate) fn to_record_match_key(record: &Record) -> MatchKey {
 /// Reverse-apply the zone's journal in `(target_serial, current_serial]`
 /// onto the current records, yielding the records at `target_serial`.
 /// SOA rows are skipped (SOA state is restored from `zone_versions`).
-pub(crate) async fn reconstruct_records_at_serial(
+pub(crate) async fn reconstruct_records_at_serial_tx(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
     target_serial: i32,
@@ -98,7 +104,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<Reconstruct
     let mut state: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
     for record in records {
         state
-            .entry(to_record_match_key(&record))
+            .entry(to_match_key(&record))
             .or_default()
             .push(record.into());
     }
@@ -111,7 +117,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<Reconstruct
             continue;
         };
         let Some(record_value) = change.record_value.as_deref() else {
-            log_warn!(
+            log::warn!(
                 "User change for '{}' {} carries no value; skipping during reconstruction",
                 change.record_name,
                 change.record_type
@@ -119,7 +125,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<Reconstruct
             continue;
         };
         let record_type = record_type.clone();
-        let key = to_match_key(
+        let key = build_match_key(
             &change.record_name,
             &record_type,
             record_value,
@@ -131,7 +137,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<Reconstruct
                 Some(_) => {}
                 // Tolerated: history anomalies (e.g. rows removed outside
                 // the change log) must not brick reconstruction.
-                None => log_warn!(
+                None => log::warn!(
                     "No matching record to undo ADD of '{}' {} during reconstruction",
                     change.record_name,
                     change.record_type
@@ -157,7 +163,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<Reconstruct
 
 /// The records at `serial`: the live records when it is the current serial,
 /// otherwise reconstructed from the journal.
-pub(crate) async fn list_records_at_serial(
+pub(crate) async fn list_records_at_serial_tx(
     tx: &mut RepositoryTx<'_>,
     zone_id: i32,
     serial: i32,
@@ -173,7 +179,7 @@ pub(crate) async fn list_records_at_serial(
         sort_records(&mut records);
         Ok(records)
     } else {
-        reconstruct_records_at_serial(tx, zone_id, serial, current_serial).await
+        reconstruct_records_at_serial_tx(tx, zone_id, serial, current_serial).await
     }
 }
 

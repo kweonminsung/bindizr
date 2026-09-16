@@ -9,7 +9,7 @@ use std::{
 use bindizr_core::dns::{
     address::is_address_target,
     name::{OwnerName, ZoneName},
-    zonefile::{ZoneFileValue, parse_zone_file},
+    zonefile::{ParsedZoneFile, ZoneFileValue},
 };
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
@@ -24,7 +24,6 @@ use crate::{
     authorization::Caller,
     dnssec::DnssecService,
     error::ServiceError,
-    log_debug, log_error, log_info, log_warn,
     model::record::{Record, RecordType},
     repository::RepositoryService,
     serial::generate_serial,
@@ -131,7 +130,7 @@ impl RecordService {
 
             let t = Instant::now();
             // Relative owners and omitted TTLs must use the zone this transaction locked.
-            let parsed = parse_zone_file(content, zone.name.as_str(), zone.default_ttl);
+            let parsed = ParsedZoneFile::parse(content, zone.name.as_str(), zone.default_ttl);
             timings.parse_ms = elapsed_ms(t);
             let mut errors = parsed.errors;
             let mut skipped = 0usize;
@@ -245,7 +244,7 @@ impl RecordService {
                 }
             }
             .map_err(|e| {
-                log_error!("Failed to load zone records: {}", e);
+                log::error!("Failed to load zone records: {}", e);
                 ServiceError::internal("Failed to import zone file")
             })?;
             timings.load_existing_ms = elapsed_ms(t);
@@ -398,7 +397,7 @@ impl RecordService {
             changed,
         } = RepositoryService::finish_tx(tx, apply_result, "Failed to import zone file").await?;
 
-        log_info!(
+        log::info!(
             "event=zone_import zone={} mode={:?} applied={} added={} deleted={} updated={} unchanged={} skipped={} errors={}",
             zone_name,
             mode,
@@ -416,13 +415,13 @@ impl RecordService {
         if changed
             && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {
-            log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
         let notify_ms = elapsed_ms(t);
 
         // Per-stage breakdown for profiling; debug-gated so it stays out of
         // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
-        log_debug!(
+        log::debug!(
             "event=zone_import_timing zone={} mode={:?} parsed={} applied={} parse_ms={:.1} \
              load_zone_ms={:.1} load_existing_ms={:.1} normalize_ms={:.1} \
              reconcile_ms={:.1} validate_ms={:.1} db_write_ms={:.1} serial_ms={:.1} notify_ms={:.1} \

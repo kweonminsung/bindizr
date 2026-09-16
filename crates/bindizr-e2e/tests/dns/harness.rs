@@ -1,3 +1,5 @@
+//! Unit tests of the DNS harness itself: the response parser the e2e assertions rely on.
+
 use std::str::FromStr;
 
 use domain::{

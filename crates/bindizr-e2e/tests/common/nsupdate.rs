@@ -14,10 +14,23 @@ use domain::{
     tsig::{Algorithm, ClientTransaction, Key, KeyName},
 };
 
+use crate::common::dns::parse_name;
+
 /// The key an update is signed with, as `tsig-key get` reports it.
 pub(crate) struct SigningKey {
     pub(crate) name: String,
     pub(crate) secret: String,
+}
+
+impl SigningKey {
+    /// Convert into the TSIG key `domain` signs and verifies with.
+    pub(crate) fn to_tsig_key(&self) -> Result<Key, String> {
+        let secret = base64::engine::general_purpose::STANDARD
+            .decode(&self.secret)
+            .map_err(|e| format!("TSIG secret is not base64: {e}"))?;
+        let key_name = KeyName::from_str(&self.name).map_err(|e| e.to_string())?;
+        Key::new(Algorithm::Sha256, &secret, key_name, None, None).map_err(|e| e.to_string())
+    }
 }
 
 /// One RR of an update section, in the class that gives it its meaning
@@ -117,7 +130,7 @@ fn build_update(
 
     let mut question = builder.question();
     question
-        .push((&name(zone)?, Rtype::SOA, Class::IN))
+        .push((&parse_name(zone)?, Rtype::SOA, Class::IN))
         .map_err(|e| e.to_string())?;
 
     let mut answer = question.answer();
@@ -132,7 +145,7 @@ fn build_update(
             PrereqRr::AEquals { name: owner, addr } => {
                 let data = A::from_str(addr).map_err(|e| e.to_string())?;
                 answer
-                    .push(Record::new(name(owner)?, Class::IN, Ttl::ZERO, data))
+                    .push(Record::new(parse_name(owner)?, Class::IN, Ttl::ZERO, data))
                     .map_err(|e| e.to_string())?;
             }
         }
@@ -149,7 +162,7 @@ fn build_update(
                 let data = A::from_str(addr).map_err(|e| e.to_string())?;
                 authority
                     .push(Record::new(
-                        name(owner)?,
+                        parse_name(owner)?,
                         Class::IN,
                         Ttl::from_secs(*ttl),
                         data,
@@ -162,7 +175,12 @@ fn build_update(
             UpdateRr::DeleteA { name: owner, addr } => {
                 let data = A::from_str(addr).map_err(|e| e.to_string())?;
                 authority
-                    .push(Record::new(name(owner)?, Class::NONE, Ttl::ZERO, data))
+                    .push(Record::new(
+                        parse_name(owner)?,
+                        Class::NONE,
+                        Ttl::ZERO,
+                        data,
+                    ))
                     .map_err(|e| e.to_string())?;
             }
         }
@@ -179,23 +197,12 @@ type EmptyRecord = Record<Name<Vec<u8>>, UnknownRecordData<Vec<u8>>>;
 /// name-existence entry takes.
 fn empty_record(owner: &str, rtype: Rtype, class: Class) -> Result<EmptyRecord, String> {
     let data = UnknownRecordData::from_octets(rtype, Vec::new()).map_err(|e| e.to_string())?;
-    Ok(Record::new(name(owner)?, class, Ttl::ZERO, data))
+    Ok(Record::new(parse_name(owner)?, class, Ttl::ZERO, data))
 }
 
 /// Append the request TSIG, the way `domain`'s client transaction does it.
 fn sign(builder: &mut AdditionalBuilder<Vec<u8>>, key: &SigningKey) -> Result<(), String> {
-    let secret = base64::engine::general_purpose::STANDARD
-        .decode(&key.secret)
-        .map_err(|e| format!("TSIG secret is not base64: {e}"))?;
-    let key_name = KeyName::from_str(&key.name).map_err(|e| e.to_string())?;
-    let signing_key =
-        Key::new(Algorithm::Sha256, &secret, key_name, None, None).map_err(|e| e.to_string())?;
-
-    ClientTransaction::request(signing_key, builder, Time48::now()).map_err(|e| e.to_string())?;
+    ClientTransaction::request(key.to_tsig_key()?, builder, Time48::now())
+        .map_err(|e| e.to_string())?;
     Ok(())
-}
-
-/// Parse a DNS wire-format name for an update request.
-fn name(value: &str) -> Result<Name<Vec<u8>>, String> {
-    Name::from_str(value.trim_end_matches('.')).map_err(|e| format!("invalid name '{value}': {e}"))
 }

@@ -10,7 +10,6 @@ use bindizr_db::repository::LockLevel;
 use super::RecordService;
 use crate::{
     error::ServiceError,
-    log_error,
     model::{
         record::{Record, RecordType},
         zone::Zone,
@@ -101,9 +100,10 @@ pub(crate) fn validate_record_add_constraints_normalized(
     }
 
     if *record_type == RecordType::MX {
-        let adding_null_mx = MxRecordValue::is_null_value(value, priority);
+        let adding_null_mx = MxRecordValue::parse(value, priority).is_ok_and(|mx| mx.is_null());
         let has_existing_null_mx = records_at_name.iter().any(|r| {
-            r.record_type == RecordType::MX && MxRecordValue::is_null_value(&r.value, r.priority)
+            r.record_type == RecordType::MX
+                && MxRecordValue::parse(&r.value, r.priority).is_ok_and(|mx| mx.is_null())
         });
         let has_existing_mx = records_at_name
             .iter()
@@ -178,7 +178,7 @@ pub(crate) fn validate_delete_constraints(
     deleting_records: &[Record],
 ) -> Result<(), ServiceError> {
     for record in deleting_records {
-        if zone.is_mname(&record.record_type, &record.name, &record.value) {
+        if zone.mname_matches(&record.record_type, &record.name, &record.value) {
             return Err(ServiceError::invalid_input(
                 "Cannot delete NS record referenced by zone mname".to_string(),
             ));
@@ -205,12 +205,12 @@ pub(crate) fn validate_record_update_constraints_normalized(
         Some(existing_record.id),
     )?;
 
-    if zone.is_mname(
+    if zone.mname_matches(
         &existing_record.record_type,
         &existing_record.name,
         &existing_record.value,
     ) {
-        let still_primary = zone.is_mname(
+        let still_primary = zone.mname_matches(
             &updated_record.record_type,
             &updated_record.name,
             &updated_record.value,
@@ -258,7 +258,7 @@ impl RecordService {
         )
         .await
         .map_err(|e| {
-            log_error!("Failed to load records: {}", e);
+            log::error!("Failed to load records: {}", e);
             ServiceError::internal("Failed to load records")
         })?;
 

@@ -205,8 +205,8 @@ it folds into the verb (`upsert`) or the doc comment.
   matches (the newest zone version, serial boundaries) — semantics a literal
   `delete_*_older_than` would misdescribe.
 
-`begin_tx` / `finish_tx` / `ping` are transaction/connectivity plumbing, not
-entity methods, and are the only exemptions.
+`begin_tx` / `begin_read_tx` / `finish_tx` / `ping` are transaction/connectivity
+plumbing, not entity methods, and are the only exemptions.
 
 **Segments:**
 
@@ -524,7 +524,7 @@ never bare `pub`):
 3. **e2e suite**: shared helpers live in `tests/common/` as `pub(crate)`
    (private when only their own module needs them); the single harness `e2e.rs`
    declares plain private `mod`s. `common/` holds helpers only — test
-   functions belong under `api/` / `cli/`.
+   functions belong under `api/` / `cli/` / `dns/`.
 4. **Never across crates**: no `test-util` features or helper crates;
    duplicate small fixtures per crate instead.
 

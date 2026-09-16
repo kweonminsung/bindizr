@@ -15,7 +15,7 @@ const RESERVED_SERIAL_HEADROOM: i32 = 10_000_000;
 
 /// Largest serial accepted as a zone's starting point, leaving
 /// `RESERVED_SERIAL_HEADROOM` mutations before the counter reaches the ceiling.
-pub(crate) const MAX_INITIAL_SERIAL: i32 = i32::MAX - RESERVED_SERIAL_HEADROOM;
+const MAX_INITIAL_SERIAL: i32 = i32::MAX - RESERVED_SERIAL_HEADROOM;
 
 /// Generate the next SOA serial: `None` (new zone) yields 1; `Some(s)` yields
 /// `s + 1`. `i32::MAX` is an error rather than a saturating no-op, which would

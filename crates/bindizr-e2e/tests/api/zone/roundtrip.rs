@@ -22,7 +22,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     );
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content })),
@@ -33,7 +33,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     assert_eq!(body["errors"].as_array().unwrap().len(), 0, "{body}");
 
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=SSHFP"),
             None,
@@ -49,13 +49,13 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
 
     // The unsigned export must re-import as all-unchanged.
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     let exported = body.as_str().unwrap().to_string();
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": exported })),
@@ -68,14 +68,14 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     // The delegation NS cannot go while its DS survives; DS first, then NS.
     let record_id = |listing: &serde_json::Value| listing["items"][0]["id"].as_i64().unwrap();
     let (_, ns_listing) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=NS&name=sub"),
             None,
         )
         .await;
     let (status, body) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/records/{}", record_id(&ns_listing)),
             None,
@@ -84,7 +84,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
 
     let (_, ds_listing) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=DS&name=sub"),
             None,
@@ -92,7 +92,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
         .await;
     for listing in [ds_listing, ns_listing] {
         let (status, _) = app
-            .request(
+            .send_request(
                 Method::DELETE,
                 &format!("/records/{}", record_id(&listing)),
                 None,
@@ -116,7 +116,7 @@ async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
         "alias IN DNAME target.example.com.\n",
     );
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content })),
@@ -127,7 +127,7 @@ async fn dname_and_naptr_survive_an_import_and_export_round_trip() {
     assert_eq!(body["summary"]["added"], 3, "{body}");
 
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
@@ -161,7 +161,7 @@ async fn escaped_labels_and_values_survive_an_import_and_export_round_trip() {
         "@    IN CAA   0 issue \"a\\\"b\\\\c\"\n",
     );
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "content": content })),
@@ -172,7 +172,7 @@ async fn escaped_labels_and_values_survive_an_import_and_export_round_trip() {
     assert_eq!(body["summary"]["added"], 3, "{body}");
 
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 

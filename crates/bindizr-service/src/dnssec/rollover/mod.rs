@@ -10,7 +10,6 @@ use crate::{
     authorization::Caller,
     database::repository::LockLevel,
     error::ServiceError,
-    log_info,
     model::{
         dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
         dnssec_policy::DnssecPolicy,
@@ -19,18 +18,6 @@ use crate::{
     repository::{RepositoryService, RepositoryTx},
     types::{DnssecDelegationKeyInfo, GetDnssecStatusResponse},
 };
-
-/// The wait before a retired key may be removed: the retire interval of RFC
-/// 7583, Section 3.3.4. The key outlives the signatures it made, cached for
-/// their RRset's TTL, and — for a key a DS names — the parent's DS RRset,
-/// cached for the TTL the confirming probe saw.
-fn retirement_interval_secs(key: &DnssecKey, parent_ds_ttl: Option<u32>) -> i64 {
-    let signatures = i64::from(key.max_signed_ttl);
-    if !key.role.is_sep() {
-        return signatures;
-    }
-    signatures.max(i64::from(parent_ds_ttl.unwrap_or(0)))
-}
 
 impl DnssecService {
     /// Start a key rollover: pre-publish a same-algorithm replacement for
@@ -106,7 +93,7 @@ impl DnssecService {
         let response =
             RepositoryService::finish_tx(tx, result, "failed to start key rollover").await?;
 
-        crate::log_info!("event=dnssec_rollover_start zone={}", response.zone_name);
+        log::info!("event=dnssec_rollover_start zone={}", response.zone_name);
 
         // Announce the pre-published key after the signed view commits.
         notify_zone(&response.zone_name).await;
@@ -209,18 +196,18 @@ impl DnssecService {
             RepositoryService::finish_tx(tx, result, "failed to advance key rollover").await?;
 
         if skip_ds_check {
-            crate::log_warn!(
+            log::warn!(
                 "event=dnssec_rollover_ds_seen_ds_check_skipped zone={}",
                 response.zone_name
             );
         }
         if skip_holddown {
-            crate::log_warn!(
+            log::warn!(
                 "event=dnssec_rollover_ds_seen_holddown_skipped zone={}",
                 response.zone_name
             );
         }
-        crate::log_info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
+        log::info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
         notify_zone(&response.zone_name).await;
         Ok(response)
     }
@@ -267,7 +254,7 @@ impl DnssecService {
         let retire_wait = keys
             .iter()
             .filter(|key| key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role))
-            .map(|key| retirement_interval_secs(key, parent_ds_ttl))
+            .map(|key| key.retirement_interval_secs(parent_ds_ttl))
             .max()
             .unwrap_or(0);
 
@@ -302,7 +289,7 @@ impl DnssecService {
             updated.push(key);
         }
 
-        log_info!(
+        log::info!(
             "Promoted {} pre-published DNSSEC key(s) for zone {}",
             promoted.len(),
             zone.name
@@ -352,7 +339,7 @@ pub(crate) fn promotable_sep_key_ids(
     if !skip_holddown && promotable_at > Utc::now() {
         return Err(ServiceError::invalid_input(format!(
             "the replacement key must stay published so resolvers holding the previous \
-             DNSKEY RRset can learn it; retry after {}, or skip the hold-down and accept \
+             DNSKEY records can learn it; retry after {}, or skip the hold-down and accept \
              validation failures until those caches expire",
             promotable_at.format("%Y-%m-%dT%H:%M:%SZ"),
         )));

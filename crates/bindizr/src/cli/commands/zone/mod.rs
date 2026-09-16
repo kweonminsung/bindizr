@@ -21,7 +21,7 @@ use crate::{
         },
     },
     socket::{
-        client::DaemonSocketClient,
+        client,
         types::{
             DaemonCommandKind, ExportZoneFileParams, ImportZoneParams, NotifyZoneParams,
             UpdateZoneParams, ZoneNameParams,
@@ -319,8 +319,6 @@ pub(crate) struct NotifyArgs {
 
 /// Handle the `zone` subcommand by forwarding it to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliError> {
-    let client = DaemonSocketClient::new();
-
     match subcommand {
         ZoneCommand::Create {
             name,
@@ -335,24 +333,23 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             description,
             output,
         } => {
-            let data = client
-                .send_command(
-                    DaemonCommandKind::CreateZone,
-                    CreateZoneRequest {
-                        name,
-                        mname,
-                        rname,
-                        default_ttl,
-                        serial,
-                        description,
-                        refresh,
-                        retry,
-                        expire,
-                        minimum_ttl,
-                    },
-                )
-                .await?
-                .data;
+            let data = client::send_command(
+                DaemonCommandKind::CreateZone,
+                CreateZoneRequest {
+                    name,
+                    mname,
+                    rname,
+                    default_ttl,
+                    serial,
+                    description,
+                    refresh,
+                    retry,
+                    expire,
+                    minimum_ttl,
+                },
+            )
+            .await?
+            .data;
 
             print_response(&data, output, |response: &ZoneResponse| {
                 vec![ZoneRow::from(&response.zone)]
@@ -420,13 +417,12 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 limit,
                 offset,
             };
-            let data = client
-                .send_command(
-                    DaemonCommandKind::ListZones,
-                    has_filters.then(filter_payload),
-                )
-                .await?
-                .data;
+            let data = client::send_command(
+                DaemonCommandKind::ListZones,
+                has_filters.then(filter_payload),
+            )
+            .await?
+            .data;
 
             print_response(
                 &data,
@@ -437,8 +433,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             )?;
         }
         ZoneCommand::Get { name, output } => {
-            let data = client
-                .send_command(DaemonCommandKind::GetZone, ZoneNameParams { name })
+            let data = client::send_command(DaemonCommandKind::GetZone, ZoneNameParams { name })
                 .await?
                 .data;
 
@@ -460,48 +455,46 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             description,
             output,
         } => {
-            let data = client
-                .send_command(
-                    DaemonCommandKind::UpdateZone,
-                    // `name` looks up the zone; `new_name` renames it.
-                    UpdateZoneParams {
-                        zone_name: name,
-                        request: UpdateZoneRequest {
-                            name: new_name,
-                            mname,
-                            rname,
-                            default_ttl,
-                            refresh,
-                            retry,
-                            expire,
-                            minimum_ttl,
-                            serial: None,
-                            enabled,
-                            description,
-                        },
+            let data = client::send_command(
+                DaemonCommandKind::UpdateZone,
+                // `name` looks up the zone; `new_name` renames it.
+                UpdateZoneParams {
+                    zone_name: name,
+                    request: UpdateZoneRequest {
+                        name: new_name,
+                        mname,
+                        rname,
+                        default_ttl,
+                        refresh,
+                        retry,
+                        expire,
+                        minimum_ttl,
+                        serial: None,
+                        enabled,
+                        description,
                     },
-                )
-                .await?
-                .data;
+                },
+            )
+            .await?
+            .data;
 
             print_response(&data, output, |response: &ZoneResponse| {
                 vec![ZoneRow::from(&response.zone)]
             })?;
         }
         ZoneCommand::Delete { name } => {
-            let response = client
-                .send_command(DaemonCommandKind::DeleteZone, ZoneNameParams { name })
-                .await?;
+            let response =
+                client::send_command(DaemonCommandKind::DeleteZone, ZoneNameParams { name })
+                    .await?;
             println!("{}", response.message);
         }
         ZoneCommand::Export { name, signed } => {
-            let data = client
-                .send_command(
-                    DaemonCommandKind::ExportZoneFile,
-                    ExportZoneFileParams { name, signed },
-                )
-                .await?
-                .data;
+            let data = client::send_command(
+                DaemonCommandKind::ExportZone,
+                ExportZoneFileParams { name, signed },
+            )
+            .await?
+            .data;
             let export: ExportZoneFileResponse = parse_response(&data)?;
             print!("{}", export.zone_file);
         }
@@ -514,21 +507,20 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             skip_unsupported,
         } => {
             let content = file.map(|file| super::read_input(&file)).transpose()?;
-            let response = client
-                .send_command(
-                    DaemonCommandKind::ImportZone,
-                    ImportZoneParams {
-                        zone_name: name,
-                        request: ImportZoneRequest {
-                            content,
-                            from_server,
-                            mode: mode.into(),
-                            dry_run,
-                            skip_unsupported,
-                        },
+            let response = client::send_command(
+                DaemonCommandKind::ImportZone,
+                ImportZoneParams {
+                    zone_name: name,
+                    request: ImportZoneRequest {
+                        content,
+                        from_server,
+                        mode: mode.into(),
+                        dry_run,
+                        skip_unsupported,
                     },
-                )
-                .await?;
+                },
+            )
+            .await?;
 
             let import: ImportZoneResponse = parse_response(&response.data)?;
             // Errors go to stderr so a shell pipeline keeps the summary clean.
@@ -551,11 +543,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 print!("{}", render_change_preview(&import.diff));
             }
         }
-        ZoneCommand::Version { subcommand } => version::handle_command(&client, subcommand).await?,
+        ZoneCommand::Version { subcommand } => version::handle_command(subcommand).await?,
         ZoneCommand::Status { name } => {
-            let response = client
-                .send_command(DaemonCommandKind::ZoneStatus, ZoneNameParams { name })
-                .await?;
+            let response =
+                client::send_command(DaemonCommandKind::GetZoneStatus, ZoneNameParams { name })
+                    .await?;
 
             let status: ZoneStatusResponse = parse_response(&response.data)?;
             println!("Zone {} (serial {})", status.zone, status.serial);
@@ -566,12 +558,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             print_table(SecondaryStatusRow::rows_from_status(&status));
         }
         ZoneCommand::TokenGrants { name, output } => {
-            let res = client
-                .send_command(
-                    DaemonCommandKind::TokenGrantListByZone,
-                    ZoneNameParams { name },
-                )
-                .await?;
+            let res = client::send_command(
+                DaemonCommandKind::ListZoneTokenGrants,
+                ZoneNameParams { name },
+            )
+            .await?;
             print_response(
                 &res.data,
                 output,
@@ -581,12 +572,11 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             )?;
         }
         ZoneCommand::TsigGrants { name, output } => {
-            let res = client
-                .send_command(
-                    DaemonCommandKind::TsigGrantListByZone,
-                    ZoneNameParams { name },
-                )
-                .await?;
+            let res = client::send_command(
+                DaemonCommandKind::ListZoneTsigGrants,
+                ZoneNameParams { name },
+            )
+            .await?;
             print_response(
                 &res.data,
                 output,
@@ -596,15 +586,14 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             )?;
         }
         ZoneCommand::Notify(args) => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::NotifyZone,
-                    NotifyZoneParams {
-                        zone_name: args.name,
-                        bump_serial: args.bump_serial,
-                    },
-                )
-                .await?;
+            let response = client::send_command(
+                DaemonCommandKind::NotifyZone,
+                NotifyZoneParams {
+                    zone_name: args.name,
+                    bump_serial: args.bump_serial,
+                },
+            )
+            .await?;
             println!("{}", response.message);
         }
     }

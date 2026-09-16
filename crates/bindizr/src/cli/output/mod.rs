@@ -1,7 +1,7 @@
 pub(crate) mod color;
-pub(crate) mod diff;
-pub(crate) mod format;
-pub(crate) mod table;
+mod diff;
+mod format;
+mod table;
 
 pub(crate) use diff::{render_change_preview, render_diff_lines};
 pub(crate) use format::{OutputFormat, parse_response, print_payload, print_response, print_table};

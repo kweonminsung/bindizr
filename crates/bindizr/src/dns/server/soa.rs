@@ -10,7 +10,6 @@ use bindizr_core::{
         message::{Rcode, Rtype},
         tsig::{RequestSignature, TransferSigner, request_signature},
     },
-    log_info, log_warn,
     metrics::{SoaResult, track_soa},
 };
 use bindizr_service::zone::{TransferAccess, ZoneService};
@@ -33,7 +32,7 @@ pub(crate) async fn handle_tcp_soa(
     query: &message::ParsedQuery,
     query_data: &[u8],
 ) -> Result<(), XfrError> {
-    let (response, outcome) = build_soa_response(query, client_addr.ip(), query_data)
+    let (response, outcome) = handle_soa_request(query, client_addr.ip(), query_data)
         .await
         .inspect_err(|_| track_soa(SoaResult::Error))?;
     wire::write_tcp_message(stream, &response)
@@ -50,7 +49,7 @@ pub(crate) async fn handle_udp_soa(
     query: &message::ParsedQuery,
     query_data: &[u8],
 ) -> Result<(), XfrError> {
-    let (response, outcome) = build_soa_response(query, client_addr.ip(), query_data)
+    let (response, outcome) = handle_soa_request(query, client_addr.ip(), query_data)
         .await
         .inspect_err(|_| track_soa(SoaResult::Error))?;
     socket
@@ -72,7 +71,7 @@ fn is_self_probe(client_ip: IpAddr) -> bool {
 /// carry. A secondary polls the serial with the key it transfers under, so
 /// one gate answers both, and the zone answered is the one that key is
 /// granted.
-async fn build_soa_response(
+async fn handle_soa_request(
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     query_data: &[u8],
@@ -82,7 +81,7 @@ async fn build_soa_response(
     let mut identity = match authenticate_soa(query, client_ip, query_data).await {
         Ok(identity) => identity,
         Err(refusal) => {
-            log_warn!(
+            log::warn!(
                 "Refused SOA query for {:?} from {}: {}",
                 zone_name_str,
                 client_ip,
@@ -94,7 +93,7 @@ async fn build_soa_response(
         }
     };
 
-    log_info!("SOA query for zone {:?} from {}", zone_name_str, client_ip);
+    log::info!("SOA query for zone {:?} from {}", zone_name_str, client_ip);
 
     let build = |signer: Option<TransferSigner>| {
         let builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
@@ -105,7 +104,7 @@ async fn build_soa_response(
     };
 
     if catalog::is_catalog_zone(zone_name_str) {
-        log_info!("SOA query for catalog zone: {}", catalog::CATALOG_ZONE_NAME);
+        log::info!("SOA query for catalog zone: {}", catalog::CATALOG_ZONE_NAME);
         let (catalog_zone, _) = catalog::generate_catalog_zone().await?;
         let mut builder = build(identity.signer);
         builder.add_catalog_soa(
@@ -124,7 +123,7 @@ async fn build_soa_response(
                 .map(|response| (response, SoaResult::NotAuth));
         }
         TransferAccess::Refused(reason) => {
-            log_warn!(
+            log::warn!(
                 "Refused SOA query for {:?} from {}: {}",
                 zone_name_str,
                 client_ip,
@@ -136,7 +135,7 @@ async fn build_soa_response(
         }
     };
 
-    log_info!(
+    log::info!(
         "SOA response: zone {} serial={}",
         zone_name_str,
         zone.serial

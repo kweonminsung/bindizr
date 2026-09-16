@@ -1,9 +1,6 @@
 use std::net::IpAddr;
 
-use bindizr_core::{
-    dns::{message, message::Rtype},
-    log_info,
-};
+use bindizr_core::dns::{message, message::Rtype};
 use bindizr_service::zone::TransferAccess;
 use tokio::net::TcpStream;
 
@@ -23,24 +20,21 @@ pub(crate) async fn handle_axfr(
 ) -> Result<(), XfrError> {
     let zone_name_str = query.zone_name.as_str();
 
-    log_info!(
+    log::info!(
         "AXFR request for zone {:?} from {}",
         zone_name_str,
         client_ip
     );
 
     if catalog::is_catalog_zone(zone_name_str) {
-        return catalog::handle_catalog_axfr_with_qtype(
-            stream,
-            query,
-            response_qtype,
-            identity.signer.take(),
-        )
-        .await;
+        return catalog::handle_catalog_axfr(stream, query, response_qtype, identity.signer.take())
+            .await;
     }
 
     let (zone, content) =
-        match zone_cache::find_zone_content(zone_name_str, identity.key.as_ref()).await? {
+        match zone_cache::authorize_transfer_content_by_name(zone_name_str, identity.key.as_ref())
+            .await?
+        {
             TransferAccess::Granted(found) => found,
             TransferAccess::NotZone => {
                 return Err(XfrError::ZoneNotFound(zone_name_str.to_string()));
@@ -48,7 +42,7 @@ pub(crate) async fn handle_axfr(
             TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
         };
 
-    log_info!(
+    log::info!(
         "AXFR: zone {} has {} records + {} DNSSEC records, serial={}",
         zone_name_str,
         content.records.len(),
@@ -103,7 +97,7 @@ pub(crate) async fn handle_axfr(
     .await?;
     messages_sent += crate::dns::wire::flush_if_not_empty(&mut builder, stream).await?;
 
-    log_info!(
+    log::info!(
         "AXFR completed for zone {}: sent {} records + 2 SOA records in {} DNS message(s)",
         zone_name_str,
         content.records.len() + content.dnssec_records.len(),

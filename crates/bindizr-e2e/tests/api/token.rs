@@ -29,7 +29,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     };
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tokens",
             Some(json!({ "name": scoped_name, "description": "created over HTTP" })),
@@ -46,7 +46,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     // The new token authenticates, and is scoped: no zone plane.
     app.set_auth_token(scoped_secret.clone());
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/zones",
             Some(zone_body(&app.zone_name("scoped-zone"))),
@@ -56,7 +56,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
 
     app.set_auth_token(bootstrap_token.clone());
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tokens",
             Some(json!({ "name": global_name, "global": true })),
@@ -69,7 +69,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     // A global token minted over HTTP holds the zone plane.
     app.set_auth_token(global_secret);
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/zones",
             Some(zone_body(&app.zone_name("global-zone"))),
@@ -78,7 +78,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     assert_eq!(status, StatusCode::CREATED);
 
     app.set_auth_token(bootstrap_token.clone());
-    let (status, body) = app.request(Method::GET, "/tokens", None).await;
+    let (status, body) = app.send_request(Method::GET, "/tokens", None).await;
     assert_eq!(status, StatusCode::OK);
     let tokens = body["items"].as_array().unwrap();
     for name in [&bootstrap_name, &scoped_name, &global_name] {
@@ -96,7 +96,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     assert!(total >= 3, "{body}");
 
     let (status, body) = app
-        .request(Method::GET, "/tokens?limit=1&offset=1", None)
+        .send_request(Method::GET, "/tokens?limit=1&offset=1", None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 1, "{body}");
@@ -105,7 +105,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     assert_eq!(body["pagination"]["total"], total, "{body}");
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tokens",
             Some(json!({ "name": scoped_name })),
@@ -115,7 +115,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
 
     // Values the columns cannot hold are a 400, not a backend-dependent 500.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tokens",
             Some(json!({ "name": app.zone_name("never"), "expires_in_days": i64::MAX })),
@@ -123,7 +123,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tokens",
             Some(json!({ "name": app.zone_name("verbose"), "description": "x".repeat(256) })),
@@ -132,18 +132,18 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let (status, _) = app
-        .request(Method::DELETE, &format!("/tokens/{scoped_name}"), None)
+        .send_request(Method::DELETE, &format!("/tokens/{scoped_name}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     // A deleted token stops authenticating at once.
     app.set_auth_token(scoped_secret);
-    let (status, _) = app.request(Method::GET, "/zones", None).await;
+    let (status, _) = app.send_request(Method::GET, "/zones", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
     app.set_auth_token(bootstrap_token);
     let (status, _) = app
-        .request(Method::DELETE, &format!("/tokens/{global_name}"), None)
+        .send_request(Method::DELETE, &format!("/tokens/{global_name}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 }
@@ -163,7 +163,7 @@ async fn scoped_token_cannot_manage_tokens() {
     app.set_auth_token(scoped_token);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/tokens",
             Some(json!({ "name": app.zone_name("escalation") })),
@@ -171,12 +171,12 @@ async fn scoped_token_cannot_manage_tokens() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    let (status, _) = app.request(Method::GET, "/tokens", None).await;
+    let (status, _) = app.send_request(Method::GET, "/tokens", None).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     // Not even its own.
     let (status, _) = app
-        .request(Method::DELETE, &format!("/tokens/{scoped_name}"), None)
+        .send_request(Method::DELETE, &format!("/tokens/{scoped_name}"), None)
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
@@ -198,7 +198,7 @@ async fn tokens_self_describes_the_bearer() {
         (scoped_name, scoped_token, false),
     ] {
         app.set_auth_token(token);
-        let (status, body) = app.request(Method::GET, "/tokens/self", None).await;
+        let (status, body) = app.send_request(Method::GET, "/tokens/self", None).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["token"]["name"], json!(name));
         assert_eq!(body["token"]["global"], json!(global));
@@ -217,7 +217,7 @@ async fn tokens_self_needs_a_token_even_with_authentication_off() {
     .await;
 
     for path in ["/tokens/self", "/tokens/self/grants"] {
-        let (status, _) = app.request(Method::GET, path, None).await;
+        let (status, _) = app.send_request(Method::GET, path, None).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
     }
 }

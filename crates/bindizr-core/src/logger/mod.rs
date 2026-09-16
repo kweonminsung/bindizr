@@ -8,43 +8,6 @@ use log::{Level, Metadata, Record};
 
 use crate::config;
 
-#[macro_export]
-macro_rules! log_error {
-    ($($arg:tt)*) => {
-        log::error!($($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_warn {
-    ($($arg:tt)*) => {
-        log::warn!($($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_info {
-    ($($arg:tt)*) => {
-        log::info!($($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_debug {
-    ($($arg:tt)*) => {
-        log::debug!($($arg)*)
-    };
-}
-
-/// Whether debug logging is enabled. Lets hot paths skip building debug-only
-/// data (e.g. per-record timing) when it would only be discarded.
-#[macro_export]
-macro_rules! log_debug_enabled {
-    () => {
-        log::log_enabled!(log::Level::Debug)
-    };
-}
-
 /// The level in force, read per record so a config reload changes it without
 /// replacing the installed logger — `log` allows only one.
 static LOG_LEVEL: AtomicUsize = AtomicUsize::new(Level::Info as usize);
@@ -93,14 +56,16 @@ impl log::Log for Logger {
     }
 }
 
-/// Convert a configured logging level into the logging facade's level.
-fn to_log_level(level: config::LogLevel) -> Level {
-    match level {
-        config::LogLevel::Error => Level::Error,
-        config::LogLevel::Warn => Level::Warn,
-        config::LogLevel::Debug => Level::Debug,
-        config::LogLevel::Trace => Level::Trace,
-        config::LogLevel::Info => Level::Info,
+impl From<config::LogLevel> for Level {
+    /// Convert a configured logging level into the logging facade's level.
+    fn from(level: config::LogLevel) -> Self {
+        match level {
+            config::LogLevel::Error => Level::Error,
+            config::LogLevel::Warn => Level::Warn,
+            config::LogLevel::Debug => Level::Debug,
+            config::LogLevel::Trace => Level::Trace,
+            config::LogLevel::Info => Level::Info,
+        }
     }
 }
 
@@ -112,7 +77,7 @@ pub fn initialize() {
 /// Install the global logger at an explicit level, for binaries that do not
 /// load the bindizr configuration file (e.g. the ExternalDNS adapter).
 pub fn initialize_with_level(level: config::LogLevel) {
-    let log_level = to_log_level(level);
+    let log_level = Level::from(level);
 
     if let Err(e) = log::set_boxed_logger(Box::new(Logger)) {
         eprintln!("Failed to set logger: {}", e);
@@ -125,7 +90,7 @@ pub fn initialize_with_level(level: config::LogLevel) {
 
 /// Change the level of the installed logger, for a configuration reload.
 pub fn set_level(level: config::LogLevel) {
-    let level = to_log_level(level);
+    let level = Level::from(level);
     LOG_LEVEL.store(level as usize, Ordering::Relaxed);
     log::set_max_level(level.to_level_filter());
 }

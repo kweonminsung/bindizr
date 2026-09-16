@@ -1,25 +1,25 @@
 //! HTTP API server: routing, middleware, and the zone/record/notify endpoints.
 
-pub(crate) mod dnssec;
-pub(crate) mod dnssec_policy;
-pub(crate) mod error;
-pub(crate) mod external_dns;
-pub(crate) mod health;
-pub(crate) mod metrics;
-pub(crate) mod middleware;
-pub(crate) mod notify;
-pub(crate) mod openapi;
-pub(crate) mod record;
-pub(crate) mod router;
-pub(crate) mod token;
-pub(crate) mod tsig_key;
-pub(crate) mod zone;
+mod dnssec;
+mod dnssec_policy;
+mod error;
+mod external_dns;
+mod health;
+mod metrics;
+mod middleware;
+mod notify;
+mod openapi;
+mod record;
+mod router;
+mod token;
+mod tsig_key;
+mod zone;
 
 use std::{net::SocketAddr, time::Duration};
 
 use axum::{extract::FromRequestParts, http::request::Parts};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
-use bindizr_core::{config, log_error, log_info, model::api_token::ApiToken};
+use bindizr_core::{config, model::api_token::ApiToken};
 use bindizr_service::{authorization::Caller, error::ServiceError};
 use error::ApiError;
 use router::ApiRouter;
@@ -103,14 +103,14 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, St
         .map_err(|e| format!("Failed to bind the HTTP API to {}: {}", addr, e))?;
 
     let Some((cert_file, key_file)) = bindizr_config.api.tls_files() else {
-        log_info!("HTTP API server listening on http://{}", addr);
+        log::info!("HTTP API server listening on http://{}", addr);
         let stop = shutdown.waiter();
         return Ok(tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, ApiRouter::routes().await)
                 .with_graceful_shutdown(stop)
                 .await
             {
-                log_error!("API server error: {:?}", e);
+                log::error!("API server error: {:?}", e);
             }
         }));
     };
@@ -132,7 +132,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, St
     let server = axum_server::from_tcp_rustls(listener, tls)
         .map_err(|e| format!("Failed to start the HTTPS API server on {}: {}", addr, e))?;
 
-    log_info!("HTTP API server listening on https://{}", addr);
+    log::info!("HTTP API server listening on https://{}", addr);
 
     let handle = Handle::new();
     let stop = shutdown.waiter();
@@ -147,7 +147,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, St
             .serve(ApiRouter::routes().await.into_make_service())
             .await
         {
-            log_error!("API server error: {:?}", e);
+            log::error!("API server error: {:?}", e);
         }
     }))
 }

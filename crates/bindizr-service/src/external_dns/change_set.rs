@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
-use super::policy::{find_authoritative_zone, normalize_lookup_name};
+use super::policy::{authoritative_zone, normalize_lookup_name};
 use crate::{
     authorization::Caller,
     error::{ErrorCode, ServiceError},
@@ -201,8 +201,8 @@ pub(crate) fn group_ops_by_zone(
 
     for pending in ops {
         // From every zone, so a hidden subzone still shadows a granted parent.
-        let zone = find_authoritative_zone(zones, &pending.op.name)
-            .filter(|zone| caller.zone_visible(zone.id))
+        let zone = authoritative_zone(zones, &pending.op.name)
+            .filter(|zone| caller.sees_zone(zone.id))
             .ok_or_else(|| {
                 ServiceError::new(
                     ErrorCode::ZoneNotFound,
@@ -212,7 +212,7 @@ pub(crate) fn group_ops_by_zone(
 
         let op = ZoneRrsetOp {
             name: OwnerName::parse_absolute_in_zone(&pending.op.name, &zone.name)
-                .expect("find_authoritative_zone matched the name inside this zone"),
+                .expect("authoritative_zone matched the name inside this zone"),
             record_type: pending.op.record_type,
             ttl: pending.op.ttl,
             values: pending.op.values,

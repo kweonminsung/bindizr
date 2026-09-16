@@ -67,7 +67,7 @@ impl<'a> SrvRecordValue<'a> {
 
     /// The value column's form: `<weight> <port> <target>` with a lowercase
     /// FQDN target.
-    pub fn encoded(&self) -> String {
+    pub fn to_stored(&self) -> String {
         format!(
             "{} {} {}",
             self.weight,

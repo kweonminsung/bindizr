@@ -15,7 +15,7 @@ use crate::{
         },
     },
     socket::{
-        client::DaemonSocketClient,
+        client,
         types::{
             DaemonCommandKind, DiffZoneVersionsParams, ListZoneVersionsParams, RollbackZoneParams,
             ZoneVersionParams,
@@ -80,10 +80,7 @@ pub(crate) enum ZoneVersionCommand {
 }
 
 /// Run the requested zone history or rollback command.
-pub(crate) async fn handle_command(
-    client: &DaemonSocketClient,
-    subcommand: ZoneVersionCommand,
-) -> Result<(), CliError> {
+pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(), CliError> {
     match subcommand {
         ZoneVersionCommand::List {
             name,
@@ -92,18 +89,17 @@ pub(crate) async fn handle_command(
             include_signer_serials,
             output,
         } => {
-            let data = client
-                .send_command(
-                    DaemonCommandKind::ListZoneVersions,
-                    ListZoneVersionsParams {
-                        name,
-                        limit,
-                        offset,
-                        include_signer_serials,
-                    },
-                )
-                .await?
-                .data;
+            let data = client::send_command(
+                DaemonCommandKind::ListZoneVersions,
+                ListZoneVersionsParams {
+                    name,
+                    limit,
+                    offset,
+                    include_signer_serials,
+                },
+            )
+            .await?
+            .data;
 
             print_response(
                 &data,
@@ -118,13 +114,12 @@ pub(crate) async fn handle_command(
             serial,
             output,
         } => {
-            let data = client
-                .send_command(
-                    DaemonCommandKind::GetZoneVersion,
-                    ZoneVersionParams { name, serial },
-                )
-                .await?
-                .data;
+            let data = client::send_command(
+                DaemonCommandKind::GetZoneVersion,
+                ZoneVersionParams { name, serial },
+            )
+            .await?
+            .data;
 
             match output {
                 OutputFormat::Table => {
@@ -140,17 +135,16 @@ pub(crate) async fn handle_command(
             from_serial,
             to_serial,
         } => {
-            let data = client
-                .send_command(
-                    DaemonCommandKind::DiffZoneVersions,
-                    DiffZoneVersionsParams {
-                        name,
-                        from_serial,
-                        to_serial,
-                    },
-                )
-                .await?
-                .data;
+            let data = client::send_command(
+                DaemonCommandKind::DiffZoneVersions,
+                DiffZoneVersionsParams {
+                    name,
+                    from_serial,
+                    to_serial,
+                },
+            )
+            .await?
+            .data;
 
             print!("{}", render_version_diff(&parse_response(&data)?));
         }
@@ -159,16 +153,15 @@ pub(crate) async fn handle_command(
             serial,
             dry_run,
         } => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::RollbackZone,
-                    RollbackZoneParams {
-                        name,
-                        serial,
-                        dry_run,
-                    },
-                )
-                .await?;
+            let response = client::send_command(
+                DaemonCommandKind::RollbackZone,
+                RollbackZoneParams {
+                    name,
+                    serial,
+                    dry_run,
+                },
+            )
+            .await?;
 
             let rollback: RollbackZoneResponse = parse_response(&response.data)?;
             println!("{}", response.message);

@@ -3,7 +3,7 @@
 
 use sqlx::{MySql, Postgres, Sqlite};
 
-use crate::{DatabasePool, error::DatabaseError, get_pool};
+use crate::{DatabasePool, error::DatabaseError, pool};
 
 /// Row locks requested on MySQL/PostgreSQL. SQLite relies on its transaction
 /// mode: a database write lock for mutations, a snapshot for read-only work.
@@ -17,6 +17,19 @@ pub enum LockLevel {
     /// No row lock: either an existing lock protects these rows, or the caller
     /// accepts changes between reads.
     None,
+}
+
+impl LockLevel {
+    /// The locking clause for this level, as a suffix appended after any
+    /// `ORDER BY`. SQLite locks the whole database instead, so it never calls
+    /// this.
+    pub(crate) fn clause(self) -> &'static str {
+        match self {
+            LockLevel::Exclusive => " FOR UPDATE",
+            LockLevel::Shared => " FOR SHARE",
+            LockLevel::None => "",
+        }
+    }
 }
 
 /// A database transaction spanning any of the supported backends.
@@ -43,7 +56,7 @@ pub async fn begin_read_tx() -> Result<RepositoryTx<'static>, DatabaseError> {
 
 /// Shared opener; only SQLite's BEGIN statement distinguishes the two.
 async fn begin(sqlite_begin: &'static str) -> Result<RepositoryTx<'static>, DatabaseError> {
-    match get_pool() {
+    match pool() {
         DatabasePool::MySQL(pool) => pool
             .begin()
             .await

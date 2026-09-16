@@ -91,7 +91,7 @@ async fn nsupdate_adds_and_deletes_records() {
 #[serial]
 async fn nsupdate_deletes_every_record_of_a_name_and_type() {
     let app = unsigned_nsupdate_app().await;
-    let zone_name = app.zone_name("nsupdate-rrset.example");
+    let zone_name = app.zone_name("nsupdate-records.example");
     app.create_zone_cli(&zone_name, "3600").await;
     let port = app.dns_port();
 
@@ -119,7 +119,7 @@ async fn nsupdate_deletes_every_record_of_a_name_and_type() {
             rtype: Rtype::A,
         }],
     )
-    .expect("rrset delete");
+    .expect("delete every record of the name and type");
     assert_eq!(rcode, Rcode::NOERROR);
 
     assert!(
@@ -178,12 +178,12 @@ async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
     assert_eq!(app.list_records(&zone_name).await.len(), before + 1);
 }
 
-/// Verify that a value prerequisite needs the whole RRset.
+/// Verify that a value prerequisite needs every record of the name and type.
 #[tokio::test]
 #[serial]
-async fn a_value_prerequisite_needs_the_whole_rrset() {
+async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
     let app = unsigned_nsupdate_app().await;
-    let zone_name = app.zone_name("nsupdate-rrset.example");
+    let zone_name = app.zone_name("nsupdate-records.example");
     app.create_zone_cli(&zone_name, "3600").await;
     let port = app.dns_port();
 
@@ -199,7 +199,7 @@ async fn a_value_prerequisite_needs_the_whole_rrset() {
                 addr: addr.to_string(),
             }],
         )
-        .expect("seed the RRset");
+        .expect("seed the records");
         assert_eq!(rcode, Rcode::NOERROR);
     }
     let before = app.list_records(&zone_name).await.len();
@@ -277,7 +277,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
     app.create_zone_cli(&zone_name, "3600").await;
     let port = app.dns_port();
 
-    let before = app.zone_serial(&zone_name).await;
+    let before = app.read_zone_serial(&zone_name).await;
 
     let owner = format!("pair.{zone_name}.");
     let rcode = send_update(
@@ -300,7 +300,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
     .expect("two-record update");
     assert_eq!(rcode, Rcode::NOERROR);
 
-    assert_eq!(app.zone_serial(&zone_name).await, before + 1);
+    assert_eq!(app.read_zone_serial(&zone_name).await, before + 1);
 
     // An update that changes nothing must leave the serial alone, or every
     // no-op would make secondaries re-transfer.
@@ -315,7 +315,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
     )
     .expect("no-op update");
     assert_eq!(rcode, Rcode::NOERROR);
-    assert_eq!(app.zone_serial(&zone_name).await, before + 1);
+    assert_eq!(app.read_zone_serial(&zone_name).await, before + 1);
 }
 
 /// Create a TSIG key fixture for signed update requests.
@@ -401,7 +401,7 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     // The DNS plane has no API token, so the key that signed the update is
     // the name the change is recorded under.
     let (status, body) = app
-        .request(
+        .send_request(
             reqwest::Method::GET,
             &format!("/zones/{zone_name}/versions"),
             None,
@@ -441,7 +441,7 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
     assert_eq!(rcode, Rcode::REFUSED);
 
     let (status, body) = app
-        .request(
+        .send_request(
             reqwest::Method::POST,
             "/records",
             Some(serde_json::json!({

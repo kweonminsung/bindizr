@@ -138,7 +138,7 @@ fn render_zone_file(rrs: &[TransferRr]) -> Result<String, String> {
         ) {
             continue;
         }
-        RecordType::from_rtype(rr.rtype).map_err(|_| {
+        RecordType::try_from(rr.rtype).map_err(|_| {
             format!(
                 "the source zone carries a record type bindizr does not store: {} {}",
                 rr.name, rr.rtype
@@ -154,7 +154,7 @@ fn render_zone_file(rrs: &[TransferRr]) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::dns::zonefile::{ZoneFileValue, parse_zone_file};
+    use bindizr_core::dns::zonefile::{ParsedZoneFile, ZoneFileValue};
 
     use super::{Rtype, TransferRr, render_zone_file};
 
@@ -179,7 +179,7 @@ mod tests {
             rdata: rdata.to_string(),
         });
 
-        let parsed = parse_zone_file(&render_zone_file(&rrs).unwrap(), "example.com", 300);
+        let parsed = ParsedZoneFile::parse(&render_zone_file(&rrs).unwrap(), "example.com", 300);
 
         assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
         assert!(parsed.unsupported.is_empty(), "{:?}", parsed.unsupported);

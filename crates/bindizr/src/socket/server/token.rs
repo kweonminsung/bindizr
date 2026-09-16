@@ -87,7 +87,7 @@ pub(crate) async fn create_token_grant(
 }
 
 /// List the requested token grants for an API token.
-pub(crate) async fn list_token_grants_by_token(
+pub(crate) async fn list_token_grants(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: TokenNameParams = parse_params(data)?;
@@ -103,7 +103,7 @@ pub(crate) async fn list_token_grants_by_token(
 }
 
 /// List the requested token grants for a zone.
-pub(crate) async fn list_token_grants_by_zone(
+pub(crate) async fn list_zone_token_grants(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;

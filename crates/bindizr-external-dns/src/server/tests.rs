@@ -13,6 +13,7 @@ use crate::{upstream::UpstreamClient, wire::MEDIA_TYPE};
 /// One request the mock bindizr server saw: path, Authorization header, body.
 type RecordedRequest = (String, Option<String>, String);
 
+/// The mock bindizr server's canned responses and the requests it recorded.
 #[derive(Clone)]
 struct MockState {
     requests: Arc<Mutex<Vec<RecordedRequest>>>,
@@ -22,6 +23,7 @@ struct MockState {
     adjust: (u16, String),
 }
 
+/// A running mock bindizr server: its address and the requests it saw.
 struct MockUpstream {
     addr: std::net::SocketAddr,
     requests: Arc<Mutex<Vec<RecordedRequest>>>,

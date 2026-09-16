@@ -116,7 +116,7 @@ pub(crate) async fn enable_dnssec(
 
 #[derive(Deserialize)]
 pub(crate) struct DisableDnssecQuery {
-    pub(crate) skip_ds_check: Option<bool>,
+    skip_ds_check: Option<bool>,
 }
 
 /// Disable DNSSEC for a zone.
@@ -215,8 +215,8 @@ pub(crate) async fn start_dnssec_rollover(
 
 #[derive(Deserialize)]
 pub(crate) struct DsSeenQuery {
-    pub(crate) skip_ds_check: Option<bool>,
-    pub(crate) skip_holddown: Option<bool>,
+    skip_ds_check: Option<bool>,
+    skip_holddown: Option<bool>,
 }
 
 /// Confirm the new DS is at the parent, promoting the pre-published key(s).

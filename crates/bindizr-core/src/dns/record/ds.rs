@@ -9,14 +9,14 @@ use super::{
     },
 };
 
-pub struct DsRrValue {
+pub struct DsRecordValue {
     key_tag: u16,
     algorithm: u8,
     digest_type: u8,
     digest: Vec<u8>,
 }
 
-impl DsRrValue {
+impl DsRecordValue {
     /// The value is `<key tag> <algorithm> <digest type> <digest>`; the hex
     /// digest may be split into whitespace-separated groups, as `dig` prints.
     pub fn parse(value: &str) -> Result<Self, String> {
@@ -92,32 +92,37 @@ impl DsRrValue {
 
 #[cfg(test)]
 mod tests {
-    use super::DsRrValue;
+    use super::DsRecordValue;
 
     /// Verify that `parse` joins spaced digest and canonicalizes hex case.
     #[test]
     fn parse_joins_spaced_digest_and_canonicalizes_hex_case() {
-        let parsed = DsRrValue::parse("34217 13 2 4b9b 6b07 3edd").unwrap();
+        let parsed = DsRecordValue::parse("34217 13 2 4b9b 6b07 3edd").unwrap();
         assert_eq!(parsed.canonical(), "34217 13 2 4B9B6B073EDD");
     }
 
     /// Verify that `validate` pins the digest length per type.
     #[test]
     fn validate_pins_the_digest_length_per_type() {
-        let short = DsRrValue::parse("1 13 2 4B9B").unwrap();
+        let short = DsRecordValue::parse("1 13 2 4B9B").unwrap();
         assert!(short.validate().unwrap_err().contains("32-byte"));
         // Unknown digest types carry no known length to enforce.
-        assert!(DsRrValue::parse("1 13 9 4B9B").unwrap().validate().is_ok());
+        assert!(
+            DsRecordValue::parse("1 13 9 4B9B")
+                .unwrap()
+                .validate()
+                .is_ok()
+        );
     }
 
     /// Verify that `parse` rejects non hex and odd digests.
     #[test]
     fn parse_rejects_non_hex_and_odd_digests() {
-        assert!(DsRrValue::parse("1 13 2 XYZ1").is_err());
-        assert!(DsRrValue::parse("1 13 2 4B9").is_err());
-        assert!(DsRrValue::parse("1 13 2").is_err());
+        assert!(DsRecordValue::parse("1 13 2 XYZ1").is_err());
+        assert!(DsRecordValue::parse("1 13 2 4B9").is_err());
+        assert!(DsRecordValue::parse("1 13 2").is_err());
         // An even byte length with a multi-byte character once panicked by
         // slicing the digest mid-character; it must fail as non-hex.
-        assert!(DsRrValue::parse("1 13 2 4é4").is_err());
+        assert!(DsRecordValue::parse("1 13 2 4é4").is_err());
     }
 }

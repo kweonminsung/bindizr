@@ -13,7 +13,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     let serial_before = zone["serial"].as_i64().unwrap();
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
@@ -55,7 +55,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     );
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
@@ -65,27 +65,27 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(body["code"], "DNSSEC_ALREADY_ENABLED");
 
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["dnssec"]["enabled"], true);
     assert_eq!(body["dnssec"]["keys"][0]["key_tag"], key_tag);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec/sign"),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(app.zone_serial(zone_name).await, serial_before + 2);
+    assert_eq!(app.read_zone_serial(zone_name).await, serial_before + 2);
 
     // The enable serial carried only signer-generated changes, so once it is
     // no longer current the default version listing hides it; `all` shows it.
     let signer_serial = serial_before + 1;
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     let listed_serials = |body: &serde_json::Value| -> Vec<i64> {
@@ -107,7 +107,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     );
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{zone_name}/versions?include_signer_serials=true"),
             None,
@@ -123,7 +123,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     // A DS secures a delegation, so the NS RRset must exist first.
     let ds_value = "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -135,7 +135,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(status, StatusCode::CONFLICT);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -146,7 +146,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -159,7 +159,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
 
     // The unsigned export must stay the import-compatible user plane.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{zone_name}/export?signed=true"),
             None,
@@ -187,13 +187,13 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     );
 
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(!body.as_str().unwrap().contains("RRSIG"), "{body}");
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/zones/{zone_name}/dnssec?skip_ds_check=true"),
             None,
@@ -202,7 +202,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(status, StatusCode::OK);
 
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["dnssec"]["enabled"], false);
@@ -210,7 +210,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert!(body["dnssec"]["keys"].as_array().unwrap().is_empty());
 
     let (status, body) = app
-        .request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
+        .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_NOT_ENABLED");
@@ -225,7 +225,7 @@ async fn dnssec_csk_rollover_lifecycle() {
     // promotion inside the test.
     let zone_name = app.zone_name("rollover.example");
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/zones",
             Some(json!({
@@ -242,7 +242,7 @@ async fn dnssec_csk_rollover_lifecycle() {
     let serial_before = body["zone"]["serial"].as_i64().unwrap();
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
@@ -261,7 +261,7 @@ async fn dnssec_csk_rollover_lifecycle() {
     assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 1);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec/rollover"),
             Some(json!({})),
@@ -296,7 +296,7 @@ async fn dnssec_csk_rollover_lifecycle() {
     assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 2);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec/rollover"),
             Some(json!({})),
@@ -311,14 +311,14 @@ async fn dnssec_csk_rollover_lifecycle() {
         format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
         format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_ds_check=true"),
     ] {
-        let (status, _) = app.request(Method::POST, &path, None).await;
+        let (status, _) = app.send_request(Method::POST, &path, None).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{path}");
     }
     tokio::time::sleep(std::time::Duration::from_secs(61)).await;
 
     // No parent stands in here, so the DS is taken on the caller's word.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec/rollover/ds-seen?skip_ds_check=true"),
             None,
@@ -343,7 +343,7 @@ async fn dnssec_csk_rollover_lifecycle() {
     assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 3);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
             None,
@@ -363,7 +363,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
 
     let policy_name = format!("{}-nsec3-split", app.namespace());
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/dnssec-policies",
             Some(json!({ "name": policy_name, "denial": "nsec3", "split_keys": true })),
@@ -372,7 +372,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
@@ -401,7 +401,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
 
     // A split-key zone has two rollable keys, so the role must be named.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec/rollover"),
             Some(json!({})),
@@ -410,7 +410,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec/rollover"),
             Some(json!({ "role": "zsk" })),
@@ -428,7 +428,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
     // ds-seen has no meaning for a ZSK rollover — no parent DS is involved —
     // and must not bypass the publish hold-down.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
             None,
@@ -445,7 +445,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -459,7 +459,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
@@ -468,7 +468,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}"),
             None,
@@ -486,7 +486,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
     );
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&signed=true"),
             None,
@@ -512,7 +512,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
 
     // The derived plane pages after the user records under one offset space.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&signed=true&offset={user_total}&limit=2"),
             None,
@@ -524,7 +524,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
     assert!(items.iter().all(|item| item["id"].is_null()));
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&signed=true&record_type=RRSIG"),
             None,
@@ -537,7 +537,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
 
     // A derived type is only addressable through the signed view.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&record_type=RRSIG"),
             None,
@@ -568,7 +568,7 @@ async fn dnssec_enable_requires_a_global_token() {
     app.set_auth_token(scoped_token);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
@@ -587,7 +587,7 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -598,7 +598,7 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
             Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
@@ -608,7 +608,7 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
 
     // A search used to leave the derived rows out entirely.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&search=searchable&signed=true&limit=1000"),
             None,
@@ -626,7 +626,7 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
 
     // Refused rather than quietly answered without the rows it cannot narrow.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&value=192.0.2.1&signed=true"),
             None,

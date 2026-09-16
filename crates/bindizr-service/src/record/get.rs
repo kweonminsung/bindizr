@@ -1,11 +1,10 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, join_labels};
+use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, render_labels};
 use bindizr_db::repository::{DnssecRecordFilter, RecordFilter};
 
 use super::{ListedRecord, RecordService};
 use crate::{
     authorization::Caller,
     error::ServiceError,
-    log_error,
     model::{
         dnssec_record::DnssecRecordType,
         record::{RecordType, RecordWithZone},
@@ -179,12 +178,12 @@ impl RecordService {
             Ok(Some(record)) => record,
             Ok(None) => return Err(ServiceError::record_not_found(record_id)),
             Err(e) => {
-                log_error!("Failed to fetch record: {}", e);
+                log::error!("Failed to fetch record: {}", e);
                 return Err(ServiceError::internal("Failed to fetch record"));
             }
         };
 
-        if !caller.record_visible(record.zone_id, &record.name, Some(&record.record_type)) {
+        if !caller.sees_record(record.zone_id, &record.name, Some(&record.record_type)) {
             return Err(ServiceError::record_not_found(record_id));
         }
         Ok(record)
@@ -210,7 +209,7 @@ fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) 
             // absolute one against the FQDN the query builds.
             return Some(match decode_name_labels(trimmed) {
                 Ok((labels, absolute)) => {
-                    let rendered = join_labels(&labels);
+                    let rendered = render_labels(&labels);
                     if absolute {
                         format!("{rendered}.")
                     } else {

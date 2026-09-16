@@ -1,4 +1,4 @@
-use super::{ParseError, UpdateRr, parse_update_request};
+use super::{ParseError, UpdateRequest, UpdateRr};
 use crate::{
     dns::message::{Class, Rtype},
     model::record::RecordType,
@@ -65,34 +65,34 @@ fn append_tsig_rr_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
     message.extend_from_slice(&rdata);
 }
 
-/// Verify that `parse_update_request` rejects non SOA zone type.
+/// Verify that `UpdateRequest::parse` rejects non SOA zone type.
 #[test]
 fn parse_update_request_rejects_non_soa_zone_type() {
     let message = minimal_update_with_ztype(1);
-    let err = parse_update_request(&message).unwrap_err();
+    let err = UpdateRequest::parse(&message).unwrap_err();
     assert!(matches!(err, ParseError::InvalidZoneSection));
 }
 
-/// Verify that `parse_update_request` accepts SOA zone type.
+/// Verify that `UpdateRequest::parse` accepts SOA zone type.
 #[test]
 fn parse_update_request_accepts_soa_zone_type() {
     let message = minimal_update_with_ztype(6);
-    let request = parse_update_request(&message).unwrap();
+    let request = UpdateRequest::parse(&message).unwrap();
     assert_eq!(request.zone_name, "example.com.");
 }
 
-/// Verify that `parse_update_request` accepts opt additional without TSIG.
+/// Verify that `UpdateRequest::parse` accepts opt additional without TSIG.
 #[test]
 fn parse_update_request_accepts_opt_additional_without_tsig() {
     let mut message = minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
     append_opt_rr(&mut message);
 
-    let request = parse_update_request(&message).unwrap();
+    let request = UpdateRequest::parse(&message).unwrap();
     assert!(request.tsig.is_none());
 }
 
-/// Verify that `parse_update_request` accepts opt before TSIG.
+/// Verify that `UpdateRequest::parse` accepts opt before TSIG.
 #[test]
 fn parse_update_request_accepts_opt_before_tsig() {
     let mut message = minimal_update_with_ztype(6);
@@ -100,7 +100,7 @@ fn parse_update_request_accepts_opt_before_tsig() {
     append_opt_rr(&mut message);
     append_tsig_rr(&mut message);
 
-    let request = parse_update_request(&message).unwrap();
+    let request = UpdateRequest::parse(&message).unwrap();
     let tsig = request.tsig.unwrap();
     assert_eq!(tsig.name, "key.");
     assert_eq!(tsig.fudge, 300);
@@ -119,7 +119,7 @@ fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
         ],
     );
 
-    let request = parse_update_request(&message).unwrap();
+    let request = UpdateRequest::parse(&message).unwrap();
     assert_eq!(request.tsig.unwrap().name, r"Key\046With\046Dot.");
 }
 
@@ -142,11 +142,11 @@ fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
     message.extend_from_slice(&6u16.to_be_bytes());
     message.extend_from_slice(&1u16.to_be_bytes());
 
-    let request = parse_update_request(&message).unwrap();
+    let request = UpdateRequest::parse(&message).unwrap();
     assert_eq!(request.zone_name, r"evil\046example.com.");
 }
 
-/// Verify that `parse_update_request` rejects TSIG before other additional rrs.
+/// Verify that `UpdateRequest::parse` rejects TSIG before other additional rrs.
 #[test]
 fn parse_update_request_rejects_tsig_before_other_additional_rrs() {
     let mut message = minimal_update_with_ztype(6);
@@ -154,7 +154,7 @@ fn parse_update_request_rejects_tsig_before_other_additional_rrs() {
     append_tsig_rr(&mut message);
     append_opt_rr(&mut message);
 
-    let err = parse_update_request(&message).unwrap_err();
+    let err = UpdateRequest::parse(&message).unwrap_err();
     assert!(matches!(err, ParseError::InvalidTsig));
 }
 

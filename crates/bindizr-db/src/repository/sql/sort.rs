@@ -49,6 +49,13 @@ impl ZoneSort {
             ZoneSort::CreatedAt => "created_at",
         }
     }
+
+    /// The `ORDER BY` a zone listing pages under. The id follows the sort
+    /// column so the order is total: rows tied on it would otherwise be free
+    /// to swap between pages, dropping or repeating one.
+    pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
+        format!("ORDER BY {} {}, id", self.column(), order.as_str())
+    }
 }
 
 impl RecordSort {
@@ -61,6 +68,12 @@ impl RecordSort {
             RecordSort::Priority => "r.priority",
             RecordSort::CreatedAt => "r.created_at",
         }
+    }
+
+    /// The `ORDER BY` a record listing pages under; see
+    /// [`ZoneSort::order_by_sql`].
+    pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
+        format!("ORDER BY {} {}, r.id", self.column(), order.as_str())
     }
 }
 
@@ -115,18 +128,6 @@ impl std::str::FromStr for SortOrder {
     }
 }
 
-/// The `ORDER BY` a zone listing pages under. The id follows the sort column
-/// so the order is total: rows tied on it would otherwise be free to swap
-/// between pages, dropping or repeating one.
-pub(crate) fn zone_order_by_sql(sort: ZoneSort, order: SortOrder) -> String {
-    format!("ORDER BY {} {}, id", sort.column(), order.as_str())
-}
-
-/// The `ORDER BY` a record listing pages under; see [`zone_order_by_sql`].
-pub(crate) fn record_order_by_sql(sort: RecordSort, order: SortOrder) -> String {
-    format!("ORDER BY {} {}, r.id", sort.column(), order.as_str())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,15 +138,15 @@ mod tests {
         // LIMIT/OFFSET over a non-unique sort would let tied rows swap between
         // pages, dropping or repeating one.
         assert_eq!(
-            zone_order_by_sql(ZoneSort::Serial, SortOrder::Desc),
+            ZoneSort::Serial.order_by_sql(SortOrder::Desc),
             "ORDER BY serial DESC, id"
         );
         assert_eq!(
-            record_order_by_sql(RecordSort::Ttl, SortOrder::Asc),
+            RecordSort::Ttl.order_by_sql(SortOrder::Asc),
             "ORDER BY r.ttl ASC, r.id"
         );
         assert_eq!(
-            record_order_by_sql(RecordSort::default(), SortOrder::default()),
+            RecordSort::default().order_by_sql(SortOrder::default()),
             "ORDER BY r.name ASC, r.id"
         );
     }

@@ -11,7 +11,6 @@ use bindizr_core::{
         message::Rcode,
         nsupdate::{DEFAULT_FUDGE, build_response},
     },
-    log_info, log_warn,
     metrics::{NsupdateResult, track_nsupdate},
 };
 use tokio::net::{TcpStream, UdpSocket};
@@ -22,7 +21,7 @@ pub(crate) async fn handle_tcp_nsupdate(
     query_data: &[u8],
     client_addr: SocketAddr,
 ) -> Result<(), String> {
-    log_info!("NSUPDATE TCP request from {}", client_addr);
+    log::info!("NSUPDATE TCP request from {}", client_addr);
 
     let response = handle_nsupdate_request(query_data, client_addr)
         .await
@@ -39,12 +38,12 @@ pub(crate) async fn handle_udp_nsupdate(
     query_data: &[u8],
     client_addr: SocketAddr,
 ) -> Result<(), String> {
-    log_info!("NSUPDATE UDP request from {}", client_addr);
+    log::info!("NSUPDATE UDP request from {}", client_addr);
 
     let response = match handle_nsupdate_request(query_data, client_addr).await {
         Some(resp) => resp,
         None => {
-            log_warn!("Ignored malformed NSUPDATE packet from {}", client_addr);
+            log::warn!("Ignored malformed NSUPDATE packet from {}", client_addr);
             return Ok(());
         }
     };
@@ -60,10 +59,10 @@ pub(crate) async fn handle_udp_nsupdate(
 /// Process an UPDATE request and return the complete wire response, or `None`
 /// for a message too malformed to answer.
 async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> Option<Vec<u8>> {
-    let parsed = match bindizr_core::dns::nsupdate::parser::parse_update_request(query_data) {
+    let parsed = match bindizr_core::dns::nsupdate::parser::UpdateRequest::parse(query_data) {
         Ok(req) => req,
         Err(e) => {
-            log_warn!("NSUPDATE parse error from {}: {}", client_addr, e);
+            log::warn!("NSUPDATE parse error from {}: {}", client_addr, e);
             track_nsupdate(NsupdateResult::Rcode(Rcode::FORMERR));
             return build_response(query_data, Rcode::FORMERR, None, DEFAULT_FUDGE);
         }
@@ -78,7 +77,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
 
     let rcode = match result {
         Ok(changed) => {
-            log_info!(
+            log::info!(
                 "NSUPDATE applied from {} (changed={})",
                 client_addr,
                 changed
@@ -88,36 +87,36 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         // TSIG failures carry their own complete response, built against the
         // request's TSIG record (RFC 8945, Sections 5.2–5.3).
         Err(update::UpdateError::TsigFailed { msg, response }) => {
-            log_warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
+            log::warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
             track_nsupdate(NsupdateResult::TsigFailed);
             return Some(response);
         }
         Err(update::UpdateError::Refused(msg)) => {
-            log_warn!("NSUPDATE refused from {}: {}", client_addr, msg);
+            log::warn!("NSUPDATE refused from {}: {}", client_addr, msg);
             Rcode::REFUSED
         }
         Err(update::UpdateError::YxDomain(msg)) => {
-            log_warn!("NSUPDATE yxdomain from {}: {}", client_addr, msg);
+            log::warn!("NSUPDATE yxdomain from {}: {}", client_addr, msg);
             Rcode::YXDOMAIN
         }
         Err(update::UpdateError::YxRrset(msg)) => {
-            log_warn!("NSUPDATE yxrrset from {}: {}", client_addr, msg);
+            log::warn!("NSUPDATE yxrrset from {}: {}", client_addr, msg);
             Rcode::YXRRSET
         }
         Err(update::UpdateError::NxDomain(msg)) => {
-            log_warn!("NSUPDATE nxdomain from {}: {}", client_addr, msg);
+            log::warn!("NSUPDATE nxdomain from {}: {}", client_addr, msg);
             Rcode::NXDOMAIN
         }
         Err(update::UpdateError::NxRrset(msg)) => {
-            log_warn!("NSUPDATE nxrrset from {}: {}", client_addr, msg);
+            log::warn!("NSUPDATE nxrrset from {}: {}", client_addr, msg);
             Rcode::NXRRSET
         }
         Err(update::UpdateError::NotZone(msg)) => {
-            log_warn!("NSUPDATE notzone from {}: {}", client_addr, msg);
+            log::warn!("NSUPDATE notzone from {}: {}", client_addr, msg);
             Rcode::NOTZONE
         }
         Err(update::UpdateError::Internal(msg)) => {
-            log_warn!("NSUPDATE internal error from {}: {}", client_addr, msg);
+            log::warn!("NSUPDATE internal error from {}: {}", client_addr, msg);
             Rcode::SERVFAIL
         }
     };

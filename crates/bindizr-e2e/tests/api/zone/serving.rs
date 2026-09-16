@@ -12,7 +12,7 @@ async fn zone_status_reports_secondaries() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/status"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/status"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["zone"], zone_name);
@@ -28,7 +28,7 @@ async fn zone_status_reports_secondaries() {
         let mut attempts = 0;
         loop {
             let (_, body) = app
-                .request(Method::GET, &format!("/zones/{zone_name}/status"), None)
+                .send_request(Method::GET, &format!("/zones/{zone_name}/status"), None)
                 .await;
             let all_in_sync = body["secondaries"]
                 .as_array()
@@ -49,7 +49,7 @@ async fn zone_status_reports_secondaries() {
 
     let missing_zone = app.zone_name("missing.example");
     let (status, body) = app
-        .request(Method::GET, &format!("/zones/{missing_zone}/status"), None)
+        .send_request(Method::GET, &format!("/zones/{missing_zone}/status"), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], "ZONE_NOT_FOUND");
@@ -74,7 +74,7 @@ async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {
     );
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}"),
             Some(json!({ "enabled": false, "description": "paused for migration" })),
@@ -94,7 +94,7 @@ async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {
         "a disabled zone must not answer its SOA"
     );
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/import"),
             Some(json!({ "from_server": server, "mode": "replace" })),
@@ -109,7 +109,7 @@ async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {
     // The management plane still holds it: listable under the filter, and
     // editable.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones?enabled=false&search={zone_name}"),
             None,
@@ -125,7 +125,7 @@ async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {
     assert_eq!(names, [zone_name], "{body}");
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -137,7 +137,7 @@ async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}"),
             Some(json!({ "enabled": true, "description": "" })),

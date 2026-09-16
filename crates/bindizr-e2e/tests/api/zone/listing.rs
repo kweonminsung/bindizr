@@ -22,12 +22,12 @@ async fn zone_filter_and_paginate() {
         "minimum_ttl": 86400
     });
     let (status, _) = app
-        .request(Method::POST, "/zones", Some(create_zone_request))
+        .send_request(Method::POST, "/zones", Some(create_zone_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!(
                 "/zones?search={}&min_default_ttl=7000&max_default_ttl=8000",
@@ -42,7 +42,7 @@ async fn zone_filter_and_paginate() {
     assert_eq!(zones[0]["name"], filtered_zone_name);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones?search={}&limit=1&offset=1", app.namespace()),
             None,
@@ -56,7 +56,7 @@ async fn zone_filter_and_paginate() {
     assert_eq!(body["pagination"]["limit"], 1);
     assert_eq!(body["pagination"]["offset"], 1);
 
-    let (status, _) = app.request(Method::GET, "/zones?limit=-1", None).await;
+    let (status, _) = app.send_request(Method::GET, "/zones?limit=-1", None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -71,7 +71,7 @@ async fn zone_listing_sorts_and_filters_on_more_than_the_name() {
     for (label, serial) in [("a-sort", 30), ("b-sort", 10), ("c-sort", 20)] {
         let name = app.zone_name(label);
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/zones",
                 Some(json!({
@@ -89,7 +89,7 @@ async fn zone_listing_sorts_and_filters_on_more_than_the_name() {
 
     let listed = async |app: &TestApp, query: &str| -> Vec<String> {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::GET,
                 &format!("/zones?search={prefix}&limit=1000&{query}"),
                 None,
@@ -125,7 +125,9 @@ async fn zone_listing_sorts_and_filters_on_more_than_the_name() {
     assert!(listed(&app, "signed=true").await.is_empty());
     assert_eq!(listed(&app, "signed=false").await.len(), 3);
 
-    let (status, body) = app.request(Method::GET, "/zones?sort=nope", None).await;
+    let (status, body) = app
+        .send_request(Method::GET, "/zones?sort=nope", None)
+        .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(
         body["error"]

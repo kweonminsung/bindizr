@@ -12,8 +12,8 @@ use domain::{
 
 use crate::{
     dns::{
-        name::join_labels,
-        record::{TxtRecordValue, to_naptr_presentation},
+        name::render_labels,
+        record::{NaptrRecordValue, TxtRecordValue},
     },
     model::record::RecordType,
 };
@@ -21,6 +21,7 @@ use crate::{
 /// Fixed length of a DNS message header, in bytes.
 const DNS_HEADER_LEN: usize = 12;
 
+/// A parsed UPDATE message: its zone, prerequisites, updates, and TSIG.
 #[derive(Debug, Clone)]
 pub struct UpdateRequest {
     pub zone_name: String,
@@ -79,62 +80,64 @@ impl fmt::Display for ParseError {
     }
 }
 
-/// Parse the zone, prerequisites, updates, and TSIG from an UPDATE message.
-pub fn parse_update_request(data: &[u8]) -> Result<UpdateRequest, ParseError> {
-    let message = Message::from_octets(data).map_err(|_| ParseError::TooShort)?;
+impl UpdateRequest {
+    /// Parse the zone, prerequisites, updates, and TSIG from an UPDATE message.
+    pub fn parse(data: &[u8]) -> Result<Self, ParseError> {
+        let message = Message::from_octets(data).map_err(|_| ParseError::TooShort)?;
 
-    if message.header().opcode() != Opcode::UPDATE {
-        return Err(ParseError::InvalidOpcode);
+        if message.header().opcode() != Opcode::UPDATE {
+            return Err(ParseError::InvalidOpcode);
+        }
+
+        let counts = message.header_counts();
+        if counts.qdcount() != 1 {
+            return Err(ParseError::InvalidHeader);
+        }
+
+        let mut parser = Parser::from_ref(data);
+        parser
+            .advance(DNS_HEADER_LEN)
+            .map_err(|_| ParseError::TooShort)?;
+
+        // The single question identifies the update zone and must carry SOA/IN.
+        let zone = ParsedName::parse(&mut parser).map_err(|_| ParseError::InvalidName)?;
+        let ztype = parser
+            .parse_u16_be()
+            .map_err(|_| ParseError::InvalidZoneSection)?;
+        let zclass = parser
+            .parse_u16_be()
+            .map_err(|_| ParseError::InvalidZoneSection)?;
+
+        if Rtype::from_int(ztype) != Rtype::SOA || Class::from_int(zclass) != Class::IN {
+            return Err(ParseError::InvalidZoneSection);
+        }
+        let zone_name = to_presentation_name(&zone)?;
+
+        // UPDATE uses the answer count for prerequisites and the authority count
+        // for changes; these are not ordinary response sections.
+        let mut prerequisites = Vec::with_capacity(counts.ancount() as usize);
+        for _ in 0..counts.ancount() {
+            prerequisites.push(parse_rr(&mut parser, data)?);
+        }
+
+        let mut updates = Vec::with_capacity(counts.nscount() as usize);
+        for _ in 0..counts.nscount() {
+            updates.push(parse_rr(&mut parser, data)?);
+        }
+
+        let tsig = parse_additional_section(&mut parser, counts.arcount() as usize)?;
+
+        if parser.remaining() != 0 {
+            return Err(ParseError::InvalidHeader);
+        }
+
+        Ok(UpdateRequest {
+            zone_name,
+            prerequisites,
+            updates,
+            tsig,
+        })
     }
-
-    let counts = message.header_counts();
-    if counts.qdcount() != 1 {
-        return Err(ParseError::InvalidHeader);
-    }
-
-    let mut parser = Parser::from_ref(data);
-    parser
-        .advance(DNS_HEADER_LEN)
-        .map_err(|_| ParseError::TooShort)?;
-
-    // The single question identifies the update zone and must carry SOA/IN.
-    let zone = ParsedName::parse(&mut parser).map_err(|_| ParseError::InvalidName)?;
-    let ztype = parser
-        .parse_u16_be()
-        .map_err(|_| ParseError::InvalidZoneSection)?;
-    let zclass = parser
-        .parse_u16_be()
-        .map_err(|_| ParseError::InvalidZoneSection)?;
-
-    if Rtype::from_int(ztype) != Rtype::SOA || Class::from_int(zclass) != Class::IN {
-        return Err(ParseError::InvalidZoneSection);
-    }
-    let zone_name = to_presentation_name(&zone)?;
-
-    // UPDATE uses the answer count for prerequisites and the authority count
-    // for changes; these are not ordinary response sections.
-    let mut prerequisites = Vec::with_capacity(counts.ancount() as usize);
-    for _ in 0..counts.ancount() {
-        prerequisites.push(parse_rr(&mut parser, data)?);
-    }
-
-    let mut updates = Vec::with_capacity(counts.nscount() as usize);
-    for _ in 0..counts.nscount() {
-        updates.push(parse_rr(&mut parser, data)?);
-    }
-
-    let tsig = parse_additional_section(&mut parser, counts.arcount() as usize)?;
-
-    if parser.remaining() != 0 {
-        return Err(ParseError::InvalidHeader);
-    }
-
-    Ok(UpdateRequest {
-        zone_name,
-        prerequisites,
-        updates,
-        tsig,
-    })
 }
 
 /// Read one update record from the DNS wire message.
@@ -233,7 +236,7 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> 
         return Ok(".".to_string());
     }
 
-    Ok(format!("{}.", join_labels(&labels)))
+    Ok(format!("{}.", render_labels(&labels)))
 }
 
 impl UpdateRr {
@@ -265,7 +268,7 @@ impl UpdateRr {
         &self,
         message: &[u8],
     ) -> Result<(RecordType, String, Option<i32>), String> {
-        match RecordType::from_rtype(self.rr_type)? {
+        match RecordType::try_from(self.rr_type)? {
             RecordType::A => {
                 let data = self.parse_rdata(message, "A", |parser| A::parse(parser).ok())?;
                 Ok((RecordType::A, data.addr().to_string(), None))
@@ -318,14 +321,15 @@ impl UpdateRr {
                 })?;
                 let replacement = to_presentation_name(data.replacement())
                     .map_err(|e| format!("invalid NAPTR rdata: {}", e))?;
-                let value = to_naptr_presentation(
+                let value = NaptrRecordValue::from_wire(
                     data.order(),
                     data.preference(),
                     data.flags().as_slice(),
                     data.services().as_slice(),
                     data.regexp().as_slice(),
                     &replacement,
-                )?;
+                )?
+                .canonical();
                 Ok((RecordType::NAPTR, value, None))
             }
             RecordType::SSHFP => {
@@ -362,4 +366,4 @@ impl UpdateRr {
 }
 
 #[cfg(test)]
-pub mod tests;
+pub(crate) mod tests;

@@ -13,7 +13,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
 
     for address in ["192.0.2.1", "192.0.2.2", "192.0.2.3"] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(json!({
@@ -24,7 +24,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
         assert_eq!(status, StatusCode::CREATED, "{body}");
     }
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(json!({
@@ -36,14 +36,14 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
 
     let serial_of = async |app: &TestApp| -> i64 {
         let (_, body) = app
-            .request(Method::GET, &format!("/zones?name={zone_name}"), None)
+            .send_request(Method::GET, &format!("/zones?name={zone_name}"), None)
             .await;
         body["items"][0]["serial"].as_i64().unwrap()
     };
     let before = serial_of(&app).await;
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/records?zone_name={zone_name}&name=www&record_type=A&dry_run=true"),
             None,
@@ -55,7 +55,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     assert_eq!(serial_of(&app).await, before, "a dry run must not move it");
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/records?zone_name={zone_name}&name=www&record_type=A"),
             None,
@@ -68,7 +68,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     assert_eq!(serial_of(&app).await, before + 1);
 
     let (_, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&name=www"),
             None,
@@ -80,11 +80,15 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
         .iter()
         .map(|record| record["record_type"].as_str().unwrap())
         .collect();
-    assert_eq!(kept, ["TXT"], "another type at the name is not the RRset");
+    assert_eq!(
+        kept,
+        ["TXT"],
+        "another type at the name is not every record of the name and type"
+    );
 
     // Matching nothing leaves the zone where it is, so a retry is free.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/records?zone_name={zone_name}&name=www&record_type=A"),
             None,
@@ -115,7 +119,7 @@ async fn record_delete_matching_refuses_what_would_widen_it() {
         ),
         (format!("/records?zone_name={zone_name}"), "name"),
     ] {
-        let (status, body) = app.request(Method::DELETE, &query, None).await;
+        let (status, body) = app.send_request(Method::DELETE, &query, None).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{query}: {body}");
         assert!(
             body["error"].as_str().unwrap().contains(expected),

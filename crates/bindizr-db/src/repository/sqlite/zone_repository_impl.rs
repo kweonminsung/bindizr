@@ -5,10 +5,7 @@ use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use crate::{
     error::DatabaseError,
     model::zone::Zone,
-    repository::{
-        LockLevel, RepositoryTx, ZoneFilter, ZoneRepository,
-        sql::{like_pattern, zone_order_by_sql},
-    },
+    repository::{LockLevel, RepositoryTx, ZoneFilter, ZoneRepository, sql::like_pattern},
 };
 
 pub(crate) struct SqliteZoneRepository {
@@ -137,7 +134,7 @@ impl ZoneRepository for SqliteZoneRepository {
         let mut conn = self.pool.acquire().await?;
         let search = like_pattern(filter.search.as_deref());
 
-        let order_by = zone_order_by_sql(filter.sort, filter.order);
+        let order_by = filter.sort.order_by_sql(filter.order);
         let zones = sqlx::query_as::<_, Zone>(AssertSqlSafe(format!(
             r#"
             SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at

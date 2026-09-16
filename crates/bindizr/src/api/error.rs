@@ -4,7 +4,6 @@ use axum::{
     http::{StatusCode, request::Parts},
     response::{IntoResponse, Response},
 };
-use bindizr_core::log_error;
 use bindizr_service::{
     error::{ErrorCode, ServiceError},
     types::ErrorResponse,
@@ -37,7 +36,7 @@ impl IntoResponse for ApiError {
 impl From<JsonRejection> for ApiError {
     /// Translate a JSON extraction failure into an API error.
     fn from(rejection: JsonRejection) -> Self {
-        log_error!("JSON Rejection: {:?}", rejection);
+        log::error!("JSON Rejection: {:?}", rejection);
 
         let error = match rejection {
             JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {

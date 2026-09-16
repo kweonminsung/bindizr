@@ -19,7 +19,7 @@ fn display_option_i32(opt: &Option<i32>) -> String {
 }
 
 /// Render a boolean as yes or no.
-fn yes_no(value: bool) -> String {
+fn display_yes_no(value: bool) -> String {
     if value { "yes" } else { "no" }.to_string()
 }
 
@@ -35,7 +35,7 @@ fn display_option_time(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
 
 /// A record value as one table cell; TXT segments concatenate into the string
 /// they encode.
-fn value_text(value: &RecordValueRequest) -> String {
+fn display_value(value: &RecordValueRequest) -> String {
     match value {
         RecordValueRequest::String(value) => value.clone(),
         RecordValueRequest::Segments(segments) => segments.concat(),
@@ -84,7 +84,7 @@ impl From<&GetZoneResponse> for ZoneRow {
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: zone.minimum_ttl,
-            served: yes_no(zone.enabled),
+            served: display_yes_no(zone.enabled),
             description: display_option_text(&zone.description),
         }
     }
@@ -117,7 +117,7 @@ impl From<&GetRecordResponse> for RecordRow {
             id: record.id,
             name: record.name.clone(),
             record_type: record.record_type.clone(),
-            value: value_text(&record.value),
+            value: display_value(&record.value),
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
@@ -274,7 +274,7 @@ impl From<&VersionRecordResponse> for VersionRecordRow {
         VersionRecordRow {
             name: record.name.clone(),
             record_type: record.record_type.clone(),
-            value: value_text(&record.value),
+            value: display_value(&record.value),
             ttl: record.ttl,
             priority: record.priority,
         }
@@ -420,7 +420,7 @@ impl From<&GetTokenResponse> for TokenRow {
             id: token.id,
             name: token.name.clone(),
             token: display_option_text(&None),
-            global: yes_no(token.global),
+            global: display_yes_no(token.global),
             description: display_option_text(&token.description),
             created_at: token.created_at.to_rfc3339(),
             expires_at: token
@@ -467,7 +467,7 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
             name: key.name.clone(),
             algorithm: key.algorithm.clone(),
             secret: display_option_text(&None),
-            global: yes_no(key.global),
+            global: display_yes_no(key.global),
             created_at: key.created_at.to_rfc3339(),
         }
     }

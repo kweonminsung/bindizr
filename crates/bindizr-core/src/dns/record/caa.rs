@@ -2,8 +2,8 @@
 //! a name.
 
 use super::{
-    Rdata,
-    value::{MAX_RECORD_RDATA, parse_quoted_string, parse_u8_record_field, to_quoted_string},
+    Rdata, to_quoted_charstr,
+    value::{MAX_RECORD_RDATA, parse_quoted_string, parse_u8_record_field},
 };
 
 pub struct CaaRecordValue<'a> {
@@ -84,7 +84,7 @@ impl<'a> CaaRecordValue<'a> {
             "{} {} {}",
             self.flags,
             self.tag.to_lowercase(),
-            to_quoted_string(&self.value)
+            to_quoted_charstr(self.value.as_bytes())
         )
     }
 

@@ -9,7 +9,7 @@ use sha2::{Sha256, Sha384, Sha512};
 use super::*;
 use crate::dns::nsupdate::parser::tests::minimal_update_with_ztype;
 
-pub(crate) const SECRET: &[u8] = b"a-very-secret-test-key-material!";
+const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
 /// Build a signing-key fixture for the test.
 pub(crate) fn test_key(algorithm: TsigAlgorithm) -> TsigKey {
@@ -101,7 +101,7 @@ pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u
 
 /// Parse the response's rcode plus TSIG error, time-signed, MAC, and other
 /// data.
-fn response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Vec<u8>) {
+fn extract_response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Vec<u8>) {
     let msg = Message::from_octets(response).unwrap();
     let tsig_rr = msg
         .additional()
@@ -122,7 +122,7 @@ fn response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Vec<u8>) {
 }
 
 /// Extract the DNS response from a TSIG verification failure.
-fn failed_response(err: TsigError) -> Vec<u8> {
+fn extract_failed_response(err: TsigError) -> Vec<u8> {
     match err {
         TsigError::Failed { response, .. } => response,
         other => panic!("expected TsigFailed, got {:?}", other),
@@ -138,7 +138,7 @@ fn verify_tsig_accepts_valid_signatures_for_all_algorithms() {
         TsigAlgorithm::HmacSha512,
     ] {
         let query = signed_update(algorithm, now_secs());
-        let key = to_domain_key(&test_key(algorithm)).unwrap();
+        let key = test_key(algorithm).to_domain_key().unwrap();
         verify_tsig(&query, Some(key)).unwrap();
     }
 }
@@ -152,12 +152,12 @@ fn verify_tsig_rejects_tampered_mac_with_badsig() {
     let mac_end = query.len() - 7;
     query[mac_end] ^= 0xFF;
 
-    let key = to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
+    let key = test_key(TsigAlgorithm::HmacSha256).to_domain_key().unwrap();
     let err = verify_tsig(&query, Some(key)).unwrap_err();
 
     // RFC 8945, Section 5.3.2: a MAC failure answers NOTAUTH/BADSIG with an unsigned
     // TSIG error record.
-    let (rcode, error, _, mac, _) = response_tsig(&failed_response(err));
+    let (rcode, error, _, mac, _) = extract_response_tsig(&extract_failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
     assert_eq!(error, TsigRcode::BADSIG);
     assert!(mac.is_empty());
@@ -172,10 +172,10 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
     let original_id = query.len() - 6;
     query[original_id] ^= 0xFF;
 
-    let key = to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
+    let key = test_key(TsigAlgorithm::HmacSha256).to_domain_key().unwrap();
     let err = verify_tsig(&query, Some(key)).unwrap_err();
 
-    let (rcode, error, _, _, _) = response_tsig(&failed_response(err));
+    let (rcode, error, _, _, _) = extract_response_tsig(&extract_failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
     assert_eq!(error, TsigRcode::BADSIG);
 }
@@ -185,10 +185,10 @@ fn verify_tsig_rejects_original_id_mismatch_with_badsig() {
 fn verify_tsig_rejects_algorithm_mismatch_with_badkey() {
     let query = signed_update(TsigAlgorithm::HmacSha256, now_secs());
 
-    let key = to_domain_key(&test_key(TsigAlgorithm::HmacSha512)).unwrap();
+    let key = test_key(TsigAlgorithm::HmacSha512).to_domain_key().unwrap();
     let err = verify_tsig(&query, Some(key)).unwrap_err();
 
-    let (rcode, error, _, mac, _) = response_tsig(&failed_response(err));
+    let (rcode, error, _, mac, _) = extract_response_tsig(&extract_failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
     assert_eq!(error, TsigRcode::BADKEY);
     assert!(mac.is_empty());
@@ -201,7 +201,7 @@ fn verify_tsig_rejects_unknown_key_with_badkey() {
 
     let err = verify_tsig(&query, None).unwrap_err();
 
-    let (rcode, error, _, mac, _) = response_tsig(&failed_response(err));
+    let (rcode, error, _, mac, _) = extract_response_tsig(&extract_failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
     assert_eq!(error, TsigRcode::BADKEY);
     assert!(mac.is_empty());
@@ -213,12 +213,13 @@ fn verify_tsig_rejects_stale_time_with_signed_badtime() {
     let stale = now_secs() - 3600;
     let query = signed_update(TsigAlgorithm::HmacSha256, stale);
 
-    let key = to_domain_key(&test_key(TsigAlgorithm::HmacSha256)).unwrap();
+    let key = test_key(TsigAlgorithm::HmacSha256).to_domain_key().unwrap();
     let err = verify_tsig(&query, Some(key)).unwrap_err();
 
     // RFC 8945, Section 5.2.3: BADTIME responses are signed, echo the client's time,
     // and carry the server's time in other data.
-    let (rcode, error, time_signed, mac, other) = response_tsig(&failed_response(err));
+    let (rcode, error, time_signed, mac, other) =
+        extract_response_tsig(&extract_failed_response(err));
     assert_eq!(rcode, Rcode::NOTAUTH);
     assert_eq!(error, TsigRcode::BADTIME);
     assert_eq!(time_signed, stale);
@@ -238,11 +239,12 @@ fn the_reserved_tsig_size_covers_the_largest_key_a_request_can_name() {
         "c".repeat(63),
         "d".repeat(61)
     );
-    let key = to_domain_key(&TsigKey {
+    let key = TsigKey {
         name,
         algorithm: TsigAlgorithm::HmacSha512,
         ..test_key(TsigAlgorithm::HmacSha512)
-    })
+    }
+    .to_domain_key()
     .unwrap();
 
     let composed = usize::from(key.compose_len());

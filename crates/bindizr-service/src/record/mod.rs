@@ -25,7 +25,7 @@ pub struct RecordService;
 /// One row of the records listing: a user record or, behind the `signed`
 /// flag, a row of the derived DNSSEC plane.
 #[derive(Debug)]
-pub(crate) enum ListedRecord {
+enum ListedRecord {
     User(RecordWithZone),
     Derived(DnssecRecordWithZone),
 }
@@ -33,7 +33,7 @@ pub(crate) enum ListedRecord {
 impl ListedRecord {
     /// Render the row for the API: a user record keeps its id, a derived
     /// DNSSEC row carries none and renders its RDATA in presentation form.
-    pub(crate) fn to_response(&self) -> GetRecordResponse {
+    fn to_response(&self) -> GetRecordResponse {
         match self {
             ListedRecord::User(record) => GetRecordResponse::from_record_with_zone(record),
             ListedRecord::Derived(row) => GetRecordResponse {

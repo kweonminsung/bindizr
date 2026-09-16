@@ -13,117 +13,103 @@ use crate::{
     },
 };
 
-/// Client for sending commands to the daemon over the Unix socket.
-pub(crate) struct DaemonSocketClient;
-
-impl DaemonSocketClient {
-    /// Create a client for the daemon control socket.
-    pub(crate) fn new() -> Self {
-        DaemonSocketClient
+/// True only when nothing listens on either socket path; a timeout or
+/// garbled response may come from a live but wedged daemon.
+pub(crate) async fn is_daemon_socket_gone() -> bool {
+    /// Check whether a connection error means no daemon is listening.
+    fn gone(err: &std::io::Error) -> bool {
+        matches!(
+            err.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+        )
     }
 
-    /// True only when nothing listens on either socket path; a timeout or
-    /// garbled response may come from a live but wedged daemon.
-    pub(crate) async fn daemon_socket_gone(&self) -> bool {
-        /// Check whether a connection error means no daemon is listening.
-        fn gone(err: &std::io::Error) -> bool {
-            matches!(
-                err.kind(),
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
-            )
-        }
-
-        match try_connect_daemon_socket().await {
-            Ok(_) => false,
-            // An owner-only socket this user cannot open is a live daemon.
-            Err((err, _)) if err.kind() == std::io::ErrorKind::PermissionDenied => false,
-            // Primary refused/missing; the fallback was also tried.
-            Err((_, Some(fallback_err))) => gone(&fallback_err),
-            // Primary failed in an unexpected way; the fallback was not tried.
-            Err((err, None)) => gone(&err),
-        }
-    }
-
-    /// Request the daemon's current status.
-    pub(crate) async fn status(&self) -> Result<DaemonStatusResponse, CliError> {
-        let res = self.send_control_command(DaemonCommandKind::Status).await?;
-        serde_json::from_value(res.data)
-            .map_err(|e| CliError::from(format!("Failed to parse status response: {}", e)))
-    }
-
-    /// The daemon's loaded configuration, which can differ from the file on disk.
-    pub(crate) async fn config(&self) -> Result<BindizrConfig, CliError> {
-        let res = self.send_control_command(DaemonCommandKind::Config).await?;
-        serde_json::from_value(res.data)
-            .map_err(|e| CliError::from(format!("Failed to parse config response: {}", e)))
-    }
-
-    /// Send a command the daemon answers from memory (status/lifecycle) under
-    /// a short deadline, so a wedged daemon cannot hang polling loops.
-    pub(crate) async fn send_control_command(
-        &self,
-        command: DaemonCommandKind,
-    ) -> Result<DaemonResponse, CliError> {
-        const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-
-        tokio::time::timeout(CONTROL_TIMEOUT, self.send_command(command, ()))
-            .await
-            .map_err(|_| {
-                CliError::from(format!(
-                    "The daemon did not answer within {} seconds",
-                    CONTROL_TIMEOUT.as_secs()
-                ))
-            })?
-    }
-
-    /// Send a command to the daemon and return its parsed response. `data` is
-    /// the command's payload type; `()` for the commands that take none.
-    pub(crate) async fn send_command(
-        &self,
-        command: DaemonCommandKind,
-        data: impl serde::Serialize,
-    ) -> Result<DaemonResponse, CliError> {
-        let mut stream = connect_to_daemon_socket().await?;
-
-        let cmd = DaemonCommand {
-            command,
-            data: serde_json::to_value(data)
-                .map_err(|e| format!("Failed to serialize command payload: {}", e))?,
-        };
-        let json = serde_json::to_string(&cmd)
-            .map_err(|e| format!("Failed to serialize command: {}", e))?;
-
-        stream
-            .write_all(json.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to write to socket: {}", e))?;
-        stream
-            .write_all(b"\n")
-            .await
-            .map_err(|e| format!("Failed to write newline to socket: {}", e))?;
-
-        let mut reader = BufReader::new(stream);
-        let mut response = String::new();
-
-        reader
-            .read_line(&mut response)
-            .await
-            .map_err(|e| format!("Failed to read from socket: {}", e))?;
-
-        // An error reply is an `ErrorResponse` instead of a `DaemonResponse`,
-        // so only a failed command parses here.
-        if let Ok(error) = serde_json::from_str::<ErrorResponse>(&response) {
-            return Err(CliError::from_daemon(
-                ErrorCode::parse(&error.code),
-                error.error,
-            ));
-        }
-
-        Ok(serde_json::from_str(&response)
-            .map_err(|e| format!("Failed to parse response: {}", e))?)
+    match try_connect_daemon_socket().await {
+        Ok(_) => false,
+        // An owner-only socket this user cannot open is a live daemon.
+        Err((err, _)) if err.kind() == std::io::ErrorKind::PermissionDenied => false,
+        // Primary refused/missing; the fallback was also tried.
+        Err((_, Some(fallback_err))) => gone(&fallback_err),
+        // Primary failed in an unexpected way; the fallback was not tried.
+        Err((err, None)) => gone(&err),
     }
 }
 
+/// Request the daemon's current status.
+pub(crate) async fn fetch_status() -> Result<DaemonStatusResponse, CliError> {
+    let res = send_control_command(DaemonCommandKind::Status).await?;
+    serde_json::from_value(res.data)
+        .map_err(|e| CliError::from(format!("Failed to parse status response: {}", e)))
+}
+
+/// The daemon's loaded configuration, which can differ from the file on disk.
+pub(crate) async fn fetch_config() -> Result<BindizrConfig, CliError> {
+    let res = send_control_command(DaemonCommandKind::Config).await?;
+    serde_json::from_value(res.data)
+        .map_err(|e| CliError::from(format!("Failed to parse config response: {}", e)))
+}
+
+/// Send a command the daemon answers from memory (status/lifecycle) under
+/// a short deadline, so a wedged daemon cannot hang polling loops.
+pub(crate) async fn send_control_command(
+    command: DaemonCommandKind,
+) -> Result<DaemonResponse, CliError> {
+    const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+    tokio::time::timeout(CONTROL_TIMEOUT, send_command(command, ()))
+        .await
+        .map_err(|_| {
+            CliError::from(format!(
+                "The daemon did not answer within {} seconds",
+                CONTROL_TIMEOUT.as_secs()
+            ))
+        })?
+}
+
+/// Send a command to the daemon and return its parsed response. `data` is
+/// the command's payload type; `()` for the commands that take none.
+pub(crate) async fn send_command(
+    command: DaemonCommandKind,
+    data: impl serde::Serialize,
+) -> Result<DaemonResponse, CliError> {
+    let mut stream = connect_to_daemon_socket().await?;
+
+    let cmd = DaemonCommand {
+        command,
+        data: serde_json::to_value(data)
+            .map_err(|e| format!("Failed to serialize command payload: {}", e))?,
+    };
+    let json =
+        serde_json::to_string(&cmd).map_err(|e| format!("Failed to serialize command: {}", e))?;
+
+    stream
+        .write_all(json.as_bytes())
+        .await
+        .map_err(|e| format!("Failed to write to socket: {}", e))?;
+    stream
+        .write_all(b"\n")
+        .await
+        .map_err(|e| format!("Failed to write newline to socket: {}", e))?;
+
+    let mut reader = BufReader::new(stream);
+    let mut response = String::new();
+
+    reader
+        .read_line(&mut response)
+        .await
+        .map_err(|e| format!("Failed to read from socket: {}", e))?;
+
+    // An error reply is an `ErrorResponse` instead of a `DaemonResponse`,
+    // so only a failed command parses here.
+    if let Ok(error) = serde_json::from_str::<ErrorResponse>(&response) {
+        return Err(CliError::from_daemon(
+            ErrorCode::parse(&error.code),
+            error.error,
+        ));
+    }
+
+    Ok(serde_json::from_str(&response).map_err(|e| format!("Failed to parse response: {}", e))?)
+}
 /// Open a connection to the daemon's control socket.
 async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
     try_connect_daemon_socket()

@@ -5,7 +5,6 @@ use crate::{
     RepositoryTx,
     authorization::Caller,
     error::ServiceError,
-    log_error,
     model::{record::Record, zone::Zone, zone_change::ZoneChange},
     repository::RepositoryService,
     types::{
@@ -30,7 +29,7 @@ impl ZoneService {
     }
 
     /// Count journal rows in `(from_serial, to_serial]` for the IXFR size estimate.
-    pub async fn count_journal_between_serials(
+    pub async fn count_changes_between_serials(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
@@ -39,7 +38,7 @@ impl ZoneService {
     }
 
     /// Journal rows in `(from_serial, to_serial]`, ordered by serial then row id.
-    pub async fn list_journal_between_serials(
+    pub async fn list_changes_between_serials(
         zone_id: i32,
         from_serial: i32,
         to_serial: i32,
@@ -56,7 +55,7 @@ impl ZoneService {
     /// fan-out read it.
     pub async fn list() -> Result<Vec<Zone>, ServiceError> {
         let zones = RepositoryService::list_zones().await.map_err(|e| {
-            log_error!("Failed to fetch zones: {}", e);
+            log::error!("Failed to fetch zones: {}", e);
             ServiceError::internal("Failed to fetch zones")
         })?;
         Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
@@ -164,7 +163,7 @@ impl ZoneService {
                 .await?
                 .into_iter()
                 .filter(|record| {
-                    caller.record_visible(zone.id, &record.name, Some(&record.record_type))
+                    caller.sees_record(zone.id, &record.name, Some(&record.record_type))
                 })
                 .collect();
             Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))

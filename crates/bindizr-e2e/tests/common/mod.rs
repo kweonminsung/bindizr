@@ -28,7 +28,7 @@ pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 pub(crate) use dns::{
     FakeParent, ServedDs, TransferOutcome, axfr, probe_zone_soa, wait_for_any_dns_record,
 };
-use dns::{dns_expected_value, dns_key_from_record, dns_record_type, wait_for_dns_records};
+use dns::{dns_record_type, extract_dns_key, to_dns_expected_value, wait_for_dns_records};
 
 /// The most a listing returns in one call; the HTTP API refuses more.
 const RECORD_PAGE_LIMIT: u32 = 1000;
@@ -36,6 +36,7 @@ const DNS_VERIFICATION_ENV: &str = "BINDIZR_E2E_VERIFY_DNS";
 static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 static RUN_ID: OnceLock<String> = OnceLock::new();
 
+/// One bindizr under test, reached over its HTTP API and CLI, plus the DNS ports it serves.
 pub(crate) struct TestApp {
     runtime: TestRuntime,
     client: Client,
@@ -59,6 +60,7 @@ pub(crate) struct TestAppOptions {
     pub(crate) tls: bool,
 }
 
+/// Where the daemon under test runs: a process this test spawned, or the shared Compose stack.
 enum TestRuntime {
     Local { temp_dir: TempDir, child: Child },
     Compose(&'static ComposeStack),
@@ -161,18 +163,18 @@ impl TestApp {
 
     /// One API request; in compose mode every mutating call also asserts the
     /// DNS secondaries match the API.
-    pub(crate) async fn request(
+    pub(crate) async fn send_request(
         &self,
         method: Method,
         path: &str,
         body: Option<Value>,
     ) -> (StatusCode, Value) {
         let should_verify_dns = method != Method::GET;
-        let mut previous_dns_key = self.previous_dns_key(&method, path).await;
+        let mut previous_dns_key = self.read_previous_dns_key(&method, path).await;
         let updated_zone_name = (method == Method::PUT)
             .then(|| path.strip_prefix("/zones/"))
             .flatten();
-        let response = self.send_request(method, path, body).await;
+        let response = self.send_http(method, path, body).await;
 
         if let Some(previous_zone_name) = updated_zone_name
             && response.0.is_success()
@@ -189,7 +191,7 @@ impl TestApp {
     }
 
     /// Send an authenticated API request and decode its JSON response.
-    async fn send_request(
+    async fn send_http(
         &self,
         method: Method,
         path: &str,
@@ -224,7 +226,7 @@ impl TestApp {
     /// Fetch all API record pages for a zone.
     pub(crate) async fn list_records(&self, zone_name: &str) -> Vec<Value> {
         let (status, body) = self
-            .request(
+            .send_request(
                 Method::GET,
                 &format!("/zones/{zone_name}?records=true"),
                 None,
@@ -238,9 +240,9 @@ impl TestApp {
     }
 
     /// Read the zone's current serial through the API.
-    pub(crate) async fn zone_serial(&self, zone_name: &str) -> i64 {
+    pub(crate) async fn read_zone_serial(&self, zone_name: &str) -> i64 {
         let (status, body) = self
-            .request(Method::GET, &format!("/zones/{zone_name}"), None)
+            .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
             .await;
         assert_eq!(status, StatusCode::OK);
         body["zone"]["serial"]
@@ -262,7 +264,9 @@ impl TestApp {
             "expire": 604800,
             "minimum_ttl": 86400
         });
-        let (status, body) = self.request(Method::POST, "/zones", Some(request)).await;
+        let (status, body) = self
+            .send_request(Method::POST, "/zones", Some(request))
+            .await;
         assert_eq!(status, StatusCode::CREATED);
         body["zone"].clone()
     }
@@ -300,7 +304,7 @@ impl TestApp {
         // Remember deleted names before the API can no longer return their identity.
         let previous_dns_key = match args {
             ["record", "delete", record_id, ..] => {
-                self.previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
+                self.read_previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
                     .await
             }
             ["zone", "delete", zone_name, ..] => Some((zone_name.to_string(), 6)),
@@ -366,16 +370,16 @@ impl TestApp {
     }
 
     /// Capture the record owner and type before an API mutation.
-    async fn previous_dns_key(&self, method: &Method, path: &str) -> Option<(String, u16)> {
+    async fn read_previous_dns_key(&self, method: &Method, path: &str) -> Option<(String, u16)> {
         if !matches!(*method, Method::PUT | Method::DELETE) {
             return None;
         }
 
         if path.starts_with("/records/") {
-            let (status, body) = self.send_request(Method::GET, path, None).await;
+            let (status, body) = self.send_http(Method::GET, path, None).await;
             return status
                 .is_success()
-                .then(|| dns_key_from_record(&body["record"]));
+                .then(|| extract_dns_key(&body["record"]));
         }
 
         if let Some(zone_name) = path.strip_prefix("/zones/") {
@@ -398,7 +402,7 @@ impl TestApp {
         let mut offset = 0u64;
         loop {
             let (status, body) = self
-                .send_request(
+                .send_http(
                     Method::GET,
                     &format!(
                         "/records?search={}&limit={RECORD_PAGE_LIMIT}&offset={offset}",
@@ -440,7 +444,7 @@ impl TestApp {
             expected
                 .entry((name, record_type))
                 .or_default()
-                .push(dns_expected_value(record, record_type));
+                .push(to_dns_expected_value(record, record_type));
         }
 
         // Wait for each name and type to converge on every configured secondary.

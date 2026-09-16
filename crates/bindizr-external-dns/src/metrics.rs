@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 
 use prometheus::{HistogramVec, IntCounterVec, Registry, TextEncoder};
 
+/// The adapter's Prometheus registry and the request metrics registered in it.
 pub(crate) struct AdapterMetrics {
     registry: Registry,
     pub(crate) requests_total: IntCounterVec,

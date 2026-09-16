@@ -160,6 +160,7 @@ fn display_value_leaves_wrong_field_count_unchanged() {
     }
 }
 
+/// Verify that CNAME, NS, and PTR values reject invalid domain forms.
 /// Hyphen-edge and non-LDH labels are not here: an rdata name takes the labels
 /// an owner name does, so only what no presentation form spells back is left.
 #[test]

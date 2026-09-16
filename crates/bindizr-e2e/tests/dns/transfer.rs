@@ -36,22 +36,6 @@ async fn create_key(app: &TestApp, name: &str, global: bool) -> SigningKey {
     }
 }
 
-/// Extract the received record count from a successful transfer.
-fn records(outcome: TransferOutcome) -> usize {
-    match outcome {
-        TransferOutcome::Records(count) => count,
-        TransferOutcome::Refused(rcode) => panic!("transfer refused with {rcode}"),
-    }
-}
-
-/// Extract the refusal code from a rejected transfer.
-fn refusal(outcome: TransferOutcome) -> Rcode {
-    match outcome {
-        TransferOutcome::Refused(rcode) => rcode,
-        TransferOutcome::Records(count) => panic!("transfer returned {count} record(s)"),
-    }
-}
-
 /// Verify that an unsigned transfer still runs under the address acl.
 #[tokio::test]
 #[serial]
@@ -62,7 +46,7 @@ async fn an_unsigned_transfer_still_runs_under_the_address_acl() {
 
     let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
     assert!(
-        records(outcome) >= 3,
+        outcome.records() >= 3,
         "the zone carries its SOA twice plus NS"
     );
 }
@@ -79,7 +63,7 @@ async fn a_signed_transfer_answers_under_the_key_that_asked() {
     // `axfr` verifies every envelope's MAC, so an unsigned answer — which BIND
     // discards as "expected a TSIG" — fails here rather than passing silently.
     let outcome = axfr(app.dns_port(), zone_name, Some(&key)).expect("signed AXFR");
-    assert!(records(outcome) >= 3);
+    assert!(outcome.records() >= 3);
 }
 
 /// Verify that a key transfers only the zones it is granted whole.
@@ -109,11 +93,11 @@ async fn a_key_transfers_only_the_zones_it_is_granted_whole() {
     .await;
 
     let outcome = axfr(app.dns_port(), granted, Some(&key)).expect("granted AXFR");
-    assert!(records(outcome) >= 3);
+    assert!(outcome.records() >= 3);
 
     for zone in [&narrowed, &ungranted] {
         let outcome = axfr(app.dns_port(), zone, Some(&key)).expect("AXFR");
-        assert_eq!(refusal(outcome), Rcode::REFUSED, "zone {zone}");
+        assert_eq!(outcome.refusal(), Rcode::REFUSED, "zone {zone}");
     }
 }
 
@@ -129,7 +113,7 @@ async fn a_transfer_only_grant_pulls_the_zone_without_changing_it() {
         .await;
 
     let outcome = axfr(app.dns_port(), zone_name, Some(&key)).expect("read-only AXFR");
-    assert!(records(outcome) >= 3);
+    assert!(outcome.records() >= 3);
 
     // The same key must not be able to write what it just read.
     let rcode = crate::common::nsupdate::send_signed_update(

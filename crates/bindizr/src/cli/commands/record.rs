@@ -14,7 +14,7 @@ use crate::{
         },
     },
     socket::{
-        client::DaemonSocketClient,
+        client,
         types::{DaemonCommandKind, RecordIdParams, UpdateRecordParams},
     },
 };
@@ -212,8 +212,6 @@ serial and the secondaries transfer once.")]
 
 /// Handle the `record` subcommand by forwarding it to the daemon over the socket.
 pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliError> {
-    let client = DaemonSocketClient::new();
-
     match subcommand {
         RecordCommand::Create {
             name,
@@ -224,20 +222,19 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             priority,
             output,
         } => {
-            let data = client
-                .send_command(
-                    DaemonCommandKind::CreateRecord,
-                    CreateRecordRequest {
-                        name,
-                        record_type,
-                        value: to_record_value_request(value),
-                        zone_name: zone,
-                        ttl,
-                        priority,
-                    },
-                )
-                .await?
-                .data;
+            let data = client::send_command(
+                DaemonCommandKind::CreateRecord,
+                CreateRecordRequest {
+                    name,
+                    record_type,
+                    value: to_record_value_request(value),
+                    zone_name: zone,
+                    ttl,
+                    priority,
+                },
+            )
+            .await?
+            .data;
 
             print_response(&data, output, |response: &RecordResponse| {
                 vec![RecordRow::from(&response.record)]
@@ -296,8 +293,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 limit,
                 offset,
             });
-            let data = client
-                .send_command(DaemonCommandKind::ListRecords, filter)
+            let data = client::send_command(DaemonCommandKind::ListRecords, filter)
                 .await?
                 .data;
 
@@ -332,16 +328,15 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let records: Vec<RecordItem> = serde_json::from_value(records)
                 .map_err(|e| format!("Invalid record in '{}': {}", file, e))?;
 
-            let response = client
-                .send_command(
-                    DaemonCommandKind::BulkCreateRecords,
-                    CreateBulkRecordsRequest {
-                        zone_name: zone,
-                        records,
-                        dry_run,
-                    },
-                )
-                .await?;
+            let response = client::send_command(
+                DaemonCommandKind::CreateRecordsBulk,
+                CreateBulkRecordsRequest {
+                    zone_name: zone,
+                    records,
+                    dry_run,
+                },
+            )
+            .await?;
 
             let bulk: BulkRecordsResponse = parse_response(&response.data)?;
             println!("{}", response.message);
@@ -352,8 +347,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             }
         }
         RecordCommand::Get { id, output } => {
-            let data = client
-                .send_command(DaemonCommandKind::GetRecord, RecordIdParams { id })
+            let data = client::send_command(DaemonCommandKind::GetRecord, RecordIdParams { id })
                 .await?
                 .data;
 
@@ -370,31 +364,30 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             priority,
             output,
         } => {
-            let data = client
-                .send_command(
-                    DaemonCommandKind::UpdateRecord,
-                    UpdateRecordParams {
-                        id,
-                        request: UpdateRecordRequest {
-                            name,
-                            record_type,
-                            value: (!value.is_empty()).then(|| to_record_value_request(value)),
-                            ttl,
-                            priority,
-                        },
+            let data = client::send_command(
+                DaemonCommandKind::UpdateRecord,
+                UpdateRecordParams {
+                    id,
+                    request: UpdateRecordRequest {
+                        name,
+                        record_type,
+                        value: (!value.is_empty()).then(|| to_record_value_request(value)),
+                        ttl,
+                        priority,
                     },
-                )
-                .await?
-                .data;
+                },
+            )
+            .await?
+            .data;
 
             print_response(&data, output, |response: &RecordResponse| {
                 vec![RecordRow::from(&response.record)]
             })?;
         }
         RecordCommand::Delete { id } => {
-            let response = client
-                .send_command(DaemonCommandKind::DeleteRecord, RecordIdParams { id })
-                .await?;
+            let response =
+                client::send_command(DaemonCommandKind::DeleteRecord, RecordIdParams { id })
+                    .await?;
             println!("{}", response.message);
         }
         RecordCommand::DeleteMatching {
@@ -405,19 +398,18 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             priority,
             dry_run,
         } => {
-            let response = client
-                .send_command(
-                    DaemonCommandKind::DeleteRecordsMatching,
-                    DeleteRecordsFilter {
-                        zone_name: zone,
-                        name,
-                        record_type,
-                        value,
-                        priority,
-                        dry_run,
-                    },
-                )
-                .await?;
+            let response = client::send_command(
+                DaemonCommandKind::DeleteRecordsMatching,
+                DeleteRecordsFilter {
+                    zone_name: zone,
+                    name,
+                    record_type,
+                    value,
+                    priority,
+                    dry_run,
+                },
+            )
+            .await?;
             println!("{}", response.message);
         }
     }

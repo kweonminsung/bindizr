@@ -4,7 +4,6 @@ use axum::{
     Json,
     extract::{FromRequest, Request},
 };
-use bindizr_core::log_debug;
 use serde::de::DeserializeOwned;
 
 use crate::api::error::ApiError;
@@ -29,7 +28,7 @@ where
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
         let start = Instant::now();
         let Json(value) = Json::<T>::from_request(req, state).await?;
-        log_debug!(
+        log::debug!(
             "event=json_decode ms={:.1}",
             start.elapsed().as_secs_f64() * 1000.0
         );

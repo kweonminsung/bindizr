@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 pub(crate) use transfer::{TransferOutcome, axfr};
 
 /// Convert an API record value into the DNS comparison form.
-pub(crate) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
+pub(crate) fn to_dns_expected_value(record: &Value, record_type: u16) -> Value {
     let value = record["value"].clone();
     if !matches!(record_type, 15 | 33) {
         return value;
@@ -37,7 +37,7 @@ pub(crate) fn dns_expected_value(record: &Value, record_type: u16) -> Value {
 }
 
 /// Extract the DNS owner and type used to identify a record.
-pub(crate) fn dns_key_from_record(record: &Value) -> (String, u16) {
+pub(crate) fn extract_dns_key(record: &Value) -> (String, u16) {
     let name = record["name"]
         .as_str()
         .expect("record did not contain a name")
@@ -90,7 +90,7 @@ pub(crate) async fn wait_for_dns_records(
                     .filter(|answer| answer.record_type == record_type)
                     .count()
                     == expected_count
-                    && dns_values_match(record_type, expected, &answers) =>
+                    && matches_dns_values(record_type, expected, &answers) =>
             {
                 eprintln!("{name} type {record_type} propagated through 127.0.0.1:{port}.");
                 return;
@@ -121,6 +121,7 @@ fn is_deleted_zone_absence(record_type: u16, expected: &[Value], error: &str) ->
     record_type == 6 && expected.is_empty() && error.contains("REFUSED RCODE")
 }
 
+/// One answer record, as its type number and the comparison form of its rdata.
 #[derive(Debug)]
 pub(crate) struct DnsAnswer {
     pub(crate) record_type: u16,
@@ -128,7 +129,7 @@ pub(crate) struct DnsAnswer {
 }
 
 /// Compare DNS answers with expected values for the record type.
-fn dns_values_match(record_type: u16, expected: &[Value], answers: &[DnsAnswer]) -> bool {
+fn matches_dns_values(record_type: u16, expected: &[Value], answers: &[DnsAnswer]) -> bool {
     if record_type == 6 {
         return true;
     }
@@ -175,7 +176,7 @@ pub(crate) async fn wait_for_any_dns_record(port: u16, name: &str, record_type: 
 }
 
 /// Whether the DNS plane serves `zone_name`: a zone it does not know answers
-/// REFUSED, which `check_response_header` reports as an error.
+/// REFUSED, which `validate_response_header` reports as an error.
 pub(crate) fn probe_zone_soa(port: u16, zone_name: &str) -> bool {
     matches!(query_dns_record(port, zone_name, 6), Ok(answers) if !answers.is_empty())
 }
@@ -190,7 +191,7 @@ fn query_dns_record(port: u16, name: &str, record_type: u16) -> Result<Vec<DnsAn
 fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usize, String> {
     let (query_id, response) = exchange_dns_query(port, name, record_type)?;
     let message = Message::from_octets(response.as_slice()).map_err(|e| e.to_string())?;
-    if !check_response_header(query_id, &message)? {
+    if !validate_response_header(query_id, &message)? {
         return Ok(0);
     }
 
@@ -230,14 +231,14 @@ fn build_dns_query(query_id: u16, name: &str, record_type: u16) -> Result<Vec<u8
 
     let mut question = builder.question();
     question
-        .push((&query_name(name)?, Rtype::from_int(record_type)))
+        .push((&parse_name(name)?, Rtype::from_int(record_type)))
         .map_err(|e| e.to_string())?;
 
     Ok(question.finish())
 }
 
-/// Parse an absolute DNS name for a query.
-fn query_name(name: &str) -> Result<Name<Vec<u8>>, String> {
+/// Parse a DNS name into its wire form, a bare or trailing dot reading as the root.
+pub(crate) fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
     let trimmed = name.trim_end_matches('.');
     if trimmed.is_empty() {
         return Ok(Name::root_vec());
@@ -248,7 +249,7 @@ fn query_name(name: &str) -> Result<Name<Vec<u8>>, String> {
 /// Validate a DNS response and decode its answers.
 pub(crate) fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<DnsAnswer>, String> {
     let message = Message::from_octets(response).map_err(|e| e.to_string())?;
-    if !check_response_header(query_id, &message)? {
+    if !validate_response_header(query_id, &message)? {
         return Ok(Vec::new());
     }
 
@@ -282,7 +283,7 @@ pub(crate) fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<D
 
 /// Validate the response's id, QR bit, and rcode; `false` is a well-formed
 /// NXDOMAIN, i.e. the name holds no records.
-fn check_response_header(query_id: u16, message: &Message<&[u8]>) -> Result<bool, String> {
+fn validate_response_header(query_id: u16, message: &Message<&[u8]>) -> Result<bool, String> {
     let header = message.header();
 
     if header.id() != query_id {

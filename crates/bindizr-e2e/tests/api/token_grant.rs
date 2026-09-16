@@ -6,7 +6,7 @@ use crate::common::{TestApp, TestAppOptions};
 /// Create a zone fixture through the API.
 async fn create_zone(app: &TestApp, zone_name: &str) {
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/zones",
             Some(json!({
@@ -50,7 +50,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     // Persist a record in the ungranted zone so listing assertions can prove
     // exclusion, not pass over an empty zone.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&other_zone, "app", "A", "192.0.2.9")),
@@ -66,7 +66,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     app.set_auth_token(scoped_token);
 
     // Zone listing is filtered to grants; ungranted zones read as 404.
-    let (status, body) = app.request(Method::GET, "/zones", None).await;
+    let (status, body) = app.send_request(Method::GET, "/zones", None).await;
     assert_eq!(status, StatusCode::OK);
     let names: Vec<&str> = body["items"]
         .as_array()
@@ -79,13 +79,13 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     assert_eq!(body["pagination"]["total"], json!(1));
 
     let (status, _) = app
-        .request(Method::GET, &format!("/zones/{other_zone}"), None)
+        .send_request(Method::GET, &format!("/zones/{other_zone}"), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     // Record writes work in the granted zone and 404 elsewhere.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&granted_zone, "app", "A", "192.0.2.1")),
@@ -95,7 +95,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     let record_id = body["record"]["id"].as_i64().unwrap();
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&other_zone, "app", "A", "192.0.2.2")),
@@ -106,7 +106,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
 
     // Record listing only surfaces granted zones.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?search={}&limit=1000", app.namespace()),
             None,
@@ -125,7 +125,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
     // The zone plane requires a global token.
     let new_zone = app.zone_name("new.com");
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/zones",
             Some(json!({
@@ -138,13 +138,13 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (status, _) = app
-        .request(Method::DELETE, &format!("/zones/{granted_zone}"), None)
+        .send_request(Method::DELETE, &format!("/zones/{granted_zone}"), None)
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     // So does a serial-bumping NOTIFY.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/zones/{granted_zone}/notify?bump_serial=true"),
             None,
@@ -154,7 +154,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
 
     // So does grant management (no self-escalation).
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/tokens/{scoped_name}/grants"),
             Some(json!({ "zone_name": granted_zone })),
@@ -164,7 +164,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
 
     // Records of ungranted zones are invisible even when addressed by id.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/records/{ungranted_record_id}"),
             None,
@@ -174,7 +174,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
 
     // Deleting an own record still works.
     let (status, _) = app
-        .request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .send_request(Method::DELETE, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 }
@@ -210,7 +210,7 @@ async fn token_grants_enforce_name_patterns_and_types() {
     app.set_auth_token(scoped_token);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&zone_name, "host.dyn", "A", "192.0.2.1")),
@@ -220,7 +220,7 @@ async fn token_grants_enforce_name_patterns_and_types() {
 
     // Outside the name pattern.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&zone_name, "www", "A", "192.0.2.1")),
@@ -230,7 +230,7 @@ async fn token_grants_enforce_name_patterns_and_types() {
 
     // Outside the type list.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(
@@ -278,13 +278,13 @@ async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches(
     let paths = [filter.clone(), format!("{filter}&dry_run=true")];
     app.set_auth_token(scoped_token.clone());
     for path in &paths {
-        let (status, body) = app.request(Method::DELETE, path, None).await;
+        let (status, body) = app.send_request(Method::DELETE, path, None).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {body}");
     }
 
     app.set_auth_token(global_token);
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&zone_name, "www", "A", "192.0.2.1")),
@@ -295,17 +295,17 @@ async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches(
 
     app.set_auth_token(scoped_token);
     for path in &paths {
-        let (status, body) = app.request(Method::DELETE, path, None).await;
+        let (status, body) = app.send_request(Method::DELETE, path, None).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {body}");
     }
 
     // Addressed by id, the record reads as absent, as it does on GET.
     let (status, _) = app
-        .request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .send_request(Method::DELETE, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _) = app
-        .request(
+        .send_request(
             Method::PUT,
             &format!("/records/{record_id}"),
             Some(json!({ "ttl": 600 })),
@@ -332,12 +332,12 @@ async fn scoped_token_without_grants_sees_nothing() {
     let (_, scoped_token) = app.create_scoped_api_token().await;
     app.set_auth_token(scoped_token);
 
-    let (status, body) = app.request(Method::GET, "/zones", None).await;
+    let (status, body) = app.send_request(Method::GET, "/zones", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["pagination"]["total"], json!(0));
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&zone_name, "app", "A", "192.0.2.1")),
@@ -361,7 +361,7 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
     let zone_name = app.zone_name("example.com");
     create_zone(&app, &zone_name).await;
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&zone_name, "app", "A", "192.0.2.1")),
@@ -376,7 +376,7 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
     // first and tells an ungranted caller what the zone already holds.
     for dry_run in [false, true] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records/bulk",
                 Some(json!({
@@ -418,7 +418,7 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
     app.set_auth_token(scoped_token);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records/bulk",
             Some(json!({
@@ -452,7 +452,7 @@ async fn global_token_grant_management_over_http() {
     let (scoped_name, _) = app.create_scoped_api_token().await;
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/tokens/{scoped_name}/grants"),
             Some(json!({ "zone_name": zone_name, "record_types": "A,AAAA" })),
@@ -466,13 +466,13 @@ async fn global_token_grant_management_over_http() {
 
     // The grant is visible from both ends: the token's list and the zone's.
     let (status, body) = app
-        .request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
+        .send_request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 1);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{zone_name}/token-grants"),
             None,
@@ -483,7 +483,7 @@ async fn global_token_grant_management_over_http() {
 
     // A global token already covers every zone, so it cannot be granted one.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/tokens/{global_name}/grants"),
             Some(json!({ "zone_name": zone_name })),
@@ -493,7 +493,7 @@ async fn global_token_grant_management_over_http() {
 
     // A grant id is only reachable under the token that holds it.
     let (status, _) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/tokens/{global_name}/grants/{grant_id}"),
             None,
@@ -502,7 +502,7 @@ async fn global_token_grant_management_over_http() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::DELETE,
             &format!("/tokens/{scoped_name}/grants/{grant_id}"),
             None,
@@ -511,7 +511,7 @@ async fn global_token_grant_management_over_http() {
     assert_eq!(status, StatusCode::OK);
 
     let (status, body) = app
-        .request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
+        .send_request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["items"].as_array().unwrap().is_empty());
@@ -533,7 +533,7 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
     create_zone(&app, &granted_zone).await;
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             &format!("/tokens/{scoped_name}/grants"),
             Some(json!({
@@ -546,7 +546,9 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
     assert_eq!(status, StatusCode::CREATED);
 
     app.set_auth_token(scoped_token);
-    let (status, body) = app.request(Method::GET, "/tokens/self/grants", None).await;
+    let (status, body) = app
+        .send_request(Method::GET, "/tokens/self/grants", None)
+        .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let grants = body["items"].as_array().unwrap();
     assert_eq!(grants.len(), 1, "{body}");
@@ -557,13 +559,15 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
 
     // The by-name path stays global-only even for the token's own name.
     let (status, _) = app
-        .request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
+        .send_request(Method::GET, &format!("/tokens/{scoped_name}/grants"), None)
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     // A global token holds no grants.
     app.set_auth_token(global_token);
-    let (status, body) = app.request(Method::GET, "/tokens/self/grants", None).await;
+    let (status, body) = app
+        .send_request(Method::GET, "/tokens/self/grants", None)
+        .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body["items"].as_array().unwrap().is_empty(), "{body}");
 }
@@ -596,13 +600,13 @@ async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
         let expected = json!(format!("Zone with name '{zone}' not found"));
 
         let (status, body) = app
-            .request(Method::GET, &format!("/zones/{spelled}"), None)
+            .send_request(Method::GET, &format!("/zones/{spelled}"), None)
             .await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
         assert_eq!(body["error"], expected, "{body}");
 
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(record_body(&spelled, "www", "A", "192.0.2.1")),
@@ -629,7 +633,7 @@ async fn a_narrowed_grant_reads_only_what_it_may_write() {
     create_zone(&app, &zone_name).await;
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&zone_name, "host.dyn", "A", "192.0.2.1")),
@@ -639,7 +643,7 @@ async fn a_narrowed_grant_reads_only_what_it_may_write() {
     let granted_id = body["record"]["id"].as_i64().unwrap();
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&zone_name, "www", "A", "192.0.2.2")),
@@ -661,7 +665,7 @@ async fn a_narrowed_grant_reads_only_what_it_may_write() {
     app.set_auth_token(scoped_token);
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&limit=1000"),
             None,
@@ -681,21 +685,21 @@ async fn a_narrowed_grant_reads_only_what_it_may_write() {
     assert_eq!(body["pagination"]["total"], 1, "{body}");
 
     let (status, _) = app
-        .request(Method::GET, &format!("/records/{granted_id}"), None)
+        .send_request(Method::GET, &format!("/records/{granted_id}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     let (status, _) = app
-        .request(Method::GET, &format!("/records/{outside_id}"), None)
+        .send_request(Method::GET, &format!("/records/{outside_id}"), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     // A view the zone is rebuilt from cannot be handed over half-written.
     let (status, _) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (status, _) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/zones/{zone_name}/versions/diff?from=1&to=2"),
             None,
@@ -720,7 +724,7 @@ async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
     create_zone(&app, &zone_name).await;
 
     let (status, body) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&zone_name, "app", "A", "192.0.2.1")),
@@ -735,16 +739,16 @@ async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
     app.set_auth_token(scoped_token);
 
     let (status, _) = app
-        .request(Method::GET, &format!("/records/{record_id}"), None)
+        .send_request(Method::GET, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
     let (status, _) = app
-        .request(Method::GET, &format!("/zones/{zone_name}/export"), None)
+        .send_request(Method::GET, &format!("/zones/{zone_name}/export"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, _) = app
-        .request(
+        .send_request(
             Method::POST,
             "/records",
             Some(record_body(&zone_name, "other", "A", "192.0.2.2")),
@@ -752,7 +756,7 @@ async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (status, _) = app
-        .request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .send_request(Method::DELETE, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
@@ -781,7 +785,7 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
         (r"a\.dyn", "A", "192.0.2.3"),
     ] {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::POST,
                 "/records",
                 Some(record_body(&zone_name, name, record_type, value)),
@@ -798,7 +802,7 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
 
     let listed = async |app: &TestApp| -> (usize, u64) {
         let (status, body) = app
-            .request(
+            .send_request(
                 Method::GET,
                 &format!("/records?zone_name={zone_name}&limit=1000"),
                 None,
@@ -832,7 +836,7 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
 
     // And out of the pages: its slot holds the next visible row, not a gap.
     let (status, body) = app
-        .request(
+        .send_request(
             Method::GET,
             &format!("/records?zone_name={zone_name}&sort=name&order=asc&limit=1&offset=2"),
             None,

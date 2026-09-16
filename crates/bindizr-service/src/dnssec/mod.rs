@@ -26,7 +26,6 @@ pub use maintenance::init_maintenance_scheduler;
 use crate::{
     database::repository::LockLevel,
     error::ServiceError,
-    log_warn,
     model::{
         dnssec_key::DnssecKey,
         dnssec_policy::DnssecPolicy,
@@ -40,17 +39,6 @@ use crate::{
 /// Backdated inception absorbs validator clock skew; one hour covers any
 /// sane offset.
 const SIGNATURE_INCEPTION_OFFSET_SECS: i64 = 3600;
-
-/// The window the per-RRset expirations spread over, so a pass does not come
-/// due for the whole zone at once and push an IXFR the size of it. Half the
-/// room the policy leaves, which keeps even the earliest signature outside
-/// its own refresh window.
-fn expiration_jitter_secs(policy: &DnssecPolicy) -> i64 {
-    let validity = i64::from(policy.signature_validity_days) * 86_400;
-    let refresh = i64::from(policy.signature_refresh_days) * 86_400;
-
-    (validity - refresh).max(0) / 2
-}
 
 /// Enables, disables, rolls, and reports DNSSEC signing for zones.
 pub struct DnssecService;
@@ -70,7 +58,7 @@ impl DnssecService {
             return Ok(());
         }
         let policy = Self::get_zone_policy_tx(tx, zone).await?;
-        Self::sign_zone_locked(tx, zone, &policy, new_serial, &keys, false).await?;
+        Self::apply_signed_view_tx(tx, zone, &policy, new_serial, &keys, false).await?;
         Ok(())
     }
 
@@ -86,7 +74,7 @@ impl DnssecService {
         subject: &ChangeSubject,
     ) -> Result<Option<i32>, ServiceError> {
         let new_serial = crate::serial::generate_serial(Some(zone.serial))?;
-        if !Self::sign_zone_locked(tx, zone, policy, new_serial, keys, force).await? {
+        if !Self::apply_signed_view_tx(tx, zone, policy, new_serial, keys, force).await? {
             return Ok(None);
         }
         ZoneService::advance_serial_tx(tx, zone, new_serial, subject).await?;
@@ -96,7 +84,7 @@ impl DnssecService {
     /// The policy the zone signs under, or `None` for an unsigned zone. Read
     /// unlocked: a policy in use cannot be deleted (FK), and its editable
     /// fields are safe to read at any moment.
-    pub(crate) async fn find_zone_policy_tx(
+    async fn find_zone_policy_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
     ) -> Result<Option<DnssecPolicy>, ServiceError> {
@@ -116,7 +104,7 @@ impl DnssecService {
 
     /// The policy a signed zone signs under; a signed zone without one is a
     /// broken invariant, never a caller error.
-    pub(crate) async fn get_zone_policy_tx(
+    async fn get_zone_policy_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
     ) -> Result<DnssecPolicy, ServiceError> {
@@ -130,7 +118,7 @@ impl DnssecService {
 
     /// Load the zone (locked at `lock_level`) together with its policy and
     /// signing keys; a zone with no keys reads as not DNSSEC-enabled.
-    pub(crate) async fn get_signed_zone_tx(
+    async fn get_signed_zone_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
         lock_level: LockLevel,
@@ -146,7 +134,7 @@ impl DnssecService {
 
     /// The scheduler's form of [`Self::get_signed_zone_tx`]: `None` when the
     /// zone was deleted or unsigned since its id was listed.
-    pub(crate) async fn find_signed_zone_by_id_tx(
+    async fn find_signed_zone_by_id_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         lock_level: LockLevel,
@@ -165,7 +153,7 @@ impl DnssecService {
     /// Apply the signed DNSSEC view and journal its changes under the held zone lock.
     ///
     /// Returns whether anything changed; `force` regenerates stored signatures.
-    async fn sign_zone_locked(
+    async fn apply_signed_view_tx(
         tx: &mut RepositoryTx<'_>,
         zone: &Zone,
         policy: &DnssecPolicy,
@@ -192,7 +180,7 @@ impl DnssecService {
             now,
             inception: now - Duration::seconds(SIGNATURE_INCEPTION_OFFSET_SECS),
             expiration: now + Duration::days(i64::from(policy.signature_validity_days)),
-            expiration_jitter_secs: expiration_jitter_secs(policy),
+            expiration_jitter_secs: policy.expiration_jitter_secs(),
             refresh_secs: i64::from(policy.signature_refresh_days) * 86_400,
             force,
             withdraw_parent_ds,
@@ -267,19 +255,10 @@ impl DnssecService {
     }
 }
 
-/// Describe the policy's key layout for validation errors.
-fn to_key_layout(split_keys: bool) -> &'static str {
-    if split_keys {
-        "split KSK/ZSK keys"
-    } else {
-        "a single CSK"
-    }
-}
-
 /// Schedule NOTIFY after a DNSSEC change to a zone.
 async fn notify_zone(zone_name: &str) {
     if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name)).await {
-        log_warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+        log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
     }
 }
 
@@ -288,7 +267,7 @@ mod tests {
     use bindizr_core::model::{dnssec_key::DnssecAlgorithm, dnssec_policy::DnssecDenial};
     use chrono::Utc;
 
-    use super::{DnssecPolicy, expiration_jitter_secs};
+    use super::DnssecPolicy;
 
     /// Build a policy fixture with the requested signature timing.
     fn policy(signature_validity_days: i32, signature_refresh_days: i32) -> DnssecPolicy {
@@ -310,7 +289,7 @@ mod tests {
     fn jitter_spreads_over_half_the_room_the_policy_leaves() {
         // The built-in default: 14 days of validity re-signed with 5 left.
         assert_eq!(
-            expiration_jitter_secs(&policy(14, 5)),
+            policy(14, 5).expiration_jitter_secs(),
             (9 * 86_400) / 2,
             "a fixed window would come due for the whole zone at once"
         );
@@ -321,7 +300,7 @@ mod tests {
     fn the_earliest_signature_stays_clear_of_its_refresh_window() {
         for (validity, refresh) in [(14, 5), (30, 7), (7, 6), (2, 1)] {
             let policy = policy(validity, refresh);
-            let earliest = i64::from(validity) * 86_400 - expiration_jitter_secs(&policy);
+            let earliest = i64::from(validity) * 86_400 - policy.expiration_jitter_secs();
 
             assert!(
                 earliest > i64::from(refresh) * 86_400,
@@ -333,7 +312,7 @@ mod tests {
     /// Verify that a policy leaving no room takes no jitter.
     #[test]
     fn a_policy_leaving_no_room_takes_no_jitter() {
-        assert_eq!(expiration_jitter_secs(&policy(5, 5)), 0);
-        assert_eq!(expiration_jitter_secs(&policy(5, 7)), 0);
+        assert_eq!(policy(5, 5).expiration_jitter_secs(), 0);
+        assert_eq!(policy(5, 7).expiration_jitter_secs(), 0);
     }
 }
