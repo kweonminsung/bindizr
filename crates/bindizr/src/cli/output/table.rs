@@ -28,17 +28,43 @@ fn display_option_text(opt: &Option<String>) -> String {
     opt.clone().unwrap_or_else(|| "-".to_string())
 }
 
-/// Format an optional timestamp for table output.
-fn display_option_time(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
-    opt.map_or_else(|| "-".to_string(), |at| at.to_rfc3339())
+/// The longest value a listing cell shows: one DKIM key would otherwise widen
+/// the column for every row. `record get` and `-o json` carry the whole value.
+const MAX_CELL_CHARS: usize = 48;
+
+/// Format a timestamp for table output; `-o json` carries the full precision.
+fn display_time(at: chrono::DateTime<chrono::Utc>) -> String {
+    at.format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
-/// A record value as one table cell; TXT segments concatenate into the string
-/// they encode.
-fn display_value(value: &RecordValueRequest) -> String {
+/// Format an optional timestamp for table output.
+fn display_option_time(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
+    opt.map_or_else(|| "-".to_string(), display_time)
+}
+
+/// A record value as text; TXT segments concatenate into the string they
+/// encode.
+fn to_value_text(value: &RecordValueRequest) -> String {
     match value {
         RecordValueRequest::String(value) => value.clone(),
         RecordValueRequest::Segments(segments) => segments.concat(),
+    }
+}
+
+/// A record value as one listing cell.
+fn display_value(value: &RecordValueRequest) -> String {
+    truncate_cell(&to_value_text(value))
+}
+
+/// Shorten an over-long cell, marking that it was cut. Counted in characters,
+/// so a multi-byte value is not split.
+fn truncate_cell(text: &str) -> String {
+    let mut chars = text.chars();
+    let head: String = chars.by_ref().take(MAX_CELL_CHARS).collect();
+    if chars.next().is_none() {
+        head
+    } else {
+        format!("{}…", head)
     }
 }
 
@@ -111,13 +137,24 @@ pub(crate) struct RecordRow {
 }
 
 impl From<&GetRecordResponse> for RecordRow {
-    /// Build a CLI table row from the record response.
+    /// Build a listing row, with the value shortened so one long record does
+    /// not widen the column.
     fn from(record: &GetRecordResponse) -> Self {
+        RecordRow {
+            value: display_value(&record.value),
+            ..Self::whole(record)
+        }
+    }
+}
+
+impl RecordRow {
+    /// Build the row for a single record, whose whole value is the point.
+    pub(crate) fn whole(record: &GetRecordResponse) -> Self {
         RecordRow {
             id: record.id,
             name: record.name.clone(),
             record_type: record.record_type.clone(),
-            value: display_value(&record.value),
+            value: to_value_text(&record.value),
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
@@ -155,12 +192,12 @@ impl From<&DnssecKeyInfo> for DnssecKeyRow {
             id: key.id,
             role: key.role.clone(),
             state: key.state.clone(),
-            state_changed_at: key.state_changed_at.to_rfc3339(),
+            state_changed_at: display_time(key.state_changed_at),
             eligible_at: display_option_time(&key.eligible_at),
             algorithm: key.algorithm.clone(),
             key_tag: key.key_tag,
             dnskey: key.dnskey.clone(),
-            created_at: key.created_at.to_rfc3339(),
+            created_at: display_time(key.created_at),
         }
     }
 }
@@ -203,7 +240,7 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
             } else {
                 format!("{}d", policy.zsk_lifetime_days)
             },
-            created_at: policy.created_at.to_rfc3339(),
+            created_at: display_time(policy.created_at),
         }
     }
 }
@@ -248,7 +285,7 @@ impl From<&ZoneVersionResponse> for VersionRow {
             minimum_ttl: version.minimum_ttl,
             change_source: version.change_source.clone(),
             changed_by: display_option_text(&version.changed_by),
-            created_at: version.created_at.to_rfc3339(),
+            created_at: display_time(version.created_at),
         }
     }
 }
@@ -422,10 +459,10 @@ impl From<&GetTokenResponse> for TokenRow {
             token: display_option_text(&None),
             global: display_yes_no(token.global),
             description: display_option_text(&token.description),
-            created_at: token.created_at.to_rfc3339(),
+            created_at: display_time(token.created_at),
             expires_at: token
                 .expires_at
-                .map(|dt| dt.to_rfc3339())
+                .map(display_time)
                 .unwrap_or_else(|| "Never".to_string()),
             last_used_at: display_option_time(&token.last_used_at),
         }
@@ -468,7 +505,7 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
             algorithm: key.algorithm.clone(),
             secret: display_option_text(&None),
             global: display_yes_no(key.global),
-            created_at: key.created_at.to_rfc3339(),
+            created_at: display_time(key.created_at),
         }
     }
 }
@@ -516,7 +553,7 @@ impl From<&GetTokenGrantResponse> for TokenGrantRow {
                 "read-only"
             }
             .to_string(),
-            created_at: grant.created_at.to_rfc3339(),
+            created_at: display_time(grant.created_at),
         }
     }
 }
@@ -554,7 +591,7 @@ impl From<&GetTsigGrantResponse> for TsigGrantRow {
                 "transfer-only"
             }
             .to_string(),
-            created_at: grant.created_at.to_rfc3339(),
+            created_at: display_time(grant.created_at),
         }
     }
 }

@@ -66,6 +66,11 @@ impl ApiRouter {
             router = router
                 .route("/openapi.json", routing::get(ApiRouter::openapi_json))
                 .route("/openapi.yaml", routing::get(ApiRouter::openapi_yaml));
+        } else {
+            // A bare 404 reads as "no such endpoint" for a path the docs name.
+            router = router
+                .route("/openapi.json", routing::get(ApiRouter::openapi_disabled))
+                .route("/openapi.yaml", routing::get(ApiRouter::openapi_disabled));
         }
 
         router = router
@@ -120,6 +125,14 @@ impl ApiRouter {
         ApiError(ServiceError::new(
             ErrorCode::MethodNotAllowed,
             "this path does not take that method",
+        ))
+    }
+
+    /// Return the API error for the OpenAPI document while it is not served.
+    async fn openapi_disabled() -> impl IntoResponse {
+        ApiError(ServiceError::new(
+            ErrorCode::EndpointNotFound,
+            "the OpenAPI document is not served; set api.openapi_enabled = true to serve it",
         ))
     }
 

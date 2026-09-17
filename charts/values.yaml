@@ -20,13 +20,17 @@ bindizr:
     authentication:
       # Require an API token.
       required: true
-      # The first global token, created when none exist, so the first one
-      # needs no `kubectl exec`.
+      # The first global token, created when the database holds none. Read it
+      # with `bindizr config get api.authentication.initial_token`.
       initialToken:
-        # A Secret holding the token, or leave empty and set `value`.
+        # Off leaves the first token to `bindizr token create` in the pod.
+        enabled: true
+        # A Secret holding the token, instead of one the chart generates. Name
+        # one where the manifests are rendered with no cluster to reuse a
+        # generated token from.
         existingSecret: ""
         secretKey: api-token
-        # Used only without existingSecret; at least 16 characters.
+        # A fixed token, instead of a generated one; at least 16 characters.
         value: ""
     tls:
       # A Secret holding tls.crt and tls.key (a cert-manager Certificate makes

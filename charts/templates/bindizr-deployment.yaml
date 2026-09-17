@@ -54,14 +54,12 @@ spec:
                 secretKeyRef:
                   name: {{ include "bindizr-chart.databaseSecretName" . }}
                   key: {{ .Values.bindizr.database.secretKey }}
-            {{- with .Values.bindizr.api.authentication.initialToken }}
-            {{- if or .existingSecret .value }}
+            {{- if include "bindizr-chart.initialTokenEnabled" . }}
             - name: BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "bindizr-chart.initialTokenSecretName" $ }}
-                  key: {{ .secretKey }}
-            {{- end }}
+                  name: {{ include "bindizr-chart.initialTokenSecretName" . }}
+                  key: {{ .Values.bindizr.api.authentication.initialToken.secretKey }}
             {{- end }}
             {{- with .Values.bindizr.dns.nsupdate.initialKey }}
             {{- if .name }}

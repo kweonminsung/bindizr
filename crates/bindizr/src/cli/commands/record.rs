@@ -361,7 +361,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 .data;
 
             print_response(&data, output, |response: &RecordResponse| {
-                vec![RecordRow::from(&response.record)]
+                vec![RecordRow::whole(&response.record)]
             })?;
         }
         RecordCommand::Update {

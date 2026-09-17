@@ -32,9 +32,21 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
 
 ## The first credentials
 
-Authentication is on by default, so the API answers `401` until a token
-exists. Rather than `kubectl exec` into the pod, hand the chart a secret and
-bindizr creates a global token with it on the first start that finds none:
+Authentication is on by default, so the API answers `401` until a token exists.
+The chart generates one at install and bindizr creates a global token with it
+on the first start that finds none. The install notes print how to read it
+back:
+
+```bash
+$ kubectl exec deploy/bindizr-bindizr-chart -c bindizr -- \
+  bindizr config get api.authentication.initial_token
+
+$ kubectl get secret bindizr-bindizr-chart-initial-token \
+  -o jsonpath='{.data.api-token}' | base64 -d
+```
+
+Upgrades reuse the Secret, so the token survives them. To choose the token
+yourself, hand the chart one instead:
 
 ```bash
 $ kubectl create secret generic bindizr-initial-token --from-literal=api-token="$(openssl rand -hex 24)"
@@ -44,10 +56,17 @@ $ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --set bindizr.api.authentication.initialToken.existingSecret=bindizr-initial-token
 ```
 
+Name a Secret wherever the manifests are rendered with no cluster behind them —
+`helm template`, Argo CD — since there is nothing to reuse there and every
+render would otherwise carry a different token. Setting
+`bindizr.api.authentication.initialToken.enabled=false` leaves the first token
+to `bindizr token create` in the pod instead.
+
 It seeds rather than resets: once any token exists, later starts ignore it.
 Rotate by creating a normal token and deleting `initial`.
 
-nsupdate takes the same shape. A cluster whose clients sign RFC 2136 updates —
+nsupdate seeds the same way, except that nothing is generated for it. A
+cluster whose clients sign RFC 2136 updates —
 cert-manager's DNS-01 solver, a DHCP server — needs a TSIG key before any of
 them can write, and `bindizr.dns.nsupdate.initialKey` seeds one:
 
