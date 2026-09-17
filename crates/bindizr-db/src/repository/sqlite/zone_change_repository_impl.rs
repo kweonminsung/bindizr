@@ -29,8 +29,9 @@ impl ZoneChangeRepository for SqliteZoneChangeRepository {
     ) -> Result<(), DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // 11 columns per row; keep bind count under SQLite's conservative limit.
-        const CHUNK: usize = 90;
+        // One journal row per record, so size it like the record insert:
+        // 11 binds per row, leaving room under SQLite's 32766 limit.
+        const CHUNK: usize = 400;
         const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         for chunk in changes.chunks(CHUNK) {
             let mut sql = String::from(

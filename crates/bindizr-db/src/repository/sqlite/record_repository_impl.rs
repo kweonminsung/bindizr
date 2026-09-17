@@ -67,8 +67,9 @@ impl RecordRepository for SqliteRecordRepository {
     ) -> Result<Vec<Record>, DatabaseError> {
         let sqlite_tx = tx.as_sqlite()?;
 
-        // 8 binds per row; stays under SQLite's conservative 999-bind limit.
-        const CHUNK: usize = 124;
+        // Statement count drives bulk-insert time, but the gain flattens by ~500
+        // rows; 8 binds per row leaves room under SQLite's 32766 limit.
+        const CHUNK: usize = 500;
         let mut out = Vec::with_capacity(records.len());
         for chunk in records.chunks(CHUNK) {
             let mut sql = String::from(

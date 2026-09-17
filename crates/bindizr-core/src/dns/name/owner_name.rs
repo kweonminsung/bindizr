@@ -254,7 +254,8 @@ fn decode_label(label: Vec<u8>) -> Result<String, ParseNameError> {
     if !label.is_ascii() {
         return Err(ParseNameError::NonAscii);
     }
-    let mut label: String = label.into_iter().map(char::from).collect();
+    // ASCII is valid UTF-8, so this reuses the buffer rather than copying it.
+    let mut label = String::from_utf8(label).map_err(|_| ParseNameError::NonAscii)?;
     label.make_ascii_lowercase();
     Ok(label)
 }
