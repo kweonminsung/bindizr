@@ -112,7 +112,7 @@ Example:
 pub async fn execute() {
     let args = Args::parse();
 
-    if let Err(e) = match args.command {
+    let result = match args.command {
         Command::Start { config } => daemon::bootstrap(config.as_deref())
             .await
             .map_err(error::CliError::from),
@@ -133,7 +133,19 @@ pub async fn execute() {
         Command::Dnssec { subcommand } => commands::dnssec::handle_command(subcommand).await,
         Command::Completion { shell } => commands::completion::handle_command(shell),
         Command::Man => commands::completion::handle_man_command(),
-    } {
+    };
+
+    // Lost output must not read as success; a reader that stopped early is
+    // not lost output.
+    let result = result.and_then(|()| match bindizr_core::stream::write_failure() {
+        Some(failure) => Err(error::CliError::from(format!(
+            "output was lost: {}",
+            failure
+        ))),
+        None => Ok(()),
+    });
+
+    if let Err(e) = result {
         errln!("Error: {}", e.message);
         if let Some(hint) = e.hint() {
             errln!("Hint: {}", hint);
