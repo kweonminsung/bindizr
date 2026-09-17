@@ -133,7 +133,7 @@ pub(crate) async fn delete_tsig_grant(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DeleteTsigGrantParams = parse_params(data)?;
 
-    TsigGrantService::revoke(&Caller::Global, &params.key_name, params.id).await?;
+    TsigGrantService::revoke_by_id(&Caller::Global, params.id).await?;
 
     Ok(DaemonResponse {
         message: "TSIG grant revoked successfully".to_string(),

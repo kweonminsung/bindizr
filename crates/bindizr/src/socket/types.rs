@@ -129,7 +129,6 @@ pub(crate) struct CreateTsigGrantParams {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DeleteTsigGrantParams {
-    pub(crate) key_name: String,
     pub(crate) id: i32,
 }
 
@@ -142,7 +141,6 @@ pub(crate) struct CreateTokenGrantParams {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DeleteTokenGrantParams {
-    pub(crate) token_name: String,
     pub(crate) id: i32,
 }
 

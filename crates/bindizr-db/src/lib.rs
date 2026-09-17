@@ -49,8 +49,13 @@ pub async fn initialize() -> Result<(), DatabaseError> {
     let database_url = match database_type {
         DatabaseType::MySQL => bindizr_config.database.mysql.url.clone(),
         DatabaseType::PostgreSQL => bindizr_config.database.postgresql.url.clone(),
-        DatabaseType::SQLite => utils::to_sqlite_url(&bindizr_config.database.sqlite.file_path)
-            .map_err(DatabaseError::PoolError)?,
+        DatabaseType::SQLite => {
+            // The file is created on a clean install, so its directory is too.
+            utils::create_parent_dir(&bindizr_config.database.sqlite.file_path)
+                .map_err(DatabaseError::PoolError)?;
+            utils::to_sqlite_url(&bindizr_config.database.sqlite.file_path)
+                .map_err(DatabaseError::PoolError)?
+        }
     };
 
     let pool = match database_type {

@@ -25,12 +25,12 @@ pub(crate) enum RecordCommand {
     /// Create a record
     #[command(after_help = "\
 Examples:
-  bindizr record create -z example.com --name www --type A --value 192.0.2.1
-  bindizr record create -z example.com --name @ --type MX --priority 10 --value mail.example.com
-  bindizr record create -z example.com --name @ --type TXT --value v=spf1 --value ~all")]
+  bindizr record create www -z example.com --type A --value 192.0.2.1
+  bindizr record create @ -z example.com --type MX --priority 10 --value mail.example.com
+  bindizr record create @ -z example.com --type TXT --value v=spf1 --value ~all")]
     Create {
-        /// Record name
-        #[arg(long, value_name = "RECORD_NAME")]
+        /// Owner name relative to the zone, or '@' for the apex
+        #[arg(value_name = "RECORD_NAME")]
         name: String,
         /// Record type (A, AAAA, CNAME, MX, etc.)
         #[arg(long = "type", alias = "record-type")]
@@ -176,41 +176,44 @@ YAML example:
         output: OutputFormat,
     },
 
-    /// Delete a record
-    #[command(alias = "rm")]
-    Delete {
-        /// The record ID
-        #[arg(value_name = "RECORD_ID")]
-        id: i32,
-    },
+    /// Delete one record by ID, or every record at a name
+    #[command(
+        alias = "rm",
+        after_help = "\
+Examples:
+  bindizr record delete 42
+  bindizr record delete -z example.com --name www
+  bindizr record delete -z example.com --name www --type A --dry-run
 
-    /// Delete every record at a name in one change
-    #[command(after_help = "\
-Narrowing follows RFC 2136, Section 2.5.2:
+Deleting by name narrows as RFC 2136, Section 2.5.2 does:
   --name only                 every record type at the name
   --name --type               every record of that type at the name
   --name --type --value       one record
 
 The whole set goes in one transaction, so the zone advances by a single
-serial and the secondaries transfer once.")]
-    DeleteMatching {
+serial and the secondaries transfer once."
+    )]
+    Delete {
+        /// The record ID; omit it to delete by name with --zone and --name
+        #[arg(value_name = "RECORD_ID", required_unless_present = "name")]
+        id: Option<i32>,
         /// Zone the records belong to
-        #[arg(long)]
-        zone: String,
+        #[arg(short, long, value_name = "ZONE_NAME", requires = "name")]
+        zone: Option<String>,
         /// Owner name relative to the zone, or '@' for the apex
-        #[arg(long)]
-        name: String,
+        #[arg(long, conflicts_with = "id", requires = "zone")]
+        name: Option<String>,
         /// Narrow to one record type
-        #[arg(long = "type")]
+        #[arg(long = "type", requires = "name")]
         record_type: Option<String>,
         /// Narrow to one value (requires --type)
-        #[arg(long)]
+        #[arg(long, requires = "record_type")]
         value: Option<String>,
         /// Narrow to one MX/SRV priority
-        #[arg(long)]
+        #[arg(long, requires = "name")]
         priority: Option<i32>,
         /// Report what would go without removing anything
-        #[arg(long)]
+        #[arg(long, requires = "name")]
         dry_run: bool,
     },
 }
@@ -389,19 +392,21 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 vec![RecordRow::from(&response.record)]
             })?;
         }
-        RecordCommand::Delete { id } => {
+        // clap holds the two selectors apart.
+        RecordCommand::Delete { id: Some(id), .. } => {
             let response =
                 client::send_command(DaemonCommandKind::DeleteRecord, RecordIdParams { id })
                     .await?;
             println!("{}", response.message);
         }
-        RecordCommand::DeleteMatching {
-            zone,
-            name,
+        RecordCommand::Delete {
+            zone: Some(zone),
+            name: Some(name),
             record_type,
             value,
             priority,
             dry_run,
+            ..
         } => {
             let response = client::send_command(
                 DaemonCommandKind::DeleteRecordsMatching,
@@ -416,6 +421,11 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             )
             .await?;
             println!("{}", response.message);
+        }
+        RecordCommand::Delete { .. } => {
+            return Err(CliError::from(
+                "give a record ID, or --zone and --name to delete by name",
+            ));
         }
     }
 

@@ -101,9 +101,10 @@ statements.
 
 Import the records first, then decide between two paths:
 
-- **Re-sign with bindizr's own keys.** `bindizr dnssec enable example.com`
-  generates fresh keys, and the parent's DS has to be replaced with the new
-  one before the old keys stop being published.
+- **Re-sign with bindizr's own keys.** `bindizr dnssec enable example.com
+  --parent-ns-addrs <parent nameservers>` generates fresh keys, and the
+  parent's DS has to be replaced with the new one before the old keys stop
+  being published.
 - **Keep the existing keys.** Import them in BIND's `K*.key` / `K*.private`
   form with `bindizr dnssec keys import`, and the chain of trust at the parent
   stays valid across the move.

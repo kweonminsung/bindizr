@@ -107,9 +107,6 @@ Examples:
     },
     /// Revoke one of a key's grants by grant ID
     Revoke {
-        /// Name of the key
-        #[arg(value_name = "KEY_NAME")]
-        name: String,
         /// ID of the grant to revoke (see `tsig-key grants`)
         #[arg(value_name = "GRANT_ID")]
         id: i32,
@@ -227,10 +224,10 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 },
             )?;
         }
-        TsigKeyCommand::Revoke { name, id } => {
+        TsigKeyCommand::Revoke { id } => {
             let res = client::send_command(
                 DaemonCommandKind::DeleteTsigGrant,
-                DeleteTsigGrantParams { key_name: name, id },
+                DeleteTsigGrantParams { id },
             )
             .await?;
             println!("{}", res.message);

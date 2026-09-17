@@ -17,14 +17,15 @@ use crate::{
         error::CliError,
         output::{
             ImportSummaryRow, OutputFormat, SecondaryStatusRow, TokenGrantRow, TsigGrantRow,
-            ZoneRow, parse_response, print_response, print_table, render_change_preview,
+            ZoneRow, parse_response, print_payload, print_response, print_table,
+            render_change_preview,
         },
     },
     socket::{
         client,
         types::{
-            DaemonCommandKind, ExportZoneFileParams, ImportZoneParams, NotifyZoneParams,
-            UpdateZoneParams, ZoneNameParams,
+            DaemonCommandKind, ExportZoneFileParams, ImportZoneParams, NotifyAllZonesParams,
+            NotifyZoneParams, UpdateZoneParams, ZoneNameParams,
         },
     },
 };
@@ -255,9 +256,17 @@ TTLs are decimal seconds (RFC 1035). A file using BIND's unit suffixes
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
 
-    /// Send NOTIFY messages to secondary servers for a zone
+    /// Send NOTIFY messages to secondary servers for a zone, or for every zone
+    #[command(after_help = "\
+Examples:
+  bindizr zone notify example.com
+  bindizr zone notify                 # every zone
+  bindizr zone notify --bump-serial   # every zone, transferring even where nothing changed")]
     Notify(NotifyArgs),
 
     /// List the API token grants that apply to a zone
@@ -314,9 +323,9 @@ impl From<ImportMode> for ServiceImportMode {
 /// Arguments for the `zone notify` subcommand.
 #[derive(Args, Debug)]
 pub(crate) struct NotifyArgs {
-    /// The name of the zone
+    /// The name of the zone; omit it to notify every zone
     #[arg(value_name = "ZONE_NAME")]
-    name: String,
+    name: Option<String>,
 
     /// Bump the serial first, so secondaries transfer even when nothing
     /// changed
@@ -534,17 +543,12 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             .await?;
 
             let import: ImportZoneResponse = parse_response(&response.data)?;
-            // Errors go to stderr so a shell pipeline keeps the summary clean.
-            if import.errors.is_empty() {
-                println!("{}", response.message);
-            } else {
-                eprintln!("{}", response.message);
-                for error in &import.errors {
-                    eprintln!("  - {}", error);
-                }
-            }
+            println!("{}", response.message);
 
-            // Also stderr: a warning about the zone, not part of the summary.
+            // Diagnostics go to stderr, so a pipeline keeps the summary clean.
+            for error in &import.errors {
+                eprintln!("  - {}", error);
+            }
             for skipped in &import.skipped_records {
                 eprintln!("  ~ {}", skipped);
             }
@@ -555,11 +559,15 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             }
         }
         ZoneCommand::Version { subcommand } => version::handle_command(subcommand).await?,
-        ZoneCommand::Status { name } => {
+        ZoneCommand::Status { name, output } => {
             let response =
                 client::send_command(DaemonCommandKind::GetZoneStatus, ZoneNameParams { name })
                     .await?;
 
+            if output != OutputFormat::Table {
+                print_payload(&response.data, output)?;
+                return Ok(());
+            }
             let status: ZoneStatusResponse = parse_response(&response.data)?;
             println!("Zone {} (serial {})", status.zone, status.serial);
             if status.secondaries.is_empty() {
@@ -597,14 +605,28 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             )?;
         }
         ZoneCommand::Notify(args) => {
-            let response = client::send_command(
-                DaemonCommandKind::NotifyZone,
-                NotifyZoneParams {
-                    zone_name: args.name,
-                    bump_serial: args.bump_serial,
-                },
-            )
-            .await?;
+            // The daemon has a command for each.
+            let response = match args.name {
+                Some(zone_name) => {
+                    client::send_command(
+                        DaemonCommandKind::NotifyZone,
+                        NotifyZoneParams {
+                            zone_name,
+                            bump_serial: args.bump_serial,
+                        },
+                    )
+                    .await?
+                }
+                None => {
+                    client::send_command(
+                        DaemonCommandKind::NotifyAllZones,
+                        NotifyAllZonesParams {
+                            bump_serial: args.bump_serial,
+                        },
+                    )
+                    .await?
+                }
+            };
             println!("{}", response.message);
         }
     }

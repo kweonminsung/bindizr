@@ -157,8 +157,8 @@ $ sudo systemctl restart named  # For Red Hat-based systems
 ## 4. Configure Bindizr options
 
 The package installs `/etc/bindizr/bindizr.conf.toml` ready to run: SQLite at
-`/var/lib/bindizr/bindizr.db` and zone transfers on port 5300, leaving 53 to
-BIND. For MySQL or PostgreSQL, set
+`/var/lib/bindizr/bindizr.db` (the file and its directory are created on the
+first start) and zone transfers on port 5300, leaving 53 to BIND. For MySQL or PostgreSQL, set
 `database.type` and that backend's `url`; see [Configuration](../configuration.md)
 for every option. The file is `0640 root:bindizr` because it carries database
 credentials and the service reads it as the `bindizr` user.
@@ -187,7 +187,7 @@ the fix for the common ones.
 
 ```bash
 $ sudo bindizr zone create example.com --mname ns1.example.com
-$ sudo bindizr record create --zone example.com --name www --type A --value 192.0.2.1
+$ sudo bindizr record create www --zone example.com --type A --value 192.0.2.1
 
 # BIND learned the zone through the catalog and pulled it; it answers on 53
 $ dig @127.0.0.1 www.example.com A +short

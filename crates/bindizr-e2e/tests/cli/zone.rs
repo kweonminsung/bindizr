@@ -265,7 +265,6 @@ async fn zone_export_via_cli() {
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
         "www",
         "--type",
         "A",
@@ -282,7 +281,6 @@ async fn zone_export_via_cli() {
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
         "nottl",
         "--type",
         "A",
@@ -408,7 +406,6 @@ async fn zone_versions_and_rollback_flow() {
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
         "www",
         "--type",
         "A",
@@ -422,7 +419,6 @@ async fn zone_versions_and_rollback_flow() {
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
         "extra",
         "--type",
         "A",

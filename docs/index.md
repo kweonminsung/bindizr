@@ -55,7 +55,7 @@ DNS Synchronization Service for BIND9
 
 - **Multiple Database Backends**: Store DNS data in MySQL, PostgreSQL, or SQLite.
 
-- **Zone Transfers (AXFR/IXFR)**: Serve full and incremental zone transfers to secondaries, with automatic SOA serial management and an optional per-serial zone cache.
+- **Zone Transfers (AXFR/IXFR)**: Serve full and incremental zone transfers to secondaries, with automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
 
 - **Automatic Zone Provisioning**: DNS Catalog Zones (RFC 9432) let BIND9 secondaries discover created and deleted zones without configuration changes.
 

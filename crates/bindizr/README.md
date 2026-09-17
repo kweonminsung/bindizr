@@ -114,7 +114,7 @@ bindizr zone import example.com db.example.com --mode upsert
 bindizr zone version list example.com
 bindizr zone version diff example.com 7
 bindizr zone version rollback example.com 7 --dry-run
-bindizr dnssec enable example.com
+bindizr dnssec enable example.com --parent-ns-addrs a.gtld-servers.net
 bindizr token grant ci example.com --types A,AAAA
 bindizr zone status example.com
 bindizr record list --zone example.com

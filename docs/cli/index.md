@@ -15,15 +15,17 @@ package install, or a shell inside the container for Compose and Helm.
 | Commands | What they manage | Documented in |
 |---|---|---|
 | `start`, `stop`, `restart`, `status`, `doctor`, `config` | The daemon and its configuration | this page |
-| `zone`, `record`, `notify` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | this page |
+| `completion`, `man` | The shell completion scripts and the man page | this page |
+| `zone`, `record` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | this page |
 | `token` | API tokens and the zones each is granted over HTTP | [API Tokens](tokens.md) |
 | `tsig-key` | TSIG keys and the zones each is granted for nsupdate | [TSIG Keys](tsig-keys.md), [Dynamic Updates](nsupdate.md) |
 | `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec.md) |
 
-Every `create`, `list`, `get`, and `update` command prints a table and takes
-`-o json` or `-o yaml`, whose payload is the same body the HTTP API returns;
-`delete` and the one-shot actions print a message.
-`zone export` and `dnssec keys export` print paste-ready text.
+Every command that reports something prints a table and takes `-o json` or
+`-o yaml`, whose payload is the same body the HTTP API returns; `delete` and
+the one-shot actions print a message. `zone export` and `dnssec keys export`
+print paste-ready text. A command's result goes to stdout and its diagnostics
+to stderr, so a pipeline keeps the result clean.
 
 ## Service
 
@@ -97,13 +99,18 @@ $ bindizr zone list --enabled false
 $ bindizr zone update example.com --enabled true
 
 # Create, list, inspect, and delete records (TTL defaults to the zone's; one TTL per name and type)
-$ bindizr record create --zone example.com --name www --type A --value 192.0.2.1 --ttl 300
-$ bindizr record create --zone example.com --name @ --type TXT --value v=spf1 --value ~all  # repeat --value for TXT segments
+$ bindizr record create www --zone example.com --type A --value 192.0.2.1 --ttl 300
+$ bindizr record create @ --zone example.com --type TXT --value v=spf1 --value ~all  # repeat --value for TXT segments
 $ bindizr record list --zone example.com
 $ bindizr record list --zone example.com --sort ttl --order desc
 $ bindizr zone list --min-serial 100 --signed --sort created_at
 $ bindizr record get <RECORD_ID>
 $ bindizr record delete <RECORD_ID>
+
+# Or delete by name: every type at the name, or narrowed by type and value
+# (--dry-run reports what would go). The whole set moves in one serial.
+$ bindizr record delete -z example.com --name www
+$ bindizr record delete -z example.com --name www --type A --dry-run
 
 # Update a record, changing only the fields you pass
 $ bindizr record update <RECORD_ID> --value 127.0.0.1
@@ -113,7 +120,7 @@ $ bindizr zone export example.com > db.example.com
 
 # Send NOTIFY to secondary DNS servers for a zone, or for every zone
 $ bindizr zone notify <ZONE_NAME>
-$ bindizr notify
+$ bindizr zone notify              # every zone
 
 # Check how far each secondary has caught up with a zone
 $ bindizr zone status <ZONE_NAME>

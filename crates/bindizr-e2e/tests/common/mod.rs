@@ -322,7 +322,7 @@ impl TestApp {
     async fn run_cli_with_input(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
         // Remember deleted names before the API can no longer return their identity.
         let previous_dns_key = match args {
-            ["record", "delete", record_id, ..] => {
+            ["record", "delete", record_id, ..] if record_id.parse::<i32>().is_ok() => {
                 self.read_previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
                     .await
             }

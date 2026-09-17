@@ -32,7 +32,7 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 
 - **Zone and Record Management** — full CRUD through the HTTP API or CLI, including bulk inserts, BIND master-file import/export, and dry-run diff previews.
 - **Multiple Database Backends** — MySQL, PostgreSQL, or SQLite.
-- **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and an optional per-serial zone cache.
+- **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 - **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone grants.
@@ -46,8 +46,8 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 - **Per-zone ACLs** — transfer and SOA access is one server-wide list today.
   Scoping it per zone lets one deployment serve secondaries that each hold
   part of the catalog.
-- **Secondaries managed at runtime** — the secondary list is a config field, so
-  adding one takes a restart. Moving it into the database puts it behind the
+- **Secondaries managed at runtime** — the secondary list is a config field,
+  reloadable but still a file. Moving it into the database puts it behind the
   API and CLI, like zones, tokens, and signing policies already are.
 
 ## Quick Start

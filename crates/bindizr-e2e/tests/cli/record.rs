@@ -16,7 +16,6 @@ async fn record_create_read_delete() {
         .run_cli_success(&[
             "record",
             "create",
-            "--name",
             "www",
             "--type",
             "A",
@@ -113,7 +112,6 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
         "svc",
         "--type",
         "MX",
@@ -173,7 +171,6 @@ async fn record_update_retype_without_value_is_rejected_via_cli() {
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
         "www",
         "--type",
         "A",
@@ -212,7 +209,6 @@ async fn record_update_changes_only_passed_fields_via_cli() {
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
         "www",
         "--type",
         "A",
@@ -275,7 +271,6 @@ async fn record_filter_by_zone_and_type() {
         app.run_cli_success(&[
             "record",
             "create",
-            "--name",
             name,
             "--type",
             record_type,
@@ -316,7 +311,6 @@ async fn record_reject_invalid_values() {
         let args = [
             "record",
             "create",
-            "--name",
             "invalid",
             "--type",
             record_type,
@@ -420,8 +414,8 @@ async fn record_create_txt_segments_from_repeated_value() {
 
     let created = app
         .run_cli_success(&[
-            "record", "create", "--zone", &zone_name, "--name", "spf", "--type", "TXT", "--value",
-            "v=spf1", "--value", "~all", "--output", "json",
+            "record", "create", "spf", "--zone", &zone_name, "--type", "TXT", "--value", "v=spf1",
+            "--value", "~all", "--output", "json",
         ])
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
@@ -445,4 +439,63 @@ async fn record_create_txt_segments_from_repeated_value() {
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
     assert_eq!(updated["record"]["value"], "v=spf1 ~all");
+}
+
+/// Verify that `record delete` takes a name instead of an ID, narrowing by type.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_delete_by_name_narrows_by_type() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("delete-by-name.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    for (record_type, value) in [("A", "192.0.2.1"), ("TXT", "hello")] {
+        app.run_cli_success(&[
+            "record",
+            "create",
+            "www",
+            "--zone",
+            &zone_name,
+            "--type",
+            record_type,
+            "--value",
+            value,
+        ])
+        .await;
+    }
+
+    // A dry run reports the count and leaves both records in place.
+    let preview = app
+        .run_cli_success(&[
+            "record",
+            "delete",
+            "-z",
+            &zone_name,
+            "--name",
+            "www",
+            "--dry-run",
+        ])
+        .await;
+    assert!(preview.contains("would be deleted"), "{preview}");
+
+    // Narrowed to one type, so the TXT record stays.
+    let deleted = app
+        .run_cli_success(&[
+            "record", "delete", "-z", &zone_name, "--name", "www", "--type", "A",
+        ])
+        .await;
+    assert!(deleted.contains("1 record(s) deleted"), "{deleted}");
+
+    let listed = app
+        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .await;
+    let listed: serde_json::Value =
+        serde_json::from_str(&listed).expect("record list did not print JSON");
+    let types: Vec<&str> = listed["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|record| record["record_type"].as_str().expect("record_type"))
+        .collect();
+    assert!(types.contains(&"TXT"), "{types:?}");
+    assert!(!types.contains(&"A"), "{types:?}");
 }

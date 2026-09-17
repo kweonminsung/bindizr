@@ -89,9 +89,6 @@ Examples:
     },
     /// Revoke one of a token's grants by grant ID
     Revoke {
-        /// Name of the token
-        #[arg(value_name = "TOKEN_NAME")]
-        name: String,
         /// ID of the grant to revoke (see `token grants`)
         #[arg(value_name = "GRANT_ID")]
         id: i32,
@@ -184,13 +181,10 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 },
             )?;
         }
-        TokenCommand::Revoke { name, id } => {
+        TokenCommand::Revoke { id } => {
             let res = client::send_command(
                 DaemonCommandKind::DeleteTokenGrant,
-                DeleteTokenGrantParams {
-                    token_name: name,
-                    id,
-                },
+                DeleteTokenGrantParams { id },
             )
             .await?;
             println!("{}", res.message);

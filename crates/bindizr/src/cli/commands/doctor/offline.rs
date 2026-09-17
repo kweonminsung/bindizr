@@ -31,7 +31,7 @@ pub(crate) async fn check_database(config: &BindizrConfig, report: &mut Report) 
         }
         if !file_path.exists() {
             report.skip(format!(
-                "Database check skipped: SQLite file '{}' is created on first start",
+                "Database check skipped: SQLite file '{}' is created on first start, with its directory",
                 database.sqlite.file_path
             ));
             return;

@@ -333,6 +333,7 @@ dependencies = [
  "chrono",
  "log",
  "sqlx",
+ "tempfile",
  "thiserror",
  "tokio",
 ]

@@ -168,4 +168,15 @@ impl TokenGrantService {
 
         RepositoryService::delete_token_grant(grant.id).await
     }
+
+    /// Revoke a grant by its id, which identifies the row on its own.
+    pub async fn revoke_by_id(caller: &Caller, grant_id: i32) -> Result<(), ServiceError> {
+        caller.require_global("manage token grants")?;
+
+        let grant = RepositoryService::get_token_grant(grant_id)
+            .await?
+            .ok_or_else(|| ServiceError::token_grant_not_found(grant_id))?;
+
+        RepositoryService::delete_token_grant(grant.id).await
+    }
 }

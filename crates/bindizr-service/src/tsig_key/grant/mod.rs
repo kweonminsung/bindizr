@@ -178,6 +178,17 @@ impl TsigGrantService {
 
         RepositoryService::delete_tsig_grant(grant.id).await
     }
+
+    /// Revoke a grant by its id, which identifies the row on its own.
+    pub async fn revoke_by_id(caller: &Caller, grant_id: i32) -> Result<(), ServiceError> {
+        caller.require_global("manage TSIG keys and grants")?;
+
+        let grant = RepositoryService::get_tsig_grant(grant_id)
+            .await?
+            .ok_or_else(|| ServiceError::tsig_grant_not_found(grant_id))?;
+
+        RepositoryService::delete_tsig_grant(grant.id).await
+    }
 }
 
 /// Whether any grant authorizes an update of `record_type` at the relative

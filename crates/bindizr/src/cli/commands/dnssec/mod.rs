@@ -84,6 +84,9 @@ pub(crate) enum DnssecCommand {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
+        /// Output format (json, yaml, table)
+        #[arg(short, long, default_value = "table")]
+        output: OutputFormat,
     },
     /// Show a zone's DNSSEC status (policy, keys, DS records, signature expiry)
     Status {
@@ -183,11 +186,14 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
             .await?;
             print_status(&response.data)?;
         }
-        DnssecCommand::CheckDs { name } => {
+        DnssecCommand::CheckDs { name, output } => {
             let response =
                 client::send_command(DaemonCommandKind::CheckDnssecDs, ZoneNameParams { name })
                     .await?;
-            print_status(&response.data)?;
+            match output {
+                OutputFormat::Table => print_status(&response.data)?,
+                _ => print_payload(&response.data, output)?,
+            }
         }
         DnssecCommand::Set {
             name,

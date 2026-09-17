@@ -22,7 +22,7 @@ is down. The tables below pair the messages you will meet with what to do.
 | --- | --- | --- |
 | `BIND catalog zone not configured` | doctor | Run `/usr/share/bindizr/setup_bind.sh [host] [port]`, check with `named-checkconf`, and restart BIND. |
 | `BIND fetches the catalog from port N but bindizr listens on M` | doctor | Rerun `setup_bind.sh` with bindizr's `dns.listen_port`. |
-| BIND never picks up a new zone | `bindizr zone status`, BIND's log | BIND learns zones from `catalog.bind`. Check doctor's BIND line, then BIND's log for the catalog transfer; `bindizr notify` resends NOTIFY for every zone. |
+| BIND never picks up a new zone | `bindizr zone status`, BIND's log | BIND learns zones from `catalog.bind`. Check doctor's BIND line, then BIND's log for the catalog transfer; `bindizr zone notify` resends NOTIFY for every zone. |
 | `Secondary unreachable` | doctor, `zone status` | The address in `dns.secondary_addrs` is wrong, or a firewall sits between bindizr and the secondary. |
 | `Secondary out of sync` | doctor, `zone status` | The secondary has not pulled the current serial. BIND's log names the reason it refused or deferred the transfer. |
 | `NOTIFY rejected` | doctor | BIND's `allow-notify` does not admit bindizr's address; the setup script adds `allow-notify { any; }`. |

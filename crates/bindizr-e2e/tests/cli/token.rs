@@ -60,14 +60,12 @@ async fn token_grant_grants_revoke() {
     let refused = app.run_cli(&grant_args).await;
     assert_cli_failure_contains(&grant_args, &refused, "is global");
 
-    // A grant id is only reachable under the token that holds it.
-    let revoke_args = ["token", "revoke", &global_name, &grant_id];
+    // An unknown id is not found; the grant id alone names the row.
+    let revoke_args = ["token", "revoke", "999999"];
     let refused = app.run_cli(&revoke_args).await;
     assert_cli_failure_contains(&revoke_args, &refused, "not found");
 
-    let revoked = app
-        .run_cli_success(&["token", "revoke", &scoped_name, &grant_id])
-        .await;
+    let revoked = app.run_cli_success(&["token", "revoke", &grant_id]).await;
     assert!(
         revoked.contains("Token grant revoked successfully"),
         "{revoked}"

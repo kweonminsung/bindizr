@@ -124,7 +124,7 @@ pub(crate) async fn delete_token_grant(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DeleteTokenGrantParams = parse_params(data)?;
 
-    TokenGrantService::revoke(&Caller::Global, &params.token_name, params.id).await?;
+    TokenGrantService::revoke_by_id(&Caller::Global, params.id).await?;
 
     Ok(DaemonResponse {
         message: "Token grant revoked successfully".to_string(),

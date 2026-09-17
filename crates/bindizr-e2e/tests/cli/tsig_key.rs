@@ -94,7 +94,7 @@ async fn tsig_key_grant_grants_revoke() {
     assert_cli_failure_contains(&delete_args, &refused, "still holds 1 grant");
 
     let revoked = app
-        .run_cli_success(&["tsig-key", "revoke", "cli-grant-key", &grant_id])
+        .run_cli_success(&["tsig-key", "revoke", &grant_id])
         .await;
     assert!(
         revoked.contains("TSIG grant revoked successfully"),
