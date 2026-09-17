@@ -1,3 +1,4 @@
+use bindizr_core::outln;
 use bindizr_service::types::{
     CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, PaginatedResponse,
     UpdateDnssecPolicyRequest,
@@ -183,7 +184,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             log::debug!("DNSSEC policy deletion result: {:?}", res);
 
-            println!("{}", res.message);
+            outln!("{}", res.message);
         }
     }
 

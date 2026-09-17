@@ -8,7 +8,7 @@ mod offline;
 
 use std::fmt;
 
-use bindizr_core::config;
+use bindizr_core::{config, outln};
 use serde::Serialize;
 
 use crate::{
@@ -77,7 +77,7 @@ impl Report {
                 CheckStatus::Fail => color::red("FAIL"),
                 CheckStatus::Skip => color::yellow("SKIP"),
             };
-            println!("[{}] {}", label, message);
+            outln!("[{}] {}", label, message);
         }
         self.checks.push(Check { status, message });
     }
@@ -89,8 +89,8 @@ pub(crate) async fn handle_command(
     format: OutputFormat,
 ) -> Result<(), CliError> {
     if format == OutputFormat::Table {
-        println!("Bindizr Doctor");
-        println!();
+        outln!("Bindizr Doctor");
+        outln!();
     }
 
     let mut report = Report {
@@ -130,9 +130,9 @@ pub(crate) async fn handle_command(
     );
 
     if format == OutputFormat::Table {
-        println!();
+        outln!();
         if report.failures == 0 {
-            println!("Result: installation looks {}", color::green("healthy"));
+            outln!("Result: installation looks {}", color::green("healthy"));
         }
     } else {
         let document = DoctorReport {

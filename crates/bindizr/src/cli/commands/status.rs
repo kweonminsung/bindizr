@@ -1,5 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use bindizr_core::outln;
+
 use crate::{
     cli::{error::CliError, output::color},
     socket::client,
@@ -9,17 +11,17 @@ use crate::{
 pub(crate) async fn handle_command() -> Result<(), CliError> {
     let status = client::fetch_status().await?;
 
-    println!("=== BINDIZR STATUS ===");
-    println!("Status: {}", color::green("Running"));
+    outln!("=== BINDIZR STATUS ===");
+    outln!("Status: {}", color::green("Running"));
     let pid = match status.pid {
         Some(pid) => pid.to_string(),
         None => "Unknown".to_string(),
     };
-    println!("PID: {}", pid);
-    println!("Version: {}", status.version);
-    println!("Uptime: {}", display_uptime(status.started_at_ms));
-    println!();
-    println!(
+    outln!("PID: {}", pid);
+    outln!("Version: {}", status.version);
+    outln!("Uptime: {}", display_uptime(status.started_at_ms));
+    outln!();
+    outln!(
         "API: {} (authentication {})",
         status.api_url,
         if status.api_authentication {
@@ -28,14 +30,14 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
             "off"
         }
     );
-    println!("DNS: {}", status.dns_addr);
+    outln!("DNS: {}", status.dns_addr);
     match (&status.database_error, status.zones) {
-        (Some(e), _) => println!("Database: {} ({})", status.database_type, color::red(e)),
-        (None, Some(1)) => println!("Database: {} (1 zone)", status.database_type),
-        (None, Some(zones)) => println!("Database: {} ({} zones)", status.database_type, zones),
-        (None, None) => println!("Database: {}", status.database_type),
+        (Some(e), _) => outln!("Database: {} ({})", status.database_type, color::red(e)),
+        (None, Some(1)) => outln!("Database: {} (1 zone)", status.database_type),
+        (None, Some(zones)) => outln!("Database: {} ({} zones)", status.database_type, zones),
+        (None, None) => outln!("Database: {}", status.database_type),
     }
-    println!("Secondaries: {} configured", status.secondaries);
+    outln!("Secondaries: {} configured", status.secondaries);
     Ok(())
 }
 

@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use bindizr_core::outln;
+
 use crate::{
     cli::error::CliError,
     socket::{client, types::DaemonCommandKind},
@@ -11,7 +13,7 @@ const STOP_DEADLINE: Duration = Duration::from_secs(10);
 /// socket stops answering.
 pub(crate) async fn handle_command() -> Result<(), CliError> {
     let res = client::send_control_command(DaemonCommandKind::Shutdown).await?;
-    println!("{}", res.message);
+    outln!("{}", res.message);
 
     let stopped = super::poll_with_deadline(STOP_DEADLINE, async || {
         client::is_daemon_socket_gone().await.then_some(())
@@ -20,7 +22,7 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
 
     match stopped {
         Some(()) => {
-            println!("Bindizr stopped.");
+            outln!("Bindizr stopped.");
             Ok(())
         }
         None => Err(CliError::from(format!(

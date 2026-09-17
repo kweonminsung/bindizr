@@ -43,8 +43,9 @@ $ curl -H "Authorization: Bearer $TOKEN" \
     'http://localhost:3000/tokens?limit=20&offset=40'
 ```
 
-The CLI reads whole tables instead: it talks to the daemon over its local
-socket, which applies no page limit.
+The CLI takes the same `--limit` and `--offset`, and pages at 1000 rather
+than 50 when neither is given. A table that did not fit says so on its last
+line: `Showing 1000 of 2001; page the rest with --limit and --offset.`
 
 `/zones` and `/records` also take `sort` and `order`. The row id follows the
 sort column, so paging stays stable even where the column has ties.

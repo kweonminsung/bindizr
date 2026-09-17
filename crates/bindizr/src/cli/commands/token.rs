@@ -1,3 +1,4 @@
+use bindizr_core::outln;
 use bindizr_service::types::{
     CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
     GetTokenResponse, PaginatedResponse, TokenGrantResponse,
@@ -142,7 +143,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
 
             log::debug!("Token deletion result: {:?}", res);
 
-            println!("{}", res.message);
+            outln!("{}", res.message);
         }
         TokenCommand::Grant {
             name,
@@ -187,7 +188,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 DeleteTokenGrantParams { id },
             )
             .await?;
-            println!("{}", res.message);
+            outln!("{}", res.message);
         }
     }
 

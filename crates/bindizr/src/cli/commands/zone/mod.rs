@@ -3,6 +3,7 @@
 
 mod version;
 
+use bindizr_core::{errln, out, outln};
 use bindizr_service::types::{
     CreateZoneRequest, ExportZoneFileResponse, GetTokenGrantResponse, GetTsigGrantResponse,
     GetZoneResponse, GetZonesFilter, ImportMode as ServiceImportMode, ImportZoneRequest,
@@ -504,7 +505,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response =
                 client::send_command(DaemonCommandKind::DeleteZone, ZoneNameParams { name })
                     .await?;
-            println!("{}", response.message);
+            outln!("{}", response.message);
         }
         ZoneCommand::Export { name, signed } => {
             let data = client::send_command(
@@ -514,7 +515,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             .await?
             .data;
             let export: ExportZoneFileResponse = parse_response(&data)?;
-            print!("{}", export.zone_file);
+            out!("{}", export.zone_file);
         }
         ZoneCommand::Import {
             name,
@@ -543,19 +544,19 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             .await?;
 
             let import: ImportZoneResponse = parse_response(&response.data)?;
-            println!("{}", response.message);
+            outln!("{}", response.message);
 
             // Diagnostics go to stderr, so a pipeline keeps the summary clean.
             for error in &import.errors {
-                eprintln!("  - {}", error);
+                errln!("  - {}", error);
             }
             for skipped in &import.skipped_records {
-                eprintln!("  ~ {}", skipped);
+                errln!("  ~ {}", skipped);
             }
 
             print_table(vec![ImportSummaryRow::from(&import.summary)]);
             if dry_run {
-                print!("{}", render_change_preview(&import.diff));
+                out!("{}", render_change_preview(&import.diff));
             }
         }
         ZoneCommand::Version { subcommand } => version::handle_command(subcommand).await?,
@@ -569,9 +570,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 return Ok(());
             }
             let status: ZoneStatusResponse = parse_response(&response.data)?;
-            println!("Zone {} (serial {})", status.zone, status.serial);
+            outln!("Zone {} (serial {})", status.zone, status.serial);
             if status.secondaries.is_empty() {
-                println!("No secondaries configured.");
+                outln!("No secondaries configured.");
                 return Ok(());
             }
             print_table(SecondaryStatusRow::rows_from_status(&status));
@@ -627,7 +628,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     .await?
                 }
             };
-            println!("{}", response.message);
+            outln!("{}", response.message);
         }
     }
 

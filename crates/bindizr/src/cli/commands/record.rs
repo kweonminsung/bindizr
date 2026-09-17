@@ -1,3 +1,4 @@
+use bindizr_core::{out, outln};
 use bindizr_service::types::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
     GetRecordResponse, GetRecordsFilter, PaginatedResponse, RecordItem, RecordResponse,
@@ -347,9 +348,9 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             .await?;
 
             let bulk: BulkRecordsResponse = parse_response(&response.data)?;
-            println!("{}", response.message);
+            outln!("{}", response.message);
             if dry_run {
-                print!("{}", render_change_preview(&bulk.diff));
+                out!("{}", render_change_preview(&bulk.diff));
             } else {
                 print_table(bulk.records.iter().map(RecordRow::from).collect());
             }
@@ -397,7 +398,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let response =
                 client::send_command(DaemonCommandKind::DeleteRecord, RecordIdParams { id })
                     .await?;
-            println!("{}", response.message);
+            outln!("{}", response.message);
         }
         RecordCommand::Delete {
             zone: Some(zone),
@@ -420,7 +421,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 },
             )
             .await?;
-            println!("{}", response.message);
+            outln!("{}", response.message);
         }
         RecordCommand::Delete { .. } => {
             return Err(CliError::from(

@@ -1,3 +1,4 @@
+use bindizr_core::{errln, outln};
 use bindizr_service::types::{
     CreateTsigGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
     PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
@@ -139,7 +140,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             let created: TsigKeyResponse = parse_response(&res.data)?;
             // stderr, so `--output json` stays parseable.
             if created.tsig_key.global {
-                eprintln!("Warning: this key can update every zone without any grant.");
+                errln!("Warning: this key can update every zone without any grant.");
             }
             print_response(&res.data, output, |key: &TsigKeyResponse| {
                 vec![TsigKeyRow::from(key)]
@@ -183,7 +184,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
 
             log::debug!("TSIG key deletion result: {:?}", res);
 
-            println!("{}", res.message);
+            outln!("{}", res.message);
         }
         TsigKeyCommand::Grant {
             name,
@@ -230,7 +231,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 DeleteTsigGrantParams { id },
             )
             .await?;
-            println!("{}", res.message);
+            outln!("{}", res.message);
         }
     }
 
@@ -240,8 +241,8 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
 /// The `key` statement BIND, Knot and NSD all read a TSIG key from, so the
 /// secret reaches a secondary as something to paste rather than reformat.
 fn print_bind_key(key: &TsigKeyResponse) {
-    println!("key \"{}\" {{", key.tsig_key.name);
-    println!("    algorithm {};", key.tsig_key.algorithm);
-    println!("    secret \"{}\";", key.secret);
-    println!("}};");
+    outln!("key \"{}\" {{", key.tsig_key.name);
+    outln!("    algorithm {};", key.tsig_key.algorithm);
+    outln!("    secret \"{}\";", key.secret);
+    outln!("}};");
 }

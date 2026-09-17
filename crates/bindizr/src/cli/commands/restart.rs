@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use bindizr_core::outln;
+
 use crate::{
     cli::error::CliError,
     socket::{client, types::DaemonCommandKind},
@@ -13,7 +15,7 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
     let before = client::fetch_status().await?;
 
     let res = client::send_control_command(DaemonCommandKind::Restart).await?;
-    println!("{}", res.message);
+    outln!("{}", res.message);
 
     // exec keeps the PID, so a changed start time is the restart signal.
     let replaced =
@@ -30,9 +32,10 @@ pub(crate) async fn handle_command() -> Result<(), CliError> {
             let pid = status
                 .pid
                 .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
-            println!(
+            outln!(
                 "Bindizr restarted: pid {} (version {})",
-                pid, status.version
+                pid,
+                status.version
             );
             Ok(())
         }

@@ -57,8 +57,9 @@ impl log::Log for Logger {
                 format!("{} {}: {}", at, record.level(), record.args())
             };
 
-            // Stderr keeps logs out of the CLI's stdout.
-            eprintln!("{}", line);
+            // Stderr keeps logs out of the CLI's stdout; a reader that stops
+            // early must not panic the daemon.
+            crate::stream::write_stderr(&format!("{}\n", line));
         }
     }
 

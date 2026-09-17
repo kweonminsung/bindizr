@@ -1,5 +1,6 @@
 //! The `dnssec keys` subcommands: BIND key-file export and import.
 
+use bindizr_core::outln;
 use bindizr_service::types::{
     ExportDnssecKeysResponse, ImportDnssecKeyPair, ImportDnssecKeyRequest,
 };
@@ -113,9 +114,9 @@ fn print_key_material(exported: &ExportDnssecKeysResponse) {
         if dup > 0 {
             base.push_str(&format!(".{}", dup + 1));
         }
-        println!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
-        println!("{}", key.dnskey_record);
-        println!("; {}.private", base);
-        println!("{}", key.private_key.trim_end());
+        outln!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
+        outln!("{}", key.dnskey_record);
+        outln!("; {}.private", base);
+        outln!("{}", key.private_key.trim_end());
     }
 }

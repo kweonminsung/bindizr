@@ -1,4 +1,4 @@
-use bindizr_core::{config, config::BindizrConfig};
+use bindizr_core::{config, config::BindizrConfig, outln};
 use clap::Subcommand;
 
 use crate::{
@@ -45,18 +45,18 @@ pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliE
 /// Ask the daemon to reload its configuration.
 async fn reload_config() -> Result<(), CliError> {
     let response = client::send_command(DaemonCommandKind::ReloadConfig, ()).await?;
-    println!("{}", response.message);
+    outln!("{}", response.message);
     Ok(())
 }
 
 /// Validate the local configuration file.
 fn validate_config(file: Option<&str>) -> Result<(), CliError> {
     let path = config::resolve_config_path(file);
-    println!("Checking configuration file: {}", path);
+    outln!("Checking configuration file: {}", path);
 
     config::load_config_file(&path)?;
 
-    println!("Configuration is {}.", color::green("valid"));
+    outln!("Configuration is {}.", color::green("valid"));
     Ok(())
 }
 
@@ -79,13 +79,13 @@ async fn print_config_value(key: &str) -> Result<(), CliError> {
         .ok_or_else(|| format!("Unknown configuration key: {}", key))?;
 
     match found {
-        serde_json::Value::String(value) => println!("{}", value),
-        serde_json::Value::Object(_) => println!(
+        serde_json::Value::String(value) => outln!("{}", value),
+        serde_json::Value::Object(_) => outln!(
             "{}",
             serde_json::to_string_pretty(found)
                 .map_err(|e| format!("Failed to render configuration value: {}", e))?
         ),
-        value => println!("{}", value),
+        value => outln!("{}", value),
     }
     Ok(())
 }
@@ -100,7 +100,7 @@ fn print_config(config: &BindizrConfig) {
     print_value("openapi_enabled", config.api.openapi_enabled);
     print_optional("tls_cert_file", config.api.tls_cert_file.as_deref());
     print_optional("tls_key_file", config.api.tls_key_file.as_deref());
-    println!();
+    outln!();
 
     print_section("api.authentication");
     print_value("required", config.api.authentication.required);
@@ -108,23 +108,23 @@ fn print_config(config: &BindizrConfig) {
         "initial_token",
         config.api.authentication.initial_token.as_deref(),
     );
-    println!();
+    outln!();
 
     print_section("database");
     print_value("type", config.database.database_type);
-    println!();
+    outln!();
 
     print_section("database.mysql");
     print_value("url", &config.database.mysql.url);
-    println!();
+    outln!();
 
     print_section("database.sqlite");
     print_value("file_path", &config.database.sqlite.file_path);
-    println!();
+    outln!();
 
     print_section("database.postgresql");
     print_value("url", &config.database.postgresql.url);
-    println!();
+    outln!();
 
     print_section("dns");
     print_value("listen_addr", config.dns.listen_addr);
@@ -138,7 +138,7 @@ fn print_config(config: &BindizrConfig) {
         "scheduler_interval_secs",
         config.dns.scheduler_interval_secs,
     );
-    println!();
+    outln!();
 
     print_section("dns.nsupdate");
     print_value("tsig_required", config.dns.nsupdate.tsig_required);
@@ -147,7 +147,7 @@ fn print_config(config: &BindizrConfig) {
         print_value("initial_key.secret", &key.secret);
         print_optional("initial_key.algorithm", key.algorithm.as_deref());
     }
-    println!();
+    outln!();
 
     print_section("dns.notify");
     print_value("after_update", config.dns.notify.after_update);
@@ -155,12 +155,12 @@ fn print_config(config: &BindizrConfig) {
     print_value("batch_ms", config.dns.notify.batch_ms);
     print_value("retries", config.dns.notify.retries);
     print_value("timeout_secs", config.dns.notify.timeout_secs);
-    println!();
+    outln!();
 
     print_section("dns.transfer_cache");
     print_value("enabled", config.dns.transfer_cache.enabled);
     print_value("max_records", config.dns.transfer_cache.max_records);
-    println!();
+    outln!();
 
     print_section("dns.zone_defaults");
     print_value("ttl", config.dns.zone_defaults.ttl);
@@ -168,7 +168,7 @@ fn print_config(config: &BindizrConfig) {
     print_value("retry", config.dns.zone_defaults.retry);
     print_value("expire", config.dns.zone_defaults.expire);
     print_value("minimum_ttl", config.dns.zone_defaults.minimum_ttl);
-    println!();
+    outln!();
 
     print_section("logging");
     print_value("level", config.logging.level);
@@ -177,7 +177,7 @@ fn print_config(config: &BindizrConfig) {
 
 /// Print a configuration section heading.
 fn print_section(name: &str) {
-    println!("{}", color::cyan(&format!("[{}]", name)));
+    outln!("{}", color::cyan(&format!("[{}]", name)));
 }
 
 /// A value the configuration may leave out, shown as unset rather than absent
@@ -188,5 +188,5 @@ fn print_optional(key: &str, value: Option<&str>) {
 
 /// Print one configuration key and its value.
 fn print_value(key: &str, value: impl std::fmt::Display) {
-    println!("  {} = {}", color::yellow(&format!("{:<24}", key)), value);
+    outln!("  {} = {}", color::yellow(&format!("{:<24}", key)), value);
 }

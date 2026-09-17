@@ -6,6 +6,7 @@ mod commands;
 pub(crate) mod error;
 mod output;
 
+use bindizr_core::errln;
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 
@@ -133,9 +134,9 @@ pub async fn execute() {
         Command::Completion { shell } => commands::completion::handle_command(shell),
         Command::Man => commands::completion::handle_man_command(),
     } {
-        eprintln!("Error: {}", e.message);
+        errln!("Error: {}", e.message);
         if let Some(hint) = e.hint() {
-            eprintln!("Hint: {}", hint);
+            errln!("Hint: {}", hint);
         }
         std::process::exit(e.exit_code());
     }

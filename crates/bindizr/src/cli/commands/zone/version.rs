@@ -1,5 +1,6 @@
 //! The `zone version` subcommands: list, show, diff, and rollback.
 
+use bindizr_core::{out, outln};
 use bindizr_service::types::{
     PaginatedResponse, RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse,
     ZoneVersionResponse,
@@ -146,7 +147,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             .await?
             .data;
 
-            print!("{}", render_version_diff(&parse_response(&data)?));
+            out!("{}", render_version_diff(&parse_response(&data)?));
         }
         ZoneVersionCommand::Rollback {
             name,
@@ -164,7 +165,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             .await?;
 
             let rollback: RollbackZoneResponse = parse_response(&response.data)?;
-            println!("{}", response.message);
+            outln!("{}", response.message);
             print_table(vec![RollbackSummaryRow::from(&rollback)]);
         }
     }

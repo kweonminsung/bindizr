@@ -2,6 +2,7 @@
 
 mod keys;
 
+use bindizr_core::outln;
 use bindizr_service::types::{
     DnssecStatusResponse, EnableDnssecRequest, RolloverDnssecRequest, UpdateDnssecSettingsRequest,
 };
@@ -236,7 +237,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 },
             )
             .await?;
-            println!("{}", response.message);
+            outln!("{}", response.message);
         }
         DnssecCommand::Status { name, output } => {
             let response =
@@ -250,7 +251,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
         DnssecCommand::Sign { name } => {
             let response =
                 client::send_command(DaemonCommandKind::SignZone, ZoneNameParams { name }).await?;
-            println!("{}", response.message);
+            outln!("{}", response.message);
         }
         DnssecCommand::Rollover { subcommand } => match subcommand {
             DnssecRolloverCommand::Start { name, role } => {
@@ -290,33 +291,34 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
 fn print_status(data: &serde_json::Value) -> Result<(), String> {
     let status = parse_response::<DnssecStatusResponse>(data)?.dnssec;
     let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
-        println!(
+        outln!(
             "Zone {} (serial {}): DNSSEC disabled",
-            status.zone_name, status.serial
+            status.zone_name,
+            status.serial
         );
         return Ok(());
     };
 
-    println!(
+    outln!(
         "Zone {} (serial {}): DNSSEC enabled, {} denial",
         status.zone_name,
         status.serial,
         policy.denial.to_uppercase()
     );
     if status.withdrawing {
-        println!(
+        outln!(
             "DS withdrawal published (RFC 8078): the parent should drop this zone's DS records."
         );
     }
     if let Some(addrs) = status.parent_ns_addrs.as_deref() {
-        println!("Parent nameservers: {}", addrs);
+        outln!("Parent nameservers: {}", addrs);
     }
     if let Some(delegation) = &status.delegation {
         let servers = delegation.parent_ns_addrs.join(", ");
         if delegation.ds_key_tags.is_empty() {
-            println!("Parent DS: none served by {}", servers);
+            outln!("Parent DS: none served by {}", servers);
         } else {
-            println!(
+            outln!(
                 "Parent DS: key tag{} {} served by {} (TTL {}s)",
                 if delegation.ds_key_tags.len() == 1 {
                     ""
@@ -351,35 +353,36 @@ fn print_status(data: &serde_json::Value) -> Result<(), String> {
                     eligible_at.format("%Y-%m-%d %H:%M:%S")
                 ));
             }
-            println!("{}", line);
+            outln!("{}", line);
         }
     }
     if let Some(expires_at) = status.earliest_signature_expires_at {
-        println!(
+        outln!(
             "Earliest signature expiry: {}",
             expires_at.format("%Y-%m-%d %H:%M:%S")
         );
     }
     if let Some(resign_at) = status.next_resign_at {
-        println!("Next re-signing: {}", resign_at.format("%Y-%m-%d %H:%M:%S"));
+        outln!("Next re-signing: {}", resign_at.format("%Y-%m-%d %H:%M:%S"));
     }
     if status.expired_signatures == 0 {
-        println!("Signatures: {}", status.signatures);
+        outln!("Signatures: {}", status.signatures);
     } else {
         // Resolvers are already failing this much of the zone.
-        println!(
+        outln!(
             "Signatures: {} ({} EXPIRED)",
-            status.signatures, status.expired_signatures
+            status.signatures,
+            status.expired_signatures
         );
     }
-    println!("Policy:");
+    outln!("Policy:");
     print_table(vec![DnssecPolicyRow::from(policy)]);
-    println!("Keys:");
+    outln!("Keys:");
     print_table(status.keys.iter().map(DnssecKeyRow::from).collect());
     if !status.ds_records.is_empty() {
-        println!("DS records (register in the parent zone):");
+        outln!("DS records (register in the parent zone):");
         for ds in &status.ds_records {
-            println!("  {}", ds.presentation);
+            outln!("  {}", ds.presentation);
         }
     }
 
