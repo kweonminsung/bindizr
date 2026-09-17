@@ -1,6 +1,6 @@
 use super::{
     OwnerName, ParseNameError, ZoneName, decode_name_labels, encode_name, is_label_suffix,
-    parse_lookup_name,
+    parse_lookup_name, to_fqdn_lowercase,
 };
 
 /// Build the test zone or its DNS name.
@@ -560,4 +560,29 @@ fn zone_to_wire_matches_the_encoded_fqdn() {
         zone.to_wire().unwrap(),
         encode_name(&zone.to_fqdn()).unwrap()
     );
+}
+
+/// Verify that the escape-free shortcut in `to_fqdn_lowercase` renders what
+/// decoding the name into labels does.
+#[test]
+fn to_fqdn_lowercase_matches_the_decoded_rendering() {
+    // The shortcut's own cases: only these spellings may skip the decode.
+    assert_eq!(to_fqdn_lowercase("Host1.Example.COM"), "host1.example.com.");
+    assert_eq!(
+        to_fqdn_lowercase("  _sip.example.com.  "),
+        "_sip.example.com."
+    );
+    assert_eq!(to_fqdn_lowercase("host"), "host.");
+
+    // A value carrying an escape or a metacharacter still decodes, so the dot
+    // inside a label comes back as `\046` rather than reading as a boundary.
+    assert_eq!(
+        to_fqdn_lowercase(r"Host\.Name.example.com"),
+        r"host\046name.example.com."
+    );
+
+    // Spellings the decode rejects keep their own text either way.
+    assert_eq!(to_fqdn_lowercase("a..b.example.com"), "a..b.example.com.");
+    assert_eq!(to_fqdn_lowercase("."), ".");
+    assert_eq!(to_fqdn_lowercase(""), ".");
 }

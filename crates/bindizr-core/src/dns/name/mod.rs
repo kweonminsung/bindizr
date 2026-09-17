@@ -88,13 +88,17 @@ pub fn render_labels(labels: &[String]) -> String {
 /// re-escaped canonically, so a `\.` stays inside its label. A value that does
 /// not decode keeps its own spelling — this renders, it does not validate.
 pub(crate) fn to_fqdn_lowercase(value: &str) -> String {
-    match parse_lookup_name(value) {
-        Ok(name) => format!("{name}."),
-        Err(_) => format!(
-            "{}.",
-            value.trim().trim_end_matches('.').to_ascii_lowercase()
-        ),
+    let trimmed = value.trim();
+    // LDH-and-`_` spellings hold no escape to resolve and need none applied on
+    // the way out, so decoding them into labels lands on the same lowercasing
+    // below that a value failing to decode takes.
+    let needs_decode = trimmed
+        .bytes()
+        .any(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')));
+    if needs_decode && let Ok(name) = parse_lookup_name(trimmed) {
+        return format!("{name}.");
     }
+    format!("{}.", trimmed.trim_end_matches('.').to_ascii_lowercase())
 }
 
 /// Return `value` with a single trailing dot, preserving case. Only the one
