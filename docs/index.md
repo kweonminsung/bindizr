@@ -74,7 +74,7 @@ DNS Synchronization Service for BIND9
 Bindizr never answers a client query — the BIND9 secondaries do. It owns the
 zone data and the transfer path, so putting it in front of BIND9 costs
 [nothing on the query path](benchmarks.md#no-overhead-on-the-query-path):
-`Bindizr + BIND9` serves **57,466 QPS against native BIND9's 57,674**.
+`Bindizr + BIND9` serves **58,414 QPS against native BIND9's 58,179**.
 
 ## License
 
