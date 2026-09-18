@@ -210,5 +210,5 @@ without parsing the message.
 | `3` | Not found: no such zone, record, token, version, key, or policy |
 | `4` | Conflict: the name is taken, or the object is in use or in the wrong state |
 | `5` | Denied: the token is missing, invalid, or lacks a grant |
-| `6` | Unavailable: the daemon is not running, so the command never reached it |
-| `7` | The configuration file is unusable, so running the same command again changes nothing |
+| `6` | The configuration file is unusable, so running the same command again changes nothing |
+| `7` | Unavailable: the daemon is not running, so the command never reached it |

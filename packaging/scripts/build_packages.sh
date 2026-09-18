@@ -10,7 +10,7 @@ TARGET="${TARGET:-x86_64-unknown-linux-musl}"
 case "$TARGET" in
     x86_64-*)  DEB_ARCH="amd64"; RPM_ARCH="x86_64" ;;
     aarch64-*) DEB_ARCH="arm64"; RPM_ARCH="aarch64" ;;
-    *) echo "Unsupported target: $TARGET (expected x86_64-* or aarch64-*)" >&2; exit 1 ;;
+    *) echo "Unsupported target: $TARGET (expected x86_64-* or aarch64-*)" >&2; exit 2 ;;
 esac
 
 # Point cargo at musl-gcc for the target.

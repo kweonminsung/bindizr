@@ -7,9 +7,10 @@ Type=simple
 ExecStart=/usr/bin/bindizr start
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
-# 7 is "the configuration file is unusable", the one failure a restart cannot
-# fix. Everything else, a database that is not up yet included, is retried.
-RestartPreventExitStatus=7
+# 6 is "the configuration file is unusable", the one failure a restart cannot
+# fix; systemd prints it as NOTCONFIGURED. Everything else, a database that is
+# not up yet included, is retried.
+RestartPreventExitStatus=6
 RestartSec=5
 TimeoutStopSec=30
 

@@ -43,13 +43,14 @@ impl From<&str> for CliError {
     }
 }
 
-/// 2 is left to clap's usage errors.
+/// 2 is left to clap's usage errors. The daemon is a systemd service, so 6
+/// and 7 keep the meanings it prints for them: `NOTCONFIGURED`, `NOTRUNNING`.
 const EXIT_FAILURE: i32 = 1;
 const EXIT_NOT_FOUND: i32 = 3;
 const EXIT_CONFLICT: i32 = 4;
 const EXIT_DENIED: i32 = 5;
-const EXIT_UNAVAILABLE: i32 = 6;
-const EXIT_CONFIG: i32 = 7;
+const EXIT_CONFIG: i32 = 6;
+const EXIT_UNAVAILABLE: i32 = 7;
 
 impl CliError {
     /// An error reply from the daemon, carrying whatever code it sent.
@@ -207,5 +208,14 @@ mod tests {
             CliError::configuration("missing field `mname`".to_string()).exit_code(),
             EXIT_CONFIG
         );
+    }
+
+    /// Verify that the daemon's two failure classes keep their LSB values.
+    #[test]
+    fn the_daemon_classes_keep_their_lsb_values() {
+        // Nothing links these to `RestartPreventExitStatus=6` in the systemd
+        // unit, where renumbering would mean restarting a hopeless daemon.
+        assert_eq!(EXIT_CONFIG, 6, "systemd prints 6 as NOTCONFIGURED");
+        assert_eq!(EXIT_UNAVAILABLE, 7, "systemd prints 7 as NOTRUNNING");
     }
 }

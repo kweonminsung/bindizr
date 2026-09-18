@@ -22,12 +22,16 @@ use tokio::{
 /// well inside the grace period Kubernetes allows before SIGKILL.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The configuration is unusable, so a restart changes nothing — the code
+/// bindizr's own CLI uses for that class.
+const EXIT_CONFIG: i32 = 6;
+
 /// Parse arguments, start both listeners, and serve until interrupted.
 pub async fn execute() {
     let cli = config::Cli::parse();
     let adapter_config = config::AdapterConfig::from_cli(cli).unwrap_or_else(|e| {
         eprintln!("{}", e);
-        std::process::exit(1);
+        std::process::exit(EXIT_CONFIG);
     });
 
     logger::initialize_with_level(adapter_config.log_level);
@@ -47,7 +51,7 @@ pub async fn execute() {
     )
     .unwrap_or_else(|e| {
         eprintln!("{}", e);
-        std::process::exit(1);
+        std::process::exit(EXIT_CONFIG);
     });
     let state = Arc::new(server::AppState { upstream });
 
