@@ -7,6 +7,7 @@ use std::{
 };
 
 use bindizr_core::dns::{
+    CATALOG_ZONE_NAME,
     address::is_address_target,
     name::{OwnerName, ZoneName},
     zonefile::{ParsedZoneFile, ZoneFileValue},
@@ -40,6 +41,8 @@ struct AppliedImport {
     response: ImportZoneResponse,
     zone_name: ZoneName,
     changed: bool,
+    /// This import created the zone, so the catalog gained a member.
+    created: bool,
 }
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY;
@@ -130,6 +133,7 @@ impl RecordService {
 
         let apply_result: Result<AppliedImport, ServiceError> = async {
             let t = Instant::now();
+            let mut created = false;
             let zone = match (
                 ZoneService::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?,
                 create_as,
@@ -145,6 +149,7 @@ impl RecordService {
                                 "the zone file carries no SOA to create the zone from; create it with `zone create` first",
                             )
                         })?;
+                    created = true;
                     ZoneService::create_tx(
                         &mut tx,
                         caller,
@@ -415,17 +420,23 @@ impl RecordService {
                 response,
                 zone_name: zone.name,
                 changed: will_apply && has_changes,
+                created: will_apply && created,
             })
         }
         .await;
 
-        // A dry run writes nothing, so its transaction is discarded rather
-        // than committed: a zone created to plan against goes with it.
+        // Only an applied import commits: a dry run and a rejected one both
+        // answer `applied: false`, so neither may leave the zone `create` made.
+        let discard = dry_run
+            || !apply_result
+                .as_ref()
+                .is_ok_and(|import| import.response.applied);
         let AppliedImport {
             response,
             zone_name,
             changed,
-        } = if dry_run {
+            created,
+        } = if discard {
             RepositoryService::discard_tx(tx, apply_result).await?
         } else {
             RepositoryService::finish_tx(tx, apply_result, "Failed to import zone file").await?
@@ -444,8 +455,15 @@ impl RecordService {
             response.errors.len(),
         );
 
-        // Notify after commit only when the import changed the served zone.
         let t = Instant::now();
+        // The catalog goes first: a secondary that has not seen the new member
+        // there cannot act on the zone's own NOTIFY below.
+        if created
+            && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
+        {
+            log::warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
+        }
+        // Notify after commit only when the import changed the served zone.
         if changed
             && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {

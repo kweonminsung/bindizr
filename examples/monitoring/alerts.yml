@@ -30,10 +30,10 @@ groups:
           severity: warning
         annotations:
           summary: "DNSSEC re-signing is falling behind"
-          description: "Signatures have sat inside the refresh window for six hours. Check bindizr_dnssec_maintenance_runs_total{result!=\"ok\"}."
+          description: "Signatures have sat inside the refresh window for six hours. Check bindizr_dnssec_scheduler_runs_total{result!=\"ok\"}."
 
       - alert: BindizrMaintenancePassFailing
-        expr: increase(bindizr_dnssec_maintenance_runs_total{result!="ok"}[1h]) > 0
+        expr: increase(bindizr_dnssec_scheduler_runs_total{result!="ok"}[1h]) > 0
         labels:
           severity: warning
         annotations:
@@ -61,7 +61,9 @@ groups:
 
       # Zero pruning while zones change means the tables grow without bound.
       - alert: BindizrHistoryNotPruned
-        expr: increase(bindizr_pruned_rows_total[24h]) == 0 and increase(bindizr_zone_serial_bumps_total[24h]) > 0
+        # `and` pairs only identical label sets, so the `table` label on
+        # pruned_rows_total is summed away to match the unlabelled bump counter.
+        expr: sum(increase(bindizr_pruned_rows_total[24h])) == 0 and increase(bindizr_zone_serial_bumps_total[24h]) > 0
         for: 1h
         labels:
           severity: warning

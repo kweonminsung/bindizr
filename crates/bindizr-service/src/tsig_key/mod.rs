@@ -5,7 +5,7 @@ use rand::RngExt;
 
 use crate::{
     authorization::Caller,
-    error::ServiceError,
+    error::{ErrorCode, ServiceError},
     model::tsig_key::{TsigAlgorithm, TsigKey},
     repository::RepositoryService,
     types::{GetTsigKeyResponse, PageFilter, PaginatedResponse},
@@ -77,7 +77,7 @@ impl TsigKeyService {
             Some(raw) => raw.parse().map_err(ServiceError::invalid_input)?,
         };
 
-        RepositoryService::create_tsig_key(TsigKey {
+        match RepositoryService::create_tsig_key(TsigKey {
             id: 0,
             name,
             algorithm,
@@ -86,8 +86,15 @@ impl TsigKeyService {
             is_global: true,
             created_at: Utc::now(),
         })
-        .await?;
-        Ok(true)
+        .await
+        {
+            Ok(_) => Ok(true),
+            // Replicas starting together all read an empty table above;
+            // UNIQUE(name) settles which one seeds, and the losers report the
+            // winner's key rather than failing startup over it.
+            Err(e) if e.code == ErrorCode::TsigKeyConflict => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     /// List all TSIG keys.

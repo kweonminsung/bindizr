@@ -2,7 +2,10 @@ use chrono::{DateTime, Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
-use super::{error::ServiceError, repository::RepositoryService};
+use super::{
+    error::{ErrorCode, ServiceError},
+    repository::RepositoryService,
+};
 use crate::{
     authorization::Caller,
     model::api_token::ApiToken,
@@ -108,7 +111,7 @@ impl TokenService {
             return Ok(false);
         }
 
-        RepositoryService::create_api_token(ApiToken {
+        match RepositoryService::create_api_token(ApiToken {
             id: 0,
             name: normalize_token_name(INITIAL_TOKEN_NAME)?,
             token: hash_token(secret),
@@ -118,8 +121,15 @@ impl TokenService {
             created_at: Utc::now(),
             last_used_at: None,
         })
-        .await?;
-        Ok(true)
+        .await
+        {
+            Ok(_) => Ok(true),
+            // Replicas starting together all read an empty table above;
+            // UNIQUE(name) settles which one seeds, and the losers report the
+            // winner's token rather than failing startup over it.
+            Err(e) if e.code == ErrorCode::TokenConflict => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     /// Every API token, for the daemon's startup hint.

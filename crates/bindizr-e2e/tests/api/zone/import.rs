@@ -439,3 +439,39 @@ async fn zone_import_refuses_a_missing_zone_without_create() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("no SOA"), "{body}");
 }
+
+/// Verify that a rejected import leaves behind no zone it created to apply into.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_rejected_with_create_leaves_no_zone() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-create-reject.example");
+    // The SOA is enough to create the zone from, but the CNAME collides with
+    // the A record at the same name, so validation rejects the whole file.
+    let content = format!(
+        "@ IN SOA ns1.old.example. hostmaster.{zone_name}. (2026091601 7200 1800 1209600 300)\n\
+         @ IN NS ns1.old.example.\n\
+         www IN A 192.0.2.10\n\
+         www IN CNAME target.example.\n"
+    );
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content, "create": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["applied"], false);
+    assert!(
+        !body["errors"].as_array().expect("errors array").is_empty(),
+        "{body}"
+    );
+
+    // The zone was created inside the transaction the rejection discarded.
+    let (status, _) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

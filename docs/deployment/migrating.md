@@ -56,7 +56,7 @@ Where the source has no SOA to build from, or its fields are not what you want
 to keep, create the zone yourself first and import without `--create`:
 
 ```bash
-$ bindizr zone create example.com --mname ns1.example.com --serial 2026091601
+$ bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --serial 2026091601
 $ bindizr zone import example.com --from-server <old-primary>:53 --mode replace
 ```
 

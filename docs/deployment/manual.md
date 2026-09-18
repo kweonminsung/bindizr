@@ -186,7 +186,7 @@ the fix for the common ones.
 ## 6. Create a zone and query it
 
 ```bash
-$ sudo bindizr zone create example.com --mname ns1.example.com
+$ sudo bindizr zone create example.com --mname ns1.example.com --rname admin@example.com
 $ sudo bindizr record create example.com www --type A --value 192.0.2.1
 
 # BIND learned the zone through the catalog and pulled it; it answers on 53
