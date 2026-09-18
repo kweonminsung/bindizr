@@ -11,8 +11,8 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        CreateTokenGrantParams, DaemonResponse, DeleteTokenGrantParams, ListGrantsParams,
-        TokenNameParams,
+        CreateTokenGrantParams, DaemonResponse, DeleteTokenGrantParams,
+        DeleteTokenGrantsByTokenAndZoneParams, ListGrantsParams, TokenNameParams,
     },
 };
 
@@ -128,6 +128,25 @@ pub(crate) async fn delete_token_grant(
 
     Ok(DaemonResponse {
         message: "Token grant revoked successfully".to_string(),
+        data: serde_json::Value::Null,
+    })
+}
+
+/// Revoke every grant the requested token holds in the requested zone.
+pub(crate) async fn delete_token_grants_by_token_and_zone(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: DeleteTokenGrantsByTokenAndZoneParams = parse_params(data)?;
+
+    let revoked = TokenGrantService::revoke_by_token_and_zone(
+        &Caller::Global,
+        &params.token_name,
+        &params.zone_name,
+    )
+    .await?;
+
+    Ok(DaemonResponse {
+        message: format!("{} token grant(s) revoked successfully", revoked),
         data: serde_json::Value::Null,
     })
 }

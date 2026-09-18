@@ -13,8 +13,8 @@ use crate::{
     socket::{
         client,
         types::{
-            CreateTsigGrantParams, DaemonCommandKind, DeleteTsigGrantParams, ListGrantsParams,
-            TsigKeyNameParams,
+            CreateTsigGrantParams, DaemonCommandKind, DeleteTsigGrantParams,
+            DeleteTsigGrantsByKeyAndZoneParams, ListGrantsParams, TsigKeyNameParams,
         },
     },
 };
@@ -119,11 +119,28 @@ Examples:
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-    /// Revoke one of a key's grants by grant ID
+    /// Revoke a key's grants in a zone, or one grant by ID
+    #[command(after_help = "\
+Examples:
+  bindizr tsig-key revoke updater example.com
+  bindizr tsig-key revoke --id 7
+
+A key can hold several grants in one zone, so the name form revokes all of
+them. --id revokes exactly one (see `tsig-key grants`).")]
     Revoke {
-        /// ID of the grant to revoke (see `tsig-key grants`)
-        #[arg(value_name = "GRANT_ID")]
-        id: i32,
+        /// TSIG key whose grants go
+        #[arg(
+            value_name = "KEY_NAME",
+            required_unless_present = "id",
+            requires = "zone"
+        )]
+        name: Option<String>,
+        /// Zone the grants cover
+        #[arg(value_name = "ZONE_NAME", requires = "name")]
+        zone: Option<String>,
+        /// ID of the one grant to revoke (see `tsig-key grants`)
+        #[arg(long, value_name = "GRANT_ID", conflicts_with = "name")]
+        id: Option<i32>,
     },
 }
 
@@ -254,13 +271,34 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 },
             )?;
         }
-        TsigKeyCommand::Revoke { id } => {
+        // clap holds the two selectors apart.
+        TsigKeyCommand::Revoke { id: Some(id), .. } => {
             let res = client::send_command(
                 DaemonCommandKind::DeleteTsigGrant,
                 DeleteTsigGrantParams { id },
             )
             .await?;
             outln!("{}", res.message);
+        }
+        TsigKeyCommand::Revoke {
+            name: Some(name),
+            zone: Some(zone),
+            ..
+        } => {
+            let res = client::send_command(
+                DaemonCommandKind::DeleteTsigGrantsByKeyAndZone,
+                DeleteTsigGrantsByKeyAndZoneParams {
+                    key_name: name,
+                    zone_name: zone,
+                },
+            )
+            .await?;
+            outln!("{}", res.message);
+        }
+        TsigKeyCommand::Revoke { .. } => {
+            return Err(CliError::from(
+                "give a TSIG key name and a zone name, or --id to revoke one grant",
+            ));
         }
     }
 

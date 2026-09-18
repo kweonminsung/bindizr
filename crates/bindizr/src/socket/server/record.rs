@@ -10,7 +10,7 @@ use bindizr_service::{
 
 use crate::socket::{
     server::{parse_params, to_response_data},
-    types::{DaemonResponse, RecordIdParams, UpdateRecordParams},
+    types::{DaemonResponse, RecordIdParams, UpdateRecordByNameParams, UpdateRecordParams},
 };
 
 /// Return the requested record.
@@ -64,6 +64,27 @@ pub(crate) async fn update_record(
     let params: UpdateRecordParams = parse_params(data)?;
 
     let record = RecordService::update(&Caller::Global, params.id, &params.request).await?;
+    Ok(DaemonResponse {
+        message: "Record updated successfully".to_string(),
+        data: to_response_data(RecordResponse {
+            record: GetRecordResponse::from_record_with_zone(&record),
+        })?,
+    })
+}
+
+/// Update the one record at the requested owner name.
+pub(crate) async fn update_record_by_name(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: UpdateRecordByNameParams = parse_params(data)?;
+
+    let record = RecordService::update_by_name(
+        &Caller::Global,
+        &params.zone_name,
+        &params.name,
+        &params.request,
+    )
+    .await?;
     Ok(DaemonResponse {
         message: "Record updated successfully".to_string(),
         data: to_response_data(RecordResponse {

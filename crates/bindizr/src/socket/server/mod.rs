@@ -87,12 +87,18 @@ async fn handle_client(stream: UnixStream) {
                     tsig_key::list_zone_tsig_grants(&cmd.data).await
                 }
                 DaemonCommandKind::DeleteTsigGrant => tsig_key::delete_tsig_grant(&cmd.data).await,
+                DaemonCommandKind::DeleteTsigGrantsByKeyAndZone => {
+                    tsig_key::delete_tsig_grants_by_key_and_zone(&cmd.data).await
+                }
                 DaemonCommandKind::CreateTokenGrant => token::create_token_grant(&cmd.data).await,
                 DaemonCommandKind::ListTokenGrants => token::list_token_grants(&cmd.data).await,
                 DaemonCommandKind::ListZoneTokenGrants => {
                     token::list_zone_token_grants(&cmd.data).await
                 }
                 DaemonCommandKind::DeleteTokenGrant => token::delete_token_grant(&cmd.data).await,
+                DaemonCommandKind::DeleteTokenGrantsByTokenAndZone => {
+                    token::delete_token_grants_by_token_and_zone(&cmd.data).await
+                }
                 DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
                 DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
                 DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
@@ -102,6 +108,9 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
                 DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
                 DaemonCommandKind::UpdateRecord => record::update_record(&cmd.data).await,
+                DaemonCommandKind::UpdateRecordByName => {
+                    record::update_record_by_name(&cmd.data).await
+                }
                 DaemonCommandKind::CreateRecordsBulk => {
                     record::create_records_bulk(&cmd.data).await
                 }

@@ -103,21 +103,29 @@ $ bindizr zone list --enabled false
 $ bindizr zone update example.com --enabled true
 
 # Create, list, inspect, and delete records (TTL defaults to the zone's; one TTL per name and type)
-$ bindizr record create www --zone example.com --type A --value 192.0.2.1 --ttl 300
-$ bindizr record create @ --zone example.com --type TXT --value "v=spf1 include:_spf.example.net ~all"
-$ bindizr record list --zone example.com
-$ bindizr record list --zone example.com --sort ttl --order desc
+$ bindizr record create example.com www --type A --value 192.0.2.1 --ttl 300
+$ bindizr record create example.com @ --type TXT --value "v=spf1 include:_spf.example.net ~all"
+$ bindizr record list example.com
+$ bindizr record list example.com --sort ttl --order desc
 $ bindizr zone list --min-serial 100 --signed --sort created_at
-$ bindizr record get <RECORD_ID>
-$ bindizr record delete <RECORD_ID>
+# A name can hold several records, so the name form answers with all of them
+$ bindizr record get example.com www
 
-# Or delete by name: every type at the name, or narrowed by type and value
+# Delete by name: every type at the name, or narrowed by type and value
 # (--dry-run reports what would go). The whole set moves in one serial.
-$ bindizr record delete -z example.com --name www
-$ bindizr record delete -z example.com --name www --type A --dry-run
+$ bindizr record delete example.com www
+$ bindizr record delete example.com www --type A --dry-run
 
-# Update a record, changing only the fields you pass
-$ bindizr record update <RECORD_ID> --value 127.0.0.1
+# Update a record, changing only the fields you pass. Every flag sets a new
+# value, so the name form needs the name to hold exactly one record.
+$ bindizr record update example.com www --value 127.0.0.1
+$ bindizr record update example.com www --new-name api
+
+# --id addresses exactly one record, which is how a name holding several is
+# narrowed down; `record list` prints the IDs.
+$ bindizr record get --id 42
+$ bindizr record update --id 42 --value 127.0.0.1
+$ bindizr record delete --id 42
 ```
 
 A TXT value over 255 bytes is split into segments for you. Repeat `--value` to
@@ -145,7 +153,7 @@ Bulk changes can be previewed before anything is written. `--dry-run` applies
 nothing and renders the change as a `+`/`-`/`~` diff:
 
 ```bash
-$ bindizr record bulk-create records.json --zone <ZONE_NAME> --dry-run
+$ bindizr record bulk-create <ZONE_NAME> records.json --dry-run
 $ bindizr zone import <ZONE_NAME> zone.txt --dry-run
 ```
 

@@ -135,4 +135,21 @@ impl TsigGrantRepository for MySqlTsigGrantRepository {
 
         Ok(())
     }
+
+    /// Delete every grant a TSIG key holds in one zone, returning how many rows went.
+    async fn delete_by_key_id_and_zone_id(
+        &self,
+        tsig_key_id: i32,
+        zone_id: i32,
+    ) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let result = sqlx::query("DELETE FROM tsig_grants WHERE tsig_key_id = ? AND zone_id = ?")
+            .bind(tsig_key_id)
+            .bind(zone_id)
+            .execute(&mut *conn)
+            .await?;
+
+        Ok(result.rows_affected())
+    }
 }

@@ -31,6 +31,14 @@ use crate::{
 pub(crate) enum DnssecCommand {
     /// Enable DNSSEC: generate the signing key(s) a policy prescribes and
     /// sign the zone
+    #[command(after_help = "\
+Examples:
+  bindizr dnssec enable example.com --parent-ns-addrs 198.51.100.1
+  bindizr dnssec enable example.com --policy split --parent-ns-addrs 'a.gtld.net,b.gtld.net'
+
+--parent-ns-addrs is required: `check-ds`, `rollover ds-seen`, and `disable`
+ask those servers whether the parent serves this zone's DS. Signing does not
+publish the DS itself — hand the DS from `dnssec status` to the registrar.")]
     Enable {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -50,7 +58,16 @@ pub(crate) enum DnssecCommand {
     },
     /// Change a zone's signing settings: the policy it signs under and/or
     /// the parent nameservers asked for its DS record
-    #[command(group = clap::ArgGroup::new("setting").required(true).multiple(true))]
+    #[command(
+        group = clap::ArgGroup::new("setting").required(true).multiple(true),
+        after_help = "\
+Examples:
+  bindizr dnssec set example.com --policy stronger
+  bindizr dnssec set example.com --parent-ns-addrs 198.51.100.1,198.51.100.2
+
+At least one of the two is required. A policy with a new denial mode replaces
+the chain, and a new algorithm starts a rollover."
+    )]
     Set {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -128,6 +145,13 @@ pub(crate) enum DnssecRolloverCommand {
     /// Publish a replacement key with the same algorithm. After the publish
     /// wait, the scheduler promotes ZSKs automatically and CSK/KSKs once the
     /// parent serves their DS; `ds-seen` requests that confirmation manually
+    #[command(after_help = "\
+Examples:
+  bindizr dnssec rollover start example.com
+  bindizr dnssec rollover start example.com --role ksk
+
+--role is required on a split-key zone and rejected on a CSK zone, which has
+only one key to roll.")]
     Start {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -143,6 +167,14 @@ pub(crate) enum DnssecRolloverCommand {
     /// Confirm the new DS is at the parent: once its nameservers serve the
     /// DS, promotes the pre-published key and retires the one it replaces.
     /// ZSK rollovers involve no DS and promote automatically
+    #[command(after_help = "\
+Examples:
+  bindizr dnssec rollover ds-seen example.com
+  bindizr dnssec rollover ds-seen example.com --skip-ds-check
+
+The DS goes to the registrar by hand, so this is the step that tells bindizr
+the parent has it. --skip-holddown is for a compromised key only: resolvers
+still caching the previous keys fail until the hold-down would have expired.")]
     DsSeen {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]

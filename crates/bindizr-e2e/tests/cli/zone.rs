@@ -232,9 +232,7 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
     assert_eq!(summary_cells(&stdout)[0], "false", "{stdout}");
 
     // Nothing landed, including the record that was valid on its own.
-    let listed = app
-        .run_cli_success(&["record", "list", "-z", &zone_name])
-        .await;
+    let listed = app.run_cli_success(&["record", "list", &zone_name]).await;
     assert!(!listed.contains("192.0.2.40"), "{listed}");
 }
 
@@ -275,7 +273,7 @@ async fn zone_import_zone_file_from_stdin() {
 
     let records = app
         .run_cli_success(&[
-            "record", "list", "--zone", &zone_name, "--type", "A", "--output", "json",
+            "record", "list", &zone_name, "--type", "A", "--output", "json",
         ])
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
@@ -299,13 +297,12 @@ async fn zone_export_via_cli() {
     app.run_cli_success(&[
         "record",
         "create",
+        &zone_name,
         "www",
         "--type",
         "A",
         "--value",
         "192.0.2.1",
-        "--zone",
-        &zone_name,
         "--ttl",
         "300",
     ])
@@ -315,13 +312,12 @@ async fn zone_export_via_cli() {
     app.run_cli_success(&[
         "record",
         "create",
+        &zone_name,
         "nottl",
         "--type",
         "A",
         "--value",
         "192.0.2.2",
-        "--zone",
-        &zone_name,
     ])
     .await;
 
@@ -407,7 +403,7 @@ async fn zone_import_dry_run_shows_the_diff_via_cli() {
     assert!(dry_run.contains("By name and type: +2 -0 ~0"), "{dry_run}");
 
     let records = app
-        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .run_cli_success(&["record", "list", &zone_name, "--output", "json"])
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     // Only the apex NS seeded at creation exists.
@@ -440,26 +436,24 @@ async fn zone_versions_and_rollback_flow() {
     app.run_cli_success(&[
         "record",
         "create",
+        &zone_name,
         "www",
         "--type",
         "A",
         "--value",
         "192.0.2.80",
-        "--zone",
-        &zone_name,
     ])
     .await;
     let target_serial = "2"; // zone create = 1, record create = 2
     app.run_cli_success(&[
         "record",
         "create",
+        &zone_name,
         "extra",
         "--type",
         "A",
         "--value",
         "192.0.2.81",
-        "--zone",
-        &zone_name,
     ])
     .await;
 
@@ -545,7 +539,7 @@ async fn zone_versions_and_rollback_flow() {
 
     let records = app
         .run_cli_success(&[
-            "record", "list", "--zone", &zone_name, "--type", "A", "--output", "json",
+            "record", "list", &zone_name, "--type", "A", "--output", "json",
         ])
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");

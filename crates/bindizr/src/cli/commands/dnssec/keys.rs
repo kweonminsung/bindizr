@@ -23,6 +23,12 @@ use crate::{
 pub(crate) enum DnssecKeysCommand {
     /// Print the zone's keys in BIND key-file form, private halves
     /// included — redirect somewhere with tight permissions
+    #[command(after_help = "\
+Examples:
+  umask 077 && bindizr dnssec keys export example.com > example.com.keys
+
+The output carries the private halves, so anyone who reads it can sign the
+zone.")]
     Export {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -33,6 +39,17 @@ pub(crate) enum DnssecKeysCommand {
     /// key a rollover still holds — each private file's timing places it.
     /// The migration path for a zone signed elsewhere; the zone must be
     /// unsigned
+    #[command(after_help = "\
+Examples:
+  bindizr dnssec keys import example.com \\
+    --key Kexample.com.+013+12345.key --private Kexample.com.+013+12345.private
+
+  bindizr dnssec keys import example.com --policy split \\
+    --key Kexample.com.+013+11111.key --private Kexample.com.+013+11111.private \\
+    --key Kexample.com.+013+22222.key --private Kexample.com.+013+22222.private
+
+Repeat --key and --private once per pair, in the same order: the Nth --private
+is matched with the Nth --key.")]
     Import {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]

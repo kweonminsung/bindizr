@@ -16,7 +16,7 @@ use crate::{
     },
     socket::{
         client,
-        types::{DaemonCommandKind, RecordIdParams, UpdateRecordParams},
+        types::{DaemonCommandKind, RecordIdParams, UpdateRecordByNameParams, UpdateRecordParams},
     },
 };
 
@@ -26,14 +26,17 @@ pub(crate) enum RecordCommand {
     /// Create a record
     #[command(after_help = "\
 Examples:
-  bindizr record create www -z example.com --type A --value 192.0.2.1
-  bindizr record create @ -z example.com --type MX --priority 10 --value mail.example.com
-  bindizr record create @ -z example.com --type TXT --value \"v=spf1 include:_spf.example.net ~all\"
+  bindizr record create example.com www --type A --value 192.0.2.1
+  bindizr record create example.com @ --type MX --priority 10 --value mail.example.com
+  bindizr record create example.com @ --type TXT --value \"v=spf1 include:_spf.example.net ~all\"
 
 A TXT value longer than 255 bytes is split for you. Repeat --value only to
 choose the split yourself, as a DKIM key's publisher does; resolvers join the
 parts with nothing between them, so a space has to be inside a value.")]
     Create {
+        /// Zone the record belongs to
+        #[arg(value_name = "ZONE_NAME")]
+        zone: String,
         /// Owner name relative to the zone, or '@' for the apex
         #[arg(value_name = "RECORD_NAME")]
         name: String,
@@ -43,9 +46,6 @@ parts with nothing between them, so a space has to be inside a value.")]
         /// Record value; repeat it to choose a long TXT value's segments yourself
         #[arg(long, value_name = "VALUE", action = clap::ArgAction::Append, required = true)]
         value: Vec<String>,
-        /// Zone name
-        #[arg(short, long, value_name = "ZONE_NAME")]
-        zone: String,
         /// TTL in seconds, defaulting to the zone TTL (records sharing a name and type share one TTL)
         #[arg(long)]
         ttl: Option<i32>,
@@ -78,12 +78,12 @@ YAML example:
     value: 192.0.2.1
     ttl: 300")]
     BulkCreate {
+        /// Zone the records belong to
+        #[arg(value_name = "ZONE_NAME")]
+        zone: String,
         /// Path to a JSON or YAML file (an array of records, or an object with
         /// a 'records' array), or '-' to read from stdin
         file: String,
-        /// Zone name
-        #[arg(short, long, value_name = "ZONE_NAME")]
-        zone: String,
         /// Parse and validate without applying any change, showing the inserts
         /// as a +/-/~ diff
         #[arg(long)]
@@ -94,10 +94,19 @@ YAML example:
     },
 
     /// List records
-    #[command(alias = "ls")]
+    #[command(
+        alias = "ls",
+        after_help = "\
+Examples:
+  bindizr record list example.com
+  bindizr record list example.com --type A --sort ttl --order desc
+  bindizr record list --name www
+
+Omit the zone to list records from every zone the caller can see."
+    )]
     List {
-        /// Filter by zone name
-        #[arg(short, long, value_name = "ZONE_NAME")]
+        /// Zone to list; omitted, records from every visible zone are listed
+        #[arg(value_name = "ZONE_NAME")]
         zone: Option<String>,
         /// Filter by record name
         #[arg(long, value_name = "RECORD_NAME")]
@@ -149,24 +158,69 @@ YAML example:
         output: OutputFormat,
     },
 
-    /// Get a record by ID
+    /// Get every record at a name, or one record by ID
+    #[command(after_help = "\
+Examples:
+  bindizr record get example.com www
+  bindizr record get --id 42
+
+A name can hold several records, so the name form lists all of them. --id
+addresses exactly one.")]
     Get {
-        /// The record ID
-        #[arg(value_name = "RECORD_ID")]
-        id: i32,
+        /// Zone the records belong to
+        #[arg(
+            value_name = "ZONE_NAME",
+            required_unless_present = "id",
+            requires = "name"
+        )]
+        zone: Option<String>,
+        /// Owner name relative to the zone, or '@' for the apex
+        #[arg(
+            value_name = "RECORD_NAME",
+            required_unless_present = "id",
+            requires = "zone"
+        )]
+        name: Option<String>,
+        /// The record ID; addresses exactly one record
+        #[arg(long, value_name = "RECORD_ID", conflicts_with = "name")]
+        id: Option<i32>,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
     /// Update a record, changing only the fields you pass
+    #[command(after_help = "\
+Examples:
+  bindizr record update example.com www --value 192.0.2.2
+  bindizr record update example.com www --new-name api
+  bindizr record update --id 42 --type TXT --value \"hello\"
+
+Every flag below sets a new value; none of them picks which record to change.
+The name form therefore changes the one record at the name and reports an
+error when the name holds several, which --id then addresses individually.")]
     Update {
-        /// The record ID
-        #[arg(value_name = "RECORD_ID")]
-        id: i32,
-        /// Record name
-        #[arg(long, value_name = "RECORD_NAME")]
+        /// Zone the record belongs to
+        #[arg(
+            value_name = "ZONE_NAME",
+            required_unless_present = "id",
+            requires = "name"
+        )]
+        zone: Option<String>,
+        /// Owner name relative to the zone, or '@' for the apex; holding
+        /// several records there is an error
+        #[arg(
+            value_name = "RECORD_NAME",
+            required_unless_present = "id",
+            requires = "zone"
+        )]
         name: Option<String>,
+        /// The record ID; addresses exactly one record
+        #[arg(long, value_name = "RECORD_ID", conflicts_with = "name")]
+        id: Option<i32>,
+        /// Move the record to this owner name
+        #[arg(long, value_name = "RECORD_NAME")]
+        new_name: Option<String>,
         /// Record type (A, AAAA, CNAME, MX, etc.)
         #[arg(long = "type")]
         record_type: Option<String>,
@@ -189,33 +243,37 @@ YAML example:
         alias = "rm",
         after_help = "\
 Examples:
-  bindizr record delete 42
-  bindizr record delete -z example.com --name www
-  bindizr record delete -z example.com --name www --type A --dry-run
+  bindizr record delete example.com www
+  bindizr record delete example.com www --type A --dry-run
+  bindizr record delete --id 42
 
 Deleting by name narrows as RFC 2136, Section 2.5.2 does:
-  --name only                 every record type at the name
-  --name --type               every record of that type at the name
-  --name --type --value       one record
+  name only                   every record type at the name
+  name --type                 every record of that type at the name
+  name --type --value         one record
 
 The whole set goes in one transaction, so the zone advances by a single
 serial and the secondaries transfer once."
     )]
     Delete {
-        /// The record ID; omit it to delete by name with --zone and --name
-        #[arg(value_name = "RECORD_ID", required_unless_present = "name")]
-        id: Option<i32>,
         /// Zone the records belong to
-        #[arg(short, long, value_name = "ZONE_NAME", requires = "name")]
-        zone: Option<String>,
-        /// Owner name relative to the zone, or '@' for the apex
         #[arg(
-            long,
+            value_name = "ZONE_NAME",
+            required_unless_present = "id",
+            requires = "name"
+        )]
+        zone: Option<String>,
+        /// Owner name relative to the zone, or '@' for the apex; every record
+        /// there goes unless a flag below narrows it
+        #[arg(
             value_name = "RECORD_NAME",
-            conflicts_with = "id",
+            required_unless_present = "id",
             requires = "zone"
         )]
         name: Option<String>,
+        /// The record ID; deletes exactly that one record
+        #[arg(long, value_name = "RECORD_ID", conflicts_with = "name")]
+        id: Option<i32>,
         /// Narrow to one record type
         #[arg(long = "type", requires = "name")]
         record_type: Option<String>,
@@ -376,7 +434,12 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 _ => print_payload(&response.data, output)?,
             }
         }
-        RecordCommand::Get { id, output } => {
+        // clap holds the two selectors apart.
+        RecordCommand::Get {
+            id: Some(id),
+            output,
+            ..
+        } => {
             let data = client::send_command(DaemonCommandKind::GetRecord, RecordIdParams { id })
                 .await?
                 .data;
@@ -385,21 +448,54 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 vec![RecordRow::whole(&response.record)]
             })?;
         }
+        RecordCommand::Get {
+            name: Some(name),
+            zone,
+            output,
+            ..
+        } => {
+            // A name can hold several records, so this is the listing filtered
+            // to one owner rather than a single-record lookup.
+            let data = client::send_command(
+                DaemonCommandKind::ListRecords,
+                GetRecordsFilter {
+                    zone_name: zone,
+                    name: Some(name),
+                    ..GetRecordsFilter::default()
+                },
+            )
+            .await?
+            .data;
+
+            print_response(
+                &data,
+                output,
+                |page: &PaginatedResponse<GetRecordResponse>| {
+                    page.items.iter().map(RecordRow::whole).collect()
+                },
+            )?;
+        }
+        RecordCommand::Get { .. } => {
+            return Err(CliError::from(
+                "give a zone and a record name, or --id to address one record",
+            ));
+        }
         RecordCommand::Update {
-            id,
-            name,
+            id: Some(id),
+            new_name,
             record_type,
             value,
             ttl,
             priority,
             output,
+            ..
         } => {
             let data = client::send_command(
                 DaemonCommandKind::UpdateRecord,
                 UpdateRecordParams {
                     id,
                     request: UpdateRecordRequest {
-                        name,
+                        name: new_name,
                         record_type,
                         value: (!value.is_empty()).then(|| to_record_value_request(value)),
                         ttl,
@@ -414,7 +510,43 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 vec![RecordRow::from(&response.record)]
             })?;
         }
-        // clap holds the two selectors apart.
+        RecordCommand::Update {
+            name: Some(name),
+            zone: Some(zone),
+            new_name,
+            record_type,
+            value,
+            ttl,
+            priority,
+            output,
+            ..
+        } => {
+            let data = client::send_command(
+                DaemonCommandKind::UpdateRecordByName,
+                UpdateRecordByNameParams {
+                    zone_name: zone,
+                    name,
+                    request: UpdateRecordRequest {
+                        name: new_name,
+                        record_type,
+                        value: (!value.is_empty()).then(|| to_record_value_request(value)),
+                        ttl,
+                        priority,
+                    },
+                },
+            )
+            .await?
+            .data;
+
+            print_response(&data, output, |response: &RecordResponse| {
+                vec![RecordRow::from(&response.record)]
+            })?;
+        }
+        RecordCommand::Update { .. } => {
+            return Err(CliError::from(
+                "give a zone and a record name, or --id to address one record",
+            ));
+        }
         RecordCommand::Delete {
             id: Some(id),
             output,
@@ -457,7 +589,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         }
         RecordCommand::Delete { .. } => {
             return Err(CliError::from(
-                "give a record ID, or --zone and --name to delete by name",
+                "give a zone and a record name, or --id to delete one record",
             ));
         }
     }

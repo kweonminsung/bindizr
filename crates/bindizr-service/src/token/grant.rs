@@ -169,6 +169,22 @@ impl TokenGrantService {
         RepositoryService::delete_token_grant(grant.id).await
     }
 
+    /// Revoke every grant `token_name` holds in `zone_name`, returning how
+    /// many went. Matching none is not an error: the rights already read the
+    /// way the request asked for.
+    pub async fn revoke_by_token_and_zone(
+        caller: &Caller,
+        token_name: &str,
+        zone_name: &str,
+    ) -> Result<u64, ServiceError> {
+        caller.authorize_global("manage token grants")?;
+
+        let token = TokenService::lookup_by_name(token_name).await?;
+        let zone = ZoneService::lookup_by_name(zone_name).await?;
+
+        RepositoryService::delete_token_grants_by_token_id_and_zone_id(token.id, zone.id).await
+    }
+
     /// Revoke a grant by its id, which identifies the row on its own.
     pub async fn revoke_by_id(caller: &Caller, grant_id: i32) -> Result<(), ServiceError> {
         caller.authorize_global("manage token grants")?;

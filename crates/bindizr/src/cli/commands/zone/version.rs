@@ -28,7 +28,16 @@ use crate::{
 #[derive(Subcommand, Debug)]
 pub(crate) enum ZoneVersionCommand {
     /// List a zone's versions (serial history)
-    #[command(alias = "ls")]
+    #[command(
+        alias = "ls",
+        after_help = "\
+Examples:
+  bindizr zone version list example.com
+  bindizr zone version list example.com --include-signer-serials
+
+By default only serials a user change produced are listed; re-signs and
+rollovers move the serial too, and --include-signer-serials shows those."
+    )]
     List {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -47,6 +56,11 @@ pub(crate) enum ZoneVersionCommand {
         output: OutputFormat,
     },
     /// Show the zone state captured at one version serial
+    #[command(after_help = "\
+Examples:
+  bindizr zone version get example.com 2026010101
+
+`zone version list` prints the serials.")]
     Get {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -58,6 +72,12 @@ pub(crate) enum ZoneVersionCommand {
         output: OutputFormat,
     },
     /// Show the record differences between two serials
+    #[command(after_help = "\
+Examples:
+  bindizr zone version diff example.com 2026010101 2026010105
+  bindizr zone version diff example.com 2026010101
+
+Omit the second serial to compare that version against the zone as it stands.")]
     Diff {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -71,6 +91,13 @@ pub(crate) enum ZoneVersionCommand {
         output: OutputFormat,
     },
     /// Roll a zone back to the state captured at a version serial
+    #[command(after_help = "\
+Examples:
+  bindizr zone version rollback example.com 2026010101 --dry-run
+  bindizr zone version rollback example.com 2026010101
+
+The zone serial still advances, so secondaries transfer the rollback as an
+ordinary change rather than seeing the serial go backwards.")]
     Rollback {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]

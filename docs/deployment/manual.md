@@ -187,7 +187,7 @@ the fix for the common ones.
 
 ```bash
 $ sudo bindizr zone create example.com --mname ns1.example.com
-$ sudo bindizr record create www --zone example.com --type A --value 192.0.2.1
+$ sudo bindizr record create example.com www --type A --value 192.0.2.1
 
 # BIND learned the zone through the catalog and pulled it; it answers on 53
 $ dig @127.0.0.1 www.example.com A +short

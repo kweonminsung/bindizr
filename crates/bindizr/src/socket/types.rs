@@ -28,10 +28,12 @@ pub(crate) enum DaemonCommandKind {
     ListTsigGrants,
     ListZoneTsigGrants,
     DeleteTsigGrant,
+    DeleteTsigGrantsByKeyAndZone,
     CreateTokenGrant,
     ListTokenGrants,
     ListZoneTokenGrants,
     DeleteTokenGrant,
+    DeleteTokenGrantsByTokenAndZone,
     GetZone,
     ListZones,
     CreateZone,
@@ -41,6 +43,7 @@ pub(crate) enum DaemonCommandKind {
     ListRecords,
     CreateRecord,
     UpdateRecord,
+    UpdateRecordByName,
     CreateRecordsBulk,
     DeleteRecord,
     DeleteRecordsMatching,
@@ -176,6 +179,20 @@ pub(crate) struct DeleteTokenGrantParams {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct DeleteTsigGrantsByKeyAndZoneParams {
+    pub(crate) key_name: String,
+    pub(crate) zone_name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DeleteTokenGrantsByTokenAndZoneParams {
+    pub(crate) token_name: String,
+    pub(crate) zone_name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ExportZoneFileParams {
     pub(crate) name: String,
     #[serde(default)]
@@ -202,6 +219,15 @@ pub(crate) struct UpdateZoneParams {
 #[serde(deny_unknown_fields)]
 pub(crate) struct UpdateRecordParams {
     pub(crate) id: i32,
+    #[serde(flatten)]
+    pub(crate) request: UpdateRecordRequest,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct UpdateRecordByNameParams {
+    pub(crate) zone_name: String,
+    pub(crate) name: String,
     #[serde(flatten)]
     pub(crate) request: UpdateRecordRequest,
 }

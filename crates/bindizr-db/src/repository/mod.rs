@@ -273,6 +273,14 @@ pub trait TsigGrantRepository: Send + Sync {
 
     /// Delete a TSIG grant by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+
+    /// Delete every grant a TSIG key holds in one zone, returning how many
+    /// rows went. One statement, so a revocation never lands half-applied.
+    async fn delete_by_key_id_and_zone_id(
+        &self,
+        tsig_key_id: i32,
+        zone_id: i32,
+    ) -> Result<u64, DatabaseError>;
 }
 
 /// Persistence operations for token grants, the HTTP twin of
@@ -304,6 +312,14 @@ pub trait TokenGrantRepository: Send + Sync {
 
     /// Delete a token grant by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+
+    /// Delete every grant a token holds in one zone, returning how many rows
+    /// went. One statement, so a revocation never lands half-applied.
+    async fn delete_by_token_id_and_zone_id(
+        &self,
+        api_token_id: i32,
+        zone_id: i32,
+    ) -> Result<u64, DatabaseError>;
 }
 
 #[async_trait]

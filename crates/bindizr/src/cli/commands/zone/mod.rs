@@ -82,9 +82,6 @@ Examples:
         /// Filter by zone name
         #[arg(long, value_name = "ZONE_NAME")]
         name: Option<String>,
-        /// Filter by zone ID
-        #[arg(long, value_name = "ZONE_ID")]
-        id: Option<i32>,
         /// Filter by mname
         #[arg(long)]
         mname: Option<String>,
@@ -251,6 +248,13 @@ TTLs are decimal seconds (RFC 1035). A file using BIND's unit suffixes
     },
 
     /// Export a zone as BIND master-file text
+    #[command(after_help = "\
+Examples:
+  bindizr zone export example.com > db.example.com
+  bindizr zone export example.com --signed > db.example.com.signed
+
+--signed appends the derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3), which
+bindizr generates rather than stores as editable records.")]
     Export {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -396,7 +400,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         }
         ZoneCommand::List {
             name,
-            id,
             mname,
             rname,
             default_ttl,
@@ -417,7 +420,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             output,
         } => {
             let has_filters = name.is_some()
-                || id.is_some()
                 || mname.is_some()
                 || rname.is_some()
                 || default_ttl.is_some()
@@ -437,7 +439,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 || offset.is_some();
             let filter_payload = || GetZonesFilter {
                 name,
-                id,
+                // The HTTP API keeps an id filter; the CLI keys zones by name,
+                // which is UNIQUE, so it never sends one.
+                id: None,
                 mname,
                 rname,
                 default_ttl,

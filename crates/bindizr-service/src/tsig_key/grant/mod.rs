@@ -179,6 +179,22 @@ impl TsigGrantService {
         RepositoryService::delete_tsig_grant(grant.id).await
     }
 
+    /// Revoke every grant `key_name` holds in `zone_name`, returning how many
+    /// went. Matching none is not an error: the rights already read the way
+    /// the request asked for.
+    pub async fn revoke_by_key_and_zone(
+        caller: &Caller,
+        key_name: &str,
+        zone_name: &str,
+    ) -> Result<u64, ServiceError> {
+        caller.authorize_global("manage TSIG keys and grants")?;
+
+        let key = TsigKeyService::lookup_by_name(key_name).await?;
+        let zone = ZoneService::lookup_by_name(zone_name).await?;
+
+        RepositoryService::delete_tsig_grants_by_key_id_and_zone_id(key.id, zone.id).await
+    }
+
     /// Revoke a grant by its id, which identifies the row on its own.
     pub async fn revoke_by_id(caller: &Caller, grant_id: i32) -> Result<(), ServiceError> {
         caller.authorize_global("manage TSIG keys and grants")?;

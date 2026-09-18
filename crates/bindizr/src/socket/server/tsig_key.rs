@@ -10,8 +10,8 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        CreateTsigGrantParams, DaemonResponse, DeleteTsigGrantParams, ListGrantsParams,
-        TsigKeyNameParams,
+        CreateTsigGrantParams, DaemonResponse, DeleteTsigGrantParams,
+        DeleteTsigGrantsByKeyAndZoneParams, ListGrantsParams, TsigKeyNameParams,
     },
 };
 
@@ -140,6 +140,25 @@ pub(crate) async fn delete_tsig_grant(
 
     Ok(DaemonResponse {
         message: "TSIG grant revoked successfully".to_string(),
+        data: serde_json::Value::Null,
+    })
+}
+
+/// Revoke every grant the requested TSIG key holds in the requested zone.
+pub(crate) async fn delete_tsig_grants_by_key_and_zone(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: DeleteTsigGrantsByKeyAndZoneParams = parse_params(data)?;
+
+    let revoked = TsigGrantService::revoke_by_key_and_zone(
+        &Caller::Global,
+        &params.key_name,
+        &params.zone_name,
+    )
+    .await?;
+
+    Ok(DaemonResponse {
+        message: format!("{} TSIG grant(s) revoked successfully", revoked),
         data: serde_json::Value::Null,
     })
 }

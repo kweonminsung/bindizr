@@ -13,8 +13,8 @@ use crate::{
     socket::{
         client,
         types::{
-            CreateTokenGrantParams, DaemonCommandKind, DeleteTokenGrantParams, ListGrantsParams,
-            TokenNameParams,
+            CreateTokenGrantParams, DaemonCommandKind, DeleteTokenGrantParams,
+            DeleteTokenGrantsByTokenAndZoneParams, ListGrantsParams, TokenNameParams,
         },
     },
 };
@@ -66,6 +66,15 @@ Examples:
         name: String,
     },
     /// Grant an API token record rights in a zone
+    #[command(after_help = "\
+Examples:
+  bindizr token grant deploy example.com
+  bindizr token grant deploy example.com --pattern '*.dyn' --types A,TXT
+  bindizr token grant monitoring example.com --read-only
+
+Omitted, --pattern and --types both default to '*', so the token reaches every
+record in the zone. A token may hold several grants in one zone; `token revoke
+<TOKEN_NAME> <ZONE_NAME>` takes them all back.")]
     Grant {
         /// Name of an existing non-global token (global tokens already cover every zone)
         #[arg(value_name = "TOKEN_NAME")]
@@ -101,11 +110,28 @@ Examples:
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-    /// Revoke one of a token's grants by grant ID
+    /// Revoke a token's grants in a zone, or one grant by ID
+    #[command(after_help = "\
+Examples:
+  bindizr token revoke deploy example.com
+  bindizr token revoke --id 7
+
+A token can hold several grants in one zone, so the name form revokes all of
+them. --id revokes exactly one (see `token grants`).")]
     Revoke {
-        /// ID of the grant to revoke (see `token grants`)
-        #[arg(value_name = "GRANT_ID")]
-        id: i32,
+        /// Token whose grants go
+        #[arg(
+            value_name = "TOKEN_NAME",
+            required_unless_present = "id",
+            requires = "zone"
+        )]
+        name: Option<String>,
+        /// Zone the grants cover
+        #[arg(value_name = "ZONE_NAME", requires = "name")]
+        zone: Option<String>,
+        /// ID of the one grant to revoke (see `token grants`)
+        #[arg(long, value_name = "GRANT_ID", conflicts_with = "name")]
+        id: Option<i32>,
     },
 }
 
@@ -211,13 +237,34 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 },
             )?;
         }
-        TokenCommand::Revoke { id } => {
+        // clap holds the two selectors apart.
+        TokenCommand::Revoke { id: Some(id), .. } => {
             let res = client::send_command(
                 DaemonCommandKind::DeleteTokenGrant,
                 DeleteTokenGrantParams { id },
             )
             .await?;
             outln!("{}", res.message);
+        }
+        TokenCommand::Revoke {
+            name: Some(name),
+            zone: Some(zone),
+            ..
+        } => {
+            let res = client::send_command(
+                DaemonCommandKind::DeleteTokenGrantsByTokenAndZone,
+                DeleteTokenGrantsByTokenAndZoneParams {
+                    token_name: name,
+                    zone_name: zone,
+                },
+            )
+            .await?;
+            outln!("{}", res.message);
+        }
+        TokenCommand::Revoke { .. } => {
+            return Err(CliError::from(
+                "give a token name and a zone name, or --id to revoke one grant",
+            ));
         }
     }
 

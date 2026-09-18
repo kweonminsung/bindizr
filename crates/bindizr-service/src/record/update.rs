@@ -19,8 +19,19 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     types::UpdateRecordRequest,
-    zone::ZoneService,
+    zone::{ZoneService, validation::normalize_zone_name},
 };
+
+/// How an update names the one record it changes.
+enum RecordSelector<'a> {
+    Id(i32),
+    /// Several records at the name are an error: an update must not pick one
+    /// of them on the caller's behalf.
+    Name {
+        zone_name: &'a str,
+        name: &'a str,
+    },
+}
 
 /// The record's fields after the request has been resolved against the
 /// stored record: the owner normalized and `encoded_value` in row form.
@@ -41,119 +52,205 @@ impl RecordService {
         record_id: i32,
         request: &UpdateRecordRequest,
     ) -> Result<RecordWithZone, ServiceError> {
-        Self::update_locked(caller, record_id, |zone, existing| {
-            let record_type = match &request.record_type {
-                Some(record_type) => parse_record_type(record_type)?,
-                None => existing.record_type.clone(),
-            };
-            // Each type has its own stored grammar (TXT uses quoted presentation),
-            // so a type change requires a fresh value.
-            if record_type != existing.record_type && request.value.is_none() {
-                return Err(ServiceError::invalid_input(
-                    "value is required when changing a record's type".to_string(),
-                ));
-            }
-            // Only MX/SRV carry a priority: given for another type it is the
-            // error creation gives, and retyping to another type clears it.
-            let priority = if matches!(record_type, RecordType::MX | RecordType::SRV) {
-                record_type.stored_priority(request.priority.or(existing.priority))
-            } else if request.priority.is_some() {
-                return Err(ServiceError::invalid_record_value(format!(
-                    "{} records do not take a priority",
-                    record_type
-                )));
-            } else {
-                None
-            };
-            let encoded_value = match &request.value {
-                Some(value) => value
-                    .to_encoded_value(&record_type, priority)
-                    .map_err(ServiceError::invalid_record_value)?,
-                None => existing.value.clone(),
-            };
-            let ttl = match request.ttl {
-                Some(ttl) => {
-                    validate_record_ttl(ttl)?;
-                    ttl
-                }
-                None => existing.ttl,
-            };
-            // An omitted name keeps the stored owner, which needs no reparse.
-            let owner_name = match &request.name {
-                Some(name) => normalize_record_owner_name(name, &zone.name)?,
-                None => existing.name.clone(),
-            };
-            Ok(ResolvedRecordUpdate {
-                owner_name,
-                record_type,
-                encoded_value,
-                ttl,
-                priority,
-            })
-        })
+        Self::update_locked(
+            caller,
+            RecordSelector::Id(record_id),
+            resolve_update(request),
+        )
         .await
     }
 
+    /// Update the one record at `name` in `zone_name`. The match is resolved
+    /// under the zone lock, so the row written is the row that was counted.
+    pub async fn update_by_name(
+        caller: &Caller,
+        zone_name: &str,
+        name: &str,
+        request: &UpdateRecordRequest,
+    ) -> Result<RecordWithZone, ServiceError> {
+        Self::update_locked(
+            caller,
+            RecordSelector::Name { zone_name, name },
+            resolve_update(request),
+        )
+        .await
+    }
+}
+
+/// Merge `request` onto the stored record: an omitted field keeps the
+/// record's current value. Shared, so both entry points resolve it alike.
+fn resolve_update(
+    request: &UpdateRecordRequest,
+) -> impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError> + '_ {
+    move |zone, existing| {
+        let record_type = match &request.record_type {
+            Some(record_type) => parse_record_type(record_type)?,
+            None => existing.record_type.clone(),
+        };
+        // Each type has its own stored grammar (TXT uses quoted presentation),
+        // so a type change requires a fresh value.
+        if record_type != existing.record_type && request.value.is_none() {
+            return Err(ServiceError::invalid_input(
+                "value is required when changing a record's type".to_string(),
+            ));
+        }
+        // Only MX/SRV carry a priority: given for another type it is the
+        // error creation gives, and retyping to another type clears it.
+        let priority = if matches!(record_type, RecordType::MX | RecordType::SRV) {
+            record_type.stored_priority(request.priority.or(existing.priority))
+        } else if request.priority.is_some() {
+            return Err(ServiceError::invalid_record_value(format!(
+                "{} records do not take a priority",
+                record_type
+            )));
+        } else {
+            None
+        };
+        let encoded_value = match &request.value {
+            Some(value) => value
+                .to_encoded_value(&record_type, priority)
+                .map_err(ServiceError::invalid_record_value)?,
+            None => existing.value.clone(),
+        };
+        let ttl = match request.ttl {
+            Some(ttl) => {
+                validate_record_ttl(ttl)?;
+                ttl
+            }
+            None => existing.ttl,
+        };
+        // An omitted name keeps the stored owner, which needs no reparse.
+        let owner_name = match &request.name {
+            Some(name) => normalize_record_owner_name(name, &zone.name)?,
+            None => existing.name.clone(),
+        };
+        Ok(ResolvedRecordUpdate {
+            owner_name,
+            record_type,
+            encoded_value,
+            ttl,
+            priority,
+        })
+    }
+}
+
+impl RecordService {
     /// Load the record inside the transaction, resolve the update against it,
     /// then write it, bumping the zone serial and recording DEL+ADD IXFR changes.
     async fn update_locked(
         caller: &Caller,
-        record_id: i32,
+        selector: RecordSelector<'_>,
         resolve: impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError>,
     ) -> Result<RecordWithZone, ServiceError> {
-        // Resolve zone_id with a non-locking read so the tx locks zone before
-        // record (the create/bulk/import order); the reverse can deadlock.
-        let zone_id = match RepositoryService::get_record(record_id).await {
-            Ok(Some(record)) => record.zone_id,
-            Ok(None) => return Err(ServiceError::record_not_found(record_id)),
-            Err(e) => {
-                log::error!("Failed to fetch record: {}", e);
-                return Err(ServiceError::internal("Failed to fetch record"));
-            }
+        // Non-locking read for the zone_id, so the tx locks zone before record
+        // (the create/bulk/import order); the reverse can deadlock. The name
+        // form already names its zone and needs no pre-read.
+        let zone_id = match selector {
+            RecordSelector::Id(record_id) => match RepositoryService::get_record(record_id).await {
+                Ok(Some(record)) => Some(record.zone_id),
+                Ok(None) => return Err(ServiceError::record_not_found(record_id)),
+                Err(e) => {
+                    log::error!("Failed to fetch record: {}", e);
+                    return Err(ServiceError::internal("Failed to fetch record"));
+                }
+            },
+            RecordSelector::Name { .. } => None,
         };
 
         let mut tx = RepositoryService::begin_tx("Failed to update record").await?;
 
         let apply_result = async {
-            let zone = match RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive)
-                .await
-            {
-                Ok(Some(zone)) => zone,
-                Ok(None) => {
-                    return Err(ServiceError::new(
-                        ErrorCode::ZoneNotFound,
-                        format!("Zone with id '{}' not found", zone_id),
-                    ));
-                }
-                Err(e) => {
-                    log::error!("Failed to fetch zone: {}", e);
-                    return Err(ServiceError::internal("Failed to fetch zone"));
-                }
-            };
-
-            let existing_record =
-                match RepositoryService::get_record_tx(&mut tx, record_id, LockLevel::Exclusive)
+            let (zone, existing_record) = match selector {
+                RecordSelector::Id(record_id) => {
+                    let zone_id = zone_id.expect("the id form pre-reads its zone_id");
+                    let zone = match RepositoryService::get_zone_tx(
+                        &mut tx,
+                        zone_id,
+                        LockLevel::Exclusive,
+                    )
                     .await
-                {
-                    Ok(Some(record)) if record.zone_id == zone.id => record,
-                    Ok(Some(_)) | Ok(None) => {
+                    {
+                        Ok(Some(zone)) => zone,
+                        Ok(None) => {
+                            return Err(ServiceError::new(
+                                ErrorCode::ZoneNotFound,
+                                format!("Zone with id '{}' not found", zone_id),
+                            ));
+                        }
+                        Err(e) => {
+                            log::error!("Failed to fetch zone: {}", e);
+                            return Err(ServiceError::internal("Failed to fetch zone"));
+                        }
+                    };
+
+                    let existing_record = match RepositoryService::get_record_tx(
+                        &mut tx,
+                        record_id,
+                        LockLevel::Exclusive,
+                    )
+                    .await
+                    {
+                        Ok(Some(record)) if record.zone_id == zone.id => record,
+                        Ok(Some(_)) | Ok(None) => {
+                            return Err(ServiceError::record_not_found(record_id));
+                        }
+                        Err(e) => {
+                            log::error!("Failed to fetch record: {}", e);
+                            return Err(ServiceError::internal("Failed to fetch record"));
+                        }
+                    };
+
+                    // A record the caller's grants do not reach reads as 404,
+                    // as it does on GET, so ids cannot be probed.
+                    if !caller.sees_record(
+                        zone.id,
+                        &existing_record.name,
+                        Some(&existing_record.record_type),
+                    ) {
                         return Err(ServiceError::record_not_found(record_id));
                     }
-                    Err(e) => {
-                        log::error!("Failed to fetch record: {}", e);
-                        return Err(ServiceError::internal("Failed to fetch record"));
-                    }
-                };
 
-            // A record the caller's grants do not reach reads as 404, as it
-            // does on GET, so ids cannot be probed.
-            if !caller.sees_record(
-                zone.id,
-                &existing_record.name,
-                Some(&existing_record.record_type),
-            ) {
-                return Err(ServiceError::record_not_found(record_id));
-            }
+                    (zone, existing_record)
+                }
+                RecordSelector::Name { zone_name, name } => {
+                    let zone_name = normalize_zone_name(zone_name)?;
+                    let zone = ZoneService::get_visible_by_name_tx(
+                        &mut tx,
+                        caller,
+                        zone_name.as_str(),
+                        LockLevel::Exclusive,
+                    )
+                    .await?;
+                    let owner = normalize_record_owner_name(name, &zone.name)?;
+
+                    // Count only what the caller can see, so the count never
+                    // reports rows their grants do not reach.
+                    let mut matched: Vec<Record> = RepositoryService::list_records_by_name_tx(
+                        &mut tx,
+                        zone.id,
+                        &owner,
+                        LockLevel::Exclusive,
+                    )
+                    .await?
+                    .into_iter()
+                    .filter(|record| {
+                        caller.sees_record(zone.id, &record.name, Some(&record.record_type))
+                    })
+                    .collect();
+
+                    match matched.len() {
+                        1 => (zone, matched.remove(0)),
+                        0 => {
+                            return Err(ServiceError::record_not_found_at_name(&zone.name, &owner));
+                        }
+                        matches => {
+                            return Err(ServiceError::record_name_ambiguous(
+                                &zone.name, &owner, matches,
+                            ));
+                        }
+                    }
+                }
+            };
 
             let resolved = resolve(&zone, &existing_record)?;
 

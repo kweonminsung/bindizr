@@ -94,7 +94,7 @@ async fn tsig_key_grant_grants_revoke() {
     assert_cli_failure_contains(&delete_args, &refused, "still holds 1 grant");
 
     let revoked = app
-        .run_cli_success(&["tsig-key", "revoke", &grant_id])
+        .run_cli_success(&["tsig-key", "revoke", "--id", &grant_id])
         .await;
     assert!(
         revoked.contains("TSIG grant revoked successfully"),
@@ -134,5 +134,39 @@ async fn global_tsig_key_create_list_delete() {
     assert_eq!(fetched["tsig_key"]["global"], true);
 
     app.run_cli_success(&["tsig-key", "delete", "cli-global-key"])
+        .await;
+}
+
+/// Verify that `tsig-key revoke` takes a key and zone name, revoking every grant there.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn tsig_key_revoke_by_name_revokes_every_grant_in_the_zone() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("tsig-revoke-by-name.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    app.run_cli_success(&["tsig-key", "create", "cli-revoke-key"])
+        .await;
+
+    // One key can hold several grants in one zone, each with its own name
+    // pattern, so the pair the grants were created with must revoke them all.
+    for pattern in ["*.dyn", "*.auto"] {
+        app.run_cli_success(&[
+            "tsig-key",
+            "grant",
+            "cli-revoke-key",
+            &zone_name,
+            "--pattern",
+            pattern,
+        ])
+        .await;
+    }
+
+    let revoked = app
+        .run_cli_success(&["tsig-key", "revoke", "cli-revoke-key", &zone_name])
+        .await;
+    assert!(revoked.contains("2 TSIG grant(s) revoked"), "{revoked}");
+
+    // The key holds no grant now, so deleting it is no longer refused.
+    app.run_cli_success(&["tsig-key", "delete", "cli-revoke-key"])
         .await;
 }

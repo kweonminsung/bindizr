@@ -46,8 +46,9 @@ $ bindizr token grant monitoring example.com --read-only
 $ bindizr token grants external-dns
 $ bindizr zone token-grants example.com
 
-# Revoke one grant by ID
-$ bindizr token revoke <GRANT_ID>
+# Revoke every grant a token holds in a zone, or one grant by ID
+$ bindizr token revoke external-dns example.com
+$ bindizr token revoke --id 7
 ```
 
 A global token can do all of this over HTTP too: `POST`/`GET /tokens` and
