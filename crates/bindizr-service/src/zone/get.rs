@@ -5,11 +5,10 @@ use crate::{
     RepositoryTx,
     authorization::Caller,
     error::ServiceError,
-    model::{record::Record, zone::Zone, zone_change::ZoneChange},
+    model::{zone::Zone, zone_change::ZoneChange},
     repository::RepositoryService,
     types::{
-        GetRecordResponse, GetZoneResponse, GetZonesFilter, PaginatedResponse, ZoneDetailResponse,
-        normalize_page_limit, parse_setting,
+        GetZoneResponse, GetZonesFilter, PaginatedResponse, normalize_page_limit, parse_setting,
     },
 };
 
@@ -159,51 +158,6 @@ impl ZoneService {
         let zone = Self::get_by_name_tx(tx, zone_name, lock_level).await?;
         caller.authorize_zone_visible(&zone)?;
         Ok(zone)
-    }
-
-    /// The zone and its records from one snapshot, so they share a serial.
-    /// Fetch a zone as the detail payload both front ends answer with,
-    /// carrying its records only when they were asked for.
-    pub async fn get_detail(
-        caller: &Caller,
-        zone_name: &str,
-        with_records: bool,
-    ) -> Result<ZoneDetailResponse, ServiceError> {
-        let (zone, records) = if with_records {
-            Self::get_with_records(caller, zone_name).await?
-        } else {
-            (Self::get_by_name(caller, zone_name).await?, vec![])
-        };
-        Ok(ZoneDetailResponse {
-            zone: GetZoneResponse::from_zone(&zone),
-            records: records
-                .iter()
-                .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone.name))
-                .collect(),
-        })
-    }
-
-    pub(crate) async fn get_with_records(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<(Zone, Vec<Record>), ServiceError> {
-        let mut tx = RepositoryService::begin_read_tx("Failed to fetch zone").await?;
-        let result = async {
-            let zone =
-                Self::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-            // Narrowed the way `/records` narrows it: a grant that hides a
-            // record from the listing must hide it from the zone's detail too.
-            let records = RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None)
-                .await?
-                .into_iter()
-                .filter(|record| {
-                    caller.sees_record(zone.id, &record.name, Some(&record.record_type))
-                })
-                .collect();
-            Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
-        }
-        .await;
-        RepositoryService::finish_tx(tx, result, "Failed to fetch zone").await
     }
 
     /// Fetch a zone by name within the caller's transaction at `lock_level`,

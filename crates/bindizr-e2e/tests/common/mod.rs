@@ -245,18 +245,34 @@ impl TestApp {
 
     /// Fetch all API record pages for a zone.
     pub(crate) async fn list_records(&self, zone_name: &str) -> Vec<Value> {
-        let (status, body) = self
-            .send_request(
-                Method::GET,
-                &format!("/zones/{zone_name}?records=true"),
-                None,
-            )
-            .await;
-        assert_eq!(status, StatusCode::OK);
-        body["records"]
-            .as_array()
-            .expect("zone detail carries a records array")
-            .clone()
+        let mut records = Vec::new();
+        let mut offset = 0u64;
+        loop {
+            let (status, body) = self
+                .send_request(
+                    Method::GET,
+                    &format!(
+                        "/records?zone_name={zone_name}&limit={RECORD_PAGE_LIMIT}&offset={offset}"
+                    ),
+                    None,
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK);
+            let page = body["items"]
+                .as_array()
+                .expect("record list response did not contain items")
+                .clone();
+            let read = page.len();
+            records.extend(page);
+            let total = body["pagination"]["total"]
+                .as_u64()
+                .expect("record list response did not contain a total");
+            offset += read as u64;
+            if read == 0 || offset >= total {
+                break;
+            }
+        }
+        records
     }
 
     /// Read the zone's current serial through the API.

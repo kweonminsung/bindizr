@@ -11,20 +11,22 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, GetZoneParams,
-        ImportZoneParams, ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams,
-        ZoneNameParams, ZoneVersionParams,
+        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, ImportZoneParams,
+        ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams, ZoneNameParams,
+        ZoneVersionParams,
     },
 };
 
-/// Return the requested zone, with its records when they were asked for.
+/// Return the requested zone.
 pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: GetZoneParams = parse_params(data)?;
+    let params: ZoneNameParams = parse_params(data)?;
 
-    let detail = ZoneService::get_detail(&Caller::Global, &params.name, params.records).await?;
+    let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
-        data: to_response_data(detail)?,
+        data: to_response_data(ZoneResponse {
+            zone: GetZoneResponse::from_zone(&zone),
+        })?,
     })
 }
 

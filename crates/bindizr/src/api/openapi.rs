@@ -14,8 +14,8 @@ use bindizr_service::types::{
     RecordValueRequest, RollbackSummary, RollbackZoneResponse, RolloverDnssecRequest,
     SecondaryStatusResponse, TokenGrantResponse, TokenResponse, TsigGrantResponse, TsigKeyResponse,
     UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateZoneRequest,
-    VersionDetailResponse, VersionDiffResponse, VersionRecordResponse, ZoneDetailResponse,
-    ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
+    VersionDetailResponse, VersionDiffResponse, VersionRecordResponse, ZoneResponse,
+    ZoneStatusResponse, ZoneVersionResponse,
 };
 use utoipa::{
     Modify, OpenApi,
@@ -155,7 +155,6 @@ use utoipa::{
         VersionDiffResponse,
         VersionRecordResponse,
         TsigKeyResponse,
-        ZoneDetailResponse,
         ZoneResponse,
         ZoneVersionResponse,
         ZoneStatusResponse,

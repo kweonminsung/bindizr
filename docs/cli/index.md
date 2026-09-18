@@ -94,10 +94,9 @@ $ bindizr zone create example.com --mname ns1.example.com --rname admin@example.
 $ bindizr record create example.com @ --type NS --value ns1.example.com
 $ bindizr record create example.com ns1 --type A --value 192.0.2.1
 
-# List, inspect, and delete zones (--records adds the zone's records, unpaginated)
+# List, inspect, and delete zones
 $ bindizr zone list
 $ bindizr zone get example.com
-$ bindizr zone get example.com --records
 $ bindizr zone delete example.com
 
 # Update a zone, changing only the fields you pass

@@ -97,16 +97,6 @@ pub(crate) struct ZoneNameParams {
     pub(crate) name: String,
 }
 
-/// Payload for reading one zone; `records` asks for its records alongside it,
-/// unpaginated, the way `GET /zones/{name}?records=true` does.
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct GetZoneParams {
-    pub(crate) name: String,
-    #[serde(default)]
-    pub(crate) records: bool,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RecordIdParams {

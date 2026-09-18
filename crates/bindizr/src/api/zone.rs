@@ -11,7 +11,7 @@ use bindizr_service::{
         CreateZoneRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetZoneResponse, GetZonesFilter,
         ImportZoneRequest, ImportZoneResponse, MessageResponse, PaginatedResponse,
         RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
-        ZoneDetailResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
+        ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
     },
     zone::ZoneService,
 };
@@ -318,19 +318,18 @@ pub(crate) async fn list_zones(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-/// Get a single DNS zone, optionally including its records.
+/// Get a single DNS zone.
 #[utoipa::path(
         get,
         path = "/zones/{name}",
         tag = "Zone",
         summary = "Get a specific DNS zone",
-        description = "With `records=true` the response carries every record of the zone in one unpaginated array; for a large zone list them page by page with `GET /records?zone_name=` instead.",
+        description = "Returns the zone's SOA metadata. For its records, list them with `GET /records?zone_name=`, or render the whole zone as a master file with `GET /zones/{name}/export`.",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone to retrieve."),
-            ("records" = Option<bool>, Query, description = "Include the zone's records, unpaginated.")
+            ("name" = String, Path, description = "The name of the DNS zone to retrieve.")
         ),
         responses(
-            (status = 200, description = "Details of the DNS zone", body = ZoneDetailResponse),
+            (status = 200, description = "Details of the DNS zone", body = ZoneResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -339,11 +338,15 @@ pub(crate) async fn list_zones(
 pub(crate) async fn get_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
-    Query(query): Query<GetZoneQuery>,
 ) -> Result<Response, ApiError> {
-    let response =
-        ZoneService::get_detail(&caller, &params.name, query.records == Some(true)).await?;
-    Ok((StatusCode::OK, Json(response)).into_response())
+    let zone = ZoneService::get_by_name(&caller, &params.name).await?;
+    Ok((
+        StatusCode::OK,
+        Json(ZoneResponse {
+            zone: GetZoneResponse::from_zone(&zone),
+        }),
+    )
+        .into_response())
 }
 
 /// Create a new DNS zone.
@@ -473,10 +476,4 @@ pub(crate) async fn import_zone(
         StatusCode::OK
     };
     Ok((status, Json(response)).into_response())
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct GetZoneQuery {
-    records: Option<bool>,
 }

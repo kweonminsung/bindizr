@@ -5,7 +5,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::record::GetRecordResponse;
 use crate::{error::ServiceError, model::zone::Zone};
 
 /// API representation of a zone.
@@ -215,13 +214,6 @@ pub fn build_notify_message(zone_name: Option<&str>, bump_serial: bool) -> Strin
     };
     let suffix = if bump_serial { " (serial bumped)" } else { "" };
     format!("NOTIFY sent successfully for {}{}", scope, suffix)
-}
-
-/// A zone together with all of its records.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct ZoneDetailResponse {
-    pub zone: GetZoneResponse,
-    pub records: Vec<GetRecordResponse>,
 }
 
 /// A single zone wrapped in a response envelope.

@@ -7,8 +7,8 @@ use bindizr_core::{errln, out, outln};
 use bindizr_service::types::{
     CreateZoneRequest, ExportZoneFileResponse, GetTokenGrantResponse, GetTsigGrantResponse,
     GetZoneResponse, GetZonesFilter, ImportMode as ServiceImportMode, ImportZoneRequest,
-    ImportZoneResponse, PageFilter, PaginatedResponse, UpdateZoneRequest, ZoneDetailResponse,
-    ZoneResponse, ZoneStatusResponse,
+    ImportZoneResponse, PageFilter, PaginatedResponse, UpdateZoneRequest, ZoneResponse,
+    ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -17,17 +17,16 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ImportSummaryRow, OutputFormat, RecordRow, SecondaryStatusRow, TokenGrantRow,
-            TsigGrantRow, ZoneRow, parse_response, print_payload, print_response, print_table,
+            ImportSummaryRow, OutputFormat, SecondaryStatusRow, TokenGrantRow, TsigGrantRow,
+            ZoneRow, parse_response, print_payload, print_response, print_table,
             render_change_preview,
         },
     },
     socket::{
         client,
         types::{
-            DaemonCommandKind, ExportZoneFileParams, GetZoneParams, ImportZoneParams,
-            ListGrantsParams, NotifyAllZonesParams, NotifyZoneParams, UpdateZoneParams,
-            ZoneNameParams,
+            DaemonCommandKind, ExportZoneFileParams, ImportZoneParams, ListGrantsParams,
+            NotifyAllZonesParams, NotifyZoneParams, UpdateZoneParams, ZoneNameParams,
         },
     },
 };
@@ -146,10 +145,6 @@ and the contact is the address a resolver operator writes to.")]
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
-        /// Include the zone's records, unpaginated; page a large zone with
-        /// `record list --zone` instead
-        #[arg(long)]
-        records: bool,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -476,23 +471,15 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 },
             )?;
         }
-        ZoneCommand::Get {
-            name,
-            records,
-            output,
-        } => {
-            let data =
-                client::send_command(DaemonCommandKind::GetZone, GetZoneParams { name, records })
-                    .await?
-                    .data;
+        ZoneCommand::Get { name, output } => {
+            let data = client::send_command(DaemonCommandKind::GetZone, ZoneNameParams { name })
+                .await?
+                .data;
 
             match output {
                 OutputFormat::Table => {
-                    let detail: ZoneDetailResponse = parse_response(&data)?;
-                    print_table(vec![ZoneRow::from(&detail.zone)]);
-                    if records {
-                        print_table(detail.records.iter().map(RecordRow::from).collect());
-                    }
+                    let response: ZoneResponse = parse_response(&data)?;
+                    print_table(vec![ZoneRow::from(&response.zone)]);
                 }
                 _ => print_payload(&data, output)?,
             }
