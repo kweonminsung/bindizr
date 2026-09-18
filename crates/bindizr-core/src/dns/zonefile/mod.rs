@@ -97,9 +97,17 @@ impl ParsedZoneFile {
 
                     let record_type = match rr.rtype() {
                         // Not stored as a record; `soa` carries its fields for
-                        // a zone created from this file.
+                        // a zone created from this file. Only the apex SOA is
+                        // this zone's: another owner's would hand it a foreign
+                        // serial and timers.
                         Rtype::SOA => {
-                            if soa.is_none() {
+                            if to_fqdn_lowercase(&rr.owner().to_string()) != origin_fqdn {
+                                errors.push(format!(
+                                    "SOA for '{}' does not belong to zone '{}'",
+                                    rr.owner(),
+                                    origin_fqdn
+                                ));
+                            } else if soa.is_none() {
                                 soa = to_zone_file_soa(&rr);
                             }
                             continue;

@@ -138,7 +138,7 @@ Omit the zone to list records from every zone the caller can see."
         /// Search records by partial text
         #[arg(short = 'q', long)]
         search: Option<String>,
-        /// Sort by: name (default), record_type, ttl, priority, created_at
+        /// Sort by: name (default), type, ttl, priority, created_at
         #[arg(long, value_name = "FIELD")]
         sort: Option<String>,
         /// Sort order: asc (default) or desc
@@ -455,17 +455,38 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ..
         } => {
             // A name can hold several records, so this is the listing filtered
-            // to one owner rather than a single-record lookup.
-            let data = client::send_command(
-                DaemonCommandKind::ListRecords,
-                GetRecordsFilter {
-                    zone_name: zone,
-                    name: Some(name),
-                    ..GetRecordsFilter::default()
-                },
-            )
-            .await?
-            .data;
+            // to one owner. It defines no paging flags and promises every
+            // record at the name, so the pages are walked here.
+            let mut items: Vec<serde_json::Value> = Vec::new();
+            let mut offset = 0u64;
+            let mut total = 0u64;
+            let data = loop {
+                let page = client::send_command(
+                    DaemonCommandKind::ListRecords,
+                    GetRecordsFilter {
+                        zone_name: zone.clone(),
+                        name: Some(name.clone()),
+                        offset: Some(offset),
+                        ..GetRecordsFilter::default()
+                    },
+                )
+                .await?
+                .data;
+
+                let Some(page_items) = page["items"].as_array() else {
+                    break page;
+                };
+                let read = page_items.len() as u64;
+                items.extend(page_items.iter().cloned());
+                total = page["pagination"]["total"].as_u64().unwrap_or(total);
+                offset += read;
+                if read == 0 || offset >= total {
+                    break serde_json::json!({
+                        "items": items,
+                        "pagination": { "total": total, "limit": total, "offset": 0 },
+                    });
+                }
+            };
 
             print_response(
                 &data,

@@ -1962,7 +1962,7 @@ paths:
       tags:
       - Zone
       summary: Get a specific DNS zone
-      description: With `records=true` the response carries every record of the zone in one unpaginated array; for a large zone list them page by page with `GET /records?zone_name=` instead.
+      description: Returns the zone's SOA metadata. For its records, list them with `GET /records?zone_name=`, or render the whole zone as a master file with `GET /zones/{name}/export`.
       operationId: get_zone
       parameters:
       - name: name
@@ -1971,19 +1971,13 @@ paths:
         required: true
         schema:
           type: string
-      - name: records
-        in: query
-        description: Include the zone's records, unpaginated.
-        required: false
-        schema:
-          type: boolean
       responses:
         '200':
           description: Details of the DNS zone
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneDetailResponse'
+                $ref: '#/components/schemas/ZoneResponse'
         '401':
           description: Unauthorized
           content:
@@ -5440,19 +5434,6 @@ components:
           example: A
         value:
           $ref: '#/components/schemas/RecordValueRequest'
-    ZoneDetailResponse:
-      type: object
-      description: A zone together with all of its records.
-      required:
-      - zone
-      - records
-      properties:
-        records:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetRecordResponse'
-        zone:
-          $ref: '#/components/schemas/GetZoneResponse'
     ZoneResponse:
       type: object
       description: A single zone wrapped in a response envelope.

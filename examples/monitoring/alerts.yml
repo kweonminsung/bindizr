@@ -42,7 +42,7 @@ groups:
 
       # Secondaries then sit on an old serial until their refresh timer fires.
       - alert: BindizrNotifyFailing
-        expr: increase(bindizr_notify_sent_total{result!="success"}[15m]) > 0
+        expr: increase(bindizr_notify_sent_total{result!="ok"}[15m]) > 0
         for: 15m
         labels:
           severity: warning
@@ -61,9 +61,9 @@ groups:
 
       # Zero pruning while zones change means the tables grow without bound.
       - alert: BindizrHistoryNotPruned
-        # `and` pairs only identical label sets, so the `table` label on
-        # pruned_rows_total is summed away to match the unlabelled bump counter.
-        expr: sum(increase(bindizr_pruned_rows_total[24h])) == 0 and increase(bindizr_zone_serial_bumps_total[24h]) > 0
+        # `and` pairs only identical label sets: drop the `table` label the
+        # pruning counter carries, and keep the scrape labels both sides share.
+        expr: sum without(table) (increase(bindizr_pruned_rows_total[24h])) == 0 and increase(bindizr_zone_serial_bumps_total[24h]) > 0
         for: 1h
         labels:
           severity: warning
@@ -83,8 +83,9 @@ groups:
 
       # The working set no longer fits, so transfers reach the database.
       - alert: BindizrTransferCacheThrashing
+        # Both sides aggregate to an empty label set, so `and` can pair them.
         expr: |
-          increase(bindizr_zone_cache_evictions_total[15m]) > 0
+          sum(increase(bindizr_zone_cache_evictions_total[15m])) > 0
             and sum(rate(bindizr_zone_cache_lookups_total{result="hit"}[15m]))
               / sum(rate(bindizr_zone_cache_lookups_total[15m])) < 0.5
         for: 30m

@@ -105,3 +105,36 @@ fn reads_a_naptr_record_in_its_own_presentation_form() {
         ]
     );
 }
+
+/// Verify that only the apex SOA is read as the zone's own.
+#[test]
+fn a_soa_outside_the_apex_is_refused() {
+    // `zone import --create` builds the new zone from `soa`, so a foreign
+    // owner's SOA would hand it that zone's serial, MNAME, RNAME and timers.
+    let parsed = ParsedZoneFile::parse(
+        "other.example. IN SOA ns1.other.example. host.other.example. (99 1 2 3 4)\n\
+         www IN A 192.0.2.1\n",
+        "example.com",
+        3600,
+    );
+    assert!(
+        parsed.soa.is_none(),
+        "a foreign SOA was read as the zone's own"
+    );
+    assert!(
+        parsed
+            .errors
+            .iter()
+            .any(|e| e.contains("does not belong to zone")),
+        "{:?}",
+        parsed.errors
+    );
+
+    let parsed = ParsedZoneFile::parse(
+        "@ IN SOA ns1.example.com. host.example.com. (99 1 2 3 4)\n",
+        "example.com",
+        3600,
+    );
+    assert_eq!(parsed.soa.expect("apex SOA").serial, 99);
+    assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+}
