@@ -407,9 +407,9 @@ fn a_reload_takes_the_settings_read_per_use() {
     assert!(current.changed_settings(&current).is_empty());
 }
 
-/// Verify that a provisioned token file reads as the secret it holds.
+/// Verify that the token file is validated where it is read.
 #[test]
-fn load_initial_token_file_trims_and_reads_an_empty_file_as_unset() {
+fn load_initial_token_file_trims_and_refuses_what_cannot_seed() {
     let dir = tempfile::tempdir().expect("temp dir");
 
     // A secret manager writes a trailing newline; the token must not carry it.
@@ -417,16 +417,18 @@ fn load_initial_token_file_trims_and_reads_an_empty_file_as_unset() {
     std::fs::write(&path, "a-16-plus-secret\n").expect("write");
     assert_eq!(
         load_initial_token_file(path.to_str().unwrap()).unwrap(),
-        Some("a-16-plus-secret".to_string())
+        "a-16-plus-secret"
     );
 
-    // A mount that exists but was never filled must not seed an empty token.
+    // These must fail before the schema exists, or the startup that creates
+    // it spends the one chance to seed.
+    let short = dir.path().join("short");
+    std::fs::write(&short, "too-short\n").expect("write");
+    assert!(load_initial_token_file(short.to_str().unwrap()).is_err());
+
     let empty = dir.path().join("empty");
     std::fs::write(&empty, "  \n").expect("write");
-    assert_eq!(
-        load_initial_token_file(empty.to_str().unwrap()).unwrap(),
-        None
-    );
+    assert!(load_initial_token_file(empty.to_str().unwrap()).is_err());
 
     assert!(load_initial_token_file(dir.path().join("absent").to_str().unwrap()).is_err());
 }

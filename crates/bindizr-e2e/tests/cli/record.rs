@@ -483,7 +483,7 @@ async fn record_delete_by_name_takes_a_txt_value_as_it_was_created() {
     }
 
     // The row holds the presentation form, so comparing the two spellings
-    // byte for byte used to match nothing and report a successful no-op.
+    // byte for byte matches nothing and reports a successful no-op.
     let deleted = app
         .run_cli_success(&[
             "record",

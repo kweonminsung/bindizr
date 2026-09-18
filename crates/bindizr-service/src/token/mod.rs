@@ -31,9 +31,6 @@ pub(crate) fn hash_token(token: &str) -> String {
 /// Name the configured initial token is created under.
 const INITIAL_TOKEN_NAME: &str = "initial";
 
-/// Shortest initial secret accepted; the generated ones are 32 characters.
-const INITIAL_TOKEN_MIN_LEN: usize = 16;
-
 impl TokenService {
     /// Create an API token; the secret comes back beside it, shown this once.
     pub async fn create(
@@ -95,19 +92,11 @@ impl TokenService {
         )
     }
 
-    /// Create the configured secret as a global token named `initial`. The
-    /// daemon calls this only on the startup that built the schema, so a token
-    /// revoked later is never seeded back. Takes no caller: it runs before any
-    /// front end is up.
+    /// Create `secret` as a global token named `initial`. The daemon calls
+    /// this only on the startup that built the schema, so a token revoked
+    /// later is never seeded back, and passes a secret the config reader
+    /// validated. Takes no caller: it runs before any front end is up.
     pub async fn seed_initial(secret: &str) -> Result<bool, ServiceError> {
-        let secret = secret.trim();
-        // A short secret is guessable, and this token may manage every zone.
-        if secret.len() < INITIAL_TOKEN_MIN_LEN {
-            return Err(ServiceError::invalid_input(format!(
-                "api.authentication.initial_token_file must hold at least {} characters",
-                INITIAL_TOKEN_MIN_LEN
-            )));
-        }
         if Self::count_all().await? > 0 {
             return Ok(false);
         }

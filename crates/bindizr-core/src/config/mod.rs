@@ -519,13 +519,23 @@ pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
     BindizrConfig::from_toml(&text, |name| env::var(name).ok())
 }
 
+/// Shortest initial secret accepted; a guessable one would manage every zone.
+const INITIAL_TOKEN_MIN_LEN: usize = 16;
+
 /// Read the secret in `api.authentication.initial_token_file`, trimmed of the
-/// newline a secret manager writes. An empty file reads as no token.
-pub fn load_initial_token_file(path: &str) -> Result<Option<String>, String> {
+/// newline a secret manager writes. Everything that can fail on the value
+/// fails here, which the daemon runs before the schema exists.
+pub fn load_initial_token_file(path: &str) -> Result<String, String> {
     let secret = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read the initial token file '{}': {}", path, e))?;
     let secret = secret.trim();
-    Ok((!secret.is_empty()).then(|| secret.to_string()))
+    if secret.len() < INITIAL_TOKEN_MIN_LEN {
+        return Err(format!(
+            "The initial token file '{}' must hold at least {} characters",
+            path, INITIAL_TOKEN_MIN_LEN
+        ));
+    }
+    Ok(secret.to_string())
 }
 
 impl BindizrConfig {

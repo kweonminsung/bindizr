@@ -604,7 +604,7 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
-    // A search used to leave the derived rows out entirely.
+    // The search must reach the derived rows, not only the stored ones.
     let (status, body) = app
         .send_request(
             Method::GET,

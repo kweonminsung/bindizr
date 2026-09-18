@@ -117,8 +117,8 @@ mod tests {
     /// Verify that a misspelled query key is rejected, naming the key.
     #[tokio::test]
     async fn unknown_query_key_is_rejected_by_name() {
-        // A key the filter does not declare used to be dropped silently, which
-        // widened this delete to every type at the name.
+        // Dropping a key the filter does not declare would widen this delete
+        // to every type at the name.
         let (mut parts, _) = Request::builder()
             .uri("/records?zone_name=example.com&name=www&record_type=A")
             .body(Body::empty())

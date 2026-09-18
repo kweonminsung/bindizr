@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use bindizr_core::{config, logger};
 use bindizr_db as database;
-use bindizr_service::{self as service, error::ErrorCode};
+use bindizr_service as service;
 use tokio::signal::unix::{SignalKind, signal};
 
 use crate::{api, cli::error::CliError, dns, shutdown::Shutdown, socket};
@@ -54,35 +54,33 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
 
     let notify_task = service::notify::initialize_worker();
 
+    // Read before the database exists, so a bad path or secret stops the
+    // startup with nothing created and the corrected retry is still a first
+    // install.
+    let config = config::bindizr_config();
+    let authentication = &config.api.authentication;
+    let initial_token = authentication
+        .initial_token_file
+        .as_deref()
+        .map(|path| config::load_initial_token_file(path).map_err(CliError::configuration))
+        .transpose()?;
+
     // Only a database this startup created is a first install, so a revoked
     // credential is never seeded back on the next restart.
     let first_install = database::initialize().await.map_err(|e| e.to_string())?;
 
     // A fresh install with authentication on answers 401 until a token exists.
-    let config = config::bindizr_config();
-    let authentication = &config.api.authentication;
-    if let Some(secret) = authentication
-        .initial_token_file
-        .as_ref()
-        .filter(|_| first_install)
-        .map(|path| config::load_initial_token_file(path).map_err(CliError::configuration))
-        .transpose()?
-        .flatten()
-    {
+    if let Some(secret) = initial_token.filter(|_| first_install) {
         match service::token::TokenService::seed_initial(&secret).await {
             Ok(true) => log::info!(
                 "Created the global API token 'initial' from api.authentication.initial_token_file"
             ),
             Ok(false) => {}
             Err(e) => {
-                let message = format!("Failed to create the initial API token: {}", e);
-                // Bad input names a setting to fix, so it exits as the
-                // configuration error the unit refuses to restart; anything
-                // else may pass on the next attempt.
-                return Err(match e.code {
-                    ErrorCode::InvalidInput => CliError::configuration(message),
-                    _ => CliError::from(message),
-                });
+                return Err(CliError::from(format!(
+                    "Failed to create the initial API token: {}",
+                    e
+                )));
             }
         }
     } else if authentication.required {

@@ -89,6 +89,9 @@ kubectl -n bindizr rollout restart deploy/bindizr
 # 2. Create the zone ExternalDNS will manage, and a token granted to it.
 kubectl -n bindizr exec deploy/bindizr -- bindizr zone create example.com \
   --mname ns.example.com --rname admin@example.com --default-ttl 3600
+# BIND9 will not load a zone without apex NS records, and ExternalDNS writes none.
+kubectl -n bindizr exec deploy/bindizr -- bindizr record create example.com @ \
+  --type NS --value ns.example.com
 kubectl -n bindizr exec deploy/bindizr -- bindizr token create external-dns
 kubectl -n bindizr exec deploy/bindizr -- bindizr token grant external-dns example.com
 kubectl -n bindizr create secret generic bindizr-external-dns --from-literal=api-token=<token>
