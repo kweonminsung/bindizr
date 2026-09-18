@@ -117,10 +117,11 @@ impl UpstreamClient {
         Ok(body.records)
     }
 
-    /// Unauthenticated liveness probe of the bindizr server.
+    /// Probe whether the adapter can work at all: bindizr answers, and accepts
+    /// this token. The unauthenticated `/health` stays green through a token
+    /// that was rotated away, the adapter's most common failure.
     pub(crate) async fn probe_health(&self) -> Result<(), UpstreamError> {
-        let request = self.http.get(format!("{}/health", self.base_url));
-        self.send(request).await?;
+        self.list_domains().await?;
         Ok(())
     }
 

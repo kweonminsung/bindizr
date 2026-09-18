@@ -1,6 +1,6 @@
 use bindizr_service::types::{
     CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest,
-    ImportZoneRequest, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
+    ImportZoneRequest, PageFilter, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
     UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateZoneRequest,
 };
 use serde::{Deserialize, Serialize};
@@ -89,26 +89,41 @@ pub(crate) struct DaemonResponse {
 // request type is sent as that type.
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ZoneNameParams {
     pub(crate) name: String,
 }
 
+/// Payload for reading one zone; `records` asks for its records alongside it,
+/// unpaginated, the way `GET /zones/{name}?records=true` does.
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GetZoneParams {
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) records: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RecordIdParams {
     pub(crate) id: i32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct TsigKeyNameParams {
     pub(crate) name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DnssecPolicyNameParams {
     pub(crate) name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct UpdateDnssecPolicyParams {
     pub(crate) name: String,
     #[serde(flatten)]
@@ -116,11 +131,23 @@ pub(crate) struct UpdateDnssecPolicyParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct TokenNameParams {
     pub(crate) name: String,
 }
 
+/// Payload for listing the grants of one named subject: a TSIG key, an API
+/// token, or a zone, all of which are keyed the same way.
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ListGrantsParams {
+    pub(crate) name: String,
+    #[serde(flatten)]
+    pub(crate) page: PageFilter,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CreateTsigGrantParams {
     pub(crate) key_name: String,
     #[serde(flatten)]
@@ -128,11 +155,13 @@ pub(crate) struct CreateTsigGrantParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DeleteTsigGrantParams {
     pub(crate) id: i32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CreateTokenGrantParams {
     pub(crate) token_name: String,
     #[serde(flatten)]
@@ -140,11 +169,13 @@ pub(crate) struct CreateTokenGrantParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DeleteTokenGrantParams {
     pub(crate) id: i32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ExportZoneFileParams {
     pub(crate) name: String,
     #[serde(default)]
@@ -152,6 +183,7 @@ pub(crate) struct ExportZoneFileParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ImportZoneParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
@@ -159,6 +191,7 @@ pub(crate) struct ImportZoneParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct UpdateZoneParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
@@ -166,6 +199,7 @@ pub(crate) struct UpdateZoneParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct UpdateRecordParams {
     pub(crate) id: i32,
     #[serde(flatten)]
@@ -173,12 +207,14 @@ pub(crate) struct UpdateRecordParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct NotifyAllZonesParams {
     #[serde(default)]
     pub(crate) bump_serial: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct NotifyZoneParams {
     pub(crate) zone_name: String,
     #[serde(default)]
@@ -186,6 +222,7 @@ pub(crate) struct NotifyZoneParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RollbackZoneParams {
     pub(crate) name: String,
     pub(crate) serial: i32,
@@ -194,6 +231,7 @@ pub(crate) struct RollbackZoneParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ListZoneVersionsParams {
     pub(crate) name: String,
     pub(crate) limit: Option<u32>,
@@ -203,6 +241,7 @@ pub(crate) struct ListZoneVersionsParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ZoneVersionParams {
     pub(crate) name: String,
     pub(crate) serial: i32,
@@ -211,6 +250,7 @@ pub(crate) struct ZoneVersionParams {
 /// Payload for diffing two of a zone's serials; a missing `to_serial` compares
 /// against the current serial.
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DiffZoneVersionsParams {
     pub(crate) name: String,
     pub(crate) from_serial: i32,
@@ -218,6 +258,7 @@ pub(crate) struct DiffZoneVersionsParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct EnableZoneDnssecParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
@@ -225,6 +266,7 @@ pub(crate) struct EnableZoneDnssecParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RolloverZoneDnssecParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
@@ -232,6 +274,7 @@ pub(crate) struct RolloverZoneDnssecParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ImportZoneDnssecKeysParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
@@ -239,6 +282,7 @@ pub(crate) struct ImportZoneDnssecKeysParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct UpdateZoneDnssecSettingsParams {
     pub(crate) zone_name: String,
     #[serde(flatten)]
@@ -246,12 +290,14 @@ pub(crate) struct UpdateZoneDnssecSettingsParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DisableZoneDnssecParams {
     pub(crate) zone_name: String,
     pub(crate) skip_ds_check: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DsSeenZoneDnssecParams {
     pub(crate) zone_name: String,
     pub(crate) skip_ds_check: bool,
@@ -273,7 +319,7 @@ pub(crate) struct DaemonStatusResponse {
     /// Configured secondary addresses.
     pub(crate) secondaries: usize,
     /// `None`, with `database_error` set, when the database did not answer;
-    /// the container health check still needs a running-daemon answer.
+    /// `status` prints the block and then exits non-zero.
     pub(crate) zones: Option<u64>,
     pub(crate) database_error: Option<String>,
 }

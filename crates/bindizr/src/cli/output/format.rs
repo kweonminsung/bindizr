@@ -1,29 +1,15 @@
 use bindizr_core::outln;
+use clap::ValueEnum;
 use serde::de::DeserializeOwned;
 use tabled::{Table, Tabled, settings::Style};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How a command renders its result. Deriving `ValueEnum` is what puts the
+/// values in `--help` and in the generated shell completions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum OutputFormat {
     Json,
     Yaml,
     Table,
-}
-
-impl std::str::FromStr for OutputFormat {
-    type Err = String;
-
-    /// Parse an output format from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "json" => Ok(OutputFormat::Json),
-            "yaml" => Ok(OutputFormat::Yaml),
-            "table" => Ok(OutputFormat::Table),
-            _ => Err(format!(
-                "Invalid output format: {}. Valid options are: json, yaml, table",
-                s
-            )),
-        }
-    }
 }
 
 /// Read a daemon response payload as the type the command expects.

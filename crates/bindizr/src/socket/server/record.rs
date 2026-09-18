@@ -4,7 +4,7 @@ use bindizr_service::{
     record::RecordService,
     types::{
         CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter, GetRecordResponse,
-        GetRecordsFilter, RecordResponse,
+        GetRecordsFilter, MessageResponse, RecordResponse,
     },
 };
 
@@ -37,7 +37,7 @@ pub(crate) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
     let response = RecordService::list_with_zone_by_filter(&Caller::Global, filter).await?;
 
     Ok(DaemonResponse {
-        message: format!("Found {} record(s)", response.items.len()),
+        message: "Records retrieved successfully".to_string(),
         data: to_response_data(response)?,
     })
 }
@@ -107,9 +107,12 @@ pub(crate) async fn delete_record(
     let params: RecordIdParams = parse_params(data)?;
 
     RecordService::delete(&Caller::Global, params.id).await?;
+    let message = format!("Record {} deleted successfully", params.id);
     Ok(DaemonResponse {
-        message: format!("Record '{}' deleted successfully", params.id),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        // The body `DELETE /records/{id}` answers with, so `--output json`
+        // prints the same payload the HTTP API returns.
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 
@@ -124,7 +127,7 @@ pub(crate) async fn delete_records_matching(
         message: if response.dry_run {
             format!("{} record(s) would be deleted", response.deleted)
         } else {
-            format!("{} record(s) deleted", response.deleted)
+            format!("{} record(s) deleted successfully", response.deleted)
         },
         data: to_response_data(response)?,
     })

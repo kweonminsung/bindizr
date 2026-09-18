@@ -515,7 +515,9 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
                 "targets": ["2001:db8::1"], "recordTTL": 300}])
     );
 
-    // A wrong token surfaces as a permanent 401 through the adapter.
+    // A wrong token answers 503, not the upstream 401: external-dns retries
+    // only 5xx, and granting or replacing the token is meant to heal the sync
+    // rather than leave the change set dropped as permanently bad.
     let bad_adapter = ExternalDnsAdapter::spawn(app.base_url(), "not-a-real-token").await;
     let response = client
         .get(format!("{}/records", bad_adapter.base_url))
@@ -523,7 +525,16 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 503);
+
+    // The same token failure turns the adapter unready, instead of leaving it
+    // green on bindizr's unauthenticated health endpoint.
+    let health = client
+        .get(format!("{}/healthz", bad_adapter.health_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(health.status().as_u16(), 503);
 }
 
 /// Verify that external DNS record listing spans read pages.

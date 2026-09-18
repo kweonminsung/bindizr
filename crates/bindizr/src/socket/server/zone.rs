@@ -3,8 +3,7 @@ use bindizr_service::{
     error::ServiceError,
     record::RecordService,
     types::{
-        CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-        ZoneDetailResponse, ZoneResponse,
+        CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter, ZoneResponse,
     },
     zone::ZoneService,
 };
@@ -12,23 +11,20 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, ImportZoneParams,
-        ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams, ZoneNameParams,
-        ZoneVersionParams,
+        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, GetZoneParams,
+        ImportZoneParams, ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams,
+        ZoneNameParams, ZoneVersionParams,
     },
 };
 
-/// Return the requested zone.
+/// Return the requested zone, with its records when they were asked for.
 pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: GetZoneParams = parse_params(data)?;
 
-    let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
+    let detail = ZoneService::get_detail(&Caller::Global, &params.name, params.records).await?;
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
-        data: to_response_data(ZoneDetailResponse {
-            zone: GetZoneResponse::from_zone(&zone),
-            records: vec![],
-        })?,
+        data: to_response_data(detail)?,
     })
 }
 
@@ -42,7 +38,7 @@ pub(crate) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
 
     let response = ZoneService::list_by_filter(&Caller::Global, filter).await?;
     Ok(DaemonResponse {
-        message: format!("Found {} zone(s)", response.items.len()),
+        message: "Zones retrieved successfully".to_string(),
         data: to_response_data(response)?,
     })
 }
@@ -122,7 +118,7 @@ pub(crate) async fn list_zone_versions(
     .await?;
 
     Ok(DaemonResponse {
-        message: format!("Found {} version(s)", response.items.len()),
+        message: "Versions retrieved successfully".to_string(),
         data: to_response_data(response)?,
     })
 }

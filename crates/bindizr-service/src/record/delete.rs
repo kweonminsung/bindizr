@@ -236,7 +236,7 @@ impl RecordService {
                 .collect();
 
             let response = DeleteRecordsResponse {
-                applied: !filter.dry_run && !matched.is_empty(),
+                applied: !filter.dry_run,
                 dry_run: filter.dry_run,
                 deleted: matched.len(),
                 records: matched
@@ -245,7 +245,7 @@ impl RecordService {
                     .collect(),
                 diff: build_record_diff(&zone, &before, &after),
             };
-            if !response.applied {
+            if !response.applied || matched.is_empty() {
                 return Ok(response);
             }
 

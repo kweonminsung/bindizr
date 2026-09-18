@@ -5,9 +5,20 @@ use bindizr_service::error::ErrorCode;
 #[derive(Debug)]
 pub(crate) struct CliError {
     pub(crate) code: Option<ErrorCode>,
-    /// The daemon never answered, so no reply could carry a code.
-    daemon_unreachable: bool,
+    failure: Failure,
     pub(crate) message: String,
+}
+
+/// The kinds of failure that exit differently.
+#[derive(Debug, Clone, Copy)]
+enum Failure {
+    /// The request was rejected, by the daemon or before it was sent.
+    Request,
+    /// The daemon never answered, so no reply could carry a code.
+    Unreachable,
+    /// The configuration is unusable, so running the same thing again changes
+    /// nothing.
+    Configuration,
 }
 
 impl From<String> for CliError {
@@ -15,7 +26,7 @@ impl From<String> for CliError {
     fn from(message: String) -> Self {
         CliError {
             code: None,
-            daemon_unreachable: false,
+            failure: Failure::Request,
             message,
         }
     }
@@ -26,7 +37,7 @@ impl From<&str> for CliError {
     fn from(message: &str) -> Self {
         CliError {
             code: None,
-            daemon_unreachable: false,
+            failure: Failure::Request,
             message: message.to_string(),
         }
     }
@@ -38,13 +49,14 @@ const EXIT_NOT_FOUND: i32 = 3;
 const EXIT_CONFLICT: i32 = 4;
 const EXIT_DENIED: i32 = 5;
 const EXIT_UNAVAILABLE: i32 = 6;
+const EXIT_CONFIG: i32 = 7;
 
 impl CliError {
     /// An error reply from the daemon, carrying whatever code it sent.
     pub(crate) fn from_daemon(code: Option<ErrorCode>, message: String) -> Self {
         CliError {
             code,
-            daemon_unreachable: false,
+            failure: Failure::Request,
             message,
         }
     }
@@ -54,15 +66,27 @@ impl CliError {
     pub(crate) fn daemon_unreachable(message: String) -> Self {
         CliError {
             code: None,
-            daemon_unreachable: true,
+            failure: Failure::Unreachable,
+            message,
+        }
+    }
+
+    /// The configuration is unusable. Exits distinctly so a supervisor can
+    /// stop retrying a start that will fail the same way every time.
+    pub(crate) fn configuration(message: String) -> Self {
+        CliError {
+            code: None,
+            failure: Failure::Configuration,
             message,
         }
     }
 
     /// Derived from `http_status`, so a new code needs no second list here.
     pub(crate) fn exit_code(&self) -> i32 {
-        if self.daemon_unreachable {
-            return EXIT_UNAVAILABLE;
+        match self.failure {
+            Failure::Unreachable => return EXIT_UNAVAILABLE,
+            Failure::Configuration => return EXIT_CONFIG,
+            Failure::Request => {}
         }
         match self.code.map(|code| code.http_status()) {
             Some(404) => EXIT_NOT_FOUND,
@@ -158,7 +182,7 @@ mod tests {
         let code = |code| {
             CliError {
                 code: Some(code),
-                daemon_unreachable: false,
+                failure: Failure::Request,
                 message: String::new(),
             }
             .exit_code()
@@ -176,6 +200,12 @@ mod tests {
         assert_eq!(
             CliError::from("malformed response").exit_code(),
             EXIT_FAILURE
+        );
+        // A supervisor restarts a start that failed on a late database, and
+        // gives up on one that failed on the configuration file.
+        assert_eq!(
+            CliError::configuration("missing field `mname`".to_string()).exit_code(),
+            EXIT_CONFIG
         );
     }
 }

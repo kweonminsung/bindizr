@@ -8,6 +8,7 @@ use crate::model::api_token::ApiToken;
 
 /// Request body for creating an API token.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateTokenRequest {
     /// Letters, digits, `.`, `_`, and `-`: one URL path segment.
     #[schema(example = "external-dns")]

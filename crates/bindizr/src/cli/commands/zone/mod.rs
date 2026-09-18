@@ -7,8 +7,8 @@ use bindizr_core::{errln, out, outln};
 use bindizr_service::types::{
     CreateZoneRequest, ExportZoneFileResponse, GetTokenGrantResponse, GetTsigGrantResponse,
     GetZoneResponse, GetZonesFilter, ImportMode as ServiceImportMode, ImportZoneRequest,
-    ImportZoneResponse, PaginatedResponse, UpdateZoneRequest, ZoneDetailResponse, ZoneResponse,
-    ZoneStatusResponse,
+    ImportZoneResponse, PageFilter, PaginatedResponse, UpdateZoneRequest, ZoneDetailResponse,
+    ZoneResponse, ZoneStatusResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -17,16 +17,17 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ImportSummaryRow, OutputFormat, SecondaryStatusRow, TokenGrantRow, TsigGrantRow,
-            ZoneRow, parse_response, print_payload, print_response, print_table,
+            ImportSummaryRow, OutputFormat, RecordRow, SecondaryStatusRow, TokenGrantRow,
+            TsigGrantRow, ZoneRow, parse_response, print_payload, print_response, print_table,
             render_change_preview,
         },
     },
     socket::{
         client,
         types::{
-            DaemonCommandKind, ExportZoneFileParams, ImportZoneParams, NotifyAllZonesParams,
-            NotifyZoneParams, UpdateZoneParams, ZoneNameParams,
+            DaemonCommandKind, ExportZoneFileParams, GetZoneParams, ImportZoneParams,
+            ListGrantsParams, NotifyAllZonesParams, NotifyZoneParams, UpdateZoneParams,
+            ZoneNameParams,
         },
     },
 };
@@ -70,8 +71,8 @@ Examples:
         /// Free-text note for operators
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -135,8 +136,8 @@ Examples:
         /// Number of zones to skip
         #[arg(long)]
         offset: Option<u64>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -145,8 +146,12 @@ Examples:
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Include the zone's records, unpaginated; page a large zone with
+        /// `record list --zone` instead
+        #[arg(long)]
+        records: bool,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -185,8 +190,8 @@ Examples:
         /// Free-text note for operators; empty clears it
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -240,6 +245,9 @@ TTLs are decimal seconds (RFC 1035). A file using BIND's unit suffixes
         /// Create the zone from the file's SOA when it does not exist yet
         #[arg(long)]
         create: bool,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 
     /// Export a zone as BIND master-file text
@@ -257,8 +265,8 @@ TTLs are decimal seconds (RFC 1035). A file using BIND's unit suffixes
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -275,8 +283,14 @@ Examples:
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Maximum number of grants to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of grants to skip
+        #[arg(long)]
+        offset: Option<u64>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -285,8 +299,14 @@ Examples:
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Maximum number of grants to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of grants to skip
+        #[arg(long)]
+        offset: Option<u64>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -451,14 +471,26 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 },
             )?;
         }
-        ZoneCommand::Get { name, output } => {
-            let data = client::send_command(DaemonCommandKind::GetZone, ZoneNameParams { name })
-                .await?
-                .data;
+        ZoneCommand::Get {
+            name,
+            records,
+            output,
+        } => {
+            let data =
+                client::send_command(DaemonCommandKind::GetZone, GetZoneParams { name, records })
+                    .await?
+                    .data;
 
-            print_response(&data, output, |detail: &ZoneDetailResponse| {
-                vec![ZoneRow::from(&detail.zone)]
-            })?;
+            match output {
+                OutputFormat::Table => {
+                    let detail: ZoneDetailResponse = parse_response(&data)?;
+                    print_table(vec![ZoneRow::from(&detail.zone)]);
+                    if records {
+                        print_table(detail.records.iter().map(RecordRow::from).collect());
+                    }
+                }
+                _ => print_payload(&data, output)?,
+            }
         }
         ZoneCommand::Update {
             name,
@@ -525,6 +557,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             dry_run,
             skip_unsupported,
             create,
+            output,
         } => {
             let content = file.map(|file| super::read_input(&file)).transpose()?;
             let response = client::send_command(
@@ -544,19 +577,32 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             .await?;
 
             let import: ImportZoneResponse = parse_response(&response.data)?;
-            outln!("{}", response.message);
+            match output {
+                OutputFormat::Table => {
+                    outln!("{}", response.message);
 
-            // Diagnostics go to stderr, so a pipeline keeps the summary clean.
-            for error in &import.errors {
-                errln!("  - {}", error);
-            }
-            for skipped in &import.skipped_records {
-                errln!("  ~ {}", skipped);
+                    // Diagnostics go to stderr, so a pipeline keeps the summary clean.
+                    for error in &import.errors {
+                        errln!("  - {}", error);
+                    }
+                    for skipped in &import.skipped_records {
+                        errln!("  ~ {}", skipped);
+                    }
+
+                    print_table(vec![ImportSummaryRow::from(&import)]);
+                    if dry_run {
+                        out!("{}", render_change_preview(&import.diff));
+                    }
+                }
+                _ => print_payload(&response.data, output)?,
             }
 
-            print_table(vec![ImportSummaryRow::from(&import.summary)]);
-            if dry_run {
-                out!("{}", render_change_preview(&import.diff));
+            // A rejected import applied nothing, so it must not exit as a success.
+            if import.was_rejected() {
+                return Err(CliError::from(format!(
+                    "import rejected: {} record(s) failed validation; nothing was applied",
+                    import.errors.len()
+                )));
             }
         }
         ZoneCommand::Version { subcommand } => version::handle_command(subcommand).await?,
@@ -577,10 +623,18 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             }
             print_table(SecondaryStatusRow::rows_from_status(&status));
         }
-        ZoneCommand::TokenGrants { name, output } => {
+        ZoneCommand::TokenGrants {
+            name,
+            limit,
+            offset,
+            output,
+        } => {
             let res = client::send_command(
                 DaemonCommandKind::ListZoneTokenGrants,
-                ZoneNameParams { name },
+                ListGrantsParams {
+                    name,
+                    page: PageFilter { limit, offset },
+                },
             )
             .await?;
             print_response(
@@ -591,10 +645,18 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 },
             )?;
         }
-        ZoneCommand::TsigGrants { name, output } => {
+        ZoneCommand::TsigGrants {
+            name,
+            limit,
+            offset,
+            output,
+        } => {
             let res = client::send_command(
                 DaemonCommandKind::ListZoneTsigGrants,
-                ZoneNameParams { name },
+                ListGrantsParams {
+                    name,
+                    page: PageFilter { limit, offset },
+                },
             )
             .await?;
             print_response(

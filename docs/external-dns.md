@@ -78,7 +78,15 @@ spec:
                   key: api-token
           ports:
             - containerPort: 8080 # /healthz and /metrics; 8888 stays pod-local
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
 ```
+
+`/healthz` asks bindizr with the adapter's own token, so a token that was
+rotated away or never granted a zone turns the sidecar unready instead of
+leaving it green while every sync fails.
 
 **4. Annotate a resource** and the record appears in bindizr:
 
@@ -114,8 +122,8 @@ metadata:
 | `--timeout-secs` | `BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS` | `8` (keep under external-dns's 10s webhook write timeout) |
 | `--log-level` | `BINDIZR_EXTERNAL_DNS_LOG_LEVEL` | `info` |
 
-The health listener serves `GET /healthz` (also checks bindizr reachability)
-and `GET /metrics` (`bindizr_external_dns_requests_total`,
+The health listener serves `GET /healthz` (bindizr answers and accepts this
+token) and `GET /metrics` (`bindizr_external_dns_requests_total`,
 `bindizr_external_dns_request_duration_seconds`).
 
 ### Running standalone

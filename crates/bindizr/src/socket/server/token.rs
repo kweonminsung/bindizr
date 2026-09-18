@@ -11,8 +11,8 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        CreateTokenGrantParams, DaemonResponse, DeleteTokenGrantParams, TokenNameParams,
-        ZoneNameParams,
+        CreateTokenGrantParams, DaemonResponse, DeleteTokenGrantParams, ListGrantsParams,
+        TokenNameParams,
     },
 };
 
@@ -40,8 +40,10 @@ pub(crate) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
 }
 
 /// List the requested tokens.
-pub(crate) async fn list_tokens() -> Result<DaemonResponse, ServiceError> {
-    let response = TokenService::list(&Caller::Global, PageFilter::default()).await?;
+pub(crate) async fn list_tokens(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+    let page: PageFilter = parse_params(data)?;
+
+    let response = TokenService::list(&Caller::Global, page).await?;
 
     Ok(DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
@@ -90,11 +92,10 @@ pub(crate) async fn create_token_grant(
 pub(crate) async fn list_token_grants(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: TokenNameParams = parse_params(data)?;
+    let params: ListGrantsParams = parse_params(data)?;
 
     let response =
-        TokenGrantService::list_by_token(&Caller::Global, &params.name, PageFilter::default())
-            .await?;
+        TokenGrantService::list_by_token(&Caller::Global, &params.name, params.page).await?;
 
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
@@ -106,11 +107,10 @@ pub(crate) async fn list_token_grants(
 pub(crate) async fn list_zone_token_grants(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: ListGrantsParams = parse_params(data)?;
 
     let response =
-        TokenGrantService::list_by_zone(&Caller::Global, &params.name, PageFilter::default())
-            .await?;
+        TokenGrantService::list_by_zone(&Caller::Global, &params.name, params.page).await?;
 
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),

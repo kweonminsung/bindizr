@@ -57,6 +57,16 @@ services:
     networks:
       bindizr-net:
         ipv4_address: 172.28.0.10
+    # The secondaries send their first SOA refresh as soon as they start, so
+    # they wait for a bindizr that is actually serving.
+    healthcheck:
+      test: ["CMD", "bindizr", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # Longer than the 10s drain, so a stop is not cut short by SIGKILL.
+    stop_grace_period: 30s
     restart: unless-stopped
 
   bind9-1:
@@ -64,7 +74,7 @@ services:
     command: ["-g", "-c", "/etc/bind/named.conf"]
     depends_on:
       bindizr:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "1053:53/tcp"
       - "1053:53/udp"
@@ -82,7 +92,7 @@ services:
     command: ["-g", "-c", "/etc/bind/named.conf"]
     depends_on:
       bindizr:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "1054:53/tcp"
       - "1054:53/udp"

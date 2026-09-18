@@ -37,7 +37,7 @@ async fn zone_import_passes_over_unsupported_types_only_when_asked() {
             Some(json!({ "content": content })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["applied"], false, "{body}");
     assert!(
         body["errors"]
@@ -95,7 +95,7 @@ async fn zone_import_zone_file_reports_validation_errors() {
             Some(json!({ "content": content })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["applied"], false);
     assert!(!body["errors"].as_array().unwrap().is_empty());
 
@@ -128,7 +128,7 @@ async fn zone_import_preview_shows_empty_diff_on_validation_error() {
             Some(json!({ "content": content, "dry_run": true })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["applied"], false);
     assert_eq!(body["dry_run"], true);
     assert!(!body["errors"].as_array().unwrap().is_empty());
@@ -167,7 +167,7 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
             Some(json!({ "content": "WWW IN CNAME target\n", "mode": "append" })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["applied"], false);
     assert!(!body["errors"].as_array().unwrap().is_empty());
 
@@ -210,7 +210,7 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
             Some(json!({ "content": "alias IN A 192.0.2.9\n", "mode": "append" })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["applied"], false);
     assert!(!body["errors"].as_array().unwrap().is_empty());
 

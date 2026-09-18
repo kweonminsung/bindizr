@@ -106,3 +106,76 @@ where
             .map_err(|rejection| ApiError(ServiceError::invalid_input(rejection.body_text())))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::{body::Body, extract::FromRequest, http::Request};
+    use bindizr_service::types::{CreateRecordRequest, DeleteRecordsFilter};
+
+    use super::*;
+
+    /// Verify that a misspelled query key is rejected, naming the key.
+    #[tokio::test]
+    async fn unknown_query_key_is_rejected_by_name() {
+        // `type` instead of `record_type` used to be dropped silently, widening
+        // the delete to every type at the name.
+        let (mut parts, _) = Request::builder()
+            .uri("/records?zone_name=example.com&name=www&type=A")
+            .body(Body::empty())
+            .unwrap()
+            .into_parts();
+
+        let Err(error) = Query::<DeleteRecordsFilter>::from_request_parts(&mut parts, &()).await
+        else {
+            panic!("an unknown query key must be rejected");
+        };
+        assert_eq!(error.0.code, ErrorCode::InvalidInput);
+        assert!(
+            error.0.message.contains("unknown field `type`"),
+            "{}",
+            error.0.message
+        );
+    }
+
+    /// Verify that the spelled-out filter still parses, keys and all.
+    #[tokio::test]
+    async fn known_query_keys_are_accepted() {
+        let (mut parts, _) = Request::builder()
+            .uri("/records?zone_name=example.com&name=www&record_type=A&dry_run=true")
+            .body(Body::empty())
+            .unwrap()
+            .into_parts();
+
+        let Ok(Query(filter)) =
+            Query::<DeleteRecordsFilter>::from_request_parts(&mut parts, &()).await
+        else {
+            panic!("the spelled-out filter must parse");
+        };
+        assert_eq!(filter.record_type.as_deref(), Some("A"));
+        assert!(filter.dry_run);
+    }
+
+    /// Verify that an unknown body field is rejected, naming the field.
+    #[tokio::test]
+    async fn unknown_body_field_is_rejected_by_name() {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/records")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"name":"www","record_type":"A","value":"192.0.2.1","zone_name":"example.com","tll":300}"#,
+            ))
+            .unwrap();
+
+        let Err(rejection) = Json::<CreateRecordRequest>::from_request(request, &()).await else {
+            panic!("an unknown body field must be rejected");
+        };
+        let error = ApiError::from(rejection);
+        assert_eq!(error.0.code, ErrorCode::InvalidJsonBody);
+        assert!(
+            error.0.message.contains("unknown field `tll`"),
+            "{}",
+            error.0.message
+        );
+    }
+}

@@ -3,14 +3,20 @@ use serde_json::Value;
 use crate::common::{TestApp, TestAppOptions, assert_cli_failure_contains, assert_cli_success};
 
 /// The `zone import` summary row: PARSED ADDED DELETED UPDATED UNCHANGED SKIPPED.
-fn summary_row(stdout: &str) -> Vec<&str> {
+fn summary_cells(stdout: &str) -> Vec<&str> {
     stdout
         .lines()
-        .skip_while(|line| !line.contains("PARSED"))
+        .skip_while(|line| !line.contains("APPLIED"))
         .nth(1)
         .expect("import printed a summary table")
         .split_whitespace()
         .collect()
+}
+
+/// The count cells of an import summary table, after its APPLIED and DRY-RUN
+/// flags.
+fn summary_row(stdout: &str) -> Vec<&str> {
+    summary_cells(stdout)[2..].to_vec()
 }
 
 /// Verify that zone create takes SOA timers.
@@ -202,6 +208,34 @@ async fn zone_reject_invalid_name_and_ttl() {
 
     let status = app.run_cli(&["status"]).await;
     assert_cli_success(&["status"], &status);
+}
+
+/// Verify that a rejected import applies nothing and exits non-zero.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-reject.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    // A record type bindizr does not store fails the whole file, and a CI step
+    // must not read the rejection as a successful import.
+    let output = app
+        .run_cli_with_input(
+            &["zone", "import", &zone_name, "-"],
+            Some("www IN A 192.0.2.40\nbox IN HINFO \"amd64\" \"linux\"\n"),
+        )
+        .await;
+    assert!(!output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8");
+    assert_eq!(summary_cells(&stdout)[0], "false", "{stdout}");
+
+    // Nothing landed, including the record that was valid on its own.
+    let listed = app
+        .run_cli_success(&["record", "list", "-z", &zone_name])
+        .await;
+    assert!(!listed.contains("192.0.2.40"), "{listed}");
 }
 
 /// Verify importing a zone file from standard input.

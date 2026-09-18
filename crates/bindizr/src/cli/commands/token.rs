@@ -1,7 +1,7 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
     CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
-    GetTokenResponse, PaginatedResponse, TokenGrantResponse,
+    GetTokenResponse, PageFilter, PaginatedResponse, TokenGrantResponse,
 };
 use clap::Subcommand;
 
@@ -13,7 +13,8 @@ use crate::{
     socket::{
         client,
         types::{
-            CreateTokenGrantParams, DaemonCommandKind, DeleteTokenGrantParams, TokenNameParams,
+            CreateTokenGrantParams, DaemonCommandKind, DeleteTokenGrantParams, ListGrantsParams,
+            TokenNameParams,
         },
     },
 };
@@ -40,15 +41,21 @@ Examples:
         /// plane without grants. Fixed at creation.
         #[arg(long)]
         global: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// List all API tokens
     #[command(alias = "ls")]
     List {
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Maximum number of tokens to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of tokens to skip
+        #[arg(long)]
+        offset: Option<u64>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Delete an API token by name
@@ -75,8 +82,8 @@ Examples:
         /// Grant read access only; the zone stays visible, narrowed the same way
         #[arg(long)]
         read_only: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// List a token's grants (`zone token-grants` lists a zone's)
@@ -84,8 +91,14 @@ Examples:
         /// Name of the token
         #[arg(value_name = "TOKEN_NAME")]
         name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Maximum number of grants to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of grants to skip
+        #[arg(long)]
+        offset: Option<u64>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Revoke one of a token's grants by grant ID
@@ -123,8 +136,14 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 vec![TokenRow::from(created)]
             })?;
         }
-        TokenCommand::List { output } => {
-            let res = client::send_command(DaemonCommandKind::ListTokens, ()).await?;
+        TokenCommand::List {
+            limit,
+            offset,
+            output,
+        } => {
+            let res =
+                client::send_command(DaemonCommandKind::ListTokens, PageFilter { limit, offset })
+                    .await?;
 
             log::debug!("Token list result: {:?}", res);
 
@@ -170,10 +189,20 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 vec![TokenGrantRow::from(&response.token_grant)]
             })?;
         }
-        TokenCommand::Grants { name, output } => {
-            let res =
-                client::send_command(DaemonCommandKind::ListTokenGrants, TokenNameParams { name })
-                    .await?;
+        TokenCommand::Grants {
+            name,
+            limit,
+            offset,
+            output,
+        } => {
+            let res = client::send_command(
+                DaemonCommandKind::ListTokenGrants,
+                ListGrantsParams {
+                    name,
+                    page: PageFilter { limit, offset },
+                },
+            )
+            .await?;
             print_response(
                 &res.data,
                 output,

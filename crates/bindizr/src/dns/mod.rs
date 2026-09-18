@@ -14,6 +14,7 @@ use bindizr_core::{
 use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
     sync::Semaphore,
+    task::JoinHandle,
     time::timeout,
 };
 
@@ -27,8 +28,12 @@ const MAX_UDP_IN_FLIGHT: usize = 256;
 /// Connections served at once; the accept backlog holds the rest.
 const MAX_TCP_CONNECTIONS: usize = 128;
 
-/// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
-pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
+/// Initializes the DNS service: prepares the catalog zone and spawns the TCP
+/// and UDP servers, handing back their accept loops so the daemon notices one
+/// that stops.
+pub(crate) async fn initialize(
+    shutdown: &Shutdown,
+) -> Result<(JoinHandle<()>, JoinHandle<()>), String> {
     // The catalog zone must exist before a secondary asks for it.
     match server::catalog::generate_catalog_zone().await {
         Ok((catalog, _)) => {
@@ -60,20 +65,20 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
     log::info!("DNS UDP server listening on {}", listen_addr);
 
     let tcp_stop = shutdown.waiter();
-    tokio::spawn(async move {
+    let tcp_task = tokio::spawn(async move {
         if let Err(e) = run_tcp_server(tcp_listener, tcp_stop).await {
             log::error!("DNS TCP server error: {}", e);
         }
     });
 
     let udp_stop = shutdown.waiter();
-    tokio::spawn(async move {
+    let udp_task = tokio::spawn(async move {
         if let Err(e) = run_udp_server(udp_socket, udp_stop).await {
             log::error!("DNS UDP server error: {}", e);
         }
     });
 
-    Ok(())
+    Ok((tcp_task, udp_task))
 }
 
 /// Accept DNS TCP connections until shutdown.

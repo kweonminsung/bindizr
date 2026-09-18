@@ -319,7 +319,11 @@ impl TestApp {
     ///
     /// After selected zone/record commands succeed, wait for configured secondary
     /// DNS answers to match the API.
-    async fn run_cli_with_input(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
+    pub(crate) async fn run_cli_with_input(
+        &self,
+        args: &[&str],
+        input: Option<&str>,
+    ) -> std::process::Output {
         // Remember deleted names before the API can no longer return their identity.
         let previous_dns_key = match args {
             ["record", "delete", record_id, ..] if record_id.parse::<i32>().is_ok() => {

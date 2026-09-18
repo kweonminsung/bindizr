@@ -115,6 +115,7 @@ pub(crate) async fn enable_dnssec(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DisableDnssecQuery {
     skip_ds_check: Option<bool>,
 }
@@ -214,6 +215,7 @@ pub(crate) async fn start_dnssec_rollover(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DsSeenQuery {
     skip_ds_check: Option<bool>,
     skip_holddown: Option<bool>,

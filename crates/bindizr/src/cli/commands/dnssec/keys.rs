@@ -8,7 +8,10 @@ use clap::Subcommand;
 
 use super::print_status;
 use crate::{
-    cli::{error::CliError, output::parse_response},
+    cli::{
+        error::CliError,
+        output::{OutputFormat, parse_response},
+    },
     socket::{
         client,
         types::{DaemonCommandKind, ImportZoneDnssecKeysParams, ZoneNameParams},
@@ -45,6 +48,9 @@ pub(crate) enum DnssecKeysCommand {
         /// and key layout decide what the keys must be
         #[arg(long, value_name = "POLICY_NAME")]
         policy: Option<String>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -64,6 +70,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
             key,
             private,
             policy,
+            output,
         } => {
             if key.len() != private.len() {
                 return Err(CliError::from(format!(
@@ -91,7 +98,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
                 },
             )
             .await?;
-            print_status(&response.data)?;
+            print_status(&response.data, output)?;
         }
     }
 

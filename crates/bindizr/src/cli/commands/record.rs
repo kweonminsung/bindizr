@@ -10,7 +10,7 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            OutputFormat, RecordRow, parse_response, print_response, print_table,
+            OutputFormat, RecordRow, parse_response, print_payload, print_response, print_table,
             render_change_preview,
         },
     },
@@ -28,7 +28,11 @@ pub(crate) enum RecordCommand {
 Examples:
   bindizr record create www -z example.com --type A --value 192.0.2.1
   bindizr record create @ -z example.com --type MX --priority 10 --value mail.example.com
-  bindizr record create @ -z example.com --type TXT --value v=spf1 --value ~all")]
+  bindizr record create @ -z example.com --type TXT --value \"v=spf1 include:_spf.example.net ~all\"
+
+A TXT value longer than 255 bytes is split for you. Repeat --value only to
+choose the split yourself, as a DKIM key's publisher does; resolvers join the
+parts with nothing between them, so a space has to be inside a value.")]
     Create {
         /// Owner name relative to the zone, or '@' for the apex
         #[arg(value_name = "RECORD_NAME")]
@@ -36,7 +40,7 @@ Examples:
         /// Record type (A, AAAA, CNAME, MX, etc.)
         #[arg(long = "type", alias = "record-type")]
         record_type: String,
-        /// Record value; repeat it for the segments of a TXT record
+        /// Record value; repeat it to choose a long TXT value's segments yourself
         #[arg(long, value_name = "VALUE", action = clap::ArgAction::Append, required = true)]
         value: Vec<String>,
         /// Zone name
@@ -48,8 +52,8 @@ Examples:
         /// Priority, MX and SRV only (default: 10)
         #[arg(long)]
         priority: Option<i32>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -84,6 +88,9 @@ YAML example:
         /// as a +/-/~ diff
         #[arg(long)]
         dry_run: bool,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 
     /// List records
@@ -137,8 +144,8 @@ YAML example:
         /// Number of records to skip
         #[arg(long)]
         offset: Option<u64>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -147,8 +154,8 @@ YAML example:
         /// The record ID
         #[arg(value_name = "RECORD_ID")]
         id: i32,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -172,8 +179,8 @@ YAML example:
         /// Priority (MX and SRV only)
         #[arg(long)]
         priority: Option<i32>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
 
@@ -202,10 +209,15 @@ serial and the secondaries transfer once."
         #[arg(short, long, value_name = "ZONE_NAME", requires = "name")]
         zone: Option<String>,
         /// Owner name relative to the zone, or '@' for the apex
-        #[arg(long, conflicts_with = "id", requires = "zone")]
+        #[arg(
+            long,
+            value_name = "RECORD_NAME",
+            conflicts_with = "id",
+            requires = "zone"
+        )]
         name: Option<String>,
         /// Narrow to one record type
-        #[arg(long = "type", requires = "name")]
+        #[arg(long = "type", alias = "record-type", requires = "name")]
         record_type: Option<String>,
         /// Narrow to one value (requires --type)
         #[arg(long, requires = "record_type")]
@@ -216,6 +228,9 @@ serial and the secondaries transfer once."
         /// Report what would go without removing anything
         #[arg(long, requires = "name")]
         dry_run: bool,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -318,6 +333,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             file,
             zone,
             dry_run,
+            output,
         } => {
             let content = super::read_input(&file)?;
             // YAML is a superset of JSON, so one parse accepts both formats.
@@ -347,12 +363,17 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             )
             .await?;
 
-            let bulk: BulkRecordsResponse = parse_response(&response.data)?;
-            outln!("{}", response.message);
-            if dry_run {
-                out!("{}", render_change_preview(&bulk.diff));
-            } else {
-                print_table(bulk.records.iter().map(RecordRow::from).collect());
+            match output {
+                OutputFormat::Table => {
+                    let bulk: BulkRecordsResponse = parse_response(&response.data)?;
+                    outln!("{}", response.message);
+                    if dry_run {
+                        out!("{}", render_change_preview(&bulk.diff));
+                    } else {
+                        print_table(bulk.records.iter().map(RecordRow::from).collect());
+                    }
+                }
+                _ => print_payload(&response.data, output)?,
             }
         }
         RecordCommand::Get { id, output } => {
@@ -394,11 +415,18 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             })?;
         }
         // clap holds the two selectors apart.
-        RecordCommand::Delete { id: Some(id), .. } => {
+        RecordCommand::Delete {
+            id: Some(id),
+            output,
+            ..
+        } => {
             let response =
                 client::send_command(DaemonCommandKind::DeleteRecord, RecordIdParams { id })
                     .await?;
-            outln!("{}", response.message);
+            match output {
+                OutputFormat::Table => outln!("{}", response.message),
+                _ => print_payload(&response.data, output)?,
+            }
         }
         RecordCommand::Delete {
             zone: Some(zone),
@@ -407,6 +435,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             value,
             priority,
             dry_run,
+            output,
             ..
         } => {
             let response = client::send_command(
@@ -421,7 +450,10 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 },
             )
             .await?;
-            outln!("{}", response.message);
+            match output {
+                OutputFormat::Table => outln!("{}", response.message),
+                _ => print_payload(&response.data, output)?,
+            }
         }
         RecordCommand::Delete { .. } => {
             return Err(CliError::from(

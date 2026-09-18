@@ -45,14 +45,18 @@ pub(crate) enum Command {
     /// Restart the running bindizr daemon in place
     Restart,
     /// Show the status of the bindizr service
-    Status,
+    Status {
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
     /// Check that the bindizr installation is healthy
     Doctor {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Inspect and validate configuration
@@ -113,12 +117,10 @@ pub async fn execute() {
     let args = Args::parse();
 
     let result = match args.command {
-        Command::Start { config } => daemon::bootstrap(config.as_deref())
-            .await
-            .map_err(error::CliError::from),
+        Command::Start { config } => daemon::bootstrap(config.as_deref()).await,
         Command::Stop => commands::stop::handle_command().await,
         Command::Restart => commands::restart::handle_command().await,
-        Command::Status => commands::status::handle_command().await,
+        Command::Status { output } => commands::status::handle_command(output).await,
         Command::Doctor { config, output } => {
             commands::doctor::handle_command(config, output).await
         }

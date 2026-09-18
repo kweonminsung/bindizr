@@ -8,6 +8,7 @@ use super::GetDnssecPolicyResponse;
 
 /// Request body for enabling DNSSEC on a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct EnableDnssecRequest {
     /// Name of the DNSSEC policy to sign under; defaults to `default`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -22,6 +23,7 @@ pub struct EnableDnssecRequest {
 /// Request body for changing a zone's signing settings; an omitted field
 /// keeps its value.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateDnssecSettingsRequest {
     /// Policy to move the signed zone to; it must share the zone's key
     /// layout. A new denial mode replaces the chain under one serial, and a
@@ -86,6 +88,7 @@ pub struct DnssecDelegationInfo {
 
 /// Request body for starting a key rollover.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RolloverDnssecRequest {
     /// Which key to roll: required for split-key zones (`ksk` or `zsk`),
     /// omitted for CSK zones.
@@ -208,6 +211,7 @@ pub struct ExportDnssecKeysResponse {
 /// One BIND key pair: `K*.key` contents (or the bare DNSKEY RDATA) and the
 /// matching `K*.private` contents.
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct ImportDnssecKeyPair {
     pub dnskey: String,
     pub private_key: String,
@@ -215,6 +219,7 @@ pub struct ImportDnssecKeyPair {
 
 /// Request body importing a zone's complete key set; daemon-socket only.
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct ImportDnssecKeyRequest {
     /// One CSK pair, or a KSK pair and a ZSK pair under a split-key policy.
     /// The policy's layout decides the role of a SEP key.

@@ -3,6 +3,7 @@
 
 use std::{net::SocketAddr, time::Duration};
 
+use axum::http::StatusCode;
 use bindizr_core::config::BindizrConfig;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -11,10 +12,11 @@ use tokio::{
 
 use super::Report;
 use crate::{
+    cli::output::parse_response,
     net::loopback_if_unspecified,
     socket::{
         client,
-        types::{DaemonCommandKind, DaemonDoctorResponse},
+        types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse},
     },
 };
 
@@ -22,7 +24,10 @@ const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Check whether the daemon responds through its control socket.
 pub(crate) async fn check_running(report: &mut Report) -> bool {
-    match client::fetch_status().await {
+    let status = client::send_control_command(DaemonCommandKind::Status)
+        .await
+        .and_then(|response| Ok(parse_response::<DaemonStatusResponse>(&response.data)?));
+    match status {
         Ok(status) => {
             let pid = status
                 .pid
@@ -103,11 +108,21 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
         .map_err(|_| "timed out".to_string())??;
 
     let status_line = response.lines().next().unwrap_or_default().trim();
-    if status_line.starts_with("HTTP/") {
-        Ok(status_line.to_string())
-    } else {
-        Err(format!("unexpected response: {}", status_line))
+    if !status_line.starts_with("HTTP/") {
+        return Err(format!("unexpected response: {}", status_line));
     }
+    // A 5xx to this request means the API is answering but cannot serve, which
+    // is a failing check rather than a reachable API.
+    let answered_5xx = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse::<u16>().ok())
+        .and_then(|code| StatusCode::from_u16(code).ok())
+        .is_some_and(|status| status.is_server_error());
+    if answered_5xx {
+        return Err(status_line.to_string());
+    }
+    Ok(status_line.to_string())
 }
 
 /// Check database, DNS listener, and secondary status through the daemon.

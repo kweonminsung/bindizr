@@ -4,7 +4,7 @@
 use bindizr_service::types::{
     CreatedTokenResponse, DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse,
     GetTokenGrantResponse, GetTokenResponse, GetTsigGrantResponse, GetTsigKeyResponse,
-    GetZoneResponse, ImportSummary, RecordValueRequest, RollbackZoneResponse,
+    GetZoneResponse, ImportZoneResponse, RecordValueRequest, RollbackZoneResponse,
     SecondaryStatusResponse, TsigKeyResponse, VersionRecordResponse, ZoneStatusResponse,
     ZoneVersionResponse,
 };
@@ -401,6 +401,11 @@ impl SecondaryStatusRow {
 
 #[derive(Debug, Tabled)]
 pub(crate) struct ImportSummaryRow {
+    /// The counts describe the plan, which a rejected file never applies.
+    #[tabled(rename = "APPLIED")]
+    pub(crate) applied: bool,
+    #[tabled(rename = "DRY-RUN")]
+    pub(crate) dry_run: bool,
     #[tabled(rename = "PARSED")]
     pub(crate) parsed: usize,
     #[tabled(rename = "ADDED")]
@@ -415,10 +420,13 @@ pub(crate) struct ImportSummaryRow {
     pub(crate) skipped: usize,
 }
 
-impl From<&ImportSummary> for ImportSummaryRow {
-    /// Build a CLI table row from the import summary.
-    fn from(summary: &ImportSummary) -> Self {
+impl From<&ImportZoneResponse> for ImportSummaryRow {
+    /// Build a CLI table row from the import result.
+    fn from(response: &ImportZoneResponse) -> Self {
+        let summary = &response.summary;
         ImportSummaryRow {
+            applied: response.applied,
+            dry_run: response.dry_run,
             parsed: summary.parsed,
             added: summary.added,
             deleted: summary.deleted,

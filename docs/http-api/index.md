@@ -56,6 +56,16 @@ reaches them by name only, since their type is stored as a number and their
 rdata as wire bytes, a `priority` filter leaves them out because none carries
 one, and a `value` filter is refused rather than answered without them.
 
+## Rejected requests
+
+An unknown query parameter or body field is refused rather than ignored, so
+`DELETE /records?type=A` answers 400 naming `type` instead of quietly deleting
+every type at that name.
+
+A zone import that fails validation answers 422 and applies nothing, carrying
+the same body as a successful one so the per-record errors survive the status.
+Every other failure answers the usual `{"error", "code"}` envelope.
+
 ## Authentication
 
 Bootstrap the first token with the CLI:

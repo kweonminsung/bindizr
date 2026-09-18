@@ -1,7 +1,7 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
-    CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, PaginatedResponse,
-    UpdateDnssecPolicyRequest,
+    CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, PageFilter,
+    PaginatedResponse, UpdateDnssecPolicyRequest,
 };
 use clap::Subcommand;
 
@@ -45,15 +45,21 @@ pub(crate) enum DnssecPolicyCommand {
         /// default, disables scheduled rolls)
         #[arg(long, value_name = "DAYS")]
         zsk_lifetime_days: Option<u32>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// List all DNSSEC policies
     #[command(alias = "ls")]
     List {
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Maximum number of policies to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of policies to skip
+        #[arg(long)]
+        offset: Option<u64>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Show one DNSSEC policy
@@ -61,8 +67,8 @@ pub(crate) enum DnssecPolicyCommand {
         /// Name of the policy
         #[arg(value_name = "POLICY_NAME")]
         name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Edit a policy's timing; an omitted option keeps its value. The
@@ -81,8 +87,8 @@ pub(crate) enum DnssecPolicyCommand {
         /// disables scheduled rolls)
         #[arg(long, value_name = "DAYS")]
         zsk_lifetime_days: Option<u32>,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Delete a DNSSEC policy (refused for the built-in "default" and while
@@ -127,8 +133,16 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             print_policy(&res.data, output)?;
         }
-        DnssecPolicyCommand::List { output } => {
-            let res = client::send_command(DaemonCommandKind::ListDnssecPolicies, ()).await?;
+        DnssecPolicyCommand::List {
+            limit,
+            offset,
+            output,
+        } => {
+            let res = client::send_command(
+                DaemonCommandKind::ListDnssecPolicies,
+                PageFilter { limit, offset },
+            )
+            .await?;
 
             log::debug!("DNSSEC policy list result: {:?}", res);
 

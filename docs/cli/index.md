@@ -23,9 +23,10 @@ package install, or a shell inside the container for Compose and Helm.
 
 Every command that reports something prints a table and takes `-o json` or
 `-o yaml`, whose payload is the same body the HTTP API returns; `delete` and
-the one-shot actions print a message. `zone export` and `dnssec keys export`
-print paste-ready text. A command's result goes to stdout and its diagnostics
-to stderr, so a pipeline keeps the result clean.
+the one-shot actions print a message. `zone export`, `dnssec keys export`, and
+`tsig-key export` print paste-ready text instead, so none of the three takes
+`-o`. A command's result goes to stdout and its diagnostics to stderr, so a
+pipeline keeps the result clean.
 
 ## Service
 
@@ -41,7 +42,9 @@ $ bindizr start -c <FILE>
 $ bindizr stop
 $ bindizr restart
 
-# Whether the daemon runs, where it listens, its database and zone count, and its secondaries
+# Whether the daemon runs, where it listens, its database and zone count, and its
+# secondaries. Exits non-zero when the database does not answer, so a health
+# check can branch on it
 $ bindizr status
 
 # Check the installation end to end; without a daemon it checks the database, the
@@ -84,9 +87,10 @@ $ bindizr man | sudo tee /usr/share/man/man1/bindizr.1 > /dev/null
 # unless --serial is given; --refresh, --retry, --expire, and --minimum-ttl set the other SOA timers)
 $ bindizr zone create example.com --mname ns1.example.com --default-ttl 3600
 
-# List, inspect, and delete zones
+# List, inspect, and delete zones (--records adds the zone's records, unpaginated)
 $ bindizr zone list
 $ bindizr zone get example.com
+$ bindizr zone get example.com --records
 $ bindizr zone delete example.com
 
 # Update a zone, changing only the fields you pass
@@ -100,7 +104,7 @@ $ bindizr zone update example.com --enabled true
 
 # Create, list, inspect, and delete records (TTL defaults to the zone's; one TTL per name and type)
 $ bindizr record create www --zone example.com --type A --value 192.0.2.1 --ttl 300
-$ bindizr record create @ --zone example.com --type TXT --value v=spf1 --value ~all  # repeat --value for TXT segments
+$ bindizr record create @ --zone example.com --type TXT --value "v=spf1 include:_spf.example.net ~all"
 $ bindizr record list --zone example.com
 $ bindizr record list --zone example.com --sort ttl --order desc
 $ bindizr zone list --min-serial 100 --signed --sort created_at
@@ -114,7 +118,14 @@ $ bindizr record delete -z example.com --name www --type A --dry-run
 
 # Update a record, changing only the fields you pass
 $ bindizr record update <RECORD_ID> --value 127.0.0.1
+```
 
+A TXT value over 255 bytes is split into segments for you. Repeat `--value` to
+choose the split yourself, which is how a DKIM key is usually published.
+Resolvers join the segments with nothing between them, so any space belongs
+inside a value rather than between two of them.
+
+```bash
 # Export a zone as BIND master-file text (--signed appends the derived DNSSEC records)
 $ bindizr zone export example.com > db.example.com
 
@@ -148,6 +159,10 @@ whole cutover:
 ```bash
 $ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --create --dry-run
 ```
+
+A record that fails validation fails the whole import: nothing is applied, the
+rejected records are listed on stderr, and the command exits non-zero so a CI
+step does not read the rejection as success.
 
 A zone file written for BIND often carries record types bindizr does not
 store, and one of them fails the whole import. `--skip-unsupported` passes
@@ -196,3 +211,4 @@ without parsing the message.
 | `4` | Conflict: the name is taken, or the object is in use or in the wrong state |
 | `5` | Denied: the token is missing, invalid, or lacks a grant |
 | `6` | Unavailable: the daemon is not running, so the command never reached it |
+| `7` | The configuration file is unusable, so running the same command again changes nothing |

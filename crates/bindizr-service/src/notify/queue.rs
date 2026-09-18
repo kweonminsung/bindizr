@@ -6,7 +6,11 @@ use std::{collections::HashSet, sync::OnceLock, time::Duration};
 
 use bindizr_core::config;
 use tokio::{
-    sync::mpsc::{UnboundedSender, unbounded_channel},
+    sync::{
+        mpsc::{UnboundedSender, unbounded_channel},
+        watch,
+    },
+    task::JoinHandle,
     time::{Instant, timeout},
 };
 
@@ -20,18 +24,31 @@ struct NotifyJob {
 
 static NOTIFY_QUEUE: OnceLock<UnboundedSender<NotifyJob>> = OnceLock::new();
 
-/// Spawn the background worker that drains queued NOTIFYs. First call wins;
-/// later calls are no-ops. Without it, writes fall back to sending inline.
-pub fn init_notify_worker() {
+/// Set when the daemon asks the worker to flush what it holds and finish.
+static NOTIFY_STOP: OnceLock<watch::Sender<bool>> = OnceLock::new();
+
+/// Spawn the background worker that drains queued NOTIFYs, handing back its
+/// task so the daemon can wait for it. First call wins; later calls are
+/// no-ops. Without it, writes fall back to sending inline.
+pub fn init_notify_worker() -> Option<JoinHandle<()>> {
     let (tx, mut rx) = unbounded_channel::<NotifyJob>();
     if NOTIFY_QUEUE.set(tx).is_err() {
-        return;
+        return None;
     }
+    let (stop_tx, mut stop) = watch::channel(false);
+    let _ = NOTIFY_STOP.set(stop_tx);
 
-    tokio::spawn(async move {
+    Some(tokio::spawn(async move {
         // Block for the first job, then batch everything that arrives within
         // the configured window into a single NOTIFY per zone.
-        while let Some(first) = rx.recv().await {
+        loop {
+            let first = tokio::select! {
+                job = rx.recv() => match job {
+                    Some(job) => job,
+                    None => break,
+                },
+                _ = stop.changed() => break,
+            };
             let mut batch = NotifyBatch::default();
             batch.add(first);
 
@@ -58,7 +75,23 @@ pub fn init_notify_worker() {
 
             batch.flush().await;
         }
-    });
+
+        // A batched write was answered as soon as its NOTIFY was queued, so
+        // send what is left; otherwise secondaries keep serving the old serial
+        // until their own refresh timer.
+        let mut last = NotifyBatch::default();
+        while let Ok(job) = rx.try_recv() {
+            last.add(job);
+        }
+        last.flush().await;
+    }))
+}
+
+/// Ask the worker to send what it holds and finish.
+pub fn stop_notify_worker() {
+    if let Some(stop) = NOTIFY_STOP.get() {
+        let _ = stop.send(true);
+    }
 }
 
 /// Accumulates queued jobs so a burst collapses to one NOTIFY per zone. An
@@ -82,6 +115,9 @@ impl NotifyBatch {
 
     /// Drain the pending batch and send notifications for its zones.
     async fn flush(self) {
+        if !self.all_zones && self.zones.is_empty() {
+            return;
+        }
         if self.all_zones {
             // Notifying all zones covers every per-zone entry in this batch.
             if let Err(e) = send_notify(None).await {

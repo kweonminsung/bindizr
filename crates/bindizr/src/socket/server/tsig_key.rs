@@ -10,8 +10,8 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        CreateTsigGrantParams, DaemonResponse, DeleteTsigGrantParams, TsigKeyNameParams,
-        ZoneNameParams,
+        CreateTsigGrantParams, DaemonResponse, DeleteTsigGrantParams, ListGrantsParams,
+        TsigKeyNameParams,
     },
 };
 
@@ -37,8 +37,12 @@ pub(crate) async fn create_tsig_key(
 }
 
 /// List the requested TSIG keys.
-pub(crate) async fn list_tsig_keys() -> Result<DaemonResponse, ServiceError> {
-    let response = TsigKeyService::list(&Caller::Global, PageFilter::default()).await?;
+pub(crate) async fn list_tsig_keys(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let page: PageFilter = parse_params(data)?;
+
+    let response = TsigKeyService::list(&Caller::Global, page).await?;
 
     Ok(DaemonResponse {
         message: "TSIG keys retrieved successfully".to_string(),
@@ -100,10 +104,10 @@ pub(crate) async fn create_tsig_grant(
 pub(crate) async fn list_tsig_grants(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: TsigKeyNameParams = parse_params(data)?;
+    let params: ListGrantsParams = parse_params(data)?;
 
     let response =
-        TsigGrantService::list_by_key(&Caller::Global, &params.name, PageFilter::default()).await?;
+        TsigGrantService::list_by_key(&Caller::Global, &params.name, params.page).await?;
 
     Ok(DaemonResponse {
         message: "TSIG grants retrieved successfully".to_string(),
@@ -115,11 +119,10 @@ pub(crate) async fn list_tsig_grants(
 pub(crate) async fn list_zone_tsig_grants(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: ListGrantsParams = parse_params(data)?;
 
     let response =
-        TsigGrantService::list_by_zone(&Caller::Global, &params.name, PageFilter::default())
-            .await?;
+        TsigGrantService::list_by_zone(&Caller::Global, &params.name, params.page).await?;
 
     Ok(DaemonResponse {
         message: "TSIG grants retrieved successfully".to_string(),

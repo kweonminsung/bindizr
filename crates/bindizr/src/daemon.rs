@@ -9,7 +9,7 @@ use bindizr_db as database;
 use bindizr_service as service;
 use tokio::signal::unix::{SignalKind, signal};
 
-use crate::{api, dns, shutdown::Shutdown, socket};
+use crate::{api, cli::error::CliError, dns, shutdown::Shutdown, socket};
 
 /// How long the servers that can finish on their own get before the daemon
 /// exits anyway.
@@ -34,19 +34,25 @@ pub(crate) fn reload_config() -> Result<Vec<String>, String> {
 }
 
 /// Start daemon services, handle reload/restart/shutdown requests, and drain on shutdown.
-pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
+pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError> {
     if let Ok(exe) = std::env::current_exe() {
         let _ = DAEMON_EXE.set(exe);
     }
 
     // Prepare configuration and background services before accepting requests.
-    config::initialize(config_file)?;
+    config::initialize(config_file).map_err(CliError::configuration)?;
 
     logger::initialize();
     // Touch the metrics registry so bindizr_started_at_seconds reflects process start.
     bindizr_core::metrics::metrics();
 
-    service::notify::init_notify_worker();
+    // Binding this first is what refuses a second daemon: otherwise the loser
+    // reports the conflict as a taken DNS port, after opening the database and
+    // running the seeding.
+    let (socket_path, socket_listener) = socket::server::bind().await?;
+    log::info!("Daemon socket server listening on {}", socket_path);
+
+    let notify_task = service::notify::init_notify_worker();
 
     database::initialize().await.map_err(|e| e.to_string())?;
 
@@ -65,7 +71,12 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
                 key.name
             ),
             Ok(false) => {}
-            Err(e) => return Err(format!("Failed to create the initial TSIG key: {}", e)),
+            Err(e) => {
+                return Err(CliError::from(format!(
+                    "Failed to create the initial TSIG key: {}",
+                    e
+                )));
+            }
         }
     }
 
@@ -76,7 +87,12 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
                 "Created the global API token 'initial' from api.authentication.initial_token"
             ),
             Ok(false) => {}
-            Err(e) => return Err(format!("Failed to create the initial API token: {}", e)),
+            Err(e) => {
+                return Err(CliError::from(format!(
+                    "Failed to create the initial API token: {}",
+                    e
+                )));
+            }
         }
     } else if authentication.required {
         match service::token::TokenService::count_all().await {
@@ -92,7 +108,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
 
     // DNS must be listening before startup NOTIFY can prompt secondary transfers.
     let shutdown = Shutdown::new();
-    dns::initialize(&shutdown).await?;
+    let (mut dns_tcp_task, mut dns_udp_task) = dns::initialize(&shutdown).await?;
 
     if config::bindizr_config().dns.notify.on_startup {
         match service::notify::send_notify(None).await {
@@ -101,11 +117,14 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
         }
     }
 
-    log::info!("Bindizr is running.");
-
     let mut control_rx = socket::server::control::init();
-    let socket_task = socket::server::initialize(&shutdown).await?;
-    let api_task = api::initialize(&shutdown).await?;
+    let mut socket_task = socket::server::serve(socket_listener, &shutdown);
+    let mut api_task = api::initialize(&shutdown).await?;
+
+    // Every front end is serving now, so the start time is what `bindizr
+    // restart` waits for before it reports the daemon back up.
+    socket::server::status::mark_start_time();
+    log::info!("Bindizr is running.");
 
     let mut terminate = signal(SignalKind::terminate())
         .map_err(|e| format!("Failed to listen for SIGTERM: {}", e))?;
@@ -113,16 +132,18 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
         signal(SignalKind::hangup()).map_err(|e| format!("Failed to listen for SIGHUP: {}", e))?;
 
     // Handle process signals and socket control commands in one lifecycle loop.
-    loop {
+    // A front end that stops on its own ends the daemon: the control socket
+    // would otherwise keep answering for a process serving nothing.
+    let outcome = loop {
         let control = tokio::select! {
             result = tokio::signal::ctrl_c() => {
                 result.map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
                 log::info!("Interrupt received, shutting down...");
-                break;
+                break Outcome::Stop;
             }
             _ = terminate.recv() => {
                 log::info!("SIGTERM received, shutting down...");
-                break;
+                break Outcome::Stop;
             }
             _ = hangup.recv() => {
                 match reload_config() {
@@ -136,30 +157,74 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
                 }
                 continue;
             }
+            result = &mut socket_task => break Outcome::server_stopped("daemon socket server", result),
+            result = &mut api_task => break Outcome::server_stopped("API server", result),
+            result = &mut dns_tcp_task => break Outcome::server_stopped("DNS TCP server", result),
+            result = &mut dns_udp_task => break Outcome::server_stopped("DNS UDP server", result),
             control = control_rx.recv() => control,
         };
 
         match control {
             Some(socket::server::control::DaemonControl::Restart) => {
                 log::info!("Restart requested, re-executing bindizr...");
-                // reexec only returns on failure; the listeners are still
-                // serving, so keep running instead of turning it into an outage.
-                log::error!("{}. Continuing with the current process.", reexec());
+                break Outcome::Restart;
             }
             _ => {
                 log::info!("Shutdown requested, exiting gracefully...");
-                break;
+                break Outcome::Stop;
             }
         }
+    };
+
+    drain(&shutdown, socket_task, api_task, notify_task).await;
+    socket::server::remove_socket_file(&socket_path).await;
+
+    match outcome {
+        Outcome::Stop => Ok(()),
+        Outcome::Failed(e) => Err(CliError::from(e)),
+        // exec replaces this image, so it returns only on failure, and by
+        // then nothing is listening: the failure ends the process.
+        Outcome::Restart => Err(CliError::from(reexec())),
     }
+}
 
-    // Stop accepting work before waiting for API and socket requests to finish.
+/// Why the lifecycle loop ended.
+enum Outcome {
+    Stop,
+    Restart,
+    Failed(String),
+}
+
+impl Outcome {
+    /// The outcome of a server that stopped on its own, so the exit says what
+    /// failed.
+    fn server_stopped(name: &str, result: Result<(), tokio::task::JoinError>) -> Self {
+        Outcome::Failed(match result {
+            Ok(()) => format!("The {} stopped", name),
+            Err(e) => format!("The {} failed: {}", name, e),
+        })
+    }
+}
+
+/// Stop accepting work, then give in-flight requests and queued NOTIFYs a
+/// bounded time to finish.
+///
+/// In-flight zone transfers are not waited on: a cut transfer is one the
+/// secondary discards and retries.
+async fn drain(
+    shutdown: &Shutdown,
+    socket_task: tokio::task::JoinHandle<()>,
+    api_task: tokio::task::JoinHandle<()>,
+    notify_task: Option<tokio::task::JoinHandle<()>>,
+) {
     shutdown.trigger();
+    service::notify::stop_notify_worker();
 
-    // In-flight zone transfers are not waited on: a cut transfer is one the
-    // secondary discards and retries.
     let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
         let _ = tokio::join!(socket_task, api_task);
+        if let Some(notify_task) = notify_task {
+            let _ = notify_task.await;
+        }
     })
     .await;
     if drained.is_err() {
@@ -168,8 +233,6 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), String> {
             DRAIN_TIMEOUT
         );
     }
-
-    Ok(())
 }
 
 /// Re-exec the original command line in place. exec keeps the PID, so

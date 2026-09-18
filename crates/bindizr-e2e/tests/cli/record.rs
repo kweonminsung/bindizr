@@ -499,3 +499,51 @@ async fn record_delete_by_name_narrows_by_type() {
     assert!(types.contains(&"TXT"), "{types:?}");
     assert!(!types.contains(&"A"), "{types:?}");
 }
+
+/// Verify that a TXT record is deleted by the value it was created with.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_delete_by_name_takes_a_txt_value_as_it_was_created() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("delete-txt-value.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    for value in ["hello world", "keep me"] {
+        app.run_cli_success(&[
+            "record", "create", "txt", "--zone", &zone_name, "--type", "TXT", "--value", value,
+        ])
+        .await;
+    }
+
+    // The row holds the presentation form, so comparing the two spellings
+    // byte for byte used to match nothing and report a successful no-op.
+    let deleted = app
+        .run_cli_success(&[
+            "record",
+            "delete",
+            "-z",
+            &zone_name,
+            "--name",
+            "txt",
+            "--type",
+            "TXT",
+            "--value",
+            "hello world",
+        ])
+        .await;
+    assert!(deleted.contains("1 record(s) deleted"), "{deleted}");
+
+    let listed = app
+        .run_cli_success(&[
+            "record", "list", "--zone", &zone_name, "--type", "TXT", "--output", "json",
+        ])
+        .await;
+    let listed: serde_json::Value =
+        serde_json::from_str(&listed).expect("record list did not print JSON");
+    let values: Vec<&str> = listed["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .filter_map(|record| record["value"].as_str())
+        .collect();
+    assert_eq!(values, vec!["keep me"], "{listed}");
+}

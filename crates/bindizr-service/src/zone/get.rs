@@ -8,7 +8,8 @@ use crate::{
     model::{record::Record, zone::Zone, zone_change::ZoneChange},
     repository::RepositoryService,
     types::{
-        GetZoneResponse, GetZonesFilter, PaginatedResponse, normalize_page_limit, parse_setting,
+        GetRecordResponse, GetZoneResponse, GetZonesFilter, PaginatedResponse, ZoneDetailResponse,
+        normalize_page_limit, parse_setting,
     },
 };
 
@@ -161,7 +162,28 @@ impl ZoneService {
     }
 
     /// The zone and its records from one snapshot, so they share a serial.
-    pub async fn get_with_records(
+    /// Fetch a zone as the detail payload both front ends answer with,
+    /// carrying its records only when they were asked for.
+    pub async fn get_detail(
+        caller: &Caller,
+        zone_name: &str,
+        with_records: bool,
+    ) -> Result<ZoneDetailResponse, ServiceError> {
+        let (zone, records) = if with_records {
+            Self::get_with_records(caller, zone_name).await?
+        } else {
+            (Self::get_by_name(caller, zone_name).await?, vec![])
+        };
+        Ok(ZoneDetailResponse {
+            zone: GetZoneResponse::from_zone(&zone),
+            records: records
+                .iter()
+                .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone.name))
+                .collect(),
+        })
+    }
+
+    pub(crate) async fn get_with_records(
         caller: &Caller,
         zone_name: &str,
     ) -> Result<(Zone, Vec<Record>), ServiceError> {

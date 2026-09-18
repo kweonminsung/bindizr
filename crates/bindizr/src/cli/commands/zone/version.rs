@@ -42,8 +42,8 @@ pub(crate) enum ZoneVersionCommand {
         /// Include signer-only serials (DNSSEC re-signs and rollovers)
         #[arg(long)]
         include_signer_serials: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Show the zone state captured at one version serial
@@ -53,8 +53,8 @@ pub(crate) enum ZoneVersionCommand {
         name: String,
         /// Version serial to inspect
         serial: i32,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Show the record differences between two serials
@@ -66,6 +66,9 @@ pub(crate) enum ZoneVersionCommand {
         from_serial: i32,
         /// The serial to diff to (omit to compare against the current serial)
         to_serial: Option<i32>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
     /// Roll a zone back to the state captured at a version serial
     Rollback {
@@ -77,6 +80,9 @@ pub(crate) enum ZoneVersionCommand {
         /// Compute and report the rollback without applying any change
         #[arg(long)]
         dry_run: bool,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -135,6 +141,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             name,
             from_serial,
             to_serial,
+            output,
         } => {
             let data = client::send_command(
                 DaemonCommandKind::DiffZoneVersions,
@@ -147,12 +154,18 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             .await?
             .data;
 
-            out!("{}", render_version_diff(&parse_response(&data)?));
+            match output {
+                OutputFormat::Table => {
+                    out!("{}", render_version_diff(&parse_response(&data)?));
+                }
+                _ => print_payload(&data, output)?,
+            }
         }
         ZoneVersionCommand::Rollback {
             name,
             serial,
             dry_run,
+            output,
         } => {
             let response = client::send_command(
                 DaemonCommandKind::RollbackZone,
@@ -164,9 +177,14 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             )
             .await?;
 
-            let rollback: RollbackZoneResponse = parse_response(&response.data)?;
-            outln!("{}", response.message);
-            print_table(vec![RollbackSummaryRow::from(&rollback)]);
+            match output {
+                OutputFormat::Table => {
+                    let rollback: RollbackZoneResponse = parse_response(&response.data)?;
+                    outln!("{}", response.message);
+                    print_table(vec![RollbackSummaryRow::from(&rollback)]);
+                }
+                _ => print_payload(&response.data, output)?,
+            }
         }
     }
 

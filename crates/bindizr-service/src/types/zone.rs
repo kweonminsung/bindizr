@@ -60,6 +60,7 @@ impl GetZoneResponse {
 
 /// Request body for creating a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateZoneRequest {
     #[schema(example = "example.com")]
     pub name: String,
@@ -117,6 +118,7 @@ impl CreateZoneRequest {
 
 /// Query filters and pagination for listing zones.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GetZonesFilter {
     #[schema(example = "example.com")]
     pub name: Option<String>,
@@ -165,6 +167,7 @@ pub struct GetZonesFilter {
 /// value, merged inside the update transaction. `serial` is carried only to
 /// be rejected: it is fixed at creation.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateZoneRequest {
     /// A different name renames the zone.
     #[serde(default, skip_serializing_if = "Option::is_none")]

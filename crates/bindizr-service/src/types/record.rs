@@ -60,6 +60,7 @@ pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> Reco
 
 /// Request body for creating a record in a named zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateRecordRequest {
     #[schema(example = "sub")]
     pub name: String,
@@ -80,6 +81,7 @@ pub struct CreateRecordRequest {
 /// A record's data fields for a bulk insertion; the zone comes from the
 /// request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RecordItem {
     #[schema(example = "sub")]
     pub name: String,
@@ -97,6 +99,7 @@ pub struct RecordItem {
 
 /// Request body for bulk-inserting records into a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateBulkRecordsRequest {
     #[schema(example = "example.com")]
     pub zone_name: String,
@@ -110,6 +113,7 @@ pub struct CreateBulkRecordsRequest {
 /// value, merged inside the update transaction. `value` is required when
 /// `record_type` changes.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateRecordRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "sub")]
@@ -135,6 +139,7 @@ pub struct UpdateRecordRequest {
 /// second, quieter way to empty a zone, which `DELETE /zones/{name}` owns.
 #[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
 #[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
 pub struct DeleteRecordsFilter {
     #[schema(example = "example.com")]
     pub zone_name: String,
@@ -165,6 +170,8 @@ pub struct DeleteRecordsFilter {
 /// serial does not move and no NOTIFY goes out.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DeleteRecordsResponse {
+    /// Whether this call wrote; a filter that matched nothing still ran, and
+    /// says so with `deleted: 0`.
     #[schema(example = true)]
     pub applied: bool,
     #[schema(example = false)]
@@ -178,6 +185,7 @@ pub struct DeleteRecordsResponse {
 
 /// Query filters and pagination for listing records.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GetRecordsFilter {
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,

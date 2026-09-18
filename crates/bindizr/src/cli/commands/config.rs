@@ -2,7 +2,10 @@ use bindizr_core::{config, config::BindizrConfig, outln};
 use clap::Subcommand;
 
 use crate::{
-    cli::{error::CliError, output::color},
+    cli::{
+        error::CliError,
+        output::{OutputFormat, color, parse_response, print_payload},
+    },
     socket::{client, types::DaemonCommandKind},
 };
 
@@ -17,7 +20,11 @@ pub(crate) enum ConfigCommand {
     },
     /// Show the configuration loaded by the running daemon
     #[command(alias = "ls")]
-    List,
+    List {
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
     /// Re-read the configuration file in the running daemon
     #[command(after_help = "\
 Settings bound to something built at startup — the `api` section, the
@@ -29,6 +36,9 @@ running configuration always describes the running process.")]
     Get {
         /// Dotted configuration key, e.g. dns.secondary_addrs
         key: String,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -36,9 +46,9 @@ running configuration always describes the running process.")]
 pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliError> {
     match subcommand {
         ConfigCommand::Check { config } => validate_config(config.as_deref()),
-        ConfigCommand::List => print_config_list().await,
+        ConfigCommand::List { output } => print_config_list(output).await,
         ConfigCommand::Reload => reload_config().await,
-        ConfigCommand::Get { key } => print_config_value(&key).await,
+        ConfigCommand::Get { key, output } => print_config_value(&key, output).await,
     }
 }
 
@@ -54,38 +64,44 @@ fn validate_config(file: Option<&str>) -> Result<(), CliError> {
     let path = config::resolve_config_path(file);
     outln!("Checking configuration file: {}", path);
 
-    config::load_config_file(&path)?;
+    config::load_config_file(&path).map_err(CliError::configuration)?;
 
     outln!("Configuration is {}.", color::green("valid"));
     Ok(())
 }
 
 /// Print all effective configuration values.
-async fn print_config_list() -> Result<(), CliError> {
-    let config = client::fetch_config().await?;
-    print_config(&config);
+async fn print_config_list(output: OutputFormat) -> Result<(), CliError> {
+    let response = client::send_control_command(DaemonCommandKind::Config).await?;
+
+    match output {
+        OutputFormat::Table => print_config(&parse_response(&response.data)?),
+        _ => print_payload(&response.data, output)?,
+    }
     Ok(())
 }
 
-/// Print one effective configuration value by key.
-async fn print_config_value(key: &str) -> Result<(), CliError> {
-    let config = client::fetch_config().await?;
-    let value = serde_json::to_value(&config)
-        .map_err(|e| format!("Failed to serialize configuration: {}", e))?;
+/// Print one effective configuration value by key. The plain form prints a
+/// string bare, so a value can be read straight into a shell variable.
+async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliError> {
+    let response = client::send_control_command(DaemonCommandKind::Config).await?;
 
     let found = key
         .split('.')
-        .try_fold(&value, |value, part| value.get(part))
+        .try_fold(&response.data, |value, part| value.get(part))
         .ok_or_else(|| format!("Unknown configuration key: {}", key))?;
 
-    match found {
-        serde_json::Value::String(value) => outln!("{}", value),
-        serde_json::Value::Object(_) => outln!(
-            "{}",
-            serde_json::to_string_pretty(found)
-                .map_err(|e| format!("Failed to render configuration value: {}", e))?
-        ),
-        value => outln!("{}", value),
+    match output {
+        OutputFormat::Table => match found {
+            serde_json::Value::String(value) => outln!("{}", value),
+            serde_json::Value::Object(_) => outln!(
+                "{}",
+                serde_json::to_string_pretty(found)
+                    .map_err(|e| format!("Failed to render configuration value: {}", e))?
+            ),
+            value => outln!("{}", value),
+        },
+        _ => print_payload(found, output)?,
     }
     Ok(())
 }

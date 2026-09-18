@@ -131,6 +131,9 @@ bindizr:
       path: /health
       port: api
     periodSeconds: 10
+    # Longer than the handler's own 3s database budget, so a slow database
+    # answers 503 instead of being cut off as a probe timeout.
+    timeoutSeconds: 5
     failureThreshold: 3
   livenessProbe:
     tcpSocket:
@@ -196,6 +199,19 @@ bind9:
     accessModes:
       - ReadWriteOnce
     size: 1Gi
+
+  # Without a probe the LoadBalancer sends public DNS traffic to a named that
+  # has not started answering yet.
+  readinessProbe:
+    tcpSocket:
+      port: dns-tcp
+    periodSeconds: 10
+    failureThreshold: 3
+  startupProbe:
+    tcpSocket:
+      port: dns-tcp
+    periodSeconds: 5
+    failureThreshold: 30
 
   resources: {}
   podAnnotations: {}

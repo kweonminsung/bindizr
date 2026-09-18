@@ -244,7 +244,7 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
                     "name": spelling,
                     "record_type": "NS",
                     "value": ns["value"],
-                    "default_ttl": 1200,
+                    "ttl": 1200,
                 })),
             )
             .await;

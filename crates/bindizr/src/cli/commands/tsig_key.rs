@@ -1,7 +1,7 @@
 use bindizr_core::{errln, outln};
 use bindizr_service::types::{
     CreateTsigGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
-    PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
+    PageFilter, PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
 };
 use clap::Subcommand;
 
@@ -13,7 +13,8 @@ use crate::{
     socket::{
         client,
         types::{
-            CreateTsigGrantParams, DaemonCommandKind, DeleteTsigGrantParams, TsigKeyNameParams,
+            CreateTsigGrantParams, DaemonCommandKind, DeleteTsigGrantParams, ListGrantsParams,
+            TsigKeyNameParams,
         },
     },
 };
@@ -36,15 +37,21 @@ pub(crate) enum TsigKeyCommand {
         /// Fixed at creation
         #[arg(long)]
         global: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// List all TSIG keys (secrets are not shown; use `get`)
     #[command(alias = "ls")]
     List {
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Maximum number of keys to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of keys to skip
+        #[arg(long)]
+        offset: Option<u64>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Show one TSIG key including its secret
@@ -52,8 +59,8 @@ pub(crate) enum TsigKeyCommand {
         /// Name of the key
         #[arg(value_name = "KEY_NAME")]
         name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Print the key as a BIND `key` block, ready to paste into a
@@ -93,8 +100,8 @@ Examples:
         /// Grant transfers only; the key may pull the zone but not change it
         #[arg(long)]
         read_only: bool,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// List a key's grants (`zone tsig-grants` lists a zone's)
@@ -102,8 +109,14 @@ Examples:
         /// Name of the key
         #[arg(value_name = "KEY_NAME")]
         name: String,
-        /// Output format (json, yaml, table)
-        #[arg(short, long, default_value = "table")]
+        /// Maximum number of grants to return
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Number of grants to skip
+        #[arg(long)]
+        offset: Option<u64>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
     /// Revoke one of a key's grants by grant ID
@@ -146,8 +159,16 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 vec![TsigKeyRow::from(key)]
             })?;
         }
-        TsigKeyCommand::List { output } => {
-            let res = client::send_command(DaemonCommandKind::ListTsigKeys, ()).await?;
+        TsigKeyCommand::List {
+            limit,
+            offset,
+            output,
+        } => {
+            let res = client::send_command(
+                DaemonCommandKind::ListTsigKeys,
+                PageFilter { limit, offset },
+            )
+            .await?;
 
             log::debug!("TSIG key list result: {:?}", res);
 
@@ -211,10 +232,18 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 vec![TsigGrantRow::from(&response.tsig_grant)]
             })?;
         }
-        TsigKeyCommand::Grants { name, output } => {
+        TsigKeyCommand::Grants {
+            name,
+            limit,
+            offset,
+            output,
+        } => {
             let res = client::send_command(
                 DaemonCommandKind::ListTsigGrants,
-                TsigKeyNameParams { name },
+                ListGrantsParams {
+                    name,
+                    page: PageFilter { limit, offset },
+                },
             )
             .await?;
             print_response(

@@ -7,7 +7,7 @@ mod dnssec_policy;
 mod doctor;
 mod notify;
 mod record;
-mod status;
+pub(crate) mod status;
 mod token;
 mod tsig_key;
 mod zone;
@@ -60,17 +60,17 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::Config => status::config(),
                 DaemonCommandKind::ReloadConfig => status::reload_config(),
                 DaemonCommandKind::CreateToken => token::create_token(&cmd.data).await,
-                DaemonCommandKind::ListTokens => token::list_tokens().await,
+                DaemonCommandKind::ListTokens => token::list_tokens(&cmd.data).await,
                 DaemonCommandKind::DeleteToken => token::delete_token(&cmd.data).await,
                 DaemonCommandKind::CreateTsigKey => tsig_key::create_tsig_key(&cmd.data).await,
-                DaemonCommandKind::ListTsigKeys => tsig_key::list_tsig_keys().await,
+                DaemonCommandKind::ListTsigKeys => tsig_key::list_tsig_keys(&cmd.data).await,
                 DaemonCommandKind::GetTsigKey => tsig_key::get_tsig_key(&cmd.data).await,
                 DaemonCommandKind::DeleteTsigKey => tsig_key::delete_tsig_key(&cmd.data).await,
                 DaemonCommandKind::CreateDnssecPolicy => {
                     dnssec_policy::create_dnssec_policy(&cmd.data).await
                 }
                 DaemonCommandKind::ListDnssecPolicies => {
-                    dnssec_policy::list_dnssec_policies().await
+                    dnssec_policy::list_dnssec_policies(&cmd.data).await
                 }
                 DaemonCommandKind::GetDnssecPolicy => {
                     dnssec_policy::get_dnssec_policy(&cmd.data).await
@@ -162,16 +162,14 @@ async fn handle_client(stream: UnixStream) {
     }
 }
 
-/// Bind the daemon's Unix socket and spawn the connection accept loop. The
-/// returned handle finishes once `shutdown` fires and the socket file is gone.
-pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, String> {
-    status::mark_start_time();
-    let (socket_path, listener) = bind_daemon_socket().await?;
-
-    log::info!("Daemon socket server listening on {}", socket_path);
-
+/// Serve control commands on an already-bound socket until `shutdown` fires.
+///
+/// The daemon removes the socket file once everything has drained: `bindizr
+/// stop` waits for it to disappear, so removing it earlier would report a stop
+/// that is still in progress.
+pub(crate) fn serve(listener: UnixListener, shutdown: &Shutdown) -> JoinHandle<()> {
     let stop = shutdown.waiter();
-    Ok(tokio::spawn(async move {
+    tokio::spawn(async move {
         tokio::pin!(stop);
 
         loop {
@@ -193,18 +191,23 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, St
         }
 
         drop(listener);
-        if let Err(e) = fs::remove_file(&socket_path).await {
-            log::warn!("Failed to remove the daemon socket {}: {}", socket_path, e);
-        }
         log::info!("Daemon socket server stopped");
-    }))
+    })
+}
+
+/// Remove the daemon's socket file, once nothing is serving on it.
+pub(crate) async fn remove_socket_file(socket_path: &str) {
+    if let Err(e) = fs::remove_file(socket_path).await {
+        log::warn!("Failed to remove the daemon socket {}: {}", socket_path, e);
+    }
 }
 
 /// Socket paths tried in order when the daemon starts.
 const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH];
 
-/// Bind the daemon's configured control socket.
-async fn bind_daemon_socket() -> Result<(String, UnixListener), String> {
+/// Bind the daemon's configured control socket. Owning it is what refuses a
+/// second daemon, so the daemon binds before anything else it would share.
+pub(crate) async fn bind() -> Result<(String, UnixListener), String> {
     let mut failures = Vec::new();
 
     for (i, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {

@@ -64,8 +64,21 @@ fn json_response<T: serde::Serialize>(value: &T) -> Response {
 
 /// external-dns retries only 5xx; upstream 4xx pass through as permanent
 /// errors and upstream 5xx / transport failures become a retryable 502.
+///
+/// An unauthenticated 401 is the exception: replacing the token heals it, so it
+/// answers 503 and the change set is retried afterwards instead of being
+/// dropped as permanently bad. A 403 stays permanent — the token is known and
+/// the zone is genuinely not the adapter's to write.
 fn upstream_error_response(error: UpstreamError) -> Response {
     match error {
+        UpstreamError::Status {
+            status: 401,
+            message,
+        } => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("bindizr rejected the adapter's token: {}", message),
+        )
+            .into_response(),
         UpstreamError::Status { status, message } if status < 500 => (
             StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST),
             message,
@@ -266,12 +279,19 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
     }
 }
 
-/// `GET /healthz` — this process is up and bindizr answers its
-/// (unauthenticated) health endpoint.
+/// `GET /healthz` — this process is up, bindizr answers, and it accepts the
+/// adapter's token.
 async fn get_health(State(state): State<Arc<AppState>>) -> Response {
     match state.upstream.probe_health().await {
         Ok(()) => (StatusCode::OK, "ok").into_response(),
-        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "bindizr unreachable").into_response(),
+        Err(UpstreamError::Status { status, message }) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("bindizr answered {}: {}", status, message),
+        )
+            .into_response(),
+        Err(UpstreamError::Unreachable(message)) => {
+            (StatusCode::SERVICE_UNAVAILABLE, message).into_response()
+        }
     }
 }
 

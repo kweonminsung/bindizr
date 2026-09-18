@@ -69,6 +69,18 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          # Without this the Service lists the pod through initdb, and bindizr
+          # crash-loops until the first boot finishes.
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - {{ .Values.postgresql.auth.username | quote }}
+                - -d
+                - {{ .Values.postgresql.auth.database | quote }}
+            periodSeconds: 10
+            failureThreshold: 6
           {{- with .Values.postgresql.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

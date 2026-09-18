@@ -2753,7 +2753,7 @@ paths:
       tags:
       - Zone
       summary: Import records into a zone
-      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. A record type bindizr does not store fails the file the same way unless `skip_unsupported` is set, which passes over those records and lists them in `skipped_records`. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.
+      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the answer is 422, carrying the per-record errors. A record type bindizr does not store fails the file the same way unless `skip_unsupported` is set, which passes over those records and lists them in `skipped_records`. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.
       operationId: import_zone
       parameters:
       - name: name
@@ -2770,7 +2770,7 @@ paths:
         required: true
       responses:
         '200':
-          description: Import summary and validation errors
+          description: Import summary
           content:
             application/json:
               schema:
@@ -2811,6 +2811,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: The file was rejected and nothing was applied; the same body carries the per-record errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportZoneResponse'
         '500':
           description: Internal server error
           content:
@@ -3274,6 +3280,7 @@ components:
         zone_name:
           type: string
           example: example.com
+      additionalProperties: false
     CreateDnssecPolicyRequest:
       type: object
       description: |-
@@ -3336,6 +3343,7 @@ components:
             default) disables scheduled rolls.
           example: 90
           minimum: 0
+      additionalProperties: false
     CreateRecordRequest:
       type: object
       description: Request body for creating a record in a named zone.
@@ -3372,6 +3380,7 @@ components:
         zone_name:
           type: string
           example: example.com
+      additionalProperties: false
     CreateTokenGrantRequest:
       type: object
       description: Request body for granting an API token record rights in a zone.
@@ -3402,6 +3411,7 @@ components:
           type: string
           description: Name of an existing zone.
           example: example.com
+      additionalProperties: false
     CreateTokenRequest:
       type: object
       description: Request body for creating an API token.
@@ -3431,6 +3441,7 @@ components:
           type: string
           description: 'Letters, digits, `.`, `_`, and `-`: one URL path segment.'
           example: external-dns
+      additionalProperties: false
     CreateTsigGrantRequest:
       type: object
       description: Request body for granting a TSIG key update and transfer rights in a zone.
@@ -3461,6 +3472,7 @@ components:
           type: string
           description: Name of an existing zone.
           example: example.com
+      additionalProperties: false
     CreateTsigKeyRequest:
       type: object
       description: Request body for creating a TSIG key. Omitting `secret` generates one.
@@ -3488,6 +3500,7 @@ components:
           - 'null'
           description: Existing base64 secret to import; omit to generate a random one.
           example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
+      additionalProperties: false
     CreateZoneRequest:
       type: object
       description: Request body for creating a zone.
@@ -3551,6 +3564,7 @@ components:
           format: int32
           description: Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
           example: 42
+      additionalProperties: false
     CreatedTokenResponse:
       type: object
       description: 'The create response: the token and its secret, the one time it is shown.'
@@ -3578,6 +3592,9 @@ components:
       properties:
         applied:
           type: boolean
+          description: |-
+            Whether this call wrote; a filter that matched nothing still ran, and
+            says so with `deleted: 0`.
           example: true
         deleted:
           type: integer
@@ -3804,6 +3821,7 @@ components:
           - 'null'
           description: Name of the DNSSEC policy to sign under; defaults to `default`.
           example: default
+      additionalProperties: false
     ErrorResponse:
       type: object
       description: 'Generic error response: a plain description plus a machine-readable code.'
@@ -3843,6 +3861,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ExternalDnsRecord'
+      additionalProperties: false
     ExternalDnsAdjustResponse:
       type: object
       description: The request's records in the canonical form applying them would store.
@@ -3869,6 +3888,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ExternalDnsRecordUpdate'
+      additionalProperties: false
     ExternalDnsChangesResponse:
       type: object
       description: Summary of an applied ExternalDNS change set.
@@ -3939,6 +3959,7 @@ components:
             type: string
           example:
           - 192.0.2.10
+      additionalProperties: false
     ExternalDnsRecordUpdate:
       type: object
       description: 'A record replacement: `old` values are removed and `new` written in place.'
@@ -3950,6 +3971,7 @@ components:
           $ref: '#/components/schemas/ExternalDnsRecord'
         old:
           $ref: '#/components/schemas/ExternalDnsRecord'
+      additionalProperties: false
     ExternalDnsRecordsResponse:
       type: object
       description: |-
@@ -4424,6 +4446,7 @@ components:
           description: |-
             Pass over records bindizr has no type for instead of failing the whole
             file; they are counted as skipped and listed in `skipped_records`.
+      additionalProperties: false
     ImportZoneResponse:
       type: object
       description: Result of a zone import, including a summary and any validation errors.
@@ -5050,6 +5073,7 @@ components:
           example: 3600
         value:
           $ref: '#/components/schemas/RecordValueRequest'
+      additionalProperties: false
     RecordResponse:
       type: object
       description: A single record wrapped in a response envelope.
@@ -5135,6 +5159,7 @@ components:
             Which key to roll: required for split-key zones (`ksk` or `zsk`),
             omitted for CSK zones.
           example: zsk
+      additionalProperties: false
     SecondaryStatusResponse:
       type: object
       description: Sync state of one configured secondary for a zone.
@@ -5222,6 +5247,7 @@ components:
           format: int32
           example: 90
           minimum: 0
+      additionalProperties: false
     UpdateDnssecSettingsRequest:
       type: object
       description: |-
@@ -5245,6 +5271,7 @@ components:
             layout. A new denial mode replaces the chain under one serial, and a
             new algorithm starts a rollover.
           example: strict
+      additionalProperties: false
     UpdateRecordRequest:
       type: object
       description: |-
@@ -5280,6 +5307,7 @@ components:
           oneOf:
           - type: 'null'
           - $ref: '#/components/schemas/RecordValueRequest'
+      additionalProperties: false
     UpdateZoneRequest:
       type: object
       description: |-
@@ -5351,6 +5379,7 @@ components:
           - 'null'
           format: int32
           example: 42
+      additionalProperties: false
     VersionDetailResponse:
       type: object
       description: One version plus the reconstructed records at that serial.

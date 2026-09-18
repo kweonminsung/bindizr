@@ -27,8 +27,12 @@ pub(crate) async fn create_dnssec_policy(
 }
 
 /// List the requested DNSSEC policies.
-pub(crate) async fn list_dnssec_policies() -> Result<DaemonResponse, ServiceError> {
-    let response = DnssecPolicyService::list(&Caller::Global, PageFilter::default()).await?;
+pub(crate) async fn list_dnssec_policies(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let page: PageFilter = parse_params(data)?;
+
+    let response = DnssecPolicyService::list(&Caller::Global, page).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policies retrieved successfully".to_string(),

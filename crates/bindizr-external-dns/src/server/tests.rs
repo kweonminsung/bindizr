@@ -341,6 +341,32 @@ async fn apply_changes_passes_bindizr_4xx_through_as_permanent_error() {
     assert!(body.contains("not enabled for ExternalDNS"));
 }
 
+/// Verify that a rejected token answers a retryable 503 rather than the 401.
+#[tokio::test]
+async fn apply_changes_maps_a_rejected_token_to_a_retryable_503() {
+    let mock = spawn_mock(
+        (200, json!({"domains": []})),
+        (200, json!({"records": []})),
+        (
+            401,
+            json!({"error": "Invalid API token", "code": "UNAUTHORIZED"}),
+        ),
+    )
+    .await;
+    let base = spawn_adapter(mock.addr, Some("test-token")).await;
+
+    let (status, body) = post(
+        &format!("{}/records", base),
+        json!({"create": [{"dnsName": "api.example.com", "targets": ["192.0.2.1"], "recordType": "A"}]}),
+    )
+    .await;
+
+    // external-dns retries only 5xx, and re-granting the token is meant to heal
+    // the sync instead of leaving the change set dropped.
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains("Invalid API token"));
+}
+
 /// Verify that `apply_changes` maps bindizr 5xx and unreachable to retryable 502.
 #[tokio::test]
 async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
