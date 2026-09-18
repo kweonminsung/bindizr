@@ -11,8 +11,9 @@ pip install -r requirements.txt      # aiohttp, PyYAML, matplotlib (use --user/-
 ./benchmark.sh                       # full run
 ```
 
-Results land in [`results/`](results/): `performance.md` (paste-into-README
-tables), `performance.csv`, `performance.json`, and `graphs/*.png`.
+Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory:
+`performance.md` (paste-into-README tables), `performance.csv`,
+`performance.json`, and `graphs/*.png`.
 
 ## Systems under test
 
@@ -63,7 +64,8 @@ BIND9` — i.e. **Bindizr introduces no measurable DNS query overhead**.
 
 - **Common interface.** Every system implements the same adapter
   ([`adapters/base.py`](adapters/base.py)); a runner issues one identical
-  workload against all of them. Architectural differences (RRset vs record-id,
+  workload against all of them. Architectural differences (replacing every
+  record at a name and type at once vs. addressing records by id,
   dynamic-update vs REST) are hidden in the adapter.
 - **Cross-cutting metric.** Because architectures differ, the honest comparison
   for write paths is *end-to-end* (Benchmark 3: create → DNS-visible). API-level
@@ -85,7 +87,8 @@ BIND9` — i.e. **Bindizr introduces no measurable DNS query overhead**.
   (`repeats` in `config/settings.yaml`; CI uses `repeats_ci: 1`, override with
   `BENCH_REPEATS=N`). The report averages numeric metrics per system/backend,
   reports the **sample standard deviation** as `mean ± std` on headline metrics,
-  and shows a `runs` column. Each full run starts from a clean `results/raw`, and
+  and shows a `runs` column. Each full run starts from a clean `raw/` under its
+  own results directory, and
   every system is `down -v`'d before setup, so runs never accumulate
   stale/duplicate rows.
 - **Reproducible.** A fixed seed (`config/settings.yaml`) generates the same
@@ -119,7 +122,7 @@ benchmarks/
   systems/<key>/            # compose.yml + config + adapter.py per system
   runners/bNN_*.py          # one module per benchmark
   lib/                      # metrics, loadgen, dnsquery, resources, report, env
-  results/                  # generated artifacts (md/csv/json/graphs)
+  results_<timestamp>/      # generated artifacts (md/csv/json/graphs), one dir per run
 ```
 
 ## Configuration & overrides
@@ -130,6 +133,7 @@ overrides (used by CI and quick runs):
 | Env | Effect |
 | --- | --- |
 | `BENCH_CI=1` | use small CI sizes |
+| `BENCH_RESULTS_DIR=results_20260710_233856` | reuse an existing results directory instead of creating one; pass it when re-running a subset (`-b ...`) so the report is rebuilt from the full raw set |
 | `BENCH_SIZES=1000,10000` | override bulk/AXFR sizes |
 | `BENCH_SEED=1337` | dataset seed |
 | `BENCH_CRUD_DURATION` / `BENCH_CRUD_CONCURRENCY` / `BENCH_CRUD_PREPOP` | CRUD window/load |

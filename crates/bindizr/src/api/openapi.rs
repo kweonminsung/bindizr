@@ -26,7 +26,7 @@ use utoipa::{
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        super::health::get_health,
+        super::health::handle_health,
         super::zone::list_zones,
         super::zone::get_zone,
         super::zone::create_zone,

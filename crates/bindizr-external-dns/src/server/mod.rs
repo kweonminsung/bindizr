@@ -43,8 +43,8 @@ pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
 /// Build the health/metrics router served on the exposed listener.
 pub(crate) fn health_router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/healthz", routing::get(get_health))
-        .route("/metrics", routing::get(get_metrics))
+        .route("/healthz", routing::get(handle_health))
+        .route("/metrics", routing::get(handle_metrics))
         .with_state(state)
 }
 
@@ -281,7 +281,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
 
 /// `GET /healthz` — this process is up, bindizr answers, and it accepts the
 /// adapter's token.
-async fn get_health(State(state): State<Arc<AppState>>) -> Response {
+async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
     match state.upstream.probe_health().await {
         Ok(()) => (StatusCode::OK, "ok").into_response(),
         Err(UpstreamError::Status { status, message }) => (
@@ -296,7 +296,7 @@ async fn get_health(State(state): State<Arc<AppState>>) -> Response {
 }
 
 /// `GET /metrics` — adapter-local Prometheus metrics.
-async fn get_metrics() -> Response {
+async fn handle_metrics() -> Response {
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, TEXT_CONTENT_TYPE)],

@@ -20,7 +20,7 @@ const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
             (status = 503, description = "Service unhealthy", body = HealthResponse)
         )
 )]
-pub(crate) async fn get_health() -> impl IntoResponse {
+pub(crate) async fn handle_health() -> impl IntoResponse {
     match tokio::time::timeout(DB_PROBE_TIMEOUT, ZoneService::ping()).await {
         Ok(Ok(())) => (
             StatusCode::OK,

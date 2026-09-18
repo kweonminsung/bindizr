@@ -156,7 +156,7 @@ impl RepositoryService {
     }
 
     /// Probe the zones table to check database connectivity.
-    pub(crate) async fn ping_zones() -> Result<(), ServiceError> {
+    pub(crate) async fn ping() -> Result<(), ServiceError> {
         get_zone_repository()
             .ping()
             .await
@@ -236,7 +236,7 @@ impl RepositoryService {
     }
 
     /// Find an owner with a DS record but no NS delegation in the current transaction.
-    pub(crate) async fn get_record_ds_name_without_ns_tx(
+    pub(crate) async fn get_ds_name_without_ns_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Option<String>, ServiceError> {

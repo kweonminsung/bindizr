@@ -51,7 +51,7 @@ class Bind9RndcAdapter(DnsAdapter):
         """Start the benchmark system and wait for it to become ready."""
         self.compose.down()  # clean slate: remove any leftovers from a prior run
         self.compose.up("bind9", wait=False)
-        self.cid = self.compose.container_id("bind9")
+        self.cid = self.compose.resolve_container_id("bind9")
         await self._wait_dns()
 
     async def _wait_dns(self, timeout: int = 60) -> None:

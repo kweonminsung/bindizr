@@ -17,7 +17,7 @@ use chrono::Utc;
 const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Prometheus text-format scrape endpoint.
-pub(crate) async fn get_metrics() -> Response {
+pub(crate) async fn handle_metrics() -> Response {
     let metrics = metrics();
 
     // A failed probe still serves the instrumentation counters; only

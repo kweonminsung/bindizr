@@ -38,7 +38,7 @@ def _to_bytes(s: str) -> float:
 
 def sampler_for(adapter, cfg: dict) -> "ResourceSampler":
     """Sampler over the containers an adapter declares measurable."""
-    ids = [adapter.compose.container_id(s) for s in adapter.resource_services]
+    ids = [adapter.compose.resolve_container_id(s) for s in adapter.resource_services]
     return ResourceSampler([i for i in ids if i],
                            cfg["resources"]["sample_interval_secs"])
 
@@ -63,7 +63,7 @@ class ResourceSampler:
         while not self._stop.is_set():
             # One snapshot covers every container; stamp samples with their tick
             # so summary() can total the stack for that interval.
-            for row in dockerutil.stats(self.ids):
+            for row in dockerutil.read_stats(self.ids):
                 cpu = float(row.get("CPUPerc", "0%").rstrip("%") or 0)
                 mem_use = _to_bytes(row.get("MemUsage", "0B").split("/")[0])
                 net = row.get("NetIO", "0B / 0B").split("/")

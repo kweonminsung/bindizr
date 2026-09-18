@@ -59,7 +59,7 @@ async def run_variant(transfer_cache: bool) -> dict:
         print(f"[transfer_cache={label}] importing {RECORDS} records...", flush=True)
         await adapter.bulk_import(ZONE, generate(RECORDS, 1337, ZONE))
 
-        bind9_cid = adapter.compose.container_id("bind9")
+        bind9_cid = adapter.compose.resolve_container_id("bind9")
         if not bind9_cid:
             raise RuntimeError("bind9 container not found")
 

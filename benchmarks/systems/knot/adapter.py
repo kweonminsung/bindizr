@@ -52,7 +52,7 @@ class KnotAdapter(DnsAdapter):
         """Start the benchmark system and wait for it to become ready."""
         self.compose.down()  # clean slate: remove any leftovers from a prior run
         self.compose.up("knot", wait=False)
-        self.cid = self.compose.container_id("knot")
+        self.cid = self.compose.resolve_container_id("knot")
         await self._wait_dns()
 
     async def _wait_dns(self, timeout: int = 90) -> None:

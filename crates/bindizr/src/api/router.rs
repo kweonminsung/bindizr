@@ -34,7 +34,7 @@ impl ApiRouter {
             .merge(TokenApi::routes().await)
             .merge(DnssecApi::routes().await)
             .merge(DnssecPolicyApi::routes().await)
-            .route("/", routing::get(ApiRouter::get_home));
+            .route("/", routing::get(ApiRouter::handle_home));
 
         // Unregistered when disabled, so the endpoints fall through to 404.
         if api_config.external_dns_enabled {
@@ -54,11 +54,11 @@ impl ApiRouter {
         let mut router = api_router;
 
         // Outside the auth layer: probes must work without credentials.
-        router = router.route("/health", routing::get(super::health::get_health));
+        router = router.route("/health", routing::get(super::health::handle_health));
 
         // Also outside auth: scrapers get only aggregate counts, no zone data.
         if api_config.metrics_enabled {
-            router = router.route("/metrics", routing::get(super::metrics::get_metrics));
+            router = router.route("/metrics", routing::get(super::metrics::handle_metrics));
         }
 
         // Also outside auth: the document is the API's own description.
@@ -90,7 +90,7 @@ impl ApiRouter {
     }
 
     /// Return the API's running-status message.
-    async fn get_home() -> impl IntoResponse {
+    async fn handle_home() -> impl IntoResponse {
         (
             StatusCode::OK,
             Json(MessageResponse {

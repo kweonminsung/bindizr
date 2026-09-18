@@ -68,11 +68,11 @@ pub fn parse_lookup_name(value: &str) -> Result<String, ParseNameError> {
         return Err(ParseNameError::Whitespace);
     }
 
-    Ok(render_labels(&decode_name_labels(trimmed)?.0))
+    Ok(labels_to_presentation(&decode_name_labels(trimmed)?.0))
 }
 
-/// Render decoded labels back to presentation form.
-pub fn render_labels(labels: &[String]) -> String {
+/// Convert decoded labels back to presentation form.
+pub fn labels_to_presentation(labels: &[String]) -> String {
     // Most owners are one label, which needs no join buffer.
     if let [label] = labels {
         return owner_name::escape_label(label).into_owned();

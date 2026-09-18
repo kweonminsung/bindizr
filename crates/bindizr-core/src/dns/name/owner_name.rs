@@ -102,7 +102,7 @@ impl OwnerName {
             return String::new();
         }
 
-        self.render_labels()
+        self.to_presentation()
     }
 
     /// The wire form within `zone`: this owner's labels, the zone's, then the
@@ -123,12 +123,12 @@ impl OwnerName {
             return zone_name.to_fqdn();
         }
 
-        format!("{}.{}", self.render_labels(), zone_name.to_fqdn())
+        format!("{}.{}", self.to_presentation(), zone_name.to_fqdn())
     }
 
-    /// Render DNS labels with the required presentation escapes.
-    fn render_labels(&self) -> String {
-        super::render_labels(&self.0)
+    /// This owner's labels in presentation form, with the required escapes.
+    fn to_presentation(&self) -> String {
+        super::labels_to_presentation(&self.0)
     }
 
     /// Whether this owner is `other` or sits under it, compared label by label.
@@ -183,7 +183,7 @@ impl std::fmt::Display for OwnerName {
         if self.is_apex() {
             return f.write_str(Self::APEX);
         }
-        f.write_str(&self.render_labels())
+        f.write_str(&self.to_presentation())
     }
 }
 

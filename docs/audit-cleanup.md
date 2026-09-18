@@ -35,7 +35,7 @@
 | `presentation_rdata_txt_escapes_special_characters` | 이스케이프를 테스트 준비 단계의 `TxtRecordValue`가 이미 수행하고, 검사 대상은 그 문자열을 그대로 반환한다. 고유한 따옴표·역슬래시·제어문자 기대값은 TXT 모듈의 기존 `to_presentation_round_trips_ownership_records` 테스트로 이동했다. |
 | `validate_cname_value_accepts_underscore_labels` | 공통 이름 검증의 `accepts_the_labels_an_owner_name_may_carry`와 중복된다. 이스케이프·비호스트 이름·잘못된 이름의 검증은 유지했다. |
 
-SQL grant의 MySQL 문자열 결합 문법, 정렬의 id 동률 처리, RRset 충돌,
+SQL grant의 MySQL 문자열 결합 문법, 정렬의 id 동률 처리, 같은 이름·타입 레코드의 충돌,
 권한 검사 순서, DNSSEC 전환, 전송 경계와 잘린 패킷 테스트는 서로 다른 결함을
 검출하므로 유지했다. E2E와 단위 테스트가 같은 기능을 다룬다는 이유만으로 제거하지 않았다.
 

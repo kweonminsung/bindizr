@@ -61,7 +61,7 @@ impl ZoneService {
 
     /// Cheap database round-trip (limit-1 zones probe), for health checks.
     pub async fn ping() -> Result<(), ServiceError> {
-        RepositoryService::ping_zones().await
+        RepositoryService::ping().await
     }
 
     /// The zones the DNS plane serves: the catalog's membership and the NOTIFY

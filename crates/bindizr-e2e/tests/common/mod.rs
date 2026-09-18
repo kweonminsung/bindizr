@@ -28,7 +28,7 @@ pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 pub(crate) use dns::{
     FakeParent, ServedDs, TransferOutcome, axfr, probe_zone_soa, wait_for_any_dns_record,
 };
-use dns::{dns_record_type, extract_dns_key, to_dns_expected_value, wait_for_dns_records};
+use dns::{build_dns_expected_value, dns_record_type, extract_dns_key, wait_for_dns_records};
 
 /// The most a listing returns in one call; the HTTP API refuses more.
 const RECORD_PAGE_LIMIT: u32 = 1000;
@@ -467,7 +467,7 @@ impl TestApp {
             expected
                 .entry((name, record_type))
                 .or_default()
-                .push(to_dns_expected_value(record, record_type));
+                .push(build_dns_expected_value(record, record_type));
         }
 
         // Wait for each name and type to converge on every configured secondary.

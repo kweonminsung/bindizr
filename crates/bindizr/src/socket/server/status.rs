@@ -29,7 +29,7 @@ pub(crate) fn mark_start_time() {
 }
 
 /// Return the daemon's current status as JSON.
-pub(crate) async fn status() -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
     let config = config::bindizr_config();
     let (zones, database_error) =
         match tokio::time::timeout(DB_COUNT_TIMEOUT, ZoneService::count_all()).await {

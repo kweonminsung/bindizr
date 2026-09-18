@@ -71,7 +71,7 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
             result = await mod.run(None, cfg, ctx)
             rows = result if isinstance(result, list) else [result]
             for row in rows:
-                report.save_result(bench, row)
+                report.write_result(bench, row)
             print(f"  OK: {rows}", flush=True)
             return rows
         except Exception as e:
@@ -97,7 +97,7 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
         # A runner that samples its own measured phase sets SELF_SAMPLES; a
         # second sampler would only add `docker stats` load to the same run.
         if not getattr(mod, "SELF_SAMPLES", False):
-            ids = [adapter.compose.container_id(s) for s in adapter.resource_services]
+            ids = [adapter.compose.resolve_container_id(s) for s in adapter.resource_services]
             ids = [i for i in ids if i]
             sampler = ResourceSampler(ids, cfg["resources"]["sample_interval_secs"])
             sampler.start()
@@ -113,7 +113,7 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
             if res.get("samples"):
                 row.setdefault("peak_mem_mb", res["peak_mem_mb"])
                 row.setdefault("avg_cpu_pct", res["avg_cpu_pct"])
-            report.save_result(bench, row)
+            report.write_result(bench, row)
         print(f"  OK: {rows}", flush=True)
         return rows
     except Exception as e:
@@ -121,7 +121,7 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
         traceback.print_exc()
         print("  --- container logs (tail) ---")
         for s in adapter.resource_services:
-            print(adapter.compose.logs(s, tail=30))
+            print(adapter.compose.read_logs(s, tail=30))
         return None
     finally:
         if sampler:
@@ -167,7 +167,7 @@ async def main_async(args) -> None:
                 await run_one(bench, system, cfg)
 
     print("\n=== building report ===")
-    report.build_report(envmod.collect(cfg), cfg)
+    report.write_report(envmod.collect(cfg), cfg)
     print(f"Report written to {settings.RESULTS_DIR}")
     print(f"To re-run a subset into this same directory:\n"
           f"  BENCH_RESULTS_DIR={settings.RESULTS_DIR.name} python3 orchestrator.py -b <bench>")

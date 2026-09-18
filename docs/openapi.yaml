@@ -442,7 +442,7 @@ paths:
       - Health
       summary: Health probe
       description: Runs a minimal database query and reports whether the API can serve requests. Unauthenticated, intended for load-balancer and orchestrator probes; deeper checks (DNS listener, secondary sync) belong to 'bindizr doctor'.
-      operationId: get_health
+      operationId: handle_health
       responses:
         '200':
           description: Service healthy
