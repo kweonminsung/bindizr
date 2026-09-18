@@ -14,10 +14,10 @@ async fn record_bulk_insert() {
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [
-            { "name": "bulk1", "record_type": "A", "value": "192.0.2.1" },
-            { "name": "bulk2", "record_type": "A", "value": "192.0.2.2", "ttl": 1800 },
-            { "name": "bulkcname", "record_type": "CNAME", "value": "bulk1" },
-            { "name": "@", "record_type": "MX", "value": "mail", "priority": 10 }
+            { "name": "bulk1", "type": "A", "value": "192.0.2.1" },
+            { "name": "bulk2", "type": "A", "value": "192.0.2.2", "ttl": 1800 },
+            { "name": "bulkcname", "type": "CNAME", "value": "bulk1" },
+            { "name": "@", "type": "MX", "value": "mail", "priority": 10 }
         ]
     });
     let (status, body) = app
@@ -30,7 +30,7 @@ async fn record_bulk_insert() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=A"),
+            &format!("/records?zone_name={zone_name}&type=A"),
             None,
         )
         .await;
@@ -49,8 +49,8 @@ async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [
-            { "name": "sub", "record_type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" },
-            { "name": "sub", "record_type": "NS", "value": "ns1.example.net." }
+            { "name": "sub", "type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" },
+            { "name": "sub", "type": "NS", "value": "ns1.example.net." }
         ]
     });
     let (status, body) = app
@@ -58,8 +58,8 @@ async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["inserted"], 2);
-    assert_eq!(body["records"][0]["record_type"], "DS");
-    assert_eq!(body["records"][1]["record_type"], "NS");
+    assert_eq!(body["records"][0]["type"], "DS");
+    assert_eq!(body["records"][1]["type"], "NS");
 }
 
 /// Verify that record bulk dry run rejects a DS without delegation NS.
@@ -75,7 +75,7 @@ async fn record_bulk_dry_run_rejects_a_ds_without_delegation_ns() {
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [
-            { "name": "sub", "record_type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" }
+            { "name": "sub", "type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab" }
         ],
         "dry_run": true
     });
@@ -101,8 +101,8 @@ async fn record_bulk_insert_is_all_or_nothing() {
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [
-            { "name": "ok", "record_type": "A", "value": "192.0.2.5" },
-            { "name": "bad", "record_type": "NOPE", "value": "192.0.2.6" }
+            { "name": "ok", "type": "A", "value": "192.0.2.5" },
+            { "name": "bad", "type": "NOPE", "value": "192.0.2.6" }
         ]
     });
     let (status, _) = app
@@ -130,7 +130,7 @@ async fn record_bulk_insert_unknown_zone_returns_not_found() {
 
     let bulk_request = json!({
         "zone_name": missing_zone,
-        "records": [ { "name": "a", "record_type": "A", "value": "192.0.2.1" } ]
+        "records": [ { "name": "a", "type": "A", "value": "192.0.2.1" } ]
     });
     let (status, _) = app
         .send_request(Method::POST, "/records/bulk", Some(bulk_request))
@@ -150,8 +150,8 @@ async fn record_bulk_insert_dry_run_then_apply() {
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [
-            { "name": "dry1", "record_type": "A", "value": "192.0.2.40" },
-            { "name": "dry2", "record_type": "A", "value": "192.0.2.41", "ttl": 1800 }
+            { "name": "dry1", "type": "A", "value": "192.0.2.40" },
+            { "name": "dry2", "type": "A", "value": "192.0.2.41", "ttl": 1800 }
         ],
         "dry_run": true
     });
@@ -167,7 +167,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=A"),
+            &format!("/records?zone_name={zone_name}&type=A"),
             None,
         )
         .await;
@@ -178,8 +178,8 @@ async fn record_bulk_insert_dry_run_then_apply() {
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [
-            { "name": "dry1", "record_type": "A", "value": "192.0.2.40" },
-            { "name": "dry2", "record_type": "A", "value": "192.0.2.41", "ttl": 1800 }
+            { "name": "dry1", "type": "A", "value": "192.0.2.40" },
+            { "name": "dry2", "type": "A", "value": "192.0.2.41", "ttl": 1800 }
         ]
     });
     let (status, body) = app
@@ -193,7 +193,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=A"),
+            &format!("/records?zone_name={zone_name}&type=A"),
             None,
         )
         .await;

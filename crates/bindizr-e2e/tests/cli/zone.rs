@@ -415,7 +415,7 @@ async fn zone_import_dry_run_shows_the_diff_via_cli() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|r| r["record_type"] == "A")
+        .filter(|r| r["type"] == "A")
         .map(|r| r["name"].as_str().unwrap())
         .collect();
     assert!(names.is_empty(), "records were: {names:?}");
@@ -492,7 +492,7 @@ async fn zone_versions_and_rollback_flow() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|record| record["record_type"] == "A")
+        .filter(|record| record["type"] == "A")
         .map(|record| record["name"].as_str().unwrap())
         .collect();
     assert_eq!(a_records, ["www"]);

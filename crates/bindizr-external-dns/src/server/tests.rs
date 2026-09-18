@@ -223,9 +223,9 @@ async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
 #[tokio::test]
 async fn list_records_maps_records_to_endpoints() {
     let records = json!({"records": [
-        {"name": "app.example.com", "record_type": "A", "ttl": 300,
+        {"name": "app.example.com", "type": "A", "ttl": 300,
          "values": ["192.0.2.1", "192.0.2.2"]},
-        {"name": "app.example.com", "record_type": "TXT", "ttl": 3600,
+        {"name": "app.example.com", "type": "TXT", "ttl": 3600,
          "values": ["\"heritage=external-dns,external-dns/owner=default\""]}
     ]});
     let mock = spawn_mock(
@@ -284,13 +284,13 @@ async fn apply_changes_posts_one_bindizr_change_set_and_returns_204() {
     assert_eq!(
         serde_json::from_str::<Value>(&recorded[0].2).unwrap(),
         json!({
-            "creates": [{"name": "a.example.com", "record_type": "A", "ttl": 300,
+            "creates": [{"name": "a.example.com", "type": "A", "ttl": 300,
                          "values": ["192.0.2.1"]}],
-            "updates": [{"old": {"name": "b.example.com", "record_type": "A",
+            "updates": [{"old": {"name": "b.example.com", "type": "A",
                                  "values": ["192.0.2.2"]},
-                         "new": {"name": "b.example.com", "record_type": "A",
+                         "new": {"name": "b.example.com", "type": "A",
                                  "values": ["192.0.2.3"]}}],
-            "deletes": [{"name": "c.example.com", "record_type": "TXT",
+            "deletes": [{"name": "c.example.com", "type": "TXT",
                          "values": ["\"v=1\""]}]
         })
     );
@@ -405,8 +405,8 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
         (
             200,
             json!({"records": [
-                {"name": "a.example.com", "record_type": "AAAA", "ttl": 300, "values": ["2001:db8::1"]},
-                {"name": "b.example.com", "record_type": "TXT", "values": ["\"v=spf1 -all\""]}
+                {"name": "a.example.com", "type": "AAAA", "ttl": 300, "values": ["2001:db8::1"]},
+                {"name": "b.example.com", "type": "TXT", "values": ["\"v=spf1 -all\""]}
             ]}),
         ),
     )
@@ -440,8 +440,8 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     assert_eq!(
         serde_json::from_str::<Value>(&recorded[0].2).unwrap(),
         json!({"records": [
-            {"name": "a.example.com", "record_type": "AAAA", "ttl": 300, "values": ["2001:0DB8::1"]},
-            {"name": "b.example.com", "record_type": "TXT", "values": ["v=spf1 -all"]}
+            {"name": "a.example.com", "type": "AAAA", "ttl": 300, "values": ["2001:0DB8::1"]},
+            {"name": "b.example.com", "type": "TXT", "values": ["v=spf1 -all"]}
         ]})
     );
 }

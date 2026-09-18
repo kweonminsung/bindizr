@@ -35,7 +35,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     let (_, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=SSHFP"),
+            &format!("/records?zone_name={zone_name}&type=SSHFP"),
             None,
         )
         .await;
@@ -70,7 +70,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     let (_, ns_listing) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=NS&name=sub"),
+            &format!("/records?zone_name={zone_name}&type=NS&name=sub"),
             None,
         )
         .await;
@@ -86,7 +86,7 @@ async fn zone_import_accepts_every_user_type_and_round_trips_the_export() {
     let (_, ds_listing) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=DS&name=sub"),
+            &format!("/records?zone_name={zone_name}&type=DS&name=sub"),
             None,
         )
         .await;

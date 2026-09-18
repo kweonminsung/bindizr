@@ -45,7 +45,7 @@ async fn nsupdate_adds_and_deletes_records() {
         records
             .iter()
             .any(|record| record["name"] == format!("www.{zone_name}.")
-                && record["record_type"] == "A"
+                && record["type"] == "A"
                 && record["value"] == "192.0.2.10"),
         "record was not added: {records:#?}"
     );
@@ -445,7 +445,7 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
             "/records",
             Some(serde_json::json!({
                 "name": "secret",
-                "record_type": "A",
+                "type": "A",
                 "value": "192.0.2.1",
                 "zone_name": zone_name,
             })),
@@ -500,7 +500,7 @@ async fn nsupdate_adds_at_the_zone_apex() {
             .await
             .iter()
             .any(|record| record["name"] == format!("{zone_name}.")
-                && record["record_type"] == "A"
+                && record["type"] == "A"
                 && record["value"] == "192.0.2.60"),
         "apex record was not added"
     );

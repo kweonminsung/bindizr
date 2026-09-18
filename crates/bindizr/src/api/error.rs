@@ -117,10 +117,10 @@ mod tests {
     /// Verify that a misspelled query key is rejected, naming the key.
     #[tokio::test]
     async fn unknown_query_key_is_rejected_by_name() {
-        // `type` instead of `record_type` used to be dropped silently, widening
-        // the delete to every type at the name.
+        // A key the filter does not declare used to be dropped silently, which
+        // widened this delete to every type at the name.
         let (mut parts, _) = Request::builder()
-            .uri("/records?zone_name=example.com&name=www&type=A")
+            .uri("/records?zone_name=example.com&name=www&record_type=A")
             .body(Body::empty())
             .unwrap()
             .into_parts();
@@ -131,7 +131,7 @@ mod tests {
         };
         assert_eq!(error.0.code, ErrorCode::InvalidInput);
         assert!(
-            error.0.message.contains("unknown field `type`"),
+            error.0.message.contains("unknown field `record_type`"),
             "{}",
             error.0.message
         );
@@ -141,7 +141,7 @@ mod tests {
     #[tokio::test]
     async fn known_query_keys_are_accepted() {
         let (mut parts, _) = Request::builder()
-            .uri("/records?zone_name=example.com&name=www&record_type=A&dry_run=true")
+            .uri("/records?zone_name=example.com&name=www&type=A&dry_run=true")
             .body(Body::empty())
             .unwrap()
             .into_parts();
@@ -163,7 +163,7 @@ mod tests {
             .uri("/records")
             .header("content-type", "application/json")
             .body(Body::from(
-                r#"{"name":"www","record_type":"A","value":"192.0.2.1","zone_name":"example.com","tll":300}"#,
+                r#"{"name":"www","type":"A","value":"192.0.2.1","zone_name":"example.com","tll":300}"#,
             ))
             .unwrap();
 

@@ -163,7 +163,7 @@ class BindizrAdapter(DnsAdapter):
         """Build one record entry for the bindizr bulk API."""
         item = {
             "name": rec["name"],
-            "record_type": rec["type"],
+            "type": rec["type"],
             "value": rec["value"],
             "ttl": rec.get("ttl", 3600),
         }

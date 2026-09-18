@@ -13,7 +13,7 @@ async fn record_create_read_update_delete() {
 
     let create_record_request = json!({
         "name": "api",
-        "record_type": "A",
+        "type": "A",
         "value": "192.168.1.200",
         "ttl": 1800,
         "zone_name": zone_name
@@ -25,7 +25,7 @@ async fn record_create_read_update_delete() {
 
     let record_id = body["record"]["id"].as_i64().unwrap();
     assert_eq!(body["record"]["name"], format!("api.{zone_name}."));
-    assert_eq!(body["record"]["record_type"], "A");
+    assert_eq!(body["record"]["type"], "A");
 
     let (status, body) = app
         .send_request(Method::GET, &format!("/records/{record_id}"), None)
@@ -36,7 +36,7 @@ async fn record_create_read_update_delete() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=A"),
+            &format!("/records?zone_name={zone_name}&type=A"),
             None,
         )
         .await;
@@ -48,7 +48,7 @@ async fn record_create_read_update_delete() {
     let (status, _) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=BOGUS"),
+            &format!("/records?zone_name={zone_name}&type=BOGUS"),
             None,
         )
         .await;
@@ -56,7 +56,7 @@ async fn record_create_read_update_delete() {
 
     let update_record_request = json!({
         "name": "api-updated",
-        "record_type": "A",
+        "type": "A",
         "value": "192.168.1.202",
         "ttl": 3600
     });
@@ -115,7 +115,7 @@ async fn record_normalize_zone_name() {
 
     let create_record_request = json!({
         "name": "api",
-        "record_type": "A",
+        "type": "A",
         "value": "192.168.1.200",
         "ttl": 1800,
         "zone_name": format!("{}.", zone_name.to_ascii_uppercase())

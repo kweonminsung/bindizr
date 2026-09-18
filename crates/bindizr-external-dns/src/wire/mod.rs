@@ -73,6 +73,7 @@ pub(crate) struct DomainFilter {
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct BindizrRecord {
     name: String,
+    #[serde(rename = "type")]
     record_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ttl: Option<i32>,

@@ -72,6 +72,7 @@ impl ZoneVersionResponse {
 pub struct VersionRecordResponse {
     #[schema(example = "www")]
     pub name: String,
+    #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
@@ -122,6 +123,7 @@ pub struct RecordDiffEntry {
     pub change: String,
     #[schema(example = "www.example.com.")]
     pub name: String,
+    #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
     pub from: Vec<RecordDiffValue>,

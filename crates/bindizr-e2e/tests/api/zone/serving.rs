@@ -129,7 +129,7 @@ async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {
             Method::POST,
             "/records",
             Some(json!({
-                "name": "www", "record_type": "A", "value": "192.0.2.31",
+                "name": "www", "type": "A", "value": "192.0.2.31",
                 "zone_name": zone_name
             })),
         )

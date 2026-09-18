@@ -24,7 +24,7 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
 fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> serde_json::Value {
     json!({
         "name": name,
-        "record_type": record_type,
+        "type": record_type,
         "value": value,
         "zone_name": zone_name,
     })
@@ -274,7 +274,7 @@ async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches(
     .await;
 
     // The answer must not depend on whether the record exists.
-    let filter = format!("/records?zone_name={zone_name}&name=www&record_type=A");
+    let filter = format!("/records?zone_name={zone_name}&name=www&type=A");
     let paths = [filter.clone(), format!("{filter}&dry_run=true")];
     app.set_auth_token(scoped_token.clone());
     for path in &paths {
@@ -382,7 +382,7 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
                 Some(json!({
                     "zone_name": zone_name,
                     "records": [
-                        { "name": "app", "record_type": "A", "value": "192.0.2.1" }
+                        { "name": "app", "type": "A", "value": "192.0.2.1" }
                     ],
                     "dry_run": dry_run,
                 })),
@@ -424,7 +424,7 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
             Some(json!({
                 "zone_name": zone_name,
                 "records": [
-                    { "name": "bad name", "record_type": "A", "value": "192.0.2.1" }
+                    { "name": "bad name", "type": "A", "value": "192.0.2.1" }
                 ]
             })),
         )

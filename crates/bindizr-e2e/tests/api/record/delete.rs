@@ -17,7 +17,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
                 Method::POST,
                 "/records",
                 Some(json!({
-                    "name": "www", "record_type": "A", "value": address, "zone_name": zone_name
+                    "name": "www", "type": "A", "value": address, "zone_name": zone_name
                 })),
             )
             .await;
@@ -28,7 +28,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
             Method::POST,
             "/records",
             Some(json!({
-                "name": "www", "record_type": "TXT", "value": "keep", "zone_name": zone_name
+                "name": "www", "type": "TXT", "value": "keep", "zone_name": zone_name
             })),
         )
         .await;
@@ -45,7 +45,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     let (status, body) = app
         .send_request(
             Method::DELETE,
-            &format!("/records?zone_name={zone_name}&name=www&record_type=A&dry_run=true"),
+            &format!("/records?zone_name={zone_name}&name=www&type=A&dry_run=true"),
             None,
         )
         .await;
@@ -57,7 +57,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     let (status, body) = app
         .send_request(
             Method::DELETE,
-            &format!("/records?zone_name={zone_name}&name=www&record_type=A"),
+            &format!("/records?zone_name={zone_name}&name=www&type=A"),
             None,
         )
         .await;
@@ -78,7 +78,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|record| record["record_type"].as_str().unwrap())
+        .map(|record| record["type"].as_str().unwrap())
         .collect();
     assert_eq!(
         kept,
@@ -90,7 +90,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     let (status, body) = app
         .send_request(
             Method::DELETE,
-            &format!("/records?zone_name={zone_name}&name=www&record_type=A"),
+            &format!("/records?zone_name={zone_name}&name=www&type=A"),
             None,
         )
         .await;
@@ -114,7 +114,7 @@ async fn record_delete_matching_refuses_what_would_widen_it() {
             "record_type is required",
         ),
         (
-            format!("/records?zone_name={zone_name}&name=@&record_type=NS"),
+            format!("/records?zone_name={zone_name}&name=@&type=NS"),
             "zone mname",
         ),
         (format!("/records?zone_name={zone_name}"), "name"),

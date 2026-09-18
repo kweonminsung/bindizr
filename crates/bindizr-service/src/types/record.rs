@@ -64,6 +64,7 @@ pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> Reco
 pub struct CreateRecordRequest {
     #[schema(example = "sub")]
     pub name: String,
+    #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
@@ -85,6 +86,7 @@ pub struct CreateRecordRequest {
 pub struct RecordItem {
     #[schema(example = "sub")]
     pub name: String,
+    #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
@@ -111,14 +113,14 @@ pub struct CreateBulkRecordsRequest {
 
 /// Request body for updating a record; an omitted field keeps the current
 /// value, merged inside the update transaction. `value` is required when
-/// `record_type` changes.
+/// `type` changes.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateRecordRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "sub")]
     pub name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "A")]
     pub record_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -147,11 +149,11 @@ pub struct DeleteRecordsFilter {
     #[schema(example = "www")]
     pub name: String,
     /// Narrows to one type; omitted, every type at the name goes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "A")]
     pub record_type: Option<String>,
     /// Narrows to one record; compared canonically, so a value spelled
-    /// another way still matches. Requires `record_type`.
+    /// another way still matches. Requires `type`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "192.0.2.1")]
     pub value: Option<String>,
@@ -191,6 +193,7 @@ pub struct GetRecordsFilter {
     pub zone_name: Option<String>,
     #[schema(example = "sub")]
     pub name: Option<String>,
+    #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: Option<String>,
     #[schema(example = "192.168.1.100")]
@@ -209,7 +212,7 @@ pub struct GetRecordsFilter {
     pub max_priority: Option<i32>,
     #[schema(example = "api")]
     pub search: Option<String>,
-    /// `name` (the default), `record_type`, `ttl`, `priority`, or `created_at`.
+    /// `name` (the default), `type`, `ttl`, `priority`, or `created_at`.
     #[schema(example = "name")]
     pub sort: Option<String>,
     /// `asc` (the default) or `desc`.
@@ -235,6 +238,7 @@ pub struct GetRecordResponse {
     pub id: Option<i32>,
     #[schema(example = "sub")]
     pub name: String,
+    #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
     #[schema(example = "192.168.1.100")]

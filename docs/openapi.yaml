@@ -515,7 +515,7 @@ paths:
         required: false
         schema:
           type: string
-      - name: record_type
+      - name: type
         in: query
         description: Filter by record type.
         required: false
@@ -577,7 +577,7 @@ paths:
           type: string
       - name: sort
         in: query
-        description: Sort by name (the default), record_type, ttl, priority, or created_at.
+        description: Sort by name (the default), type, ttl, priority, or created_at.
         required: false
         schema:
           type: string
@@ -589,7 +589,7 @@ paths:
           type: string
       - name: signed
         in: query
-        description: Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and record_type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them.
+        description: Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them.
         required: false
         schema:
           type: boolean
@@ -699,7 +699,7 @@ paths:
       tags:
       - Record
       summary: Delete records by name
-      description: 'Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.'
+      description: 'Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.'
       operationId: delete_records_matching
       parameters:
       - name: zone_name
@@ -713,7 +713,7 @@ paths:
         required: true
         schema:
           type: string
-      - name: record_type
+      - name: type
         in: query
         description: Narrows to one type; omitted, every type at the name goes.
         required: false
@@ -723,7 +723,7 @@ paths:
         in: query
         description: |-
           Narrows to one record; compared canonically, so a value spelled
-          another way still matches. Requires `record_type`.
+          another way still matches. Requires `type`.
         required: false
         schema:
           type: string
@@ -890,7 +890,7 @@ paths:
       tags:
       - Record
       summary: Update a specific DNS record
-      description: Applies the given fields and keeps the rest. `value` is required when `record_type` changes, since a stored value is encoded per type.
+      description: Applies the given fields and keeps the rest. `value` is required when `type` changes, since a stored value is encoded per type.
       operationId: update_record
       parameters:
       - name: record_id
@@ -3349,7 +3349,7 @@ components:
       description: Request body for creating a record in a named zone.
       required:
       - name
-      - record_type
+      - type
       - value
       - zone_name
       properties:
@@ -3365,9 +3365,6 @@ components:
             MX and SRV priority, set here rather than inline in the value; other
             record types reject it. Omitted, it is served and compared as 10.
           example: 10
-        record_type:
-          type: string
-          example: A
         ttl:
           type:
           - integer
@@ -3375,6 +3372,9 @@ components:
           format: int32
           description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
           example: 3600
+        type:
+          type: string
+          example: A
         value:
           $ref: '#/components/schemas/RecordValueRequest'
         zone_name:
@@ -3937,15 +3937,12 @@ components:
         are absolute; TXT values are quoted presentation strings.
       required:
       - name
-      - record_type
+      - type
       - values
       properties:
         name:
           type: string
           example: app.example.com
-        record_type:
-          type: string
-          example: A
         ttl:
           type:
           - integer
@@ -3953,6 +3950,9 @@ components:
           format: int32
           description: Optional on writes; an omitted or zero TTL resolves to the zone TTL.
           example: 300
+        type:
+          type: string
+          example: A
         values:
           type: array
           items:
@@ -4120,7 +4120,7 @@ components:
       description: API representation of a record.
       required:
       - name
-      - record_type
+      - type
       - value
       - ttl
       - zone_id
@@ -4144,13 +4144,13 @@ components:
           - 'null'
           format: int32
           example: 10
-        record_type:
-          type: string
-          example: A
         ttl:
           type: integer
           format: int32
           example: 3600
+        type:
+          type: string
+          example: A
         value:
           $ref: '#/components/schemas/RecordValueRequest'
         zone_id:
@@ -4562,7 +4562,7 @@ components:
             description: API representation of a record.
             required:
             - name
-            - record_type
+            - type
             - value
             - ttl
             - zone_id
@@ -4586,13 +4586,13 @@ components:
                 - 'null'
                 format: int32
                 example: 10
-              record_type:
-                type: string
-                example: A
               ttl:
                 type: integer
                 format: int32
                 example: 3600
+              type:
+                type: string
+                example: A
               value:
                 $ref: '#/components/schemas/RecordValueRequest'
               zone_id:
@@ -4976,7 +4976,7 @@ components:
       required:
       - change
       - name
-      - record_type
+      - type
       - from
       - to
       properties:
@@ -4991,13 +4991,13 @@ components:
         name:
           type: string
           example: www.example.com.
-        record_type:
-          type: string
-          example: A
         to:
           type: array
           items:
             $ref: '#/components/schemas/RecordDiffValue'
+        type:
+          type: string
+          example: A
     RecordDiffSummary:
       type: object
       description: How many name-and-type groups of records were added, removed, and changed.
@@ -5046,7 +5046,7 @@ components:
         request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
       required:
       - name
-      - record_type
+      - type
       - value
       properties:
         name:
@@ -5061,9 +5061,6 @@ components:
             MX and SRV priority, set here rather than inline in the value; other
             record types reject it. Omitted, it is served and compared as 10.
           example: 10
-        record_type:
-          type: string
-          example: A
         ttl:
           type:
           - integer
@@ -5071,6 +5068,9 @@ components:
           format: int32
           description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
           example: 3600
+        type:
+          type: string
+          example: A
         value:
           $ref: '#/components/schemas/RecordValueRequest'
       additionalProperties: false
@@ -5277,7 +5277,7 @@ components:
       description: |-
         Request body for updating a record; an omitted field keeps the current
         value, merged inside the update transaction. `value` is required when
-        `record_type` changes.
+        `type` changes.
       properties:
         name:
           type:
@@ -5291,11 +5291,6 @@ components:
           format: int32
           description: MX and SRV priority; other record types reject it.
           example: 10
-        record_type:
-          type:
-          - string
-          - 'null'
-          example: A
         ttl:
           type:
           - integer
@@ -5303,6 +5298,11 @@ components:
           format: int32
           description: Records sharing a name and type share one TTL.
           example: 3600
+        type:
+          type:
+          - string
+          - 'null'
+          example: A
         value:
           oneOf:
           - type: 'null'
@@ -5418,7 +5418,7 @@ components:
         records it has no database id.
       required:
       - name
-      - record_type
+      - type
       - value
       - ttl
       properties:
@@ -5431,13 +5431,13 @@ components:
           - 'null'
           format: int32
           example: 10
-        record_type:
-          type: string
-          example: A
         ttl:
           type: integer
           format: int32
           example: 3600
+        type:
+          type: string
+          example: A
         value:
           $ref: '#/components/schemas/RecordValueRequest'
     ZoneDetailResponse:

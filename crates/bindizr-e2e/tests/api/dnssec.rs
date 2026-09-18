@@ -127,7 +127,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
             Method::POST,
             "/records",
             Some(json!({
-                "name": "sub", "record_type": "DS", "value": ds_value,
+                "name": "sub", "type": "DS", "value": ds_value,
                 "ttl": 3600, "zone_name": zone_name
             })),
         )
@@ -139,7 +139,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
             Method::POST,
             "/records",
             Some(json!({
-                "name": "sub", "record_type": "NS", "value": "ns1.delegated-child.example.",
+                "name": "sub", "type": "NS", "value": "ns1.delegated-child.example.",
                 "ttl": 3600, "zone_name": zone_name
             })),
         )
@@ -150,7 +150,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
             Method::POST,
             "/records",
             Some(json!({
-                "name": "sub", "record_type": "DS", "value": ds_value,
+                "name": "sub", "type": "DS", "value": ds_value,
                 "ttl": 3600, "zone_name": zone_name
             })),
         )
@@ -450,7 +450,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
             "/records",
             Some(json!({
                 "name": "www",
-                "record_type": "A",
+                "type": "A",
                 "value": "192.0.2.10",
                 "zone_name": zone_name,
             })),
@@ -502,9 +502,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
     let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
     for record_type in ["DNSKEY", "NSEC3", "RRSIG"] {
         assert!(
-            derived
-                .iter()
-                .any(|item| item["record_type"] == record_type),
+            derived.iter().any(|item| item["type"] == record_type),
             "signed listing must carry a {record_type} row: {items:?}"
         );
     }
@@ -526,20 +524,20 @@ async fn records_listing_signed_pages_the_derived_plane() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&signed=true&record_type=RRSIG"),
+            &format!("/records?zone_name={zone_name}&signed=true&type=RRSIG"),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
     let items = body["items"].as_array().unwrap();
     assert!(!items.is_empty());
-    assert!(items.iter().all(|item| item["record_type"] == "RRSIG"));
+    assert!(items.iter().all(|item| item["type"] == "RRSIG"));
 
     // A derived type is only addressable through the signed view.
     let (status, _) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=RRSIG"),
+            &format!("/records?zone_name={zone_name}&type=RRSIG"),
             None,
         )
         .await;
@@ -591,7 +589,7 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
             Method::POST,
             "/records",
             Some(json!({
-                "name": "searchable", "record_type": "A", "value": "192.0.2.1",
+                "name": "searchable", "type": "A", "value": "192.0.2.1",
                 "zone_name": zone_name
             })),
         )
@@ -619,7 +617,7 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|record| record["record_type"].as_str().unwrap())
+        .map(|record| record["type"].as_str().unwrap())
         .collect();
     assert!(types.contains(&"A"), "{body}");
     assert!(types.contains(&"RRSIG"), "{body}");

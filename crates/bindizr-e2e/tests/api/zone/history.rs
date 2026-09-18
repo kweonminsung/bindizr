@@ -14,7 +14,7 @@ async fn zone_versions_list_and_get() {
 
     // serial +1: add record A; serial +2: add record B.
     let record_a = json!({
-        "name": "www", "record_type": "A", "value": "192.0.2.50",
+        "name": "www", "type": "A", "value": "192.0.2.50",
         "ttl": 300, "zone_name": zone_name
     });
     let (status, _) = app
@@ -22,7 +22,7 @@ async fn zone_versions_list_and_get() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let record_b = json!({
-        "name": "mail", "record_type": "A", "value": "192.0.2.51",
+        "name": "mail", "type": "A", "value": "192.0.2.51",
         "ttl": 300, "zone_name": zone_name
     });
     let (status, _) = app
@@ -78,7 +78,7 @@ async fn zone_versions_list_and_get() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|record| record["record_type"] == "A")
+        .filter(|record| record["type"] == "A")
         .map(|record| record["name"].as_str().unwrap())
         .collect();
     assert_eq!(a_records, ["www"]);
@@ -120,7 +120,7 @@ async fn zone_versions_diff_reports_the_records_between_two_serials() {
                 Method::POST,
                 "/records",
                 Some(json!({
-                    "name": name, "record_type": "A", "value": value,
+                    "name": name, "type": "A", "value": value,
                     "ttl": 300, "zone_name": zone_name
                 })),
             )
@@ -172,7 +172,7 @@ async fn zone_rollback_dry_run_then_apply() {
     let zone_name = zone["name"].as_str().unwrap();
 
     let keep_record = json!({
-        "name": "keep", "record_type": "A", "value": "192.0.2.60",
+        "name": "keep", "type": "A", "value": "192.0.2.60",
         "ttl": 300, "zone_name": zone_name
     });
     let (status, _) = app
@@ -188,7 +188,7 @@ async fn zone_rollback_dry_run_then_apply() {
 
     // Mutate past the target.
     let extra_record = json!({
-        "name": "extra", "record_type": "A", "value": "192.0.2.61",
+        "name": "extra", "type": "A", "value": "192.0.2.61",
         "ttl": 300, "zone_name": zone_name
     });
     let (status, _) = app
@@ -263,7 +263,7 @@ async fn zone_rollback_dry_run_then_apply() {
     let (status, records) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=A"),
+            &format!("/records?zone_name={zone_name}&type=A"),
             None,
         )
         .await;
@@ -288,11 +288,11 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
 
     for request in [
         json!({
-            "name": "sub", "record_type": "NS", "value": "ns1.example.net.",
+            "name": "sub", "type": "NS", "value": "ns1.example.net.",
             "ttl": 3600, "zone_name": zone_name
         }),
         json!({
-            "name": "sub", "record_type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab",
+            "name": "sub", "type": "DS", "value": "12345 13 2 abababababababababababababababababababababababababababababababab",
             "ttl": 3600, "zone_name": zone_name
         }),
     ] {
@@ -311,7 +311,7 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
         let (_, listing) = app
             .send_request(
                 Method::GET,
-                &format!("/records?zone_name={zone_name}&record_type={record_type}&name=sub"),
+                &format!("/records?zone_name={zone_name}&type={record_type}&name=sub"),
                 None,
             )
             .await;
@@ -337,7 +337,7 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
         let (_, listing) = app
             .send_request(
                 Method::GET,
-                &format!("/records?zone_name={zone_name}&record_type={record_type}&name=sub"),
+                &format!("/records?zone_name={zone_name}&type={record_type}&name=sub"),
                 None,
             )
             .await;
@@ -409,7 +409,7 @@ async fn zone_versions_record_who_made_each_change() {
             Method::POST,
             "/records",
             Some(json!({
-                "name": "www", "record_type": "A", "value": "192.0.2.7",
+                "name": "www", "type": "A", "value": "192.0.2.7",
                 "zone_name": zone_name
             })),
         )

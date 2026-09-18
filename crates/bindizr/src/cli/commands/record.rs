@@ -38,7 +38,7 @@ parts with nothing between them, so a space has to be inside a value.")]
         #[arg(value_name = "RECORD_NAME")]
         name: String,
         /// Record type (A, AAAA, CNAME, MX, etc.)
-        #[arg(long = "type", alias = "record-type")]
+        #[arg(long = "type")]
         record_type: String,
         /// Record value; repeat it to choose a long TXT value's segments yourself
         #[arg(long, value_name = "VALUE", action = clap::ArgAction::Append, required = true)]
@@ -61,20 +61,20 @@ parts with nothing between them, so a space has to be inside a value.")]
     #[command(after_help = "\
 Input format (JSON or YAML): an array of records, or an object with a
 'records' array. Fields per record:
-  name         owner name relative to the zone, or '@' for the apex (required)
-  record_type  A, AAAA, CAA, CNAME, DNAME, DS, MX, NAPTR, NS, PTR, SRV,
-               SSHFP, TLSA, TXT (required)
-  value        record value; TXT also accepts an array of strings (required)
-  ttl          seconds (optional; defaults to the zone TTL)
-  priority     MX/SRV priority (optional; defaults to 10)
+  name      owner name relative to the zone, or '@' for the apex (required)
+  type      A, AAAA, CAA, CNAME, DNAME, DS, MX, NAPTR, NS, PTR, SRV, SSHFP,
+            TLSA, TXT (required)
+  value     record value; TXT also accepts an array of strings (required)
+  ttl       seconds (optional; defaults to the zone TTL)
+  priority  MX/SRV priority (optional; defaults to 10)
 
 JSON example:
-  [{\"name\": \"www\", \"record_type\": \"A\", \"value\": \"192.0.2.1\", \"ttl\": 300},
-   {\"name\": \"@\", \"record_type\": \"MX\", \"value\": \"mail\", \"priority\": 10}]
+  [{\"name\": \"www\", \"type\": \"A\", \"value\": \"192.0.2.1\", \"ttl\": 300},
+   {\"name\": \"@\", \"type\": \"MX\", \"value\": \"mail\", \"priority\": 10}]
 
 YAML example:
   - name: www
-    record_type: A
+    type: A
     value: 192.0.2.1
     ttl: 300")]
     BulkCreate {
@@ -103,7 +103,7 @@ YAML example:
         #[arg(long, value_name = "RECORD_NAME")]
         name: Option<String>,
         /// Filter by record type
-        #[arg(long = "type", alias = "record-type")]
+        #[arg(long = "type")]
         record_type: Option<String>,
         /// Filter by record value
         #[arg(long)]
@@ -168,7 +168,7 @@ YAML example:
         #[arg(long, value_name = "RECORD_NAME")]
         name: Option<String>,
         /// Record type (A, AAAA, CNAME, MX, etc.)
-        #[arg(long = "type", alias = "record-type")]
+        #[arg(long = "type")]
         record_type: Option<String>,
         /// Record value; repeat it for the segments of a TXT record
         #[arg(long, value_name = "VALUE", action = clap::ArgAction::Append)]
@@ -217,7 +217,7 @@ serial and the secondaries transfer once."
         )]
         name: Option<String>,
         /// Narrow to one record type
-        #[arg(long = "type", alias = "record-type", requires = "name")]
+        #[arg(long = "type", requires = "name")]
         record_type: Option<String>,
         /// Narrow to one value (requires --type)
         #[arg(long, requires = "record_type")]

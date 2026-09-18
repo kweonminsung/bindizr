@@ -40,7 +40,7 @@ async fn record_create_read_delete() {
     let record = records
         .get("items")
         .and_then(Value::as_array)
-        .and_then(|records| records.iter().find(|record| record["record_type"] == "A"))
+        .and_then(|records| records.iter().find(|record| record["type"] == "A"))
         .expect("CLI did not return the created record");
     assert_eq!(record["name"], format!("www.{zone_name}."));
     assert_eq!(record["value"], "192.0.2.10");
@@ -65,8 +65,8 @@ async fn record_bulk_dry_run_shows_the_diff_via_cli() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let records = r#"[
-        {"name": "www", "record_type": "A", "value": "192.0.2.1"},
-        {"name": "@", "record_type": "MX", "value": "mail.example.com", "priority": 10}
+        {"name": "www", "type": "A", "value": "192.0.2.1"},
+        {"name": "@", "type": "MX", "value": "mail.example.com", "priority": 10}
     ]"#;
     let dry_run = app
         .run_cli_success_with_input(
@@ -96,7 +96,7 @@ async fn record_bulk_dry_run_shows_the_diff_via_cli() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|r| r["record_type"] != "MX"),
+            .all(|r| r["type"] != "MX"),
         "a dry run must not insert records"
     );
 }
@@ -129,7 +129,7 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     let record_id = records["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|r| r["record_type"] == "MX"))
+        .and_then(|records| records.iter().find(|r| r["type"] == "MX"))
         .and_then(|r| r["id"].as_i64())
         .expect("created MX record did not contain an ID")
         .to_string();
@@ -151,7 +151,7 @@ async fn record_update_retype_clears_incompatible_priority_via_cli() {
         .await;
     let updated: Value = serde_json::from_str(&updated).expect("CLI did not return valid JSON");
     let updated = &updated["record"];
-    assert_eq!(updated["record_type"], "A");
+    assert_eq!(updated["type"], "A");
     assert_eq!(updated["value"], "192.0.2.1");
     assert!(
         updated["priority"].is_null(),
@@ -186,7 +186,7 @@ async fn record_update_retype_without_value_is_rejected_via_cli() {
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     let record_id = records["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|r| r["record_type"] == "A"))
+        .and_then(|records| records.iter().find(|r| r["type"] == "A"))
         .and_then(|r| r["id"].as_i64())
         .expect("created A record did not contain an ID")
         .to_string();
@@ -227,7 +227,7 @@ async fn record_update_changes_only_passed_fields_via_cli() {
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     let record_id = records["items"]
         .as_array()
-        .and_then(|records| records.iter().find(|record| record["record_type"] == "A"))
+        .and_then(|records| records.iter().find(|record| record["type"] == "A"))
         .and_then(|record| record["id"].as_i64())
         .expect("created record did not contain an ID")
         .to_string();
@@ -247,7 +247,7 @@ async fn record_update_changes_only_passed_fields_via_cli() {
     let updated = &updated["record"];
     assert_eq!(updated["value"], "127.0.0.1");
     assert_eq!(updated["ttl"], 300);
-    assert_eq!(updated["record_type"], "A");
+    assert_eq!(updated["type"], "A");
     assert_eq!(updated["name"], format!("www.{zone_name}."));
 }
 
@@ -335,8 +335,8 @@ async fn record_bulk_insert_from_stdin() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let records = serde_json::json!([
-        { "name": "www", "record_type": "A", "value": "192.0.2.20", "ttl": 300 },
-        { "name": "mail", "record_type": "A", "value": "192.0.2.21", "ttl": 300 },
+        { "name": "www", "type": "A", "value": "192.0.2.20", "ttl": 300 },
+        { "name": "mail", "type": "A", "value": "192.0.2.21", "ttl": 300 },
     ])
     .to_string();
     let dry_run = app
@@ -365,7 +365,7 @@ async fn record_bulk_insert_from_stdin() {
             .as_array()
             .expect("missing record items")
             .iter()
-            .all(|record| record["record_type"] != "A"),
+            .all(|record| record["type"] != "A"),
         "dry run must not persist records"
     );
 
@@ -377,7 +377,7 @@ async fn record_bulk_insert_from_stdin() {
         .await;
     assert!(inserted.contains("Inserted 2 record(s)"));
 
-    let yaml_records = "- name: ftp\n  record_type: A\n  value: 192.0.2.22\n  ttl: 300\n";
+    let yaml_records = "- name: ftp\n  type: A\n  value: 192.0.2.22\n  ttl: 300\n";
     let inserted_yaml = app
         .run_cli_success_with_input(
             &["record", "bulk-create", "-", "--zone", &zone_name],
@@ -494,7 +494,7 @@ async fn record_delete_by_name_narrows_by_type() {
         .as_array()
         .expect("items")
         .iter()
-        .map(|record| record["record_type"].as_str().expect("record_type"))
+        .map(|record| record["type"].as_str().expect("type"))
         .collect();
     assert!(types.contains(&"TXT"), "{types:?}");
     assert!(!types.contains(&"A"), "{types:?}");

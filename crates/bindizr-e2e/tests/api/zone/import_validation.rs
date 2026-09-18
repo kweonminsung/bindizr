@@ -153,7 +153,7 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
         &app,
         zone_name,
         json!([
-            { "name": "www", "record_type": "A", "value": "192.0.2.1" }
+            { "name": "www", "type": "A", "value": "192.0.2.1" }
         ]),
     )
     .await;
@@ -181,7 +181,7 @@ async fn zone_import_append_rejects_cname_over_existing_db_record() {
         .await;
     let items = body["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["record_type"], "A");
+    assert_eq!(items[0]["type"], "A");
     assert_eq!(items[0]["value"], "192.0.2.1");
 }
 
@@ -197,7 +197,7 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
         &app,
         zone_name,
         json!([
-            { "name": "alias", "record_type": "CNAME", "value": "target.example.com." }
+            { "name": "alias", "type": "CNAME", "value": "target.example.com." }
         ]),
     )
     .await;
@@ -223,7 +223,7 @@ async fn zone_import_append_rejects_record_over_existing_cname() {
         .await;
     let items = body["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["record_type"], "CNAME");
+    assert_eq!(items[0]["type"], "CNAME");
 }
 
 /// Verify that zone import append dedups against existing db record.
@@ -238,7 +238,7 @@ async fn zone_import_append_dedups_against_existing_db_record() {
         &app,
         zone_name,
         json!([
-            { "name": "www", "record_type": "A", "value": "192.0.2.1" }
+            { "name": "www", "type": "A", "value": "192.0.2.1" }
         ]),
     )
     .await;
@@ -278,8 +278,8 @@ async fn zone_import_append_into_populated_zone_isolates_names() {
         &app,
         zone_name,
         json!([
-            { "name": "a1", "record_type": "A", "value": "192.0.2.1" },
-            { "name": "b1", "record_type": "A", "value": "192.0.2.2" }
+            { "name": "a1", "type": "A", "value": "192.0.2.1" },
+            { "name": "b1", "type": "A", "value": "192.0.2.2" }
         ]),
     )
     .await;

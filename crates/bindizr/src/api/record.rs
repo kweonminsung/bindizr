@@ -50,7 +50,7 @@ impl RecordApi {
         params(
             ("zone_name" = Option<String>, Query, description = "The name of the DNS zone to filter records by."),
             ("name" = Option<String>, Query, description = "Filter by record name."),
-            ("record_type" = Option<String>, Query, description = "Filter by record type."),
+            ("type" = Option<String>, Query, description = "Filter by record type."),
             ("value" = Option<String>, Query, description = "Partially filter by record value."),
             ("ttl" = Option<i32>, Query, description = "Filter by TTL."),
             ("min_ttl" = Option<i32>, Query, description = "Filter by minimum TTL."),
@@ -59,9 +59,9 @@ impl RecordApi {
             ("min_priority" = Option<i32>, Query, description = "Filter by minimum priority."),
             ("max_priority" = Option<i32>, Query, description = "Filter by maximum priority."),
             ("search" = Option<String>, Query, description = "Partially search records."),
-            ("sort" = Option<String>, Query, description = "Sort by name (the default), record_type, ttl, priority, or created_at."),
+            ("sort" = Option<String>, Query, description = "Sort by name (the default), type, ttl, priority, or created_at."),
             ("order" = Option<String>, Query, description = "asc (the default) or desc."),
-            ("signed" = Option<bool>, Query, description = "Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and record_type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them."),
+            ("signed" = Option<bool>, Query, description = "Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them."),
             ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Records per page; defaults to 50."),
             ("offset" = Option<u64>, Query, description = "Number of records to skip.")
         ),
@@ -145,7 +145,7 @@ pub(crate) async fn create_record(
         path = "/records/{record_id}",
         tag = "Record",
         summary = "Update a specific DNS record",
-        description = "Applies the given fields and keeps the rest. `value` is required when `record_type` changes, since a stored value is encoded per type.",
+        description = "Applies the given fields and keeps the rest. `value` is required when `type` changes, since a stored value is encoded per type.",
         params(
             ("record_id" = i32, Path, description = "The ID of the DNS record to update.")
         ),
@@ -210,7 +210,7 @@ pub(crate) async fn delete_record(
         path = "/records",
         tag = "Record",
         summary = "Delete records by name",
-        description = "Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.",
+        description = "Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.",
         params(DeleteRecordsFilter),
         responses(
             (status = 200, description = "Records deleted", body = DeleteRecordsResponse),

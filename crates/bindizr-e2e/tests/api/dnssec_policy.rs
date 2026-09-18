@@ -309,7 +309,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|record| record["record_type"].as_str().unwrap().to_string())
+            .map(|record| record["type"].as_str().unwrap().to_string())
             .filter(|record_type| record_type.starts_with("NSEC"))
             .collect();
         types.sort();

@@ -96,8 +96,8 @@ async fn zone_import_zone_file_replace_mode() {
         &app,
         zone_name,
         json!([
-            { "name": "keep", "record_type": "A", "value": "192.0.2.1" },
-            { "name": "drop", "record_type": "A", "value": "192.0.2.2" }
+            { "name": "keep", "type": "A", "value": "192.0.2.1" },
+            { "name": "drop", "type": "A", "value": "192.0.2.2" }
         ]),
     )
     .await;
@@ -150,10 +150,10 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
         &app,
         zone_name,
         json!([
-            { "name": "www", "record_type": "A", "value": "192.0.2.1" },
-            { "name": "www", "record_type": "A", "value": "192.0.2.2" },
-            { "name": "www", "record_type": "TXT", "value": "keep me" },
-            { "name": "other", "record_type": "A", "value": "192.0.2.9" }
+            { "name": "www", "type": "A", "value": "192.0.2.1" },
+            { "name": "www", "type": "A", "value": "192.0.2.2" },
+            { "name": "www", "type": "TXT", "value": "keep me" },
+            { "name": "other", "type": "A", "value": "192.0.2.9" }
         ]),
     )
     .await;
@@ -186,7 +186,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     let (_, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&name=www&record_type=A"),
+            &format!("/records?zone_name={zone_name}&name=www&type=A"),
             None,
         )
         .await;
@@ -196,7 +196,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     let (_, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&name=www&record_type=TXT"),
+            &format!("/records?zone_name={zone_name}&name=www&type=TXT"),
             None,
         )
         .await;
@@ -225,7 +225,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
         &app,
         zone_name,
         json!([
-            { "name": "www", "record_type": "A", "value": "192.0.2.1", "ttl": 300 }
+            { "name": "www", "type": "A", "value": "192.0.2.1", "ttl": 300 }
         ]),
     )
     .await;

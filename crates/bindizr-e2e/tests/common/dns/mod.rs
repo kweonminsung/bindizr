@@ -42,7 +42,7 @@ pub(crate) fn extract_dns_key(record: &Value) -> (String, u16) {
         .as_str()
         .expect("record did not contain a name")
         .to_string();
-    let record_type = record["record_type"]
+    let record_type = record["type"]
         .as_str()
         .and_then(dns_record_type)
         .expect("record contained an unsupported DNS type");

@@ -10,6 +10,7 @@ use utoipa::ToSchema;
 pub struct ExternalDnsRecord {
     #[schema(example = "app.example.com")]
     pub name: String,
+    #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
     /// Optional on writes; an omitted or zero TTL resolves to the zone TTL.
