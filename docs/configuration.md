@@ -98,7 +98,7 @@ expire = 3600000              # SOA expire
 minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
-level = "debug"               # error, warn, info, debug, trace
+level = "info"                # error, warn, info, debug, trace
 # format = "text"             # text, or json for one object per line
 ```
 

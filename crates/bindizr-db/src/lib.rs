@@ -295,13 +295,13 @@ impl DatabasePool {
                     log::error!("Failed to acquire MySQL connection: {}", e);
                     e.to_string()
                 })?;
-                for query in schema::mysql_table_creation_queries() {
+                for query in schema::mysql::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
                     })?;
                 }
-                let seed = schema::mysql_default_policy_seed();
+                let seed = schema::mysql::default_policy_seed();
                 sqlx::query(seed)
                     .bind(Utc::now())
                     .execute(&mut *conn)
@@ -316,13 +316,13 @@ impl DatabasePool {
                     log::error!("Failed to acquire PostgreSQL connection: {}", e);
                     e.to_string()
                 })?;
-                for query in schema::postgres_table_creation_queries() {
+                for query in schema::postgres::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
                     })?;
                 }
-                let seed = schema::postgres_default_policy_seed();
+                let seed = schema::postgres::default_policy_seed();
                 sqlx::query(seed)
                     .bind(Utc::now())
                     .execute(&mut *conn)
@@ -337,13 +337,13 @@ impl DatabasePool {
                     log::error!("Failed to acquire SQLite connection: {}", e);
                     e.to_string()
                 })?;
-                for query in schema::sqlite_table_creation_queries() {
+                for query in schema::sqlite::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
                         e.to_string()
                     })?;
                 }
-                let seed = schema::sqlite_default_policy_seed();
+                let seed = schema::sqlite::default_policy_seed();
                 sqlx::query(seed)
                     .bind(Utc::now())
                     .execute(&mut *conn)
