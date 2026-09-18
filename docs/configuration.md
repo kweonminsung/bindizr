@@ -49,7 +49,8 @@ openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.y
 
 [api.authentication]
 required = true               # Require an API token
-# initial_token = ""          # Secret of the first global token, created when none exist (16+ characters)
+# initial_token_file = ""     # File holding the first global token's secret (16+ characters), read
+                              # once on a first install. `bindizr token create` is the other way in.
 
 [database]
 type = "sqlite"               # sqlite, mysql, or postgresql
@@ -73,11 +74,6 @@ secondary_addrs = ""          # Secondary servers, comma-separated (e.g. "192.16
 
 [dns.nsupdate]                # RFC 2136 dynamic updates
 tsig_required = true          # Require a TSIG signature; false accepts updates from anyone (testing only)
-
-# [dns.nsupdate.initial_key]  # The first TSIG key, created when none exist. It may update every zone.
-# name = "update-key"         # Name the client signs with
-# secret = ""                 # Base64 HMAC secret
-# algorithm = "hmac-sha256"   # hmac-sha256 (default), hmac-sha384, hmac-sha512
 
 [dns.notify]                  # NOTIFY to the secondaries
 after_update = true           # Notify after zone changes
@@ -122,7 +118,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_API_LISTEN_ADDR` | `api.listen_addr` | |
 | `BINDIZR_API_LISTEN_PORT` | `api.listen_port` | |
 | `BINDIZR_API_AUTHENTICATION_REQUIRED` | `api.authentication.required` | |
-| `BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN` | `api.authentication.initial_token` | The first global token, for a deployment that cannot run the CLI |
+| `BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN_FILE` | `api.authentication.initial_token_file` | File holding the first global token, for a deployment that cannot run the CLI; read only on a first install |
 | `BINDIZR_API_METRICS_ENABLED` | `api.metrics_enabled` | |
 | `BINDIZR_API_EXTERNAL_DNS_ENABLED` | `api.external_dns_enabled` | See [ExternalDNS](external-dns.md) |
 | `BINDIZR_API_OPENAPI_ENABLED` | `api.openapi_enabled` | Describes the whole API surface; off by default |
@@ -137,9 +133,6 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
 | `BINDIZR_DNS_SECONDARY_ADDRS` | `dns.secondary_addrs` | |
 | `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate.tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
-| `BINDIZR_DNS_NSUPDATE_INITIAL_KEY_NAME` | `dns.nsupdate.initial_key.name` | With the secret below, seeds the first TSIG key |
-| `BINDIZR_DNS_NSUPDATE_INITIAL_KEY_SECRET` | `dns.nsupdate.initial_key.secret` | Base64 HMAC secret |
-| `BINDIZR_DNS_NSUPDATE_INITIAL_KEY_ALGORITHM` | `dns.nsupdate.initial_key.algorithm` | Defaults to `hmac-sha256` |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
 | `BINDIZR_DNS_NOTIFY_AFTER_UPDATE` | `dns.notify.after_update` | |

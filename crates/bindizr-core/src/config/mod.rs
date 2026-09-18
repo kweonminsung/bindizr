@@ -67,10 +67,10 @@ pub struct ApiConfig {
 #[serde(deny_unknown_fields)]
 pub struct AuthenticationConfig {
     pub required: bool,
-    /// Secret of a global token created at startup when the database holds
-    /// none; ignored once any token exists.
+    /// File holding the secret of a global token, read only by the startup
+    /// that builds the schema, so revoking the token is final.
     #[serde(default)]
-    pub initial_token: Option<String>,
+    pub initial_token_file: Option<String>,
 }
 
 impl Default for AuthenticationConfig {
@@ -78,7 +78,7 @@ impl Default for AuthenticationConfig {
     fn default() -> Self {
         Self {
             required: true,
-            initial_token: None,
+            initial_token_file: None,
         }
     }
 }
@@ -194,8 +194,6 @@ pub struct NsupdateConfig {
     /// way `api.authentication.required = false` opens the API. Signed
     /// requests are verified either way.
     pub tsig_required: bool,
-    #[serde(default)]
-    pub initial_key: Option<InitialTsigKeyConfig>,
 }
 
 impl Default for NsupdateConfig {
@@ -203,23 +201,8 @@ impl Default for NsupdateConfig {
     fn default() -> Self {
         Self {
             tsig_required: true,
-            initial_key: None,
         }
     }
-}
-
-/// A TSIG key created at startup when the database holds none. It is global:
-/// it may update every zone without a grant.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct InitialTsigKeyConfig {
-    /// The name the client signs with, carried on the wire.
-    pub name: String,
-    /// Base64 HMAC secret, as the client has it.
-    pub secret: String,
-    /// `hmac-sha256` (the default), `hmac-sha384`, or `hmac-sha512`.
-    #[serde(default)]
-    pub algorithm: Option<String>,
 }
 
 /// When NOTIFY reaches the secondaries.
@@ -534,6 +517,15 @@ pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
         )
     })?;
     BindizrConfig::from_toml(&text, |name| env::var(name).ok())
+}
+
+/// Read the secret in `api.authentication.initial_token_file`, trimmed of the
+/// newline a secret manager writes. An empty file reads as no token.
+pub fn load_initial_token_file(path: &str) -> Result<Option<String>, String> {
+    let secret = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read the initial token file '{}': {}", path, e))?;
+    let secret = secret.trim();
+    Ok((!secret.is_empty()).then(|| secret.to_string()))
 }
 
 impl BindizrConfig {

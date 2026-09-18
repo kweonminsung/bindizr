@@ -12,7 +12,7 @@ BIND9 replicas are exposed for authoritative DNS traffic.
 The API token to start with, sent as `Authorization: Bearer <token>`:
 
   kubectl exec -n {{ .Release.Namespace }} deploy/{{ include "bindizr-chart.fullname" . }} -c bindizr -- \
-    bindizr config get api.authentication.initial_token
+    kubectl get secret {{ include "bindizr-chart.initialTokenSecretName" . }} -n {{ .Release.Namespace }} -o jsonpath='{.data.{{ .Values.bindizr.api.authentication.initialToken.secretKey }}}' | base64 -d
 
 The same token is in the {{ include "bindizr-chart.initialTokenSecretName" . }} Secret under {{ .Values.bindizr.api.authentication.initialToken.secretKey }}.
 Issue the tokens you hand out with `bindizr token create`.

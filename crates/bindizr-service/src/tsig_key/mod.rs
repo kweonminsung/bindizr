@@ -5,7 +5,7 @@ use rand::RngExt;
 
 use crate::{
     authorization::Caller,
-    error::{ErrorCode, ServiceError},
+    error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
     repository::RepositoryService,
     types::{GetTsigKeyResponse, PageFilter, PaginatedResponse},
@@ -57,44 +57,6 @@ impl TsigKeyService {
             created_at: Utc::now(),
         })
         .await
-    }
-
-    /// Create the configured key as a global key, unless the database holds
-    /// one already. Takes no caller: the daemon runs it before any front end
-    /// is up.
-    pub async fn seed_initial(
-        name: &str,
-        algorithm: Option<&str>,
-        secret: &str,
-    ) -> Result<bool, ServiceError> {
-        if !RepositoryService::list_tsig_keys().await?.is_empty() {
-            return Ok(false);
-        }
-
-        let name = normalize_key_name(name)?;
-        let algorithm = match algorithm {
-            None => TsigAlgorithm::default(),
-            Some(raw) => raw.parse().map_err(ServiceError::invalid_input)?,
-        };
-
-        match RepositoryService::create_tsig_key(TsigKey {
-            id: 0,
-            name,
-            algorithm,
-            secret: normalize_secret(secret)?,
-            // A key with no grant updates nothing, and granting needs the API.
-            is_global: true,
-            created_at: Utc::now(),
-        })
-        .await
-        {
-            Ok(_) => Ok(true),
-            // Replicas starting together all read an empty table above;
-            // UNIQUE(name) settles which one seeds, and the losers report the
-            // winner's key rather than failing startup over it.
-            Err(e) if e.code == ErrorCode::TsigKeyConflict => Ok(false),
-            Err(e) => Err(e),
-        }
     }
 
     /// List all TSIG keys.

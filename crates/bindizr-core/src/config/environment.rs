@@ -4,7 +4,7 @@
 
 use std::fmt;
 
-use super::{BindizrConfig, DatabaseType, InitialTsigKeyConfig};
+use super::{BindizrConfig, DatabaseType};
 
 impl BindizrConfig {
     /// Apply the `BINDIZR_*` environment variables to the loaded configuration.
@@ -22,8 +22,8 @@ impl BindizrConfig {
             self.api.authentication.required =
                 parse_env_value("BINDIZR_API_AUTHENTICATION_REQUIRED", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN") {
-            self.api.authentication.initial_token = to_optional_setting(value);
+        if let Some(value) = get_env("BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN_FILE") {
+            self.api.authentication.initial_token_file = to_optional_setting(value);
         }
         if let Some(value) = get_env("BINDIZR_API_METRICS_ENABLED") {
             self.api.metrics_enabled = parse_env_value("BINDIZR_API_METRICS_ENABLED", &value)?;
@@ -77,19 +77,6 @@ impl BindizrConfig {
         }
         // Three variables rather than one, because the key's name is part of
         // the contract: the client signs with it.
-        if let Some(name) =
-            get_env("BINDIZR_DNS_NSUPDATE_INITIAL_KEY_NAME").and_then(to_optional_setting)
-        {
-            let secret = get_env("BINDIZR_DNS_NSUPDATE_INITIAL_KEY_SECRET")
-                .and_then(to_optional_setting)
-                .ok_or("BINDIZR_DNS_NSUPDATE_INITIAL_KEY_NAME needs BINDIZR_DNS_NSUPDATE_INITIAL_KEY_SECRET")?;
-            self.dns.nsupdate.initial_key = Some(InitialTsigKeyConfig {
-                name,
-                secret,
-                algorithm: get_env("BINDIZR_DNS_NSUPDATE_INITIAL_KEY_ALGORITHM")
-                    .and_then(to_optional_setting),
-            });
-        }
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS") {
             self.dns.zone_history_retention_days =
                 parse_env_value("BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS", &value)?;

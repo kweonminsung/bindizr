@@ -75,8 +75,9 @@ $ bindizr token create admin --global
 ```
 
 Where the CLI cannot be run — a container image without a shell, an automated
-rollout — `api.authentication.initial_token` (or
-`BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN`) names the secret of a global token
+rollout — `api.authentication.initial_token_file` (or
+`BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN_FILE`) names a file holding the
+secret of a global token
 created on the first start that finds no tokens at all. It is ignored once any
 token exists, so it seeds rather than resets.
 

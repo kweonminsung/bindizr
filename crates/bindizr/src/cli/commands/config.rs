@@ -121,8 +121,8 @@ fn print_config(config: &BindizrConfig) {
     print_section("api.authentication");
     print_value("required", config.api.authentication.required);
     print_optional(
-        "initial_token",
-        config.api.authentication.initial_token.as_deref(),
+        "initial_token_file",
+        config.api.authentication.initial_token_file.as_deref(),
     );
     outln!();
 
@@ -158,11 +158,6 @@ fn print_config(config: &BindizrConfig) {
 
     print_section("dns.nsupdate");
     print_value("tsig_required", config.dns.nsupdate.tsig_required);
-    if let Some(key) = &config.dns.nsupdate.initial_key {
-        print_value("initial_key.name", &key.name);
-        print_value("initial_key.secret", &key.secret);
-        print_optional("initial_key.algorithm", key.algorithm.as_deref());
-    }
     outln!();
 
     print_section("dns.notify");

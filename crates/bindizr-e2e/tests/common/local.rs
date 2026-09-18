@@ -152,7 +152,6 @@ secondary_addrs = "{secondary_addrs}"
 
 [dns.nsupdate]
 tsig_required = {nsupdate_tsig_required}
-{initial_key}
 
 [dns.notify]
 after_update = false
@@ -166,16 +165,16 @@ level = "error"
         db_path.display(),
         authentication_required = options.authentication_required,
         initial_token = match &options.initial_token {
-            Some(secret) => format!("initial_token = \"{secret}\""),
+            Some(secret) => {
+                // The daemon reads the secret from a file, so provision one.
+                let path = config_path.with_file_name("initial-token");
+                std::fs::write(&path, secret).expect("write the initial token file");
+                format!("initial_token_file = \"{}\"", path.display())
+            }
             None => String::new(),
         },
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_tsig_required = options.nsupdate_tsig_required,
-        initial_key = match &options.initial_key {
-            Some((name, secret)) =>
-                format!("\n[dns.nsupdate.initial_key]\nname = \"{name}\"\nsecret = \"{secret}\""),
-            None => String::new(),
-        },
         openapi_enabled = options.openapi_enabled,
         tls = match options.tls {
             true => {

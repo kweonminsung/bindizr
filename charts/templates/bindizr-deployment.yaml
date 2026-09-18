@@ -55,24 +55,10 @@ spec:
                   name: {{ include "bindizr-chart.databaseSecretName" . }}
                   key: {{ .Values.bindizr.database.secretKey }}
             {{- if include "bindizr-chart.initialTokenEnabled" . }}
-            - name: BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "bindizr-chart.initialTokenSecretName" . }}
-                  key: {{ .Values.bindizr.api.authentication.initialToken.secretKey }}
-            {{- end }}
-            {{- with .Values.bindizr.dns.nsupdate.initialKey }}
-            {{- if .name }}
-            - name: BINDIZR_DNS_NSUPDATE_INITIAL_KEY_NAME
-              value: {{ .name | quote }}
-            - name: BINDIZR_DNS_NSUPDATE_INITIAL_KEY_ALGORITHM
-              value: {{ .algorithm | quote }}
-            - name: BINDIZR_DNS_NSUPDATE_INITIAL_KEY_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "bindizr-chart.initialKeySecretName" $ }}
-                  key: {{ .secretKey }}
-            {{- end }}
+            # The secret is mounted, not passed in the environment, so it stays
+            # out of the pod spec and /proc/*/environ.
+            - name: BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN_FILE
+              value: /etc/bindizr/initial/{{ .Values.bindizr.api.authentication.initialToken.secretKey }}
             {{- end }}
           {{- with .Values.bindizr.securityContext }}
           securityContext:
@@ -109,6 +95,11 @@ spec:
               mountPath: /etc/bindizr/tls
               readOnly: true
             {{- end }}
+            {{- if include "bindizr-chart.initialTokenEnabled" . }}
+            - name: initial-token
+              mountPath: /etc/bindizr/initial
+              readOnly: true
+            {{- end }}
             # The daemon's control socket: the only path a read-only root
             # filesystem has to open.
             - name: runtime
@@ -121,6 +112,11 @@ spec:
         - name: api-tls
           secret:
             secretName: {{ . }}
+        {{- end }}
+        {{- if include "bindizr-chart.initialTokenEnabled" . }}
+        - name: initial-token
+          secret:
+            secretName: {{ include "bindizr-chart.initialTokenSecretName" . }}
         {{- end }}
         - name: runtime
           emptyDir: {}

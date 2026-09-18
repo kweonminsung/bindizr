@@ -1,5 +1,5 @@
 use crate::config::{
-    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogFormat, LogLevel,
+    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogFormat, LogLevel, load_initial_token_file,
     resolve_config_path_with_env,
 };
 
@@ -122,7 +122,6 @@ fn from_toml_defaults_missing_optional_fields() {
     assert!(parsed.dns.transfer_cache.enabled);
     assert_eq!(parsed.dns.transfer_cache.max_records, 500_000);
     assert!(parsed.dns.nsupdate.tsig_required);
-    assert!(parsed.dns.nsupdate.initial_key.is_none());
     assert_eq!(parsed.dns.zone_history_retention_days, 365);
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
     assert_eq!(parsed.logging.format, LogFormat::Text);
@@ -212,7 +211,9 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
             "BINDIZR_API_LISTEN_PORT" => Some("8000".to_string()),
             "BINDIZR_API_AUTHENTICATION_REQUIRED" => Some("false".to_string()),
-            "BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN" => Some("a-16-plus-secret".to_string()),
+            "BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN_FILE" => {
+                Some("/run/secrets/token".to_string())
+            }
             "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
             "BINDIZR_API_EXTERNAL_DNS_ENABLED" => Some("true".to_string()),
             "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
@@ -221,8 +222,6 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DNS_LISTEN_PORT" => Some("5353".to_string()),
             "BINDIZR_DNS_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
             "BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED" => Some("false".to_string()),
-            "BINDIZR_DNS_NSUPDATE_INITIAL_KEY_NAME" => Some("update-key".to_string()),
-            "BINDIZR_DNS_NSUPDATE_INITIAL_KEY_SECRET" => Some("c2VjcmV0".to_string()),
             "BINDIZR_DNS_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
             "BINDIZR_DNS_NOTIFY_ON_STARTUP" => Some("true".to_string()),
             "BINDIZR_DNS_NOTIFY_BATCH_MS" => Some("50".to_string()),
@@ -242,8 +241,8 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.api.listen_port, 8000);
     assert!(!overridden.api.authentication.required);
     assert_eq!(
-        overridden.api.authentication.initial_token.as_deref(),
-        Some("a-16-plus-secret")
+        overridden.api.authentication.initial_token_file.as_deref(),
+        Some("/run/secrets/token")
     );
     assert!(!overridden.api.metrics_enabled);
     assert!(overridden.api.external_dns_enabled);
@@ -262,11 +261,6 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         "192.0.2.10:53,192.0.2.11:53"
     );
     assert!(!overridden.dns.nsupdate.tsig_required);
-    let initial_key = overridden.dns.nsupdate.initial_key.expect("initial key");
-    assert_eq!(initial_key.name, "update-key");
-    assert_eq!(initial_key.secret, "c2VjcmV0");
-    // Omitted, so the service takes its default algorithm.
-    assert_eq!(initial_key.algorithm, None);
     assert!(!overridden.dns.notify.after_update);
     assert!(overridden.dns.notify.on_startup);
     assert_eq!(overridden.dns.notify.batch_ms, 50);
@@ -411,4 +405,28 @@ fn a_reload_takes_the_settings_read_per_use() {
     assert!(current.fixed_settings_changed(&next).is_empty());
     assert_eq!(current.changed_settings(&next), ["dns", "logging"]);
     assert!(current.changed_settings(&current).is_empty());
+}
+
+/// Verify that a provisioned token file reads as the secret it holds.
+#[test]
+fn load_initial_token_file_trims_and_reads_an_empty_file_as_unset() {
+    let dir = tempfile::tempdir().expect("temp dir");
+
+    // A secret manager writes a trailing newline; the token must not carry it.
+    let path = dir.path().join("token");
+    std::fs::write(&path, "a-16-plus-secret\n").expect("write");
+    assert_eq!(
+        load_initial_token_file(path.to_str().unwrap()).unwrap(),
+        Some("a-16-plus-secret".to_string())
+    );
+
+    // A mount that exists but was never filled must not seed an empty token.
+    let empty = dir.path().join("empty");
+    std::fs::write(&empty, "  \n").expect("write");
+    assert_eq!(
+        load_initial_token_file(empty.to_str().unwrap()).unwrap(),
+        None
+    );
+
+    assert!(load_initial_token_file(dir.path().join("absent").to_str().unwrap()).is_err());
 }

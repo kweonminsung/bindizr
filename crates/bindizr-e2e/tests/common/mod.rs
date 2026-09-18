@@ -55,8 +55,6 @@ pub(crate) struct TestAppOptions {
     pub(crate) external_dns_enabled: bool,
     /// `false` accepts unsigned nsupdate requests.
     pub(crate) nsupdate_tsig_required: bool,
-    /// Seed this `(name, base64 secret)` as the first global TSIG key.
-    pub(crate) initial_key: Option<(String, String)>,
     pub(crate) openapi_enabled: bool,
     /// Also the zone-transfer ACL; NOTIFY stays off in tests.
     pub(crate) secondary_addrs: String,
@@ -73,7 +71,6 @@ impl Default for TestAppOptions {
             initial_token: None,
             external_dns_enabled: false,
             nsupdate_tsig_required: true,
-            initial_key: None,
             openapi_enabled: false,
             secondary_addrs: String::new(),
             tls: false,

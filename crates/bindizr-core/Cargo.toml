@@ -30,6 +30,7 @@ sqlx.workspace = true
 
 [dev-dependencies]
 hmac.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

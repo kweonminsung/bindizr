@@ -44,7 +44,7 @@ openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.y
 
 [api.authentication]
 required = true               # Require an API token
-# initial_token = ""          # Secret of the first global token, created when none exist (16+ characters)
+# initial_token_file = ""     # File holding the secret of the first global token, read once on a first install
 
 [database]
 type = "sqlite"               # sqlite, mysql, or postgresql
@@ -68,11 +68,6 @@ secondary_addrs = ""          # Secondary servers, comma-separated (e.g. "192.16
 
 [dns.nsupdate]                # RFC 2136 dynamic updates
 tsig_required = true          # Require a TSIG signature; false accepts updates from anyone (testing only)
-
-# [dns.nsupdate.initial_key]  # The first TSIG key, created when none exist. It may update every zone.
-# name = "update-key"         # Name the client signs with
-# secret = ""                 # Base64 HMAC secret
-# algorithm = "hmac-sha256"   # hmac-sha256 (default), hmac-sha384, hmac-sha512
 
 [dns.notify]                  # NOTIFY to the secondaries
 after_update = true           # Notify after zone changes

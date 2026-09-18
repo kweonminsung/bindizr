@@ -20,8 +20,9 @@ bindizr:
     authentication:
       # Require an API token.
       required: true
-      # The first global token, created when the database holds none. Read it
-      # with `bindizr config get api.authentication.initial_token`.
+      # The first global token, created when this release builds the schema.
+      # Read it
+      # from the Secret; the pods mount it rather than read it from the environment.
       initialToken:
         # Off leaves the first token to `bindizr token create` in the pod.
         enabled: true
@@ -54,16 +55,6 @@ bindizr:
     nsupdate:
       # Require a TSIG signature; false accepts updates from anyone (testing only).
       tsigRequired: true
-      # The first TSIG key, created when none exist. It may update every zone.
-      initialKey:
-        # Set the name to create it; empty creates nothing.
-        name: ""
-        algorithm: hmac-sha256
-        # A Secret holding the key, or leave empty and set `value`.
-        existingSecret: ""
-        secretKey: secret
-        # Used only without existingSecret; base64.
-        value: ""
     # NOTIFY to the secondaries.
     notify:
       # Notify after zone changes, and for every zone at startup.

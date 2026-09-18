@@ -59,18 +59,18 @@ which may update any zone.
 
 ## The first key
 
-Where the CLI cannot be run — a container image without a shell, an automated
-rollout — `[dns.nsupdate.initial_key]` names a key created on the first start
-that finds none:
+A TSIG key needs no bootstrapping of its own: with the first API token, which a
+fresh install seeds, a key is created over the API from anywhere.
 
-```toml
-[dns.nsupdate.initial_key]
-name = "update-key"
-secret = "<base64>"
-# algorithm = "hmac-sha256"
+```bash
+$ curl -X POST https://bindizr:3000/tsig-keys \
+  -H "Authorization: Bearer $BINDIZR_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "update-key"}'
 ```
 
-The key is **global**: it may update every zone without a grant, which is the
-only useful shape for a key created before any grant can be made. It is
-ignored once any key exists, so it seeds rather than resets. Where the CLI or
-the API is reachable, create a scoped key and grant it instead.
+The secret comes back in that response, shown once; `bindizr tsig-key create
+update-key` does the same where the CLI can be run.
+
+A key updates only what its grants reach. `--global` (or `"is_global": true`)
+makes one that needs none, which is worth avoiding where you can grant instead.

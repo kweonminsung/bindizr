@@ -95,15 +95,16 @@ impl TokenService {
         )
     }
 
-    /// Create the configured secret as a global token named `initial`, unless
-    /// the database holds one already. Takes no caller: the daemon runs it
-    /// before any front end is up.
+    /// Create the configured secret as a global token named `initial`. The
+    /// daemon calls this only on the startup that built the schema, so a token
+    /// revoked later is never seeded back. Takes no caller: it runs before any
+    /// front end is up.
     pub async fn seed_initial(secret: &str) -> Result<bool, ServiceError> {
         let secret = secret.trim();
         // A short secret is guessable, and this token may manage every zone.
         if secret.len() < INITIAL_TOKEN_MIN_LEN {
             return Err(ServiceError::invalid_input(format!(
-                "api.authentication.initial_token must be at least {} characters",
+                "api.authentication.initial_token_file must hold at least {} characters",
                 INITIAL_TOKEN_MIN_LEN
             )));
         }
@@ -115,7 +116,7 @@ impl TokenService {
             id: 0,
             name: normalize_token_name(INITIAL_TOKEN_NAME)?,
             token: hash_token(secret),
-            description: Some("Created from api.authentication.initial_token".to_string()),
+            description: Some("Created from api.authentication.initial_token_file".to_string()),
             is_global: true,
             expires_at: None,
             created_at: Utc::now(),

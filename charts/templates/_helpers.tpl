@@ -88,11 +88,6 @@ per-pod headless names instead of the load-balanced service. */ -}}
 {{- $token -}}
 {{- end -}}
 
-{{- /* Choose the secret containing the initial TSIG key. */ -}}
-{{- define "bindizr-chart.initialKeySecretName" -}}
-{{- default (printf "%s-initial-key" (include "bindizr-chart.fullname" .)) .Values.bindizr.dns.nsupdate.initialKey.existingSecret -}}
-{{- end -}}
-
 {{- /* Build the name of the bundled MySQL resources. */ -}}
 {{- define "bindizr-chart.mysql.fullname" -}}
 {{- printf "%s-mysql" (include "bindizr-chart.fullname" .) | trunc 63 | trimSuffix "-" -}}

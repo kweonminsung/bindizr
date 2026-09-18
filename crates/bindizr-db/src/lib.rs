@@ -36,8 +36,10 @@ pub(crate) enum DatabaseType {
     SQLite,
 }
 
-/// Build the global database pool from configuration; the daemon calls this once.
-pub async fn initialize() -> Result<(), DatabaseError> {
+/// Build the global database pool from configuration; the daemon calls this
+/// once. Returns whether this startup created the schema, which is what tells
+/// a first install from a restart.
+pub async fn initialize() -> Result<bool, DatabaseError> {
     let bindizr_config = config::bindizr_config();
 
     let database_type = match bindizr_config.database.database_type {
@@ -58,7 +60,7 @@ pub async fn initialize() -> Result<(), DatabaseError> {
         }
     };
 
-    let pool = match database_type {
+    let (pool, schema_created) = match database_type {
         DatabaseType::MySQL => DatabasePool::new_mysql(&database_url).await?,
         DatabaseType::PostgreSQL => DatabasePool::new_postgres(&database_url).await?,
         DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await?,
@@ -69,7 +71,7 @@ pub async fn initialize() -> Result<(), DatabaseError> {
         .map_err(|_| DatabaseError::PoolError("database pool initialized twice".to_string()))?;
 
     log::info!("Database pool initialized");
-    Ok(())
+    Ok(schema_created)
 }
 
 /// Connect once and run a trivial query, creating neither tables nor the
@@ -186,7 +188,7 @@ fn pool_max_connections() -> u32 {
 
 impl DatabasePool {
     /// Connect to MySQL, create tables, and return the pool.
-    pub(crate) async fn new_mysql(url: &str) -> Result<Self, DatabaseError> {
+    pub(crate) async fn new_mysql(url: &str) -> Result<(Self, bool), DatabaseError> {
         let pool = MySqlPoolOptions::new()
             .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
@@ -204,16 +206,16 @@ impl DatabasePool {
             .map_err(|e| DatabaseError::PoolError(mysql_connect_error(&e)))?;
 
         let database_pool = DatabasePool::MySQL(pool);
-        database_pool
+        let schema_created = database_pool
             .create_tables()
             .await
             .map_err(DatabaseError::QueryFailed)?;
 
-        Ok(database_pool)
+        Ok((database_pool, schema_created))
     }
 
     /// Connect to PostgreSQL, create tables, and return the pool.
-    pub(crate) async fn new_postgres(url: &str) -> Result<Self, DatabaseError> {
+    pub(crate) async fn new_postgres(url: &str) -> Result<(Self, bool), DatabaseError> {
         let pool = PgPoolOptions::new()
             .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
@@ -232,16 +234,16 @@ impl DatabasePool {
             .map_err(|e| DatabaseError::PoolError(postgres_connect_error(&e)))?;
 
         let database_pool = DatabasePool::PostgreSQL(pool);
-        database_pool
+        let schema_created = database_pool
             .create_tables()
             .await
             .map_err(DatabaseError::QueryFailed)?;
 
-        Ok(database_pool)
+        Ok((database_pool, schema_created))
     }
 
     /// Connect to SQLite, create tables, and return the pool.
-    pub(crate) async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
+    pub(crate) async fn new_sqlite(url: &str) -> Result<(Self, bool), DatabaseError> {
         // A clean install points at a database file that does not exist yet.
         let connect_options = sqlite_connect_options(url)?.create_if_missing(true);
 
@@ -279,22 +281,32 @@ impl DatabasePool {
             .map_err(|e| DatabaseError::PoolError(sqlite_connect_error(&e)))?;
 
         let database_pool = DatabasePool::SQLite(pool);
-        database_pool
+        let schema_created = database_pool
             .create_tables()
             .await
             .map_err(DatabaseError::QueryFailed)?;
 
-        Ok(database_pool)
+        Ok((database_pool, schema_created))
     }
 
-    /// Create the application schema in the selected database backend.
-    async fn create_tables(&self) -> Result<(), String> {
-        match self {
+    /// Create the application schema in the selected database backend,
+    /// reporting whether it was absent beforehand: the statements themselves
+    /// are idempotent, so only this tells a first install from a restart.
+    async fn create_tables(&self) -> Result<bool, String> {
+        let created = match self {
             DatabasePool::MySQL(pool) => {
                 let mut conn = pool.acquire().await.map_err(|e| {
                     log::error!("Failed to acquire MySQL connection: {}", e);
                     e.to_string()
                 })?;
+                let existed = sqlx::query(schema::mysql::schema_presence_query())
+                    .fetch_optional(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to read the MySQL schema: {}", e);
+                        e.to_string()
+                    })?
+                    .is_some();
                 for query in schema::mysql::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
@@ -310,12 +322,21 @@ impl DatabasePool {
                         log::error!("Failed to execute query '{}': {}", seed, e);
                         e.to_string()
                     })?;
+                !existed
             }
             DatabasePool::PostgreSQL(pool) => {
                 let mut conn = pool.acquire().await.map_err(|e| {
                     log::error!("Failed to acquire PostgreSQL connection: {}", e);
                     e.to_string()
                 })?;
+                let existed = sqlx::query(schema::postgres::schema_presence_query())
+                    .fetch_optional(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to read the PostgreSQL schema: {}", e);
+                        e.to_string()
+                    })?
+                    .is_some();
                 for query in schema::postgres::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
@@ -331,12 +352,21 @@ impl DatabasePool {
                         log::error!("Failed to execute query '{}': {}", seed, e);
                         e.to_string()
                     })?;
+                !existed
             }
             DatabasePool::SQLite(pool) => {
                 let mut conn = pool.acquire().await.map_err(|e| {
                     log::error!("Failed to acquire SQLite connection: {}", e);
                     e.to_string()
                 })?;
+                let existed = sqlx::query(schema::sqlite::schema_presence_query())
+                    .fetch_optional(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to read the SQLite schema: {}", e);
+                        e.to_string()
+                    })?
+                    .is_some();
                 for query in schema::sqlite::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
@@ -352,9 +382,10 @@ impl DatabasePool {
                         log::error!("Failed to execute query '{}': {}", seed, e);
                         e.to_string()
                     })?;
+                !existed
             }
-        }
-        Ok(())
+        };
+        Ok(created)
     }
 }
 

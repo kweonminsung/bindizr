@@ -10,8 +10,3 @@
 {{- if eq .Values.bindizr.database.type "sqlite" }}
 {{- fail "SQLite is not supported by the Helm chart. Use mysql or postgresql." }}
 {{- end }}
-{{- with .Values.bindizr.dns.nsupdate.initialKey }}
-{{- if and .name (not .value) (not .existingSecret) }}
-{{- fail "Set bindizr.dns.nsupdate.initialKey.value or .existingSecret alongside .name: without either, the pods reference a Secret the chart never creates." }}
-{{- end }}
-{{- end }}

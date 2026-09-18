@@ -38,9 +38,6 @@ on the first start that finds none. The install notes print how to read it
 back:
 
 ```bash
-$ kubectl exec deploy/bindizr-bindizr-chart -c bindizr -- \
-  bindizr config get api.authentication.initial_token
-
 $ kubectl get secret bindizr-bindizr-chart-initial-token \
   -o jsonpath='{.data.api-token}' | base64 -d
 ```
@@ -62,27 +59,24 @@ render would otherwise carry a different token. Setting
 `bindizr.api.authentication.initialToken.enabled=false` leaves the first token
 to `bindizr token create` in the pod instead.
 
-It seeds rather than resets: once any token exists, later starts ignore it.
-Rotate by creating a normal token and deleting `initial`.
+Only the start that creates the schema reads it, so a token deleted later stays
+deleted however often the pods restart. The Secret is mounted as a file rather
+than put in the environment, keeping it out of the pod spec. Rotate by creating
+a normal token and deleting `initial`.
 
-nsupdate seeds the same way, except that nothing is generated for it. A
-cluster whose clients sign RFC 2136 updates —
-cert-manager's DNS-01 solver, a DHCP server — needs a TSIG key before any of
-them can write, and `bindizr.dns.nsupdate.initialKey` seeds one:
+Clients that sign RFC 2136 updates — cert-manager's DNS-01 solver, a DHCP
+server — need a TSIG key, which the chart does not seed: with the token above,
+any workload creates one over the API.
 
 ```bash
-$ kubectl create secret generic bindizr-initial-key \
-  --from-literal=secret="$(openssl rand -base64 32)"
-
-$ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --reuse-values \
-  --set bindizr.dns.nsupdate.initialKey.name=update-key \
-  --set bindizr.dns.nsupdate.initialKey.existingSecret=bindizr-initial-key
+$ curl -X POST http://bindizr-bindizr-chart:3000/tsig-keys \
+  -H "Authorization: Bearer $BINDIZR_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "update-key", "is_global": true}'
 ```
 
-That key is global: it may update every zone without a grant, which is the
-only useful shape for a key created before any grant exists. Where the API is
-reachable, create a scoped key and grant it instead — see
+The secret comes back once, in that response. A global key updates every zone
+without a grant; prefer a scoped key where you can grant — see
 [Dynamic Updates](../cli/nsupdate.md).
 
 ## Serving the API over TLS

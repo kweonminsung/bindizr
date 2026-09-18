@@ -202,6 +202,11 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
     ]
 }
 
+/// Whether the schema is already there, which tells a fresh database apart.
+pub(crate) fn schema_presence_query() -> &'static str {
+    "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'zones'"
+}
+
 /// Return the statement that seeds the built-in `default` DNSSEC policy.
 pub(crate) fn default_policy_seed() -> &'static str {
     r#"
