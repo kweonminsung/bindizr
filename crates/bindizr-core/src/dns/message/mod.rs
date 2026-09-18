@@ -113,7 +113,7 @@ impl DnsMessageBuilder {
     }
 
     /// Adds an answer from wire-format RDATA bytes, with no per-type parser.
-    pub fn add_raw_rdata(
+    pub(crate) fn add_raw_rdata(
         &mut self,
         owner: impl IntoOwner,
         record_type: u16,

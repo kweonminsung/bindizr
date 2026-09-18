@@ -10,7 +10,7 @@ use crate::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    record::{RecordService, validate_record_name_in_zone},
+    record::validate_record_name_in_zone,
     repository::RepositoryService,
     serial::generate_serial,
     types::{CreateZoneRequest, UpdateZoneRequest},
@@ -203,45 +203,6 @@ impl ZoneService {
                     ServiceError::internal("Failed to update zone")
                 }
             })?;
-
-            // A rename / mname change must keep an apex NS matching the new
-            // mname; only apex rows can satisfy that, so load just those.
-            let apex_records = RepositoryService::list_records_by_name_tx(
-                &mut tx,
-                zone_id,
-                &OwnerName::apex(),
-                LockLevel::Exclusive,
-            )
-            .await
-            .map_err(|e| {
-                log::error!("Failed to fetch apex records: {}", e);
-                ServiceError::internal("Failed to update zone")
-            })?;
-            let has_mname = apex_records
-                .iter()
-                .any(|r| updated_zone.mname_matches(&r.record_type, &r.name, &r.value));
-
-            if !has_mname {
-                let mname_record = updated_zone.mname_record(
-                    updated_zone.apex_ns_rrset_ttl(
-                        apex_records
-                            .iter()
-                            .map(|r| (&r.record_type, &r.name, r.ttl)),
-                    ),
-                );
-
-                RecordService::create_with_changes_tx(
-                    &mut tx,
-                    zone_id,
-                    new_serial,
-                    &[mname_record],
-                )
-                .await
-                .map_err(|e| {
-                    log::error!("Failed to create mname NS record during update: {}", e);
-                    ServiceError::internal("Failed to keep mname NS consistency")
-                })?;
-            }
 
             // Journal the SOA and signature changes under the zone update's serial,
             // then save the version that future IXFR and rollback reads will use.

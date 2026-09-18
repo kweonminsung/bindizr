@@ -370,7 +370,7 @@ async fn zone_rollback_rejects_bad_serials() {
         (0, StatusCode::BAD_REQUEST, "INVALID_INPUT"),
         (-5, StatusCode::BAD_REQUEST, "INVALID_INPUT"),
         (
-            current_serial - 1,
+            current_serial - 2,
             StatusCode::NOT_FOUND,
             "VERSION_NOT_FOUND",
         ),

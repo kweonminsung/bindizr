@@ -176,7 +176,7 @@ impl DnsMessageBuilder {
 
     /// Adds an answer from stored record columns (records and journal
     /// rows share this shape). Unsupported types are skipped.
-    pub fn add_record_parts(
+    pub(crate) fn add_record_parts(
         &mut self,
         zone_name: &ZoneName,
         name: &OwnerName,

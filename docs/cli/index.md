@@ -83,9 +83,16 @@ $ bindizr man | sudo tee /usr/share/man/man1/bindizr.1 > /dev/null
 ## Zones and records
 
 ```bash
-# Create a zone (--rname defaults to hostmaster@<zone>; the SOA serial starts at 1
-# unless --serial is given; --refresh, --retry, --expire, and --minimum-ttl set the other SOA timers)
-$ bindizr zone create example.com --mname ns1.example.com --default-ttl 3600
+# Create a zone. --mname and --rname are both required: neither is guessed.
+# The SOA serial starts at 1 unless --serial is given; --refresh, --retry,
+# --expire, and --minimum-ttl set the other SOA timers
+$ bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
+
+# A new zone holds its SOA and nothing else. Give it the NS records that name
+# its public nameservers, and an address record for any of them inside the zone
+# (the parent zone needs matching glue for those).
+$ bindizr record create example.com @ --type NS --value ns1.example.com
+$ bindizr record create example.com ns1 --type A --value 192.0.2.1
 
 # List, inspect, and delete zones (--records adds the zone's records, unpaginated)
 $ bindizr zone list

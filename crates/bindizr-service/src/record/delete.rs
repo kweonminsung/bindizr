@@ -5,7 +5,7 @@ use bindizr_db::repository::LockLevel;
 
 use super::{
     RecordService, matches_record,
-    validation::{normalize_record_owner_name, parse_record_type, validate_delete_constraints},
+    validation::{normalize_record_owner_name, parse_record_type},
 };
 use crate::{
     authorization::{Caller, RecordWrite},
@@ -102,8 +102,6 @@ impl RecordService {
                 .await?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
-
-            validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
 
             Self::delete_with_changes_tx(
                 &mut tx,
@@ -218,7 +216,6 @@ impl RecordService {
                 })
                 .cloned()
                 .collect();
-            validate_delete_constraints(&zone, &matched)?;
 
             // Build the preview from the validated rows; dry runs and empty matches
             // return it before any records or serials are written.

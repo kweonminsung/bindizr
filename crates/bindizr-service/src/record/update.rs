@@ -303,7 +303,6 @@ impl RecordService {
             };
 
             validate_record_update_constraints_normalized(
-                &zone,
                 &records_at_name,
                 &existing_record,
                 &candidate_updated,

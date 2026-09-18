@@ -22,13 +22,9 @@ use crate::{
     authorization::Caller,
     dnssec::DnssecService,
     error::ServiceError,
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
+    model::{record::Record, zone::Zone},
     record::{
-        RecordService, validate_delete_constraints, validate_record_add_constraints_normalized,
-        validate_record_name_in_zone,
+        RecordService, validate_record_add_constraints_normalized, validate_record_name_in_zone,
     },
     repository::RepositoryService,
     serial::generate_serial,
@@ -240,9 +236,7 @@ impl ZoneService {
                 reconstruct_records_at_serial_tx(&mut tx, zone.id, target_serial, zone.serial)
                     .await?;
 
-            // Diff current vs target, import-Replace style. Protection is
-            // evaluated against the restored zone so the restored mname's
-            // apex NS is kept and the newer one becomes deletable.
+            // Diff current vs target, import-Replace style.
             let mut target_by_key: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
             for target in target_records {
                 target_by_key
@@ -259,8 +253,8 @@ impl ZoneService {
                 let key = to_match_key(record);
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
-                        // The DEL + ADD pair preserves the record's identity, so
-                        // the mname delete protection cannot be violated.
+                        // A TTL change is a DEL + ADD pair, which RFC 2181,
+                        // Section 5.2 requires: one name and type, one TTL.
                         if record.ttl != target.ttl {
                             dels.push(record.clone());
                             to_add.push(target);
@@ -268,50 +262,12 @@ impl ZoneService {
                             unchanged += 1;
                         }
                     }
-                    None => {
-                        if validate_delete_constraints(&restored_zone, std::slice::from_ref(record))
-                            .is_ok()
-                        {
-                            dels.push(record.clone());
-                        } else {
-                            // Protected rows (SOA / restored mname NS) stay.
-                            unchanged += 1;
-                        }
-                    }
+                    None => dels.push(record.clone()),
                 }
             }
             to_add.extend(target_by_key.into_values().flatten());
 
-            // The restored mname must keep a matching apex NS record.
             let deleted_ids: HashSet<i32> = dels.iter().map(|del| del.id).collect();
-            let surviving = |record: &&Record| !deleted_ids.contains(&record.id);
-            let has_mname = current_records
-                .iter()
-                .filter(surviving)
-                .any(|r| restored_zone.mname_matches(&r.record_type, &r.name, &r.value))
-                || to_add
-                    .iter()
-                    .any(|r| restored_zone.mname_matches(&r.record_type, &r.name, &r.value));
-            if !has_mname {
-                // Prefer a restored TTL: the restore is what this serial expresses.
-                let candidates = to_add
-                    .iter()
-                    .map(|r| (&r.record_type, &r.name, r.ttl))
-                    .chain(
-                        current_records
-                            .iter()
-                            .filter(surviving)
-                            .map(|r| (&r.record_type, &r.name, r.ttl)),
-                    );
-
-                to_add.push(ReconstructedRecord {
-                    name: OwnerName::apex(),
-                    record_type: RecordType::NS,
-                    value: restored_zone.mname.clone(),
-                    ttl: restored_zone.apex_ns_rrset_ttl(candidates),
-                    priority: None,
-                });
-            }
 
             // Validate the adds in-memory against the records left after the deletes
             // (mirrors the import reconcile).

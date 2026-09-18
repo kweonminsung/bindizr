@@ -6,7 +6,7 @@ use bindizr_core::dns::name::OwnerName;
 
 use crate::{
     model::{record::Record, zone::Zone},
-    record::{bulk::PreparedRecord, validation::validate_delete_constraints},
+    record::bulk::PreparedRecord,
     types::{ImportMode, RecordDiff},
     zone::{diff::build_record_diff, history::ReconstructedRecord},
 };
@@ -27,11 +27,6 @@ impl DesiredRecord {
     }
 }
 
-/// Records referenced by the zone's own SOA/mname NS must never be removed.
-fn is_protected(zone: &Zone, record: &Record) -> bool {
-    validate_delete_constraints(zone, std::slice::from_ref(record)).is_err()
-}
-
 /// What an import will change, decided before anything is written.
 pub(crate) struct ImportPlan<'a> {
     pub(crate) dels: Vec<Record>,
@@ -43,8 +38,7 @@ pub(crate) struct ImportPlan<'a> {
 }
 
 /// Reconcile the file against the zone under `mode`. Records are indexed by
-/// owner name so each one is compared only against same-name rows, and a
-/// record the zone's own SOA or apex NS depends on is never deleted.
+/// owner name so each one is compared only against same-name rows.
 pub(crate) fn compute_import_plan<'a>(
     mode: ImportMode,
     zone: &Zone,
@@ -84,16 +78,12 @@ pub(crate) fn compute_import_plan<'a>(
         ImportMode::Append => Vec::new(),
         ImportMode::Replace => existing_records
             .iter()
-            .filter(|e| !is_protected(zone, e) && !desired_matches_existing(e))
+            .filter(|e| !desired_matches_existing(e))
             .cloned()
             .collect(),
         ImportMode::Upsert => existing_records
             .iter()
-            .filter(|e| {
-                desired_key_matches_existing(e)
-                    && !is_protected(zone, e)
-                    && !desired_matches_existing(e)
-            })
+            .filter(|e| desired_key_matches_existing(e) && !desired_matches_existing(e))
             .cloned()
             .collect(),
     };

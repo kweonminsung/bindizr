@@ -259,17 +259,6 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
     }
 
-    /// Insert a record in the current transaction.
-    pub(crate) async fn create_record_tx(
-        tx: &mut RepositoryTx<'_>,
-        record: Record,
-    ) -> Result<Record, ServiceError> {
-        get_record_repository()
-            .create_tx(tx, record)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to create record: {}", e)))
-    }
-
     /// Insert a batch of records in the current transaction.
     pub(crate) async fn create_records_tx(
         tx: &mut RepositoryTx<'_>,

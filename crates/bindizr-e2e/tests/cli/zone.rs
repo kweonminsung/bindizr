@@ -424,8 +424,21 @@ async fn zone_versions_and_rollback_flow() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("history.example");
 
-    // Build three versions so rollback can preserve www while removing the later extra.
-    app.create_zone_cli(&zone_name, "3600").await;
+    // Build three versions so rollback can preserve www while removing the later
+    // extra. The zone is created directly so the serials count from its own
+    // first mutation.
+    app.run_cli_success(&[
+        "zone",
+        "create",
+        &zone_name,
+        "--mname",
+        &format!("ns1.{zone_name}"),
+        "--rname",
+        &format!("hostmaster@{zone_name}"),
+        "--default-ttl",
+        "3600",
+    ])
+    .await;
 
     let zone = app
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
@@ -567,7 +580,8 @@ async fn zone_status_via_cli() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let status = app.run_cli_success(&["zone", "status", &zone_name]).await;
-    assert!(status.contains(&format!("Zone {} (serial 1)", zone_name)));
+    // Serial 2: the zone starts at 1 and its apex NS is the second mutation.
+    assert!(status.contains(&format!("Zone {} (serial 2)", zone_name)));
 
     if !app.has_dns_secondaries() {
         assert!(status.contains("No secondaries configured."));

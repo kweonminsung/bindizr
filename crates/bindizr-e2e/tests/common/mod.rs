@@ -284,10 +284,31 @@ impl TestApp {
             "expire": 604800,
             "minimum_ttl": 86400
         });
-        let (status, body) = self
+        let (status, _) = self
             .send_request(Method::POST, "/zones", Some(request))
             .await;
         assert_eq!(status, StatusCode::CREATED);
+
+        // The apex NS is the operator's record, so the fixture adds one.
+        let (status, _) = self
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "zone_name": zone_name,
+                    "name": "@",
+                    "type": "NS",
+                    "value": format!("ns1.{zone_name}"),
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        // That record moved the serial, so report the zone as it now stands.
+        let (status, body) = self
+            .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+            .await;
+        assert_eq!(status, StatusCode::OK);
         body["zone"].clone()
     }
 
@@ -296,18 +317,27 @@ impl TestApp {
     pub(crate) async fn create_zone_cli(&self, zone_name: &str, default_ttl: &str) -> String {
         let mname = format!("ns1.{zone_name}");
         let rname = format!("hostmaster@{zone_name}");
+        let created = self
+            .run_cli_success(&[
+                "zone",
+                "create",
+                zone_name,
+                "--mname",
+                &mname,
+                "--rname",
+                &rname,
+                "--default-ttl",
+                default_ttl,
+            ])
+            .await;
+
+        // The apex NS is the operator's record, so the fixture adds one.
         self.run_cli_success(&[
-            "zone",
-            "create",
-            zone_name,
-            "--mname",
-            &mname,
-            "--rname",
-            &rname,
-            "--default-ttl",
-            default_ttl,
+            "record", "create", zone_name, "@", "--type", "NS", "--value", &mname,
         ])
-        .await
+        .await;
+
+        created
     }
 
     /// Run a CLI command against this test application.

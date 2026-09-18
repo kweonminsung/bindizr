@@ -107,15 +107,11 @@ async fn record_delete_matching_refuses_what_would_widen_it() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // The last would be a second zone delete; the other two cannot be meant.
+    // The last would be a whole-zone delete; the other cannot be meant.
     for (query, expected) in [
         (
             format!("/records?zone_name={zone_name}&name=www&value=x"),
             "record_type is required",
-        ),
-        (
-            format!("/records?zone_name={zone_name}&name=@&type=NS"),
-            "zone mname",
         ),
         (format!("/records?zone_name={zone_name}"), "name"),
     ] {

@@ -14,7 +14,8 @@ use crate::{
 };
 
 impl ZoneService {
-    /// Create a new zone with an apex NS record and NOTIFY the catalog zone.
+    /// Create a new zone and NOTIFY the catalog zone. The zone carries its
+    /// SOA and no records; its NS records are the caller's to add.
     pub async fn create(
         caller: &Caller,
         create_zone_request: &CreateZoneRequest,
@@ -60,11 +61,11 @@ impl ZoneService {
         Ok(created_zone)
     }
 
-    /// Insert a zone, its apex NS record, and its first version on the
-    /// caller's transaction. A zone import creates and fills a zone in one
-    /// transaction this way, so a dry run rolls both back; [`Self::create`]
-    /// adds the duplicate pre-check and the catalog NOTIFY that follows the
-    /// commit. Here the UNIQUE(name) constraint is the whole duplicate check.
+    /// Insert a zone and its first version on the caller's transaction. A zone
+    /// import creates and fills a zone in one transaction this way, so a dry
+    /// run rolls both back; [`Self::create`] adds the duplicate pre-check and
+    /// the catalog NOTIFY that follows the commit. Here the UNIQUE(name)
+    /// constraint is the whole duplicate check.
     pub(crate) async fn create_tx(
         tx: &mut RepositoryTx<'_>,
         caller: &Caller,
@@ -118,18 +119,6 @@ impl ZoneService {
             } else {
                 ServiceError::internal("Failed to create zone")
             }
-        })?;
-
-        // A new zone has no IXFR history to log against, so the apex NS row
-        // goes in directly.
-        RepositoryService::create_record_tx(
-            tx,
-            created_zone.mname_record(created_zone.default_ttl),
-        )
-        .await
-        .map_err(|e| {
-            log::error!("Failed to create mname NS record: {}", e);
-            ServiceError::internal("Failed to create mname NS record")
         })?;
 
         ZoneService::save_version_tx(

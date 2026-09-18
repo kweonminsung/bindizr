@@ -815,8 +815,8 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
         )
     };
 
-    // The apex holds the TXT above and the NS the zone was created with.
-    assert_eq!(listed(&app).await, (2, 2));
+    // The apex holds only the TXT above: a new zone carries no records.
+    assert_eq!(listed(&app).await, (1, 1));
 
     app.run_cli_success(&[
         "token",
@@ -829,16 +829,16 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
         "A",
     ])
     .await;
-    // The apex grant still stands, so its two rows come with the one A record
+    // The apex grant still stands, so its one row comes with the one A record
     // under `dyn`; the dotted label is stored as `a\046dyn`, so SQL leaves it
     // out of the count too.
-    assert_eq!(listed(&app).await, (3, 3));
+    assert_eq!(listed(&app).await, (2, 2));
 
     // And out of the pages: its slot holds the next visible row, not a gap.
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&sort=name&order=asc&limit=1&offset=2"),
+            &format!("/records?zone_name={zone_name}&sort=name&order=asc&limit=1&offset=1"),
             None,
         )
         .await;
@@ -848,5 +848,5 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
         format!("host.dyn.{zone_name}."),
         "{body}"
     );
-    assert_eq!(body["pagination"]["total"], 3, "{body}");
+    assert_eq!(body["pagination"]["total"], 2, "{body}");
 }

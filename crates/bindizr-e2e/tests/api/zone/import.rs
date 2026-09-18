@@ -102,7 +102,8 @@ async fn zone_import_zone_file_replace_mode() {
     )
     .await;
 
-    // Replace: keep stays (same value), drop is removed, add is created.
+    // Replace: keep stays (same value), add is created, and both drop and the
+    // apex NS go — the file is the desired state and lists neither.
     let content = "keep IN A 192.0.2.1\nadd IN A 192.0.2.3\n";
     let (status, body) = app
         .send_request(
@@ -114,7 +115,7 @@ async fn zone_import_zone_file_replace_mode() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 1);
-    assert_eq!(body["summary"]["deleted"], 1);
+    assert_eq!(body["summary"]["deleted"], 2);
     assert_eq!(body["summary"]["unchanged"], 1);
 
     let (_, body) = app
@@ -373,7 +374,8 @@ async fn zone_import_creates_the_zone_from_the_files_soa() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], false);
-    assert_eq!(body["summary"]["added"], 1);
+    // The zone is created empty, so the file's NS and A are both adds.
+    assert_eq!(body["summary"]["added"], 2);
 
     let (status, _) = app
         .send_request(Method::GET, &format!("/zones/{zone_name}"), None)

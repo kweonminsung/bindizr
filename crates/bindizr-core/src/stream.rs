@@ -21,7 +21,8 @@ static STDERR_CLOSED: AtomicBool = AtomicBool::new(false);
 /// is lost, so the entry point reports it instead of exiting as success.
 static WRITE_FAILURE: OnceLock<String> = OnceLock::new();
 
-/// Write to stdout, ignoring a closed pipe.
+/// Write to stdout, ignoring a closed pipe. Both writers are `pub` only
+/// because `outln!`/`errln!` expand to them in other crates.
 pub fn write_stdout(text: &str) {
     write(&STDOUT_CLOSED, &mut std::io::stdout(), text);
 }

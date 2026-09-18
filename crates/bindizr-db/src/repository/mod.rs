@@ -324,13 +324,6 @@ pub trait TokenGrantRepository: Send + Sync {
 
 #[async_trait]
 pub trait RecordRepository: Send + Sync {
-    /// Insert a record in the current transaction.
-    async fn create_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        record: Record,
-    ) -> Result<Record, DatabaseError>;
-
     /// Insert many records in one chunked statement, returning them with their
     /// assigned ids in input order.
     async fn create_many_tx(

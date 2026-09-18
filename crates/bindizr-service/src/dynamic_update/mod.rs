@@ -21,7 +21,7 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    record::{AddOutcome, RecordService, matches_record, validate_delete_constraints},
+    record::{AddOutcome, RecordService, matches_record},
     repository::RepositoryService,
     serial::generate_serial,
     tsig_key::grant::{authorize_prerequisite, authorize_update},
@@ -408,9 +408,6 @@ async fn delete_matching_tx(
     if matched.is_empty() {
         return Ok(false);
     }
-
-    validate_delete_constraints(zone, &matched)
-        .map_err(|e| DynamicUpdateError::Refused(e.to_string()))?;
 
     RecordService::delete_with_changes_tx(tx, zone.id, new_serial, &matched).await?;
 

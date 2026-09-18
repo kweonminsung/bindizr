@@ -255,7 +255,7 @@ pub struct GetRecordResponse {
 
 impl GetRecordResponse {
     /// Build a response from a [`Record`], rendering owner/value as display names within `zone_name`.
-    pub fn from_record_and_zone_name(record: &Record, zone_name: &ZoneName) -> Self {
+    pub(crate) fn from_record_and_zone_name(record: &Record, zone_name: &ZoneName) -> Self {
         GetRecordResponse {
             id: Some(record.id),
             name: record.name.to_fqdn(zone_name),
