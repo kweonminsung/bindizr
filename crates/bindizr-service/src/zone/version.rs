@@ -29,7 +29,7 @@ impl ChangeSubject {
         }
     }
 
-    /// The maintenance scheduler, acting on nobody's request.
+    /// The scheduler, acting on nobody's request.
     pub(crate) fn system() -> Self {
         ChangeSubject {
             source: ChangeSource::System,

@@ -68,7 +68,7 @@ impl ZoneService {
         zone_name: &str,
         request: &UpdateZoneRequest,
     ) -> Result<Zone, ServiceError> {
-        caller.require_global("update zones")?;
+        caller.authorize_global("update zones")?;
         // The serial is a system-managed version counter, never set on update.
         if request.serial.is_some() {
             return Err(ServiceError::invalid_input(

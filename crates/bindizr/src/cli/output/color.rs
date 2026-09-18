@@ -12,8 +12,9 @@ fn is_enabled() -> bool {
     })
 }
 
-/// Wrap text in the requested ANSI color when colors are enabled.
-fn paint(code: &str, text: &str) -> String {
+/// Text wrapped in the requested ANSI color, or unchanged when colors are
+/// disabled.
+fn colored(code: &str, text: &str) -> String {
     if is_enabled() {
         format!("\x1b[{}m{}\x1b[0m", code, text)
     } else {
@@ -23,20 +24,20 @@ fn paint(code: &str, text: &str) -> String {
 
 /// Format text in green when colors are enabled.
 pub(crate) fn green(text: &str) -> String {
-    paint("32", text)
+    colored("32", text)
 }
 
 /// Format text in red when colors are enabled.
 pub(crate) fn red(text: &str) -> String {
-    paint("31", text)
+    colored("31", text)
 }
 
 /// Format text in yellow when colors are enabled.
 pub(crate) fn yellow(text: &str) -> String {
-    paint("33", text)
+    colored("33", text)
 }
 
 /// Format text in cyan when colors are enabled.
 pub(crate) fn cyan(text: &str) -> String {
-    paint("36", text)
+    colored("36", text)
 }

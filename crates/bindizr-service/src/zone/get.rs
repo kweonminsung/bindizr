@@ -131,7 +131,7 @@ impl ZoneService {
     /// `NotFound`, so grants cannot be probed.
     pub async fn get_by_name(caller: &Caller, zone_name: &str) -> Result<Zone, ServiceError> {
         let zone = Self::lookup_by_name(zone_name).await?;
-        caller.ensure_zone_visible(&zone)?;
+        caller.authorize_zone_visible(&zone)?;
         Ok(zone)
     }
 
@@ -157,7 +157,7 @@ impl ZoneService {
         lock_level: LockLevel,
     ) -> Result<Zone, ServiceError> {
         let zone = Self::get_by_name_tx(tx, zone_name, lock_level).await?;
-        caller.ensure_zone_visible(&zone)?;
+        caller.authorize_zone_visible(&zone)?;
         Ok(zone)
     }
 

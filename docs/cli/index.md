@@ -179,7 +179,7 @@ text) or `from_server` the same way, and `skip_unsupported` alongside them.
 
 Every SOA serial has a version behind it, so a zone can be diffed and rolled
 back, and each version records who made the change: the API token or TSIG key
-it was made under (`system` for the DNSSEC maintenance scheduler, `local` for
+it was made under (`system` for the DNSSEC scheduler, `local` for
 the daemon socket or a request made while authentication is disabled). The
 name is copied into the version, so it still answers after the token is gone.
 

@@ -40,7 +40,7 @@ impl TokenService {
         expires_in_days: Option<i64>,
         is_global: bool,
     ) -> Result<(ApiToken, String), ServiceError> {
-        caller.require_global("manage API tokens")?;
+        caller.authorize_global("manage API tokens")?;
 
         let name = normalize_token_name(name)?;
         validate_token_description(description)?;
@@ -82,7 +82,7 @@ impl TokenService {
         caller: &Caller,
         page: PageFilter,
     ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
-        caller.require_global("manage API tokens")?;
+        caller.authorize_global("manage API tokens")?;
 
         let tokens = RepositoryService::list_api_tokens().await?;
         PaginatedResponse::from_collection(
@@ -130,7 +130,7 @@ impl TokenService {
     /// Delete the API token with the given name, returning `NotFound` if it
     /// is absent.
     pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
-        caller.require_global("manage API tokens")?;
+        caller.authorize_global("manage API tokens")?;
 
         let token = Self::lookup_by_name(name).await?;
 

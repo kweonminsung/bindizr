@@ -56,7 +56,7 @@ pub(crate) async fn check_listen_ports(config: &BindizrConfig, report: &mut Repo
         let _udp = UdpSocket::bind(dns).await?;
         Ok::<(), io::Error>(())
     };
-    report_port(
+    check_port(
         report,
         "DNS",
         dns,
@@ -66,11 +66,11 @@ pub(crate) async fn check_listen_ports(config: &BindizrConfig, report: &mut Repo
 
     let api = SocketAddr::new(config.api.listen_addr, config.api.listen_port);
     let bound = TcpListener::bind(api).await.map(|_| ());
-    report_port(report, "API", api, bound, "change api.listen_port");
+    check_port(report, "API", api, bound, "change api.listen_port");
 }
 
-/// Report one listen address by its bind result; a taken port carries `in_use_hint`.
-fn report_port(
+/// Check one listen address by its bind result; a taken port carries `in_use_hint`.
+fn check_port(
     report: &mut Report,
     label: &str,
     addr: SocketAddr,

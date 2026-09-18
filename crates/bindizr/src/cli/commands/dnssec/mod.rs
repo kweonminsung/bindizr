@@ -126,7 +126,7 @@ pub(crate) enum DnssecCommand {
 #[derive(Subcommand, Debug)]
 pub(crate) enum DnssecRolloverCommand {
     /// Publish a replacement key with the same algorithm. After the publish
-    /// wait, maintenance promotes ZSKs automatically and CSK/KSKs once the
+    /// wait, the scheduler promotes ZSKs automatically and CSK/KSKs once the
     /// parent serves their DS; `ds-seen` requests that confirmation manually
     Start {
         /// The name of the zone

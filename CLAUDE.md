@@ -58,7 +58,7 @@ cargo +nightly fmt                                         # format (needs night
 
 - **Authorization is the service's.** Every service operation a front end can
   reach takes a `Caller` first and gates itself; a transport never calls
-  `require_global` on its own. The daemon socket passes `Caller::Global`.
+  `authorize_global` on its own. The daemon socket passes `Caller::Global`.
   Service-internal lookups that must skip visibility are `pub(crate)` under
   their own name (`ZoneService::lookup_by_name`). DNS-plane operations
   (transfers, NOTIFY, nsupdate) take no caller — ACL and TSIG authorize there.

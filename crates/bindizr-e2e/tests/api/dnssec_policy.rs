@@ -82,7 +82,7 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(policy["algorithm"], "ed25519");
 
     // A refresh window at least as long as the validity would re-sign on
-    // every maintenance pass.
+    // every scheduler pass.
     let (status, body) = app
         .send_request(
             Method::PUT,

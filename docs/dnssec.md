@@ -4,7 +4,7 @@ bindizr signs zones itself: enabling DNSSEC generates the zone's key(s),
 derives the `DNSKEY`, `CDS`/`CDNSKEY`, denial-of-existence, and `RRSIG`
 records, and serves them over the same AXFR/IXFR path — secondaries need
 **no configuration changes**. Every record change re-signs exactly what
-changed in the same transaction, and a maintenance pass — hourly by default,
+changed in the same transaction, and a scheduler pass — hourly by default,
 set by `dns.scheduler_interval_secs` — renews signatures before they expire
 and carries key rollovers through, asking the parent about the DS when one is
 waiting on it.
@@ -55,7 +55,7 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
 The algorithm, denial mode, and key layout are fixed once a policy exists
 (move a zone to another policy to change them);
 the timing fields can be edited in place and apply to every zone under the
-policy from its next signing pass or maintenance scan. A policy in use
+policy from its next signing pass or scheduler scan. A policy in use
 cannot be deleted, and neither can `default`: edit it to change the
 installation's defaults.
 
@@ -171,11 +171,11 @@ replaced with one of the new algorithm and the zone is double-signed — both
 algorithms cover all data — until the old keys leave together after
 `ds-seen`.
 
-## Signature maintenance
+## Signature refresh
 
 Signatures are valid for the policy's `signature_validity_days` (default 14)
 and renewed once fewer than `signature_refresh_days` (default 5) remain; the
-maintenance pass handles this with no operator action. Every instance runs the
+scheduler pass handles this with no operator action. Every instance runs the
 whole pass, so a deployment of several can set
 `dns.scheduler_interval_secs = 0` on all but one — at least one must keep
 it, or signatures expire. `bindizr dnssec
@@ -185,7 +185,7 @@ doubted.
 To give some zones different timing, create a policy with the values you
 want and move them to it with `dnssec set --policy`; editing a policy
 with `dnssec-policy update` changes every zone under it from the next
-signing pass or maintenance scan. `dnssec status` reports the zone's
+signing pass or scheduler scan. `dnssec status` reports the zone's
 policy and its values.
 
 ## Key import and export

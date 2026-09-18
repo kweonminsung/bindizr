@@ -41,7 +41,7 @@ pub struct CreateDnssecPolicyRequest {
 }
 
 /// Request body for editing a DNSSEC policy's timing; an omitted field keeps
-/// its value. Takes effect on the next signing pass or maintenance scan.
+/// its value. Takes effect on the next signing pass or scheduler scan.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateDnssecPolicyRequest {

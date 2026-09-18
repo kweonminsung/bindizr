@@ -106,7 +106,7 @@ impl ZoneService {
             let zone =
                 ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
                     .await?;
-            caller.ensure_zone_unrestricted(&zone)?;
+            caller.authorize_zone_unrestricted(&zone)?;
             let version = RepositoryService::get_zone_version_by_serial_tx(
                 &mut tx,
                 zone.id,
@@ -150,7 +150,7 @@ impl ZoneService {
             let zone =
                 ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
                     .await?;
-            caller.ensure_zone_unrestricted(&zone)?;
+            caller.authorize_zone_unrestricted(&zone)?;
             let to_serial = to_serial.unwrap_or(zone.serial);
 
             Self::validate_serial_diffable_tx(&mut tx, &zone, from_serial).await?;
@@ -182,7 +182,7 @@ impl ZoneService {
         target_serial: i32,
         dry_run: bool,
     ) -> Result<RollbackZoneResponse, ServiceError> {
-        caller.require_global("roll back zones")?;
+        caller.authorize_global("roll back zones")?;
 
         let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_tx("Failed to roll back zone").await?;

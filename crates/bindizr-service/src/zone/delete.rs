@@ -7,7 +7,7 @@ use crate::{authorization::Caller, error::ServiceError, repository::RepositorySe
 impl ZoneService {
     /// Delete a zone by name and NOTIFY the catalog zone after commit.
     pub async fn delete(caller: &Caller, zone_name: &str) -> Result<(), ServiceError> {
-        caller.require_global("delete zones")?;
+        caller.authorize_global("delete zones")?;
 
         let mut tx = RepositoryService::begin_tx("Failed to delete zone").await?;
 

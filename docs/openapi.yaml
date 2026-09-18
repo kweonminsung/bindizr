@@ -164,7 +164,7 @@ paths:
       tags:
       - DNSSEC
       summary: Edit a DNSSEC policy's timing
-      description: 'Edits the policy''s signature validity, re-sign threshold, and scheduled ZSK lifetime; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or maintenance scan.'
+      description: 'Edits the policy''s signature validity, re-sign threshold, and scheduled ZSK lifetime; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or scheduler scan.'
       operationId: update_dnssec_policy
       parameters:
       - name: name
@@ -2475,7 +2475,7 @@ paths:
       tags:
       - DNSSEC
       summary: Confirm the new DS is at the parent (ds-seen)
-      description: Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The maintenance scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.
+      description: Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.
       operationId: ds_seen_dnssec_rollover
       parameters:
       - name: name
@@ -4884,7 +4884,7 @@ components:
                 type: string
                 description: |-
                   Which plane asked for this version: `token`, `nsupdate`, `system`
-                  (the DNSSEC maintenance scheduler), or `local` (the daemon socket, or
+                  (the DNSSEC scheduler), or `local` (the daemon socket, or
                   any request while authentication is disabled).
                 example: token
               changed_by:
@@ -5224,7 +5224,7 @@ components:
       type: object
       description: |-
         Request body for editing a DNSSEC policy's timing; an omitted field keeps
-        its value. Takes effect on the next signing pass or maintenance scan.
+        its value. Takes effect on the next signing pass or scheduler scan.
       properties:
         signature_refresh_days:
           type:
@@ -5503,7 +5503,7 @@ components:
           type: string
           description: |-
             Which plane asked for this version: `token`, `nsupdate`, `system`
-            (the DNSSEC maintenance scheduler), or `local` (the daemon socket, or
+            (the DNSSEC scheduler), or `local` (the daemon socket, or
             any request while authentication is disabled).
           example: token
         changed_by:

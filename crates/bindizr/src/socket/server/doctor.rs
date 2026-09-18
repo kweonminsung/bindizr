@@ -89,7 +89,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         .collect();
 
     // Actively test NOTIFY delivery; this can prompt secondaries to transfer the catalog.
-    let notifies = notify::notify_secondaries(CATALOG_ZONE_NAME)
+    let notifies = notify::send_notify_to_secondaries(CATALOG_ZONE_NAME)
         .await
         .map_err(ServiceError::internal)?
         .into_iter()

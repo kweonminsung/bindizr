@@ -1,4 +1,4 @@
-//! The periodic maintenance task: journal retention, signature refresh, and
+//! The periodic scheduler pass: journal retention, signature refresh, and
 //! the rollover steps that advance on deadlines rather than operator action.
 
 mod steps;
@@ -7,13 +7,13 @@ use std::sync::OnceLock;
 
 use bindizr_core::{
     config::bindizr_config,
-    metrics::{MaintenanceResult, track_dnssec_maintenance, track_pruned_rows},
+    metrics::{SchedulerResult, track_dnssec_scheduler, track_pruned_rows},
 };
 use chrono::{Duration, Utc};
 
 use self::steps::{
-    promote_sep_keys_by_zone_id, promote_zsks_by_zone_id, prune_zone_history_by_zone_id,
-    remove_retired_keys_by_zone_id, resign_zone_by_zone_id, start_zsk_rollover_by_zone_id,
+    promote_sep_keys_by_zone_id, promote_zsks_by_zone_id, prune_retired_keys_by_zone_id,
+    prune_zone_history_by_zone_id, resign_zone_by_zone_id, start_zsk_rollover_by_zone_id,
 };
 use super::notify_zone;
 use crate::{
@@ -21,24 +21,24 @@ use crate::{
     repository::RepositoryService,
 };
 
-static MAINTENANCE_SCHEDULER: OnceLock<()> = OnceLock::new();
+static SCHEDULER: OnceLock<()> = OnceLock::new();
 
-/// Start the periodic maintenance task. Called once from the daemon after
-/// the database is initialized; later calls are no-ops. A zero
+/// Start the periodic scheduler. Called once from the daemon after the
+/// database is initialized; later calls are no-ops. A zero
 /// `dns.scheduler_interval_secs` leaves this instance without one.
-pub fn init_maintenance_scheduler() {
+pub fn initialize_scheduler() {
     let interval_secs = bindizr_config().dns.scheduler_interval_secs;
     if interval_secs == 0 {
-        log::info!("Maintenance scheduler disabled by dns.scheduler_interval_secs = 0");
+        log::info!("Scheduler disabled by dns.scheduler_interval_secs = 0");
         return;
     }
-    if MAINTENANCE_SCHEDULER.set(()).is_err() {
+    if SCHEDULER.set(()).is_err() {
         return;
     }
 
     tokio::spawn(async move {
         let mut period = interval_secs;
-        let mut interval = maintenance_interval(period);
+        let mut interval = scheduler_interval(period);
         loop {
             interval.tick().await;
             // A reload can change the period, or stand this instance down.
@@ -48,20 +48,20 @@ pub fn init_maintenance_scheduler() {
             }
             if configured != period {
                 period = configured;
-                interval = maintenance_interval(period);
+                interval = scheduler_interval(period);
                 continue;
             }
             // A panic in the pass would otherwise unwind the scheduler itself.
-            if let Err(e) = tokio::spawn(run_maintenance_pass()).await {
-                log::error!("DNSSEC maintenance pass did not finish: {}", e);
-                track_dnssec_maintenance(MaintenanceResult::Panic);
+            if let Err(e) = tokio::spawn(run_scheduler_pass()).await {
+                log::error!("DNSSEC scheduler pass did not finish: {}", e);
+                track_dnssec_scheduler(SchedulerResult::Panic);
             }
         }
     });
 }
 
-/// Create the configured DNSSEC maintenance timer.
-fn maintenance_interval(period_secs: u64) -> tokio::time::Interval {
+/// Create the configured scheduler timer.
+fn scheduler_interval(period_secs: u64) -> tokio::time::Interval {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(period_secs));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     interval
@@ -69,7 +69,7 @@ fn maintenance_interval(period_secs: u64) -> tokio::time::Interval {
 
 /// One scheduler pass: journal retention, signature refresh, and rollover
 /// advancement. Failures are logged, never fatal.
-async fn run_maintenance_pass() {
+async fn run_scheduler_pass() {
     let config = bindizr_config();
     let mut failed = false;
 
@@ -243,7 +243,7 @@ async fn run_maintenance_pass() {
             let mut zone_ids: Vec<i32> = keys.iter().map(|key| key.zone_id).collect();
             zone_ids.dedup();
             for zone_id in zone_ids {
-                match remove_retired_keys_by_zone_id(zone_id).await {
+                match prune_retired_keys_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Removed retired DNSSEC key(s) for zone {}", zone_name);
                         notify_zone(&zone_name).await;
@@ -262,9 +262,9 @@ async fn run_maintenance_pass() {
         }
     }
 
-    track_dnssec_maintenance(if failed {
-        MaintenanceResult::Error
+    track_dnssec_scheduler(if failed {
+        SchedulerResult::Error
     } else {
-        MaintenanceResult::Ok
+        SchedulerResult::Ok
     });
 }

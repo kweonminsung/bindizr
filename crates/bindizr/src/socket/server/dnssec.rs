@@ -77,7 +77,7 @@ pub(crate) async fn start_dnssec_rollover(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RolloverZoneDnssecParams = parse_params(data)?;
 
-    let status = DnssecService::rollover_start(
+    let status = DnssecService::start_rollover(
         &Caller::Global,
         &params.zone_name,
         params.request.role.as_deref(),
@@ -96,7 +96,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DsSeenZoneDnssecParams = parse_params(data)?;
 
-    let status = DnssecService::rollover_ds_seen(
+    let status = DnssecService::advance_rollover(
         &Caller::Global,
         &params.zone_name,
         params.skip_ds_check,
@@ -179,7 +179,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    let status = DnssecService::withdraw_cancel(&Caller::Global, &params.name).await?;
+    let status = DnssecService::cancel_withdrawal(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
         message: "DS withdrawal cancelled successfully".to_string(),

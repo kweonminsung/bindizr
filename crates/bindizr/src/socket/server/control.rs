@@ -14,7 +14,7 @@ pub(crate) enum DaemonControl {
 static CONTROL_TX: OnceLock<mpsc::Sender<DaemonControl>> = OnceLock::new();
 
 /// Create the control channel; the daemon main loop awaits the receiver.
-pub(crate) fn init() -> mpsc::Receiver<DaemonControl> {
+pub(crate) fn initialize() -> mpsc::Receiver<DaemonControl> {
     let (tx, rx) = mpsc::channel(1);
     let _ = CONTROL_TX.set(tx);
     rx

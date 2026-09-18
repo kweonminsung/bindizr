@@ -39,7 +39,7 @@ impl TsigGrantService {
         record_types: Option<&str>,
         can_write: bool,
     ) -> Result<TsigGrantWithNames, ServiceError> {
-        caller.require_global("manage TSIG keys and grants")?;
+        caller.authorize_global("manage TSIG keys and grants")?;
 
         let key = TsigKeyService::lookup_by_name(key_name).await?;
         if key.is_global {
@@ -77,7 +77,7 @@ impl TsigGrantService {
         key_name: &str,
         page: PageFilter,
     ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
-        caller.require_global("manage TSIG keys and grants")?;
+        caller.authorize_global("manage TSIG keys and grants")?;
 
         let key = TsigKeyService::lookup_by_name(key_name).await?;
         let grants = RepositoryService::list_tsig_grants_by_key_id(key.id).await?;
@@ -110,7 +110,7 @@ impl TsigGrantService {
         zone_name: &str,
         page: PageFilter,
     ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
-        caller.require_global("manage TSIG keys and grants")?;
+        caller.authorize_global("manage TSIG keys and grants")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
         let grants = RepositoryService::list_tsig_grants_by_zone_id(zone.id).await?;
@@ -168,7 +168,7 @@ impl TsigGrantService {
         key_name: &str,
         grant_id: i32,
     ) -> Result<(), ServiceError> {
-        caller.require_global("manage TSIG keys and grants")?;
+        caller.authorize_global("manage TSIG keys and grants")?;
 
         let key = TsigKeyService::lookup_by_name(key_name).await?;
         let grant = RepositoryService::get_tsig_grant(grant_id)
@@ -181,7 +181,7 @@ impl TsigGrantService {
 
     /// Revoke a grant by its id, which identifies the row on its own.
     pub async fn revoke_by_id(caller: &Caller, grant_id: i32) -> Result<(), ServiceError> {
-        caller.require_global("manage TSIG keys and grants")?;
+        caller.authorize_global("manage TSIG keys and grants")?;
 
         let grant = RepositoryService::get_tsig_grant(grant_id)
             .await?

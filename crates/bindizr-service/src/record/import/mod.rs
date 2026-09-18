@@ -66,7 +66,7 @@ impl RecordService {
         zone_name: &str,
         request: &ImportZoneRequest,
     ) -> Result<ImportZoneResponse, ServiceError> {
-        caller.require_global("import zone files")?;
+        caller.authorize_global("import zone files")?;
 
         let content: Cow<'_, str> = match (&request.content, &request.from_server) {
             (Some(content), None) => Cow::Borrowed(content.as_str()),

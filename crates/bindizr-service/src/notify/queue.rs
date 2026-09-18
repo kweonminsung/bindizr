@@ -30,7 +30,7 @@ static NOTIFY_STOP: OnceLock<watch::Sender<bool>> = OnceLock::new();
 /// Spawn the background worker that drains queued NOTIFYs, handing back its
 /// task so the daemon can wait for it. First call wins; later calls are
 /// no-ops. Without it, writes fall back to sending inline.
-pub fn init_notify_worker() -> Option<JoinHandle<()>> {
+pub fn initialize_worker() -> Option<JoinHandle<()>> {
     let (tx, mut rx) = unbounded_channel::<NotifyJob>();
     if NOTIFY_QUEUE.set(tx).is_err() {
         return None;
@@ -88,7 +88,7 @@ pub fn init_notify_worker() -> Option<JoinHandle<()>> {
 }
 
 /// Ask the worker to send what it holds and finish.
-pub fn stop_notify_worker() {
+pub fn stop_worker() {
     if let Some(stop) = NOTIFY_STOP.get() {
         let _ = stop.send(true);
     }

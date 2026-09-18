@@ -35,7 +35,7 @@ impl DnssecPolicyService {
         caller: &Caller,
         request: CreateDnssecPolicyRequest,
     ) -> Result<DnssecPolicy, ServiceError> {
-        caller.require_global("manage DNSSEC policies")?;
+        caller.authorize_global("manage DNSSEC policies")?;
 
         let name = normalize_policy_name(&request.name)?;
         let algorithm = match request.algorithm.as_deref() {
@@ -88,7 +88,7 @@ impl DnssecPolicyService {
         caller: &Caller,
         page: PageFilter,
     ) -> Result<PaginatedResponse<GetDnssecPolicyResponse>, ServiceError> {
-        caller.require_global("manage DNSSEC policies")?;
+        caller.authorize_global("manage DNSSEC policies")?;
 
         let policies = RepositoryService::list_dnssec_policies().await?;
         PaginatedResponse::from_collection(
@@ -103,7 +103,7 @@ impl DnssecPolicyService {
 
     /// Load a named DNSSEC policy for an authorized caller.
     pub async fn get(caller: &Caller, name: &str) -> Result<DnssecPolicy, ServiceError> {
-        caller.require_global("manage DNSSEC policies")?;
+        caller.authorize_global("manage DNSSEC policies")?;
 
         Self::lookup_by_name(name).await
     }
@@ -119,13 +119,13 @@ impl DnssecPolicyService {
 
     /// Edit the policy's timing fields; the key layout, algorithm, and
     /// denial mode are fixed at creation. Zones under the policy pick the
-    /// new values up on their next signing pass or maintenance scan.
+    /// new values up on their next signing pass or scheduler scan.
     pub async fn update(
         caller: &Caller,
         name: &str,
         request: UpdateDnssecPolicyRequest,
     ) -> Result<DnssecPolicy, ServiceError> {
-        caller.require_global("manage DNSSEC policies")?;
+        caller.authorize_global("manage DNSSEC policies")?;
         let name = normalize_policy_name(name)?;
 
         // Read and write under the row lock, or two partial updates would
@@ -172,7 +172,7 @@ impl DnssecPolicyService {
     /// Delete a policy by name; refused for the built-in `default` and while
     /// any zone signs under it.
     pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
-        caller.require_global("manage DNSSEC policies")?;
+        caller.authorize_global("manage DNSSEC policies")?;
 
         let policy = Self::lookup_by_name(name).await?;
         // `enable` and `keys import` fall back to it by name.
@@ -221,7 +221,7 @@ pub(crate) fn normalize_policy_name(value: &str) -> Result<String, ServiceError>
 
 /// Validate signature validity, refresh, and key lifetime settings.
 ///
-/// The refresh window must be shorter than validity, or every maintenance pass would re-sign
+/// The refresh window must be shorter than validity, or every scheduler pass would re-sign
 /// the zone.
 fn validate_timing(
     signature_validity_days: u32,

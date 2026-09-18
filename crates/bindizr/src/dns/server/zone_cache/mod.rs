@@ -134,7 +134,7 @@ fn find_cached_content(zone_id: i32, serial: i32) -> Option<CachedTransferConten
     if evicted > 0 {
         track_zone_cache_store(cache.records, evicted);
     }
-    let content = cache.lookup(zone_id, serial);
+    let content = cache.find(zone_id, serial);
     drop(cache);
     track_zone_cache_lookup(content.is_some());
     content
@@ -168,7 +168,7 @@ impl Cache {
     }
 
     /// Find cached zone content matching the requested serial.
-    fn lookup(&mut self, zone_id: i32, serial: i32) -> Option<CachedTransferContent> {
+    fn find(&mut self, zone_id: i32, serial: i32) -> Option<CachedTransferContent> {
         let entry = self
             .zones
             .get_mut(&zone_id)
@@ -186,7 +186,7 @@ impl Cache {
         max_records: usize,
     ) -> usize {
         // Before the size check: a zone that grew past the budget must release
-        // its old serial, which no lookup can satisfy any more.
+        // its old serial, which no read can match any more.
         self.remove(zone_id);
 
         let records = content.record_count();

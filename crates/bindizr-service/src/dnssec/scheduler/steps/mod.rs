@@ -1,4 +1,4 @@
-//! What one maintenance step does to one zone: the transaction each scan's
+//! What one scheduler step does to one zone: the transaction each scan's
 //! zone ids are handed to, and the journal retention that runs beside them.
 
 use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
@@ -264,9 +264,9 @@ fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<i32> {
         .collect()
 }
 
-/// Remove a zone's hold-down-expired retired keys in its own transaction.
+/// Prune a zone's hold-down-expired retired keys in its own transaction.
 /// `None` when nothing was removable, or when removing would leave no key.
-pub(crate) async fn remove_retired_keys_by_zone_id(
+pub(crate) async fn prune_retired_keys_by_zone_id(
     zone_id: i32,
 ) -> Result<Option<String>, ServiceError> {
     let mut tx = RepositoryService::begin_tx("failed to remove retired keys").await?;

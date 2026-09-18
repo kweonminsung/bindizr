@@ -29,7 +29,7 @@ pub(crate) fn reload_config() -> Result<Vec<String>, String> {
     logger::set_format(config.logging.format);
     // A no-op unless this instance had no scheduler, which a zero interval
     // leaves it without.
-    service::dnssec::init_maintenance_scheduler();
+    service::dnssec::initialize_scheduler();
     Ok(changed)
 }
 
@@ -52,7 +52,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     let (socket_path, socket_listener) = socket::server::bind().await?;
     log::info!("Daemon socket server listening on {}", socket_path);
 
-    let notify_task = service::notify::init_notify_worker();
+    let notify_task = service::notify::initialize_worker();
 
     database::initialize().await.map_err(|e| e.to_string())?;
 
@@ -104,7 +104,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
         }
     }
 
-    service::dnssec::init_maintenance_scheduler();
+    service::dnssec::initialize_scheduler();
 
     // DNS must be listening before startup NOTIFY can prompt secondary transfers.
     let shutdown = Shutdown::new();
@@ -117,7 +117,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
         }
     }
 
-    let mut control_rx = socket::server::control::init();
+    let mut control_rx = socket::server::control::initialize();
     let mut socket_task = socket::server::serve(socket_listener, &shutdown);
     let mut api_task = api::initialize(&shutdown).await?;
 
@@ -218,7 +218,7 @@ async fn drain(
     notify_task: Option<tokio::task::JoinHandle<()>>,
 ) {
     shutdown.trigger();
-    service::notify::stop_notify_worker();
+    service::notify::stop_worker();
 
     let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
         let _ = tokio::join!(socket_task, api_task);

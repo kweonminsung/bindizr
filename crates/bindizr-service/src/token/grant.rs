@@ -36,7 +36,7 @@ impl TokenGrantService {
         record_types: Option<&str>,
         can_write: bool,
     ) -> Result<TokenGrantWithNames, ServiceError> {
-        caller.require_global("manage token grants")?;
+        caller.authorize_global("manage token grants")?;
 
         let token = TokenService::lookup_by_name(token_name).await?;
         if token.is_global {
@@ -74,7 +74,7 @@ impl TokenGrantService {
         token_name: &str,
         page: PageFilter,
     ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
-        caller.require_global("manage token grants")?;
+        caller.authorize_global("manage token grants")?;
 
         let token = TokenService::lookup_by_name(token_name).await?;
         Self::list_self(&token, page).await
@@ -121,7 +121,7 @@ impl TokenGrantService {
         zone_name: &str,
         page: PageFilter,
     ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
-        caller.require_global("manage token grants")?;
+        caller.authorize_global("manage token grants")?;
 
         let zone = ZoneService::lookup_by_name(zone_name).await?;
         let grants = RepositoryService::list_token_grants_by_zone_id(zone.id).await?;
@@ -158,7 +158,7 @@ impl TokenGrantService {
         token_name: &str,
         grant_id: i32,
     ) -> Result<(), ServiceError> {
-        caller.require_global("manage token grants")?;
+        caller.authorize_global("manage token grants")?;
 
         let token = TokenService::lookup_by_name(token_name).await?;
         let grant = RepositoryService::get_token_grant(grant_id)
@@ -171,7 +171,7 @@ impl TokenGrantService {
 
     /// Revoke a grant by its id, which identifies the row on its own.
     pub async fn revoke_by_id(caller: &Caller, grant_id: i32) -> Result<(), ServiceError> {
-        caller.require_global("manage token grants")?;
+        caller.authorize_global("manage token grants")?;
 
         let grant = RepositoryService::get_token_grant(grant_id)
             .await?

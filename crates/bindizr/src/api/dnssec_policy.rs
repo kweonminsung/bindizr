@@ -132,7 +132,7 @@ pub(crate) async fn get_dnssec_policy(
         path = "/dnssec-policies/{name}",
         tag = "DNSSEC",
         summary = "Edit a DNSSEC policy's timing",
-        description = "Edits the policy's signature validity, re-sign threshold, and scheduled ZSK lifetime; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or maintenance scan.",
+        description = "Edits the policy's signature validity, re-sign threshold, and scheduled ZSK lifetime; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or scheduler scan.",
         params(
             ("name" = String, Path, description = "The name of the DNSSEC policy.")
         ),

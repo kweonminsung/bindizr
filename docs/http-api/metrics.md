@@ -29,7 +29,7 @@ $ curl http://localhost:3000/metrics
 | `bindizr_dnssec_keys_total{state}` | gauge | DNSSEC keys by state (`published`/`active`/`retired`) |
 | `bindizr_dnssec_rrsigs_expiring_total` | gauge | Signatures inside the refresh window; persisting across scrapes means re-signing is falling behind |
 | `bindizr_dnssec_rrsigs_expired_total` | gauge | Signatures already past their expiration; any at all mean resolvers are failing part of a zone |
-| `bindizr_dnssec_maintenance_runs_total{result}` | counter | Hourly DNSSEC maintenance passes, by outcome |
+| `bindizr_dnssec_scheduler_runs_total{result}` | counter | Hourly DNSSEC scheduler passes, by outcome |
 | `bindizr_zone_cache_lookups_total{result}` | counter | Transfer-cache reads by outcome; a low hit ratio means transfers reach the database anyway |
 | `bindizr_zone_cache_evictions_total` | counter | Zones dropped to make room; rising beside a low hit ratio means `dns.transfer_cache.max_records` is too small |
 | `bindizr_zone_cache_records` | gauge | Records the transfer cache holds, against `dns.transfer_cache.max_records` |

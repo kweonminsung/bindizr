@@ -63,7 +63,7 @@ fn rrset(name: &str, record_type: &str, ttl: Option<i32>, values: &[&str]) -> Ex
 
 /// Verify that find authoritative zone picks most specific match.
 #[test]
-fn find_authoritative_zone_picks_most_specific_match() {
+fn authoritative_zone_picks_most_specific_match() {
     let zones = vec![
         test_zone(1, "example.com"),
         test_zone(2, "internal.example.com"),
@@ -85,7 +85,7 @@ fn find_authoritative_zone_picks_most_specific_match() {
 
 /// Verify that `authoritative_zone` requires label boundary.
 #[test]
-fn find_authoritative_zone_requires_label_boundary() {
+fn authoritative_zone_requires_label_boundary() {
     let zones = vec![test_zone(1, "example.com")];
 
     assert!(authoritative_zone(&zones, "notexample.com").is_none());

@@ -19,7 +19,7 @@ impl ZoneService {
         caller: &Caller,
         create_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
-        caller.require_global("create zones")?;
+        caller.authorize_global("create zones")?;
 
         // Parent/child zones are allowed; only the same normalized zone name is rejected.
         // Names are stored normalized, so an exact lookup is enough to detect a collision.
@@ -70,7 +70,7 @@ impl ZoneService {
         caller: &Caller,
         create_zone_request: &CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
-        caller.require_global("create zones")?;
+        caller.authorize_global("create zones")?;
 
         let validated = normalize_create_zone_request(create_zone_request)?;
         let defaults = &bindizr_config().dns.zone_defaults;

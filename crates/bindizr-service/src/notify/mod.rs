@@ -4,7 +4,7 @@
 mod queue;
 
 use bindizr_core::config;
-pub use queue::{init_notify_worker, stop_notify_worker};
+pub use queue::{initialize_worker, stop_worker};
 
 /// Send a DNS NOTIFY for `zone_name`, or — with `None` — for every zone,
 /// aggregating per-zone failures.
