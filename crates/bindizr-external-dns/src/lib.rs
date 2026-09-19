@@ -16,6 +16,7 @@ use clap::Parser;
 use tokio::{
     signal::unix::{SignalKind, signal},
     sync::watch,
+    task::{JoinError, JoinHandle, JoinSet},
 };
 
 /// How long in-flight requests get once the adapter is asked to stop, bounded
@@ -25,6 +26,16 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 /// The configuration is unusable, so a restart changes nothing — the code
 /// bindizr's own CLI uses for that class.
 const EXIT_CONFIG: i32 = 6;
+
+/// The listeners the adapter supervises, each yielding the name it is reported
+/// under and how it ended. `join_next` removes a finished task, so the select
+/// and the drain never await the same handle twice.
+type Servers = JoinSet<(&'static str, Result<std::io::Result<()>, JoinError>)>;
+
+/// Put a spawned listener under the adapter's supervision.
+fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<std::io::Result<()>>) {
+    servers.spawn(async move { (name, task.await) });
+}
 
 /// Parse arguments, start both listeners, and serve until interrupted.
 pub async fn execute() {
@@ -89,12 +100,12 @@ pub async fn execute() {
         .with_graceful_shutdown(wait_for_stop(stop.subscribe()));
     let health = axum::serve(health_listener, server::health_router(state))
         .with_graceful_shutdown(wait_for_stop(stop.subscribe()));
-    let mut webhook = tokio::spawn(webhook.into_future());
-    let mut health = tokio::spawn(health.into_future());
+    let mut servers = Servers::new();
+    watch(&mut servers, "Webhook", tokio::spawn(webhook.into_future()));
+    watch(&mut servers, "Health", tokio::spawn(health.into_future()));
 
     tokio::select! {
-        result = &mut webhook => log_server_stopped("Webhook", result),
-        result = &mut health => log_server_stopped("Health", result),
+        Some(Ok((name, result))) = servers.join_next() => log_server_stopped(name, result),
         () = wait_for_signal() => log::info!("Shutting down"),
     }
 
@@ -102,7 +113,7 @@ pub async fn execute() {
     // leaves it unable to tell an applied change from a dropped one.
     let _ = stop.send(true);
     let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
-        let _ = tokio::join!(webhook, health);
+        while servers.join_next().await.is_some() {}
     })
     .await;
     if drained.is_err() {
