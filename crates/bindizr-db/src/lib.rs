@@ -39,7 +39,7 @@ pub(crate) enum DatabaseType {
 /// Build the global database pool from configuration; the daemon calls this
 /// once. Returns whether this startup created the schema, which is what tells
 /// a first install from a restart.
-pub async fn initialize() -> Result<bool, DatabaseError> {
+pub async fn initialize() -> Result<(), DatabaseError> {
     let bindizr_config = config::bindizr_config();
 
     let database_type = match bindizr_config.database.database_type {
@@ -70,22 +70,13 @@ pub async fn initialize() -> Result<bool, DatabaseError> {
         .set(connected)
         .map_err(|_| DatabaseError::PoolError("database pool initialized twice".to_string()))?;
 
-    let fresh = !pool()
-        .schema_exists()
+    pool()
+        .create_tables()
         .await
         .map_err(DatabaseError::QueryFailed)?;
 
     log::info!("Database pool initialized");
-    Ok(fresh)
-}
-
-/// Create the application schema. Separate from the connection so a caller can
-/// act on a first install before anything is written.
-pub async fn create_schema() -> Result<(), DatabaseError> {
-    pool()
-        .create_tables()
-        .await
-        .map_err(DatabaseError::QueryFailed)
+    Ok(())
 }
 
 /// Connect once and run a trivial query, creating neither tables nor the
@@ -283,32 +274,6 @@ impl DatabasePool {
             .map_err(|e| DatabaseError::PoolError(sqlite_connect_error(&e)))?;
 
         Ok(DatabasePool::SQLite(pool))
-    }
-
-    /// Whether the application schema is already there. The creation
-    /// statements are idempotent, so only this tells a first install from a
-    /// restart.
-    async fn schema_exists(&self) -> Result<bool, String> {
-        let found = match self {
-            DatabasePool::MySQL(pool) => sqlx::query(schema::mysql::schema_presence_query())
-                .fetch_optional(pool)
-                .await
-                .map(|row| row.is_some())
-                .map_err(|e| e.to_string()),
-            DatabasePool::PostgreSQL(pool) => {
-                sqlx::query(schema::postgres::schema_presence_query())
-                    .fetch_optional(pool)
-                    .await
-                    .map(|row| row.is_some())
-                    .map_err(|e| e.to_string())
-            }
-            DatabasePool::SQLite(pool) => sqlx::query(schema::sqlite::schema_presence_query())
-                .fetch_optional(pool)
-                .await
-                .map(|row| row.is_some())
-                .map_err(|e| e.to_string()),
-        };
-        found.inspect_err(|e| log::error!("Failed to read the schema: {}", e))
     }
 
     /// Run this backend's creation statements and seed the built-in policy.

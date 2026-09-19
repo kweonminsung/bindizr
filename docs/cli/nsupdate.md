@@ -52,9 +52,9 @@ which may update any zone.
 
 !!! warning "Turning off `tsig_required` covers testing only"
 
-    `dns.nsupdate.tsig_required = false` accepts unsigned requests for every
+    `dns.nsupdate_tsig_required = false` accepts unsigned requests for every
     zone from any client that reaches the DNS listener, as
-    `api.authentication.required = false` does for the HTTP API. Signed
+    `api.authentication_required = false` does for the HTTP API. Signed
     requests are always verified either way.
 
 ## The first key

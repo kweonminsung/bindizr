@@ -7,20 +7,14 @@ Authoritative DNS service:
   {{ include "bindizr-chart.fullname" . }}-bind9:{{ .Values.bind9.service.dnsPort }} ({{ .Values.bind9.service.type }})
 
 BIND9 replicas are exposed for authoritative DNS traffic.
-{{- if include "bindizr-chart.initialTokenEnabled" . }}
-
-The API token to start with, sent as `Authorization: Bearer <token>`:
-
-  kubectl get secret {{ include "bindizr-chart.initialTokenSecretName" . }} -n {{ .Release.Namespace }} -o jsonpath='{.data.{{ .Values.bindizr.api.authentication.initialToken.secretKey }}}' | base64 -d
-
-The same token is in the {{ include "bindizr-chart.initialTokenSecretName" . }} Secret under {{ .Values.bindizr.api.authentication.initialToken.secretKey }}.
-Issue the tokens you hand out with `bindizr token create`.
-{{- else if .Values.bindizr.api.authentication.required }}
+{{- if .Values.bindizr.api.authenticationRequired }}
 
 The API answers 401 until a token exists. Create the first one with:
 
   kubectl exec -n {{ .Release.Namespace }} deploy/{{ include "bindizr-chart.fullname" . }} -c bindizr -- \
     bindizr token create admin --global
+
+Send it as `Authorization: Bearer <token>`; the secret is shown once.
 {{- end }}
 
 Before production use:

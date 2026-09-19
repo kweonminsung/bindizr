@@ -40,8 +40,9 @@ pub struct BindizrConfig {
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
-    #[serde(default)]
-    pub authentication: AuthenticationConfig,
+    /// Require an API token on every request that touches zone data.
+    #[serde(default = "default_authentication_required")]
+    pub authentication_required: bool,
     /// Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
     #[serde(default = "default_metrics_enabled")]
     pub metrics_enabled: bool,
@@ -62,25 +63,14 @@ pub struct ApiConfig {
     pub tls_key_file: Option<String>,
 }
 
-/// Who the API answers: whether a token is required, and the first one.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AuthenticationConfig {
-    pub required: bool,
-    /// File holding the secret of a global token, read only by the startup
-    /// that builds the schema, so revoking the token is final.
-    #[serde(default)]
-    pub initial_token_file: Option<String>,
+/// Return the default nsupdate TSIG requirement.
+fn default_nsupdate_tsig_required() -> bool {
+    true
 }
 
-impl Default for AuthenticationConfig {
-    /// Build the default authentication settings.
-    fn default() -> Self {
-        Self {
-            required: true,
-            initial_token_file: None,
-        }
-    }
+/// Return the default API authentication setting.
+fn default_authentication_required() -> bool {
+    true
 }
 
 /// Return the default metrics enabled setting.
@@ -176,33 +166,15 @@ pub struct DnsConfig {
     /// it off, but not all.
     #[serde(default = "default_scheduler_interval_secs")]
     pub scheduler_interval_secs: u64,
-    #[serde(default)]
-    pub nsupdate: NsupdateConfig,
+    /// Require a TSIG signature on RFC 2136 updates.
+    #[serde(default = "default_nsupdate_tsig_required")]
+    pub nsupdate_tsig_required: bool,
     #[serde(default)]
     pub notify: NotifyConfig,
     #[serde(default)]
     pub transfer_cache: TransferCacheConfig,
     #[serde(default)]
     pub zone_defaults: ZoneDefaultsConfig,
-}
-
-/// Who may send RFC 2136 updates: [`AuthenticationConfig`] for the DNS plane.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct NsupdateConfig {
-    /// Require a TSIG signature; `false` accepts updates from any client, the
-    /// way `api.authentication.required = false` opens the API. Signed
-    /// requests are verified either way.
-    pub tsig_required: bool,
-}
-
-impl Default for NsupdateConfig {
-    /// Build the default nsupdate settings.
-    fn default() -> Self {
-        Self {
-            tsig_required: true,
-        }
-    }
 }
 
 /// When NOTIFY reaches the secondaries.
@@ -517,33 +489,6 @@ pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
         )
     })?;
     BindizrConfig::from_toml(&text, |name| env::var(name).ok())
-}
-
-/// Shortest initial secret accepted; a guessable one would manage every zone.
-const INITIAL_TOKEN_MIN_LEN: usize = 16;
-
-/// Read the secret in `api.authentication.initial_token_file`, trimmed of the
-/// newline a secret manager writes. Everything that can fail on the value
-/// fails here, which the daemon runs before the schema exists.
-pub fn load_initial_token_file(path: &str) -> Result<String, String> {
-    let secret = std::fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read the initial token file '{}': {}", path, e))?;
-    let secret = secret.trim();
-    // Seeding happens once, so a secret an `Authorization` header cannot carry
-    // would lock the deployment out with no second chance to correct it.
-    if secret.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err(format!(
-            "The initial token file '{}' must hold the secret on one line: it travels in an Authorization header, which carries no whitespace",
-            path
-        ));
-    }
-    if secret.len() < INITIAL_TOKEN_MIN_LEN {
-        return Err(format!(
-            "The initial token file '{}' must hold at least {} characters",
-            path, INITIAL_TOKEN_MIN_LEN
-        ));
-    }
-    Ok(secret.to_string())
 }
 
 impl BindizrConfig {

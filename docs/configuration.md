@@ -41,16 +41,12 @@ out; a key bindizr does not know is an error, so `config check` catches a typo.
 [api]
 listen_addr = "127.0.0.1"
 listen_port = 3000
+authentication_required = true # Require an API token; `bindizr token create` makes the first one
 metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
 external_dns_enabled = false  # ExternalDNS provider API at /external-dns
 openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
 # tls_cert_file = "/etc/bindizr/tls/tls.crt"  # Set both to serve HTTPS; without them the API is
 # tls_key_file = "/etc/bindizr/tls/tls.key"   # plain HTTP and its tokens travel in the clear
-
-[api.authentication]
-required = true               # Require an API token
-# initial_token_file = ""     # File holding the first global token's secret (16+ characters), read
-                              # once on a first install. `bindizr token create` is the other way in.
 
 [database]
 type = "sqlite"               # sqlite, mysql, or postgresql
@@ -69,11 +65,9 @@ listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 secondary_addrs = "127.0.0.1:53"  # Comma-separated; they receive NOTIFY and are the only clients
                               # allowed to pull zones. The default is the BIND `setup_bind.sh` installs.
+nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false admits anyone
 # zone_history_retention_days = 365 # Days of history kept for rollback and secondary catch-up (0 = forever)
 # scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
-
-[dns.nsupdate]                # RFC 2136 dynamic updates
-tsig_required = true          # Require a TSIG signature; false accepts updates from anyone (testing only)
 
 [dns.notify]                  # NOTIFY to the secondaries
 after_update = true           # Notify after zone changes
@@ -117,8 +111,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_CONFIG_PATH` | config file path | Falls back to `/etc/bindizr/bindizr.conf.toml` |
 | `BINDIZR_API_LISTEN_ADDR` | `api.listen_addr` | |
 | `BINDIZR_API_LISTEN_PORT` | `api.listen_port` | |
-| `BINDIZR_API_AUTHENTICATION_REQUIRED` | `api.authentication.required` | |
-| `BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN_FILE` | `api.authentication.initial_token_file` | File holding the first global token, for a deployment that cannot run the CLI; read only on a first install |
+| `BINDIZR_API_AUTHENTICATION_REQUIRED` | `api.authentication_required` | |
 | `BINDIZR_API_METRICS_ENABLED` | `api.metrics_enabled` | |
 | `BINDIZR_API_EXTERNAL_DNS_ENABLED` | `api.external_dns_enabled` | See [ExternalDNS](external-dns.md) |
 | `BINDIZR_API_OPENAPI_ENABLED` | `api.openapi_enabled` | Describes the whole API surface; off by default |
@@ -132,7 +125,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_LISTEN_ADDR` | `dns.listen_addr` | |
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
 | `BINDIZR_DNS_SECONDARY_ADDRS` | `dns.secondary_addrs` | |
-| `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate.tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
+| `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate_tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
 | `BINDIZR_DNS_NOTIFY_AFTER_UPDATE` | `dns.notify.after_update` | |

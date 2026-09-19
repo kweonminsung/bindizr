@@ -36,15 +36,12 @@ Create a configuration file at `/etc/bindizr/bindizr.conf.toml`:
 [api]
 listen_addr = "127.0.0.1"
 listen_port = 3000
+authentication_required = true # Require an API token; `bindizr token create` makes the first one
 metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
 external_dns_enabled = false  # ExternalDNS provider API at /external-dns
 openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
 # tls_cert_file = "/etc/bindizr/tls/tls.crt"  # Set both to serve HTTPS; without them the API is
 # tls_key_file = "/etc/bindizr/tls/tls.key"   # plain HTTP and its tokens travel in the clear
-
-[api.authentication]
-required = true               # Require an API token
-# initial_token_file = ""     # File holding the secret of the first global token, read once on a first install
 
 [database]
 type = "sqlite"               # sqlite, mysql, or postgresql
@@ -63,11 +60,9 @@ listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 secondary_addrs = "127.0.0.1:53"  # Comma-separated; they receive NOTIFY and are the only clients
                               # allowed to pull zones. The default is the BIND `setup_bind.sh` installs.
+nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false admits anyone
 # zone_history_retention_days = 365 # Days of history kept for rollback and secondary catch-up (0 = forever)
 # scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
-
-[dns.nsupdate]                # RFC 2136 dynamic updates
-tsig_required = true          # Require a TSIG signature; false accepts updates from anyone (testing only)
 
 [dns.notify]                  # NOTIFY to the secondaries
 after_update = true           # Notify after zone changes

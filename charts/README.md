@@ -73,7 +73,7 @@ helm install bindizr ./charts \
 - Non-secret daemon settings come from the ConfigMap; the database URL comes from its Secret through `BINDIZR_DATABASE_URL`.
 - External MySQL/PostgreSQL is supported through `bindizr.database.existingSecret` or `bindizr.database.url`.
 - SQLite is not supported by this Helm chart.
-- The first API token is generated into a Secret, which the pods mount as a file rather than take from the environment. `bindizr.api.authentication.initialToken` takes an existing Secret or a fixed value instead — which is what a render with no cluster behind it needs — and `enabled: false` turns it off. Only the startup that creates the schema reads it, so a token revoked later stays revoked.
-- nsupdate TSIG keys and their zone grants are managed at runtime: `POST /tsig-keys` with the initial token, or `bindizr tsig-key` in the pod. `bindizr.dns.nsupdate.tsigRequired` (default `true`) accepts unsigned updates when turned off, which is for testing only.
+- The chart seeds no API token. With authentication on, the API answers `401` until `bindizr token create admin --global` is run in the pod, which the install notes print.
+- nsupdate TSIG keys and their zone grants are managed at runtime: `POST /tsig-keys` with a token, or `bindizr tsig-key` in the pod. `bindizr.dns.nsupdateTsigRequired` (default `true`) accepts unsigned updates when turned off, which is for testing only.
 - BIND9 accepts NOTIFY from any source by default through `allow-notify { any; }`.
 - Bundled MySQL/PostgreSQL are optional single-replica StatefulSets using the configured Docker images and controlled by `mysql.enabled` and `postgresql.enabled`.

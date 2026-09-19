@@ -111,19 +111,15 @@ fn print_config(config: &BindizrConfig) {
     print_section("api");
     print_value("listen_addr", config.api.listen_addr);
     print_value("listen_port", config.api.listen_port);
+    print_value(
+        "authentication_required",
+        config.api.authentication_required,
+    );
     print_value("metrics_enabled", config.api.metrics_enabled);
     print_value("external_dns_enabled", config.api.external_dns_enabled);
     print_value("openapi_enabled", config.api.openapi_enabled);
     print_optional("tls_cert_file", config.api.tls_cert_file.as_deref());
     print_optional("tls_key_file", config.api.tls_key_file.as_deref());
-    outln!();
-
-    print_section("api.authentication");
-    print_value("required", config.api.authentication.required);
-    print_optional(
-        "initial_token_file",
-        config.api.authentication.initial_token_file.as_deref(),
-    );
     outln!();
 
     print_section("database");
@@ -157,7 +153,7 @@ fn print_config(config: &BindizrConfig) {
     outln!();
 
     print_section("dns.nsupdate");
-    print_value("tsig_required", config.dns.nsupdate.tsig_required);
+    print_value("nsupdate_tsig_required", config.dns.nsupdate_tsig_required);
     outln!();
 
     print_section("dns.notify");

@@ -57,37 +57,6 @@ per-pod headless names instead of the load-balanced service. */ -}}
 {{- default (printf "%s-db" (include "bindizr-chart.fullname" .)) .Values.bindizr.database.existingSecret -}}
 {{- end -}}
 
-{{- /* Non-empty while the chart hands bindizr an initial API token; with
-       authentication off the token would do nothing. */ -}}
-{{- define "bindizr-chart.initialTokenEnabled" -}}
-{{- with .Values.bindizr.api.authentication -}}
-{{- if and .required .initialToken.enabled -}}true{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{- /* Choose the secret containing the initial API token. */ -}}
-{{- define "bindizr-chart.initialTokenSecretName" -}}
-{{- default (printf "%s-initial-token" (include "bindizr-chart.fullname" .)) .Values.bindizr.api.authentication.initialToken.existingSecret -}}
-{{- end -}}
-
-{{- /* The initial API token: the value, else the one already created, else a
-       fresh one. A render with no cluster behind it has nothing to look up, so
-       it generates a different token each time. */ -}}
-{{- define "bindizr-chart.initialToken" -}}
-{{- $token := .Values.bindizr.api.authentication.initialToken.value -}}
-{{- if not $token -}}
-{{- $name := include "bindizr-chart.initialTokenSecretName" . -}}
-{{- $existing := lookup "v1" "Secret" .Release.Namespace $name -}}
-{{- $key := .Values.bindizr.api.authentication.initialToken.secretKey -}}
-{{- if and $existing (index $existing.data $key) -}}
-{{- $token = index $existing.data $key | b64dec -}}
-{{- else -}}
-{{- $token = randAlphaNum 32 -}}
-{{- end -}}
-{{- end -}}
-{{- $token -}}
-{{- end -}}
-
 {{- /* Build the name of the bundled MySQL resources. */ -}}
 {{- define "bindizr-chart.mysql.fullname" -}}
 {{- printf "%s-mysql" (include "bindizr-chart.fullname" .) | trunc 63 | trimSuffix "-" -}}

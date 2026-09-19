@@ -2,10 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
-use super::{
-    error::{ErrorCode, ServiceError},
-    repository::RepositoryService,
-};
+use super::{error::ServiceError, repository::RepositoryService};
 use crate::{
     authorization::Caller,
     model::api_token::ApiToken,
@@ -27,9 +24,6 @@ pub(crate) fn hash_token(token: &str) -> String {
     hasher.update(token.as_bytes());
     hex::encode(hasher.finalize())
 }
-
-/// Name the configured initial token is created under.
-const INITIAL_TOKEN_NAME: &str = "initial";
 
 impl TokenService {
     /// Create an API token; the secret comes back beside it, shown this once.
@@ -95,33 +89,6 @@ impl TokenService {
     /// Create `secret` as a global token named `initial`. The daemon calls
     /// this only on the startup that built the schema, so a token revoked
     /// later is never seeded back, and passes a secret the config reader
-    /// validated. Takes no caller: it runs before any front end is up.
-    pub async fn seed_initial(secret: &str) -> Result<bool, ServiceError> {
-        if Self::count_all().await? > 0 {
-            return Ok(false);
-        }
-
-        match RepositoryService::create_api_token(ApiToken {
-            id: 0,
-            name: normalize_token_name(INITIAL_TOKEN_NAME)?,
-            token: hash_token(secret),
-            description: Some("Created from api.authentication.initial_token_file".to_string()),
-            is_global: true,
-            expires_at: None,
-            created_at: Utc::now(),
-            last_used_at: None,
-        })
-        .await
-        {
-            Ok(_) => Ok(true),
-            // Replicas starting together all read an empty table above;
-            // UNIQUE(name) settles which one seeds, and the losers report the
-            // winner's token rather than failing startup over it.
-            Err(e) if e.code == ErrorCode::TokenConflict => Ok(false),
-            Err(e) => Err(e),
-        }
-    }
-
     /// Every API token, for the daemon's startup hint.
     pub async fn count_all() -> Result<u64, ServiceError> {
         Ok(RepositoryService::list_api_tokens().await?.len() as u64)

@@ -126,12 +126,10 @@ fn write_config(
 [api]
 listen_addr = "127.0.0.1"
 listen_port = {api_port}
+authentication_required = {authentication_required}
 external_dns_enabled = {external_dns_enabled}
 openapi_enabled = {openapi_enabled}
 {tls}
-[api.authentication]
-required = {authentication_required}
-{initial_token}
 
 [database]
 type = "sqlite"
@@ -149,9 +147,8 @@ url = ""
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
 secondary_addrs = "{secondary_addrs}"
+nsupdate_tsig_required = {nsupdate_tsig_required}
 
-[dns.nsupdate]
-tsig_required = {nsupdate_tsig_required}
 
 [dns.notify]
 after_update = false
@@ -164,15 +161,6 @@ level = "error"
 "#,
         db_path.display(),
         authentication_required = options.authentication_required,
-        initial_token = match &options.initial_token {
-            Some(secret) => {
-                // The daemon reads the secret from a file, so provision one.
-                let path = config_path.with_file_name("initial-token");
-                std::fs::write(&path, secret).expect("write the initial token file");
-                format!("initial_token_file = \"{}\"", path.display())
-            }
-            None => String::new(),
-        },
         external_dns_enabled = options.external_dns_enabled,
         nsupdate_tsig_required = options.nsupdate_tsig_required,
         openapi_enabled = options.openapi_enabled,

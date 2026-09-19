@@ -1,5 +1,5 @@
 use crate::config::{
-    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogFormat, LogLevel, load_initial_token_file,
+    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogFormat, LogLevel,
     resolve_config_path_with_env,
 };
 
@@ -48,9 +48,7 @@ impl TestConfigToml {
 [api]
 listen_addr = "{api_listen_addr}"
 listen_port = {api_listen_port}
-
-[api.authentication]
-required = {authentication_required}
+authentication_required = {authentication_required}
 
 [database]
 type = "{database_type}"
@@ -87,7 +85,7 @@ fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
 fn from_toml_accepts_valid_config() {
     let parsed = parse_config(&TestConfigToml {
         secondary_addrs: "127.0.0.1:53",
-        dns_extra: "[dns.nsupdate]\ntsig_required = false\n\n[dns.notify]\nafter_update = false\non_startup = true\nretries = 4\ntimeout_secs = 9",
+        dns_extra: "nsupdate_tsig_required = false\n\n[dns.notify]\nafter_update = false\non_startup = true\nretries = 4\ntimeout_secs = 9",
         ..Default::default()
     })
     .unwrap();
@@ -103,7 +101,7 @@ fn from_toml_accepts_valid_config() {
     assert!(parsed.dns.notify.on_startup);
     assert_eq!(parsed.dns.notify.retries, 4);
     assert_eq!(parsed.dns.notify.timeout_secs, 9);
-    assert!(!parsed.dns.nsupdate.tsig_required);
+    assert!(!parsed.dns.nsupdate_tsig_required);
 }
 
 /// Verify that `from_toml` defaults missing optional fields.
@@ -121,7 +119,7 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.notify.timeout_secs, 3);
     assert!(parsed.dns.transfer_cache.enabled);
     assert_eq!(parsed.dns.transfer_cache.max_records, 500_000);
-    assert!(parsed.dns.nsupdate.tsig_required);
+    assert!(parsed.dns.nsupdate_tsig_required);
     assert_eq!(parsed.dns.zone_history_retention_days, 365);
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
     assert_eq!(parsed.logging.format, LogFormat::Text);
@@ -211,9 +209,6 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
             "BINDIZR_API_LISTEN_PORT" => Some("8000".to_string()),
             "BINDIZR_API_AUTHENTICATION_REQUIRED" => Some("false".to_string()),
-            "BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN_FILE" => {
-                Some("/run/secrets/token".to_string())
-            }
             "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
             "BINDIZR_API_EXTERNAL_DNS_ENABLED" => Some("true".to_string()),
             "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
@@ -239,11 +234,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
 
     assert_eq!(overridden.api.listen_addr.to_string(), "0.0.0.0");
     assert_eq!(overridden.api.listen_port, 8000);
-    assert!(!overridden.api.authentication.required);
-    assert_eq!(
-        overridden.api.authentication.initial_token_file.as_deref(),
-        Some("/run/secrets/token")
-    );
+    assert!(!overridden.api.authentication_required);
     assert!(!overridden.api.metrics_enabled);
     assert!(overridden.api.external_dns_enabled);
     assert!(matches!(
@@ -260,7 +251,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         overridden.dns.secondary_addrs,
         "192.0.2.10:53,192.0.2.11:53"
     );
-    assert!(!overridden.dns.nsupdate.tsig_required);
+    assert!(!overridden.dns.nsupdate_tsig_required);
     assert!(!overridden.dns.notify.after_update);
     assert!(overridden.dns.notify.on_startup);
     assert_eq!(overridden.dns.notify.batch_ms, 50);
@@ -369,7 +360,7 @@ fn from_toml_rejects_an_unparseable_secondary_address() {
 /// Verify that a reload refuses what a running process cannot adopt.
 #[test]
 fn a_reload_refuses_what_a_running_process_cannot_adopt() {
-    // authentication.required is in the list because the router is built
+    // authentication_required is in the list because the router is built
     // once: a section is fixed whole, not field by field.
     let current = parse_config(&TestConfigToml::default()).unwrap();
 
@@ -378,7 +369,7 @@ fn a_reload_refuses_what_a_running_process_cannot_adopt() {
     assert_eq!(current.fixed_settings_changed(&api_moved), ["api"]);
 
     let mut auth_toggled = current.clone();
-    auth_toggled.api.authentication.required = !current.api.authentication.required;
+    auth_toggled.api.authentication_required = !current.api.authentication_required;
     assert_eq!(current.fixed_settings_changed(&auth_toggled), ["api"]);
 
     let mut db_moved = current.clone();
@@ -405,36 +396,4 @@ fn a_reload_takes_the_settings_read_per_use() {
     assert!(current.fixed_settings_changed(&next).is_empty());
     assert_eq!(current.changed_settings(&next), ["dns", "logging"]);
     assert!(current.changed_settings(&current).is_empty());
-}
-
-/// Verify that the token file is validated where it is read.
-#[test]
-fn load_initial_token_file_trims_and_refuses_what_cannot_seed() {
-    let dir = tempfile::tempdir().expect("temp dir");
-
-    // A secret manager writes a trailing newline; the token must not carry it.
-    let path = dir.path().join("token");
-    std::fs::write(&path, "a-16-plus-secret\n").expect("write");
-    assert_eq!(
-        load_initial_token_file(path.to_str().unwrap()).unwrap(),
-        "a-16-plus-secret"
-    );
-
-    // These must fail before the schema exists, or the startup that creates
-    // it spends the one chance to seed.
-    let short = dir.path().join("short");
-    std::fs::write(&short, "too-short\n").expect("write");
-    assert!(load_initial_token_file(short.to_str().unwrap()).is_err());
-
-    let empty = dir.path().join("empty");
-    std::fs::write(&empty, "  \n").expect("write");
-    assert!(load_initial_token_file(empty.to_str().unwrap()).is_err());
-
-    // Long enough and trimmed, but an `Authorization` header carries no
-    // newline, so the seeded token could never be sent back.
-    let multiline = dir.path().join("multiline");
-    std::fs::write(&multiline, "a-16-plus-secret\nand-another-line\n").expect("write");
-    assert!(load_initial_token_file(multiline.to_str().unwrap()).is_err());
-
-    assert!(load_initial_token_file(dir.path().join("absent").to_str().unwrap()).is_err());
 }

@@ -67,39 +67,12 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
 
     let notify_task = service::notify::initialize_worker();
 
-    // Only a database this startup creates is a first install, so a revoked
-    // credential is never seeded back on the next restart.
     let config = config::bindizr_config();
-    let authentication = &config.api.authentication;
-    let first_install = database::initialize().await.map_err(|e| e.to_string())?;
+    database::initialize().await.map_err(|e| e.to_string())?;
 
-    // Read between the connection and the schema: an established install never
-    // looks at a file it no longer needs, and a first install with a bad one
-    // stops with nothing created, so the corrected retry still seeds.
-    let initial_token = match authentication.initial_token_file.as_deref() {
-        Some(path) if first_install => {
-            Some(config::load_initial_token_file(path).map_err(CliError::configuration)?)
-        }
-        _ => None,
-    };
-
-    database::create_schema().await.map_err(|e| e.to_string())?;
-
-    // A fresh install with authentication on answers 401 until a token exists.
-    if let Some(secret) = initial_token {
-        match service::token::TokenService::seed_initial(&secret).await {
-            Ok(true) => log::info!(
-                "Created the global API token 'initial' from api.authentication.initial_token_file"
-            ),
-            Ok(false) => {}
-            Err(e) => {
-                return Err(CliError::from(format!(
-                    "Failed to create the initial API token: {}",
-                    e
-                )));
-            }
-        }
-    } else if authentication.required {
+    // Authentication with no token answers 401 to everything, which reads as a
+    // broken deployment rather than one nobody has been let into yet.
+    if config.api.authentication_required {
         match service::token::TokenService::count_all().await {
             Ok(0) => log::warn!(
                 "API authentication is on and no API tokens exist; create one with `bindizr token create admin --global`"

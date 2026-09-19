@@ -54,12 +54,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "bindizr-chart.databaseSecretName" . }}
                   key: {{ .Values.bindizr.database.secretKey }}
-            {{- if include "bindizr-chart.initialTokenEnabled" . }}
-            # The secret is mounted, not passed in the environment, so it stays
-            # out of the pod spec and /proc/*/environ.
-            - name: BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN_FILE
-              value: /etc/bindizr/initial/{{ .Values.bindizr.api.authentication.initialToken.secretKey }}
-            {{- end }}
           {{- with .Values.bindizr.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
@@ -95,11 +89,6 @@ spec:
               mountPath: /etc/bindizr/tls
               readOnly: true
             {{- end }}
-            {{- if include "bindizr-chart.initialTokenEnabled" . }}
-            - name: initial-token
-              mountPath: /etc/bindizr/initial
-              readOnly: true
-            {{- end }}
             # The daemon's control socket: the only path a read-only root
             # filesystem has to open.
             - name: runtime
@@ -112,11 +101,6 @@ spec:
         - name: api-tls
           secret:
             secretName: {{ . }}
-        {{- end }}
-        {{- if include "bindizr-chart.initialTokenEnabled" . }}
-        - name: initial-token
-          secret:
-            secretName: {{ include "bindizr-chart.initialTokenSecretName" . }}
         {{- end }}
         - name: runtime
           emptyDir: {}

@@ -11,28 +11,14 @@ bindizr:
   api:
     listenAddr: "0.0.0.0"
     port: 8000
+    # Require an API token; the first one is `bindizr token create` in the pod.
+    authenticationRequired: true
     # Prometheus metrics at /metrics (unauthenticated).
     metricsEnabled: true
     # ExternalDNS provider API at /external-dns, for the adapter sidecar.
     externalDnsEnabled: false
     # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated).
     openapiEnabled: false
-    authentication:
-      # Require an API token.
-      required: true
-      # The first global token, created when this release builds the schema.
-      # Read it
-      # from the Secret; the pods mount it rather than read it from the environment.
-      initialToken:
-        # Off leaves the first token to `bindizr token create` in the pod.
-        enabled: true
-        # A Secret holding the token, instead of one the chart generates. Name
-        # one where the manifests are rendered with no cluster to reuse a
-        # generated token from.
-        existingSecret: ""
-        secretKey: api-token
-        # A fixed token, instead of a generated one; at least 16 characters.
-        value: ""
     tls:
       # A Secret holding tls.crt and tls.key (a cert-manager Certificate makes
       # one) to serve HTTPS. Empty serves plain HTTP, for an Ingress that
@@ -45,16 +31,15 @@ bindizr:
   dns:
     listenAddr: "0.0.0.0"
     port: 53
+    # Require a TSIG signature on RFC 2136 updates; false accepts them from
+    # anyone (testing only).
+    nsupdateTsigRequired: true
     # Days of history kept for rollback and secondary catch-up (0 = forever).
     zoneHistoryRetentionDays: 365
     # Seconds between background passes: signing, key rollover, history
     # pruning. Every replica runs the whole pass; 0 stands one down, but at
     # least one must keep it.
     schedulerIntervalSecs: 3600
-    # RFC 2136 dynamic updates.
-    nsupdate:
-      # Require a TSIG signature; false accepts updates from anyone (testing only).
-      tsigRequired: true
     # NOTIFY to the secondaries.
     notify:
       # Notify after zone changes, and for every zone at startup.

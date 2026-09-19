@@ -7,8 +7,6 @@ const VALID_CONFIG: &str = r#"
 listen_addr = "127.0.0.1"
 listen_port = 8000
 
-[api.authentication]
-required = false
 
 [database]
 type = "sqlite"
@@ -120,11 +118,10 @@ async fn config_list_and_get_show_loaded_config() {
     let listed = app.run_cli_success(&["config", "list"]).await;
     assert!(listed.contains("[api]"));
     assert!(listed.contains("[dns]"));
-    assert!(listed.contains("[dns.nsupdate]"));
     assert!(listed.contains("[dns.notify]"));
 
     let value = app
-        .run_cli_success(&["config", "get", "api.authentication.required"])
+        .run_cli_success(&["config", "get", "api.authentication_required"])
         .await;
     assert_eq!(value.trim(), "false");
 

@@ -12,5 +12,4 @@ bindizr:
     # Without authentication the router never evaluates the adapter's token
     # (every request runs as Caller::Global), so the token grants would not
     # scope ExternalDNS or become its domain filter.
-    authentication:
-      required: true
+    authenticationRequired: true

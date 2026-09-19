@@ -221,35 +221,3 @@ async fn tokens_self_needs_a_token_even_with_authentication_off() {
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
     }
 }
-
-/// Verify that `api.authentication.initial_token` seeds the first global token.
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
-async fn the_configured_initial_token_authenticates_without_the_cli() {
-    let secret = "an-initial-token-secret";
-    let mut app = TestApp::start_with_options(TestAppOptions {
-        authentication_required: true,
-        initial_token: Some(secret.to_string()),
-        ..Default::default()
-    })
-    .await;
-
-    // Nothing ran the CLI, so this token exists only because the config named it.
-    app.set_auth_token(secret.to_string());
-    let (status, body) = app.send_request(Method::GET, "/tokens", None).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let names: Vec<&str> = body["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|token| token["name"].as_str().unwrap())
-        .collect();
-    assert!(names.contains(&"initial"), "{names:?}");
-
-    let (status, _) = app.send_request(Method::GET, "/tokens/self", None).await;
-    assert_eq!(status, StatusCode::OK);
-
-    app.set_auth_token("not-the-initial-token".to_string());
-    let (status, _) = app.send_request(Method::GET, "/tokens", None).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-}

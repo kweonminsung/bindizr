@@ -74,12 +74,9 @@ Bootstrap the first token with the CLI:
 $ bindizr token create admin --global
 ```
 
-Where the CLI cannot be run — a container image without a shell, an automated
-rollout — `api.authentication.initial_token_file` (or
-`BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN_FILE`) names a file holding the
-secret of a global token
-created on the first start that finds no tokens at all. It is ignored once any
-token exists, so it seeds rather than resets.
+Every token is created through the CLI or through `POST /tokens` with a token
+that already exists, so the first one is always `bindizr token create` on the
+daemon host — in the container or pod when that is where bindizr runs.
 
 Tokens are scoped by default and act only on the zones they are
 [granted](../cli/tokens.md); `--global` covers every zone and the
@@ -99,7 +96,7 @@ the grants it holds; both work for scoped tokens too. The CLI stays the
 recovery path: if every global token is lost, create a new one on the daemon
 host.
 
-Setting `api.authentication.required = false` disables the check entirely — only
+Setting `api.authentication_required = false` disables the check entirely — only
 sensible when Bindizr is bound to a loopback address or an otherwise trusted
 network.
 

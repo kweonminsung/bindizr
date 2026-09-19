@@ -50,8 +50,6 @@ pub(crate) struct TestApp {
 /// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
 pub(crate) struct TestAppOptions {
     pub(crate) authentication_required: bool,
-    /// Seed this secret as the first global token.
-    pub(crate) initial_token: Option<String>,
     pub(crate) external_dns_enabled: bool,
     /// `false` accepts unsigned nsupdate requests.
     pub(crate) nsupdate_tsig_required: bool,
@@ -68,7 +66,6 @@ impl Default for TestAppOptions {
     fn default() -> Self {
         Self {
             authentication_required: false,
-            initial_token: None,
             external_dns_enabled: false,
             nsupdate_tsig_required: true,
             openapi_enabled: false,

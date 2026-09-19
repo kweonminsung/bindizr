@@ -32,7 +32,7 @@ is down. The tables below pair the messages you will meet with what to do.
 
 | Symptom | Fix |
 | --- | --- |
-| Every request answers `401` | Authentication is on and no valid token was sent. Create the first one on the daemon host: `sudo bindizr token create admin --global`, or point `api.authentication.initial_token_file` at a provisioned file where the CLI cannot be run; `bindizr status` shows whether authentication is on. |
+| Every request answers `401` | Authentication is on and no valid token was sent. Create the first one on the daemon host: `sudo bindizr token create admin --global`; `bindizr status` shows whether authentication is on. |
 | `404` for a zone that exists | The token is scoped and not granted that zone: `bindizr token grant <TOKEN> <zone>` — see [API Tokens](cli/tokens.md). |
 | `403` on a write | The write falls outside the token's grant (its record-name pattern, types, or `--read-only`). |
 | `503` from `/health` | The database did not answer within the probe's timeout; see the database row above. |
@@ -41,5 +41,5 @@ is down. The tables below pair the messages you will meet with what to do.
 
 | Symptom | Fix |
 | --- | --- |
-| `unsigned NSUPDATE refused` | Sign the request with a TSIG key bindizr knows and that is granted the zone — see [Dynamic Updates](cli/nsupdate.md). Turning off `dns.nsupdate.tsig_required` is for testing only. |
+| `unsigned NSUPDATE refused` | Sign the request with a TSIG key bindizr knows and that is granted the zone — see [Dynamic Updates](cli/nsupdate.md). Turning off `dns.nsupdate_tsig_required` is for testing only. |
 | `dnssec disable` refused | The parent still serves the zone's DS, or could not be asked. Remove the DS at the parent and wait out its TTL, or pass `--skip-ds-check` when the parent is known to be clear — see [DNSSEC](dnssec.md). |

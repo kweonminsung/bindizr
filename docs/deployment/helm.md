@@ -33,43 +33,21 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
 ## The first credentials
 
 Authentication is on by default, so the API answers `401` until a token exists.
-The chart generates one at install and bindizr creates a global token with it
-on the first start that finds none. The install notes print how to read it
-back:
+The chart seeds none: every token is created through the CLI, or through the
+API with a token that already exists, so the first one is made in the pod.
 
 ```bash
-$ kubectl get secret bindizr-bindizr-chart-initial-token \
-  -o jsonpath='{.data.api-token}' | base64 -d
+$ kubectl exec -n <namespace> deploy/bindizr-bindizr-chart -c bindizr -- \
+  bindizr token create admin --global
 ```
 
-Upgrades reuse the Secret, so the token survives them. To choose the token
-yourself, hand the chart one at install:
-
-```bash
-$ kubectl create secret generic bindizr-initial-token --from-literal=api-token="$(openssl rand -hex 24)"
-
-$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-beta.7 \
-  --set bindizr.database.existingSecret=bindizr-db-secret \
-  --set bindizr.api.authentication.initialToken.existingSecret=bindizr-initial-token
-```
-
-Only the start that creates the schema reads it: pointing a release that
-already serves at another Secret changes nothing, and a deleted token stays
-deleted however the pods restart. On one already running, create a normal
-token and delete `initial`.
-
-Name a Secret wherever the manifests are rendered with no cluster behind them —
-`helm template`, Argo CD — since there is nothing to reuse there and every
-render would otherwise carry a different token. Setting
-`bindizr.api.authentication.initialToken.enabled=false` leaves the first token
-to `bindizr token create` in the pod instead.
-
-The Secret is mounted as a file rather than put in the environment, keeping it
-out of the pod spec.
+The secret is printed once. Keep it wherever your other deployment secrets
+live; bindizr stores only its hash, so a lost token is replaced rather than
+recovered. Issue the tokens you hand out from that one, scoped to the zones
+they need — see [API Tokens](../cli/tokens.md).
 
 Clients that sign RFC 2136 updates — cert-manager's DNS-01 solver, a DHCP
-server — need a TSIG key, which the chart does not seed: with the token above,
+server — need a TSIG key, which the chart does not seed either: with the token above,
 any workload creates one over the API.
 
 ```bash

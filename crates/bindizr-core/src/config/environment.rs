@@ -19,11 +19,8 @@ impl BindizrConfig {
             self.api.listen_port = parse_env_value("BINDIZR_API_LISTEN_PORT", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_API_AUTHENTICATION_REQUIRED") {
-            self.api.authentication.required =
+            self.api.authentication_required =
                 parse_env_value("BINDIZR_API_AUTHENTICATION_REQUIRED", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_API_AUTHENTICATION_INITIAL_TOKEN_FILE") {
-            self.api.authentication.initial_token_file = to_optional_setting(value);
         }
         if let Some(value) = get_env("BINDIZR_API_METRICS_ENABLED") {
             self.api.metrics_enabled = parse_env_value("BINDIZR_API_METRICS_ENABLED", &value)?;
@@ -72,7 +69,7 @@ impl BindizrConfig {
             self.dns.secondary_addrs = value;
         }
         if let Some(value) = get_env("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED") {
-            self.dns.nsupdate.tsig_required =
+            self.dns.nsupdate_tsig_required =
                 parse_env_value("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED", &value)?;
         }
         // Three variables rather than one, because the key's name is part of

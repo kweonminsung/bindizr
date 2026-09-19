@@ -9,6 +9,7 @@ data:
     [api]
     listen_addr = "{{ .Values.bindizr.api.listenAddr }}"
     listen_port = {{ .Values.bindizr.api.port }}
+    authentication_required = {{ .Values.bindizr.api.authenticationRequired }}
     metrics_enabled = {{ .Values.bindizr.api.metricsEnabled }}
     external_dns_enabled = {{ .Values.bindizr.api.externalDnsEnabled }}
     openapi_enabled = {{ .Values.bindizr.api.openapiEnabled }}
@@ -17,8 +18,6 @@ data:
     tls_key_file = "/etc/bindizr/tls/tls.key"
     {{- end }}
 
-    [api.authentication]
-    required = {{ .Values.bindizr.api.authentication.required }}
 
     [database]
     type = "{{ .Values.bindizr.database.type }}"
@@ -32,12 +31,11 @@ data:
     [dns]
     listen_addr = "{{ .Values.bindizr.dns.listenAddr }}"
     listen_port = {{ .Values.bindizr.dns.port }}
+    nsupdate_tsig_required = {{ .Values.bindizr.dns.nsupdateTsigRequired }}
     secondary_addrs = "{{ include "bindizr-chart.secondaryAddrs" . }}"
     zone_history_retention_days = {{ .Values.bindizr.dns.zoneHistoryRetentionDays }}
     scheduler_interval_secs = {{ .Values.bindizr.dns.schedulerIntervalSecs }}
 
-    [dns.nsupdate]
-    tsig_required = {{ .Values.bindizr.dns.nsupdate.tsigRequired }}
 
     [dns.notify]
     after_update = {{ .Values.bindizr.dns.notify.afterUpdate }}

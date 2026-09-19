@@ -41,7 +41,7 @@ impl ApiRouter {
             api_router = api_router.merge(ExternalDnsApi::routes().await);
         }
 
-        if api_config.authentication.required {
+        if api_config.authentication_required {
             api_router = api_router.layer(axum::middleware::from_fn(
                 super::middleware::auth::auth_middleware,
             ));

@@ -223,11 +223,6 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
     ]
 }
 
-/// Whether the schema is already there, which tells a fresh database apart.
-pub(crate) fn schema_presence_query() -> &'static str {
-    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'zones'"
-}
-
 /// Return the statement that seeds the built-in `default` DNSSEC policy.
 pub(crate) fn default_policy_seed() -> &'static str {
     r#"
