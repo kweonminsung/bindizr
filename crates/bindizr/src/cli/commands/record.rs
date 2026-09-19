@@ -564,7 +564,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 DaemonCommandKind::UpdateRecordByName,
                 UpdateRecordByNameParams {
                     zone_name: zone,
-                    name,
+                    record_name: name,
                     request: UpdateRecordRequest {
                         dry_run,
                         name: new_name,

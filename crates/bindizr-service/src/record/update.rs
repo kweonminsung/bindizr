@@ -311,22 +311,33 @@ impl RecordService {
                 &candidate,
             )?;
 
-            // The owner's rows frame the diff, as they do for every change.
-            let before: Vec<ReconstructedRecord> = records_at_name
+            // The owner's rows frame the diff. A move spans two, and the record
+            // sits at the one it leaves, so that name's rows come along too.
+            let mut framed = records_at_name.clone();
+            if candidate.name != existing_record.name {
+                framed.extend(
+                    RepositoryService::list_records_by_name_tx(
+                        &mut tx,
+                        zone.id,
+                        &existing_record.name,
+                        LockLevel::Exclusive,
+                    )
+                    .await?,
+                );
+            }
+            let before: Vec<ReconstructedRecord> = framed
                 .iter()
                 .cloned()
                 .map(ReconstructedRecord::from)
                 .collect();
-            let after: Vec<ReconstructedRecord> = records_at_name
+            let after: Vec<ReconstructedRecord> = framed
                 .iter()
-                .map(|record| {
-                    if record.id == existing_record.id {
-                        candidate.clone()
-                    } else {
-                        record.clone()
-                    }
-                })
+                .filter(|record| record.id != existing_record.id)
+                .cloned()
                 .map(ReconstructedRecord::from)
+                .chain(std::iter::once(ReconstructedRecord::from(
+                    candidate.clone(),
+                )))
                 .collect();
             let diff = build_record_diff(&zone, &before, &after);
 

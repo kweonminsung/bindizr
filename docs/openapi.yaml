@@ -652,7 +652,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordResponse'
+                $ref: '#/components/schemas/RecordWriteResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -913,7 +913,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordResponse'
+                $ref: '#/components/schemas/RecordWriteResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -1927,7 +1927,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneResponse'
+                $ref: '#/components/schemas/ZoneWriteResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -2028,7 +2028,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneResponse'
+                $ref: '#/components/schemas/ZoneWriteResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -2089,7 +2089,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                $ref: '#/components/schemas/DeleteZoneResponse'
         '401':
           description: Unauthorized
           content:
@@ -3619,6 +3619,39 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GetRecordResponse'
+    DeleteZoneResponse:
+      type: object
+      description: |-
+        What deleting a zone takes with it. A dry run reports the counts and
+        removes nothing; deleting a zone cannot be undone from the tool.
+      required:
+      - applied
+      - dry_run
+      - zone
+      - records
+      - versions
+      properties:
+        applied:
+          type: boolean
+          description: Whether this call removed the zone; a dry run answers `false`.
+          example: true
+        dry_run:
+          type: boolean
+          example: false
+        records:
+          type: integer
+          format: int64
+          description: Records the zone holds, all of which go with it.
+          example: 1240
+          minimum: 0
+        versions:
+          type: integer
+          format: int64
+          description: Saved versions, so the rollback history goes too.
+          example: 12
+          minimum: 0
+        zone:
+          $ref: '#/components/schemas/GetZoneResponse'
     DnssecDelegationInfo:
       type: object
       description: What the parent zone's servers answered when asked for the zone's DS.
@@ -5106,6 +5139,29 @@ components:
         - hello
         - world
       description: 'A record value as sent by the client: a single string or TXT segments.'
+    RecordWriteResponse:
+      type: object
+      description: |-
+        What a record write left behind, in the shape every previewable operation
+        answers with: whether it wrote, and the change as a record diff.
+      required:
+      - applied
+      - dry_run
+      - record
+      - diff
+      properties:
+        applied:
+          type: boolean
+          description: Whether this call wrote; a dry run answers `false`.
+          example: true
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+          description: The write as a record diff, for previewing it.
+        dry_run:
+          type: boolean
+          example: false
+        record:
+          $ref: '#/components/schemas/GetRecordResponse'
     RollbackSummary:
       type: object
       description: |-
@@ -5557,6 +5613,25 @@ components:
           type: integer
           format: int32
           example: 7
+    ZoneWriteResponse:
+      type: object
+      description: |-
+        What a zone write left behind. The zone's own fields are the change, so
+        unlike a record write this carries no diff.
+      required:
+      - applied
+      - dry_run
+      - zone
+      properties:
+        applied:
+          type: boolean
+          description: Whether this call wrote; a dry run answers `false`.
+          example: true
+        dry_run:
+          type: boolean
+          example: false
+        zone:
+          $ref: '#/components/schemas/GetZoneResponse'
   securitySchemes:
     bearer_auth:
       type: http

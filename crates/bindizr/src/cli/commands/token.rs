@@ -8,7 +8,7 @@ use clap::Subcommand;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, TokenGrantRow, TokenRow, print_response},
+        output::{OutputFormat, TokenGrantRow, TokenRow, print_payload, print_response},
     },
     socket::{
         client,
@@ -64,6 +64,9 @@ Examples:
         /// Name of the token to delete
         #[arg(value_name = "TOKEN_NAME")]
         name: String,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
     /// Grant an API token record rights in a zone
     #[command(after_help = "\
@@ -132,6 +135,9 @@ them. --id revokes exactly one (see `token grants`).")]
         /// ID of the one grant to revoke (see `token grants`)
         #[arg(long, value_name = "GRANT_ID", conflicts_with = "name")]
         id: Option<i32>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -181,14 +187,18 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 },
             )?;
         }
-        TokenCommand::Delete { name } => {
+        TokenCommand::Delete { name, output } => {
             let res =
                 client::send_command(DaemonCommandKind::DeleteToken, TokenNameParams { name })
                     .await?;
 
             log::debug!("Token deletion result: {:?}", res);
 
-            outln!("{}", res.message);
+            match output {
+                OutputFormat::Table => outln!("{}", res.message),
+
+                _ => print_payload(&res.data, output)?,
+            }
         }
         TokenCommand::Grant {
             name,
@@ -238,17 +248,25 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             )?;
         }
         // clap holds the two selectors apart.
-        TokenCommand::Revoke { id: Some(id), .. } => {
+        TokenCommand::Revoke {
+            id: Some(id),
+            output,
+            ..
+        } => {
             let res = client::send_command(
                 DaemonCommandKind::DeleteTokenGrant,
                 DeleteTokenGrantParams { id },
             )
             .await?;
-            outln!("{}", res.message);
+            match output {
+                OutputFormat::Table => outln!("{}", res.message),
+                _ => print_payload(&res.data, output)?,
+            }
         }
         TokenCommand::Revoke {
             name: Some(name),
             zone: Some(zone),
+            output,
             ..
         } => {
             let res = client::send_command(
@@ -259,7 +277,10 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 },
             )
             .await?;
-            outln!("{}", res.message);
+            match output {
+                OutputFormat::Table => outln!("{}", res.message),
+                _ => print_payload(&res.data, output)?,
+            }
         }
         TokenCommand::Revoke { .. } => {
             return Err(CliError::from(

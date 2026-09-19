@@ -3,7 +3,8 @@ use bindizr_service::{
     error::ServiceError,
     tsig_key::{TsigKeyService, grant::TsigGrantService},
     types::{
-        CreateTsigKeyRequest, GetTsigGrantResponse, PageFilter, TsigGrantResponse, TsigKeyResponse,
+        CreateTsigKeyRequest, GetTsigGrantResponse, MessageResponse, PageFilter, TsigGrantResponse,
+        TsigKeyResponse,
     },
 };
 
@@ -70,9 +71,10 @@ pub(crate) async fn delete_tsig_key(
 
     TsigKeyService::delete(&Caller::Global, &params.name).await?;
 
+    let message = format!("TSIG key '{}' deleted successfully", params.name);
     Ok(DaemonResponse {
-        message: format!("TSIG key '{}' deleted successfully", params.name),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 
@@ -138,9 +140,10 @@ pub(crate) async fn delete_tsig_grant(
 
     TsigGrantService::revoke_by_id(&Caller::Global, params.id).await?;
 
+    let message = "TSIG grant revoked successfully".to_string();
     Ok(DaemonResponse {
-        message: "TSIG grant revoked successfully".to_string(),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 
@@ -157,8 +160,9 @@ pub(crate) async fn delete_tsig_grants_by_key_and_zone(
     )
     .await?;
 
+    let message = format!("{} TSIG grant(s) revoked successfully", revoked);
     Ok(DaemonResponse {
-        message: format!("{} TSIG grant(s) revoked successfully", revoked),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }

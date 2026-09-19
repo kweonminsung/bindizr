@@ -10,7 +10,8 @@ use bindizr_service::{
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
         DeleteRecordsFilter, DeleteRecordsResponse, ErrorResponse, GetRecordResponse,
-        GetRecordsFilter, PaginatedResponse, RecordResponse, UpdateRecordRequest,
+        GetRecordsFilter, PaginatedResponse, RecordResponse, RecordWriteResponse,
+        UpdateRecordRequest,
     },
 };
 use serde::Deserialize;
@@ -117,7 +118,7 @@ pub(crate) async fn get_record(
         summary = "Create a new DNS record",
         request_body = CreateRecordRequest,
         responses(
-            (status = 201, description = "DNS record created successfully", body = RecordResponse),
+            (status = 201, description = "DNS record created successfully", body = RecordWriteResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
@@ -147,7 +148,7 @@ pub(crate) async fn create_record(
         ),
         request_body = UpdateRecordRequest,
         responses(
-            (status = 200, description = "DNS record updated successfully", body = RecordResponse),
+            (status = 200, description = "DNS record updated successfully", body = RecordWriteResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),

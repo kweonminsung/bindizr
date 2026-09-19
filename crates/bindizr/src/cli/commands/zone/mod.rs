@@ -367,6 +367,10 @@ pub(crate) struct NotifyArgs {
     /// changed
     #[arg(long)]
     bump_serial: bool,
+
+    /// Output format
+    #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
 }
 
 /// Handle the `zone` subcommand by forwarding it to the daemon over the socket.
@@ -708,7 +712,10 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     .await?
                 }
             };
-            outln!("{}", response.message);
+            match args.output {
+                OutputFormat::Table => outln!("{}", response.message),
+                _ => print_payload(&response.data, args.output)?,
+            }
         }
     }
 

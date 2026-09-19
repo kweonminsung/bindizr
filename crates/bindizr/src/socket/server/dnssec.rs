@@ -1,5 +1,8 @@
 use bindizr_service::{
-    authorization::Caller, dnssec::DnssecService, error::ServiceError, types::DnssecStatusResponse,
+    authorization::Caller,
+    dnssec::DnssecService,
+    error::ServiceError,
+    types::{DnssecStatusResponse, MessageResponse},
 };
 
 use crate::socket::{
@@ -39,9 +42,10 @@ pub(crate) async fn disable_dnssec(
 
     DnssecService::disable(&Caller::Global, &params.zone_name, params.skip_ds_check).await?;
 
+    let message = "DNSSEC disabled successfully".to_string();
     Ok(DaemonResponse {
-        message: "DNSSEC disabled successfully".to_string(),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 
@@ -65,9 +69,10 @@ pub(crate) async fn sign_zone(data: &serde_json::Value) -> Result<DaemonResponse
 
     DnssecService::sign(&Caller::Global, &params.name).await?;
 
+    let message = "Zone signed successfully".to_string();
     Ok(DaemonResponse {
-        message: "Zone signed successfully".to_string(),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 

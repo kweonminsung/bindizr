@@ -8,7 +8,9 @@ use clap::Subcommand;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, TsigGrantRow, TsigKeyRow, parse_response, print_response},
+        output::{
+            OutputFormat, TsigGrantRow, TsigKeyRow, parse_response, print_payload, print_response,
+        },
     },
     socket::{
         client,
@@ -76,6 +78,9 @@ pub(crate) enum TsigKeyCommand {
         /// Name of the key
         #[arg(value_name = "KEY_NAME")]
         name: String,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
     /// Grant a TSIG key rights in a zone: nsupdate, and — over the whole
     /// zone — transfers
@@ -141,6 +146,9 @@ them. --id revokes exactly one (see `tsig-key grants`).")]
         /// ID of the one grant to revoke (see `tsig-key grants`)
         #[arg(long, value_name = "GRANT_ID", conflicts_with = "name")]
         id: Option<i32>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -215,14 +223,18 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             let key: TsigKeyResponse = parse_response(&res.data).map_err(CliError::from)?;
             print_bind_key(&key);
         }
-        TsigKeyCommand::Delete { name } => {
+        TsigKeyCommand::Delete { name, output } => {
             let res =
                 client::send_command(DaemonCommandKind::DeleteTsigKey, TsigKeyNameParams { name })
                     .await?;
 
             log::debug!("TSIG key deletion result: {:?}", res);
 
-            outln!("{}", res.message);
+            match output {
+                OutputFormat::Table => outln!("{}", res.message),
+
+                _ => print_payload(&res.data, output)?,
+            }
         }
         TsigKeyCommand::Grant {
             name,
@@ -272,17 +284,25 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             )?;
         }
         // clap holds the two selectors apart.
-        TsigKeyCommand::Revoke { id: Some(id), .. } => {
+        TsigKeyCommand::Revoke {
+            id: Some(id),
+            output,
+            ..
+        } => {
             let res = client::send_command(
                 DaemonCommandKind::DeleteTsigGrant,
                 DeleteTsigGrantParams { id },
             )
             .await?;
-            outln!("{}", res.message);
+            match output {
+                OutputFormat::Table => outln!("{}", res.message),
+                _ => print_payload(&res.data, output)?,
+            }
         }
         TsigKeyCommand::Revoke {
             name: Some(name),
             zone: Some(zone),
+            output,
             ..
         } => {
             let res = client::send_command(
@@ -293,7 +313,10 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
                 },
             )
             .await?;
-            outln!("{}", res.message);
+            match output {
+                OutputFormat::Table => outln!("{}", res.message),
+                _ => print_payload(&res.data, output)?,
+            }
         }
         TsigKeyCommand::Revoke { .. } => {
             return Err(CliError::from(

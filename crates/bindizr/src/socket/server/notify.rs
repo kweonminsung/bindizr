@@ -1,9 +1,12 @@
 use bindizr_service::{
-    authorization::Caller, error::ServiceError, types::build_notify_message, zone::ZoneService,
+    authorization::Caller,
+    error::ServiceError,
+    types::{MessageResponse, build_notify_message},
+    zone::ZoneService,
 };
 
 use crate::socket::{
-    server::parse_params,
+    server::{parse_params, to_response_data},
     types::{DaemonResponse, NotifyAllZonesParams, NotifyZoneParams},
 };
 
@@ -15,9 +18,10 @@ pub(crate) async fn notify_all_zones(
 
     ZoneService::notify(&Caller::Global, None, params.bump_serial).await?;
 
+    let message = build_notify_message(None, params.bump_serial);
     Ok(DaemonResponse {
-        message: build_notify_message(None, params.bump_serial),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 
@@ -27,8 +31,9 @@ pub(crate) async fn notify_zone(data: &serde_json::Value) -> Result<DaemonRespon
 
     ZoneService::notify(&Caller::Global, Some(&params.zone_name), params.bump_serial).await?;
 
+    let message = build_notify_message(Some(&params.zone_name), params.bump_serial);
     Ok(DaemonResponse {
-        message: build_notify_message(Some(&params.zone_name), params.bump_serial),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }

@@ -4,7 +4,7 @@ use bindizr_service::{
     token::{TokenService, grant::TokenGrantService},
     types::{
         CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse, GetTokenResponse,
-        PageFilter, TokenGrantResponse,
+        MessageResponse, PageFilter, TokenGrantResponse,
     },
 };
 
@@ -57,9 +57,10 @@ pub(crate) async fn delete_token(data: &serde_json::Value) -> Result<DaemonRespo
 
     TokenService::delete(&Caller::Global, &params.name).await?;
 
+    let message = format!("Token '{}' deleted successfully", params.name);
     let response = DaemonResponse {
-        message: format!("Token '{}' deleted successfully", params.name),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     };
     Ok(response)
 }
@@ -126,9 +127,10 @@ pub(crate) async fn delete_token_grant(
 
     TokenGrantService::revoke_by_id(&Caller::Global, params.id).await?;
 
+    let message = "Token grant revoked successfully".to_string();
     Ok(DaemonResponse {
-        message: "Token grant revoked successfully".to_string(),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 
@@ -145,8 +147,9 @@ pub(crate) async fn delete_token_grants_by_token_and_zone(
     )
     .await?;
 
+    let message = format!("{} token grant(s) revoked successfully", revoked);
     Ok(DaemonResponse {
-        message: format!("{} token grant(s) revoked successfully", revoked),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }

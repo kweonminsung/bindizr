@@ -88,7 +88,7 @@ pub(crate) async fn update_record_by_name(
     let response = RecordService::update_by_name(
         &Caller::Global,
         &params.zone_name,
-        &params.name,
+        &params.record_name,
         &params.request,
     )
     .await?;

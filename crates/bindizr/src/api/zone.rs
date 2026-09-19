@@ -8,10 +8,10 @@ use axum::{
 use bindizr_service::{
     record::RecordService,
     types::{
-        CreateZoneRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetZoneResponse, GetZonesFilter,
-        ImportZoneRequest, ImportZoneResponse, MessageResponse, PaginatedResponse,
+        CreateZoneRequest, DEFAULT_PAGE_LIMIT, DeleteZoneResponse, ErrorResponse, GetZoneResponse,
+        GetZonesFilter, ImportZoneRequest, ImportZoneResponse, PaginatedResponse,
         RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
-        ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
+        ZoneResponse, ZoneStatusResponse, ZoneVersionResponse, ZoneWriteResponse,
     },
     zone::ZoneService,
 };
@@ -346,7 +346,7 @@ pub(crate) async fn get_zone(
         summary = "Create a new DNS zone",
         request_body = CreateZoneRequest,
         responses(
-            (status = 201, description = "DNS zone created successfully", body = ZoneResponse),
+            (status = 201, description = "DNS zone created successfully", body = ZoneWriteResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
@@ -375,7 +375,7 @@ pub(crate) async fn create_zone(
         ),
         request_body = UpdateZoneRequest,
         responses(
-            (status = 200, description = "DNS zone updated successfully", body = ZoneResponse),
+            (status = 200, description = "DNS zone updated successfully", body = ZoneWriteResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
@@ -404,7 +404,7 @@ pub(crate) async fn update_zone(
             ("name" = String, Path, description = "The name of the DNS zone to delete.")
         ),
         responses(
-            (status = 200, description = "DNS zone deleted successfully", body = MessageResponse),
+            (status = 200, description = "DNS zone deleted successfully", body = DeleteZoneResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),

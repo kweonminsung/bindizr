@@ -6,7 +6,7 @@ use std::{
 };
 
 use bindizr_core::config;
-use bindizr_service::{error::ServiceError, zone::ZoneService};
+use bindizr_service::{error::ServiceError, types::MessageResponse, zone::ZoneService};
 
 use crate::socket::{
     server::to_response_data,
@@ -88,8 +88,8 @@ pub(crate) fn reload_config() -> Result<DaemonResponse, ServiceError> {
     };
     log::info!("event=config_reload changed={}", changed.join(","));
     Ok(DaemonResponse {
-        message,
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 

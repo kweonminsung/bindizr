@@ -2,7 +2,10 @@ use bindizr_service::{
     authorization::Caller,
     dnssec_policy::DnssecPolicyService,
     error::ServiceError,
-    types::{CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, PageFilter},
+    types::{
+        CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, MessageResponse,
+        PageFilter,
+    },
 };
 
 use crate::socket::{
@@ -80,8 +83,9 @@ pub(crate) async fn delete_dnssec_policy(
 
     DnssecPolicyService::delete(&Caller::Global, &params.name).await?;
 
+    let message = format!("DNSSEC policy '{}' deleted successfully", params.name);
     Ok(DaemonResponse {
-        message: format!("DNSSEC policy '{}' deleted successfully", params.name),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }

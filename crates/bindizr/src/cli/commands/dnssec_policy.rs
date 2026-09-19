@@ -8,7 +8,7 @@ use clap::Subcommand;
 use crate::{
     cli::{
         error::CliError,
-        output::{DnssecPolicyRow, OutputFormat, print_response},
+        output::{DnssecPolicyRow, OutputFormat, print_payload, print_response},
     },
     socket::{
         client,
@@ -106,6 +106,9 @@ them rebuilds the zone's key set; the day counts stay editable with
         /// Name of the policy
         #[arg(value_name = "POLICY_NAME")]
         name: String,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -197,7 +200,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             print_policy(&res.data, output)?;
         }
-        DnssecPolicyCommand::Delete { name } => {
+        DnssecPolicyCommand::Delete { name, output } => {
             let res = client::send_command(
                 DaemonCommandKind::DeleteDnssecPolicy,
                 DnssecPolicyNameParams { name },
@@ -206,7 +209,11 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 
             log::debug!("DNSSEC policy deletion result: {:?}", res);
 
-            outln!("{}", res.message);
+            match output {
+                OutputFormat::Table => outln!("{}", res.message),
+
+                _ => print_payload(&res.data, output)?,
+            }
         }
     }
 

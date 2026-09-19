@@ -31,7 +31,11 @@ Settings bound to something built at startup — the `api` section, the
 `database` section, and the DNS listen address and port — are fixed while
 bindizr runs. A file that changes one of them is refused whole, so the
 running configuration always describes the running process.")]
-    Reload,
+    Reload {
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
     /// Show a single configuration value by dotted key (e.g. api.listen_port)
     Get {
         /// Dotted configuration key, e.g. dns.secondary_addrs
@@ -47,15 +51,18 @@ pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliE
     match subcommand {
         ConfigCommand::Check { config } => validate_config(config.as_deref()),
         ConfigCommand::List { output } => print_config_list(output).await,
-        ConfigCommand::Reload => reload_config().await,
+        ConfigCommand::Reload { output } => reload_config(output).await,
         ConfigCommand::Get { key, output } => print_config_value(&key, output).await,
     }
 }
 
 /// Ask the daemon to reload its configuration.
-async fn reload_config() -> Result<(), CliError> {
+async fn reload_config(output: OutputFormat) -> Result<(), CliError> {
     let response = client::send_command(DaemonCommandKind::ReloadConfig, ()).await?;
-    outln!("{}", response.message);
+    match output {
+        OutputFormat::Table => outln!("{}", response.message),
+        _ => print_payload(&response.data, output)?,
+    }
     Ok(())
 }
 

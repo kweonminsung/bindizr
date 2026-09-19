@@ -101,6 +101,9 @@ the chain, and a new algorithm starts a rollover."
         /// Skip the parent DS check
         #[arg(long)]
         skip_ds_check: bool,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
     /// Ask the parent zone whether it serves this zone's DS record: the
     /// check that gates `disable`
@@ -126,6 +129,9 @@ the chain, and a new algorithm starts a rollover."
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
     /// Roll a zone's signing key: pre-publish a replacement, then promote it
     Rollover {
@@ -279,6 +285,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
         DnssecCommand::Disable {
             name,
             skip_ds_check,
+            output,
         } => {
             let response = client::send_command(
                 DaemonCommandKind::DisableDnssec,
@@ -288,7 +295,10 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 },
             )
             .await?;
-            outln!("{}", response.message);
+            match output {
+                OutputFormat::Table => outln!("{}", response.message),
+                _ => print_payload(&response.data, output)?,
+            }
         }
         DnssecCommand::Status { name, output } => {
             let response =
@@ -296,10 +306,13 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                     .await?;
             print_status(&response.data, output)?;
         }
-        DnssecCommand::Sign { name } => {
+        DnssecCommand::Sign { name, output } => {
             let response =
                 client::send_command(DaemonCommandKind::SignZone, ZoneNameParams { name }).await?;
-            outln!("{}", response.message);
+            match output {
+                OutputFormat::Table => outln!("{}", response.message),
+                _ => print_payload(&response.data, output)?,
+            }
         }
         DnssecCommand::Rollover { subcommand } => match subcommand {
             DnssecRolloverCommand::Start { name, role, output } => {

@@ -237,7 +237,10 @@ pub(crate) struct UpdateRecordParams {
 #[serde(deny_unknown_fields)]
 pub(crate) struct UpdateRecordByNameParams {
     pub(crate) zone_name: String,
-    pub(crate) name: String,
+    /// The owner to update, kept apart from the request's own `name` — the
+    /// owner to move it to. Flattened into one object they are the same key,
+    /// and the move would pick the record it means to create.
+    pub(crate) record_name: String,
     #[serde(flatten)]
     pub(crate) request: UpdateRecordRequest,
 }
