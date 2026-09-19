@@ -220,10 +220,11 @@ impl Outcome {
 /// and a cut transfer is one the secondary discards and retries.
 async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_task: Option<JoinHandle<()>>) {
     shutdown.trigger();
-    service::notify::stop_worker();
 
     let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
         while servers.join_next().await.is_some() {}
+        // The worker outlives the front ends: an in-flight write still enqueues.
+        service::notify::stop_worker();
         // Not a front end: it may be absent, and its exit never ends the daemon.
         if let Some(notify_task) = notify_task {
             let _ = notify_task.await;

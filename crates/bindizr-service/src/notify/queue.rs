@@ -76,11 +76,16 @@ pub fn initialize_worker() -> Option<JoinHandle<()>> {
             batch.flush().await;
         }
 
+        // Refuse new jobs before flushing: an enqueue racing this shutdown
+        // then fails and its caller sends inline, while `recv` still drains
+        // what the channel already holds.
+        rx.close();
+
         // A batched write was answered as soon as its NOTIFY was queued, so
         // send what is left; otherwise secondaries keep serving the old serial
         // until their own refresh timer.
         let mut last = NotifyBatch::default();
-        while let Ok(job) = rx.try_recv() {
+        while let Some(job) = rx.recv().await {
             last.add(job);
         }
         last.flush().await;
