@@ -43,15 +43,21 @@ $ kubectl get secret bindizr-bindizr-chart-initial-token \
 ```
 
 Upgrades reuse the Secret, so the token survives them. To choose the token
-yourself, hand the chart one instead:
+yourself, hand the chart one at install:
 
 ```bash
 $ kubectl create secret generic bindizr-initial-token --from-literal=api-token="$(openssl rand -hex 24)"
 
-$ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --reuse-values \
+$ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
+  --version 0.1.0-beta.7 \
+  --set bindizr.database.existingSecret=bindizr-db-secret \
   --set bindizr.api.authentication.initialToken.existingSecret=bindizr-initial-token
 ```
+
+Only the start that creates the schema reads it: pointing a release that
+already serves at another Secret changes nothing, and a deleted token stays
+deleted however the pods restart. On one already running, create a normal
+token and delete `initial`.
 
 Name a Secret wherever the manifests are rendered with no cluster behind them —
 `helm template`, Argo CD — since there is nothing to reuse there and every
@@ -59,17 +65,15 @@ render would otherwise carry a different token. Setting
 `bindizr.api.authentication.initialToken.enabled=false` leaves the first token
 to `bindizr token create` in the pod instead.
 
-Only the start that creates the schema reads it, so a token deleted later stays
-deleted however often the pods restart. The Secret is mounted as a file rather
-than put in the environment, keeping it out of the pod spec. Rotate by creating
-a normal token and deleting `initial`.
+The Secret is mounted as a file rather than put in the environment, keeping it
+out of the pod spec.
 
 Clients that sign RFC 2136 updates — cert-manager's DNS-01 solver, a DHCP
 server — need a TSIG key, which the chart does not seed: with the token above,
 any workload creates one over the API.
 
 ```bash
-$ curl -X POST http://bindizr-bindizr-chart:3000/tsig-keys \
+$ curl -X POST http://bindizr-bindizr-chart-api:8000/tsig-keys \
   -H "Authorization: Bearer $BINDIZR_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name": "update-key", "is_global": true}'
