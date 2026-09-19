@@ -26,7 +26,7 @@ use router::ApiRouter;
 use serde::Deserialize;
 use tokio::{net::TcpListener, task::JoinHandle};
 
-use crate::shutdown::Shutdown;
+use crate::{cli::error::CliError, shutdown::Shutdown};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ZoneNameParam {
@@ -89,7 +89,7 @@ const TLS_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 /// Bind the HTTP API listener and spawn the server in the background, over TLS
 /// when `api.tls_cert_file` and `api.tls_key_file` name a pair. The returned
 /// handle finishes once `shutdown` fires and in-flight requests are answered.
-pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, String> {
+pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, CliError> {
     let bindizr_config = config::bindizr_config();
     let addr = SocketAddr::from((
         bindizr_config.api.listen_addr,
@@ -115,13 +115,15 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, St
         }));
     };
 
+    // A pair that cannot be read is permanent, so it exits as a configuration
+    // failure rather than looping through systemd's restart.
     let tls = RustlsConfig::from_pem_file(cert_file, key_file)
         .await
         .map_err(|e| {
-            format!(
+            CliError::configuration(format!(
                 "Failed to read the API TLS certificate '{}' and key '{}': {}",
                 cert_file, key_file, e
-            )
+            ))
         })?;
     let listener = listener.into_std().map_err(|e| {
         format!(

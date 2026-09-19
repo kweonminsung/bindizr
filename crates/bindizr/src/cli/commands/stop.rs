@@ -7,7 +7,9 @@ use crate::{
     socket::{client, types::DaemonCommandKind},
 };
 
-const STOP_DEADLINE: Duration = Duration::from_secs(10);
+/// Longer than the daemon's own drain budget plus the delay before it acts on
+/// the request, so a maximal drain is not reported as a timeout.
+const STOP_DEADLINE: Duration = Duration::from_secs(20);
 
 /// Handle the `stop` subcommand: request shutdown and wait until the daemon
 /// socket stops answering.

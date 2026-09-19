@@ -111,7 +111,7 @@ class BindizrAdapter(DnsAdapter):
         self.compose.down()
 
     async def create_zone(self, zone: str) -> None:
-        """Create the zone used by the benchmark."""
+        """Create the zone used by the benchmark, with the NS records its secondary needs."""
         z = zone.rstrip(".")
         body = {
             "name": z,
@@ -122,6 +122,16 @@ class BindizrAdapter(DnsAdapter):
         async with self.session.post(self.base + "/zones", json=body) as r:
             if r.status not in (200, 201, 409):
                 raise RuntimeError(f"create_zone failed: {r.status} {await r.text()}")
+        # Bindizr leaves NS records to the operator, and BIND9 loads no zone
+        # whose apex has no NS or whose in-zone NS has no address. The other
+        # systems' zone files carry these same two.
+        for rec in ({"name": "@", "type": "NS", "value": f"ns1.{z}."},
+                    {"name": "ns1", "type": "A", "value": "127.0.0.1"}):
+            body = {**rec, "zone_name": z, "ttl": 3600}
+            async with self.session.post(self.base + "/records", json=body) as r:
+                if r.status not in (200, 201, 409):
+                    raise RuntimeError(
+                        f"create_zone {rec['type']} failed: {r.status} {await r.text()}")
 
     async def delete_zone(self, zone: str) -> None:
         """Remove the benchmark zone and its records."""

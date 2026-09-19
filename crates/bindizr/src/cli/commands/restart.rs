@@ -10,7 +10,9 @@ use crate::{
     },
 };
 
-const RESTART_DEADLINE: Duration = Duration::from_secs(15);
+/// The stop budget again, plus room for the replacement to open its database
+/// and listeners.
+const RESTART_DEADLINE: Duration = Duration::from_secs(40);
 
 /// Handle the `restart` subcommand: re-exec the daemon in place and wait for
 /// the replacement to answer.

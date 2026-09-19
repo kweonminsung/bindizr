@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{error::ServiceError, model::zone::Zone};
+use crate::{error::ServiceError, model::zone::Zone, serial::validate_initial_serial};
 
 /// API representation of a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
@@ -105,7 +105,11 @@ impl CreateZoneRequest {
             mname: soa.mname.clone(),
             rname,
             default_ttl: None,
-            serial: i32::try_from(soa.serial).ok().filter(|serial| *serial > 0),
+            // The file's serial only if a zone may start from it, so an
+            // unusable one generates a fresh serial instead of failing.
+            serial: i32::try_from(soa.serial)
+                .ok()
+                .and_then(|serial| validate_initial_serial(serial).ok()),
             refresh: Some(soa.refresh),
             retry: Some(soa.retry),
             expire: Some(soa.expire),
