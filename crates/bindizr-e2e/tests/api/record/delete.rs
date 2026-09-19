@@ -123,3 +123,36 @@ async fn record_delete_matching_refuses_what_would_widen_it() {
         );
     }
 }
+
+/// Verify that a TXT record goes by the value it was created with.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn record_delete_matches_a_txt_value_as_the_content_it_was_created_with() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // These quotes are data, not delimiters, so the delete has to be given
+    // the same string the create was.
+    let value = "\"hello\"";
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "www", "type": "TXT", "value": value, "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let (status, body) = app
+        .send_request(
+            Method::DELETE,
+            &format!("/records?zone_name={zone_name}&name=www&type=TXT&value=%22hello%22"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted"].as_i64(), Some(1), "{body}");
+}

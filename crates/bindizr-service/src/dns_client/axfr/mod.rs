@@ -3,13 +3,10 @@
 
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-use bindizr_core::{
-    dns::{
-        message::{Name, Opcode, Rtype, encode_tcp_message},
-        name::decode_name_labels,
-        query::{TransferRr, build_question, extract_transfer_rrs},
-    },
-    model::record::RecordType,
+use bindizr_core::dns::{
+    message::{Name, Opcode, Rtype, encode_tcp_message},
+    name::decode_name_labels,
+    query::{TransferRr, build_question, extract_transfer_rrs},
 };
 use tokio::io::AsyncWriteExt;
 
@@ -17,7 +14,7 @@ use tokio::io::AsyncWriteExt;
 /// for the import parser.
 pub(crate) async fn fetch_zone_file(server: &str, zone_name: &str) -> Result<String, String> {
     let rrs = transfer_zone(server, zone_name).await?;
-    render_zone_file(&rrs)
+    Ok(render_zone_file(&rrs))
 }
 
 /// Bounds on one inbound transfer, guarding against a runaway server.
@@ -118,17 +115,16 @@ fn owner_labels(name: &str) -> Result<Vec<String>, String> {
         .map_err(|e| format!("invalid owner name '{}': {}", name, e))
 }
 
-/// Render transferred RRs as zone-file lines. SOA and DNSSEC-derived
-/// rows are dropped (the zone keeps its own SOA fields and signs itself);
-/// any other unsupported type fails the import rather than thinning the
-/// zone silently.
-fn render_zone_file(rrs: &[TransferRr]) -> Result<String, String> {
+/// Render transferred RRs as zone-file lines: the zone's SOA once, no
+/// DNSSEC-derived rows (bindizr signs with its own keys), and every other
+/// type as it arrived, for the parser to accept or report.
+fn render_zone_file(rrs: &[TransferRr]) -> String {
     let mut lines = String::new();
+    let mut soa_rendered = false;
     for rr in rrs {
         if matches!(
             rr.rtype,
-            Rtype::SOA
-                | Rtype::RRSIG
+            Rtype::RRSIG
                 | Rtype::NSEC
                 | Rtype::NSEC3
                 | Rtype::NSEC3PARAM
@@ -138,76 +134,23 @@ fn render_zone_file(rrs: &[TransferRr]) -> Result<String, String> {
         ) {
             continue;
         }
-        RecordType::try_from(rr.rtype).map_err(|_| {
-            format!(
-                "the source zone carries a record type bindizr does not store: {} {}",
-                rr.name, rr.rtype
-            )
-        })?;
+        // The opening delimiter is what `--create` builds the zone from; the
+        // closing repeat would read as a zone carrying two.
+        if rr.rtype == Rtype::SOA {
+            if soa_rendered {
+                continue;
+            }
+            soa_rendered = true;
+        }
+        // A type bindizr does not store is rendered anyway: the parser
+        // reports it, so `--skip-unsupported` can pass over it.
         lines.push_str(&format!(
             "{} {} IN {} {}\n",
             rr.name, rr.ttl, rr.rtype, rr.rdata
         ));
     }
-    Ok(lines)
+    lines
 }
 
 #[cfg(test)]
-mod tests {
-    use bindizr_core::dns::zonefile::{ParsedZoneFile, ZoneFileValue};
-
-    use super::{Rtype, TransferRr, render_zone_file};
-
-    /// The fetch goes structured RR -> text -> parsed record, so the render and
-    /// the parser must agree on RFC 1035, Section 5.1 escaping or a label splits.
-    #[test]
-    fn a_rendered_transfer_parses_back_into_the_names_it_carried() {
-        let rrs = [
-            (r"a\.b.example.com.", Rtype::CNAME, "target.example.com."),
-            (r"0/25.example.com.", Rtype::NS, "ns.example.com."),
-            (
-                "rfc.example.com.",
-                Rtype::CNAME,
-                "1.0/25.2.0.192.in-addr.arpa.",
-            ),
-            ("example.com.", Rtype::CAA, r#"0 issue "a\"b\\c""#),
-        ]
-        .map(|(name, rtype, rdata)| TransferRr {
-            name: name.to_string(),
-            rtype,
-            ttl: 300,
-            rdata: rdata.to_string(),
-        });
-
-        let parsed = ParsedZoneFile::parse(&render_zone_file(&rrs).unwrap(), "example.com", 300);
-
-        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
-        assert!(parsed.unsupported.is_empty(), "{:?}", parsed.unsupported);
-        let carried: Vec<_> = parsed
-            .rrs
-            .iter()
-            .map(|rr| (rr.owner_fqdn.as_str(), &rr.value))
-            .collect();
-        assert_eq!(
-            carried,
-            [
-                (
-                    r"a\046b.example.com.",
-                    &ZoneFileValue::Rdata("target.example.com.".to_string())
-                ),
-                (
-                    "0/25.example.com.",
-                    &ZoneFileValue::Rdata("ns.example.com.".to_string())
-                ),
-                (
-                    "rfc.example.com.",
-                    &ZoneFileValue::Rdata("1.0/25.2.0.192.in-addr.arpa.".to_string())
-                ),
-                (
-                    "example.com.",
-                    &ZoneFileValue::Rdata(r#"0 issue "a\"b\\c""#.to_string())
-                ),
-            ]
-        );
-    }
-}
+mod tests;

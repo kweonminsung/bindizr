@@ -1,6 +1,12 @@
 use std::collections::HashSet;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::{
+    dns::{
+        name::{OwnerName, ZoneName},
+        record::TxtRecordValue,
+    },
+    model::record::RecordType,
+};
 use bindizr_db::repository::LockLevel;
 
 use super::{
@@ -170,6 +176,14 @@ impl RecordService {
                 "value narrows a record within one type, so record_type is required with it",
             ));
         }
+        // A TXT value is raw content, exactly as a create takes it; read back
+        // as presentation, one starting with a quote would miss its own row.
+        let match_value = match (filter.value.as_deref(), record_type.as_ref()) {
+            (Some(value), Some(RecordType::TXT)) => {
+                Some(TxtRecordValue::from_string(value).to_presentation())
+            }
+            _ => filter.value.clone(),
+        };
 
         let mut tx = RepositoryService::begin_tx("Failed to delete records").await?;
 
@@ -210,7 +224,7 @@ impl RecordService {
                     matches_record(
                         record,
                         record_type.as_ref(),
-                        filter.value.as_deref(),
+                        match_value.as_deref(),
                         filter.priority,
                     )
                 })
