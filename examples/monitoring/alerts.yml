@@ -59,18 +59,6 @@ groups:
           summary: "Zone transfers are being refused"
           description: "A client outside dns.secondary_addrs, or one signing with an unknown TSIG key, is asking for a transfer."
 
-      # Zero pruning while zones change means the tables grow without bound.
-      - alert: BindizrHistoryNotPruned
-        # `and` pairs only identical label sets: drop the `table` label the
-        # pruning counter carries, and keep the scrape labels both sides share.
-        expr: sum without(table) (increase(bindizr_pruned_rows_total[24h])) == 0 and increase(bindizr_zone_serial_bumps_total[24h]) > 0
-        for: 1h
-        labels:
-          severity: warning
-        annotations:
-          summary: "Zone history is not being pruned"
-          description: "Zones keep changing but no rows were pruned in 24h. Check dns.zone_history_retention_days and the scheduler."
-
       - alert: BindizrApiErrors
         expr: |
           sum(rate(bindizr_http_requests_total{status=~"5.."}[5m]))

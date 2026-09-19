@@ -29,6 +29,12 @@ pub(crate) struct AppState {
 /// large initial reconciliations; matches the bindizr server's upload cap.
 const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 
+/// An empty DomainFilter reads as "manage everything" to external-dns, so
+/// negotiation and readiness both refuse it retryably: a new grant then heals
+/// the adapter without a restart.
+const NO_MANAGEABLE_NAMES: &str = "no manageable names: grant zones to the API token with \
+                                   'bindizr token grant', or create a zone first";
+
 /// Build the webhook router served on the (localhost) provider listener.
 pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
     Router::new()
@@ -90,6 +96,9 @@ fn upstream_error_response(error: UpstreamError) -> Response {
         )
             .into_response(),
         UpstreamError::Unreachable(message) => (StatusCode::BAD_GATEWAY, message).into_response(),
+        UpstreamError::NoManageableNames => {
+            (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
+        }
     }
 }
 
@@ -161,14 +170,9 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
     }
 
     match state.upstream.list_domains().await {
-        // An empty DomainFilter reads as "manage everything" to external-dns;
-        // refuse retryably so a new grant heals negotiation without a restart.
-        Ok(domains) if domains.is_empty() => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "no manageable names: grant zones to the API token with \
-             'bindizr token grant', or create a zone first",
-        )
-            .into_response(),
+        Ok(domains) if domains.is_empty() => {
+            (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
+        }
         Ok(domains) => {
             log::info!("event=negotiate domains={}", domains.len());
             json_response(&DomainFilter { include: domains })
@@ -291,6 +295,9 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
             .into_response(),
         Err(UpstreamError::Unreachable(message)) => {
             (StatusCode::SERVICE_UNAVAILABLE, message).into_response()
+        }
+        Err(UpstreamError::NoManageableNames) => {
+            (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
         }
     }
 }

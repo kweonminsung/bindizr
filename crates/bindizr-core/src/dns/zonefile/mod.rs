@@ -107,7 +107,12 @@ impl ParsedZoneFile {
                                     rr.owner(),
                                     origin_fqdn
                                 ));
-                            } else if soa.is_none() {
+                            } else if soa.is_some() {
+                                errors.push(format!(
+                                    "zone '{}' carries more than one SOA",
+                                    origin_fqdn
+                                ));
+                            } else {
                                 soa = to_zone_file_soa(&rr);
                             }
                             continue;

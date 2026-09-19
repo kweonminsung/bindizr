@@ -137,4 +137,21 @@ fn a_soa_outside_the_apex_is_refused() {
     );
     assert_eq!(parsed.soa.expect("apex SOA").serial, 99);
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+
+    // Two apex SOAs leave the serial and timers ambiguous, so taking the first
+    // would settle the zone by line order.
+    let parsed = ParsedZoneFile::parse(
+        "@ IN SOA ns1.example.com. host.example.com. (99 1 2 3 4)\n\
+         @ IN SOA ns2.example.com. host.example.com. (7 1 2 3 4)\n",
+        "example.com",
+        3600,
+    );
+    assert!(
+        parsed
+            .errors
+            .iter()
+            .any(|e| e.contains("more than one SOA")),
+        "{:?}",
+        parsed.errors
+    );
 }

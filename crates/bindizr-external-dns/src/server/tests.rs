@@ -488,6 +488,27 @@ async fn healthz_reflects_bindizr_reachability() {
     assert!(body.contains("bindizr_external_dns_requests_total"));
 }
 
+/// Verify that healthz is unready when the token reaches no zone.
+#[tokio::test]
+async fn healthz_is_unready_with_no_manageable_names() {
+    // `negotiate` already refuses this, so readiness must not stay green and
+    // leave the sidecar taking traffic it can do nothing with.
+    let (_, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock((200, json!({"domains": []})), records, changes).await;
+
+    let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
+    let state = Arc::new(AppState { upstream });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, health_router(state)).await.unwrap();
+    });
+
+    let (status, _, body) = get(&format!("http://{}/healthz", addr), None).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains("no manageable names"), "{body}");
+}
+
 /// Verify that endpoint label tracks head with get and skips unrouted methods.
 #[test]
 fn endpoint_label_tracks_head_with_get_and_skips_unrouted_methods() {

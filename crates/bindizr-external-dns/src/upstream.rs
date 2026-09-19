@@ -15,6 +15,8 @@ pub(crate) enum UpstreamError {
     },
     /// Connect error or timeout.
     Unreachable(String),
+    /// bindizr answered, but the token reaches no zone this adapter could manage.
+    NoManageableNames,
 }
 
 /// The `error` message a bindizr API error response carries.
@@ -117,12 +119,14 @@ impl UpstreamClient {
         Ok(body.records)
     }
 
-    /// Probe whether the adapter can work at all: bindizr answers, and accepts
-    /// this token. The unauthenticated `/health` stays green through a token
-    /// that was rotated away, the adapter's most common failure.
+    /// Probe whether the adapter can work at all: bindizr answers, accepts this
+    /// token, and grants it something to manage. The unauthenticated `/health`
+    /// stays green through a token rotated away or never granted a zone.
     pub(crate) async fn probe_health(&self) -> Result<(), UpstreamError> {
-        self.list_domains().await?;
-        Ok(())
+        match self.list_domains().await?.is_empty() {
+            true => Err(UpstreamError::NoManageableNames),
+            false => Ok(()),
+        }
     }
 
     /// Fetch and deserialize a JSON response from a bindizr API path.
