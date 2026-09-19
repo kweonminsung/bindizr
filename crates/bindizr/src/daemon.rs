@@ -67,23 +67,26 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
 
     let notify_task = service::notify::initialize_worker();
 
-    // Read before the database exists, so a bad path or secret stops the
-    // startup with nothing created and the corrected retry is still a first
-    // install.
+    // Only a database this startup creates is a first install, so a revoked
+    // credential is never seeded back on the next restart.
     let config = config::bindizr_config();
     let authentication = &config.api.authentication;
-    let initial_token = authentication
-        .initial_token_file
-        .as_deref()
-        .map(|path| config::load_initial_token_file(path).map_err(CliError::configuration))
-        .transpose()?;
-
-    // Only a database this startup created is a first install, so a revoked
-    // credential is never seeded back on the next restart.
     let first_install = database::initialize().await.map_err(|e| e.to_string())?;
 
+    // Read between the connection and the schema: an established install never
+    // looks at a file it no longer needs, and a first install with a bad one
+    // stops with nothing created, so the corrected retry still seeds.
+    let initial_token = match authentication.initial_token_file.as_deref() {
+        Some(path) if first_install => {
+            Some(config::load_initial_token_file(path).map_err(CliError::configuration)?)
+        }
+        _ => None,
+    };
+
+    database::create_schema().await.map_err(|e| e.to_string())?;
+
     // A fresh install with authentication on answers 401 until a token exists.
-    if let Some(secret) = initial_token.filter(|_| first_install) {
+    if let Some(secret) = initial_token {
         match service::token::TokenService::seed_initial(&secret).await {
             Ok(true) => log::info!(
                 "Created the global API token 'initial' from api.authentication.initial_token_file"
