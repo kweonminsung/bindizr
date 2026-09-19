@@ -41,9 +41,17 @@ pub(crate) enum Command {
         config: Option<String>,
     },
     /// Stop the running bindizr daemon
-    Stop,
+    Stop {
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
     /// Restart the running bindizr daemon in place
-    Restart,
+    Restart {
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
     /// Show the status of the bindizr service
     Status {
         /// Output format
@@ -118,8 +126,8 @@ pub async fn execute() {
 
     let result = match args.command {
         Command::Start { config } => daemon::bootstrap(config.as_deref()).await,
-        Command::Stop => commands::stop::handle_command().await,
-        Command::Restart => commands::restart::handle_command().await,
+        Command::Stop { output } => commands::stop::handle_command(output).await,
+        Command::Restart { output } => commands::restart::handle_command(output).await,
         Command::Status { output } => commands::status::handle_command(output).await,
         Command::Doctor { config, output } => {
             commands::doctor::handle_command(config, output).await

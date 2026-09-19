@@ -1,4 +1,5 @@
 use bindizr_core::{config, config::BindizrConfig, outln};
+use bindizr_service::types::MessageResponse;
 use clap::Subcommand;
 
 use crate::{
@@ -17,6 +18,9 @@ pub(crate) enum ConfigCommand {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
     /// Show the configuration loaded by the running daemon
     #[command(alias = "ls")]
@@ -49,7 +53,7 @@ running configuration always describes the running process.")]
 /// Handle the `config` subcommand.
 pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliError> {
     match subcommand {
-        ConfigCommand::Check { config } => validate_config(config.as_deref()),
+        ConfigCommand::Check { config, output } => validate_config(config.as_deref(), output),
         ConfigCommand::List { output } => print_config_list(output).await,
         ConfigCommand::Reload { output } => reload_config(output).await,
         ConfigCommand::Get { key, output } => print_config_value(&key, output).await,
@@ -67,13 +71,24 @@ async fn reload_config(output: OutputFormat) -> Result<(), CliError> {
 }
 
 /// Validate the local configuration file.
-fn validate_config(file: Option<&str>) -> Result<(), CliError> {
+fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliError> {
     let path = config::resolve_config_path(file);
-    outln!("Checking configuration file: {}", path);
+    if output == OutputFormat::Table {
+        outln!("Checking configuration file: {}", path);
+    }
 
     config::load_config_file(&path).map_err(CliError::configuration)?;
 
-    outln!("Configuration is {}.", color::green("valid"));
+    let message = format!("Configuration file '{}' is valid", path);
+    match output {
+        OutputFormat::Table => outln!("Configuration is {}.", color::green("valid")),
+        // Built here rather than by the daemon: the check never reaches one.
+        _ => {
+            let payload = serde_json::to_value(MessageResponse { message })
+                .map_err(|e| CliError::from(e.to_string()))?;
+            print_payload(&payload, output)?
+        }
+    }
     Ok(())
 }
 

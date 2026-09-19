@@ -173,6 +173,19 @@ else, including `bindizr-core` and `bindizr-db`, report the failure and let it
 propagate: a library that exits takes that decision away from whoever embedded
 it, and the e2e suite runs both binaries in-process.
 
+### `--output` renders a result, so a command that is its output has none
+
+Every CLI command that reports a *result* takes `-o/--output` and answers the
+same shape in every format, so a script reads `-o json` wherever a person
+reads the table. That means the daemon hands back a payload rather than a bare
+message: the socket answer carries `MessageResponse` where it has nothing
+richer to say, never `Value::Null`.
+
+Commands whose stdout **is** the artifact take no `--output`: `zone export`,
+`tsig-key export`, `dnssec keys export`, `completion` and `man` are redirected
+into a file, and wrapping them would break that. `start` streams logs rather
+than returning anything.
+
 ## Naming
 
 ### Data-access methods — repository traits and the `RepositoryService` facade

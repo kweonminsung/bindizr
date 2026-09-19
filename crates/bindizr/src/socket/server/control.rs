@@ -1,9 +1,9 @@
 use std::{sync::OnceLock, time::Duration};
 
-use bindizr_service::error::ServiceError;
+use bindizr_service::{error::ServiceError, types::MessageResponse};
 use tokio::sync::mpsc;
 
-use crate::socket::types::DaemonResponse;
+use crate::socket::{server::to_response_data, types::DaemonResponse};
 
 /// Daemon lifecycle transitions requestable over the control socket.
 pub(crate) enum DaemonControl {
@@ -23,18 +23,20 @@ pub(crate) fn initialize() -> mpsc::Receiver<DaemonControl> {
 /// Request daemon shutdown and acknowledge the control request.
 pub(crate) fn shutdown() -> Result<DaemonResponse, ServiceError> {
     send_control(DaemonControl::Shutdown)?;
+    let message = "Bindizr is shutting down".to_string();
     Ok(DaemonResponse {
-        message: "Bindizr is shutting down".to_string(),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 
 /// Request daemon restart and acknowledge the control request.
 pub(crate) fn restart() -> Result<DaemonResponse, ServiceError> {
     send_control(DaemonControl::Restart)?;
+    let message = "Bindizr is restarting".to_string();
     Ok(DaemonResponse {
-        message: "Bindizr is restarting".to_string(),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 
