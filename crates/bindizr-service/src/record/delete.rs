@@ -176,13 +176,13 @@ impl RecordService {
                 "value narrows a record within one type, so record_type is required with it",
             ));
         }
-        // A TXT value is raw content, exactly as a create takes it; read back
-        // as presentation, one starting with a quote would miss its own row.
-        let match_value = match (filter.value.as_deref(), record_type.as_ref()) {
+        // A TXT value is named as a create names it: one string is raw content,
+        // so a value starting with a quote finds the row it made.
+        let txt_content = match (filter.value.as_deref(), record_type.as_ref()) {
             (Some(value), Some(RecordType::TXT)) => {
                 Some(TxtRecordValue::from_string(value).to_presentation())
             }
-            _ => filter.value.clone(),
+            _ => None,
         };
 
         let mut tx = RepositoryService::begin_tx("Failed to delete records").await?;
@@ -218,18 +218,22 @@ impl RecordService {
                 LockLevel::Exclusive,
             )
             .await?;
-            let matched: Vec<Record> = existing
-                .iter()
-                .filter(|record| {
-                    matches_record(
-                        record,
-                        record_type.as_ref(),
-                        match_value.as_deref(),
-                        filter.priority,
-                    )
-                })
-                .cloned()
-                .collect();
+            let select = |value: Option<&str>| -> Vec<Record> {
+                existing
+                    .iter()
+                    .filter(|record| {
+                        matches_record(record, record_type.as_ref(), value, filter.priority)
+                    })
+                    .cloned()
+                    .collect()
+            };
+            let mut matched = select(txt_content.as_deref().or(filter.value.as_deref()));
+            // Several character-strings have no one-string content spelling,
+            // so the stored presentation answers for them — second, so the two
+            // readings never widen one delete between them.
+            if matched.is_empty() && txt_content.is_some() {
+                matched = select(filter.value.as_deref());
+            }
 
             // Build the preview from the validated rows; dry runs and empty matches
             // return it before any records or serials are written.

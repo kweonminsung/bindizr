@@ -430,5 +430,11 @@ fn load_initial_token_file_trims_and_refuses_what_cannot_seed() {
     std::fs::write(&empty, "  \n").expect("write");
     assert!(load_initial_token_file(empty.to_str().unwrap()).is_err());
 
+    // Long enough and trimmed, but an `Authorization` header carries no
+    // newline, so the seeded token could never be sent back.
+    let multiline = dir.path().join("multiline");
+    std::fs::write(&multiline, "a-16-plus-secret\nand-another-line\n").expect("write");
+    assert!(load_initial_token_file(multiline.to_str().unwrap()).is_err());
+
     assert!(load_initial_token_file(dir.path().join("absent").to_str().unwrap()).is_err());
 }

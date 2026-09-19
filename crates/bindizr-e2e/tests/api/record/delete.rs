@@ -155,4 +155,30 @@ async fn record_delete_matches_a_txt_value_as_the_content_it_was_created_with() 
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["deleted"].as_i64(), Some(1), "{body}");
+
+    // A segmented value has no content spelling, so it goes by the form the
+    // export shows.
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "seg", "type": "TXT", "value": ["hello", "world"],
+                "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let (status, body) = app
+        .send_request(
+            Method::DELETE,
+            &format!(
+                "/records?zone_name={zone_name}&name=seg&type=TXT&value=%22hello%22%20%22world%22"
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted"].as_i64(), Some(1), "{body}");
 }

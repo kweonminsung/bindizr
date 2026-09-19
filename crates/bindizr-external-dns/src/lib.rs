@@ -104,10 +104,16 @@ pub async fn execute() {
     watch(&mut servers, "Webhook", tokio::spawn(webhook.into_future()));
     watch(&mut servers, "Health", tokio::spawn(health.into_future()));
 
-    tokio::select! {
-        Some(Ok((name, result))) = servers.join_next() => log_server_stopped(name, result),
-        () = wait_for_signal() => log::info!("Shutting down"),
-    }
+    let failed = tokio::select! {
+        Some(Ok((name, result))) = servers.join_next() => {
+            log_server_stopped(name, result);
+            true
+        }
+        () = wait_for_signal() => {
+            log::info!("Shutting down");
+            false
+        }
+    };
 
     // Answer what external-dns already sent before going: a severed reply
     // leaves it unable to tell an applied change from a dropped one.
@@ -121,6 +127,12 @@ pub async fn execute() {
             "In-flight requests did not finish within {}s; exiting anyway",
             DRAIN_TIMEOUT.as_secs()
         );
+    }
+
+    // A listener stopping on its own is a failure, so a supervisor set to
+    // restart only what failed brings the adapter back.
+    if failed {
+        std::process::exit(1);
     }
 }
 

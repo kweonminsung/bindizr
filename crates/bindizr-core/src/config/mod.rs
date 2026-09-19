@@ -529,6 +529,14 @@ pub fn load_initial_token_file(path: &str) -> Result<String, String> {
     let secret = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read the initial token file '{}': {}", path, e))?;
     let secret = secret.trim();
+    // Seeding happens once, so a secret an `Authorization` header cannot carry
+    // would lock the deployment out with no second chance to correct it.
+    if secret.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(format!(
+            "The initial token file '{}' must hold the secret on one line: it travels in an Authorization header, which carries no whitespace",
+            path
+        ));
+    }
     if secret.len() < INITIAL_TOKEN_MIN_LEN {
         return Err(format!(
             "The initial token file '{}' must hold at least {} characters",
