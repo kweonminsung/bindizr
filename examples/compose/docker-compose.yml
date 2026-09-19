@@ -39,15 +39,15 @@ services:
       BINDIZR_DATABASE_TYPE: postgresql
       BINDIZR_DATABASE_URL: postgresql://bindizr:bindizr@postgres:5432/bindizr
       BINDIZR_API_LISTEN_ADDR: "0.0.0.0"
-      BINDIZR_API_PORT: "8000"
+      BINDIZR_API_LISTEN_PORT: "8000"
       BINDIZR_DNS_LISTEN_ADDR: "0.0.0.0"
-      BINDIZR_DNS_PORT: "53"
-      BINDIZR_LOG_LEVEL: info
-      BINDIZR_API_REQUIRE_AUTHENTICATION: "false"
-      BINDIZR_SECONDARY_ADDRS: bind9-1:53,bind9-2:53
-      BINDIZR_NOTIFY_RETRIES: "3"
-      BINDIZR_NOTIFY_TIMEOUT_SECS: "3"
-      BINDIZR_NSUPDATE_ALLOW_UNSIGNED: "true"
+      BINDIZR_DNS_LISTEN_PORT: "53"
+      BINDIZR_LOGGING_LEVEL: info
+      BINDIZR_API_AUTHENTICATION_REQUIRED: "false"
+      BINDIZR_DNS_SECONDARY_ADDRS: bind9-1:53,bind9-2:53
+      BINDIZR_DNS_NOTIFY_RETRIES: "3"
+      BINDIZR_DNS_NOTIFY_TIMEOUT_SECS: "3"
+      BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED: "false"
     ports:
       - "8000:8000/tcp"
       - "5300:53/tcp"
@@ -57,6 +57,16 @@ services:
     networks:
       bindizr-net:
         ipv4_address: 172.28.0.10
+    # The secondaries send their first SOA refresh as soon as they start, so
+    # they wait for a bindizr that is actually serving.
+    healthcheck:
+      test: ["CMD", "bindizr", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # Longer than the 10s drain, so a stop is not cut short by SIGKILL.
+    stop_grace_period: 30s
     restart: unless-stopped
 
   bind9-1:
@@ -64,7 +74,7 @@ services:
     command: ["-g", "-c", "/etc/bind/named.conf"]
     depends_on:
       bindizr:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "1053:53/tcp"
       - "1053:53/udp"
@@ -82,7 +92,7 @@ services:
     command: ["-g", "-c", "/etc/bind/named.conf"]
     depends_on:
       bindizr:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "1054:53/tcp"
       - "1054:53/udp"

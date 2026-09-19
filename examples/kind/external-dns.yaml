@@ -83,6 +83,15 @@ spec:
                   key: api-token
           ports:
             - containerPort: 8080 # /healthz and /metrics; 8888 stays pod-local
+          # /healthz asks bindizr with this token, so a token that was rotated
+          # or never granted a zone shows up here instead of in the other
+          # container's log.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
 ---
 # Demo target: the hostname annotation becomes an A record (its ClusterIP)
 # plus an ownership TXT record in the granted zone.

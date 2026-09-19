@@ -58,7 +58,7 @@ impl DnssecService {
         policy: Option<&str>,
         parent_ns_addrs: &str,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        caller.authorize_global("manage DNSSEC signing")?;
         let policy_name = normalize_policy_name(policy.unwrap_or(DEFAULT_DNSSEC_POLICY_NAME))?;
         let parent_ns_addrs = normalize_parent_ns_addrs(parent_ns_addrs)?;
 
@@ -67,9 +67,9 @@ impl DnssecService {
             // Check the unsigned state under the same lock used to install the keys.
             let zone =
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let existing =
+            let existing_keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            if !existing.is_empty() {
+            if !existing_keys.is_empty() {
                 return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
             }
             RepositoryService::update_zone_parent_ns_addrs_tx(
@@ -152,7 +152,7 @@ impl DnssecService {
         policy: Option<&str>,
         parent_ns_addrs: Option<&str>,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        caller.authorize_global("manage DNSSEC signing")?;
         if policy.is_none() && parent_ns_addrs.is_none() {
             return Err(ServiceError::invalid_input(
                 "nothing to update: give a policy, parent nameserver addresses, or both",
@@ -254,7 +254,7 @@ impl DnssecService {
         zone_name: &str,
         skip_ds_check: bool,
     ) -> Result<(), ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_tx("failed to disable DNSSEC").await?;
         let result = async {
@@ -317,7 +317,7 @@ impl DnssecService {
     /// Re-sign a zone from scratch, discarding stored signatures (recovery
     /// hatch when stored state is doubted).
     pub async fn sign(caller: &Caller, zone_name: &str) -> Result<(), ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_tx("failed to sign zone").await?;
         let result = async {

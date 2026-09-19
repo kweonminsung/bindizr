@@ -10,13 +10,14 @@ use bindizr_service::{
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
         DeleteRecordsFilter, DeleteRecordsResponse, ErrorResponse, GetRecordResponse,
-        GetRecordsFilter, MessageResponse, PaginatedResponse, RecordResponse, UpdateRecordRequest,
+        GetRecordsFilter, PaginatedResponse, RecordResponse, RecordWriteResponse,
+        UpdateRecordRequest,
     },
 };
 use serde::Deserialize;
 
 use crate::api::{
-    RequestCaller,
+    DryRunQuery, RequestCaller,
     error::{ApiError, Path, Query},
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
@@ -50,7 +51,7 @@ impl RecordApi {
         params(
             ("zone_name" = Option<String>, Query, description = "The name of the DNS zone to filter records by."),
             ("name" = Option<String>, Query, description = "Filter by record name."),
-            ("record_type" = Option<String>, Query, description = "Filter by record type."),
+            ("type" = Option<String>, Query, description = "Filter by record type."),
             ("value" = Option<String>, Query, description = "Partially filter by record value."),
             ("ttl" = Option<i32>, Query, description = "Filter by TTL."),
             ("min_ttl" = Option<i32>, Query, description = "Filter by minimum TTL."),
@@ -59,9 +60,9 @@ impl RecordApi {
             ("min_priority" = Option<i32>, Query, description = "Filter by minimum priority."),
             ("max_priority" = Option<i32>, Query, description = "Filter by maximum priority."),
             ("search" = Option<String>, Query, description = "Partially search records."),
-            ("sort" = Option<String>, Query, description = "Sort by name (the default), record_type, ttl, priority, or created_at."),
+            ("sort" = Option<String>, Query, description = "Sort by name (the default), type, ttl, priority, or created_at."),
             ("order" = Option<String>, Query, description = "asc (the default) or desc."),
-            ("signed" = Option<bool>, Query, description = "Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and record_type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them."),
+            ("signed" = Option<bool>, Query, description = "Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them."),
             ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Records per page; defaults to 50."),
             ("offset" = Option<u64>, Query, description = "Number of records to skip.")
         ),
@@ -117,7 +118,7 @@ pub(crate) async fn get_record(
         summary = "Create a new DNS record",
         request_body = CreateRecordRequest,
         responses(
-            (status = 201, description = "DNS record created successfully", body = RecordResponse),
+            (status = 201, description = "DNS record created successfully", body = RecordWriteResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
@@ -131,11 +132,7 @@ pub(crate) async fn create_record(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::create(&caller, &body).await?;
-
-    let response = RecordResponse {
-        record: GetRecordResponse::from_record_with_zone(&raw_record),
-    };
+    let response = RecordService::create(&caller, &body).await?;
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -145,13 +142,13 @@ pub(crate) async fn create_record(
         path = "/records/{record_id}",
         tag = "Record",
         summary = "Update a specific DNS record",
-        description = "Applies the given fields and keeps the rest. `value` is required when `record_type` changes, since a stored value is encoded per type.",
+        description = "Applies the given fields and keeps the rest. `value` is required when `type` changes, since a stored value is encoded per type.",
         params(
             ("record_id" = i32, Path, description = "The ID of the DNS record to update.")
         ),
         request_body = UpdateRecordRequest,
         responses(
-            (status = 200, description = "DNS record updated successfully", body = RecordResponse),
+            (status = 200, description = "DNS record updated successfully", body = RecordWriteResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
@@ -166,11 +163,7 @@ pub(crate) async fn update_record(
     Path(params): Path<RecordIdParam>,
     JsonBody(body): JsonBody<UpdateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::update(&caller, params.record_id, &body).await?;
-
-    let response = RecordResponse {
-        record: GetRecordResponse::from_record_with_zone(&raw_record),
-    };
+    let response = RecordService::update(&caller, params.record_id, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -181,10 +174,11 @@ pub(crate) async fn update_record(
         tag = "Record",
         summary = "Delete a specific DNS record",
         params(
-            ("record_id" = i32, Path, description = "The ID of the DNS record to delete.")
+            ("record_id" = i32, Path, description = "The ID of the DNS record to delete."),
+            ("dry_run" = Option<bool>, Query, description = "Report what would go without removing it.")
         ),
         responses(
-            (status = 200, description = "DNS record deleted successfully", body = MessageResponse),
+            (status = 200, description = "DNS record deleted successfully", body = DeleteRecordsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
             (status = 404, description = "Record not found", body = ErrorResponse),
@@ -195,12 +189,9 @@ pub(crate) async fn update_record(
 pub(crate) async fn delete_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
+    Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    RecordService::delete(&caller, params.record_id).await?;
-
-    let response = MessageResponse {
-        message: "Record deleted successfully".to_string(),
-    };
+    let response = RecordService::delete(&caller, params.record_id, preview.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -210,7 +201,7 @@ pub(crate) async fn delete_record(
         path = "/records",
         tag = "Record",
         summary = "Delete records by name",
-        description = "Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.",
+        description = "Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.",
         params(DeleteRecordsFilter),
         responses(
             (status = 200, description = "Records deleted", body = DeleteRecordsResponse),

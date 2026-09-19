@@ -30,7 +30,7 @@ async fn record_scope_by_zone() {
     ] {
         let create_record_request = json!({
             "name": "shared",
-            "record_type": "A",
+            "type": "A",
             "value": value,
             "ttl": 1800,
             "zone_name": zone_name
@@ -98,14 +98,14 @@ async fn record_filter_and_paginate() {
     for request in [
         json!({
             "name": "api",
-            "record_type": "A",
+            "type": "A",
             "value": "192.168.1.200",
             "ttl": 1800,
             "zone_name": zone["name"]
         }),
         json!({
             "name": "mail",
-            "record_type": "MX",
+            "type": "MX",
             "value": "mail.example.com",
             "ttl": 3600,
             "priority": 10,
@@ -113,7 +113,7 @@ async fn record_filter_and_paginate() {
         }),
         json!({
             "name": "alias",
-            "record_type": "CNAME",
+            "type": "CNAME",
             "value": "Target.Example.Com",
             "ttl": 7200,
             "zone_name": zone["name"]
@@ -147,7 +147,7 @@ async fn record_filter_and_paginate() {
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["record_type"], "MX");
+    assert_eq!(records[0]["type"], "MX");
 
     // The CNAME was created as "Target.Example.Com": the value filter matches
     // against the normalized (lowercased, dot-terminated) stored value.
@@ -161,7 +161,7 @@ async fn record_filter_and_paginate() {
     assert_eq!(status, StatusCode::OK);
     let records = body["items"].as_array().unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["record_type"], "CNAME");
+    assert_eq!(records[0]["type"], "CNAME");
 
     // Filters accept denormalized inputs too: a trailing-dot zone name and an
     // owner in FQDN form without the trailing dot.
@@ -213,7 +213,7 @@ async fn record_filter_matches_every_spelling_of_an_owner_name() {
                 "/records",
                 Some(json!({
                     "name": name,
-                    "record_type": "A",
+                    "type": "A",
                     "value": "192.0.2.1",
                     "zone_name": zone_name,
                 })),
@@ -265,7 +265,7 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
                 "/records",
                 Some(json!({
                     "name": name,
-                    "record_type": record_type,
+                    "type": record_type,
                     "value": value,
                     "zone_name": zone_name,
                 })),
@@ -381,7 +381,7 @@ async fn empty_name_filter_is_no_filter_not_the_apex() {
                 Method::POST,
                 "/records",
                 Some(json!({
-                    "name": name, "record_type": "A",
+                    "name": name, "type": "A",
                     "value": value, "zone_name": zone_name
                 })),
             )
@@ -433,7 +433,7 @@ async fn search_treats_like_wildcards_as_literal_text() {
                 Method::POST,
                 "/records",
                 Some(json!({
-                    "name": name, "record_type": "TXT",
+                    "name": name, "type": "TXT",
                     "value": value, "zone_name": zone_name
                 })),
             )
@@ -490,7 +490,7 @@ async fn record_listing_sorts_by_the_field_asked_for() {
                 Method::POST,
                 "/records",
                 Some(json!({
-                    "name": name, "record_type": "A", "value": "192.0.2.1",
+                    "name": name, "type": "A", "value": "192.0.2.1",
                     "ttl": ttl, "zone_name": zone_name
                 })),
             )
@@ -502,7 +502,7 @@ async fn record_listing_sorts_by_the_field_asked_for() {
         let (status, body) = app
             .send_request(
                 Method::GET,
-                &format!("/records?zone_name={zone_name}&record_type=A&limit=1000&{query}"),
+                &format!("/records?zone_name={zone_name}&type=A&limit=1000&{query}"),
                 None,
             )
             .await;

@@ -4,8 +4,8 @@ bindizr signs zones itself: enabling DNSSEC generates the zone's key(s),
 derives the `DNSKEY`, `CDS`/`CDNSKEY`, denial-of-existence, and `RRSIG`
 records, and serves them over the same AXFR/IXFR path — secondaries need
 **no configuration changes**. Every record change re-signs exactly what
-changed in the same transaction, and a maintenance pass — hourly by default,
-set by `dns.maintenance_interval_secs` — renews signatures before they expire
+changed in the same transaction, and a scheduler pass — hourly by default,
+set by `dns.scheduler_interval_secs` — renews signatures before they expire
 and carries key rollovers through, asking the parent about the DS when one is
 waiting on it.
 
@@ -19,7 +19,7 @@ key layout, or timing.
 
 ```sh
 bindizr dnssec-policy list
-bindizr dnssec-policy create --name strict --algorithm ed25519 --denial nsec3 \
+bindizr dnssec-policy create strict --algorithm ed25519 --denial nsec3 \
     --signature-validity-days 7 --signature-refresh-days 3
 bindizr dnssec-policy get strict
 bindizr dnssec-policy update strict --zsk-lifetime-days 90
@@ -55,7 +55,7 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
 The algorithm, denial mode, and key layout are fixed once a policy exists
 (move a zone to another policy to change them);
 the timing fields can be edited in place and apply to every zone under the
-policy from its next signing pass or maintenance scan. A policy in use
+policy from its next signing pass or scheduler scan. A policy in use
 cannot be deleted, and neither can `default`: edit it to change the
 installation's defaults.
 
@@ -63,9 +63,9 @@ installation's defaults.
 
 ```sh
 bindizr dnssec enable example.com \
-  --parent-ns-addrs a.gtld-servers.net,b.gtld-servers.net --parent-ds-ttl 86400
+  --parent-ns-addrs a.gtld-servers.net,b.gtld-servers.net
 bindizr dnssec enable example.com \
-  --parent-ns-addrs ns1.parent.example --parent-ds-ttl 3600 --policy strict
+  --parent-ns-addrs ns1.parent.example --policy strict
 ```
 
 or over HTTP:
@@ -74,16 +74,15 @@ or over HTTP:
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:3000/zones/example.com/dnssec \
   -H "Content-Type: application/json" \
-  -d '{"policy": "strict", "parent_ns_addrs": "ns1.parent.example", "parent_ds_ttl": 3600}'
+  -d '{"policy": "strict", "parent_ns_addrs": "ns1.parent.example"}'
 ```
 
-Both parent settings are required. `--parent-ns-addrs` names the servers
-every later DS check asks — in a hidden primary layout the host resolver
-cannot see the zones bindizr serves, so there is nothing reliable to guess
-them from. `--parent-ds-ttl` is the TTL those servers hand out with the
-zone's DS; bindizr does not read it from them, because a retired key has to
-wait it out *after* the parent stopped serving that DS, which is a moment
-bindizr never sees. Your registrar publishes the value (86400 is common).
+`--parent-ns-addrs` is required, and names the servers every later DS check
+asks — in a hidden primary layout the host resolver cannot see the zones
+bindizr serves, so there is nothing reliable to guess them from. The TTL those
+servers hand out with the zone's DS is read from their answer, not configured,
+and `dnssec status` reports it: a retired SEP key waits it out, so a long
+parent TTL lengthens a rollover.
 
 This generates the key(s) the policy prescribes (under `default`, a single
 ECDSA P-256 CSK), signs the whole zone, and notifies the secondaries. The
@@ -172,13 +171,13 @@ replaced with one of the new algorithm and the zone is double-signed — both
 algorithms cover all data — until the old keys leave together after
 `ds-seen`.
 
-## Signature maintenance
+## Signature refresh
 
 Signatures are valid for the policy's `signature_validity_days` (default 14)
 and renewed once fewer than `signature_refresh_days` (default 5) remain; the
-maintenance pass handles this with no operator action. Every instance runs the
+scheduler pass handles this with no operator action. Every instance runs the
 whole pass, so a deployment of several can set
-`dns.maintenance_interval_secs = 0` on all but one — at least one must keep
+`dns.scheduler_interval_secs = 0` on all but one — at least one must keep
 it, or signatures expire. `bindizr dnssec
 sign example.com` forces a full re-sign if stored signatures are ever
 doubted.
@@ -186,7 +185,7 @@ doubted.
 To give some zones different timing, create a policy with the values you
 want and move them to it with `dnssec set --policy`; editing a policy
 with `dnssec-policy update` changes every zone under it from the next
-signing pass or maintenance scan. `dnssec status` reports the zone's
+signing pass or scheduler scan. `dnssec status` reports the zone's
 policy and its values.
 
 ## Key import and export
@@ -256,12 +255,13 @@ changed with:
 
 ```sh
 bindizr dnssec set example.com --parent-ns-addrs ns1.parent.example:5353
-bindizr dnssec set example.com --parent-ds-ttl 3600
 ```
 
-Also `parent_ns_addrs` and `parent_ds_ttl` in the enable body and in
-`PUT /zones/{name}/dnssec`; `dnssec status` shows both. The list must always
-name at least one server.
+The same field is `parent_ns_addrs` in the enable body and in
+`PUT /zones/{name}/dnssec`, and it must always name at least one server.
+`dnssec status` shows it beside the DS TTL the parent answers with, which is
+read rather than configured: it is how long caches may keep serving a DS
+after its removal, and it paces a rollover's retirement.
 
 ## Behavior notes
 

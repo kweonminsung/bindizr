@@ -32,22 +32,22 @@ Bindizr owns the zone data and the transfer path; standard BIND9 secondaries dis
 
 - **Zone and Record Management** — full CRUD through the HTTP API or CLI, including bulk inserts, BIND master-file import/export, and dry-run diff previews.
 - **Multiple Database Backends** — MySQL, PostgreSQL, or SQLite.
-- **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and an optional per-serial zone cache.
+- **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
-- **DNS NOTIFY** — configurable retries and timeouts, plus a sync/async apply mode that batches NOTIFYs under load.
+- **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 - **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone grants.
 - **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
-- **Observability** — health probe, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
+- **Observability** — health probe, Prometheus metrics at `/metrics`, text or JSON logs, and `bindizr status` / `bindizr doctor` diagnostics.
 
 ## Roadmap
 
 - **Per-zone ACLs** — transfer and SOA access is one server-wide list today.
   Scoping it per zone lets one deployment serve secondaries that each hold
   part of the catalog.
-- **Secondaries managed at runtime** — the secondary list is a config field, so
-  adding one takes a restart. Moving it into the database puts it behind the
+- **Secondaries managed at runtime** — the secondary list is a config field,
+  reloadable but still a file. Moving it into the database puts it behind the
   API and CLI, like zones, tokens, and signing policies already are.
 
 ## Quick Start
@@ -65,6 +65,15 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --version 0.1.0-beta.7 --set postgresql.enabled=true
 ```
 
+### Docker Compose
+
+Builds the image from the working tree and brings up Bindizr, PostgreSQL, and
+two BIND9 secondaries on one host.
+
+```bash
+$ docker compose -f examples/compose/docker-compose.yml up -d --build
+```
+
 ### Docker Swarm
 
 Brings up Bindizr, PostgreSQL, and BIND9 on an overlay network.
@@ -76,16 +85,17 @@ $ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
 ### Package install
 
 ```bash
-$ sudo dpkg -i bindizr_*_amd64.deb    # Debian, Ubuntu
-$ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL
+$ sudo dpkg -i bindizr_*_amd64.deb    # Debian, Ubuntu (bindizr_*_arm64.deb on arm64)
+$ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL (bindizr-*.aarch64.rpm on arm64)
 ```
 
-The package ships a placeholder database URL, so set yours in
-`/etc/bindizr/bindizr.conf.toml` before starting. BIND9 has to be pointed at the
-catalog zone as well — the manual installation guide covers both.
+The package runs on SQLite out of the box and serves zone transfers on port
+5300, leaving 53 to BIND9. Point BIND9 at the catalog zone with the bundled
+script, then start.
 
 ```bash
-$ sudo systemctl enable --now bindizr
+$ sudo /usr/share/bindizr/setup_bind.sh && sudo systemctl restart named   # bind9 on Debian
+$ sudo systemctl start bindizr
 ```
 
 ---
@@ -104,7 +114,7 @@ API authentication is on by default for Helm and package installs — the Compos
 stack ships with it off. Create a token before calling the API:
 
 ```bash
-$ sudo bindizr token create --name admin --global
+$ sudo bindizr token create admin --global
 ```
 
 ## Documentation

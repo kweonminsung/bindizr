@@ -28,7 +28,7 @@ pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 pub(crate) use dns::{
     FakeParent, ServedDs, TransferOutcome, axfr, probe_zone_soa, wait_for_any_dns_record,
 };
-use dns::{dns_record_type, extract_dns_key, to_dns_expected_value, wait_for_dns_records};
+use dns::{build_dns_expected_value, dns_record_type, extract_dns_key, wait_for_dns_records};
 
 /// The most a listing returns in one call; the HTTP API refuses more.
 const RECORD_PAGE_LIMIT: u32 = 1000;
@@ -48,16 +48,31 @@ pub(crate) struct TestApp {
 }
 
 /// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
-#[derive(Default)]
 pub(crate) struct TestAppOptions {
-    pub(crate) require_authentication: bool,
+    pub(crate) authentication_required: bool,
     pub(crate) external_dns_enabled: bool,
-    pub(crate) nsupdate_allow_unsigned: bool,
+    /// `false` accepts unsigned nsupdate requests.
+    pub(crate) nsupdate_tsig_required: bool,
     pub(crate) openapi_enabled: bool,
     /// Also the zone-transfer ACL; NOTIFY stays off in tests.
     pub(crate) secondary_addrs: String,
     /// Serve the API over HTTPS with a certificate generated for this run.
     pub(crate) tls: bool,
+}
+
+impl Default for TestAppOptions {
+    /// Build the options `start()` uses: authentication off for convenience,
+    /// and the daemon's own answer for everything else.
+    fn default() -> Self {
+        Self {
+            authentication_required: false,
+            external_dns_enabled: false,
+            nsupdate_tsig_required: true,
+            openapi_enabled: false,
+            secondary_addrs: String::new(),
+            tls: false,
+        }
+    }
 }
 
 /// Where the daemon under test runs: a process this test spawned, or the shared Compose stack.
@@ -102,7 +117,7 @@ impl TestApp {
     /// auth) and return its `(name, plaintext token)`.
     pub(crate) async fn create_api_token(&self) -> (String, String) {
         let name = format!("{}-global", self.namespace);
-        self.create_token_with(&["token", "create", "--name", &name, "--global"])
+        self.create_token_with(&["token", "create", &name, "--global"])
             .await
     }
 
@@ -110,8 +125,7 @@ impl TestApp {
     /// grant zones with `token grant`.
     pub(crate) async fn create_scoped_api_token(&self) -> (String, String) {
         let name = format!("{}-scoped", self.namespace);
-        self.create_token_with(&["token", "create", "--name", &name])
-            .await
+        self.create_token_with(&["token", "create", &name]).await
     }
 
     /// Create a test API token using the supplied CLI options.
@@ -225,18 +239,34 @@ impl TestApp {
 
     /// Fetch all API record pages for a zone.
     pub(crate) async fn list_records(&self, zone_name: &str) -> Vec<Value> {
-        let (status, body) = self
-            .send_request(
-                Method::GET,
-                &format!("/zones/{zone_name}?records=true"),
-                None,
-            )
-            .await;
-        assert_eq!(status, StatusCode::OK);
-        body["records"]
-            .as_array()
-            .expect("zone detail carries a records array")
-            .clone()
+        let mut records = Vec::new();
+        let mut offset = 0u64;
+        loop {
+            let (status, body) = self
+                .send_request(
+                    Method::GET,
+                    &format!(
+                        "/records?zone_name={zone_name}&limit={RECORD_PAGE_LIMIT}&offset={offset}"
+                    ),
+                    None,
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK);
+            let page = body["items"]
+                .as_array()
+                .expect("record list response did not contain items")
+                .clone();
+            let read = page.len();
+            records.extend(page);
+            let total = body["pagination"]["total"]
+                .as_u64()
+                .expect("record list response did not contain a total");
+            offset += read as u64;
+            if read == 0 || offset >= total {
+                break;
+            }
+        }
+        records
     }
 
     /// Read the zone's current serial through the API.
@@ -264,10 +294,31 @@ impl TestApp {
             "expire": 604800,
             "minimum_ttl": 86400
         });
-        let (status, body) = self
+        let (status, _) = self
             .send_request(Method::POST, "/zones", Some(request))
             .await;
         assert_eq!(status, StatusCode::CREATED);
+
+        // The apex NS is the operator's record, so the fixture adds one.
+        let (status, _) = self
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(json!({
+                    "zone_name": zone_name,
+                    "name": "@",
+                    "type": "NS",
+                    "value": format!("ns1.{zone_name}"),
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        // That record moved the serial, so report the zone as it now stands.
+        let (status, body) = self
+            .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+            .await;
+        assert_eq!(status, StatusCode::OK);
         body["zone"].clone()
     }
 
@@ -276,19 +327,27 @@ impl TestApp {
     pub(crate) async fn create_zone_cli(&self, zone_name: &str, default_ttl: &str) -> String {
         let mname = format!("ns1.{zone_name}");
         let rname = format!("hostmaster@{zone_name}");
+        let created = self
+            .run_cli_success(&[
+                "zone",
+                "create",
+                zone_name,
+                "--mname",
+                &mname,
+                "--rname",
+                &rname,
+                "--default-ttl",
+                default_ttl,
+            ])
+            .await;
+
+        // The apex NS is the operator's record, so the fixture adds one.
         self.run_cli_success(&[
-            "zone",
-            "create",
-            "--name",
-            zone_name,
-            "--mname",
-            &mname,
-            "--rname",
-            &rname,
-            "--default-ttl",
-            default_ttl,
+            "record", "create", zone_name, "@", "--type", "NS", "--value", &mname,
         ])
-        .await
+        .await;
+
+        created
     }
 
     /// Run a CLI command against this test application.
@@ -300,10 +359,14 @@ impl TestApp {
     ///
     /// After selected zone/record commands succeed, wait for configured secondary
     /// DNS answers to match the API.
-    async fn run_cli_with_input(&self, args: &[&str], input: Option<&str>) -> std::process::Output {
+    pub(crate) async fn run_cli_with_input(
+        &self,
+        args: &[&str],
+        input: Option<&str>,
+    ) -> std::process::Output {
         // Remember deleted names before the API can no longer return their identity.
         let previous_dns_key = match args {
-            ["record", "delete", record_id, ..] => {
+            ["record", "delete", record_id, ..] if record_id.parse::<i32>().is_ok() => {
                 self.read_previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
                     .await
             }
@@ -437,14 +500,14 @@ impl TestApp {
                 .as_str()
                 .expect("record did not contain a name")
                 .to_string();
-            let record_type = record["record_type"]
+            let record_type = record["type"]
                 .as_str()
                 .and_then(dns_record_type)
                 .expect("record contained an unsupported DNS type");
             expected
                 .entry((name, record_type))
                 .or_default()
-                .push(to_dns_expected_value(record, record_type));
+                .push(build_dns_expected_value(record, record_type));
         }
 
         // Wait for each name and type to converge on every configured secondary.

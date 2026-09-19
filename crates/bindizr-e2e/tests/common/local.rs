@@ -126,39 +126,43 @@ fn write_config(
 [api]
 listen_addr = "127.0.0.1"
 listen_port = {api_port}
-require_authentication = {require_authentication}
+authentication_required = {authentication_required}
 external_dns_enabled = {external_dns_enabled}
 openapi_enabled = {openapi_enabled}
 {tls}
+
 [database]
 type = "sqlite"
 
 [database.mysql]
-server_url = ""
+url = ""
 
 [database.sqlite]
 file_path = "{}"
 
 [database.postgresql]
-server_url = ""
+url = ""
 
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
 secondary_addrs = "{secondary_addrs}"
-notify_after_update = false
-notify_on_startup = false
-notify_retries = 0
-notify_timeout_secs = 1
-nsupdate_allow_unsigned = {nsupdate_allow_unsigned}
+nsupdate_tsig_required = {nsupdate_tsig_required}
+
+
+[dns.notify]
+after_update = false
+on_startup = false
+retries = 0
+timeout_secs = 1
 
 [logging]
-log_level = "error"
+level = "error"
 "#,
         db_path.display(),
-        require_authentication = options.require_authentication,
+        authentication_required = options.authentication_required,
         external_dns_enabled = options.external_dns_enabled,
-        nsupdate_allow_unsigned = options.nsupdate_allow_unsigned,
+        nsupdate_tsig_required = options.nsupdate_tsig_required,
         openapi_enabled = options.openapi_enabled,
         tls = match options.tls {
             true => {
@@ -180,7 +184,7 @@ log_level = "error"
 /// stderr, the only place a daemon that dies before listening says why.
 async fn wait_for_api(client: &Client, base_url: &str, child: &mut Child) -> Result<(), String> {
     // /health sits outside the auth layer, so readiness ignores
-    // require_authentication.
+    // authentication_required.
     let health_url = format!("{base_url}/health");
     let mut attempts = 0;
     let failure = loop {

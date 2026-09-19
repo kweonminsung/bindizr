@@ -34,43 +34,57 @@ Create a configuration file at `/etc/bindizr/bindizr.conf.toml`:
 
 ```toml
 [api]
-listen_addr = "127.0.0.1"     # HTTP API listen address
-listen_port = 3000            # HTTP API listen port
-require_authentication = true # Enable API authentication (true/false)
-metrics_enabled = true        # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only)
-external_dns_enabled = false  # Register the ExternalDNS provider API at /external-dns
-openapi_enabled = false       # Serve the OpenAPI document at GET /openapi.json and /openapi.yaml (unauthenticated)
+listen_addr = "127.0.0.1"
+listen_port = 3000
+authentication_required = true # Require an API token; `bindizr token create` makes the first one
+metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
+external_dns_enabled = false  # ExternalDNS provider API at /external-dns
+openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
+# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # Set both to serve HTTPS; without them the API is
+# tls_key_file = "/etc/bindizr/tls/tls.key"   # plain HTTP and its tokens travel in the clear
 
 [database]
-type = "mysql"                # Database type: mysql, sqlite, postgresql
+type = "sqlite"               # sqlite, mysql, or postgresql
 
 [database.mysql]
-server_url = "mysql://user:password@hostname:port/database" # Mysql server configuration
+url = "mysql://user:password@hostname:port/database"
 
 [database.sqlite]
-file_path = "bindizr.db"      # SQLite database file path
+file_path = "/var/lib/bindizr/bindizr.db"
 
 [database.postgresql]
-server_url = "postgresql://user:password@hostname:port/database" # PostgreSQL server configuration
+url = "postgresql://user:password@hostname:port/database"
 
 [dns]
-listen_addr = "127.0.0.1"     # DNS server listen address
-listen_port = 53              # DNS server listen port (UDP and TCP)
-secondary_addrs = ""          # Comma-separated secondary DNS server addresses (e.g., "192.168.1.2:53,192.168.1.3:53").
-                              # Both the NOTIFY targets and the clients allowed to poll SOA and pull AXFR/IXFR.
-notify_after_update = true    # Send DNS NOTIFY after zone changes
-notify_mode = "sync"          # "sync": NOTIFY runs inline; "async": queued to a background worker
-notify_batch_ms = 50          # async only: window to batch NOTIFYs into one per zone (0 disables the wait)
-zone_cache = true             # Cache each zone's records by serial so repeated AXFRs skip the DB read
-zone_cache_max_records = 500000 # Records the cache may hold; a larger zone is served uncached (a record costs roughly 130-900 bytes)
-notify_on_startup = false     # Send DNS NOTIFY when bindizr starts
-notify_retries = 3            # Retry count after the initial NOTIFY attempt
-notify_timeout_secs = 3       # Timeout in seconds for each NOTIFY send/response wait
-nsupdate_allow_unsigned = false # Accept unsigned nsupdate requests from this host only (TSIG keys/grants are managed via CLI or HTTP API)
-journal_retention_days = 365  # Days of IXFR journal/SOA history to keep (0 = unlimited); bounds rollback depth, pruned serials fall back to AXFR
+listen_addr = "127.0.0.1"
+listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
+secondary_addrs = "127.0.0.1:53"  # Comma-separated; they receive NOTIFY and are the only clients
+                              # allowed to pull zones. The default is the BIND `setup_bind.sh` installs.
+nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false admits anyone
+# zone_history_retention_days = 365 # Days of history kept for rollback and secondary catch-up (0 = forever)
+# scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
+
+[dns.notify]                  # NOTIFY to the secondaries
+after_update = true           # Notify after zone changes
+on_startup = false            # Notify for every zone at startup
+# batch_ms = 0                # Window to batch a zone's NOTIFYs, sent after the write is answered (0 = before)
+# retries = 3                 # Retries after the first attempt
+# timeout_secs = 3            # Seconds to wait for each NOTIFY
+
+[dns.transfer_cache]          # Zone records cached per serial, so repeated transfers skip the database
+# enabled = true
+# max_records = 500000        # Records the cache holds; a larger zone is served uncached
+
+[dns.zone_defaults]           # Applied when a zone-creation request omits the field
+ttl = 3600                    # Default record TTL (seconds)
+refresh = 300                 # SOA refresh; NOTIFY drives propagation, so this only bounds a lost one
+retry = 60                    # SOA retry
+expire = 3600000              # SOA expire
+minimum_ttl = 86400           # SOA minimum (negative-caching TTL)
 
 [logging]
-log_level = "debug"           # Log level: error, warn, info, debug, trace
+level = "debug"               # error, warn, info, debug, trace
+# format = "text"             # text, or json for one object per line
 ```
 
 Start bindizr:
@@ -83,18 +97,18 @@ Use the CLI to inspect and manage resources:
 
 ```bash
 bindizr status
-bindizr token create --name admin --global
-bindizr zone create --name example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
+bindizr token create admin --global
+bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
 bindizr zone list
 bindizr zone import example.com db.example.com --mode upsert
 bindizr zone version list example.com
 bindizr zone version diff example.com 7
 bindizr zone version rollback example.com 7 --dry-run
-bindizr dnssec enable example.com
+bindizr dnssec enable example.com --parent-ns-addrs a.gtld-servers.net
 bindizr token grant ci example.com --types A,AAAA
 bindizr zone status example.com
-bindizr record list --zone example.com
-bindizr record bulk-create records.json --zone example.com
+bindizr record list example.com
+bindizr record bulk-create example.com records.json
 bindizr zone notify example.com
 ```
 

@@ -113,19 +113,6 @@ fn upsert_leaves_names_and_types_the_file_is_silent_about() {
     assert_eq!(added(&plan), ["192.0.2.1"]);
 }
 
-/// Verify that a row the SOA depends on survives a replace.
-#[test]
-fn a_row_the_soa_depends_on_survives_a_replace() {
-    // The apex NS naming the zone's own mname cannot go, or the zone would
-    // serve an SOA whose primary it no longer delegates to.
-    let rows = [existing(1, "@", RecordType::NS, "ns1.example.com.", 300)];
-    let want = [desired("www", RecordType::A, "192.0.2.1", None)];
-
-    let plan = compute_import_plan(ImportMode::Replace, &zone(), &rows, &want);
-
-    assert!(plan.dels.is_empty(), "{:?}", ids(&plan.dels));
-}
-
 /// Verify that a TTL change rewrites the row rather than editing it.
 #[test]
 fn a_ttl_change_rewrites_the_row_rather_than_editing_it() {

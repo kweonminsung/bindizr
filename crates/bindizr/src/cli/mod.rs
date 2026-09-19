@@ -6,12 +6,18 @@ mod commands;
 pub(crate) mod error;
 mod output;
 
+use bindizr_core::errln;
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 
 use crate::{
-    cli::commands::{
-        config::ConfigCommand, dnssec::DnssecCommand, dnssec_policy::DnssecPolicyCommand,
-        record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
+    cli::{
+        commands::{
+            config::ConfigCommand, dnssec::DnssecCommand, dnssec_policy::DnssecPolicyCommand,
+            record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand,
+            zone::ZoneCommand,
+        },
+        output::OutputFormat,
     },
     daemon,
 };
@@ -35,16 +41,31 @@ pub(crate) enum Command {
         config: Option<String>,
     },
     /// Stop the running bindizr daemon
-    Stop,
+    Stop {
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
     /// Restart the running bindizr daemon in place
-    Restart,
+    Restart {
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
     /// Show the status of the bindizr service
-    Status,
+    Status {
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
     /// Check that the bindizr installation is healthy
     Doctor {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
     /// Inspect and validate configuration
     Config {
@@ -60,13 +81,6 @@ pub(crate) enum Command {
     Record {
         #[command(subcommand)]
         subcommand: RecordCommand,
-    },
-    /// Send NOTIFY messages to secondary servers for every zone
-    Notify {
-        /// Bump every zone's serial first, so secondaries transfer even when
-        /// nothing changed
-        #[arg(long)]
-        bump_serial: bool,
     },
     /// Manage API tokens and the zones each may change over HTTP
     Token {
@@ -88,34 +102,63 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: DnssecCommand,
     },
+    /// Print a shell completion script on stdout
+    #[command(after_help = "\
+Examples:
+  bindizr completion bash | sudo tee /usr/share/bash-completion/completions/bindizr
+  bindizr completion zsh  | sudo tee /usr/share/zsh/site-functions/_bindizr
+  bindizr completion fish > ~/.config/fish/completions/bindizr.fish")]
+    Completion {
+        /// Shell to generate for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+    /// Print the bindizr man page (roff) on stdout
+    #[command(after_help = "\
+Example:
+  bindizr man | sudo tee /usr/share/man/man1/bindizr.1 > /dev/null")]
+    Man,
 }
 
 /// Parse CLI arguments and dispatch to the matching command handler.
 pub async fn execute() {
     let args = Args::parse();
 
-    if let Err(e) = match args.command {
-        Command::Start { config } => daemon::bootstrap(config.as_deref())
-            .await
-            .map_err(error::CliError::from),
-        Command::Stop => commands::stop::handle_command().await,
-        Command::Restart => commands::restart::handle_command().await,
-        Command::Status => commands::status::handle_command().await,
-        Command::Doctor { config } => commands::doctor::handle_command(config).await,
+    let result = match args.command {
+        Command::Start { config } => daemon::bootstrap(config.as_deref()).await,
+        Command::Stop { output } => commands::stop::handle_command(output).await,
+        Command::Restart { output } => commands::restart::handle_command(output).await,
+        Command::Status { output } => commands::status::handle_command(output).await,
+        Command::Doctor { config, output } => {
+            commands::doctor::handle_command(config, output).await
+        }
         Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
         Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
-        Command::Notify { bump_serial } => commands::notify::handle_command(bump_serial).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
         Command::DnssecPolicy { subcommand } => {
             commands::dnssec_policy::handle_command(subcommand).await
         }
         Command::Dnssec { subcommand } => commands::dnssec::handle_command(subcommand).await,
-    } {
-        eprintln!("Error: {}", e.message);
+        Command::Completion { shell } => commands::completion::handle_command(shell),
+        Command::Man => commands::completion::handle_man_command(),
+    };
+
+    // Lost output must not read as success; a reader that stopped early is
+    // not lost output.
+    let result = result.and_then(|()| match bindizr_core::stream::write_failure() {
+        Some(failure) => Err(error::CliError::from(format!(
+            "output was lost: {}",
+            failure
+        ))),
+        None => Ok(()),
+    });
+
+    if let Err(e) = result {
+        errln!("Error: {}", e.message);
         if let Some(hint) = e.hint() {
-            eprintln!("Hint: {}", hint);
+            errln!("Hint: {}", hint);
         }
         std::process::exit(e.exit_code());
     }

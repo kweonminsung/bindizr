@@ -29,7 +29,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
             "/records",
             Some(json!({
                 "name": "www",
-                "record_type": "A",
+                "type": "A",
                 "value": "192.0.2.10",
                 "zone_name": zone_name,
             })),
@@ -64,7 +64,7 @@ async fn signed_zone_propagates_dnssec_records_and_signed_ixfr() {
             "/records",
             Some(json!({
                 "name": "api",
-                "record_type": "A",
+                "type": "A",
                 "value": "192.0.2.11",
                 "zone_name": zone_name,
             })),
@@ -111,7 +111,7 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
             "/records",
             Some(json!({
                 "name": "www",
-                "record_type": "A",
+                "type": "A",
                 "value": "192.0.2.10",
                 "zone_name": zone_name,
             })),

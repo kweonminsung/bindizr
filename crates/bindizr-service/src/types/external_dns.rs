@@ -6,9 +6,11 @@ use utoipa::ToSchema;
 /// One record of the ExternalDNS API: every value of one name and type. Names
 /// are absolute; TXT values are quoted presentation strings.
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ExternalDnsRecord {
     #[schema(example = "app.example.com")]
     pub name: String,
+    #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
     /// Optional on writes; an omitted or zero TTL resolves to the zone TTL.
@@ -20,6 +22,7 @@ pub struct ExternalDnsRecord {
 
 /// A record replacement: `old` values are removed and `new` written in place.
 #[derive(Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ExternalDnsRecordUpdate {
     pub old: ExternalDnsRecord,
     pub new: ExternalDnsRecord,
@@ -27,6 +30,7 @@ pub struct ExternalDnsRecordUpdate {
 
 /// Request body for canonicalizing desired records without applying them.
 #[derive(Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ExternalDnsAdjustRequest {
     pub records: Vec<ExternalDnsRecord>,
 }
@@ -39,6 +43,7 @@ pub struct ExternalDnsAdjustResponse {
 
 /// Request body for applying an ExternalDNS change set atomically.
 #[derive(Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ExternalDnsChangesRequest {
     #[serde(default)]
     pub creates: Vec<ExternalDnsRecord>,

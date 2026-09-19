@@ -10,7 +10,7 @@ message, or reporting something that confused you all count.
 
 - **Report a bug** — [open an issue](https://github.com/kweonminsung/bindizr/issues/new/choose).
   The Bindizr version, database backend, and a few log lines
-  (`log_level = "debug"`) usually tell the whole story.
+  (`level = "debug"` under `[logging]`) usually tell the whole story.
 - **Suggest a feature** — open an issue and describe what you were trying to do.
 - **Send a pull request** — small fixes can go straight to a PR. For anything
   larger, opening an issue first saves you from writing code twice.

@@ -168,7 +168,7 @@ async fn zone_auto_serial_starts_at_one_and_update_rejects_explicit_serial() {
     assert_eq!(body["zone"]["serial"].as_i64().unwrap(), 1);
 
     let record = json!({
-        "name": "www", "record_type": "A", "value": "192.0.2.70",
+        "name": "www", "type": "A", "value": "192.0.2.70",
         "ttl": 300, "zone_name": zone_name
     });
     let (status, _) = app
@@ -233,7 +233,7 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
     let records = app.list_records(zone_name).await;
     let ns = records
         .iter()
-        .find(|record| record["record_type"] == "NS")
+        .find(|record| record["type"] == "NS")
         .expect("apex NS row");
     for spelling in ["@", zone_name] {
         let (status, body) = app
@@ -242,9 +242,9 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
                 &format!("/records/{}", ns["id"].as_i64().unwrap()),
                 Some(json!({
                     "name": spelling,
-                    "record_type": "NS",
+                    "type": "NS",
                     "value": ns["value"],
-                    "default_ttl": 1200,
+                    "ttl": 1200,
                 })),
             )
             .await;

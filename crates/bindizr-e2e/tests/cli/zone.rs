@@ -3,14 +3,20 @@ use serde_json::Value;
 use crate::common::{TestApp, TestAppOptions, assert_cli_failure_contains, assert_cli_success};
 
 /// The `zone import` summary row: PARSED ADDED DELETED UPDATED UNCHANGED SKIPPED.
-fn summary_row(stdout: &str) -> Vec<&str> {
+fn summary_cells(stdout: &str) -> Vec<&str> {
     stdout
         .lines()
-        .skip_while(|line| !line.contains("PARSED"))
+        .skip_while(|line| !line.contains("APPLIED"))
         .nth(1)
         .expect("import printed a summary table")
         .split_whitespace()
         .collect()
+}
+
+/// The count cells of an import summary table, after its APPLIED and DRY-RUN
+/// flags.
+fn summary_row(stdout: &str) -> Vec<&str> {
+    summary_cells(stdout)[2..].to_vec()
 }
 
 /// Verify that zone create takes SOA timers.
@@ -26,7 +32,6 @@ async fn zone_create_takes_soa_timers() {
         .run_cli_success(&[
             "zone",
             "create",
-            "--name",
             &zone_name,
             "--mname",
             &mname,
@@ -189,7 +194,6 @@ async fn zone_reject_invalid_name_and_ttl() {
         let args = [
             "zone",
             "create",
-            "--name",
             name,
             "--mname",
             &mname,
@@ -204,6 +208,32 @@ async fn zone_reject_invalid_name_and_ttl() {
 
     let status = app.run_cli(&["status"]).await;
     assert_cli_success(&["status"], &status);
+}
+
+/// Verify that a rejected import applies nothing and exits non-zero.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-reject.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+
+    // A record type bindizr does not store fails the whole file, and a CI step
+    // must not read the rejection as a successful import.
+    let output = app
+        .run_cli_with_input(
+            &["zone", "import", &zone_name, "-"],
+            Some("www IN A 192.0.2.40\nbox IN HINFO \"amd64\" \"linux\"\n"),
+        )
+        .await;
+    assert!(!output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8");
+    assert_eq!(summary_cells(&stdout)[0], "false", "{stdout}");
+
+    // Nothing landed, including the record that was valid on its own.
+    let listed = app.run_cli_success(&["record", "list", &zone_name]).await;
+    assert!(!listed.contains("192.0.2.40"), "{listed}");
 }
 
 /// Verify importing a zone file from standard input.
@@ -243,7 +273,7 @@ async fn zone_import_zone_file_from_stdin() {
 
     let records = app
         .run_cli_success(&[
-            "record", "list", "--zone", &zone_name, "--type", "A", "--output", "json",
+            "record", "list", &zone_name, "--type", "A", "--output", "json",
         ])
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
@@ -267,14 +297,12 @@ async fn zone_export_via_cli() {
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
+        &zone_name,
         "www",
         "--type",
         "A",
         "--value",
         "192.0.2.1",
-        "--zone",
-        &zone_name,
         "--ttl",
         "300",
     ])
@@ -284,14 +312,12 @@ async fn zone_export_via_cli() {
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
+        &zone_name,
         "nottl",
         "--type",
         "A",
         "--value",
         "192.0.2.2",
-        "--zone",
-        &zone_name,
     ])
     .await;
 
@@ -377,7 +403,7 @@ async fn zone_import_dry_run_shows_the_diff_via_cli() {
     assert!(dry_run.contains("By name and type: +2 -0 ~0"), "{dry_run}");
 
     let records = app
-        .run_cli_success(&["record", "list", "--zone", &zone_name, "--output", "json"])
+        .run_cli_success(&["record", "list", &zone_name, "--output", "json"])
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
     // Only the apex NS seeded at creation exists.
@@ -385,7 +411,7 @@ async fn zone_import_dry_run_shows_the_diff_via_cli() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|r| r["record_type"] == "A")
+        .filter(|r| r["type"] == "A")
         .map(|r| r["name"].as_str().unwrap())
         .collect();
     assert!(names.is_empty(), "records were: {names:?}");
@@ -398,8 +424,21 @@ async fn zone_versions_and_rollback_flow() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("history.example");
 
-    // Build three versions so rollback can preserve www while removing the later extra.
-    app.create_zone_cli(&zone_name, "3600").await;
+    // Build three versions so rollback can preserve www while removing the later
+    // extra. The zone is created directly so the serials count from its own
+    // first mutation.
+    app.run_cli_success(&[
+        "zone",
+        "create",
+        &zone_name,
+        "--mname",
+        &format!("ns1.{zone_name}"),
+        "--rname",
+        &format!("hostmaster@{zone_name}"),
+        "--default-ttl",
+        "3600",
+    ])
+    .await;
 
     let zone = app
         .run_cli_success(&["zone", "get", &zone_name, "--output", "json"])
@@ -410,28 +449,24 @@ async fn zone_versions_and_rollback_flow() {
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
+        &zone_name,
         "www",
         "--type",
         "A",
         "--value",
         "192.0.2.80",
-        "--zone",
-        &zone_name,
     ])
     .await;
     let target_serial = "2"; // zone create = 1, record create = 2
     app.run_cli_success(&[
         "record",
         "create",
-        "--name",
+        &zone_name,
         "extra",
         "--type",
         "A",
         "--value",
         "192.0.2.81",
-        "--zone",
-        &zone_name,
     ])
     .await;
 
@@ -464,7 +499,7 @@ async fn zone_versions_and_rollback_flow() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|record| record["record_type"] == "A")
+        .filter(|record| record["type"] == "A")
         .map(|record| record["name"].as_str().unwrap())
         .collect();
     assert_eq!(a_records, ["www"]);
@@ -517,7 +552,7 @@ async fn zone_versions_and_rollback_flow() {
 
     let records = app
         .run_cli_success(&[
-            "record", "list", "--zone", &zone_name, "--type", "A", "--output", "json",
+            "record", "list", &zone_name, "--type", "A", "--output", "json",
         ])
         .await;
     let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
@@ -545,7 +580,8 @@ async fn zone_status_via_cli() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let status = app.run_cli_success(&["zone", "status", &zone_name]).await;
-    assert!(status.contains(&format!("Zone {} (serial 1)", zone_name)));
+    // Serial 2: the zone starts at 1 and its apex NS is the second mutation.
+    assert!(status.contains(&format!("Zone {} (serial 2)", zone_name)));
 
     if !app.has_dns_secondaries() {
         assert!(status.contains("No secondaries configured."));

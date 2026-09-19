@@ -58,13 +58,13 @@ class CoreDnsAdapter(DnsAdapter):
         """Start the benchmark system and wait for it to become ready."""
         self.compose.down()  # clean slate: remove any leftovers from a prior run
         self.compose.up("coredns", wait=False)
-        self.cid = self.compose.container_id("coredns")
+        self.cid = self.compose.resolve_container_id("coredns")
         await self._wait_dns()
 
     async def _wait_dns(self, timeout: int = 60) -> None:
         """Wait until the system answers DNS queries."""
         for _ in range(timeout * 2):
-            if await self._soa_serial() is not None:
+            if await self._query_soa_serial() is not None:
                 return
             await asyncio.sleep(0.5)
         raise RuntimeError("CoreDNS did not become ready")
@@ -82,8 +82,8 @@ class CoreDnsAdapter(DnsAdapter):
         out, _ = await proc.communicate()
         return out.decode().strip()
 
-    async def _soa_serial(self) -> int | None:
-        """Read the current zone serial from its SOA response."""
+    async def _query_soa_serial(self) -> int | None:
+        """Query the current zone serial from the zone's SOA."""
         out = await self._dig(ZONE, "SOA")
         parts = out.split()
         if len(parts) >= 3:
@@ -124,7 +124,7 @@ class CoreDnsAdapter(DnsAdapter):
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
         while loop.time() < deadline:
-            got = await self._soa_serial()
+            got = await self._query_soa_serial()
             if got is not None and got >= self.serial:
                 return True
             await asyncio.sleep(0.1)

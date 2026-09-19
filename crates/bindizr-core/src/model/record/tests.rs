@@ -32,6 +32,19 @@ fn values_equal_normalizes_name_like_values() {
     assert!(!RecordType::TXT.values_equal("Token=ABC", None, "token=abc", None));
 }
 
+/// Verify that a TXT value compares equal across the two spellings of one
+/// value.
+#[test]
+fn txt_values_compare_across_content_and_presentation_spellings() {
+    // A conditional delete passes the content the record was created with,
+    // while the row holds the presentation form.
+    assert!(RecordType::TXT.values_equal("\"hello world\"", None, "hello world", None));
+    assert!(RecordType::TXT.values_equal("\"v=spf1\" \"~all\"", None, "\"v=spf1\" \"~all\"", None));
+    // Segments are joined for display only: two different records read the
+    // same way there, so that spelling must not name either of them.
+    assert!(!RecordType::TXT.values_equal("\"v=spf1\" \"~all\"", None, "v=spf1~all", None));
+}
+
 /// Verify that `encoded_value` produces one spelling per RDATA.
 #[test]
 fn encoded_value_produces_one_spelling_per_rdata() {

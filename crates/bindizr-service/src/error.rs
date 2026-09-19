@@ -265,6 +265,31 @@ impl ServiceError {
         )
     }
 
+    /// Build an error identifying the owner name that holds no record.
+    pub(crate) fn record_not_found_at_name(
+        zone_name: impl std::fmt::Display,
+        name: impl std::fmt::Display,
+    ) -> Self {
+        Self::new(
+            ErrorCode::RecordNotFound,
+            format!("No record named '{}' in zone '{}'", name, zone_name),
+        )
+    }
+
+    /// Build an error for an owner name holding several records where only
+    /// one may be touched. The message names the id rather than a front end's
+    /// flag, because every transport reaches this.
+    pub(crate) fn record_name_ambiguous(
+        zone_name: impl std::fmt::Display,
+        name: impl std::fmt::Display,
+        matched: usize,
+    ) -> Self {
+        Self::invalid_input(format!(
+            "{} records are named '{}' in zone '{}'; address one by its id",
+            matched, name, zone_name
+        ))
+    }
+
     /// Build an error naming the missing API token.
     pub(crate) fn token_not_found(name: impl Into<String>) -> Self {
         Self::new(

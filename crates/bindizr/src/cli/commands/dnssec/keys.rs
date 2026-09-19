@@ -1,5 +1,6 @@
 //! The `dnssec keys` subcommands: BIND key-file export and import.
 
+use bindizr_core::outln;
 use bindizr_service::types::{
     ExportDnssecKeysResponse, ImportDnssecKeyPair, ImportDnssecKeyRequest,
 };
@@ -7,7 +8,10 @@ use clap::Subcommand;
 
 use super::print_status;
 use crate::{
-    cli::{error::CliError, output::parse_response},
+    cli::{
+        error::CliError,
+        output::{OutputFormat, parse_response},
+    },
     socket::{
         client,
         types::{DaemonCommandKind, ImportZoneDnssecKeysParams, ZoneNameParams},
@@ -19,6 +23,12 @@ use crate::{
 pub(crate) enum DnssecKeysCommand {
     /// Print the zone's keys in BIND key-file form, private halves
     /// included — redirect somewhere with tight permissions
+    #[command(after_help = "\
+Examples:
+  umask 077 && bindizr dnssec keys export example.com > example.com.keys
+
+The output carries the private halves, so anyone who reads it can sign the
+zone.")]
     Export {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -29,6 +39,17 @@ pub(crate) enum DnssecKeysCommand {
     /// key a rollover still holds — each private file's timing places it.
     /// The migration path for a zone signed elsewhere; the zone must be
     /// unsigned
+    #[command(after_help = "\
+Examples:
+  bindizr dnssec keys import example.com \\
+    --key Kexample.com.+013+12345.key --private Kexample.com.+013+12345.private
+
+  bindizr dnssec keys import example.com --policy split \\
+    --key Kexample.com.+013+11111.key --private Kexample.com.+013+11111.private \\
+    --key Kexample.com.+013+22222.key --private Kexample.com.+013+22222.private
+
+Repeat --key and --private once per pair, in the same order: the Nth --private
+is matched with the Nth --key.")]
     Import {
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
@@ -44,6 +65,9 @@ pub(crate) enum DnssecKeysCommand {
         /// and key layout decide what the keys must be
         #[arg(long, value_name = "POLICY_NAME")]
         policy: Option<String>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -63,6 +87,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
             key,
             private,
             policy,
+            output,
         } => {
             if key.len() != private.len() {
                 return Err(CliError::from(format!(
@@ -90,7 +115,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
                 },
             )
             .await?;
-            print_status(&response.data)?;
+            print_status(&response.data, output)?;
         }
     }
 
@@ -113,9 +138,9 @@ fn print_key_material(exported: &ExportDnssecKeysResponse) {
         if dup > 0 {
             base.push_str(&format!(".{}", dup + 1));
         }
-        println!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
-        println!("{}", key.dnskey_record);
-        println!("; {}.private", base);
-        println!("{}", key.private_key.trim_end());
+        outln!("; {}.key ({}, tag {})", base, key.role, key.key_tag);
+        outln!("{}", key.dnskey_record);
+        outln!("; {}.private", base);
+        outln!("{}", key.private_key.trim_end());
     }
 }

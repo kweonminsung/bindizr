@@ -5,7 +5,7 @@ use crate::{
     RepositoryTx,
     authorization::Caller,
     error::ServiceError,
-    model::{record::Record, zone::Zone, zone_change::ZoneChange},
+    model::{zone::Zone, zone_change::ZoneChange},
     repository::RepositoryService,
     types::{
         GetZoneResponse, GetZonesFilter, PaginatedResponse, normalize_page_limit, parse_setting,
@@ -15,7 +15,7 @@ use crate::{
 impl ZoneService {
     /// The DNS plane's view of a zone: a disabled one is absent rather than
     /// served. The nsupdate apply and the transfer authorization read it.
-    pub(crate) async fn find_by_name_tx(
+    pub(crate) async fn find_served_by_name_tx(
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
         lock_level: LockLevel,
@@ -26,6 +26,18 @@ impl ZoneService {
                 .await?
                 .filter(|zone| zone.enabled),
         )
+    }
+
+    /// Fetch a zone by name within the caller's transaction at `lock_level`,
+    /// whether or not it is served. The import reads it this way because a
+    /// disabled zone still takes records.
+    pub(crate) async fn find_by_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        zone_name: &str,
+        lock_level: LockLevel,
+    ) -> Result<Option<Zone>, ServiceError> {
+        let lookup_name = normalize_zone_name(zone_name)?;
+        RepositoryService::get_zone_by_name_tx(tx, lookup_name.as_str(), lock_level).await
     }
 
     /// Count journal rows in `(from_serial, to_serial]` for the IXFR size estimate.
@@ -48,7 +60,7 @@ impl ZoneService {
 
     /// Cheap database round-trip (limit-1 zones probe), for health checks.
     pub async fn ping() -> Result<(), ServiceError> {
-        RepositoryService::ping_zones().await
+        RepositoryService::ping().await
     }
 
     /// The zones the DNS plane serves: the catalog's membership and the NOTIFY
@@ -118,7 +130,7 @@ impl ZoneService {
     /// `NotFound`, so grants cannot be probed.
     pub async fn get_by_name(caller: &Caller, zone_name: &str) -> Result<Zone, ServiceError> {
         let zone = Self::lookup_by_name(zone_name).await?;
-        caller.ensure_zone_visible(&zone)?;
+        caller.authorize_zone_visible(&zone)?;
         Ok(zone)
     }
 
@@ -144,32 +156,8 @@ impl ZoneService {
         lock_level: LockLevel,
     ) -> Result<Zone, ServiceError> {
         let zone = Self::get_by_name_tx(tx, zone_name, lock_level).await?;
-        caller.ensure_zone_visible(&zone)?;
+        caller.authorize_zone_visible(&zone)?;
         Ok(zone)
-    }
-
-    /// The zone and its records from one snapshot, so they share a serial.
-    pub async fn get_with_records(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<(Zone, Vec<Record>), ServiceError> {
-        let mut tx = RepositoryService::begin_read_tx("Failed to fetch zone").await?;
-        let result = async {
-            let zone =
-                Self::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-            // Narrowed the way `/records` narrows it: a grant that hides a
-            // record from the listing must hide it from the zone's detail too.
-            let records = RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::None)
-                .await?
-                .into_iter()
-                .filter(|record| {
-                    caller.sees_record(zone.id, &record.name, Some(&record.record_type))
-                })
-                .collect();
-            Ok::<(Zone, Vec<Record>), ServiceError>((zone, records))
-        }
-        .await;
-        RepositoryService::finish_tx(tx, result, "Failed to fetch zone").await
     }
 
     /// Fetch a zone by name within the caller's transaction at `lock_level`,

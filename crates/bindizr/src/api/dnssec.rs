@@ -115,6 +115,7 @@ pub(crate) async fn enable_dnssec(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DisableDnssecQuery {
     skip_ds_check: Option<bool>,
 }
@@ -208,12 +209,13 @@ pub(crate) async fn start_dnssec_rollover(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<RolloverDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::rollover_start(&caller, &params.name, body.role.as_deref()).await?;
+    let status = DnssecService::start_rollover(&caller, &params.name, body.role.as_deref()).await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DsSeenQuery {
     skip_ds_check: Option<bool>,
     skip_holddown: Option<bool>,
@@ -225,7 +227,7 @@ pub(crate) struct DsSeenQuery {
         path = "/zones/{name}/dnssec/rollover/ds-seen",
         tag = "DNSSEC",
         summary = "Confirm the new DS is at the parent (ds-seen)",
-        description = "Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The maintenance scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.",
+        description = "Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
             ("skip_ds_check" = Option<bool>, Query, description = "Skip the parent DS check."),
@@ -246,7 +248,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
     Path(params): Path<ZoneNameParam>,
     Query(query): Query<DsSeenQuery>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::rollover_ds_seen(
+    let status = DnssecService::advance_rollover(
         &caller,
         &params.name,
         query.skip_ds_check.unwrap_or(false),
@@ -310,7 +312,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::withdraw_cancel(&caller, &params.name).await?;
+    let status = DnssecService::cancel_withdrawal(&caller, &params.name).await?;
     let response = DnssecStatusResponse { dnssec: status };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

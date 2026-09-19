@@ -1,8 +1,8 @@
+pub(crate) mod completion;
 pub(crate) mod config;
 pub(crate) mod dnssec;
 pub(crate) mod dnssec_policy;
 pub(crate) mod doctor;
-pub(crate) mod notify;
 pub(crate) mod record;
 pub(crate) mod restart;
 pub(crate) mod status;

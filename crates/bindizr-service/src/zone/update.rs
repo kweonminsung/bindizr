@@ -10,10 +10,10 @@ use crate::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    record::{RecordService, validate_record_name_in_zone},
+    record::validate_record_name_in_zone,
     repository::RepositoryService,
     serial::generate_serial,
-    types::{CreateZoneRequest, UpdateZoneRequest},
+    types::{CreateZoneRequest, GetZoneResponse, UpdateZoneRequest, ZoneWriteResponse},
     zone::{
         validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
         version::ChangeSubject,
@@ -67,20 +67,22 @@ impl ZoneService {
         caller: &Caller,
         zone_name: &str,
         request: &UpdateZoneRequest,
-    ) -> Result<Zone, ServiceError> {
-        caller.require_global("update zones")?;
+    ) -> Result<ZoneWriteResponse, ServiceError> {
+        caller.authorize_global("update zones")?;
         // The serial is a system-managed version counter, never set on update.
         if request.serial.is_some() {
             return Err(ServiceError::invalid_input(
                 "serial is managed automatically and cannot be set on update",
             ));
         }
-        Self::update_locked(
+        let updated_zone = Self::update_locked(
             zone_name,
             &caller.change_subject(),
             request.enabled,
+            request.dry_run,
             |existing| {
                 CreateZoneRequest {
+                    dry_run: false,
                     name: request
                         .name
                         .clone()
@@ -107,7 +109,12 @@ impl ZoneService {
                 }
             },
         )
-        .await
+        .await?;
+        Ok(ZoneWriteResponse {
+            applied: !request.dry_run,
+            dry_run: request.dry_run,
+            zone: GetZoneResponse::from_zone(&updated_zone),
+        })
     }
 
     /// Lock the zone, build the effective request against it, then apply:
@@ -116,6 +123,7 @@ impl ZoneService {
         zone_name: &str,
         subject: &ChangeSubject,
         enabled: Option<bool>,
+        dry_run: bool,
         build: impl FnOnce(&Zone) -> CreateZoneRequest,
     ) -> Result<Zone, ServiceError> {
         let mut tx = RepositoryService::begin_tx("Failed to update zone").await?;
@@ -172,76 +180,45 @@ impl ZoneService {
 
             let new_serial = generate_serial(Some(existing_zone.serial))?;
 
-            let updated_zone = RepositoryService::update_zone_tx(
-                &mut tx,
-                Zone {
-                    id: zone_id,
-                    name: validated.name,
-                    mname: validated.mname,
-                    rname: validated.rname,
-                    default_ttl: validated.ttl,
-                    serial: new_serial,
-                    refresh: timers.refresh,
-                    retry: timers.retry,
-                    expire: timers.expire,
-                    minimum_ttl: timers.minimum_ttl,
-                    dnssec_policy_id: existing_zone.dnssec_policy_id,
-                    parent_ns_addrs: existing_zone.parent_ns_addrs.clone(),
-                    enabled: enabled.unwrap_or(existing_zone.enabled),
-                    description: validated.description,
-                    created_at: existing_zone.created_at,
-                },
-            )
-            .await
-            .map_err(|e| {
-                log::error!("Failed to update zone: {}", e);
-                // Keep the conflict mapped from the UNIQUE(name) backstop; it
-                // covers renames that raced past the pre-check above.
-                if e.code == ErrorCode::ZoneConflict {
-                    e
-                } else {
-                    ServiceError::internal("Failed to update zone")
-                }
-            })?;
+            let candidate = Zone {
+                id: zone_id,
+                name: validated.name,
+                mname: validated.mname,
+                rname: validated.rname,
+                default_ttl: validated.ttl,
+                serial: new_serial,
+                refresh: timers.refresh,
+                retry: timers.retry,
+                expire: timers.expire,
+                minimum_ttl: timers.minimum_ttl,
+                dnssec_policy_id: existing_zone.dnssec_policy_id,
+                parent_ns_addrs: existing_zone.parent_ns_addrs.clone(),
+                enabled: enabled.unwrap_or(existing_zone.enabled),
+                description: validated.description,
+                created_at: existing_zone.created_at,
+            };
 
-            // A rename / mname change must keep an apex NS matching the new
-            // mname; only apex rows can satisfy that, so load just those.
-            let apex_records = RepositoryService::list_records_by_name_tx(
-                &mut tx,
-                zone_id,
-                &OwnerName::apex(),
-                LockLevel::Exclusive,
-            )
-            .await
-            .map_err(|e| {
-                log::error!("Failed to fetch apex records: {}", e);
-                ServiceError::internal("Failed to update zone")
-            })?;
-            let has_mname = apex_records
-                .iter()
-                .any(|r| updated_zone.mname_matches(&r.record_type, &r.name, &r.value));
+            // The change is validated, so a dry run stops here.
+            if dry_run {
+                return Ok(AppliedZoneUpdate {
+                    new_serial: candidate.serial,
+                    zone: candidate,
+                    catalog_changed: false,
+                });
+            }
 
-            if !has_mname {
-                let mname_record = updated_zone.mname_record(
-                    updated_zone.apex_ns_rrset_ttl(
-                        apex_records
-                            .iter()
-                            .map(|r| (&r.record_type, &r.name, r.ttl)),
-                    ),
-                );
-
-                RecordService::create_with_changes_tx(
-                    &mut tx,
-                    zone_id,
-                    new_serial,
-                    &[mname_record],
-                )
+            let updated_zone = RepositoryService::update_zone_tx(&mut tx, candidate)
                 .await
                 .map_err(|e| {
-                    log::error!("Failed to create mname NS record during update: {}", e);
-                    ServiceError::internal("Failed to keep mname NS consistency")
+                    log::error!("Failed to update zone: {}", e);
+                    // Keep the conflict mapped from the UNIQUE(name) backstop; it
+                    // covers renames that raced past the pre-check above.
+                    if e.code == ErrorCode::ZoneConflict {
+                        e
+                    } else {
+                        ServiceError::internal("Failed to update zone")
+                    }
                 })?;
-            }
 
             // Journal the SOA and signature changes under the zone update's serial,
             // then save the version that future IXFR and rollback reads will use.
@@ -281,8 +258,9 @@ impl ZoneService {
         );
 
         // Announce the zone's new serial after its data and version have committed.
-        if let Err(e) =
-            crate::notify::send_notify_after_update(Some(updated_zone.name.as_str())).await
+        if !dry_run
+            && let Err(e) =
+                crate::notify::send_notify_after_update(Some(updated_zone.name.as_str())).await
         {
             log::warn!(
                 "Failed to send NOTIFY for zone {}: {}",
@@ -292,7 +270,8 @@ impl ZoneService {
         }
 
         // Renaming or toggling a zone also changes the catalog seen by secondaries.
-        if catalog_changed
+        if !dry_run
+            && catalog_changed
             && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
         {
             log::warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);

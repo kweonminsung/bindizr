@@ -23,12 +23,14 @@ log.workspace = true
 prometheus.workspace = true
 rand.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sha1.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
 
 [dev-dependencies]
 hmac.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

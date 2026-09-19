@@ -30,7 +30,7 @@ pub(crate) struct ParentDs {
 /// absence.
 pub(crate) async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
     let dns_config = &config::bindizr_config().dns;
-    let timeout = Duration::from_secs(dns_config.notify_timeout_secs);
+    let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
 
     let raw = zone.parent_ns_addrs.as_deref().ok_or(
         "the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'",

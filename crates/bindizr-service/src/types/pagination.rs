@@ -37,6 +37,7 @@ pub(crate) fn parse_setting<T: Default + std::str::FromStr<Err = String>>(
 
 /// The query window of a listing that takes no other filter.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema, IntoParams)]
+#[serde(deny_unknown_fields)]
 pub struct PageFilter {
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
     #[schema(example = 50)]

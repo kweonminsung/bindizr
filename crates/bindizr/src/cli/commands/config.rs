@@ -1,8 +1,12 @@
-use bindizr_core::{config, config::BindizrConfig};
+use bindizr_core::{config, config::BindizrConfig, outln};
+use bindizr_service::types::MessageResponse;
 use clap::Subcommand;
 
 use crate::{
-    cli::{error::CliError, output::color},
+    cli::{
+        error::CliError,
+        output::{OutputFormat, color, parse_response, print_payload},
+    },
     socket::{client, types::DaemonCommandKind},
 };
 
@@ -14,78 +18,112 @@ pub(crate) enum ConfigCommand {
         /// Path to the configuration file (default: /etc/bindizr/bindizr.conf.toml)
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
     /// Show the configuration loaded by the running daemon
     #[command(alias = "ls")]
-    List,
+    List {
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
     /// Re-read the configuration file in the running daemon
     #[command(after_help = "\
 Settings bound to something built at startup — the `api` section, the
 `database` section, and the DNS listen address and port — are fixed while
 bindizr runs. A file that changes one of them is refused whole, so the
 running configuration always describes the running process.")]
-    Reload,
+    Reload {
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
     /// Show a single configuration value by dotted key (e.g. api.listen_port)
     Get {
         /// Dotted configuration key, e.g. dns.secondary_addrs
         key: String,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
 /// Handle the `config` subcommand.
 pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliError> {
     match subcommand {
-        ConfigCommand::Check { config } => validate_config(config.as_deref()),
-        ConfigCommand::List => print_config_list().await,
-        ConfigCommand::Reload => reload_config().await,
-        ConfigCommand::Get { key } => print_config_value(&key).await,
+        ConfigCommand::Check { config, output } => validate_config(config.as_deref(), output),
+        ConfigCommand::List { output } => print_config_list(output).await,
+        ConfigCommand::Reload { output } => reload_config(output).await,
+        ConfigCommand::Get { key, output } => print_config_value(&key, output).await,
     }
 }
 
 /// Ask the daemon to reload its configuration.
-async fn reload_config() -> Result<(), CliError> {
+async fn reload_config(output: OutputFormat) -> Result<(), CliError> {
     let response = client::send_command(DaemonCommandKind::ReloadConfig, ()).await?;
-    println!("{}", response.message);
+    match output {
+        OutputFormat::Table => outln!("{}", response.message),
+        _ => print_payload(&response.data, output)?,
+    }
     Ok(())
 }
 
 /// Validate the local configuration file.
-fn validate_config(file: Option<&str>) -> Result<(), CliError> {
+fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliError> {
     let path = config::resolve_config_path(file);
-    println!("Checking configuration file: {}", path);
+    if output == OutputFormat::Table {
+        outln!("Checking configuration file: {}", path);
+    }
 
-    config::load_config_file(&path)?;
+    config::load_config_file(&path).map_err(CliError::configuration)?;
 
-    println!("Configuration is {}.", color::green("valid"));
+    let message = format!("Configuration file '{}' is valid", path);
+    match output {
+        OutputFormat::Table => outln!("Configuration is {}.", color::green("valid")),
+        // Built here rather than by the daemon: the check never reaches one.
+        _ => {
+            let payload = serde_json::to_value(MessageResponse { message })
+                .map_err(|e| CliError::from(e.to_string()))?;
+            print_payload(&payload, output)?
+        }
+    }
     Ok(())
 }
 
 /// Print all effective configuration values.
-async fn print_config_list() -> Result<(), CliError> {
-    let config = client::fetch_config().await?;
-    print_config(&config);
+async fn print_config_list(output: OutputFormat) -> Result<(), CliError> {
+    let response = client::send_control_command(DaemonCommandKind::Config).await?;
+
+    match output {
+        OutputFormat::Table => print_config(&parse_response(&response.data)?),
+        _ => print_payload(&response.data, output)?,
+    }
     Ok(())
 }
 
-/// Print one effective configuration value by key.
-async fn print_config_value(key: &str) -> Result<(), CliError> {
-    let config = client::fetch_config().await?;
-    let value = serde_json::to_value(&config)
-        .map_err(|e| format!("Failed to serialize configuration: {}", e))?;
+/// Print one effective configuration value by key. The plain form prints a
+/// string bare, so a value can be read straight into a shell variable.
+async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliError> {
+    let response = client::send_control_command(DaemonCommandKind::Config).await?;
 
     let found = key
         .split('.')
-        .try_fold(&value, |value, part| value.get(part))
+        .try_fold(&response.data, |value, part| value.get(part))
         .ok_or_else(|| format!("Unknown configuration key: {}", key))?;
 
-    match found {
-        serde_json::Value::String(value) => println!("{}", value),
-        serde_json::Value::Object(_) => println!(
-            "{}",
-            serde_json::to_string_pretty(found)
-                .map_err(|e| format!("Failed to render configuration value: {}", e))?
-        ),
-        value => println!("{}", value),
+    match output {
+        OutputFormat::Table => match found {
+            serde_json::Value::String(value) => outln!("{}", value),
+            serde_json::Value::Object(_) => outln!(
+                "{}",
+                serde_json::to_string_pretty(found)
+                    .map_err(|e| format!("Failed to render configuration value: {}", e))?
+            ),
+            value => outln!("{}", value),
+        },
+        _ => print_payload(found, output)?,
     }
     Ok(())
 }
@@ -95,52 +133,63 @@ fn print_config(config: &BindizrConfig) {
     print_section("api");
     print_value("listen_addr", config.api.listen_addr);
     print_value("listen_port", config.api.listen_port);
-    print_value("require_authentication", config.api.require_authentication);
+    print_value(
+        "authentication_required",
+        config.api.authentication_required,
+    );
     print_value("metrics_enabled", config.api.metrics_enabled);
     print_value("external_dns_enabled", config.api.external_dns_enabled);
     print_value("openapi_enabled", config.api.openapi_enabled);
     print_optional("tls_cert_file", config.api.tls_cert_file.as_deref());
     print_optional("tls_key_file", config.api.tls_key_file.as_deref());
-    println!();
+    outln!();
 
     print_section("database");
     print_value("type", config.database.database_type);
-    println!();
+    outln!();
 
     print_section("database.mysql");
-    print_value("server_url", &config.database.mysql.server_url);
-    println!();
+    print_value("url", &config.database.mysql.url);
+    outln!();
 
     print_section("database.sqlite");
     print_value("file_path", &config.database.sqlite.file_path);
-    println!();
+    outln!();
 
     print_section("database.postgresql");
-    print_value("server_url", &config.database.postgresql.server_url);
-    println!();
+    print_value("url", &config.database.postgresql.url);
+    outln!();
 
     print_section("dns");
     print_value("listen_addr", config.dns.listen_addr);
     print_value("listen_port", config.dns.listen_port);
     print_value("secondary_addrs", &config.dns.secondary_addrs);
-    print_value("notify_after_update", config.dns.notify_after_update);
-    print_value("notify_mode", config.dns.notify_mode);
-    print_value("notify_batch_ms", config.dns.notify_batch_ms);
-    print_value("zone_cache", config.dns.zone_cache);
-    print_value("zone_cache_max_records", config.dns.zone_cache_max_records);
-    print_value("notify_on_startup", config.dns.notify_on_startup);
-    print_value("notify_retries", config.dns.notify_retries);
-    print_value("notify_timeout_secs", config.dns.notify_timeout_secs);
     print_value(
-        "nsupdate_allow_unsigned",
-        config.dns.nsupdate_allow_unsigned,
+        "zone_history_retention_days",
+        config.dns.zone_history_retention_days,
     );
-    print_value("journal_retention_days", config.dns.journal_retention_days);
     print_value(
-        "maintenance_interval_secs",
-        config.dns.maintenance_interval_secs,
+        "scheduler_interval_secs",
+        config.dns.scheduler_interval_secs,
     );
-    println!();
+    outln!();
+
+    print_section("dns.nsupdate");
+    print_value("nsupdate_tsig_required", config.dns.nsupdate_tsig_required);
+    outln!();
+
+    print_section("dns.notify");
+    print_value("after_update", config.dns.notify.after_update);
+    print_value("on_startup", config.dns.notify.on_startup);
+    print_value("batch_ms", config.dns.notify.batch_ms);
+    print_value("retries", config.dns.notify.retries);
+    print_value("timeout_secs", config.dns.notify.timeout_secs);
+    outln!();
+
+    print_section("dns.transfer_cache");
+    print_value("enabled", config.dns.transfer_cache.enabled);
+    print_value("max_records", config.dns.transfer_cache.max_records);
+    outln!();
 
     print_section("dns.zone_defaults");
     print_value("ttl", config.dns.zone_defaults.ttl);
@@ -148,15 +197,16 @@ fn print_config(config: &BindizrConfig) {
     print_value("retry", config.dns.zone_defaults.retry);
     print_value("expire", config.dns.zone_defaults.expire);
     print_value("minimum_ttl", config.dns.zone_defaults.minimum_ttl);
-    println!();
+    outln!();
 
     print_section("logging");
-    print_value("log_level", config.logging.log_level);
+    print_value("level", config.logging.level);
+    print_value("format", config.logging.format);
 }
 
 /// Print a configuration section heading.
 fn print_section(name: &str) {
-    println!("{}", color::cyan(&format!("[{}]", name)));
+    outln!("{}", color::cyan(&format!("[{}]", name)));
 }
 
 /// A value the configuration may leave out, shown as unset rather than absent
@@ -167,5 +217,5 @@ fn print_optional(key: &str, value: Option<&str>) {
 
 /// Print one configuration key and its value.
 fn print_value(key: &str, value: impl std::fmt::Display) {
-    println!("  {} = {}", color::yellow(&format!("{:<24}", key)), value);
+    outln!("  {} = {}", color::yellow(&format!("{:<24}", key)), value);
 }

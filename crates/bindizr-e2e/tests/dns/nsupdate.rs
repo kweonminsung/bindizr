@@ -11,7 +11,7 @@ use crate::common::{
 /// transaction, and the serial bump. Signed updates below also exercise grants.
 async fn unsigned_nsupdate_app() -> TestApp {
     TestApp::start_with_options(TestAppOptions {
-        nsupdate_allow_unsigned: true,
+        nsupdate_tsig_required: false,
         ..TestAppOptions::default()
     })
     .await
@@ -45,7 +45,7 @@ async fn nsupdate_adds_and_deletes_records() {
         records
             .iter()
             .any(|record| record["name"] == format!("www.{zone_name}.")
-                && record["record_type"] == "A"
+                && record["type"] == "A"
                 && record["value"] == "192.0.2.10"),
         "record was not added: {records:#?}"
     );
@@ -320,8 +320,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
 
 /// Create a TSIG key fixture for signed update requests.
 async fn create_key(app: &TestApp, name: &str) -> SigningKey {
-    app.run_cli_success(&["tsig-key", "create", "--name", name])
-        .await;
+    app.run_cli_success(&["tsig-key", "create", name]).await;
     let fetched = app
         .run_cli_success(&["tsig-key", "get", name, "--output", "json"])
         .await;
@@ -446,7 +445,7 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
             "/records",
             Some(serde_json::json!({
                 "name": "secret",
-                "record_type": "A",
+                "type": "A",
                 "value": "192.0.2.1",
                 "zone_name": zone_name,
             })),
@@ -501,7 +500,7 @@ async fn nsupdate_adds_at_the_zone_apex() {
             .await
             .iter()
             .any(|record| record["name"] == format!("{zone_name}.")
-                && record["record_type"] == "A"
+                && record["type"] == "A"
                 && record["value"] == "192.0.2.60"),
         "apex record was not added"
     );

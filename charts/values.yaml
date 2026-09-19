@@ -11,19 +11,18 @@ bindizr:
   api:
     listenAddr: "0.0.0.0"
     port: 8000
-    requireAuthentication: true
-    # Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
+    # Require an API token; the first one is `bindizr token create` in the pod.
+    authenticationRequired: true
+    # Prometheus metrics at /metrics (unauthenticated).
     metricsEnabled: true
-    # ExternalDNS provider API (/external-dns), consumed by the
-    # bindizr-external-dns adapter running next to external-dns.
+    # ExternalDNS provider API at /external-dns, for the adapter sidecar.
     externalDnsEnabled: false
-    # Serve the OpenAPI document at GET /openapi.json and /openapi.yaml
-    # (unauthenticated; describes the whole API surface).
+    # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated).
     openapiEnabled: false
     tls:
-      # Serve the API over HTTPS from an existing Secret holding tls.crt and
-      # tls.key (a cert-manager Certificate makes one). Leave empty to serve
-      # plain HTTP, which is what an Ingress terminating TLS in front expects.
+      # A Secret holding tls.crt and tls.key (a cert-manager Certificate makes
+      # one) to serve HTTPS. Empty serves plain HTTP, for an Ingress that
+      # terminates TLS in front.
       existingSecret: ""
     service:
       type: ClusterIP
@@ -32,38 +31,46 @@ bindizr:
   dns:
     listenAddr: "0.0.0.0"
     port: 53
-    notifyAfterUpdate: true
-    notifyOnStartup: false
-    notifyRetries: 3
-    notifyTimeoutSecs: 3
-    # Accept unsigned nsupdate requests (not recommended in production). TSIG
-    # keys and grants are managed at runtime via the bindizr CLI or HTTP API.
-    nsupdateAllowUnsigned: false
-    # "sync" runs the NOTIFY inline; "async" queues it to a background worker.
-    notifyMode: sync
-    # async only: window to batch NOTIFYs into one per zone (0 disables the wait).
-    notifyBatchMs: 50
-    # Cache each zone's records by serial so repeated AXFRs skip the DB read.
-    zoneCache: true
-    # Records the cache may hold; a larger zone is served uncached.
-    zoneCacheMaxRecords: 500000
-    # Days of IXFR journal/SOA history to keep (0 = unlimited).
-    journalRetentionDays: 365
-    maintenanceIntervalSecs: 3600
+    # Require a TSIG signature on RFC 2136 updates; false accepts them from
+    # anyone (testing only).
+    nsupdateTsigRequired: true
+    # Days of history kept for rollback and secondary catch-up (0 = forever).
+    zoneHistoryRetentionDays: 365
+    # Seconds between background passes: signing, key rollover, history
+    # pruning. Every replica runs the whole pass; 0 stands one down, but at
+    # least one must keep it.
+    schedulerIntervalSecs: 3600
+    # NOTIFY to the secondaries.
+    notify:
+      # Notify after zone changes, and for every zone at startup.
+      afterUpdate: true
+      onStartup: false
+      # Window (ms) to batch a zone's NOTIFYs, sent after the write is
+      # answered; 0 sends before answering.
+      batchMs: 0
+      retries: 3
+      timeoutSecs: 3
+    # Zone records cached per serial, so repeated transfers skip the database.
+    transferCache:
+      enabled: true
+      # Records the cache holds; a larger zone is served uncached.
+      maxRecords: 500000
     service:
       port: 53
 
   logging:
     level: info
+    # text or json (one object per line).
+    format: json
 
   database:
     type: postgresql
     existingSecret: ""
     secretKey: database-url
-    # Used only when existingSecret is empty. Prefer an existing Secret for production.
-    # If this is empty and the matching bundled mysql/postgresql database is enabled,
-    # the chart builds the URL from the bundled database auth values.
-    serverUrl: ""
+    # Used only without existingSecret, which production should prefer. Left
+    # empty with a bundled mysql/postgresql enabled, the chart builds the URL
+    # from that database's auth values.
+    url: ""
 
   podAnnotations: {}
   podSecurityContext:
@@ -84,7 +91,7 @@ bindizr:
         - NET_BIND_SERVICE
 
   # Applied when a zone-creation request omits the field; afterwards the
-  # values are the zone's own columns.
+  # values are the zone's own.
   zoneDefaults:
     ttl: 3600
     refresh: 300
@@ -100,6 +107,9 @@ bindizr:
       path: /health
       port: api
     periodSeconds: 10
+    # Longer than the handler's own 3s database budget, so a slow database
+    # answers 503 instead of being cut off as a probe timeout.
+    timeoutSeconds: 5
     failureThreshold: 3
   livenessProbe:
     tcpSocket:
@@ -165,6 +175,19 @@ bind9:
     accessModes:
       - ReadWriteOnce
     size: 1Gi
+
+  # Without a probe the LoadBalancer sends public DNS traffic to a named that
+  # has not started answering yet.
+  readinessProbe:
+    tcpSocket:
+      port: dns-tcp
+    periodSeconds: 10
+    failureThreshold: 3
+  startupProbe:
+    tcpSocket:
+      port: dns-tcp
+    periodSeconds: 5
+    failureThreshold: 30
 
   resources: {}
   podAnnotations: {}

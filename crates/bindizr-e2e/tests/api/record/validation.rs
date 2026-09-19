@@ -35,7 +35,7 @@ async fn a_non_ascii_label_is_refused_with_punycode_advice() {
                 "/records",
                 Some(json!({
                     "name": name,
-                    "record_type": record_type,
+                    "type": record_type,
                     "value": value,
                     "zone_name": zone_name,
                 })),
@@ -64,7 +64,7 @@ async fn a_control_character_in_a_txt_value_is_stored_escaped() {
             "/records",
             Some(json!({
                 "name": "nul",
-                "record_type": "TXT",
+                "type": "TXT",
                 "value": "a\u{0}b",
                 "zone_name": zone_name,
             })),
@@ -75,7 +75,7 @@ async fn a_control_character_in_a_txt_value_is_stored_escaped() {
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&record_type=TXT&search=%5C000"),
+            &format!("/records?zone_name={zone_name}&type=TXT&search=%5C000"),
             None,
         )
         .await;
@@ -122,7 +122,7 @@ async fn a_naptr_regexp_bind_refuses_is_rejected() {
                 "/records",
                 Some(json!({
                     "name": "probe",
-                    "record_type": "NAPTR",
+                    "type": "NAPTR",
                     "value": value,
                     "zone_name": zone_name,
                 })),
@@ -154,7 +154,7 @@ async fn record_reject_invalid_values() {
     ] {
         let request = json!({
             "name": format!("bad-{}", record_type.to_ascii_lowercase()),
-            "record_type": record_type,
+            "type": record_type,
             "value": value,
             "ttl": 1800,
             "zone_name": zone["name"]
@@ -174,7 +174,7 @@ async fn record_reject_invalid_values() {
 
     let valid_request = json!({
         "name": "valid",
-        "record_type": "A",
+        "type": "A",
         "value": "192.0.2.10",
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -187,7 +187,7 @@ async fn record_reject_invalid_values() {
 
     let invalid_update = json!({
         "name": "valid",
-        "record_type": "AAAA",
+        "type": "AAAA",
         "value": "not-ipv6",
         "ttl": 1800
     });
@@ -212,7 +212,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
 
     let first = json!({
         "name": "www",
-        "record_type": "A",
+        "type": "A",
         "value": "192.0.2.1",
         "ttl": 300,
         "zone_name": zone["name"]
@@ -225,7 +225,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
     // RFC 2181, Section 5.2: one TTL per RRset.
     let differing_ttl = json!({
         "name": "www",
-        "record_type": "A",
+        "type": "A",
         "value": "192.0.2.2",
         "ttl": 600,
         "zone_name": zone["name"]
@@ -242,7 +242,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
 
     let matching_ttl = json!({
         "name": "www",
-        "record_type": "A",
+        "type": "A",
         "value": "192.0.2.2",
         "ttl": 300,
         "zone_name": zone["name"]
@@ -255,7 +255,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
     // A different type at the same owner name is a separate RRset.
     let other_rrset = json!({
         "name": "www",
-        "record_type": "TXT",
+        "type": "TXT",
         "value": "hello",
         "ttl": 600,
         "zone_name": zone["name"]
@@ -279,7 +279,7 @@ async fn record_reject_negative_ttl_on_create_and_update() {
             "/records",
             Some(json!({
                 "name": "neg",
-                "record_type": "A",
+                "type": "A",
                 "value": "192.0.2.1",
                 "ttl": -1,
                 "zone_name": zone["name"]
@@ -295,7 +295,7 @@ async fn record_reject_negative_ttl_on_create_and_update() {
             "/records",
             Some(json!({
                 "name": "neg",
-                "record_type": "A",
+                "type": "A",
                 "value": "192.0.2.1",
                 "zone_name": zone["name"]
             })),
@@ -330,7 +330,7 @@ async fn record_reject_priority_on_types_without_one() {
     ] {
         let request = json!({
             "name": if record_type == "NS" { "@" } else { "prio" },
-            "record_type": record_type,
+            "type": record_type,
             "value": value,
             "ttl": 3600,
             "priority": 10,
@@ -349,7 +349,7 @@ async fn record_reject_priority_on_types_without_one() {
 
     let mx = json!({
         "name": "@",
-        "record_type": "MX",
+        "type": "MX",
         "value": "mail.example.com",
         "ttl": 3600,
         "priority": 10,
@@ -361,7 +361,7 @@ async fn record_reject_priority_on_types_without_one() {
     // An update is held to the same rule.
     let a = json!({
         "name": "prio",
-        "record_type": "A",
+        "type": "A",
         "value": "192.0.2.1",
         "ttl": 3600,
         "zone_name": zone["name"]
@@ -396,7 +396,7 @@ async fn record_preserve_txt_segments_and_case() {
     for value in ["Token=ABC", "Token=abc"] {
         let create_record_request = json!({
             "name": "case-sensitive",
-            "record_type": "TXT",
+            "type": "TXT",
             "value": value,
             "ttl": 1800,
             "zone_name": zone["name"]
@@ -422,7 +422,7 @@ async fn record_preserve_txt_segments_and_case() {
 
     let segmented = json!({
         "name": "segmented",
-        "record_type": "TXT",
+        "type": "TXT",
         "value": ["a", "bc"],
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -435,7 +435,7 @@ async fn record_preserve_txt_segments_and_case() {
 
     let empty_segments = json!({
         "name": "empty-segment-list",
-        "record_type": "TXT",
+        "type": "TXT",
         "value": [],
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -455,7 +455,7 @@ async fn record_preserve_txt_segments_and_case() {
     // 300-char value must be stored split into 255 + 45.
     let long_txt = json!({
         "name": "long-txt",
-        "record_type": "TXT",
+        "type": "TXT",
         "value": "a".repeat(300),
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -480,7 +480,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
 
     let create_record_request = json!({
         "name": "a1",
-        "record_type": "A",
+        "type": "A",
         "value": "127.0.0.1",
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -495,7 +495,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
     // "a1" above, so it must be detected as a duplicate.
     let in_bailiwick_duplicate = json!({
         "name": format!("a1.{zone_name}."),
-        "record_type": "A",
+        "type": "A",
         "value": "127.0.0.1",
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -507,7 +507,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
 
     let in_bailiwick_different_value = json!({
         "name": format!("a1.{zone_name}"),
-        "record_type": "A",
+        "type": "A",
         "value": "127.0.0.2",
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -528,7 +528,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
     ] {
         let out_of_bailiwick = json!({
             "name": name,
-            "record_type": "A",
+            "type": "A",
             "value": "127.0.0.3",
             "ttl": 1800,
             "zone_name": zone["name"]
@@ -541,7 +541,7 @@ async fn record_normalize_owner_and_reject_out_of_zone() {
 
     let update_out_of_bailiwick = json!({
         "name": "a1.",
-        "record_type": "A",
+        "type": "A",
         "value": "127.0.0.4",
         "ttl": 1800
     });
@@ -588,7 +588,7 @@ async fn record_create_supported_types() {
     for (name, record_type, value, priority) in record_types {
         let create_request = json!({
             "name": name,
-            "record_type": record_type,
+            "type": record_type,
             "value": value,
             "ttl": 3600,
             "priority": priority,
@@ -599,7 +599,7 @@ async fn record_create_supported_types() {
             .send_request(Method::POST, "/records", Some(create_request))
             .await;
         assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(body["record"]["record_type"], record_type);
+        assert_eq!(body["record"]["type"], record_type);
         let expected_value = match record_type {
             "MX" => "mail.example.com.",
             "SRV" => "5 5060 sip.example.com.",
@@ -629,9 +629,7 @@ async fn record_create_supported_types() {
     assert_eq!(records.len(), 9);
     for record_type in ["MX", "SRV", "TXT", "AAAA", "CNAME", "CAA", "SSHFP", "TLSA"] {
         assert!(
-            records
-                .iter()
-                .any(|record| record["record_type"] == record_type),
+            records.iter().any(|record| record["type"] == record_type),
             "expected {record_type} record in list"
         );
     }
@@ -646,7 +644,7 @@ async fn record_reject_cname_conflicts() {
 
     let a_record_request = json!({
         "name": "test",
-        "record_type": "A",
+        "type": "A",
         "value": "1.1.1.1",
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -658,7 +656,7 @@ async fn record_reject_cname_conflicts() {
 
     let cname_record_request = json!({
         "name": "test",
-        "record_type": "CNAME",
+        "type": "CNAME",
         "value": "other.example.com",
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -670,7 +668,7 @@ async fn record_reject_cname_conflicts() {
 
     let cname_record_request = json!({
         "name": "cname-test",
-        "record_type": "CNAME",
+        "type": "CNAME",
         "value": "another.example.com",
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -683,7 +681,7 @@ async fn record_reject_cname_conflicts() {
 
     let a_record_request = json!({
         "name": "cname-test",
-        "record_type": "A",
+        "type": "A",
         "value": "2.2.2.2",
         "ttl": 1800,
         "zone_name": zone["name"]
@@ -697,7 +695,7 @@ async fn record_reject_cname_conflicts() {
     // hit the same exclusivity check through the update path.
     let update_cname_request = json!({
         "name": "test",
-        "record_type": "CNAME",
+        "type": "CNAME",
         "value": "updated.example.com",
         "ttl": 3600
     });

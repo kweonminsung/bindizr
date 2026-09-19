@@ -37,7 +37,7 @@ async fn a_rename_keeps_every_record_inside_the_wire_limit() {
             "/records",
             Some(json!({
                 "name": owner,
-                "record_type": "A",
+                "type": "A",
                 "value": "192.0.2.1",
                 "zone_name": "a.co"
             })),
@@ -97,7 +97,7 @@ async fn a_rollback_keeps_every_restored_record_inside_the_wire_limit() {
             "/records",
             Some(json!({
                 "name": owner,
-                "record_type": "A",
+                "type": "A",
                 "value": "192.0.2.1",
                 "zone_name": "c.co"
             })),

@@ -34,7 +34,7 @@ fn record_values(body: &Value, name: &str, record_type: &str) -> Vec<String> {
         .as_array()
         .expect("records array")
         .iter()
-        .filter(|r| r["name"] == name && r["record_type"] == record_type)
+        .filter(|r| r["name"] == name && r["type"] == record_type)
         .flat_map(|r| r["values"].as_array().expect("record values").iter())
         .map(|v| v.as_str().expect("record value").to_string())
         .collect()
@@ -62,7 +62,7 @@ async fn external_dns_routes_are_not_registered_when_disabled() {
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_domain_listing_reflects_token_grants() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })
@@ -101,7 +101,7 @@ async fn external_dns_domain_listing_reflects_token_grants() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })
@@ -173,9 +173,9 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
 
     let create = json!({
         "creates": [
-            {"name": format!("app.{zone_name}"), "record_type": "A", "ttl": 300,
+            {"name": format!("app.{zone_name}"), "type": "A", "ttl": 300,
              "values": ["192.0.2.2", "192.0.2.1"]},
-            {"name": format!("app.{zone_name}"), "record_type": "TXT",
+            {"name": format!("app.{zone_name}"), "type": "TXT",
              "values": ["\"heritage=external-dns,external-dns/owner=default\""]}
         ]
     });
@@ -218,9 +218,9 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
             "/external-dns/changes",
             Some(json!({
                 "updates": [{
-                    "old": {"name": app_fqdn, "record_type": "A", "ttl": 300,
+                    "old": {"name": app_fqdn, "type": "A", "ttl": 300,
                              "values": ["192.0.2.1", "192.0.2.2"]},
-                    "new": {"name": app_fqdn, "record_type": "A", "ttl": 300,
+                    "new": {"name": app_fqdn, "type": "A", "ttl": 300,
                              "values": ["192.0.2.1", "192.0.2.3"]}
                 }]
             })),
@@ -233,7 +233,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
 
     // Delete, then delete again as a no-op.
     let delete = json!({
-        "deletes": [{"name": app_fqdn, "record_type": "A",
+        "deletes": [{"name": app_fqdn, "type": "A",
                      "values": ["192.0.2.1", "192.0.2.3"]}]
     });
     let (status, body) = app
@@ -256,7 +256,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_changes_reject_ungranted_zones_atomically() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })
@@ -280,8 +280,8 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
             "/external-dns/changes",
             Some(json!({
                 "creates": [
-                    {"name": format!("a.{granted_zone}"), "record_type": "A", "values": ["192.0.2.1"]},
-                    {"name": format!("b.{ungranted_zone}"), "record_type": "A", "values": ["192.0.2.2"]}
+                    {"name": format!("a.{granted_zone}"), "type": "A", "values": ["192.0.2.1"]},
+                    {"name": format!("b.{ungranted_zone}"), "type": "A", "values": ["192.0.2.2"]}
                 ]
             })),
         )
@@ -308,7 +308,7 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
 #[serial_test::serial(bindizr_e2e)]
 async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })
@@ -331,7 +331,7 @@ async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent(
             Method::POST,
             "/external-dns/changes",
             Some(json!({
-                "creates": [{"name": format!("api.{child_zone}"), "record_type": "A",
+                "creates": [{"name": format!("api.{child_zone}"), "type": "A",
                              "values": ["192.0.2.1"]}]
             })),
         )
@@ -350,7 +350,7 @@ async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent(
             Method::POST,
             "/external-dns/changes",
             Some(json!({
-                "creates": [{"name": "app.unmanaged-zone.org", "record_type": "A",
+                "creates": [{"name": "app.unmanaged-zone.org", "type": "A",
                              "values": ["192.0.2.1"]}]
             })),
         )
@@ -376,7 +376,7 @@ async fn external_dns_changes_enforce_record_validation() {
             Method::POST,
             "/external-dns/changes",
             Some(json!({
-                "creates": [{"name": format!("www.{zone_name}"), "record_type": "A",
+                "creates": [{"name": format!("www.{zone_name}"), "type": "A",
                              "values": ["192.0.2.1"]}]
             })),
         )
@@ -389,7 +389,7 @@ async fn external_dns_changes_enforce_record_validation() {
             Method::POST,
             "/external-dns/changes",
             Some(json!({
-                "creates": [{"name": format!("www.{zone_name}"), "record_type": "CNAME",
+                "creates": [{"name": format!("www.{zone_name}"), "type": "CNAME",
                              "values": ["cdn.example.net"]}]
             })),
         )
@@ -403,7 +403,7 @@ async fn external_dns_changes_enforce_record_validation() {
             Method::POST,
             "/external-dns/changes",
             Some(json!({
-                "creates": [{"name": format!("mail.{zone_name}"), "record_type": "MX",
+                "creates": [{"name": format!("mail.{zone_name}"), "type": "MX",
                              "values": ["10 mail.example.com."]}]
             })),
         )
@@ -416,7 +416,7 @@ async fn external_dns_changes_enforce_record_validation() {
 #[serial_test::serial(bindizr_e2e)]
 async fn adapter_serves_webhook_protocol_with_scoped_token() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })
@@ -515,7 +515,9 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
                 "targets": ["2001:db8::1"], "recordTTL": 300}])
     );
 
-    // A wrong token surfaces as a permanent 401 through the adapter.
+    // A wrong token answers 503, not the upstream 401: external-dns retries
+    // only 5xx, and granting or replacing the token is meant to heal the sync
+    // rather than leave the change set dropped as permanently bad.
     let bad_adapter = ExternalDnsAdapter::spawn(app.base_url(), "not-a-real-token").await;
     let response = client
         .get(format!("{}/records", bad_adapter.base_url))
@@ -523,7 +525,16 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 503);
+
+    // The same token failure turns the adapter unready, instead of leaving it
+    // green on bindizr's unauthenticated health endpoint.
+    let health = client
+        .get(format!("{}/healthz", bad_adapter.health_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(health.status().as_u16(), 503);
 }
 
 /// Verify that external DNS record listing spans read pages.
@@ -566,10 +577,7 @@ async fn external_dns_record_listing_spans_read_pages() {
     assert_eq!(status, StatusCode::OK);
 
     let listed = body["records"].as_array().expect("records array");
-    let a_records = listed
-        .iter()
-        .filter(|record| record["record_type"] == "A")
-        .count();
+    let a_records = listed.iter().filter(|record| record["type"] == "A").count();
     assert_eq!(a_records, RECORDS, "{}", listed.len());
 
     let names: std::collections::HashSet<&str> = listed

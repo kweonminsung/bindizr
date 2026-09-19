@@ -33,7 +33,7 @@ pub enum ChangeSource {
     Token,
     /// An RFC 2136 update, named by the TSIG key that signed it.
     Nsupdate,
-    /// The DNSSEC maintenance scheduler, on nobody's request.
+    /// The DNSSEC scheduler, on nobody's request.
     System,
     /// No credential stood behind it: the daemon socket, or any request made
     /// while authentication is disabled.

@@ -164,7 +164,7 @@ paths:
       tags:
       - DNSSEC
       summary: Edit a DNSSEC policy's timing
-      description: 'Edits the policy''s signature validity, re-sign threshold, and scheduled ZSK lifetime; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or maintenance scan.'
+      description: 'Edits the policy''s signature validity, re-sign threshold, and scheduled ZSK lifetime; an omitted field keeps its value. The algorithm, denial mode, and key layout cannot change: move zones to another policy instead. Zones under the policy pick the new values up on their next signing pass or scheduler scan.'
       operationId: update_dnssec_policy
       parameters:
       - name: name
@@ -442,7 +442,7 @@ paths:
       - Health
       summary: Health probe
       description: Runs a minimal database query and reports whether the API can serve requests. Unauthenticated, intended for load-balancer and orchestrator probes; deeper checks (DNS listener, secondary sync) belong to 'bindizr doctor'.
-      operationId: get_health
+      operationId: handle_health
       responses:
         '200':
           description: Service healthy
@@ -515,7 +515,7 @@ paths:
         required: false
         schema:
           type: string
-      - name: record_type
+      - name: type
         in: query
         description: Filter by record type.
         required: false
@@ -577,7 +577,7 @@ paths:
           type: string
       - name: sort
         in: query
-        description: Sort by name (the default), record_type, ttl, priority, or created_at.
+        description: Sort by name (the default), type, ttl, priority, or created_at.
         required: false
         schema:
           type: string
@@ -589,7 +589,7 @@ paths:
           type: string
       - name: signed
         in: query
-        description: Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and record_type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them.
+        description: Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them.
         required: false
         schema:
           type: boolean
@@ -652,7 +652,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordResponse'
+                $ref: '#/components/schemas/RecordWriteResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -699,7 +699,7 @@ paths:
       tags:
       - Record
       summary: Delete records by name
-      description: 'Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding record_type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.'
+      description: 'Removes every record matching the filter in one transaction, so the zone advances by a single serial and sends one NOTIFY. Narrowing follows RFC 2136, Section 2.5.2: a name alone takes every type at it, adding type narrows to that type, adding value takes one record. Matching nothing is not an error — the zone already reads the way the request asked for, so nothing moves.'
       operationId: delete_records_matching
       parameters:
       - name: zone_name
@@ -713,7 +713,7 @@ paths:
         required: true
         schema:
           type: string
-      - name: record_type
+      - name: type
         in: query
         description: Narrows to one type; omitted, every type at the name goes.
         required: false
@@ -722,11 +722,12 @@ paths:
       - name: value
         in: query
         description: |-
-          Narrows to one record; compared canonically, so a value spelled
-          another way still matches. Requires `record_type`.
+          Narrows to one record, named the way a create names it: one string,
+          or the segments of a TXT record. Compared canonically, so a value
+          spelled another way still matches. Requires `type`.
         required: false
         schema:
-          type: string
+          $ref: '#/components/schemas/RecordValueRequest'
       - name: priority
         in: query
         description: |-
@@ -890,7 +891,7 @@ paths:
       tags:
       - Record
       summary: Update a specific DNS record
-      description: Applies the given fields and keeps the rest. `value` is required when `record_type` changes, since a stored value is encoded per type.
+      description: Applies the given fields and keeps the rest. `value` is required when `type` changes, since a stored value is encoded per type.
       operationId: update_record
       parameters:
       - name: record_id
@@ -912,7 +913,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordResponse'
+                $ref: '#/components/schemas/RecordWriteResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -968,13 +969,19 @@ paths:
         schema:
           type: integer
           format: int32
+      - name: dry_run
+        in: query
+        description: Report what would go without removing it.
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
           description: DNS record deleted successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                $ref: '#/components/schemas/DeleteRecordsResponse'
         '401':
           description: Unauthorized
           content:
@@ -1920,7 +1927,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneResponse'
+                $ref: '#/components/schemas/ZoneWriteResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -1962,7 +1969,7 @@ paths:
       tags:
       - Zone
       summary: Get a specific DNS zone
-      description: With `records=true` the response carries every record of the zone in one unpaginated array; for a large zone list them page by page with `GET /records?zone_name=` instead.
+      description: Returns the zone's SOA metadata. For its records, list them with `GET /records?zone_name=`, or render the whole zone as a master file with `GET /zones/{name}/export`.
       operationId: get_zone
       parameters:
       - name: name
@@ -1971,19 +1978,13 @@ paths:
         required: true
         schema:
           type: string
-      - name: records
-        in: query
-        description: Include the zone's records, unpaginated.
-        required: false
-        schema:
-          type: boolean
       responses:
         '200':
           description: Details of the DNS zone
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneDetailResponse'
+                $ref: '#/components/schemas/ZoneResponse'
         '401':
           description: Unauthorized
           content:
@@ -2027,7 +2028,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoneResponse'
+                $ref: '#/components/schemas/ZoneWriteResponse'
         '400':
           description: Bad request, invalid input
           content:
@@ -2088,7 +2089,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                $ref: '#/components/schemas/DeleteZoneResponse'
         '401':
           description: Unauthorized
           content:
@@ -2475,7 +2476,7 @@ paths:
       tags:
       - DNSSEC
       summary: Confirm the new DS is at the parent (ds-seen)
-      description: Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The maintenance scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.
+      description: Promotes the pre-published key to active and retires the key it replaces, once the publish wait has passed and every one of the zone's parent nameservers (`parent_ns_addrs`) serves the new key's DS. The scheduler applies the same two conditions on every pass, so this is the way to finish a rollover now rather than the only way to finish it; refused with `DNSSEC_DS_NOT_PUBLISHED` while they do not, or `DNSSEC_DS_UNVERIFIED` when they cannot be asked or answer only in a digest type bindizr cannot compute. `skip_ds_check=true` takes the DS on the caller's word; `skip_holddown=true` promotes before the hold-down passes, at the cost of validation failures at resolvers still caching the previous DNSKEY set. Waiting out the parent's DS TTL after it appears stays the caller's. Retired keys are removed automatically once caches drain — for a SEP key that includes the parent's DS TTL, read from the answer that confirmed this promotion; ZSK rollovers involve no DS and are promoted automatically after their wait.
       operationId: ds_seen_dnssec_rollover
       parameters:
       - name: name
@@ -2753,7 +2754,7 @@ paths:
       tags:
       - Zone
       summary: Import records into a zone
-      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the errors are returned. A record type bindizr does not store fails the file the same way unless `skip_unsupported` is set, which passes over those records and lists them in `skipped_records`. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.
+      description: Reconcile records with the zone using append/upsert/replace, taken from BIND zone file text in `content` or transferred over AXFR from `from_server` (exactly one of the two; the source must allow the transfer). When applied, the zone serial is incremented once and a single NOTIFY is sent. If any record fails validation nothing is applied and the answer is 422, carrying the per-record errors. A record type bindizr does not store fails the file the same way unless `skip_unsupported` is set, which passes over those records and lists them in `skipped_records`. TTLs are decimal seconds as RFC 1035 defines them; a file using BIND's unit suffixes (`1h`) is refused — write it out in seconds first with `named-compilezone -o - <zone> <file>`.
       operationId: import_zone
       parameters:
       - name: name
@@ -2770,7 +2771,7 @@ paths:
         required: true
       responses:
         '200':
-          description: Import summary and validation errors
+          description: Import summary
           content:
             application/json:
               schema:
@@ -2811,6 +2812,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: The file was rejected and nothing was applied; the same body carries the per-record errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportZoneResponse'
         '500':
           description: Internal server error
           content:
@@ -3274,6 +3281,7 @@ components:
         zone_name:
           type: string
           example: example.com
+      additionalProperties: false
     CreateDnssecPolicyRequest:
       type: object
       description: |-
@@ -3336,15 +3344,20 @@ components:
             default) disables scheduled rolls.
           example: 90
           minimum: 0
+      additionalProperties: false
     CreateRecordRequest:
       type: object
       description: Request body for creating a record in a named zone.
       required:
       - name
-      - record_type
+      - type
       - value
       - zone_name
       properties:
+        dry_run:
+          type: boolean
+          description: Validate and report the change without writing it.
+          example: false
         name:
           type: string
           example: sub
@@ -3353,11 +3366,10 @@ components:
           - integer
           - 'null'
           format: int32
-          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
+          description: |-
+            MX and SRV priority, set here rather than inline in the value; other
+            record types reject it. Omitted, it is served and compared as 10.
           example: 10
-        record_type:
-          type: string
-          example: A
         ttl:
           type:
           - integer
@@ -3365,11 +3377,15 @@ components:
           format: int32
           description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
           example: 3600
+        type:
+          type: string
+          example: A
         value:
           $ref: '#/components/schemas/RecordValueRequest'
         zone_name:
           type: string
           example: example.com
+      additionalProperties: false
     CreateTokenGrantRequest:
       type: object
       description: Request body for granting an API token record rights in a zone.
@@ -3400,6 +3416,7 @@ components:
           type: string
           description: Name of an existing zone.
           example: example.com
+      additionalProperties: false
     CreateTokenRequest:
       type: object
       description: Request body for creating an API token.
@@ -3429,6 +3446,7 @@ components:
           type: string
           description: 'Letters, digits, `.`, `_`, and `-`: one URL path segment.'
           example: external-dns
+      additionalProperties: false
     CreateTsigGrantRequest:
       type: object
       description: Request body for granting a TSIG key update and transfer rights in a zone.
@@ -3459,6 +3477,7 @@ components:
           type: string
           description: Name of an existing zone.
           example: example.com
+      additionalProperties: false
     CreateTsigKeyRequest:
       type: object
       description: Request body for creating a TSIG key. Omitting `secret` generates one.
@@ -3486,6 +3505,7 @@ components:
           - 'null'
           description: Existing base64 secret to import; omit to generate a random one.
           example: bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=
+      additionalProperties: false
     CreateZoneRequest:
       type: object
       description: Request body for creating a zone.
@@ -3509,6 +3529,10 @@ components:
           - 'null'
           description: Free-text note for operators, at most 255 characters.
           example: customer A, migrated 2026-01
+        dry_run:
+          type: boolean
+          description: Validate and report the change without writing it.
+          example: false
         expire:
           type:
           - integer
@@ -3549,6 +3573,7 @@ components:
           format: int32
           description: Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
           example: 42
+      additionalProperties: false
     CreatedTokenResponse:
       type: object
       description: 'The create response: the token and its secret, the one time it is shown.'
@@ -3576,6 +3601,9 @@ components:
       properties:
         applied:
           type: boolean
+          description: |-
+            Whether this call wrote; a filter that matched nothing still ran, and
+            says so with `deleted: 0`.
           example: true
         deleted:
           type: integer
@@ -3591,6 +3619,39 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GetRecordResponse'
+    DeleteZoneResponse:
+      type: object
+      description: |-
+        What deleting a zone takes with it. A dry run reports the counts and
+        removes nothing; deleting a zone cannot be undone from the tool.
+      required:
+      - applied
+      - dry_run
+      - zone
+      - records
+      - versions
+      properties:
+        applied:
+          type: boolean
+          description: Whether this call removed the zone; a dry run answers `false`.
+          example: true
+        dry_run:
+          type: boolean
+          example: false
+        records:
+          type: integer
+          format: int64
+          description: Records the zone holds, all of which go with it.
+          example: 1240
+          minimum: 0
+        versions:
+          type: integer
+          format: int64
+          description: Saved versions, so the rollback history goes too.
+          example: 12
+          minimum: 0
+        zone:
+          $ref: '#/components/schemas/GetZoneResponse'
     DnssecDelegationInfo:
       type: object
       description: What the parent zone's servers answered when asked for the zone's DS.
@@ -3802,6 +3863,7 @@ components:
           - 'null'
           description: Name of the DNSSEC policy to sign under; defaults to `default`.
           example: default
+      additionalProperties: false
     ErrorResponse:
       type: object
       description: 'Generic error response: a plain description plus a machine-readable code.'
@@ -3811,7 +3873,23 @@ components:
       properties:
         code:
           type: string
+          description: |-
+            One of `INVALID_INPUT`, `INVALID_ZONE_FIELD`, `INVALID_RECORD_NAME`,
+            `INVALID_RECORD_VALUE`, `INVALID_JSON_BODY`, `UNAUTHORIZED`,
+            `INVALID_TOKEN`, `FORBIDDEN`, `ENDPOINT_NOT_FOUND`,
+            `METHOD_NOT_ALLOWED`, `ZONE_NOT_FOUND`, `RECORD_NOT_FOUND`,
+            `TOKEN_NOT_FOUND`, `VERSION_NOT_FOUND`, `TSIG_KEY_NOT_FOUND`,
+            `TSIG_GRANT_NOT_FOUND`, `TOKEN_GRANT_NOT_FOUND`,
+            `DNSSEC_POLICY_NOT_FOUND`, `ZONE_CONFLICT`, `RECORD_CONFLICT`,
+            `TOKEN_CONFLICT`, `TSIG_KEY_CONFLICT`, `TSIG_KEY_IN_USE`,
+            `DNSSEC_POLICY_CONFLICT`, `DNSSEC_POLICY_IN_USE`,
+            `DNSSEC_ALREADY_ENABLED`, `DNSSEC_NOT_ENABLED`,
+            `DNSSEC_ROLLOVER_IN_PROGRESS`, `DNSSEC_NO_ROLLOVER_IN_PROGRESS`,
+            `DNSSEC_DS_PUBLISHED`, `DNSSEC_DS_NOT_PUBLISHED`,
+            `DNSSEC_DS_UNVERIFIED`, `PAYLOAD_TOO_LARGE`,
+            `UNSUPPORTED_MEDIA_TYPE`, `DNSSEC_SIGNING_FAILED`, `INTERNAL`.
           example: ZONE_NOT_FOUND
+          pattern: ^[A-Z_]+$
         error:
           type: string
           example: Zone with name 'example.com' not found
@@ -3825,6 +3903,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ExternalDnsRecord'
+      additionalProperties: false
     ExternalDnsAdjustResponse:
       type: object
       description: The request's records in the canonical form applying them would store.
@@ -3851,6 +3930,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ExternalDnsRecordUpdate'
+      additionalProperties: false
     ExternalDnsChangesResponse:
       type: object
       description: Summary of an applied ExternalDNS change set.
@@ -3899,15 +3979,12 @@ components:
         are absolute; TXT values are quoted presentation strings.
       required:
       - name
-      - record_type
+      - type
       - values
       properties:
         name:
           type: string
           example: app.example.com
-        record_type:
-          type: string
-          example: A
         ttl:
           type:
           - integer
@@ -3915,12 +3992,16 @@ components:
           format: int32
           description: Optional on writes; an omitted or zero TTL resolves to the zone TTL.
           example: 300
+        type:
+          type: string
+          example: A
         values:
           type: array
           items:
             type: string
           example:
           - 192.0.2.10
+      additionalProperties: false
     ExternalDnsRecordUpdate:
       type: object
       description: 'A record replacement: `old` values are removed and `new` written in place.'
@@ -3932,6 +4013,7 @@ components:
           $ref: '#/components/schemas/ExternalDnsRecord'
         old:
           $ref: '#/components/schemas/ExternalDnsRecord'
+      additionalProperties: false
     ExternalDnsRecordsResponse:
       type: object
       description: |-
@@ -4080,7 +4162,7 @@ components:
       description: API representation of a record.
       required:
       - name
-      - record_type
+      - type
       - value
       - ttl
       - zone_id
@@ -4104,13 +4186,13 @@ components:
           - 'null'
           format: int32
           example: 10
-        record_type:
-          type: string
-          example: A
         ttl:
           type: integer
           format: int32
           example: 3600
+        type:
+          type: string
+          example: A
         value:
           $ref: '#/components/schemas/RecordValueRequest'
         zone_id:
@@ -4256,7 +4338,6 @@ components:
       type: object
       description: API representation of a zone.
       required:
-      - id
       - name
       - mname
       - rname
@@ -4287,8 +4368,11 @@ components:
           format: int32
           example: 604800
         id:
-          type: integer
+          type:
+          - integer
+          - 'null'
           format: int32
+          description: Absent on a dry run, where nothing was written to carry one.
           example: 1
         minimum_ttl:
           type: integer
@@ -4383,6 +4467,11 @@ components:
           example: |
             www IN A 192.0.2.1
             mail IN A 192.0.2.2
+        create:
+          type: boolean
+          description: |-
+            Create the zone from the file's SOA when it does not exist yet.
+            Without this a missing zone is an error, so a typo creates nothing.
         dry_run:
           type: boolean
           description: When true, parse and validate without applying any change.
@@ -4401,6 +4490,7 @@ components:
           description: |-
             Pass over records bindizr has no type for instead of failing the whole
             file; they are counted as skipped and listed in `skipped_records`.
+      additionalProperties: false
     ImportZoneResponse:
       type: object
       description: Result of a zone import, including a summary and any validation errors.
@@ -4516,7 +4606,7 @@ components:
             description: API representation of a record.
             required:
             - name
-            - record_type
+            - type
             - value
             - ttl
             - zone_id
@@ -4540,13 +4630,13 @@ components:
                 - 'null'
                 format: int32
                 example: 10
-              record_type:
-                type: string
-                example: A
               ttl:
                 type: integer
                 format: int32
                 example: 3600
+              type:
+                type: string
+                example: A
               value:
                 $ref: '#/components/schemas/RecordValueRequest'
               zone_id:
@@ -4747,7 +4837,6 @@ components:
             type: object
             description: API representation of a zone.
             required:
-            - id
             - name
             - mname
             - rname
@@ -4778,8 +4867,11 @@ components:
                 format: int32
                 example: 604800
               id:
-                type: integer
+                type:
+                - integer
+                - 'null'
                 format: int32
+                description: Absent on a dry run, where nothing was written to carry one.
                 example: 1
               minimum_ttl:
                 type: integer
@@ -4838,7 +4930,7 @@ components:
                 type: string
                 description: |-
                   Which plane asked for this version: `token`, `nsupdate`, `system`
-                  (the DNSSEC maintenance scheduler), or `local` (the daemon socket, or
+                  (the DNSSEC scheduler), or `local` (the daemon socket, or
                   any request while authentication is disabled).
                 example: token
               changed_by:
@@ -4930,7 +5022,7 @@ components:
       required:
       - change
       - name
-      - record_type
+      - type
       - from
       - to
       properties:
@@ -4945,13 +5037,13 @@ components:
         name:
           type: string
           example: www.example.com.
-        record_type:
-          type: string
-          example: A
         to:
           type: array
           items:
             $ref: '#/components/schemas/RecordDiffValue'
+        type:
+          type: string
+          example: A
     RecordDiffSummary:
       type: object
       description: How many name-and-type groups of records were added, removed, and changed.
@@ -5000,7 +5092,7 @@ components:
         request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
       required:
       - name
-      - record_type
+      - type
       - value
       properties:
         name:
@@ -5011,11 +5103,10 @@ components:
           - integer
           - 'null'
           format: int32
-          description: MX and SRV priority, set here rather than inline in the value; other record types reject it.
+          description: |-
+            MX and SRV priority, set here rather than inline in the value; other
+            record types reject it. Omitted, it is served and compared as 10.
           example: 10
-        record_type:
-          type: string
-          example: A
         ttl:
           type:
           - integer
@@ -5023,8 +5114,12 @@ components:
           format: int32
           description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
           example: 3600
+        type:
+          type: string
+          example: A
         value:
           $ref: '#/components/schemas/RecordValueRequest'
+      additionalProperties: false
     RecordResponse:
       type: object
       description: A single record wrapped in a response envelope.
@@ -5044,6 +5139,29 @@ components:
         - hello
         - world
       description: 'A record value as sent by the client: a single string or TXT segments.'
+    RecordWriteResponse:
+      type: object
+      description: |-
+        What a record write left behind, in the shape every previewable operation
+        answers with: whether it wrote, and the change as a record diff.
+      required:
+      - applied
+      - dry_run
+      - record
+      - diff
+      properties:
+        applied:
+          type: boolean
+          description: Whether this call wrote; a dry run answers `false`.
+          example: true
+        diff:
+          $ref: '#/components/schemas/RecordDiff'
+          description: The write as a record diff, for previewing it.
+        dry_run:
+          type: boolean
+          example: false
+        record:
+          $ref: '#/components/schemas/GetRecordResponse'
     RollbackSummary:
       type: object
       description: |-
@@ -5110,6 +5228,7 @@ components:
             Which key to roll: required for split-key zones (`ksk` or `zsk`),
             omitted for CSK zones.
           example: zsk
+      additionalProperties: false
     SecondaryStatusResponse:
       type: object
       description: Sync state of one configured secondary for a zone.
@@ -5174,7 +5293,7 @@ components:
       type: object
       description: |-
         Request body for editing a DNSSEC policy's timing; an omitted field keeps
-        its value. Takes effect on the next signing pass or maintenance scan.
+        its value. Takes effect on the next signing pass or scheduler scan.
       properties:
         signature_refresh_days:
           type:
@@ -5197,6 +5316,7 @@ components:
           format: int32
           example: 90
           minimum: 0
+      additionalProperties: false
     UpdateDnssecSettingsRequest:
       type: object
       description: |-
@@ -5220,13 +5340,18 @@ components:
             layout. A new denial mode replaces the chain under one serial, and a
             new algorithm starts a rollover.
           example: strict
+      additionalProperties: false
     UpdateRecordRequest:
       type: object
       description: |-
         Request body for updating a record; an omitted field keeps the current
         value, merged inside the update transaction. `value` is required when
-        `record_type` changes.
+        `type` changes.
       properties:
+        dry_run:
+          type: boolean
+          description: Validate and report the change without writing it.
+          example: false
         name:
           type:
           - string
@@ -5239,11 +5364,6 @@ components:
           format: int32
           description: MX and SRV priority; other record types reject it.
           example: 10
-        record_type:
-          type:
-          - string
-          - 'null'
-          example: A
         ttl:
           type:
           - integer
@@ -5251,10 +5371,16 @@ components:
           format: int32
           description: Records sharing a name and type share one TTL.
           example: 3600
+        type:
+          type:
+          - string
+          - 'null'
+          example: A
         value:
           oneOf:
           - type: 'null'
           - $ref: '#/components/schemas/RecordValueRequest'
+      additionalProperties: false
     UpdateZoneRequest:
       type: object
       description: |-
@@ -5274,6 +5400,10 @@ components:
           - 'null'
           description: Empty clears the note.
           example: customer A, migrated 2026-01
+        dry_run:
+          type: boolean
+          description: Validate and report the change without writing it.
+          example: false
         enabled:
           type:
           - boolean
@@ -5326,6 +5456,7 @@ components:
           - 'null'
           format: int32
           example: 42
+      additionalProperties: false
     VersionDetailResponse:
       type: object
       description: One version plus the reconstructed records at that serial.
@@ -5364,7 +5495,7 @@ components:
         records it has no database id.
       required:
       - name
-      - record_type
+      - type
       - value
       - ttl
       properties:
@@ -5377,31 +5508,20 @@ components:
           - 'null'
           format: int32
           example: 10
-        record_type:
-          type: string
-          example: A
         ttl:
           type: integer
           format: int32
           example: 3600
+        type:
+          type: string
+          example: A
         value:
           $ref: '#/components/schemas/RecordValueRequest'
-    ZoneDetailResponse:
-      type: object
-      description: A zone together with all of its records.
-      required:
-      - zone
-      - records
-      properties:
-        records:
-          type: array
-          items:
-            $ref: '#/components/schemas/GetRecordResponse'
-        zone:
-          $ref: '#/components/schemas/GetZoneResponse'
     ZoneResponse:
       type: object
-      description: A single zone wrapped in a response envelope.
+      description: |-
+        A single zone wrapped in a response envelope. A dry run answers with the
+        zone as it would stand and `applied: false`.
       required:
       - zone
       properties:
@@ -5449,7 +5569,7 @@ components:
           type: string
           description: |-
             Which plane asked for this version: `token`, `nsupdate`, `system`
-            (the DNSSEC maintenance scheduler), or `local` (the daemon socket, or
+            (the DNSSEC scheduler), or `local` (the daemon socket, or
             any request while authentication is disabled).
           example: token
         changed_by:
@@ -5493,6 +5613,25 @@ components:
           type: integer
           format: int32
           example: 7
+    ZoneWriteResponse:
+      type: object
+      description: |-
+        What a zone write left behind. The zone's own fields are the change, so
+        unlike a record write this carries no diff.
+      required:
+      - applied
+      - dry_run
+      - zone
+      properties:
+        applied:
+          type: boolean
+          description: Whether this call wrote; a dry run answers `false`.
+          example: true
+        dry_run:
+          type: boolean
+          example: false
+        zone:
+          $ref: '#/components/schemas/GetZoneResponse'
   securitySchemes:
     bearer_auth:
       type: http

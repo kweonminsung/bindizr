@@ -13,6 +13,8 @@ use super::reserve_tcp_port;
 pub(crate) struct ExternalDnsAdapter {
     child: Child,
     pub(crate) base_url: String,
+    /// The second listener, which serves `/healthz` and `/metrics`.
+    pub(crate) health_url: String,
 }
 
 impl ExternalDnsAdapter {
@@ -43,6 +45,7 @@ impl ExternalDnsAdapter {
             .expect("failed to start bindizr-external-dns binary");
 
         let base_url = format!("http://127.0.0.1:{webhook_port}");
+        let health_url = format!("http://127.0.0.1:{health_port}");
         let client = Client::new();
         for _ in 0..100 {
             if let Some(status) = child.try_wait().expect("failed to check adapter status") {
@@ -50,7 +53,11 @@ impl ExternalDnsAdapter {
             }
             // Any HTTP response means the webhook listener is up.
             if client.get(&base_url).send().await.is_ok() {
-                return Self { child, base_url };
+                return Self {
+                    child,
+                    base_url,
+                    health_url,
+                };
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }

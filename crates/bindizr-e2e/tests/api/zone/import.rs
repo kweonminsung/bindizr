@@ -96,13 +96,14 @@ async fn zone_import_zone_file_replace_mode() {
         &app,
         zone_name,
         json!([
-            { "name": "keep", "record_type": "A", "value": "192.0.2.1" },
-            { "name": "drop", "record_type": "A", "value": "192.0.2.2" }
+            { "name": "keep", "type": "A", "value": "192.0.2.1" },
+            { "name": "drop", "type": "A", "value": "192.0.2.2" }
         ]),
     )
     .await;
 
-    // Replace: keep stays (same value), drop is removed, add is created.
+    // Replace: keep stays (same value), add is created, and both drop and the
+    // apex NS go — the file is the desired state and lists neither.
     let content = "keep IN A 192.0.2.1\nadd IN A 192.0.2.3\n";
     let (status, body) = app
         .send_request(
@@ -114,7 +115,7 @@ async fn zone_import_zone_file_replace_mode() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], true);
     assert_eq!(body["summary"]["added"], 1);
-    assert_eq!(body["summary"]["deleted"], 1);
+    assert_eq!(body["summary"]["deleted"], 2);
     assert_eq!(body["summary"]["unchanged"], 1);
 
     let (_, body) = app
@@ -150,10 +151,10 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
         &app,
         zone_name,
         json!([
-            { "name": "www", "record_type": "A", "value": "192.0.2.1" },
-            { "name": "www", "record_type": "A", "value": "192.0.2.2" },
-            { "name": "www", "record_type": "TXT", "value": "keep me" },
-            { "name": "other", "record_type": "A", "value": "192.0.2.9" }
+            { "name": "www", "type": "A", "value": "192.0.2.1" },
+            { "name": "www", "type": "A", "value": "192.0.2.2" },
+            { "name": "www", "type": "TXT", "value": "keep me" },
+            { "name": "other", "type": "A", "value": "192.0.2.9" }
         ]),
     )
     .await;
@@ -186,7 +187,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     let (_, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&name=www&record_type=A"),
+            &format!("/records?zone_name={zone_name}&name=www&type=A"),
             None,
         )
         .await;
@@ -196,7 +197,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     let (_, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&name=www&record_type=TXT"),
+            &format!("/records?zone_name={zone_name}&name=www&type=TXT"),
             None,
         )
         .await;
@@ -225,7 +226,7 @@ async fn zone_import_zone_file_reconciles_ttl() {
         &app,
         zone_name,
         json!([
-            { "name": "www", "record_type": "A", "value": "192.0.2.1", "ttl": 300 }
+            { "name": "www", "type": "A", "value": "192.0.2.1", "ttl": 300 }
         ]),
     )
     .await;
@@ -345,4 +346,132 @@ async fn zone_import_from_server_over_http() {
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
+}
+
+/// Verify that `create` builds the zone from the file's SOA, and that a dry
+/// run of the same import leaves no zone behind.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_creates_the_zone_from_the_files_soa() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-create.example");
+    // A migrated zone's serial has to carry over, or a secondary holding the
+    // old primary's higher serial ignores the transfer.
+    let content = format!(
+        "@ IN SOA ns1.old.example. hostmaster.{zone_name}. (2026091601 7200 1800 1209600 300)\n\
+         @ IN NS ns1.old.example.\n\
+         www IN A 192.0.2.10\n"
+    );
+
+    // A dry run plans against a zone it creates in the same transaction, and
+    // discards both.
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content, "create": true, "dry_run": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["applied"], false);
+    // The zone is created empty, so the file's NS and A are both adds.
+    assert_eq!(body["summary"]["added"], 2);
+
+    let (status, _) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content, "create": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["applied"], true);
+
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let zone = &body["zone"];
+    assert_eq!(zone["mname"], "ns1.old.example");
+    assert_eq!(zone["rname"], format!("hostmaster@{zone_name}"));
+    assert_eq!(zone["refresh"], 7200);
+    assert_eq!(zone["retry"], 1800);
+    assert_eq!(zone["expire"], 1209600);
+    assert_eq!(zone["minimum_ttl"], 300);
+    // The import advanced it once for the records it added.
+    assert!(
+        zone["serial"].as_i64().unwrap() >= 2026091601,
+        "serial did not carry over: {}",
+        zone["serial"]
+    );
+}
+
+/// Verify that a missing zone is an error unless `create` says otherwise.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_refuses_a_missing_zone_without_create() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-nocreate.example");
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": "www IN A 192.0.2.10\n" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "ZONE_NOT_FOUND");
+
+    // `create` needs an SOA to build the zone from.
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": "www IN A 192.0.2.10\n", "create": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("no SOA"), "{body}");
+}
+
+/// Verify that a rejected import leaves behind no zone it created to apply into.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_rejected_with_create_leaves_no_zone() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("import-create-reject.example");
+    // The SOA is enough to create the zone from, but the CNAME collides with
+    // the A record at the same name, so validation rejects the whole file.
+    let content = format!(
+        "@ IN SOA ns1.old.example. hostmaster.{zone_name}. (2026091601 7200 1800 1209600 300)\n\
+         @ IN NS ns1.old.example.\n\
+         www IN A 192.0.2.10\n\
+         www IN CNAME target.example.\n"
+    );
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({ "content": content, "create": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["applied"], false);
+    assert!(
+        !body["errors"].as_array().expect("errors array").is_empty(),
+        "{body}"
+    );
+
+    // The zone was created inside the transaction the rejection discarded.
+    let (status, _) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

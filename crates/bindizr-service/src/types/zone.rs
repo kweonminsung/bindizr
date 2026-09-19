@@ -1,17 +1,21 @@
 //! Zone request, patch, filter, and response payloads.
 
+use bindizr_core::{
+    dns::{record::SoaMailbox, zonefile::ZoneFileSoa},
+    model::written_id,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::record::GetRecordResponse;
-use crate::model::zone::Zone;
+use crate::{error::ServiceError, model::zone::Zone, serial::validate_initial_serial};
 
 /// API representation of a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct GetZoneResponse {
+    /// Absent on a dry run, where nothing was written to carry one.
     #[schema(example = 1)]
-    pub id: i32,
+    pub id: Option<i32>,
     #[schema(example = "example.com")]
     pub name: String,
     #[schema(example = "ns1.example.com")]
@@ -41,7 +45,7 @@ impl GetZoneResponse {
     /// Build a zone response from its stored settings.
     pub fn from_zone(zone: &Zone) -> Self {
         GetZoneResponse {
-            id: zone.id,
+            id: written_id(zone.id),
             name: zone.name.to_string(),
             mname: zone.mname.clone(),
             rname: zone.rname.clone(),
@@ -59,6 +63,7 @@ impl GetZoneResponse {
 
 /// Request body for creating a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateZoneRequest {
     #[schema(example = "example.com")]
     pub name: String,
@@ -84,10 +89,48 @@ pub struct CreateZoneRequest {
     /// Free-text note for operators, at most 255 characters.
     #[schema(example = "customer A, migrated 2026-01")]
     pub description: Option<String>,
+    /// Validate and report the change without writing it.
+    #[serde(default)]
+    #[schema(example = false)]
+    pub dry_run: bool,
+}
+
+impl CreateZoneRequest {
+    /// Build the request a zone file's SOA describes. The serial carries over
+    /// so secondaries holding the old primary's serial accept the transfer;
+    /// one past bindizr's ceiling starts fresh instead.
+    pub(crate) fn from_zone_file_soa(
+        zone_name: &str,
+        soa: &ZoneFileSoa,
+    ) -> Result<Self, ServiceError> {
+        let rname = SoaMailbox::from_encoded(soa.rname.trim_end_matches('.'))
+            .to_email()
+            .map_err(|e| {
+                ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", e))
+            })?;
+        Ok(CreateZoneRequest {
+            dry_run: false,
+            name: zone_name.to_string(),
+            mname: soa.mname.clone(),
+            rname,
+            default_ttl: None,
+            // The file's serial only if a zone may start from it, so an
+            // unusable one generates a fresh serial instead of failing.
+            serial: i32::try_from(soa.serial)
+                .ok()
+                .and_then(|serial| validate_initial_serial(serial).ok()),
+            refresh: Some(soa.refresh),
+            retry: Some(soa.retry),
+            expire: Some(soa.expire),
+            minimum_ttl: Some(soa.minimum_ttl),
+            description: None,
+        })
+    }
 }
 
 /// Query filters and pagination for listing zones.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GetZonesFilter {
     #[schema(example = "example.com")]
     pub name: Option<String>,
@@ -136,6 +179,7 @@ pub struct GetZonesFilter {
 /// value, merged inside the update transaction. `serial` is carried only to
 /// be rejected: it is fixed at creation.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateZoneRequest {
     /// A different name renames the zone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -173,6 +217,10 @@ pub struct UpdateZoneRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "customer A, migrated 2026-01")]
     pub description: Option<String>,
+    /// Validate and report the change without writing it.
+    #[serde(default)]
+    #[schema(example = false)]
+    pub dry_run: bool,
 }
 
 /// The success message every front end serves for a manual NOTIFY.
@@ -185,16 +233,40 @@ pub fn build_notify_message(zone_name: Option<&str>, bump_serial: bool) -> Strin
     format!("NOTIFY sent successfully for {}{}", scope, suffix)
 }
 
-/// A zone together with all of its records.
+/// What deleting a zone takes with it. A dry run reports the counts and
+/// removes nothing; deleting a zone cannot be undone from the tool.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct ZoneDetailResponse {
+pub struct DeleteZoneResponse {
+    /// Whether this call removed the zone; a dry run answers `false`.
+    #[schema(example = true)]
+    pub applied: bool,
+    #[schema(example = false)]
+    pub dry_run: bool,
     pub zone: GetZoneResponse,
-    pub records: Vec<GetRecordResponse>,
+    /// Records the zone holds, all of which go with it.
+    #[schema(example = 1240)]
+    pub records: u64,
+    /// Saved versions, so the rollback history goes too.
+    #[schema(example = 12)]
+    pub versions: u64,
 }
 
-/// A single zone wrapped in a response envelope.
+/// A single zone wrapped in a response envelope. A dry run answers with the
+/// zone as it would stand and `applied: false`.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ZoneResponse {
+    pub zone: GetZoneResponse,
+}
+
+/// What a zone write left behind. The zone's own fields are the change, so
+/// unlike a record write this carries no diff.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct ZoneWriteResponse {
+    /// Whether this call wrote; a dry run answers `false`.
+    #[schema(example = true)]
+    pub applied: bool,
+    #[schema(example = false)]
+    pub dry_run: bool,
     pub zone: GetZoneResponse,
 }
 

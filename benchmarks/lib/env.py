@@ -12,7 +12,7 @@ import yaml
 SYSTEMS_DIR = Path(__file__).resolve().parent.parent / "systems"
 
 
-def _cmd(args: list[str]) -> str:
+def _read_command_output(args: list[str]) -> str:
     """Capture command output for environment metadata."""
     try:
         return subprocess.run(
@@ -22,7 +22,7 @@ def _cmd(args: list[str]) -> str:
         return ""
 
 
-def _compose_images() -> dict[str, str]:
+def _load_compose_images() -> dict[str, str]:
     """Image tag per service across systems/*/compose.yml, derived so the report
     cannot drift from what the stack runs. `seed` containers are scaffolding."""
     images: dict[str, str] = {}
@@ -41,7 +41,7 @@ def _compose_images() -> dict[str, str]:
     return dict(sorted(images.items()))
 
 
-def _cpu_model() -> str:
+def _read_cpu_model() -> str:
     """Read the host CPU model for the benchmark report."""
     try:
         with open("/proc/cpuinfo") as fh:
@@ -53,7 +53,7 @@ def _cpu_model() -> str:
     return platform.processor() or "unknown"
 
 
-def _mem_total_gb() -> float:
+def _read_mem_total_gb() -> float:
     """Read the host memory capacity in GiB."""
     try:
         with open("/proc/meminfo") as fh:
@@ -71,9 +71,9 @@ def collect(cfg: dict) -> dict:
     free = shutil.disk_usage("/").free
     return {
         "hardware": {
-            "cpu": _cpu_model(),
+            "cpu": _read_cpu_model(),
             "cpu_cores": os.cpu_count(),
-            "memory_gb": _mem_total_gb(),
+            "memory_gb": _read_mem_total_gb(),
             "storage_free_gb": round(free / 1024**3, 1),
         },
         "os": {
@@ -81,10 +81,10 @@ def collect(cfg: dict) -> dict:
             "kernel": platform.release(),
         },
         "docker": {
-            "version": _cmd(["docker", "version", "--format", "{{.Server.Version}}"]),
-            "compose": _cmd(["docker", "compose", "version", "--short"]),
+            "version": _read_command_output(["docker", "version", "--format", "{{.Server.Version}}"]),
+            "compose": _read_command_output(["docker", "compose", "version", "--short"]),
         },
-        "software": _compose_images(),
+        "software": _load_compose_images(),
         "config": {
             "seed": cfg.get("seed"),
             "sizes": cfg.get("sizes"),

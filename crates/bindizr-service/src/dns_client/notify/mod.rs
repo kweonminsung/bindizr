@@ -14,7 +14,7 @@ use bindizr_core::{
 pub(crate) async fn send_zone_notify(zone_name: &str) -> Result<(), String> {
     log::info!("Sending NOTIFY for zone: {}", zone_name);
 
-    let reports = notify_secondaries(zone_name).await?;
+    let reports = send_notify_to_secondaries(zone_name).await?;
     if reports.is_empty() {
         log::info!("No secondary DNS servers configured");
         return Ok(());
@@ -51,14 +51,14 @@ pub struct NotifyReport {
 /// Send NOTIFY for a zone to every resolved secondary address (the transfer
 /// ACL admits each one, so every replica must hear the change). An empty
 /// `secondary_addrs` yields an empty list.
-pub async fn notify_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, String> {
+pub async fn send_notify_to_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, String> {
     let dns_config = &config::bindizr_config().dns;
     let raw = dns_config.secondary_addrs.as_str();
     if raw.trim().is_empty() {
         return Ok(Vec::new());
     }
-    let timeout = Duration::from_secs(dns_config.notify_timeout_secs);
-    let retries = dns_config.notify_retries;
+    let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
+    let retries = dns_config.notify.retries;
 
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;

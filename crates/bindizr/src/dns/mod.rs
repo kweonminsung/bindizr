@@ -14,6 +14,7 @@ use bindizr_core::{
 use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
     sync::Semaphore,
+    task::JoinHandle,
     time::timeout,
 };
 
@@ -27,8 +28,12 @@ const MAX_UDP_IN_FLIGHT: usize = 256;
 /// Connections served at once; the accept backlog holds the rest.
 const MAX_TCP_CONNECTIONS: usize = 128;
 
-/// Initializes the DNS service: prepares the catalog zone and spawns the TCP and UDP servers.
-pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
+/// Initializes the DNS service: prepares the catalog zone and spawns the TCP
+/// and UDP servers, handing back their accept loops so the daemon notices one
+/// that stops.
+pub(crate) async fn initialize(
+    shutdown: &Shutdown,
+) -> Result<(JoinHandle<()>, JoinHandle<()>), String> {
     // The catalog zone must exist before a secondary asks for it.
     match server::catalog::generate_catalog_zone().await {
         Ok((catalog, _)) => {
@@ -51,29 +56,29 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<(), String> {
 
     let tcp_listener = TcpListener::bind(listen_addr)
         .await
-        .map_err(|e| format!("Failed to bind DNS TCP listener on {}: {}", listen_addr, e))?;
+        .map_err(|e| bind_error("TCP listener", listen_addr, &e))?;
     let udp_socket = UdpSocket::bind(listen_addr)
         .await
-        .map_err(|e| format!("Failed to bind DNS UDP socket on {}: {}", listen_addr, e))?;
+        .map_err(|e| bind_error("UDP socket", listen_addr, &e))?;
 
     log::info!("DNS TCP server listening on {}", listen_addr);
     log::info!("DNS UDP server listening on {}", listen_addr);
 
     let tcp_stop = shutdown.waiter();
-    tokio::spawn(async move {
+    let tcp_task = tokio::spawn(async move {
         if let Err(e) = run_tcp_server(tcp_listener, tcp_stop).await {
             log::error!("DNS TCP server error: {}", e);
         }
     });
 
     let udp_stop = shutdown.waiter();
-    tokio::spawn(async move {
+    let udp_task = tokio::spawn(async move {
         if let Err(e) = run_udp_server(udp_socket, udp_stop).await {
             log::error!("DNS UDP server error: {}", e);
         }
     });
 
-    Ok(())
+    Ok((tcp_task, udp_task))
 }
 
 /// Accept DNS TCP connections until shutdown.
@@ -312,4 +317,14 @@ async fn send_udp_response(socket: &UdpSocket, client_addr: SocketAddr, response
     if let Err(e) = socket.send_to(response, client_addr).await {
         log::warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);
     }
+}
+
+/// The bind failure, naming the usual cause when the port is already taken.
+fn bind_error(socket: &str, addr: SocketAddr, e: &std::io::Error) -> String {
+    let hint = if e.kind() == std::io::ErrorKind::AddrInUse {
+        " (BIND on this host? change dns.listen_port)"
+    } else {
+        ""
+    };
+    format!("Failed to bind DNS {} on {}: {}{}", socket, addr, e, hint)
 }

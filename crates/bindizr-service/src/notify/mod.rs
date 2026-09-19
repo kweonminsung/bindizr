@@ -1,10 +1,10 @@
 //! When a committed change is propagated: the NOTIFY entry points and the
-//! `notify_after_update` gate. The batching worker lives in `queue`.
+//! `dns.notify.after_update` gate. The batching worker lives in `queue`.
 
 mod queue;
 
-use bindizr_core::config::{self, NotifyMode};
-pub use queue::init_notify_worker;
+use bindizr_core::config;
+pub use queue::{initialize_worker, stop_worker};
 
 /// Send a DNS NOTIFY for `zone_name`, or — with `None` — for every zone,
 /// aggregating per-zone failures.
@@ -38,15 +38,16 @@ async fn send_notify_all_zones() -> Result<(), String> {
     }
 }
 
-/// Send a NOTIFY after a zone update, unless disabled by `notify_after_update`.
-/// In async mode it is queued and this returns at once; otherwise sent inline.
+/// Send a NOTIFY after a zone update, unless disabled by `dns.notify.after_update`.
+/// With a `dns.notify.batch_ms` window it is queued and this returns at once;
+/// otherwise it is sent inline, before the write is answered.
 pub(crate) async fn send_notify_after_update(zone_name: Option<&str>) -> Result<(), String> {
     let dns = &config::bindizr_config().dns;
-    if !dns.notify_after_update {
+    if !dns.notify.after_update {
         return Ok(());
     }
 
-    if dns.notify_mode == NotifyMode::Async && queue::enqueue_notify(zone_name) {
+    if dns.notify.batch_ms > 0 && queue::enqueue_notify(zone_name) {
         return Ok(());
     }
 

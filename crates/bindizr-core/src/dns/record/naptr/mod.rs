@@ -99,7 +99,7 @@ impl<'a> NaptrRecordValue<'a> {
 
     /// A record decoded off the wire, whose character-strings are still the raw
     /// octets of RFC 3403, Section 4.1.
-    pub fn from_wire(
+    pub(crate) fn from_wire(
         order: u16,
         preference: u16,
         flags: &[u8],

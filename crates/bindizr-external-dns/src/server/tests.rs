@@ -223,9 +223,9 @@ async fn negotiate_rejects_unsupported_accept_without_calling_bindizr() {
 #[tokio::test]
 async fn list_records_maps_records_to_endpoints() {
     let records = json!({"records": [
-        {"name": "app.example.com", "record_type": "A", "ttl": 300,
+        {"name": "app.example.com", "type": "A", "ttl": 300,
          "values": ["192.0.2.1", "192.0.2.2"]},
-        {"name": "app.example.com", "record_type": "TXT", "ttl": 3600,
+        {"name": "app.example.com", "type": "TXT", "ttl": 3600,
          "values": ["\"heritage=external-dns,external-dns/owner=default\""]}
     ]});
     let mock = spawn_mock(
@@ -284,13 +284,13 @@ async fn apply_changes_posts_one_bindizr_change_set_and_returns_204() {
     assert_eq!(
         serde_json::from_str::<Value>(&recorded[0].2).unwrap(),
         json!({
-            "creates": [{"name": "a.example.com", "record_type": "A", "ttl": 300,
+            "creates": [{"name": "a.example.com", "type": "A", "ttl": 300,
                          "values": ["192.0.2.1"]}],
-            "updates": [{"old": {"name": "b.example.com", "record_type": "A",
+            "updates": [{"old": {"name": "b.example.com", "type": "A",
                                  "values": ["192.0.2.2"]},
-                         "new": {"name": "b.example.com", "record_type": "A",
+                         "new": {"name": "b.example.com", "type": "A",
                                  "values": ["192.0.2.3"]}}],
-            "deletes": [{"name": "c.example.com", "record_type": "TXT",
+            "deletes": [{"name": "c.example.com", "type": "TXT",
                          "values": ["\"v=1\""]}]
         })
     );
@@ -341,6 +341,32 @@ async fn apply_changes_passes_bindizr_4xx_through_as_permanent_error() {
     assert!(body.contains("not enabled for ExternalDNS"));
 }
 
+/// Verify that a rejected token answers a retryable 503 rather than the 401.
+#[tokio::test]
+async fn apply_changes_maps_a_rejected_token_to_a_retryable_503() {
+    let mock = spawn_mock(
+        (200, json!({"domains": []})),
+        (200, json!({"records": []})),
+        (
+            401,
+            json!({"error": "Invalid API token", "code": "UNAUTHORIZED"}),
+        ),
+    )
+    .await;
+    let base = spawn_adapter(mock.addr, Some("test-token")).await;
+
+    let (status, body) = post(
+        &format!("{}/records", base),
+        json!({"create": [{"dnsName": "api.example.com", "targets": ["192.0.2.1"], "recordType": "A"}]}),
+    )
+    .await;
+
+    // external-dns retries only 5xx, and re-granting the token is meant to heal
+    // the sync instead of leaving the change set dropped.
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains("Invalid API token"));
+}
+
 /// Verify that `apply_changes` maps bindizr 5xx and unreachable to retryable 502.
 #[tokio::test]
 async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
@@ -379,8 +405,8 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
         (
             200,
             json!({"records": [
-                {"name": "a.example.com", "record_type": "AAAA", "ttl": 300, "values": ["2001:db8::1"]},
-                {"name": "b.example.com", "record_type": "TXT", "values": ["\"v=spf1 -all\""]}
+                {"name": "a.example.com", "type": "AAAA", "ttl": 300, "values": ["2001:db8::1"]},
+                {"name": "b.example.com", "type": "TXT", "values": ["\"v=spf1 -all\""]}
             ]}),
         ),
     )
@@ -414,8 +440,8 @@ async fn adjustendpoints_forwards_records_and_returns_merged_endpoints() {
     assert_eq!(
         serde_json::from_str::<Value>(&recorded[0].2).unwrap(),
         json!({"records": [
-            {"name": "a.example.com", "record_type": "AAAA", "ttl": 300, "values": ["2001:0DB8::1"]},
-            {"name": "b.example.com", "record_type": "TXT", "values": ["v=spf1 -all"]}
+            {"name": "a.example.com", "type": "AAAA", "ttl": 300, "values": ["2001:0DB8::1"]},
+            {"name": "b.example.com", "type": "TXT", "values": ["v=spf1 -all"]}
         ]})
     );
 }
@@ -460,6 +486,27 @@ async fn healthz_reflects_bindizr_reachability() {
     let (status, _, body) = get(&format!("http://{}/metrics", addr), None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("bindizr_external_dns_requests_total"));
+}
+
+/// Verify that healthz is unready when the token reaches no zone.
+#[tokio::test]
+async fn healthz_is_unready_with_no_manageable_names() {
+    // `negotiate` already refuses this, so readiness must not stay green and
+    // leave the sidecar taking traffic it can do nothing with.
+    let (_, records, changes) = ok_mock_bodies();
+    let mock = spawn_mock((200, json!({"domains": []})), records, changes).await;
+
+    let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
+    let state = Arc::new(AppState { upstream });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, health_router(state)).await.unwrap();
+    });
+
+    let (status, _, body) = get(&format!("http://{}/healthz", addr), None).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains("no manageable names"), "{body}");
 }
 
 /// Verify that endpoint label tracks head with get and skips unrouted methods.

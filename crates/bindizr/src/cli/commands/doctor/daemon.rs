@@ -1,82 +1,33 @@
-use std::{fmt, net::SocketAddr, time::Duration};
+//! Checks that go through a running daemon: its socket, its HTTP API, and
+//! what it reports about its database, listener, and secondaries.
 
-use bindizr_core::config;
+use std::{net::SocketAddr, time::Duration};
+
+use axum::http::StatusCode;
+use bindizr_core::config::BindizrConfig;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
 
+use super::Report;
 use crate::{
-    cli::{error::CliError, output::color},
+    cli::output::parse_response,
     net::loopback_if_unspecified,
     socket::{
         client,
-        types::{DaemonCommandKind, DaemonDoctorResponse},
+        types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse},
     },
 };
 
 const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Tallies check outcomes so the exit code can reflect them.
-struct Report {
-    failures: usize,
-}
-
-impl Report {
-    /// Print a successful diagnostic check.
-    fn ok(&mut self, message: impl fmt::Display) {
-        println!("[{}] {}", color::green("OK"), message);
-    }
-
-    /// Print a failed diagnostic check and increment the failure count.
-    fn fail(&mut self, message: impl fmt::Display) {
-        self.failures += 1;
-        println!("[{}] {}", color::red("FAIL"), message);
-    }
-
-    /// Print a skipped diagnostic check.
-    fn skip(&mut self, message: impl fmt::Display) {
-        println!("[{}] {}", color::yellow("SKIP"), message);
-    }
-}
-
-/// Handle the `doctor` subcommand by verifying the installation end to end.
-pub(crate) async fn handle_command(config_file: Option<String>) -> Result<(), CliError> {
-    println!("Bindizr Doctor");
-    println!();
-
-    let mut report = Report { failures: 0 };
-
-    let path = config::resolve_config_path(config_file.as_deref());
-    match config::load_config_file(&path) {
-        Ok(_) => report.ok(format!("Config valid: {}", path)),
-        Err(e) => report.fail(format!("Config invalid: {}", e)),
-    }
-    if check_daemon(&mut report).await {
-        match client::fetch_config().await {
-            Ok(config) => check_api(&config, &mut report).await,
-            Err(e) => report.fail(format!("Daemon config not readable: {}", e.message)),
-        }
-        check_daemon_side(&mut report).await;
-    } else {
-        report.skip("API, database, and DNS checks skipped: daemon is not running");
-    }
-
-    println!();
-    if report.failures == 0 {
-        println!("Result: installation looks {}", color::green("healthy"));
-        Ok(())
-    } else {
-        Err(CliError::from(format!(
-            "installation has {} failing check(s)",
-            report.failures
-        )))
-    }
-}
-
 /// Check whether the daemon responds through its control socket.
-async fn check_daemon(report: &mut Report) -> bool {
-    match client::fetch_status().await {
+pub(crate) async fn check_running(report: &mut Report) -> bool {
+    let status = client::send_control_command(DaemonCommandKind::Status)
+        .await
+        .and_then(|response| Ok(parse_response::<DaemonStatusResponse>(&response.data)?));
+    match status {
         Ok(status) => {
             let pid = status
                 .pid
@@ -95,7 +46,7 @@ async fn check_daemon(report: &mut Report) -> bool {
 }
 
 /// Check API reachability at the daemon's configured address.
-async fn check_api(config: &bindizr_core::config::BindizrConfig, report: &mut Report) {
+pub(crate) async fn check_api(config: &BindizrConfig, report: &mut Report) {
     let addr = SocketAddr::new(
         loopback_if_unspecified(config.api.listen_addr),
         config.api.listen_port,
@@ -157,15 +108,25 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
         .map_err(|_| "timed out".to_string())??;
 
     let status_line = response.lines().next().unwrap_or_default().trim();
-    if status_line.starts_with("HTTP/") {
-        Ok(status_line.to_string())
-    } else {
-        Err(format!("unexpected response: {}", status_line))
+    if !status_line.starts_with("HTTP/") {
+        return Err(format!("unexpected response: {}", status_line));
     }
+    // A 5xx to this request means the API is answering but cannot serve, which
+    // is a failing check rather than a reachable API.
+    let answered_5xx = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse::<u16>().ok())
+        .and_then(|code| StatusCode::from_u16(code).ok())
+        .is_some_and(|status| status.is_server_error());
+    if answered_5xx {
+        return Err(status_line.to_string());
+    }
+    Ok(status_line.to_string())
 }
 
 /// Check database, DNS listener, and secondary status through the daemon.
-async fn check_daemon_side(report: &mut Report) {
+pub(crate) async fn check_services(report: &mut Report) {
     let res = match client::send_command(DaemonCommandKind::Doctor, ()).await {
         Ok(res) => res,
         Err(e) => {

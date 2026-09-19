@@ -21,7 +21,7 @@ use bindizr_service::{
 
 /// Read the configured cache record budget, which counts records rather than bytes.
 fn max_records() -> usize {
-    config::bindizr_config().dns.zone_cache_max_records as usize
+    config::bindizr_config().dns.transfer_cache.max_records as usize
 }
 
 /// Everything a full transfer serves for one zone: the user records and the
@@ -68,7 +68,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
     zone_name: &str,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
-    if !config::bindizr_config().dns.zone_cache {
+    if !config::bindizr_config().dns.transfer_cache.enabled {
         return fetch_transfer_content(zone_name, key).await;
     }
 
@@ -134,7 +134,7 @@ fn find_cached_content(zone_id: i32, serial: i32) -> Option<CachedTransferConten
     if evicted > 0 {
         track_zone_cache_store(cache.records, evicted);
     }
-    let content = cache.lookup(zone_id, serial);
+    let content = cache.find(zone_id, serial);
     drop(cache);
     track_zone_cache_lookup(content.is_some());
     content
@@ -168,7 +168,7 @@ impl Cache {
     }
 
     /// Find cached zone content matching the requested serial.
-    fn lookup(&mut self, zone_id: i32, serial: i32) -> Option<CachedTransferContent> {
+    fn find(&mut self, zone_id: i32, serial: i32) -> Option<CachedTransferContent> {
         let entry = self
             .zones
             .get_mut(&zone_id)
@@ -186,7 +186,7 @@ impl Cache {
         max_records: usize,
     ) -> usize {
         // Before the size check: a zone that grew past the budget must release
-        // its old serial, which no lookup can satisfy any more.
+        // its old serial, which no read can match any more.
         self.remove(zone_id);
 
         let records = content.record_count();

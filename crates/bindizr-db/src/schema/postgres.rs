@@ -1,0 +1,234 @@
+//! PostgreSQL DDL.
+
+/// Return the statements that create the application schema.
+pub(crate) fn table_creation_queries() -> Vec<&'static str> {
+    vec![
+        r#"
+        CREATE TABLE IF NOT EXISTS dnssec_policies (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            algorithm INTEGER NOT NULL,
+            denial VARCHAR(8) NOT NULL,
+            split_keys BOOLEAN NOT NULL DEFAULT FALSE,
+            signature_validity_days INTEGER NOT NULL,
+            signature_refresh_days INTEGER NOT NULL,
+            zsk_lifetime_days INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zones (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            mname VARCHAR(255) NOT NULL,
+            rname VARCHAR(255) NOT NULL,
+            default_ttl INTEGER NOT NULL,
+            serial INTEGER NOT NULL,
+            refresh INTEGER NOT NULL DEFAULT 300,
+            retry INTEGER NOT NULL DEFAULT 60,
+            expire INTEGER NOT NULL DEFAULT 3600000,
+            minimum_ttl INTEGER NOT NULL DEFAULT 86400,
+            dnssec_policy_id INTEGER NULL,
+            parent_ns_addrs VARCHAR(1024) NULL,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            description VARCHAR(255),
+            created_at TIMESTAMPTZ NOT NULL,
+            FOREIGN KEY (dnssec_policy_id) REFERENCES dnssec_policies(id)
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zones_dnssec_policy ON zones(dnssec_policy_id);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS records (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(1024) NOT NULL,
+            record_type VARCHAR(50) NOT NULL,
+            value TEXT NOT NULL,
+            display_value TEXT NOT NULL,
+            ttl INTEGER NOT NULL,
+            priority INTEGER,
+            created_at TIMESTAMPTZ NOT NULL,
+            zone_id INTEGER NOT NULL,
+            CHECK ((record_type IN ('MX', 'SRV')) = (priority IS NOT NULL)),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_records_zone_name ON records(zone_id, name);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_records_zone_type ON records(zone_id, record_type);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_journal (
+            id SERIAL PRIMARY KEY,
+            zone_id INTEGER NOT NULL,
+            serial INTEGER NOT NULL,
+            operation VARCHAR(10) NOT NULL,
+            record_name VARCHAR(1024) NOT NULL,
+            record_type VARCHAR(50) NOT NULL,
+            record_value TEXT,
+            record_rdata BYTEA,
+            record_ttl INTEGER NOT NULL,
+            record_priority INTEGER,
+            derived BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL,
+            CHECK ((derived = TRUE AND record_value IS NULL AND record_rdata IS NOT NULL)
+                OR (derived = FALSE AND record_value IS NOT NULL AND record_rdata IS NULL)),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_serial ON zone_journal(zone_id, serial);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_journal_created ON zone_journal(created_at);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS zone_versions (
+            id SERIAL PRIMARY KEY,
+            zone_id INTEGER NOT NULL,
+            serial INTEGER NOT NULL,
+            mname TEXT NOT NULL,
+            rname TEXT NOT NULL,
+            default_ttl INTEGER NOT NULL,
+            refresh INTEGER NOT NULL,
+            retry INTEGER NOT NULL,
+            expire INTEGER NOT NULL,
+            minimum_ttl INTEGER NOT NULL,
+            change_source VARCHAR(16) NOT NULL,
+            changed_by VARCHAR(255),
+            created_at TIMESTAMPTZ NOT NULL,
+            UNIQUE(zone_id, serial),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_zone_versions_created ON zone_versions(created_at);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS api_tokens (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            token VARCHAR(64) UNIQUE NOT NULL,
+            description VARCHAR(255),
+            is_global BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL,
+            expires_at TIMESTAMPTZ,
+            last_used_at TIMESTAMPTZ
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS catalog_zone_state (
+            name VARCHAR(255) PRIMARY KEY,
+            digest VARCHAR(64) NOT NULL,
+            serial INTEGER NOT NULL
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dnssec_withdrawals (
+            zone_id INTEGER PRIMARY KEY,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS tsig_keys (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            algorithm VARCHAR(32) NOT NULL,
+            secret VARCHAR(255) NOT NULL,
+            is_global BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS tsig_grants (
+            id SERIAL PRIMARY KEY,
+            zone_id INTEGER NOT NULL,
+            tsig_key_id INTEGER NOT NULL,
+            record_name_pattern VARCHAR(1024) NOT NULL,
+            record_types VARCHAR(255) NOT NULL,
+            can_write BOOLEAN NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id)
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_tsig_grants_zone ON tsig_grants(zone_id);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_tsig_grants_key ON tsig_grants(tsig_key_id);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS token_grants (
+            id SERIAL PRIMARY KEY,
+            zone_id INTEGER NOT NULL,
+            api_token_id INTEGER NOT NULL,
+            record_name_pattern VARCHAR(1024) NOT NULL,
+            record_types VARCHAR(255) NOT NULL,
+            can_write BOOLEAN NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_token_grants_zone ON token_grants(zone_id);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_token_grants_token_zone ON token_grants(api_token_id, zone_id);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dnssec_keys (
+            id SERIAL PRIMARY KEY,
+            zone_id INTEGER NOT NULL,
+            role VARCHAR(8) NOT NULL,
+            algorithm INTEGER NOT NULL,
+            key_tag INTEGER NOT NULL,
+            public_key TEXT NOT NULL,
+            private_key TEXT NOT NULL,
+            state VARCHAR(16) NOT NULL,
+            state_changed_at TIMESTAMPTZ NOT NULL,
+            eligible_at TIMESTAMPTZ NOT NULL,
+            max_signed_ttl INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_dnssec_keys_zone ON dnssec_keys(zone_id);
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS dnssec_records (
+            id SERIAL PRIMARY KEY,
+            zone_id INTEGER NOT NULL,
+            name VARCHAR(1024) NOT NULL,
+            record_type INTEGER NOT NULL,
+            covered_record_type INTEGER,
+            ttl INTEGER NOT NULL,
+            rdata BYTEA NOT NULL,
+            expires_at TIMESTAMPTZ,
+            rrset_digest VARCHAR(64),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_dnssec_records_zone ON dnssec_records(zone_id);
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_dnssec_records_expires ON dnssec_records(expires_at, zone_id);
+        "#,
+    ]
+}
+
+/// Return the statement that seeds the built-in `default` DNSSEC policy.
+pub(crate) fn default_policy_seed() -> &'static str {
+    r#"
+    INSERT INTO dnssec_policies (name, algorithm, denial, split_keys, signature_validity_days,
+        signature_refresh_days, zsk_lifetime_days, created_at)
+    SELECT 'default', 13, 'nsec3', FALSE, 14, 5, 0, $1::timestamptz
+    WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
+    "#
+}

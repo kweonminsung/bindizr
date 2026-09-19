@@ -24,7 +24,7 @@ impl DnssecService {
         caller: &Caller,
         zone_name: &str,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_read_tx("failed to check the parent DS").await?;
         let result = async {

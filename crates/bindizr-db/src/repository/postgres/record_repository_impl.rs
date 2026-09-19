@@ -28,38 +28,6 @@ impl PostgresRecordRepository {
 
 #[async_trait]
 impl RecordRepository for PostgresRecordRepository {
-    /// Insert a record in the current transaction.
-    async fn create_tx(
-        &self,
-        tx: &mut RepositoryTx<'_>,
-        mut record: Record,
-    ) -> Result<Record, DatabaseError> {
-        let postgres_tx = tx.as_postgres()?;
-
-        let now = Utc::now();
-        let result = sqlx::query(
-            r#"
-            INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING id
-            "#,
-        )
-        .bind(&record.name)
-        .bind(record.record_type.to_string())
-        .bind(&record.value)
-        .bind(record.record_type.display_value(&record.value))
-        .bind(record.ttl)
-        .bind(record.priority)
-        .bind(record.zone_id)
-        .bind(now)
-        .fetch_one(&mut **postgres_tx)
-        .await?;
-
-        record.id = result.get::<i32, _>(0);
-        record.created_at = now;
-        Ok(record)
-    }
-
     /// Insert a batch of records in the current transaction.
     async fn create_many_tx(
         &self,

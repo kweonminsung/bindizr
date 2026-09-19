@@ -15,13 +15,13 @@ impl ZoneService {
     ) -> Result<(), ServiceError> {
         // Forcing bumps zone serials — a zone-plane mutation, not just a NOTIFY.
         if force {
-            caller.require_global("force a NOTIFY")?;
+            caller.authorize_global("force a NOTIFY")?;
         }
         match zone_name {
             // The virtual catalog zone has no row: nothing to bump, and no
             // zone grant can cover it, so only a global caller may notify it.
             Some(name) if is_catalog_zone(name) => {
-                caller.require_global("send NOTIFY for the catalog zone")?;
+                caller.authorize_global("send NOTIFY for the catalog zone")?;
                 if force {
                     log::info!("Skipping forced serial increment for virtual catalog zone");
                 }
@@ -34,7 +34,7 @@ impl ZoneService {
                 }
             }
             None => {
-                caller.require_global("send NOTIFY for all zones")?;
+                caller.authorize_global("send NOTIFY for all zones")?;
                 if force {
                     Self::force_increment_serial(zone_name, &caller.change_subject()).await?;
                 }

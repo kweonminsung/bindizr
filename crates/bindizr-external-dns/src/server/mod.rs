@@ -29,6 +29,12 @@ pub(crate) struct AppState {
 /// large initial reconciliations; matches the bindizr server's upload cap.
 const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 
+/// An empty DomainFilter reads as "manage everything" to external-dns, so
+/// negotiation and readiness both refuse it retryably: a new grant then heals
+/// the adapter without a restart.
+const NO_MANAGEABLE_NAMES: &str = "no manageable names: grant zones to the API token with \
+                                   'bindizr token grant', or create a zone first";
+
 /// Build the webhook router served on the (localhost) provider listener.
 pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
     Router::new()
@@ -43,8 +49,8 @@ pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
 /// Build the health/metrics router served on the exposed listener.
 pub(crate) fn health_router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/healthz", routing::get(get_health))
-        .route("/metrics", routing::get(get_metrics))
+        .route("/healthz", routing::get(handle_health))
+        .route("/metrics", routing::get(handle_metrics))
         .with_state(state)
 }
 
@@ -64,8 +70,21 @@ fn json_response<T: serde::Serialize>(value: &T) -> Response {
 
 /// external-dns retries only 5xx; upstream 4xx pass through as permanent
 /// errors and upstream 5xx / transport failures become a retryable 502.
+///
+/// An unauthenticated 401 is the exception: replacing the token heals it, so it
+/// answers 503 and the change set is retried afterwards instead of being
+/// dropped as permanently bad. A 403 stays permanent — the token is known and
+/// the zone is genuinely not the adapter's to write.
 fn upstream_error_response(error: UpstreamError) -> Response {
     match error {
+        UpstreamError::Status {
+            status: 401,
+            message,
+        } => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("bindizr rejected the adapter's token: {}", message),
+        )
+            .into_response(),
         UpstreamError::Status { status, message } if status < 500 => (
             StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST),
             message,
@@ -77,6 +96,9 @@ fn upstream_error_response(error: UpstreamError) -> Response {
         )
             .into_response(),
         UpstreamError::Unreachable(message) => (StatusCode::BAD_GATEWAY, message).into_response(),
+        UpstreamError::NoManageableNames => {
+            (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
+        }
     }
 }
 
@@ -148,14 +170,9 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
     }
 
     match state.upstream.list_domains().await {
-        // An empty DomainFilter reads as "manage everything" to external-dns;
-        // refuse retryably so a new grant heals negotiation without a restart.
-        Ok(domains) if domains.is_empty() => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "no manageable names: grant zones to the API token with \
-             'bindizr token grant', or create a zone first",
-        )
-            .into_response(),
+        Ok(domains) if domains.is_empty() => {
+            (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
+        }
         Ok(domains) => {
             log::info!("event=negotiate domains={}", domains.len());
             json_response(&DomainFilter { include: domains })
@@ -266,17 +283,27 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
     }
 }
 
-/// `GET /healthz` — this process is up and bindizr answers its
-/// (unauthenticated) health endpoint.
-async fn get_health(State(state): State<Arc<AppState>>) -> Response {
+/// `GET /healthz` — this process is up, bindizr answers, and it accepts the
+/// adapter's token.
+async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
     match state.upstream.probe_health().await {
         Ok(()) => (StatusCode::OK, "ok").into_response(),
-        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "bindizr unreachable").into_response(),
+        Err(UpstreamError::Status { status, message }) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("bindizr answered {}: {}", status, message),
+        )
+            .into_response(),
+        Err(UpstreamError::Unreachable(message)) => {
+            (StatusCode::SERVICE_UNAVAILABLE, message).into_response()
+        }
+        Err(UpstreamError::NoManageableNames) => {
+            (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
+        }
     }
 }
 
 /// `GET /metrics` — adapter-local Prometheus metrics.
-async fn get_metrics() -> Response {
+async fn handle_metrics() -> Response {
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, TEXT_CONTENT_TYPE)],

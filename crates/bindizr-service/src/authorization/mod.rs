@@ -92,7 +92,7 @@ impl Caller {
     }
 
     /// Reject non-global callers for zone-plane and management operations.
-    pub(crate) fn require_global(&self, action: &str) -> Result<(), ServiceError> {
+    pub(crate) fn authorize_global(&self, action: &str) -> Result<(), ServiceError> {
         if self.is_global() {
             return Ok(());
         }
@@ -129,7 +129,7 @@ impl Caller {
 
     /// 404 for zones the caller cannot see, so scoped tokens cannot probe zone
     /// existence.
-    pub(crate) fn ensure_zone_visible(&self, zone: &Zone) -> Result<(), ServiceError> {
+    pub(crate) fn authorize_zone_visible(&self, zone: &Zone) -> Result<(), ServiceError> {
         if self.sees_zone(zone.id) {
             Ok(())
         } else {
@@ -188,7 +188,7 @@ impl Caller {
     /// Whether the caller sees the zone whole. A view the zone is rebuilt
     /// from — its export, a stored version, a version diff — cannot be
     /// narrowed: half a zone re-applied deletes what it left out.
-    pub(crate) fn ensure_zone_unrestricted(&self, zone: &Zone) -> Result<(), ServiceError> {
+    pub(crate) fn authorize_zone_unrestricted(&self, zone: &Zone) -> Result<(), ServiceError> {
         let unrestricted = match self {
             Caller::Global | Caller::GlobalToken { .. } => true,
             Caller::Token { grants, .. } => grants.iter().any(|grant| {
@@ -201,7 +201,7 @@ impl Caller {
             return Ok(());
         }
 
-        self.ensure_zone_visible(zone)?;
+        self.authorize_zone_visible(zone)?;
         Err(ServiceError::forbidden(format!(
             "API token is scoped to part of zone '{}', so it cannot read the zone whole",
             zone.name

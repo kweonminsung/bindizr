@@ -1,6 +1,6 @@
 use std::{
     io::{self, Write},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use chrono::Local;
@@ -11,6 +11,9 @@ use crate::config;
 /// The level in force, read per record so a config reload changes it without
 /// replacing the installed logger — `log` allows only one.
 static LOG_LEVEL: AtomicUsize = AtomicUsize::new(Level::Info as usize);
+
+/// Whether lines are JSON objects, read per record for the same reason.
+static LOG_JSON: AtomicBool = AtomicBool::new(false);
 
 /// Read the currently configured logging threshold.
 fn log_level() -> Level {
@@ -33,20 +36,30 @@ impl log::Log for Logger {
         if self.enabled(record.metadata()) {
             // The offset keeps lines from replicas in other zones comparable.
             let at = Local::now().format("%Y-%m-%dT%H:%M:%S%.3f%:z");
-            let log_message = if log_level() >= Level::Debug {
+            let line = if LOG_JSON.load(Ordering::Relaxed) {
+                // One object per line, the shape log pipelines split on.
+                serde_json::json!({
+                    "time": at.to_string(),
+                    "level": record.level().as_str(),
+                    "target": record.target(),
+                    "message": record.args().to_string(),
+                })
+                .to_string()
+            } else if log_level() >= Level::Debug {
                 format!(
-                    "{} {} - {}: {}\n",
+                    "{} {} - {}: {}",
                     at,
                     record.level(),
                     record.target(),
                     record.args()
                 )
             } else {
-                format!("{} {}: {}\n", at, record.level(), record.args())
+                format!("{} {}: {}", at, record.level(), record.args())
             };
 
-            // Use stderr for logging to avoid interfering with stdout
-            eprint!("{}", log_message);
+            // Stderr keeps logs out of the CLI's stdout; a reader that stops
+            // early must not panic the daemon.
+            crate::stream::write_stderr(&format!("{}\n", line));
         }
     }
 
@@ -69,9 +82,11 @@ impl From<config::LogLevel> for Level {
     }
 }
 
-/// Install the global logger using the configured log level.
+/// Install the global logger using the configured log level and format.
 pub fn initialize() {
-    initialize_with_level(config::bindizr_config().logging.log_level);
+    let config = config::bindizr_config();
+    set_format(config.logging.format);
+    initialize_with_level(config.logging.level);
 }
 
 /// Install the global logger at an explicit level, for binaries that do not
@@ -93,4 +108,9 @@ pub fn set_level(level: config::LogLevel) {
     let level = Level::from(level);
     LOG_LEVEL.store(level as usize, Ordering::Relaxed);
     log::set_max_level(level.to_level_filter());
+}
+
+/// Change the line shape of the installed logger, for a configuration reload.
+pub fn set_format(format: config::LogFormat) {
+    LOG_JSON.store(format == config::LogFormat::Json, Ordering::Relaxed);
 }

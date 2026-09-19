@@ -2,7 +2,10 @@ use bindizr_service::{
     authorization::Caller,
     dnssec_policy::DnssecPolicyService,
     error::ServiceError,
-    types::{CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, PageFilter},
+    types::{
+        CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, MessageResponse,
+        PageFilter,
+    },
 };
 
 use crate::socket::{
@@ -27,8 +30,12 @@ pub(crate) async fn create_dnssec_policy(
 }
 
 /// List the requested DNSSEC policies.
-pub(crate) async fn list_dnssec_policies() -> Result<DaemonResponse, ServiceError> {
-    let response = DnssecPolicyService::list(&Caller::Global, PageFilter::default()).await?;
+pub(crate) async fn list_dnssec_policies(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let page: PageFilter = parse_params(data)?;
+
+    let response = DnssecPolicyService::list(&Caller::Global, page).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policies retrieved successfully".to_string(),
@@ -76,8 +83,9 @@ pub(crate) async fn delete_dnssec_policy(
 
     DnssecPolicyService::delete(&Caller::Global, &params.name).await?;
 
+    let message = format!("DNSSEC policy '{}' deleted successfully", params.name);
     Ok(DaemonResponse {
-        message: format!("DNSSEC policy '{}' deleted successfully", params.name),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }

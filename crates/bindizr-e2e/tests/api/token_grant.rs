@@ -24,7 +24,7 @@ async fn create_zone(app: &TestApp, zone_name: &str) {
 fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> serde_json::Value {
     json!({
         "name": name,
-        "record_type": record_type,
+        "type": record_type,
         "value": value,
         "zone_name": zone_name,
     })
@@ -35,7 +35,7 @@ fn record_body(zone_name: &str, name: &str, record_type: &str, value: &str) -> s
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_sees_and_writes_only_granted_zones() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -184,7 +184,7 @@ async fn scoped_token_sees_and_writes_only_granted_zones() {
 #[serial_test::serial(bindizr_e2e)]
 async fn token_grants_enforce_name_patterns_and_types() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -250,7 +250,7 @@ async fn token_grants_enforce_name_patterns_and_types() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -274,7 +274,7 @@ async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches(
     .await;
 
     // The answer must not depend on whether the record exists.
-    let filter = format!("/records?zone_name={zone_name}&name=www&record_type=A");
+    let filter = format!("/records?zone_name={zone_name}&name=www&type=A");
     let paths = [filter.clone(), format!("{filter}&dry_run=true")];
     app.set_auth_token(scoped_token.clone());
     for path in &paths {
@@ -319,7 +319,7 @@ async fn a_delete_filter_outside_the_grant_is_refused_whether_or_not_it_matches(
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_without_grants_sees_nothing() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -351,7 +351,7 @@ async fn scoped_token_without_grants_sees_nothing() {
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -382,7 +382,7 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
                 Some(json!({
                     "zone_name": zone_name,
                     "records": [
-                        { "name": "app", "record_type": "A", "value": "192.0.2.1" }
+                        { "name": "app", "type": "A", "value": "192.0.2.1" }
                     ],
                     "dry_run": dry_run,
                 })),
@@ -404,7 +404,7 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -424,7 +424,7 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
             Some(json!({
                 "zone_name": zone_name,
                 "records": [
-                    { "name": "bad name", "record_type": "A", "value": "192.0.2.1" }
+                    { "name": "bad name", "type": "A", "value": "192.0.2.1" }
                 ]
             })),
         )
@@ -440,7 +440,7 @@ async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {
 #[serial_test::serial(bindizr_e2e)]
 async fn global_token_grant_management_over_http() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -522,7 +522,7 @@ async fn global_token_grant_management_over_http() {
 #[serial_test::serial(bindizr_e2e)]
 async fn tokens_self_grants_lists_the_bearers_own_grants() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -577,7 +577,7 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
 #[serial_test::serial(bindizr_e2e)]
 async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -622,7 +622,7 @@ async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_narrowed_grant_reads_only_what_it_may_write() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -713,7 +713,7 @@ async fn a_narrowed_grant_reads_only_what_it_may_write() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -766,7 +766,7 @@ async fn a_read_only_grant_reads_the_zone_but_cannot_change_it() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_grants_pattern_and_types_narrow_the_count_too() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -815,8 +815,8 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
         )
     };
 
-    // The apex holds the TXT above and the NS the zone was created with.
-    assert_eq!(listed(&app).await, (2, 2));
+    // The apex holds only the TXT above: a new zone carries no records.
+    assert_eq!(listed(&app).await, (1, 1));
 
     app.run_cli_success(&[
         "token",
@@ -829,16 +829,16 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
         "A",
     ])
     .await;
-    // The apex grant still stands, so its two rows come with the one A record
+    // The apex grant still stands, so its one row comes with the one A record
     // under `dyn`; the dotted label is stored as `a\046dyn`, so SQL leaves it
     // out of the count too.
-    assert_eq!(listed(&app).await, (3, 3));
+    assert_eq!(listed(&app).await, (2, 2));
 
     // And out of the pages: its slot holds the next visible row, not a gap.
     let (status, body) = app
         .send_request(
             Method::GET,
-            &format!("/records?zone_name={zone_name}&sort=name&order=asc&limit=1&offset=2"),
+            &format!("/records?zone_name={zone_name}&sort=name&order=asc&limit=1&offset=1"),
             None,
         )
         .await;
@@ -848,5 +848,5 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
         format!("host.dyn.{zone_name}."),
         "{body}"
     );
-    assert_eq!(body["pagination"]["total"], 3, "{body}");
+    assert_eq!(body["pagination"]["total"], 2, "{body}");
 }

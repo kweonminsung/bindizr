@@ -58,7 +58,7 @@ cargo +nightly fmt                                         # format (needs night
 
 - **Authorization is the service's.** Every service operation a front end can
   reach takes a `Caller` first and gates itself; a transport never calls
-  `require_global` on its own. The daemon socket passes `Caller::Global`.
+  `authorize_global` on its own. The daemon socket passes `Caller::Global`.
   Service-internal lookups that must skip visibility are `pub(crate)` under
   their own name (`ZoneService::lookup_by_name`). DNS-plane operations
   (transfers, NOTIFY, nsupdate) take no caller — ACL and TSIG authorize there.
@@ -173,6 +173,19 @@ else, including `bindizr-core` and `bindizr-db`, report the failure and let it
 propagate: a library that exits takes that decision away from whoever embedded
 it, and the e2e suite runs both binaries in-process.
 
+### `--output` renders a result, so a command that is its output has none
+
+Every CLI command that reports a *result* takes `-o/--output` and answers the
+same shape in every format, so a script reads `-o json` wherever a person
+reads the table. That means the daemon hands back a payload rather than a bare
+message: the socket answer carries `MessageResponse` where it has nothing
+richer to say, never `Value::Null`.
+
+Commands whose stdout **is** the artifact take no `--output`: `zone export`,
+`tsig-key export`, `dnssec keys export`, `completion` and `man` are redirected
+into a file, and wrapping them would break that. `start` streams logs rather
+than returning anything.
+
 ## Naming
 
 ### Data-access methods — repository traits and the `RepositoryService` facade
@@ -205,8 +218,9 @@ it folds into the verb (`upsert`) or the doc comment.
   matches (the newest zone version, serial boundaries) — semantics a literal
   `delete_*_older_than` would misdescribe.
 
-`begin_tx` / `begin_read_tx` / `finish_tx` / `ping` are transaction/connectivity
-plumbing, not entity methods, and are the only exemptions.
+`begin_tx` / `begin_read_tx` / `finish_tx` / `discard_tx` / `ping` are
+transaction/connectivity plumbing, not entity methods, and are the only
+exemptions.
 
 **Segments:**
 
@@ -220,13 +234,14 @@ plumbing, not entity methods, and are the only exemptions.
   `delete` take the row's own id, bare `list`/`count` the owning zone's id
   (`list_all` stays the unfiltered form). A non-id selector is always named,
   the canonical scope still elided around it (`get_by_serial(zone_id,
-  serial)`, `list_by_name_tx(tx, zone_id, name)`). Every other key path is
+  serial)`, `list_by_name_tx(tx, zone_id, name)`), pluralized when it takes
+  many values of that one key (`list_by_names_tx`). Every other key path is
   spelled in full: a non-canonical side (`list_by_token_id`,
-  `count_by_key_id`, `delete_by_zone_id_tx`), a batch over many scopes
-  (`list_by_zone_ids`), and any key set whose elision would leave two methods
-  of one surface distinguishable only by their signatures — which is why the
-  two-sided policy tables spell everything. `_by_filter` is the one
-  non-column key: a struct of optional predicates for the listing queries.
+  `count_by_key_id`, `delete_by_zone_id_tx`), and any key set whose elision
+  would leave two methods of one surface distinguishable only by their
+  signatures — which is why the two-sided policy tables spell everything.
+  `_by_filter` is the one non-column key: a struct of optional predicates for
+  the listing queries.
 - `_with_<join>` — the result carries joined data
   (`get_record_with_zone`); never a filter or semi-join.
 - `_<predicate>` — a comparison filter as `<subject>_<comparison>`. Serial

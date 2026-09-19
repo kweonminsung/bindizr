@@ -28,7 +28,7 @@ impl TsigKeyService {
         secret: Option<&str>,
         is_global: bool,
     ) -> Result<TsigKey, ServiceError> {
-        caller.require_global("manage TSIG keys and grants")?;
+        caller.authorize_global("manage TSIG keys and grants")?;
 
         let name = normalize_key_name(name)?;
         let algorithm = match algorithm {
@@ -64,7 +64,7 @@ impl TsigKeyService {
         caller: &Caller,
         page: PageFilter,
     ) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
-        caller.require_global("manage TSIG keys and grants")?;
+        caller.authorize_global("manage TSIG keys and grants")?;
 
         let keys = RepositoryService::list_tsig_keys().await?;
         PaginatedResponse::from_collection(
@@ -76,7 +76,7 @@ impl TsigKeyService {
 
     /// Fetch one TSIG key by name, including its secret.
     pub async fn get(caller: &Caller, name: &str) -> Result<TsigKey, ServiceError> {
-        caller.require_global("manage TSIG keys and grants")?;
+        caller.authorize_global("manage TSIG keys and grants")?;
 
         Self::lookup_by_name(name).await
     }
@@ -102,7 +102,7 @@ impl TsigKeyService {
 
     /// Delete a TSIG key by name; refused while it still holds grants.
     pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
-        caller.require_global("manage TSIG keys and grants")?;
+        caller.authorize_global("manage TSIG keys and grants")?;
 
         let key = Self::lookup_by_name(name).await?;
 

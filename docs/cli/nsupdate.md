@@ -23,14 +23,14 @@ type). Otherwise the whole update is refused and nothing is partially applied.
 
 ```bash
 # Create a key (the secret is generated and printed once; use `get` to re-read it)
-$ bindizr tsig-key create --name update-key
+$ bindizr tsig-key create update-key
 
 # Or import an existing base64 secret / pick another HMAC algorithm
-$ bindizr tsig-key create --name legacy-key --algorithm hmac-sha512 --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
+$ bindizr tsig-key create legacy-key --algorithm hmac-sha512 --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
 
 # Or create a global key that may update every zone, including future ones,
 # without any grant. This is write access to all DNS data — use sparingly.
-$ bindizr tsig-key create --name admin-key --global
+$ bindizr tsig-key create admin-key --global
 
 # Grant a (non-global) key update rights in a zone (pattern/types default to '*')
 $ bindizr tsig-key grant update-key example.com
@@ -50,10 +50,27 @@ EOF
 A zone no key has been granted refuses nsupdate, except from global keys,
 which may update any zone.
 
-!!! warning "`nsupdate_allow_unsigned` covers local testing only"
+!!! warning "Turning off `tsig_required` covers testing only"
 
-    Setting `dns.nsupdate_allow_unsigned = true` accepts unsigned requests for
-    every zone, regardless of grants, but only from the host bindizr runs on.
-    An unsigned update carries no identity a remote sender could prove, so a
-    request from anywhere else is refused whatever the setting says. Signed
-    requests are always verified.
+    `dns.nsupdate_tsig_required = false` accepts unsigned requests for every
+    zone from any client that reaches the DNS listener, as
+    `api.authentication_required = false` does for the HTTP API. Signed
+    requests are always verified either way.
+
+## The first key
+
+A TSIG key needs no bootstrapping of its own: with the first API token, which a
+fresh install seeds, a key is created over the API from anywhere.
+
+```bash
+$ curl -X POST https://bindizr:3000/tsig-keys \
+  -H "Authorization: Bearer $BINDIZR_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "update-key"}'
+```
+
+The secret comes back in that response, shown once; `bindizr tsig-key create
+update-key` does the same where the CLI can be run.
+
+A key updates only what its grants reach. `--global` (or `"is_global": true`)
+makes one that needs none, which is worth avoiding where you can grant instead.

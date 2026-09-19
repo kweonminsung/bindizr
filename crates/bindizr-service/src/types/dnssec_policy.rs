@@ -10,6 +10,7 @@ use crate::model::dnssec_policy::DnssecPolicy;
 /// and denial mode are fixed once created. Omitted fields use the built-in
 /// defaults, independent of edits to the policy named `default`.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateDnssecPolicyRequest {
     #[schema(example = "strict")]
     pub name: String,
@@ -40,8 +41,9 @@ pub struct CreateDnssecPolicyRequest {
 }
 
 /// Request body for editing a DNSSEC policy's timing; an omitted field keeps
-/// its value. Takes effect on the next signing pass or maintenance scan.
+/// its value. Takes effect on the next signing pass or scheduler scan.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateDnssecPolicyRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = 30)]

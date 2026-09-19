@@ -10,7 +10,10 @@ use bindizr_service::{
 
 use crate::socket::{
     server::{parse_params, to_response_data},
-    types::{DaemonResponse, RecordIdParams, UpdateRecordParams},
+    types::{
+        DaemonResponse, DeleteRecordParams, RecordIdParams, UpdateRecordByNameParams,
+        UpdateRecordParams,
+    },
 };
 
 /// Return the requested record.
@@ -37,7 +40,7 @@ pub(crate) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
     let response = RecordService::list_with_zone_by_filter(&Caller::Global, filter).await?;
 
     Ok(DaemonResponse {
-        message: format!("Found {} record(s)", response.items.len()),
+        message: "Records retrieved successfully".to_string(),
         data: to_response_data(response)?,
     })
 }
@@ -48,12 +51,14 @@ pub(crate) async fn create_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateRecordRequest = parse_params(data)?;
 
-    let record = RecordService::create(&Caller::Global, &request).await?;
+    let response = RecordService::create(&Caller::Global, &request).await?;
     Ok(DaemonResponse {
-        message: "Record created successfully".to_string(),
-        data: to_response_data(RecordResponse {
-            record: GetRecordResponse::from_record_with_zone(&record),
-        })?,
+        message: if response.dry_run {
+            "Record would be created".to_string()
+        } else {
+            "Record created successfully".to_string()
+        },
+        data: to_response_data(response)?,
     })
 }
 
@@ -63,12 +68,37 @@ pub(crate) async fn update_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordParams = parse_params(data)?;
 
-    let record = RecordService::update(&Caller::Global, params.id, &params.request).await?;
+    let response = RecordService::update(&Caller::Global, params.id, &params.request).await?;
     Ok(DaemonResponse {
-        message: "Record updated successfully".to_string(),
-        data: to_response_data(RecordResponse {
-            record: GetRecordResponse::from_record_with_zone(&record),
-        })?,
+        message: if response.dry_run {
+            "Record would be updated".to_string()
+        } else {
+            "Record updated successfully".to_string()
+        },
+        data: to_response_data(response)?,
+    })
+}
+
+/// Update the one record at the requested owner name.
+pub(crate) async fn update_record_by_name(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: UpdateRecordByNameParams = parse_params(data)?;
+
+    let response = RecordService::update_by_name(
+        &Caller::Global,
+        &params.zone_name,
+        &params.record_name,
+        &params.request,
+    )
+    .await?;
+    Ok(DaemonResponse {
+        message: if response.dry_run {
+            "Record would be updated".to_string()
+        } else {
+            "Record updated successfully".to_string()
+        },
+        data: to_response_data(response)?,
     })
 }
 
@@ -104,12 +134,18 @@ pub(crate) async fn create_records_bulk(
 pub(crate) async fn delete_record(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: RecordIdParams = parse_params(data)?;
+    let params: DeleteRecordParams = parse_params(data)?;
 
-    RecordService::delete(&Caller::Global, params.id).await?;
+    let response = RecordService::delete(&Caller::Global, params.id, params.dry_run).await?;
     Ok(DaemonResponse {
-        message: format!("Record '{}' deleted successfully", params.id),
-        data: serde_json::Value::Null,
+        message: if response.dry_run {
+            format!("Record {} would be deleted", params.id)
+        } else {
+            format!("Record {} deleted successfully", params.id)
+        },
+        // The body `DELETE /records/{id}` answers with, so `--output json`
+        // prints the same payload the HTTP API returns.
+        data: to_response_data(response)?,
     })
 }
 
@@ -124,7 +160,7 @@ pub(crate) async fn delete_records_matching(
         message: if response.dry_run {
             format!("{} record(s) would be deleted", response.deleted)
         } else {
-            format!("{} record(s) deleted", response.deleted)
+            format!("{} record(s) deleted successfully", response.deleted)
         },
         data: to_response_data(response)?,
     })
