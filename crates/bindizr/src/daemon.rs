@@ -7,7 +7,10 @@ use std::time::Duration;
 use bindizr_core::{config, logger};
 use bindizr_db as database;
 use bindizr_service as service;
-use tokio::signal::unix::{SignalKind, signal};
+use tokio::{
+    signal::unix::{SignalKind, signal},
+    task::{JoinError, JoinHandle, JoinSet},
+};
 
 use crate::{api, cli::error::CliError, dns, shutdown::Shutdown, socket};
 
@@ -18,6 +21,16 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 /// Re-exec path captured at startup: after a package upgrade /proc/self/exe
 /// reads as a "(deleted)" path, while this path points at the replacement.
 static DAEMON_EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// The front ends the daemon supervises, each yielding the name it is reported
+/// under and how it ended. `join_next` removes a finished task, so the
+/// lifecycle loop and the drain never await the same handle twice.
+type Servers = JoinSet<(&'static str, Result<(), JoinError>)>;
+
+/// Put a spawned front end under the daemon's supervision.
+fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<()>) {
+    servers.spawn(async move { (name, task.await) });
+}
 
 /// Re-read the configuration file and apply what only a running process can:
 /// the settings whose readers captured them at startup.
@@ -97,7 +110,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
 
     // DNS must be listening before startup NOTIFY can prompt secondary transfers.
     let shutdown = Shutdown::new();
-    let (mut dns_tcp_task, mut dns_udp_task) = dns::initialize(&shutdown).await?;
+    let (dns_tcp_task, dns_udp_task) = dns::initialize(&shutdown).await?;
 
     if config::bindizr_config().dns.notify.on_startup {
         match service::notify::send_notify(None).await {
@@ -107,8 +120,16 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     }
 
     let mut control_rx = socket::server::control::initialize();
-    let mut socket_task = socket::server::serve(socket_listener, &shutdown);
-    let mut api_task = api::initialize(&shutdown).await?;
+    let socket_task = socket::server::serve(socket_listener, &shutdown);
+    let api_task = api::initialize(&shutdown).await?;
+
+    // A front end that stops on its own ends the daemon: the control socket
+    // would otherwise keep answering for a process serving nothing.
+    let mut servers = Servers::new();
+    watch(&mut servers, "daemon socket server", socket_task);
+    watch(&mut servers, "API server", api_task);
+    watch(&mut servers, "DNS TCP server", dns_tcp_task);
+    watch(&mut servers, "DNS UDP server", dns_udp_task);
 
     // Every front end is serving now, so the start time is what `bindizr
     // restart` waits for before it reports the daemon back up.
@@ -121,8 +142,6 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
         signal(SignalKind::hangup()).map_err(|e| format!("Failed to listen for SIGHUP: {}", e))?;
 
     // Handle process signals and socket control commands in one lifecycle loop.
-    // A front end that stops on its own ends the daemon: the control socket
-    // would otherwise keep answering for a process serving nothing.
     let outcome = loop {
         let control = tokio::select! {
             result = tokio::signal::ctrl_c() => {
@@ -146,10 +165,9 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
                 }
                 continue;
             }
-            result = &mut socket_task => break Outcome::server_stopped("daemon socket server", result),
-            result = &mut api_task => break Outcome::server_stopped("API server", result),
-            result = &mut dns_tcp_task => break Outcome::server_stopped("DNS TCP server", result),
-            result = &mut dns_udp_task => break Outcome::server_stopped("DNS UDP server", result),
+            Some(Ok((name, result))) = servers.join_next() => {
+                break Outcome::server_stopped(name, result);
+            }
             control = control_rx.recv() => control,
         };
 
@@ -165,7 +183,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
         }
     };
 
-    drain(&shutdown, socket_task, api_task, notify_task).await;
+    drain(&shutdown, servers, notify_task).await;
     socket::server::remove_socket_file(&socket_path).await;
 
     match outcome {
@@ -198,19 +216,15 @@ impl Outcome {
 /// Stop accepting work, then give in-flight requests and queued NOTIFYs a
 /// bounded time to finish.
 ///
-/// In-flight zone transfers are not waited on: a cut transfer is one the
-/// secondary discards and retries.
-async fn drain(
-    shutdown: &Shutdown,
-    socket_task: tokio::task::JoinHandle<()>,
-    api_task: tokio::task::JoinHandle<()>,
-    notify_task: Option<tokio::task::JoinHandle<()>>,
-) {
+/// In-flight zone transfers are not waited on: they run in tasks of their own,
+/// and a cut transfer is one the secondary discards and retries.
+async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_task: Option<JoinHandle<()>>) {
     shutdown.trigger();
     service::notify::stop_worker();
 
     let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
-        let _ = tokio::join!(socket_task, api_task);
+        while servers.join_next().await.is_some() {}
+        // Not a front end: it may be absent, and its exit never ends the daemon.
         if let Some(notify_task) = notify_task {
             let _ = notify_task.await;
         }
