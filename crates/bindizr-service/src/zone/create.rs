@@ -9,7 +9,7 @@ use crate::{
     model::zone::Zone,
     repository::RepositoryService,
     serial::{generate_serial, validate_initial_serial},
-    types::CreateZoneRequest,
+    types::{CreateZoneRequest, GetZoneResponse, ZoneWriteResponse},
     zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
 };
 
@@ -19,7 +19,7 @@ impl ZoneService {
     pub async fn create(
         caller: &Caller,
         create_zone_request: &CreateZoneRequest,
-    ) -> Result<Zone, ServiceError> {
+    ) -> Result<ZoneWriteResponse, ServiceError> {
         caller.authorize_global("create zones")?;
 
         // Parent/child zones are allowed; only the same normalized zone name is rejected.
@@ -54,11 +54,17 @@ impl ZoneService {
         );
 
         // Send catalog NOTIFY so secondaries pick up the new zone
-        if let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await {
+        if !create_zone_request.dry_run
+            && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
+        {
             log::warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
         }
 
-        Ok(created_zone)
+        Ok(ZoneWriteResponse {
+            applied: !create_zone_request.dry_run,
+            dry_run: create_zone_request.dry_run,
+            zone: GetZoneResponse::from_zone(&created_zone),
+        })
     }
 
     /// Insert a zone and its first version on the caller's transaction. A zone
@@ -89,37 +95,41 @@ impl ZoneService {
             None => generate_serial(None)?,
         };
 
-        let created_zone = RepositoryService::create_zone_tx(
-            tx,
-            Zone {
-                id: 0,
-                name: validated.name,
-                mname: validated.mname,
-                rname: validated.rname,
-                dnssec_policy_id: None,
-                parent_ns_addrs: None,
-                enabled: true,
-                description: validated.description.clone(),
-                default_ttl: validated.ttl,
-                serial,
-                refresh: timers.refresh,
-                retry: timers.retry,
-                expire: timers.expire,
-                minimum_ttl: timers.minimum_ttl,
-                created_at: Utc::now(),
-            },
-        )
-        .await
-        .map_err(|e| {
-            log::error!("Failed to create zone: {}", e);
-            // Keep the conflict mapped from the UNIQUE(name) backstop; it
-            // covers creates that raced past a caller's pre-check.
-            if e.code == ErrorCode::ZoneConflict {
-                e
-            } else {
-                ServiceError::internal("Failed to create zone")
-            }
-        })?;
+        let candidate = Zone {
+            id: 0,
+            name: validated.name,
+            mname: validated.mname,
+            rname: validated.rname,
+            dnssec_policy_id: None,
+            parent_ns_addrs: None,
+            enabled: true,
+            description: validated.description.clone(),
+            default_ttl: validated.ttl,
+            serial,
+            refresh: timers.refresh,
+            retry: timers.retry,
+            expire: timers.expire,
+            minimum_ttl: timers.minimum_ttl,
+            created_at: Utc::now(),
+        };
+
+        // The zone is validated, so a dry run stops before its first version.
+        if create_zone_request.dry_run {
+            return Ok(candidate);
+        }
+
+        let created_zone = RepositoryService::create_zone_tx(tx, candidate)
+            .await
+            .map_err(|e| {
+                log::error!("Failed to create zone: {}", e);
+                // Keep the conflict mapped from the UNIQUE(name) backstop; it
+                // covers creates that raced past a caller's pre-check.
+                if e.code == ErrorCode::ZoneConflict {
+                    e
+                } else {
+                    ServiceError::internal("Failed to create zone")
+                }
+            })?;
 
         ZoneService::save_version_tx(
             tx,

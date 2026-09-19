@@ -67,9 +67,9 @@ impl DnssecService {
             // Check the unsigned state under the same lock used to install the keys.
             let zone =
                 ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let existing =
+            let existing_keys =
                 RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            if !existing.is_empty() {
+            if !existing_keys.is_empty() {
                 return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
             }
             RepositoryService::update_zone_parent_ns_addrs_tx(

@@ -10,13 +10,13 @@ use bindizr_service::{
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
         DeleteRecordsFilter, DeleteRecordsResponse, ErrorResponse, GetRecordResponse,
-        GetRecordsFilter, MessageResponse, PaginatedResponse, RecordResponse, UpdateRecordRequest,
+        GetRecordsFilter, PaginatedResponse, RecordResponse, UpdateRecordRequest,
     },
 };
 use serde::Deserialize;
 
 use crate::api::{
-    RequestCaller,
+    DryRunQuery, RequestCaller,
     error::{ApiError, Path, Query},
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
@@ -131,11 +131,7 @@ pub(crate) async fn create_record(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::create(&caller, &body).await?;
-
-    let response = RecordResponse {
-        record: GetRecordResponse::from_record_with_zone(&raw_record),
-    };
+    let response = RecordService::create(&caller, &body).await?;
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -166,11 +162,7 @@ pub(crate) async fn update_record(
     Path(params): Path<RecordIdParam>,
     JsonBody(body): JsonBody<UpdateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::update(&caller, params.record_id, &body).await?;
-
-    let response = RecordResponse {
-        record: GetRecordResponse::from_record_with_zone(&raw_record),
-    };
+    let response = RecordService::update(&caller, params.record_id, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -181,10 +173,11 @@ pub(crate) async fn update_record(
         tag = "Record",
         summary = "Delete a specific DNS record",
         params(
-            ("record_id" = i32, Path, description = "The ID of the DNS record to delete.")
+            ("record_id" = i32, Path, description = "The ID of the DNS record to delete."),
+            ("dry_run" = Option<bool>, Query, description = "Report what would go without removing it.")
         ),
         responses(
-            (status = 200, description = "DNS record deleted successfully", body = MessageResponse),
+            (status = 200, description = "DNS record deleted successfully", body = DeleteRecordsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
             (status = 404, description = "Record not found", body = ErrorResponse),
@@ -195,12 +188,9 @@ pub(crate) async fn update_record(
 pub(crate) async fn delete_record(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<RecordIdParam>,
+    Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    RecordService::delete(&caller, params.record_id).await?;
-
-    let response = MessageResponse {
-        message: "Record deleted successfully".to_string(),
-    };
+    let response = RecordService::delete(&caller, params.record_id, preview.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

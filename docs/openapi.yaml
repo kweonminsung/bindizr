@@ -722,11 +722,12 @@ paths:
       - name: value
         in: query
         description: |-
-          Narrows to one record; compared canonically, so a value spelled
-          another way still matches. Requires `type`.
+          Narrows to one record, named the way a create names it: one string,
+          or the segments of a TXT record. Compared canonically, so a value
+          spelled another way still matches. Requires `type`.
         required: false
         schema:
-          type: string
+          $ref: '#/components/schemas/RecordValueRequest'
       - name: priority
         in: query
         description: |-
@@ -968,13 +969,19 @@ paths:
         schema:
           type: integer
           format: int32
+      - name: dry_run
+        in: query
+        description: Report what would go without removing it.
+        required: false
+        schema:
+          type: boolean
       responses:
         '200':
           description: DNS record deleted successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                $ref: '#/components/schemas/DeleteRecordsResponse'
         '401':
           description: Unauthorized
           content:
@@ -3347,6 +3354,10 @@ components:
       - value
       - zone_name
       properties:
+        dry_run:
+          type: boolean
+          description: Validate and report the change without writing it.
+          example: false
         name:
           type: string
           example: sub
@@ -3518,6 +3529,10 @@ components:
           - 'null'
           description: Free-text note for operators, at most 255 characters.
           example: customer A, migrated 2026-01
+        dry_run:
+          type: boolean
+          description: Validate and report the change without writing it.
+          example: false
         expire:
           type:
           - integer
@@ -4290,7 +4305,6 @@ components:
       type: object
       description: API representation of a zone.
       required:
-      - id
       - name
       - mname
       - rname
@@ -4321,8 +4335,11 @@ components:
           format: int32
           example: 604800
         id:
-          type: integer
+          type:
+          - integer
+          - 'null'
           format: int32
+          description: Absent on a dry run, where nothing was written to carry one.
           example: 1
         minimum_ttl:
           type: integer
@@ -4787,7 +4804,6 @@ components:
             type: object
             description: API representation of a zone.
             required:
-            - id
             - name
             - mname
             - rname
@@ -4818,8 +4834,11 @@ components:
                 format: int32
                 example: 604800
               id:
-                type: integer
+                type:
+                - integer
+                - 'null'
                 format: int32
+                description: Absent on a dry run, where nothing was written to carry one.
                 example: 1
               minimum_ttl:
                 type: integer
@@ -5273,6 +5292,10 @@ components:
         value, merged inside the update transaction. `value` is required when
         `type` changes.
       properties:
+        dry_run:
+          type: boolean
+          description: Validate and report the change without writing it.
+          example: false
         name:
           type:
           - string
@@ -5321,6 +5344,10 @@ components:
           - 'null'
           description: Empty clears the note.
           example: customer A, migrated 2026-01
+        dry_run:
+          type: boolean
+          description: Validate and report the change without writing it.
+          example: false
         enabled:
           type:
           - boolean
@@ -5436,7 +5463,9 @@ components:
           $ref: '#/components/schemas/RecordValueRequest'
     ZoneResponse:
       type: object
-      description: A single zone wrapped in a response envelope.
+      description: |-
+        A single zone wrapped in a response envelope. A dry run answers with the
+        zone as it would stand and `applied: false`.
       required:
       - zone
       properties:

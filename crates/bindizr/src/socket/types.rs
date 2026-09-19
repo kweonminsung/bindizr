@@ -103,6 +103,26 @@ pub(crate) struct RecordIdParams {
     pub(crate) id: i32,
 }
 
+/// Parameters for deleting a zone by name.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DeleteZoneParams {
+    pub(crate) name: String,
+    /// Report what the delete would take without removing it.
+    #[serde(default)]
+    pub(crate) dry_run: bool,
+}
+
+/// Parameters for deleting one record by id.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DeleteRecordParams {
+    pub(crate) id: i32,
+    /// Report what would go without removing it, as the filtered delete does.
+    #[serde(default)]
+    pub(crate) dry_run: bool,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct TsigKeyNameParams {

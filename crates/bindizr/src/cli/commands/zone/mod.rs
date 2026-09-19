@@ -25,8 +25,9 @@ use crate::{
     socket::{
         client,
         types::{
-            DaemonCommandKind, ExportZoneFileParams, ImportZoneParams, ListGrantsParams,
-            NotifyAllZonesParams, NotifyZoneParams, UpdateZoneParams, ZoneNameParams,
+            DaemonCommandKind, DeleteZoneParams, ExportZoneFileParams, ImportZoneParams,
+            ListGrantsParams, NotifyAllZonesParams, NotifyZoneParams, UpdateZoneParams,
+            ZoneNameParams,
         },
     },
 };
@@ -73,6 +74,9 @@ and the contact is the address a resolver operator writes to.")]
         /// Free-text note for operators
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
+        /// Validate and report the change without writing it
+        #[arg(long)]
+        dry_run: bool,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -185,6 +189,9 @@ and the contact is the address a resolver operator writes to.")]
         /// Free-text note for operators; empty clears it
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
+        /// Validate and report the change without writing it
+        #[arg(long)]
+        dry_run: bool,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -196,6 +203,12 @@ and the contact is the address a resolver operator writes to.")]
         /// The name of the zone
         #[arg(value_name = "ZONE_NAME")]
         name: String,
+        /// Report what the delete would take without removing anything
+        #[arg(long)]
+        dry_run: bool,
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 
     /// Import a BIND zone file into a zone
@@ -370,11 +383,13 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             expire,
             minimum_ttl,
             description,
+            dry_run,
             output,
         } => {
             let data = client::send_command(
                 DaemonCommandKind::CreateZone,
                 CreateZoneRequest {
+                    dry_run,
                     name,
                     mname,
                     rname,
@@ -496,6 +511,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             minimum_ttl,
             enabled,
             description,
+            dry_run,
             output,
         } => {
             let data = client::send_command(
@@ -504,6 +520,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 UpdateZoneParams {
                     zone_name: name,
                     request: UpdateZoneRequest {
+                        dry_run,
                         name: new_name,
                         mname,
                         rname,
@@ -525,11 +542,20 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 vec![ZoneRow::from(&response.zone)]
             })?;
         }
-        ZoneCommand::Delete { name } => {
-            let response =
-                client::send_command(DaemonCommandKind::DeleteZone, ZoneNameParams { name })
-                    .await?;
-            outln!("{}", response.message);
+        ZoneCommand::Delete {
+            name,
+            dry_run,
+            output,
+        } => {
+            let response = client::send_command(
+                DaemonCommandKind::DeleteZone,
+                DeleteZoneParams { name, dry_run },
+            )
+            .await?;
+            match output {
+                OutputFormat::Table => outln!("{}", response.message),
+                _ => print_payload(&response.data, output)?,
+            }
         }
         ZoneCommand::Export { name, signed } => {
             let data = client::send_command(

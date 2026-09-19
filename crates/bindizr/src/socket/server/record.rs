@@ -4,13 +4,16 @@ use bindizr_service::{
     record::RecordService,
     types::{
         CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter, GetRecordResponse,
-        GetRecordsFilter, MessageResponse, RecordResponse,
+        GetRecordsFilter, RecordResponse,
     },
 };
 
 use crate::socket::{
     server::{parse_params, to_response_data},
-    types::{DaemonResponse, RecordIdParams, UpdateRecordByNameParams, UpdateRecordParams},
+    types::{
+        DaemonResponse, DeleteRecordParams, RecordIdParams, UpdateRecordByNameParams,
+        UpdateRecordParams,
+    },
 };
 
 /// Return the requested record.
@@ -48,12 +51,14 @@ pub(crate) async fn create_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateRecordRequest = parse_params(data)?;
 
-    let record = RecordService::create(&Caller::Global, &request).await?;
+    let response = RecordService::create(&Caller::Global, &request).await?;
     Ok(DaemonResponse {
-        message: "Record created successfully".to_string(),
-        data: to_response_data(RecordResponse {
-            record: GetRecordResponse::from_record_with_zone(&record),
-        })?,
+        message: if response.dry_run {
+            "Record would be created".to_string()
+        } else {
+            "Record created successfully".to_string()
+        },
+        data: to_response_data(response)?,
     })
 }
 
@@ -63,12 +68,14 @@ pub(crate) async fn update_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordParams = parse_params(data)?;
 
-    let record = RecordService::update(&Caller::Global, params.id, &params.request).await?;
+    let response = RecordService::update(&Caller::Global, params.id, &params.request).await?;
     Ok(DaemonResponse {
-        message: "Record updated successfully".to_string(),
-        data: to_response_data(RecordResponse {
-            record: GetRecordResponse::from_record_with_zone(&record),
-        })?,
+        message: if response.dry_run {
+            "Record would be updated".to_string()
+        } else {
+            "Record updated successfully".to_string()
+        },
+        data: to_response_data(response)?,
     })
 }
 
@@ -78,7 +85,7 @@ pub(crate) async fn update_record_by_name(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordByNameParams = parse_params(data)?;
 
-    let record = RecordService::update_by_name(
+    let response = RecordService::update_by_name(
         &Caller::Global,
         &params.zone_name,
         &params.name,
@@ -86,10 +93,12 @@ pub(crate) async fn update_record_by_name(
     )
     .await?;
     Ok(DaemonResponse {
-        message: "Record updated successfully".to_string(),
-        data: to_response_data(RecordResponse {
-            record: GetRecordResponse::from_record_with_zone(&record),
-        })?,
+        message: if response.dry_run {
+            "Record would be updated".to_string()
+        } else {
+            "Record updated successfully".to_string()
+        },
+        data: to_response_data(response)?,
     })
 }
 
@@ -125,15 +134,18 @@ pub(crate) async fn create_records_bulk(
 pub(crate) async fn delete_record(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: RecordIdParams = parse_params(data)?;
+    let params: DeleteRecordParams = parse_params(data)?;
 
-    RecordService::delete(&Caller::Global, params.id).await?;
-    let message = format!("Record {} deleted successfully", params.id);
+    let response = RecordService::delete(&Caller::Global, params.id, params.dry_run).await?;
     Ok(DaemonResponse {
-        message: message.clone(),
+        message: if response.dry_run {
+            format!("Record {} would be deleted", params.id)
+        } else {
+            format!("Record {} deleted successfully", params.id)
+        },
         // The body `DELETE /records/{id}` answers with, so `--output json`
         // prints the same payload the HTTP API returns.
-        data: to_response_data(MessageResponse { message })?,
+        data: to_response_data(response)?,
     })
 }
 

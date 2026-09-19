@@ -13,13 +13,16 @@ use crate::{
     dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
     model::{
-        record::{Record, RecordType, RecordWithZone},
+        record::{Record, RecordType},
         zone::Zone,
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::UpdateRecordRequest,
-    zone::{ZoneService, validation::normalize_zone_name},
+    types::{GetRecordResponse, RecordDiff, RecordWriteResponse, UpdateRecordRequest},
+    zone::{
+        ZoneService, diff::build_record_diff, history::ReconstructedRecord,
+        validation::normalize_zone_name,
+    },
 };
 
 /// How an update names the one record it changes.
@@ -41,40 +44,6 @@ struct ResolvedRecordUpdate {
     encoded_value: String,
     ttl: i32,
     priority: Option<i32>,
-}
-
-impl RecordService {
-    /// Omitted fields keep the stored record's value; the merge runs inside
-    /// the transaction, against the row loaded there. The caller is
-    /// authorized there too.
-    pub async fn update(
-        caller: &Caller,
-        record_id: i32,
-        request: &UpdateRecordRequest,
-    ) -> Result<RecordWithZone, ServiceError> {
-        Self::update_locked(
-            caller,
-            RecordSelector::Id(record_id),
-            resolve_update(request),
-        )
-        .await
-    }
-
-    /// Update the one record at `name` in `zone_name`. The match is resolved
-    /// under the zone lock, so the row written is the row that was counted.
-    pub async fn update_by_name(
-        caller: &Caller,
-        zone_name: &str,
-        name: &str,
-        request: &UpdateRecordRequest,
-    ) -> Result<RecordWithZone, ServiceError> {
-        Self::update_locked(
-            caller,
-            RecordSelector::Name { zone_name, name },
-            resolve_update(request),
-        )
-        .await
-    }
 }
 
 /// Merge `request` onto the stored record: an omitted field keeps the
@@ -135,13 +104,47 @@ fn resolve_update(
 }
 
 impl RecordService {
+    /// Omitted fields keep the stored record's value; the merge runs inside
+    /// the transaction, against the row loaded there. The caller is
+    /// authorized there too.
+    pub async fn update(
+        caller: &Caller,
+        record_id: i32,
+        request: &UpdateRecordRequest,
+    ) -> Result<RecordWriteResponse, ServiceError> {
+        Self::update_locked(
+            caller,
+            RecordSelector::Id(record_id),
+            request.dry_run,
+            resolve_update(request),
+        )
+        .await
+    }
+
+    /// Update the one record at `name` in `zone_name`. The match is resolved
+    /// under the zone lock, so the row written is the row that was counted.
+    pub async fn update_by_name(
+        caller: &Caller,
+        zone_name: &str,
+        name: &str,
+        request: &UpdateRecordRequest,
+    ) -> Result<RecordWriteResponse, ServiceError> {
+        Self::update_locked(
+            caller,
+            RecordSelector::Name { zone_name, name },
+            request.dry_run,
+            resolve_update(request),
+        )
+        .await
+    }
     /// Load the record inside the transaction, resolve the update against it,
     /// then write it, bumping the zone serial and recording DEL+ADD IXFR changes.
     async fn update_locked(
         caller: &Caller,
         selector: RecordSelector<'_>,
+        dry_run: bool,
         resolve: impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError>,
-    ) -> Result<RecordWithZone, ServiceError> {
+    ) -> Result<RecordWriteResponse, ServiceError> {
         // Non-locking read for the zone_id, so the tx locks zone before record
         // (the create/bulk/import order); the reverse can deadlock. The name
         // form already names its zone and needs no pre-read.
@@ -291,7 +294,7 @@ impl RecordService {
                 }
             };
 
-            let candidate_updated = Record {
+            let candidate = Record {
                 id: existing_record.id,
                 name: resolved.owner_name,
                 record_type: resolved.record_type,
@@ -305,31 +308,53 @@ impl RecordService {
             validate_record_update_constraints_normalized(
                 &records_at_name,
                 &existing_record,
-                &candidate_updated,
+                &candidate,
             )?;
+
+            // The owner's rows frame the diff, as they do for every change.
+            let before: Vec<ReconstructedRecord> = records_at_name
+                .iter()
+                .cloned()
+                .map(ReconstructedRecord::from)
+                .collect();
+            let after: Vec<ReconstructedRecord> = records_at_name
+                .iter()
+                .map(|record| {
+                    if record.id == existing_record.id {
+                        candidate.clone()
+                    } else {
+                        record.clone()
+                    }
+                })
+                .map(ReconstructedRecord::from)
+                .collect();
+            let diff = build_record_diff(&zone, &before, &after);
+
+            // The merge is resolved and validated, so a dry run stops here.
+            if dry_run {
+                return Ok::<(Record, ZoneName, RecordDiff), ServiceError>((
+                    candidate, zone.name, diff,
+                ));
+            }
 
             // Store the validated replacement, signatures, and journal under one serial.
             let new_serial = generate_serial(Some(zone.serial))?;
             let zone_name = zone.name.clone();
 
-            let updated_record = Self::update_with_changes_tx(
-                &mut tx,
-                new_serial,
-                &existing_record,
-                candidate_updated,
-            )
-            .await?;
+            let updated_record =
+                Self::update_with_changes_tx(&mut tx, new_serial, &existing_record, candidate)
+                    .await?;
 
             DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the change
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
                 .await?;
 
-            Ok::<(Record, ZoneName), ServiceError>((updated_record, zone_name))
+            Ok::<(Record, ZoneName, RecordDiff), ServiceError>((updated_record, zone_name, diff))
         }
         .await;
 
-        let (updated_record, zone_name) =
+        let (updated_record, zone_name, diff) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to update record").await?;
 
         log::info!(
@@ -345,10 +370,17 @@ impl RecordService {
         );
 
         // Request secondary transfers only after the replacement is committed.
-        if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
+        if !dry_run
+            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
+        {
             log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
-        Ok(RecordWithZone::new(updated_record, zone_name))
+        Ok(RecordWriteResponse {
+            applied: !dry_run,
+            dry_run,
+            record: GetRecordResponse::from_record_and_zone_name(&updated_record, &zone_name),
+            diff,
+        })
     }
 }

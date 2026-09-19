@@ -167,9 +167,6 @@ impl RecordService {
         RepositoryService::create_zone_changes_tx(tx, &changes).await?;
         Ok(())
     }
-}
-
-impl RecordService {
     /// Insert many records into a zone in one transaction. The zone serial is
     /// incremented once, a single version is saved, and a single NOTIFY is sent
     /// after commit. Either every record is inserted or none is. On `dry_run`

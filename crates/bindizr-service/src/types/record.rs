@@ -1,9 +1,12 @@
 //! Record payloads, in three groups: the string-or-segments value form, the
 //! request/filter/patch shapes, and the response shapes.
 
-use bindizr_core::dns::{
-    name::ZoneName,
-    record::{TxtContent, TxtRecordValue},
+use bindizr_core::{
+    dns::{
+        name::ZoneName,
+        record::{TxtContent, TxtRecordValue},
+    },
+    model::written_id,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -77,6 +80,10 @@ pub struct CreateRecordRequest {
     pub priority: Option<i32>,
     #[schema(example = "example.com")]
     pub zone_name: String,
+    /// Validate and report the change without writing it.
+    #[serde(default)]
+    #[schema(example = false)]
+    pub dry_run: bool,
 }
 
 /// A record's data fields for a bulk insertion; the zone comes from the
@@ -133,6 +140,10 @@ pub struct UpdateRecordRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 10)]
     pub priority: Option<i32>,
+    /// Validate and report the change without writing it.
+    #[serde(default)]
+    #[schema(example = false)]
+    pub dry_run: bool,
 }
 
 /// Which records a conditional delete removes, narrowing from a whole name
@@ -152,11 +163,12 @@ pub struct DeleteRecordsFilter {
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "A")]
     pub record_type: Option<String>,
-    /// Narrows to one record; compared canonically, so a value spelled
-    /// another way still matches. Requires `type`.
+    /// Narrows to one record, named the way a create names it: one string,
+    /// or the segments of a TXT record. Compared canonically, so a value
+    /// spelled another way still matches. Requires `type`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "192.0.2.1")]
-    pub value: Option<String>,
+    pub value: Option<RecordValueRequest>,
     /// MX and SRV keep their preference in its own column, so it narrows
     /// there rather than being part of `value`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -257,7 +269,7 @@ impl GetRecordResponse {
     /// Build a response from a [`Record`], rendering owner/value as display names within `zone_name`.
     pub(crate) fn from_record_and_zone_name(record: &Record, zone_name: &ZoneName) -> Self {
         GetRecordResponse {
-            id: Some(record.id),
+            id: written_id(record.id),
             name: record.name.to_fqdn(zone_name),
             record_type: record.record_type.to_string(),
             value: build_display_value(&record.value, &record.record_type),
@@ -278,6 +290,20 @@ impl GetRecordResponse {
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordResponse {
     pub record: GetRecordResponse,
+}
+
+/// What a record write left behind, in the shape every previewable operation
+/// answers with: whether it wrote, and the change as a record diff.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct RecordWriteResponse {
+    /// Whether this call wrote; a dry run answers `false`.
+    #[schema(example = true)]
+    pub applied: bool,
+    #[schema(example = false)]
+    pub dry_run: bool,
+    pub record: GetRecordResponse,
+    /// The write as a record diff, for previewing it.
+    pub diff: RecordDiff,
 }
 
 /// Response for a bulk insert: the count inserted and the created records. On a

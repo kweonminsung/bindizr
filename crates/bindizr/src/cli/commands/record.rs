@@ -16,7 +16,10 @@ use crate::{
     },
     socket::{
         client,
-        types::{DaemonCommandKind, RecordIdParams, UpdateRecordByNameParams, UpdateRecordParams},
+        types::{
+            DaemonCommandKind, DeleteRecordParams, RecordIdParams, UpdateRecordByNameParams,
+            UpdateRecordParams,
+        },
     },
 };
 
@@ -52,6 +55,9 @@ parts with nothing between them, so a space has to be inside a value.")]
         /// Priority, MX and SRV only (default: 10)
         #[arg(long)]
         priority: Option<i32>,
+        /// Validate and report the change without writing it
+        #[arg(long)]
+        dry_run: bool,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -233,6 +239,9 @@ error when the name holds several, which --id then addresses individually.")]
         /// Priority (MX and SRV only)
         #[arg(long)]
         priority: Option<i32>,
+        /// Validate and report the change without writing it
+        #[arg(long)]
+        dry_run: bool,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -274,17 +283,21 @@ serial and the secondaries transfer once."
         /// The record ID; deletes exactly that one record
         #[arg(long, value_name = "RECORD_ID", conflicts_with = "name")]
         id: Option<i32>,
+        // `requires = "name"` does not hold when the owner name is a positional
+        // `--id` excludes, so each narrowing flag refuses `--id` outright
+        // rather than being taken and ignored.
         /// Narrow to one record type
-        #[arg(long = "type", requires = "name")]
+        #[arg(long = "type", requires = "name", conflicts_with = "id")]
         record_type: Option<String>,
-        /// Narrow to one value (requires --type)
-        #[arg(long, requires = "record_type")]
-        value: Option<String>,
+        /// Narrow to one value as `record create` names it (requires --type);
+        /// repeat it for the segments of a TXT record
+        #[arg(long, requires = "record_type", conflicts_with = "id")]
+        value: Vec<String>,
         /// Narrow to one MX/SRV priority
-        #[arg(long, requires = "name")]
+        #[arg(long, requires = "name", conflicts_with = "id")]
         priority: Option<i32>,
         /// Report what would go without removing anything
-        #[arg(long, requires = "name")]
+        #[arg(long)]
         dry_run: bool,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
@@ -302,11 +315,13 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             zone,
             ttl,
             priority,
+            dry_run,
             output,
         } => {
             let data = client::send_command(
                 DaemonCommandKind::CreateRecord,
                 CreateRecordRequest {
+                    dry_run,
                     name,
                     record_type,
                     value: to_record_value_request(value),
@@ -503,6 +518,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         }
         RecordCommand::Update {
             id: Some(id),
+            dry_run,
             new_name,
             record_type,
             value,
@@ -516,6 +532,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                 UpdateRecordParams {
                     id,
                     request: UpdateRecordRequest {
+                        dry_run,
                         name: new_name,
                         record_type,
                         value: (!value.is_empty()).then(|| to_record_value_request(value)),
@@ -534,6 +551,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         RecordCommand::Update {
             name: Some(name),
             zone: Some(zone),
+            dry_run,
             new_name,
             record_type,
             value,
@@ -548,6 +566,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     zone_name: zone,
                     name,
                     request: UpdateRecordRequest {
+                        dry_run,
                         name: new_name,
                         record_type,
                         value: (!value.is_empty()).then(|| to_record_value_request(value)),
@@ -570,12 +589,15 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         }
         RecordCommand::Delete {
             id: Some(id),
+            dry_run,
             output,
             ..
         } => {
-            let response =
-                client::send_command(DaemonCommandKind::DeleteRecord, RecordIdParams { id })
-                    .await?;
+            let response = client::send_command(
+                DaemonCommandKind::DeleteRecord,
+                DeleteRecordParams { id, dry_run },
+            )
+            .await?;
             match output {
                 OutputFormat::Table => outln!("{}", response.message),
                 _ => print_payload(&response.data, output)?,
@@ -597,7 +619,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     zone_name: zone,
                     name,
                     record_type,
-                    value,
+                    value: (!value.is_empty()).then(|| to_record_value_request(value)),
                     priority,
                     dry_run,
                 },

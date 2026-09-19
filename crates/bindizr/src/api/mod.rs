@@ -39,6 +39,15 @@ pub(crate) struct GrantIdParam {
     pub(crate) id: i32,
 }
 
+/// The preview switch every endpoint that offers one reads, so they all spell
+/// it the same way and an absent one is the same as `false`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DryRunQuery {
+    #[serde(default)]
+    pub(crate) dry_run: bool,
+}
+
 /// The caller attached by the auth middleware, or by the router's
 /// `Caller::Global` layer when authentication is disabled. A request without
 /// one reached a handler outside both layers, so extraction fails closed.

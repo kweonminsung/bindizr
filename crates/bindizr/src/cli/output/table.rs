@@ -70,8 +70,8 @@ fn truncate_cell(text: &str) -> String {
 
 #[derive(Debug, Tabled)]
 pub(crate) struct ZoneRow {
-    #[tabled(rename = "ID")]
-    pub(crate) id: i32,
+    #[tabled(rename = "ID", display = "display_option_i32")]
+    pub(crate) id: Option<i32>,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
     #[tabled(rename = "MNAME")]

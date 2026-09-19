@@ -18,7 +18,7 @@ use bindizr_service::{
 use serde::Deserialize;
 
 use crate::api::{
-    RequestCaller, ZoneNameParam,
+    DryRunQuery, RequestCaller, ZoneNameParam,
     error::{ApiError, Path, Query},
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
@@ -207,22 +207,11 @@ pub(crate) async fn get_zone_version(
 pub(crate) async fn rollback_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneVersionParam>,
-    Query(query): Query<RollbackQuery>,
+    Query(query): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    let response = ZoneService::rollback(
-        &caller,
-        &params.name,
-        params.serial,
-        query.dry_run.unwrap_or(false),
-    )
-    .await?;
+    let response =
+        ZoneService::rollback(&caller, &params.name, params.serial, query.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct RollbackQuery {
-    dry_run: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -370,10 +359,7 @@ pub(crate) async fn create_zone(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let zone = ZoneService::create(&caller, &body).await?;
-    let response = ZoneResponse {
-        zone: GetZoneResponse::from_zone(&zone),
-    };
+    let response = ZoneService::create(&caller, &body).await?;
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -404,10 +390,7 @@ pub(crate) async fn update_zone(
     Path(params): Path<ZoneNameParam>,
     JsonBody(body): JsonBody<UpdateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let zone = ZoneService::update(&caller, &params.name, &body).await?;
-    let response = ZoneResponse {
-        zone: GetZoneResponse::from_zone(&zone),
-    };
+    let response = ZoneService::update(&caller, &params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -431,11 +414,9 @@ pub(crate) async fn update_zone(
 pub(crate) async fn delete_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneNameParam>,
+    Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    ZoneService::delete(&caller, &params.name).await?;
-    let response = MessageResponse {
-        message: "Zone deleted successfully".to_string(),
-    };
+    let response = ZoneService::delete(&caller, &params.name, preview.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

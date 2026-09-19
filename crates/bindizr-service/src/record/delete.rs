@@ -1,12 +1,5 @@
 use std::collections::HashSet;
 
-use bindizr_core::{
-    dns::{
-        name::{OwnerName, ZoneName},
-        record::TxtRecordValue,
-    },
-    model::record::RecordType,
-};
 use bindizr_db::repository::LockLevel;
 
 use super::{
@@ -27,20 +20,16 @@ use crate::{
     },
 };
 
-/// Identity of the deleted record, carried out of the transaction for logging.
-struct DeletedRecord {
-    zone_name: ZoneName,
-    record_name: OwnerName,
-    record_type: String,
-    record_value: String,
-    record_id: i32,
-}
-
 impl RecordService {
     /// Delete a record by id, bumping the zone serial and recording a DEL
     /// change for IXFR. `caller` is authorized inside the delete transaction,
-    /// so a concurrent rename cannot outrun the check.
-    pub async fn delete(caller: &Caller, record_id: i32) -> Result<(), ServiceError> {
+    /// so a concurrent rename cannot outrun the check. A dry run answers with
+    /// the same preview the filtered delete builds and writes nothing.
+    pub async fn delete(
+        caller: &Caller,
+        record_id: i32,
+        dry_run: bool,
+    ) -> Result<DeleteRecordsResponse, ServiceError> {
         // Resolve zone_id with a non-locking read so the tx locks zone before
         // record (the create/bulk/import order); the reverse can deadlock.
         let zone_id = match RepositoryService::get_record(record_id).await {
@@ -56,7 +45,7 @@ impl RecordService {
 
         let mut tx = RepositoryService::begin_tx("Failed to delete record").await?;
 
-        let apply_result: Result<DeletedRecord, ServiceError> = async {
+        let apply_result: Result<DeleteRecordsResponse, ServiceError> = async {
             let zone = match RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive)
                 .await
             {
@@ -107,6 +96,40 @@ impl RecordService {
                 )
                 .await?;
 
+            // The owner's rows frame the diff, as they do for every change.
+            let records_at_name = RepositoryService::list_records_by_name_tx(
+                &mut tx,
+                zone.id,
+                &existing_record.name,
+                LockLevel::Exclusive,
+            )
+            .await?;
+            let before: Vec<ReconstructedRecord> = records_at_name
+                .iter()
+                .cloned()
+                .map(ReconstructedRecord::from)
+                .collect();
+            let after: Vec<ReconstructedRecord> = records_at_name
+                .iter()
+                .filter(|record| record.id != existing_record.id)
+                .cloned()
+                .map(ReconstructedRecord::from)
+                .collect();
+
+            let response = DeleteRecordsResponse {
+                applied: !dry_run,
+                dry_run,
+                deleted: 1,
+                records: vec![GetRecordResponse::from_record_and_zone_name(
+                    &existing_record,
+                    &zone.name,
+                )],
+                diff: build_record_diff(&zone, &before, &after),
+            };
+            if dry_run {
+                return Ok(response);
+            }
+
             let new_serial = generate_serial(Some(zone.serial))?;
 
             Self::delete_with_changes_tx(
@@ -122,42 +145,31 @@ impl RecordService {
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
                 .await?;
 
-            Ok(DeletedRecord {
-                zone_name: zone.name,
-                record_name: existing_record.name,
-                record_type: existing_record.record_type.to_string(),
-                record_value: existing_record.value,
-                record_id: existing_record.id,
-            })
+            log::info!(
+                "event=record_delete zone={} name={} type={} value={} record_id={}",
+                zone.name,
+                existing_record.name,
+                existing_record.record_type,
+                existing_record.value,
+                existing_record.id
+            );
+            Ok(response)
         }
         .await;
 
-        let DeletedRecord {
-            zone_name,
-            record_name,
-            record_type,
-            record_value,
-            record_id,
-        } = RepositoryService::finish_tx(tx, apply_result, "Failed to delete record").await?;
+        let response =
+            RepositoryService::finish_tx(tx, apply_result, "Failed to delete record").await?;
 
-        log::info!(
-            "event=record_delete zone={} name={} type={} value={} record_id={}",
-            zone_name,
-            record_name,
-            record_type,
-            record_value,
-            record_id
-        );
-
-        if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
+        // Announce only a committed deletion, never a preview.
+        if response.applied
+            && let Some(zone_name) = response.records.first().map(|record| &record.zone_name)
+            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
+        {
             log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
-        Ok(())
+        Ok(response)
     }
-}
-
-impl RecordService {
     /// Delete every record matching `filter` in one transaction. Row by row
     /// would bump the serial once each and serve the half-removed set in
     /// between.
@@ -176,12 +188,13 @@ impl RecordService {
                 "value narrows a record within one type, so record_type is required with it",
             ));
         }
-        // A TXT value is named as a create names it: one string is raw content,
-        // so a value starting with a quote finds the row it made.
-        let txt_content = match (filter.value.as_deref(), record_type.as_ref()) {
-            (Some(value), Some(RecordType::TXT)) => {
-                Some(TxtRecordValue::from_string(value).to_presentation())
-            }
+        // Encoded the way a create encodes it, so a value finds the row it made.
+        let match_value = match (&filter.value, record_type.as_ref()) {
+            (Some(value), Some(record_type)) => Some(
+                value
+                    .to_encoded_value(record_type, filter.priority)
+                    .map_err(ServiceError::invalid_input)?,
+            ),
             _ => None,
         };
 
@@ -211,39 +224,35 @@ impl RecordService {
                 )
                 .await?;
 
-            let existing = RepositoryService::list_records_by_name_tx(
+            let records_at_name = RepositoryService::list_records_by_name_tx(
                 &mut tx,
                 zone.id,
                 &owner,
                 LockLevel::Exclusive,
             )
             .await?;
-            let select = |value: Option<&str>| -> Vec<Record> {
-                existing
-                    .iter()
-                    .filter(|record| {
-                        matches_record(record, record_type.as_ref(), value, filter.priority)
-                    })
-                    .cloned()
-                    .collect()
-            };
-            let mut matched = select(txt_content.as_deref().or(filter.value.as_deref()));
-            // Several character-strings have no one-string content spelling,
-            // so the stored presentation answers for them — second, so the two
-            // readings never widen one delete between them.
-            if matched.is_empty() && txt_content.is_some() {
-                matched = select(filter.value.as_deref());
-            }
+            let matched: Vec<Record> = records_at_name
+                .iter()
+                .filter(|record| {
+                    matches_record(
+                        record,
+                        record_type.as_ref(),
+                        match_value.as_deref(),
+                        filter.priority,
+                    )
+                })
+                .cloned()
+                .collect();
 
             // Build the preview from the validated rows; dry runs and empty matches
             // return it before any records or serials are written.
-            let before: Vec<ReconstructedRecord> = existing
+            let before: Vec<ReconstructedRecord> = records_at_name
                 .iter()
                 .cloned()
                 .map(ReconstructedRecord::from)
                 .collect();
             let removed: HashSet<i32> = matched.iter().map(|record| record.id).collect();
-            let after: Vec<ReconstructedRecord> = existing
+            let after: Vec<ReconstructedRecord> = records_at_name
                 .iter()
                 .filter(|record| !removed.contains(&record.id))
                 .cloned()

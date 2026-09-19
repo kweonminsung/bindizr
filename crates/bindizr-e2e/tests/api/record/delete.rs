@@ -156,8 +156,8 @@ async fn record_delete_matches_a_txt_value_as_the_content_it_was_created_with() 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["deleted"].as_i64(), Some(1), "{body}");
 
-    // A segmented value has no content spelling, so it goes by the form the
-    // export shows.
+    // Several character-strings are named the way a create names them, and
+    // every one has to match: a subset names no record.
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -173,12 +173,33 @@ async fn record_delete_matches_a_txt_value_as_the_content_it_was_created_with() 
     let (status, body) = app
         .send_request(
             Method::DELETE,
-            &format!(
-                "/records?zone_name={zone_name}&name=seg&type=TXT&value=%22hello%22%20%22world%22"
-            ),
+            &format!("/records?zone_name={zone_name}&name=seg&type=TXT&value=hello"),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["deleted"].as_i64(), Some(1), "{body}");
+    assert_eq!(body["deleted"].as_i64(), Some(0), "{body}");
+
+    // A value naming no record removes none: reading the same string the other
+    // way would delete whichever record that spelling happens to name.
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "plain", "type": "TXT", "value": "hello", "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let (status, body) = app
+        .send_request(
+            Method::DELETE,
+            &format!("/records?zone_name={zone_name}&name=plain&type=TXT&value=%22hello%22"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted"].as_i64(), Some(0), "{body}");
 }
