@@ -25,7 +25,7 @@ impl DnssecService {
         caller: &Caller,
         zone_name: &str,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        caller.authorize_global("manage DNSSEC signing")?;
 
         // The DS records are derived from the apex name and the keys, so they
         // are read together under the zone lock.

@@ -30,6 +30,37 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --set postgresql.enabled=true
 ```
 
+## The first credentials
+
+Authentication is on by default, so the API answers `401` until a token exists.
+The chart seeds none: every token is created through the CLI, or through the
+API with a token that already exists, so the first one is made in the pod.
+
+```bash
+$ kubectl exec -n <namespace> deploy/bindizr-bindizr-chart -c bindizr -- \
+  bindizr token create admin --global
+```
+
+The secret is printed once. Keep it wherever your other deployment secrets
+live; bindizr stores only its hash, so a lost token is replaced rather than
+recovered. Issue the tokens you hand out from that one, scoped to the zones
+they need — see [API Tokens](../cli/tokens.md).
+
+Clients that sign RFC 2136 updates — cert-manager's DNS-01 solver, a DHCP
+server — need a TSIG key, which the chart does not seed either: with the token above,
+any workload creates one over the API.
+
+```bash
+$ curl -X POST http://bindizr-bindizr-chart-api:8000/tsig-keys \
+  -H "Authorization: Bearer $BINDIZR_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "update-key", "is_global": true}'
+```
+
+The secret comes back once, in that response. A global key updates every zone
+without a grant; prefer a scoped key where you can grant — see
+[Dynamic Updates](../cli/nsupdate.md).
+
 ## Serving the API over TLS
 
 The API is `ClusterIP` and carries bearer tokens, so anything reaching it from

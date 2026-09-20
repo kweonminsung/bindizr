@@ -22,6 +22,7 @@ pub enum ImportMode {
 /// Request body for importing records into a zone: BIND zone file text in
 /// `content`, or a transfer from `from_server`; exactly one of the two.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ImportZoneRequest {
     /// Raw BIND zone file text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -41,6 +42,10 @@ pub struct ImportZoneRequest {
     /// file; they are counted as skipped and listed in `skipped_records`.
     #[serde(default)]
     pub skip_unsupported: bool,
+    /// Create the zone from the file's SOA when it does not exist yet.
+    /// Without this a missing zone is an error, so a typo creates nothing.
+    #[serde(default)]
+    pub create: bool,
 }
 
 /// Result of a zone import, including a summary and any validation errors.
@@ -58,6 +63,14 @@ pub struct ImportZoneResponse {
     /// Records passed over under `skip_unsupported`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skipped_records: Vec<String>,
+}
+
+impl ImportZoneResponse {
+    /// Whether the file was refused whole. `applied` cannot answer this: a
+    /// clean dry run also leaves it false.
+    pub fn was_rejected(&self) -> bool {
+        !self.errors.is_empty()
+    }
 }
 
 /// Counts of records parsed, added, deleted, updated, unchanged, and skipped

@@ -74,19 +74,19 @@ per-pod headless names instead of the load-balanced service. */ -}}
 
 {{- /* Build the database connection URL from explicit or bundled-server settings. */ -}}
 {{- define "bindizr-chart.databaseUrl" -}}
-{{- if .Values.bindizr.database.serverUrl -}}
-{{- .Values.bindizr.database.serverUrl -}}
+{{- if .Values.bindizr.database.url -}}
+{{- .Values.bindizr.database.url -}}
 {{- else if eq .Values.bindizr.database.type "mysql" -}}
 {{- if .Values.mysql.enabled -}}
 {{- printf "mysql://%s:%s@%s:%v/%s" (include "bindizr-chart.urlComponent" .Values.mysql.auth.username) (include "bindizr-chart.urlComponent" .Values.mysql.auth.password) (include "bindizr-chart.mysql.fullname" .) .Values.mysql.service.port (include "bindizr-chart.urlComponent" .Values.mysql.auth.database) -}}
 {{- else -}}
-{{- required "Set bindizr.database.serverUrl, bindizr.database.existingSecret, or enable mysql.enabled when bindizr.database.type is mysql" .Values.bindizr.database.serverUrl -}}
+{{- required "Set bindizr.database.url, bindizr.database.existingSecret, or enable mysql.enabled when bindizr.database.type is mysql" .Values.bindizr.database.url -}}
 {{- end -}}
 {{- else if eq .Values.bindizr.database.type "postgresql" -}}
 {{- if .Values.postgresql.enabled -}}
 {{- printf "postgresql://%s:%s@%s:%v/%s" (include "bindizr-chart.urlComponent" .Values.postgresql.auth.username) (include "bindizr-chart.urlComponent" .Values.postgresql.auth.password) (include "bindizr-chart.postgresql.fullname" .) .Values.postgresql.service.port (include "bindizr-chart.urlComponent" .Values.postgresql.auth.database) -}}
 {{- else -}}
-{{- required "Set bindizr.database.serverUrl, bindizr.database.existingSecret, or enable postgresql.enabled when bindizr.database.type is postgresql" .Values.bindizr.database.serverUrl -}}
+{{- required "Set bindizr.database.url, bindizr.database.existingSecret, or enable postgresql.enabled when bindizr.database.type is postgresql" .Values.bindizr.database.url -}}
 {{- end -}}
 {{- else -}}
 {{- required "bindizr.database.type must be mysql or postgresql" "" -}}

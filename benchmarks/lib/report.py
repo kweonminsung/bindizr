@@ -1,6 +1,6 @@
 """Result persistence + final report generation (md / csv / json / png).
 
-Each runner appends a structured result via `save_result`. `build_report` then
+Each runner appends a structured result via `write_result`. `write_report` then
 aggregates everything under results_<timestamp>/ into performance.{json,csv,md}
 and renders graphs/*.png. Graph rendering is best-effort (skipped if matplotlib
 absent).
@@ -17,7 +17,7 @@ from .settings import GRAPHS_DIR, RESULTS_DIR
 RAW_DIR = RESULTS_DIR / "raw"
 
 
-def save_result(benchmark: str, result: dict[str, Any]) -> None:
+def write_result(benchmark: str, result: dict[str, Any]) -> None:
     """Append one benchmark result to its raw JSON file."""
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     out = RAW_DIR / f"{benchmark}.json"
@@ -47,7 +47,7 @@ def _md_table(headers: list[str], rows: list[list[Any]]) -> str:
     return line
 
 
-def build_report(env: dict, cfg: dict) -> None:
+def write_report(env: dict, cfg: dict) -> None:
     """Write the combined JSON, CSV, Markdown, and graph reports."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
@@ -74,7 +74,7 @@ def build_report(env: dict, cfg: dict) -> None:
             w.writerows(csv_rows)
 
     (RESULTS_DIR / "performance.md").write_text(_render_markdown(env, data))
-    _render_graphs(data)
+    _write_graphs(data)
 
 
 # Fields that identify a distinct measurement (not metrics to average over).
@@ -354,8 +354,8 @@ def _render_markdown(env: dict, data: dict) -> str:
     return "\n".join(out)
 
 
-def _render_graphs(data: dict) -> None:
-    """Save comparison graphs when the plotting dependency is available."""
+def _write_graphs(data: dict) -> None:
+    """Write the comparison graph images when the plotting dependency is available."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -363,8 +363,9 @@ def _render_graphs(data: dict) -> None:
     except Exception:
         return
 
-    def bar(fname: str, title: str, labels: list[str], values: list[float], ylabel: str):
-        """Save a bar chart for one benchmark metric."""
+    def write_bar_chart(fname: str, title: str, labels: list[str],
+                        values: list[float], ylabel: str):
+        """Write one benchmark metric's bar chart to a PNG."""
         if not labels:
             return
         fig, ax = plt.subplots(figsize=(8, 4.5))
@@ -378,17 +379,17 @@ def _render_graphs(data: dict) -> None:
 
     if "b01_crud_tps" in data:
         rs = _rows(data, "b01_crud_tps")
-        bar("b01_create_tps.png", "Record Create TPS",
+        write_bar_chart("b01_create_tps.png", "Record Create TPS",
             [r["system"] for r in rs], [r.get("create_tps", 0) for r in rs], "TPS")
-        bar("b01_read_tps.png", "Record Read TPS",
+        write_bar_chart("b01_read_tps.png", "Record Read TPS",
             [r["system"] for r in rs], [r.get("read_tps", 0) for r in rs], "TPS")
     if "b08_query_perf" in data:
         rs = _rows(data, "b08_query_perf")
-        bar("b08_qps.png", "DNS Query Throughput (QPS)",
+        write_bar_chart("b08_qps.png", "DNS Query Throughput (QPS)",
             [r["system"] for r in rs], [r.get("qps", 0) for r in rs], "QPS")
     if "b03_propagation" in data:
         rs = _rows(data, "b03_propagation")
-        bar("b03_visible_p95.png", "DNS-Visible Latency p95 (create -> answerable)",
+        write_bar_chart("b03_visible_p95.png", "DNS-Visible Latency p95 (create -> answerable)",
             [r["system"] for r in rs], [r.get("visible_p95_ms", 0) for r in rs], "ms")
     if "b02_bulk_import" in data:
         # Largest-size row per system.
@@ -398,6 +399,6 @@ def _render_graphs(data: dict) -> None:
             if prev is None or r.get("size", 0) >= prev.get("size", 0):
                 by_sys[r["system"]] = r
         rs = list(by_sys.values())
-        bar("b02_records_per_sec.png", "Bulk Import Throughput (records/sec)",
+        write_bar_chart("b02_records_per_sec.png", "Bulk Import Throughput (records/sec)",
             [r["system"] for r in rs], [r.get("records_per_sec", 0) for r in rs],
             "records/sec")

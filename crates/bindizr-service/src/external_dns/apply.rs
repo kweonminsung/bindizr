@@ -89,7 +89,7 @@ impl ExternalDnsService {
                     .collect();
                 names.sort();
                 names.dedup();
-                let existing = RepositoryService::list_records_by_names_tx(
+                let records_at_names = RepositoryService::list_records_by_names_tx(
                     &mut tx,
                     zone.id,
                     &names,
@@ -97,7 +97,7 @@ impl ExternalDnsService {
                 )
                 .await?;
 
-                let change_set = ops.compute_change_set(&zone, &existing)?;
+                let change_set = ops.compute_change_set(&zone, &records_at_names)?;
                 if change_set.deletes.is_empty() && change_set.creates.is_empty() {
                     continue;
                 }

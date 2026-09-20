@@ -31,7 +31,7 @@ pub struct ZoneVersionResponse {
     #[schema(example = 3600)]
     pub minimum_ttl: i32,
     /// Which plane asked for this version: `token`, `nsupdate`, `system`
-    /// (the DNSSEC maintenance scheduler), or `local` (the daemon socket, or
+    /// (the DNSSEC scheduler), or `local` (the daemon socket, or
     /// any request while authentication is disabled).
     #[schema(example = "token")]
     pub change_source: String,
@@ -72,6 +72,7 @@ impl ZoneVersionResponse {
 pub struct VersionRecordResponse {
     #[schema(example = "www")]
     pub name: String,
+    #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
@@ -122,6 +123,7 @@ pub struct RecordDiffEntry {
     pub change: String,
     #[schema(example = "www.example.com.")]
     pub name: String,
+    #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
     pub from: Vec<RecordDiffValue>,

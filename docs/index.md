@@ -55,11 +55,11 @@ DNS Synchronization Service for BIND9
 
 - **Multiple Database Backends**: Store DNS data in MySQL, PostgreSQL, or SQLite.
 
-- **Zone Transfers (AXFR/IXFR)**: Serve full and incremental zone transfers to secondaries, with automatic SOA serial management and an optional per-serial zone cache.
+- **Zone Transfers (AXFR/IXFR)**: Serve full and incremental zone transfers to secondaries, with automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
 
 - **Automatic Zone Provisioning**: DNS Catalog Zones (RFC 9432) let BIND9 secondaries discover created and deleted zones without configuration changes.
 
-- **DNS NOTIFY**: Notify secondaries after each change, with configurable retries and timeouts, plus a sync/async apply mode that batches NOTIFYs under load.
+- **DNS NOTIFY**: Notify secondaries after each change, with configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 
 - **nsupdate (Dynamic Update)**: RFC 2136 dynamic updates with TSIG-signed requests, managed TSIG keys, and per-zone grants.
 
@@ -67,7 +67,7 @@ DNS Synchronization Service for BIND9
 
 - **Zone Versions**: A version per serial, with diffs between serials and rollback to a previous serial.
 
-- **Observability**: Health probe endpoint, Prometheus metrics at `/metrics`, and `bindizr doctor` end-to-end diagnostics.
+- **Observability**: Health probe endpoint, Prometheus metrics at `/metrics`, text or JSON logs, and `bindizr status` / `bindizr doctor` diagnostics.
 
 ## Performance
 

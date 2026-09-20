@@ -17,10 +17,13 @@ $ bindizr tsig-key export xfr-key
 # Delete a key (refused while it still holds grants)
 $ bindizr tsig-key delete update-key
 
-# List a key's grants, or every TSIG grant that applies to a zone; revoke one by ID
+# List a key's grants, or every TSIG grant that applies to a zone
 $ bindizr tsig-key grants update-key
 $ bindizr zone tsig-grants example.com
-$ bindizr tsig-key revoke update-key <GRANT_ID>
+
+# Revoke every grant a key holds in a zone, or one grant by ID
+$ bindizr tsig-key revoke update-key example.com
+$ bindizr tsig-key revoke --id 7
 ```
 
 ## Signing zone transfers

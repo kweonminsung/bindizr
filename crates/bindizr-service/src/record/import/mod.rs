@@ -7,6 +7,7 @@ use std::{
 };
 
 use bindizr_core::dns::{
+    CATALOG_ZONE_NAME,
     address::is_address_target,
     name::{OwnerName, ZoneName},
     zonefile::{ParsedZoneFile, ZoneFileValue},
@@ -29,8 +30,8 @@ use crate::{
     serial::generate_serial,
     timing::elapsed_ms,
     types::{
-        ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, RecordDiff,
-        RecordValueRequest,
+        CreateZoneRequest, ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse,
+        RecordDiff, RecordValueRequest,
     },
     zone::{ZoneService, version::ChangeSubject},
 };
@@ -40,6 +41,8 @@ struct AppliedImport {
     response: ImportZoneResponse,
     zone_name: ZoneName,
     changed: bool,
+    /// This import created the zone, so the catalog gained a member.
+    created: bool,
 }
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY;
@@ -66,7 +69,7 @@ impl RecordService {
         zone_name: &str,
         request: &ImportZoneRequest,
     ) -> Result<ImportZoneResponse, ServiceError> {
-        caller.require_global("import zone files")?;
+        caller.authorize_global("import zone files")?;
 
         let content: Cow<'_, str> = match (&request.content, &request.from_server) {
             (Some(content), None) => Cow::Borrowed(content.as_str()),
@@ -78,8 +81,11 @@ impl RecordService {
                     ));
                 }
                 // The zone's existence precedes the outbound fetch, so a
-                // mistyped name cannot start a transfer.
-                ZoneService::lookup_by_name(zone_name).await?;
+                // mistyped name cannot start a transfer. With `create` there is
+                // no zone yet, and the transfer itself refuses an unknown one.
+                if !request.create {
+                    ZoneService::lookup_by_name(zone_name).await?;
+                }
                 let content = crate::dns_client::axfr::fetch_zone_file(server, zone_name)
                     .await
                     .map_err(|e| {
@@ -102,18 +108,21 @@ impl RecordService {
             request.mode,
             request.dry_run,
             request.skip_unsupported,
+            request.create.then_some(caller),
             &caller.change_subject(),
         )
         .await
     }
 
-    /// Preview or apply a zone-file reconciliation in its own transaction.
+    /// Preview or apply a zone-file reconciliation in its own transaction,
+    /// creating the zone from the file's SOA when `create_as` says to.
     async fn reconcile_zone_file(
         zone_name: &str,
         content: &str,
         mode: ImportMode,
         dry_run: bool,
         skip_unsupported: bool,
+        create_as: Option<&Caller>,
         subject: &ChangeSubject,
     ) -> Result<ImportZoneResponse, ServiceError> {
         let t_total = Instant::now();
@@ -124,8 +133,32 @@ impl RecordService {
 
         let apply_result: Result<AppliedImport, ServiceError> = async {
             let t = Instant::now();
-            let zone =
-                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            let mut created = false;
+            let zone = match (
+                ZoneService::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?,
+                create_as,
+            ) {
+                (Some(zone), _) => zone,
+                // Created in this transaction, so a dry run rolls it back with
+                // the records and an apply commits both at once.
+                (None, Some(caller)) => {
+                    let soa = ParsedZoneFile::parse(content, zone_name, 0)
+                        .soa
+                        .ok_or_else(|| {
+                            ServiceError::invalid_input(
+                                "the zone file carries no SOA to create the zone from; create it with `zone create` first",
+                            )
+                        })?;
+                    created = true;
+                    ZoneService::create_tx(
+                        &mut tx,
+                        caller,
+                        &CreateZoneRequest::from_zone_file_soa(zone_name, &soa)?,
+                    )
+                    .await?
+                }
+                (None, None) => return Err(ServiceError::zone_not_found(zone_name)),
+            };
             timings.load_zone_ms = elapsed_ms(t);
 
             let t = Instant::now();
@@ -387,15 +420,27 @@ impl RecordService {
                 response,
                 zone_name: zone.name,
                 changed: will_apply && has_changes,
+                created: will_apply && created,
             })
         }
         .await;
 
+        // Only an applied import commits: a dry run and a rejected one both
+        // answer `applied: false`, so neither may leave the zone `create` made.
+        let discard = dry_run
+            || !apply_result
+                .as_ref()
+                .is_ok_and(|import| import.response.applied);
         let AppliedImport {
             response,
             zone_name,
             changed,
-        } = RepositoryService::finish_tx(tx, apply_result, "Failed to import zone file").await?;
+            created,
+        } = if discard {
+            RepositoryService::discard_tx(tx, apply_result).await?
+        } else {
+            RepositoryService::finish_tx(tx, apply_result, "Failed to import zone file").await?
+        };
 
         log::info!(
             "event=zone_import zone={} mode={:?} applied={} added={} deleted={} updated={} unchanged={} skipped={} errors={}",
@@ -410,8 +455,15 @@ impl RecordService {
             response.errors.len(),
         );
 
-        // Notify after commit only when the import changed the served zone.
         let t = Instant::now();
+        // The catalog goes first: a secondary that has not seen the new member
+        // there cannot act on the zone's own NOTIFY below.
+        if created
+            && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
+        {
+            log::warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
+        }
+        // Notify after commit only when the import changed the served zone.
         if changed
             && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {

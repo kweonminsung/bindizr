@@ -1,7 +1,7 @@
 //! Record-name-pattern and record-type matching, shared by TSIG grants
 //! (nsupdate) and token grants (HTTP API).
 
-use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, render_labels};
+use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, labels_to_presentation};
 
 use crate::{error::ServiceError, model::record::RecordType};
 
@@ -67,7 +67,7 @@ pub(crate) fn normalize_pattern(value: Option<&str>) -> Result<String, ServiceEr
     let name_part = raw.strip_prefix("*.").unwrap_or(raw);
 
     // Store the canonical spelling so one name is one pattern.
-    let canonical = render_labels(&parse_relative_name(name_part)?);
+    let canonical = labels_to_presentation(&parse_relative_name(name_part)?);
     Ok(match raw.strip_prefix("*.") {
         Some(_) => format!("*.{}", canonical),
         None => canonical,

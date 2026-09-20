@@ -22,12 +22,12 @@ use crate::{
 impl DnssecService {
     /// Start a key rollover: pre-publish a same-algorithm replacement for
     /// the CSK, or for the `role` named in a split-key zone.
-    pub async fn rollover_start(
+    pub async fn start_rollover(
         caller: &Caller,
         zone_name: &str,
         role: Option<&str>,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_tx("failed to start key rollover").await?;
         let result = async {
@@ -131,13 +131,13 @@ impl DnssecService {
     /// once the parent serves their DS and the hold-down has passed;
     /// `skip_ds_check` takes the DS on the operator's word, `skip_holddown`
     /// waives the wait.
-    pub async fn rollover_ds_seen(
+    pub async fn advance_rollover(
         caller: &Caller,
         zone_name: &str,
         skip_ds_check: bool,
         skip_holddown: bool,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
         let result = async {

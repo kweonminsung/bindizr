@@ -1,4 +1,3 @@
-use bindizr_core::config::BindizrConfig;
 use bindizr_service::{error::ErrorCode, types::ErrorResponse};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -9,7 +8,7 @@ use crate::{
     cli::error::CliError,
     socket::{
         FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
-        types::{DaemonCommand, DaemonCommandKind, DaemonResponse, DaemonStatusResponse},
+        types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
     },
 };
 
@@ -33,20 +32,6 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
         // Primary failed in an unexpected way; the fallback was not tried.
         Err((err, None)) => gone(&err),
     }
-}
-
-/// Request the daemon's current status.
-pub(crate) async fn fetch_status() -> Result<DaemonStatusResponse, CliError> {
-    let res = send_control_command(DaemonCommandKind::Status).await?;
-    serde_json::from_value(res.data)
-        .map_err(|e| CliError::from(format!("Failed to parse status response: {}", e)))
-}
-
-/// The daemon's loaded configuration, which can differ from the file on disk.
-pub(crate) async fn fetch_config() -> Result<BindizrConfig, CliError> {
-    let res = send_control_command(DaemonCommandKind::Config).await?;
-    serde_json::from_value(res.data)
-        .map_err(|e| CliError::from(format!("Failed to parse config response: {}", e)))
 }
 
 /// Send a command the daemon answers from memory (status/lifecycle) under

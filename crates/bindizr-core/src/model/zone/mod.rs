@@ -1,12 +1,9 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-use crate::{
-    dns::{
-        name::{OwnerName, ZoneName, decode_name_labels},
-        record::{Rdata, SoaMailbox, SoaRecordValue},
-    },
-    model::record::{Record, RecordType},
+use crate::dns::{
+    name::ZoneName,
+    record::{Rdata, SoaMailbox, SoaRecordValue},
 };
 
 /// Zone metadata used to generate the SOA and NS records.
@@ -40,38 +37,10 @@ pub struct Zone {
     pub created_at: DateTime<Utc>,
 }
 
-/// Whether the record is an apex NS row, whatever it points at.
-fn is_apex_ns(record_type: &RecordType, name: &OwnerName) -> bool {
-    *record_type == RecordType::NS && name.is_apex()
-}
-
 impl Zone {
     /// SOA RNAME (mailbox) in presentation form, e.g. `admin.example.com`.
     pub fn soa_mailbox(&self) -> Result<SoaMailbox, String> {
         SoaMailbox::from_email(&self.rname)
-    }
-
-    /// Whether the record is the apex NS this zone's `mname` names. One
-    /// such row must exist for the zone to stay self-consistent.
-    pub fn mname_matches(&self, record_type: &RecordType, name: &OwnerName, value: &str) -> bool {
-        is_apex_ns(record_type, name)
-            && matches!(
-                (decode_name_labels(value), decode_name_labels(&self.mname)),
-                (Ok((value, _)), Ok((mname, _))) if value == mname
-            )
-    }
-
-    /// TTL a synthesized apex NS must take to join the existing RRset rather
-    /// than split it (RFC 2181, Section 5.2). `candidates` are scanned in
-    /// priority order, falling back to the zone TTL.
-    pub fn apex_ns_rrset_ttl<'a>(
-        &self,
-        candidates: impl IntoIterator<Item = (&'a RecordType, &'a OwnerName, i32)>,
-    ) -> i32 {
-        candidates
-            .into_iter()
-            .find(|(record_type, name, _)| is_apex_ns(record_type, name))
-            .map_or(self.default_ttl, |(_, _, ttl)| ttl)
     }
 
     /// Whether the SOA metadata differs from `other`, excluding the serial.
@@ -83,20 +52,6 @@ impl Zone {
             || self.retry != other.retry
             || self.expire != other.expire
             || self.minimum_ttl != other.minimum_ttl
-    }
-
-    /// The apex NS row that satisfies [`Self::mname_matches`].
-    pub fn mname_record(&self, ttl: i32) -> Record {
-        Record {
-            id: 0,
-            name: OwnerName::apex(),
-            record_type: RecordType::NS,
-            value: self.mname.clone(),
-            ttl,
-            priority: None,
-            zone_id: self.id,
-            created_at: Utc::now(),
-        }
     }
 
     /// This zone's wire-format SOA RDATA at `serial`; the SOA is synthesized
@@ -130,6 +85,3 @@ impl Zone {
         ))
     }
 }
-
-#[cfg(test)]
-mod tests;

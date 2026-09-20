@@ -29,7 +29,7 @@ impl DnssecService {
         caller: &Caller,
         zone_name: &str,
     ) -> Result<ExportDnssecKeysResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        caller.authorize_global("manage DNSSEC signing")?;
 
         // One locked transaction: a rename cannot split the rendered name
         // from the keys.
@@ -70,7 +70,7 @@ impl DnssecService {
         zone_name: &str,
         request: ImportDnssecKeyRequest,
     ) -> Result<GetDnssecStatusResponse, ServiceError> {
-        caller.require_global("manage DNSSEC signing")?;
+        caller.authorize_global("manage DNSSEC signing")?;
         if request.keys.is_empty() {
             return Err(ServiceError::invalid_input("no key pair to import"));
         }

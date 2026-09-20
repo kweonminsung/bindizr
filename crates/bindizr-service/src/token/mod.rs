@@ -34,7 +34,7 @@ impl TokenService {
         expires_in_days: Option<i64>,
         is_global: bool,
     ) -> Result<(ApiToken, String), ServiceError> {
-        caller.require_global("manage API tokens")?;
+        caller.authorize_global("manage API tokens")?;
 
         let name = normalize_token_name(name)?;
         validate_token_description(description)?;
@@ -76,7 +76,7 @@ impl TokenService {
         caller: &Caller,
         page: PageFilter,
     ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
-        caller.require_global("manage API tokens")?;
+        caller.authorize_global("manage API tokens")?;
 
         let tokens = RepositoryService::list_api_tokens().await?;
         PaginatedResponse::from_collection(
@@ -86,10 +86,18 @@ impl TokenService {
         )
     }
 
+    /// Create `secret` as a global token named `initial`. The daemon calls
+    /// this only on the startup that built the schema, so a token revoked
+    /// later is never seeded back, and passes a secret the config reader
+    /// Every API token, for the daemon's startup hint.
+    pub async fn count_all() -> Result<u64, ServiceError> {
+        Ok(RepositoryService::list_api_tokens().await?.len() as u64)
+    }
+
     /// Delete the API token with the given name, returning `NotFound` if it
     /// is absent.
     pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
-        caller.require_global("manage API tokens")?;
+        caller.authorize_global("manage API tokens")?;
 
         let token = Self::lookup_by_name(name).await?;
 

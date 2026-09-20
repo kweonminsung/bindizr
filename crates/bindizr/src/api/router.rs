@@ -34,14 +34,14 @@ impl ApiRouter {
             .merge(TokenApi::routes().await)
             .merge(DnssecApi::routes().await)
             .merge(DnssecPolicyApi::routes().await)
-            .route("/", routing::get(ApiRouter::get_home));
+            .route("/", routing::get(ApiRouter::handle_home));
 
         // Unregistered when disabled, so the endpoints fall through to 404.
         if api_config.external_dns_enabled {
             api_router = api_router.merge(ExternalDnsApi::routes().await);
         }
 
-        if api_config.require_authentication {
+        if api_config.authentication_required {
             api_router = api_router.layer(axum::middleware::from_fn(
                 super::middleware::auth::auth_middleware,
             ));
@@ -54,11 +54,11 @@ impl ApiRouter {
         let mut router = api_router;
 
         // Outside the auth layer: probes must work without credentials.
-        router = router.route("/health", routing::get(super::health::get_health));
+        router = router.route("/health", routing::get(super::health::handle_health));
 
         // Also outside auth: scrapers get only aggregate counts, no zone data.
         if api_config.metrics_enabled {
-            router = router.route("/metrics", routing::get(super::metrics::get_metrics));
+            router = router.route("/metrics", routing::get(super::metrics::handle_metrics));
         }
 
         // Also outside auth: the document is the API's own description.
@@ -66,6 +66,11 @@ impl ApiRouter {
             router = router
                 .route("/openapi.json", routing::get(ApiRouter::openapi_json))
                 .route("/openapi.yaml", routing::get(ApiRouter::openapi_yaml));
+        } else {
+            // A bare 404 reads as "no such endpoint" for a path the docs name.
+            router = router
+                .route("/openapi.json", routing::get(ApiRouter::openapi_disabled))
+                .route("/openapi.yaml", routing::get(ApiRouter::openapi_disabled));
         }
 
         router = router
@@ -85,7 +90,7 @@ impl ApiRouter {
     }
 
     /// Return the API's running-status message.
-    async fn get_home() -> impl IntoResponse {
+    async fn handle_home() -> impl IntoResponse {
         (
             StatusCode::OK,
             Json(MessageResponse {
@@ -120,6 +125,14 @@ impl ApiRouter {
         ApiError(ServiceError::new(
             ErrorCode::MethodNotAllowed,
             "this path does not take that method",
+        ))
+    }
+
+    /// Return the API error for the OpenAPI document while it is not served.
+    async fn openapi_disabled() -> impl IntoResponse {
+        ApiError(ServiceError::new(
+            ErrorCode::EndpointNotFound,
+            "the OpenAPI document is not served; set api.openapi_enabled = true to serve it",
         ))
     }
 

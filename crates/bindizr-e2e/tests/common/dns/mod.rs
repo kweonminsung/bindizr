@@ -11,8 +11,11 @@ pub(crate) use parent::{FakeParent, ServedDs};
 use serde_json::{Value, json};
 pub(crate) use transfer::{TransferOutcome, axfr};
 
-/// Convert an API record value into the DNS comparison form.
-pub(crate) fn to_dns_expected_value(record: &Value, record_type: u16) -> Value {
+pub(crate) mod nsupdate;
+mod tests;
+
+/// Build the DNS comparison form of an API record value.
+pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Value {
     let value = record["value"].clone();
     if !matches!(record_type, 15 | 33) {
         return value;
@@ -42,7 +45,7 @@ pub(crate) fn extract_dns_key(record: &Value) -> (String, u16) {
         .as_str()
         .expect("record did not contain a name")
         .to_string();
-    let record_type = record["record_type"]
+    let record_type = record["type"]
         .as_str()
         .and_then(dns_record_type)
         .expect("record contained an unsupported DNS type");

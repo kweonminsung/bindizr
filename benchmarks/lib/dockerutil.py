@@ -52,19 +52,19 @@ class Compose:
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
 
-    def logs(self, service: str, tail: int = 50) -> str:
+    def read_logs(self, service: str, tail: int = 50) -> str:
         """Collect recent output from a Compose service."""
         p = run(self._base() + ["logs", "--tail", str(tail), service], check=False)
         return (p.stdout or "") + (p.stderr or "")
 
-    def container_id(self, service: str) -> str | None:
-        """Find the running container ID for a Compose service."""
+    def resolve_container_id(self, service: str) -> str | None:
+        """Resolve a Compose service name to its running container ID."""
         p = run(self._base() + ["ps", "-q", service], check=False)
         out = (p.stdout or "").strip()
         return out or None
 
 
-def stats(container_ids: list[str]) -> list[dict]:
+def read_stats(container_ids: list[str]) -> list[dict]:
     """One-shot `docker stats` snapshot for the given containers."""
     if not container_ids:
         return []

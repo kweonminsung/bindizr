@@ -15,15 +15,18 @@ package install, or a shell inside the container for Compose and Helm.
 | Commands | What they manage | Documented in |
 |---|---|---|
 | `start`, `stop`, `restart`, `status`, `doctor`, `config` | The daemon and its configuration | this page |
-| `zone`, `record`, `notify` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | this page |
+| `completion`, `man` | The shell completion scripts and the man page | this page |
+| `zone`, `record` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | this page |
 | `token` | API tokens and the zones each is granted over HTTP | [API Tokens](tokens.md) |
 | `tsig-key` | TSIG keys and the zones each is granted for nsupdate | [TSIG Keys](tsig-keys.md), [Dynamic Updates](nsupdate.md) |
 | `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec.md) |
 
-Every `create`, `list`, `get`, and `update` command prints a table and takes
-`-o json` or `-o yaml`, whose payload is the same body the HTTP API returns;
-`delete` and the one-shot actions print a message.
-`zone export` and `dnssec keys export` print paste-ready text.
+Every command that reports something prints a table and takes `-o json` or
+`-o yaml`, whose payload is the same body the HTTP API returns; `delete` and
+the one-shot actions print a message. `zone export`, `dnssec keys export`, and
+`tsig-key export` print paste-ready text instead, so none of the three takes
+`-o`. A command's result goes to stdout and its diagnostics to stderr, so a
+pipeline keeps the result clean.
 
 ## Service
 
@@ -39,10 +42,13 @@ $ bindizr start -c <FILE>
 $ bindizr stop
 $ bindizr restart
 
-# Check the current status of bindizr service
+# Whether the daemon runs, where it listens, its database and zone count, and its
+# secondaries. Exits non-zero when the database does not answer, so a health
+# check can branch on it
 $ bindizr status
 
-# Verify the installation end to end (config, daemon, API, database, DNS, secondaries)
+# Check the installation end to end; without a daemon it checks the database, the
+# listen ports, and BIND's catalog setup itself
 $ bindizr doctor
 
 # Validate a configuration file without starting bindizr (defaults to /etc/bindizr/bindizr.conf.toml)
@@ -52,16 +58,41 @@ $ bindizr config check [-c <FILE>]
 $ bindizr config list
 $ bindizr config get dns.secondary_addrs
 
-# Re-read the configuration file without restarting (SIGHUP does the same)
+# Re-read the configuration file without restarting (`systemctl reload bindizr` or SIGHUP does the same)
 $ bindizr config reload
+
+# doctor also answers as one JSON document, for a cron job or CI check
+$ bindizr doctor -o json
+```
+
+## Completions and the man page
+
+A package install puts both in place already. Elsewhere the binary prints
+them, generated from the same command it parses with:
+
+```bash
+# Shell completion: bash, zsh, fish, elvish, or powershell
+$ bindizr completion bash | sudo tee /usr/share/bash-completion/completions/bindizr
+$ bindizr completion zsh  | sudo tee /usr/share/zsh/site-functions/_bindizr
+$ bindizr completion fish > ~/.config/fish/completions/bindizr.fish
+
+# Man page
+$ bindizr man | sudo tee /usr/share/man/man1/bindizr.1 > /dev/null
 ```
 
 ## Zones and records
 
 ```bash
-# Create a zone (the SOA serial starts at 1 unless --serial is given; --refresh,
-# --retry, --expire, and --minimum-ttl set the other SOA timers)
-$ bindizr zone create --name example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
+# Create a zone. --mname and --rname are both required: neither is guessed.
+# The SOA serial starts at 1 unless --serial is given; --refresh, --retry,
+# --expire, and --minimum-ttl set the other SOA timers
+$ bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
+
+# A new zone holds its SOA and nothing else. Give it the NS records that name
+# its public nameservers, and an address record for any of them inside the zone
+# (the parent zone needs matching glue for those).
+$ bindizr record create example.com @ --type NS --value ns1.example.com
+$ bindizr record create example.com ns1 --type A --value 192.0.2.1
 
 # List, inspect, and delete zones
 $ bindizr zone list
@@ -78,23 +109,43 @@ $ bindizr zone list --enabled false
 $ bindizr zone update example.com --enabled true
 
 # Create, list, inspect, and delete records (TTL defaults to the zone's; one TTL per name and type)
-$ bindizr record create --zone example.com --name www --type A --value 192.0.2.1 --ttl 300
-$ bindizr record create --zone example.com --name @ --type TXT --value v=spf1 --value ~all  # repeat --value for TXT segments
-$ bindizr record list --zone example.com
-$ bindizr record list --zone example.com --sort ttl --order desc
+$ bindizr record create example.com www --type A --value 192.0.2.1 --ttl 300
+$ bindizr record create example.com @ --type TXT --value "v=spf1 include:_spf.example.net ~all"
+$ bindizr record list example.com
+$ bindizr record list example.com --sort ttl --order desc
 $ bindizr zone list --min-serial 100 --signed --sort created_at
-$ bindizr record get <RECORD_ID>
-$ bindizr record delete <RECORD_ID>
+# A name can hold several records, so the name form answers with all of them
+$ bindizr record get example.com www
 
-# Update a record, changing only the fields you pass
-$ bindizr record update <RECORD_ID> --value 127.0.0.1
+# Delete by name: every type at the name, or narrowed by type and value
+# (--dry-run reports what would go). The whole set moves in one serial.
+$ bindizr record delete example.com www
+$ bindizr record delete example.com www --type A --dry-run
 
+# Update a record, changing only the fields you pass. Every flag sets a new
+# value, so the name form needs the name to hold exactly one record.
+$ bindizr record update example.com www --value 127.0.0.1
+$ bindizr record update example.com www --new-name api
+
+# --id addresses exactly one record, which is how a name holding several is
+# narrowed down; `record list` prints the IDs.
+$ bindizr record get --id 42
+$ bindizr record update --id 42 --value 127.0.0.1
+$ bindizr record delete --id 42
+```
+
+A TXT value over 255 bytes is split into segments for you. Repeat `--value` to
+choose the split yourself, which is how a DKIM key is usually published.
+Resolvers join the segments with nothing between them, so any space belongs
+inside a value rather than between two of them.
+
+```bash
 # Export a zone as BIND master-file text (--signed appends the derived DNSSEC records)
 $ bindizr zone export example.com > db.example.com
 
 # Send NOTIFY to secondary DNS servers for a zone, or for every zone
 $ bindizr zone notify <ZONE_NAME>
-$ bindizr notify
+$ bindizr zone notify              # every zone
 
 # Check how far each secondary has caught up with a zone
 $ bindizr zone status <ZONE_NAME>
@@ -108,17 +159,24 @@ Bulk changes can be previewed before anything is written. `--dry-run` applies
 nothing and renders the change as a `+`/`-`/`~` diff:
 
 ```bash
-$ bindizr record bulk-create records.json --zone <ZONE_NAME> --dry-run
+$ bindizr record bulk-create <ZONE_NAME> records.json --dry-run
 $ bindizr zone import <ZONE_NAME> zone.txt --dry-run
 ```
 
 A zone served elsewhere imports without exporting a file first —
 `--from-server` pulls the records over AXFR (the source must allow the
-transfer):
+transfer), and `--create` builds the zone from the file's SOA, carrying its
+timers and serial, when it does not exist yet;
+[Migrating an Existing Primary](../deployment/migrating.md) walks through a
+whole cutover:
 
 ```bash
-$ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --dry-run
+$ bindizr zone import <ZONE_NAME> --from-server 192.0.2.1:53 --mode replace --create --dry-run
 ```
+
+A record that fails validation fails the whole import: nothing is applied, the
+rejected records are listed on stderr, and the command exits non-zero so a CI
+step does not read the rejection as success.
 
 A zone file written for BIND often carries record types bindizr does not
 store, and one of them fails the whole import. `--skip-unsupported` passes
@@ -135,7 +193,7 @@ text) or `from_server` the same way, and `skip_unsupported` alongside them.
 
 Every SOA serial has a version behind it, so a zone can be diffed and rolled
 back, and each version records who made the change: the API token or TSIG key
-it was made under (`system` for the DNSSEC maintenance scheduler, `local` for
+it was made under (`system` for the DNSSEC scheduler, `local` for
 the daemon socket or a request made while authentication is disabled). The
 name is copied into the version, so it still answers after the token is gone.
 
@@ -166,4 +224,5 @@ without parsing the message.
 | `3` | Not found: no such zone, record, token, version, key, or policy |
 | `4` | Conflict: the name is taken, or the object is in use or in the wrong state |
 | `5` | Denied: the token is missing, invalid, or lacks a grant |
-| `6` | Unavailable: the daemon is not running, so the command never reached it |
+| `6` | The configuration file is unusable, so running the same command again changes nothing |
+| `7` | Unavailable: the daemon is not running, so the command never reached it |

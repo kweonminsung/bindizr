@@ -12,7 +12,7 @@ use domain::{
 
 use crate::{
     dns::{
-        name::render_labels,
+        name::labels_to_presentation,
         record::{NaptrRecordValue, TxtRecordValue},
     },
     model::record::RecordType,
@@ -236,7 +236,7 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> 
         return Ok(".".to_string());
     }
 
-    Ok(format!("{}.", render_labels(&labels)))
+    Ok(format!("{}.", labels_to_presentation(&labels)))
 }
 
 impl UpdateRr {

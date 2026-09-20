@@ -8,6 +8,7 @@ use crate::model::{tsig_grant::TsigGrantWithNames, tsig_key::TsigKey};
 
 /// Request body for creating a TSIG key. Omitting `secret` generates one.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateTsigKeyRequest {
     #[schema(example = "update-key")]
     pub name: String,
@@ -54,6 +55,7 @@ impl GetTsigKeyResponse {
 
 /// Request body for granting a TSIG key update and transfer rights in a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateTsigGrantRequest {
     /// Name of an existing zone.
     #[schema(example = "example.com")]

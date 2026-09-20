@@ -9,7 +9,7 @@ async fn token_create_rejects_duplicate_name() {
     let app = TestApp::start().await;
     let (name, _) = app.create_api_token().await;
 
-    let output = app.run_cli(&["token", "create", "--name", &name]).await;
+    let output = app.run_cli(&["token", "create", &name]).await;
     assert!(!output.status.success());
 }
 
@@ -60,18 +60,52 @@ async fn token_grant_grants_revoke() {
     let refused = app.run_cli(&grant_args).await;
     assert_cli_failure_contains(&grant_args, &refused, "is global");
 
-    // A grant id is only reachable under the token that holds it.
-    let revoke_args = ["token", "revoke", &global_name, &grant_id];
+    // An unknown id is not found; the grant id alone names the row.
+    let revoke_args = ["token", "revoke", "--id", "999999"];
     let refused = app.run_cli(&revoke_args).await;
     assert_cli_failure_contains(&revoke_args, &refused, "not found");
 
     let revoked = app
-        .run_cli_success(&["token", "revoke", &scoped_name, &grant_id])
+        .run_cli_success(&["token", "revoke", "--id", &grant_id])
         .await;
     assert!(
         revoked.contains("Token grant revoked successfully"),
         "{revoked}"
     );
+
+    let by_token = app
+        .run_cli_success(&["token", "grants", &scoped_name])
+        .await;
+    assert!(!by_token.contains(&zone_name), "{by_token}");
+}
+
+/// Verify that `token revoke` takes a token and zone name, revoking every grant there.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn token_revoke_by_name_revokes_every_grant_in_the_zone() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("revoke-by-name.example");
+    app.create_zone_cli(&zone_name, "3600").await;
+    let (scoped_name, _) = app.create_scoped_api_token().await;
+
+    // One token can hold several grants in one zone, each with its own name
+    // pattern, so the pair the grants were created with must revoke them all.
+    for pattern in ["www", "api"] {
+        app.run_cli_success(&[
+            "token",
+            "grant",
+            &scoped_name,
+            &zone_name,
+            "--pattern",
+            pattern,
+        ])
+        .await;
+    }
+
+    let revoked = app
+        .run_cli_success(&["token", "revoke", &scoped_name, &zone_name])
+        .await;
+    assert!(revoked.contains("2 token grant(s) revoked"), "{revoked}");
 
     let by_token = app
         .run_cli_success(&["token", "grants", &scoped_name])

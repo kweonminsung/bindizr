@@ -65,6 +65,23 @@ $ ./packaging/scripts/build_packages.sh
 $ ls bindizr*.{deb,rpm}
 ```
 
+The script builds `x86_64-unknown-linux-musl` by default. On an arm64 host,
+name the target to build the arm64 packages, as the release workflow does:
+
+```bash
+$ TARGET=aarch64-unknown-linux-musl ./packaging/scripts/build_packages.sh
+```
+
+## Building the Container Image
+
+`build_image.sh` builds the image for amd64 and arm64 as one manifest and
+pushes it. The argument is the tag (default: the Cargo version); `IMAGE`
+overrides the repository.
+
+```bash
+$ ./packaging/scripts/build_image.sh
+```
+
 ## Installing the Package
 
 ### Debian/Ubuntu

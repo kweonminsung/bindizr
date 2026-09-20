@@ -22,7 +22,7 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    timing::{duration_ms, elapsed_ms},
+    timing::elapsed_ms,
     types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
     zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
 };
@@ -33,8 +33,7 @@ struct BulkTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,
     build_index_ms: f64,
-    normalize_ms: f64,
-    validate_ms: f64,
+    build_records_ms: f64,
     db_write_ms: f64,
     serial_ms: f64,
 }
@@ -168,9 +167,6 @@ impl RecordService {
         RepositoryService::create_zone_changes_tx(tx, &changes).await?;
         Ok(())
     }
-}
-
-impl RecordService {
     /// Insert many records into a zone in one transaction. The zone serial is
     /// incremented once, a single version is saved, and a single NOTIFY is sent
     /// after commit. Either every record is inserted or none is. On `dry_run`
@@ -286,27 +282,17 @@ impl RecordService {
             }
             timings.build_index_ms = elapsed_ms(t);
 
-            // Time normalization and validation separately so validate_ms stays
-            // comparable with zone import, which normalizes in an earlier pass;
-            // debug-gated to keep the clock reads off the hot path.
-            let timing_enabled = log::log_enabled!(log::Level::Debug);
-            let mut normalize_dur = std::time::Duration::ZERO;
-            let mut validate_dur = std::time::Duration::ZERO;
+            let t = Instant::now();
             let mut to_insert = Vec::with_capacity(prepared.len());
             for prepared_record in &prepared {
-                let t = timing_enabled.then(Instant::now);
                 let owner_name =
                     normalize_record_owner_name(&prepared_record.owner_name, &zone.name)?;
-                if let Some(t) = t {
-                    normalize_dur += t.elapsed();
-                }
 
                 let records_at_name = records_by_name.entry(owner_name.clone()).or_default();
 
                 // Fixed at write time: a later zone TTL change will not move it.
                 let ttl = prepared_record.ttl.unwrap_or(zone.default_ttl);
 
-                let t = timing_enabled.then(Instant::now);
                 validate_record_add_constraints_normalized(
                     records_at_name,
                     &owner_name,
@@ -316,9 +302,6 @@ impl RecordService {
                     prepared_record.priority,
                     None,
                 )?;
-                if let Some(t) = t {
-                    validate_dur += t.elapsed();
-                }
 
                 let record = Record {
                     id: 0,
@@ -333,8 +316,7 @@ impl RecordService {
                 records_at_name.push(record.clone());
                 to_insert.push(record);
             }
-            timings.normalize_ms = duration_ms(normalize_dur);
-            timings.validate_ms = duration_ms(validate_dur);
+            timings.build_records_ms = elapsed_ms(t);
 
             if dry_run {
                 // Mirror `validate_delegations_tx` against the simulated final
@@ -406,7 +388,7 @@ impl RecordService {
         // normal (info-level) runs. NOTIFY is inline only in sync apply mode.
         log::debug!(
             "event=record_bulk_create_timing zone={} count={} prepare_ms={:.1} load_zone_ms={:.1} \
-             load_existing_ms={:.1} build_index_ms={:.1} normalize_ms={:.1} validate_ms={:.1} \
+             load_existing_ms={:.1} build_index_ms={:.1} build_records_ms={:.1} \
              db_write_ms={:.1} serial_ms={:.1} notify_ms={:.1} total_ms={:.1}",
             zone_name,
             created_records.len(),
@@ -414,8 +396,7 @@ impl RecordService {
             timings.load_zone_ms,
             timings.load_existing_ms,
             timings.build_index_ms,
-            timings.normalize_ms,
-            timings.validate_ms,
+            timings.build_records_ms,
             timings.db_write_ms,
             timings.serial_ms,
             notify_ms,

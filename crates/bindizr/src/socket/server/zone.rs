@@ -3,8 +3,7 @@ use bindizr_service::{
     error::ServiceError,
     record::RecordService,
     types::{
-        CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-        ZoneDetailResponse, ZoneResponse,
+        CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter, ZoneResponse,
     },
     zone::ZoneService,
 };
@@ -12,9 +11,9 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DiffZoneVersionsParams, ExportZoneFileParams, ImportZoneParams,
-        ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams, ZoneNameParams,
-        ZoneVersionParams,
+        DaemonResponse, DeleteZoneParams, DiffZoneVersionsParams, ExportZoneFileParams,
+        ImportZoneParams, ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams,
+        ZoneNameParams, ZoneVersionParams,
     },
 };
 
@@ -25,9 +24,8 @@ pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse,
     let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
-        data: to_response_data(ZoneDetailResponse {
+        data: to_response_data(ZoneResponse {
             zone: GetZoneResponse::from_zone(&zone),
-            records: vec![],
         })?,
     })
 }
@@ -42,7 +40,7 @@ pub(crate) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
 
     let response = ZoneService::list_by_filter(&Caller::Global, filter).await?;
     Ok(DaemonResponse {
-        message: format!("Found {} zone(s)", response.items.len()),
+        message: "Zones retrieved successfully".to_string(),
         data: to_response_data(response)?,
     })
 }
@@ -51,12 +49,14 @@ pub(crate) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
 pub(crate) async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let request: CreateZoneRequest = parse_params(data)?;
 
-    let zone = ZoneService::create(&Caller::Global, &request).await?;
+    let response = ZoneService::create(&Caller::Global, &request).await?;
     Ok(DaemonResponse {
-        message: "Zone created successfully".to_string(),
-        data: to_response_data(ZoneResponse {
-            zone: GetZoneResponse::from_zone(&zone),
-        })?,
+        message: if response.dry_run {
+            "Zone would be created".to_string()
+        } else {
+            "Zone created successfully".to_string()
+        },
+        data: to_response_data(response)?,
     })
 }
 
@@ -64,12 +64,14 @@ pub(crate) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
 pub(crate) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateZoneParams = parse_params(data)?;
 
-    let zone = ZoneService::update(&Caller::Global, &params.zone_name, &params.request).await?;
+    let response = ZoneService::update(&Caller::Global, &params.zone_name, &params.request).await?;
     Ok(DaemonResponse {
-        message: "Zone updated successfully".to_string(),
-        data: to_response_data(ZoneResponse {
-            zone: GetZoneResponse::from_zone(&zone),
-        })?,
+        message: if response.dry_run {
+            "Zone would be updated".to_string()
+        } else {
+            "Zone updated successfully".to_string()
+        },
+        data: to_response_data(response)?,
     })
 }
 
@@ -122,7 +124,7 @@ pub(crate) async fn list_zone_versions(
     .await?;
 
     Ok(DaemonResponse {
-        message: format!("Found {} version(s)", response.items.len()),
+        message: "Versions retrieved successfully".to_string(),
         data: to_response_data(response)?,
     })
 }
@@ -227,11 +229,18 @@ pub(crate) async fn get_zone_status(
 
 /// Delete the requested zone.
 pub(crate) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: DeleteZoneParams = parse_params(data)?;
 
-    ZoneService::delete(&Caller::Global, &params.name).await?;
+    let response = ZoneService::delete(&Caller::Global, &params.name, params.dry_run).await?;
     Ok(DaemonResponse {
-        message: format!("Zone '{}' deleted successfully", params.name),
-        data: serde_json::Value::Null,
+        message: if response.dry_run {
+            format!(
+                "Zone '{}' would be deleted with {} record(s) and {} version(s)",
+                params.name, response.records, response.versions
+            )
+        } else {
+            format!("Zone '{}' deleted successfully", params.name)
+        },
+        data: to_response_data(response)?,
     })
 }

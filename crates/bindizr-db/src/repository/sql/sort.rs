@@ -101,12 +101,12 @@ impl std::str::FromStr for RecordSort {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "name" => Ok(RecordSort::Name),
-            "record_type" => Ok(RecordSort::RecordType),
+            "type" => Ok(RecordSort::RecordType),
             "ttl" => Ok(RecordSort::Ttl),
             "priority" => Ok(RecordSort::Priority),
             "created_at" => Ok(RecordSort::CreatedAt),
             other => Err(format!(
-                "unknown sort field '{other}': expected name, record_type, ttl, priority, or \
+                "unknown sort field '{other}': expected name, type, ttl, priority, or \
                  created_at"
             )),
         }

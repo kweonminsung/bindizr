@@ -59,17 +59,17 @@ fn write<'a>(name: &'a str, record_type: Option<&'a RecordType>) -> RecordWrite<
     }
 }
 
-/// Verify that `require_global` rejects scoped tokens.
+/// Verify that `authorize_global` rejects scoped tokens.
 #[test]
-fn require_global_rejects_scoped_tokens() {
-    assert!(Caller::Global.require_global("create zones").is_ok());
+fn authorize_global_rejects_scoped_tokens() {
+    assert!(Caller::Global.authorize_global("create zones").is_ok());
 
     let scoped = Caller::Token {
         id: 3,
         name: "scoped".into(),
         grants: Arc::from(vec![]),
     };
-    let err = scoped.require_global("create zones").unwrap_err();
+    let err = scoped.authorize_global("create zones").unwrap_err();
     assert_eq!(err.code, ErrorCode::Forbidden);
     assert!(err.message.contains("create zones"));
 }
@@ -188,28 +188,28 @@ fn record_visible_survives_a_read_only_grant() {
     ));
 }
 
-/// Verify that `ensure_zone_unrestricted` rejects a scoped grant.
+/// Verify that `authorize_zone_unrestricted` rejects a scoped grant.
 #[test]
-fn ensure_zone_unrestricted_rejects_a_scoped_grant() {
+fn authorize_zone_unrestricted_rejects_a_scoped_grant() {
     assert!(
         Caller::Global
-            .ensure_zone_unrestricted(&test_zone())
+            .authorize_zone_unrestricted(&test_zone())
             .is_ok()
     );
     assert!(
         token(vec![grant("*", "*")])
-            .ensure_zone_unrestricted(&test_zone())
+            .authorize_zone_unrestricted(&test_zone())
             .is_ok()
     );
 
     let err = token(vec![grant("*.dyn", "*")])
-        .ensure_zone_unrestricted(&test_zone())
+        .authorize_zone_unrestricted(&test_zone())
         .unwrap_err();
     assert_eq!(err.code, ErrorCode::Forbidden);
 
     // A zone with no grant at all keeps reading as absent.
     let err = token(vec![])
-        .ensure_zone_unrestricted(&test_zone())
+        .authorize_zone_unrestricted(&test_zone())
         .unwrap_err();
     assert_eq!(err.code, ErrorCode::ZoneNotFound);
 }

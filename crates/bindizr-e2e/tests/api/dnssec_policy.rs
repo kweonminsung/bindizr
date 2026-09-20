@@ -82,7 +82,7 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(policy["algorithm"], "ed25519");
 
     // A refresh window at least as long as the validity would re-sign on
-    // every maintenance pass.
+    // every scheduler pass.
     let (status, body) = app
         .send_request(
             Method::PUT,
@@ -309,7 +309,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|record| record["record_type"].as_str().unwrap().to_string())
+            .map(|record| record["type"].as_str().unwrap().to_string())
             .filter(|record_type| record_type.starts_with("NSEC"))
             .collect();
         types.sort();

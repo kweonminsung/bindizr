@@ -123,4 +123,22 @@ impl TokenGrantRepository for PostgresTokenGrantRepository {
 
         Ok(())
     }
+
+    /// Delete every grant a token holds in one zone, returning how many rows went.
+    async fn delete_by_token_id_and_zone_id(
+        &self,
+        api_token_id: i32,
+        zone_id: i32,
+    ) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let result =
+            sqlx::query("DELETE FROM token_grants WHERE api_token_id = $1 AND zone_id = $2")
+                .bind(api_token_id)
+                .bind(zone_id)
+                .execute(&mut *conn)
+                .await?;
+
+        Ok(result.rows_affected())
+    }
 }

@@ -28,7 +28,7 @@ external_dns_enabled = true
 zones must already exist — ExternalDNS never creates or deletes zones:
 
 ```bash
-$ bindizr token create --name external-dns
+$ bindizr token create external-dns
 $ bindizr token grant external-dns example.com
 $ kubectl -n external-dns create secret generic bindizr-external-dns \
     --from-literal=api-token=<token>
@@ -78,7 +78,15 @@ spec:
                   key: api-token
           ports:
             - containerPort: 8080 # /healthz and /metrics; 8888 stays pod-local
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
 ```
+
+`/healthz` asks bindizr with the adapter's own token, so a token that was
+rotated away or never granted a zone turns the sidecar unready instead of
+leaving it green while every sync fails.
 
 **4. Annotate a resource** and the record appears in bindizr:
 
@@ -114,8 +122,8 @@ metadata:
 | `--timeout-secs` | `BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS` | `8` (keep under external-dns's 10s webhook write timeout) |
 | `--log-level` | `BINDIZR_EXTERNAL_DNS_LOG_LEVEL` | `info` |
 
-The health listener serves `GET /healthz` (also checks bindizr reachability)
-and `GET /metrics` (`bindizr_external_dns_requests_total`,
+The health listener serves `GET /healthz` (bindizr answers and accepts this
+token) and `GET /metrics` (`bindizr_external_dns_requests_total`,
 `bindizr_external_dns_request_duration_seconds`).
 
 ### Running standalone
@@ -137,5 +145,5 @@ recommended default.
 | `404 No zone is authoritative for '<name>'` | Either no zone covers the name, or the zone that does is not granted to the token; the two read alike so a token cannot probe for zones. Create the zone if it is missing (ExternalDNS never creates zones), otherwise grant it: `bindizr token grant <TOKEN_NAME> <zone>` |
 | `502` from the adapter | Bindizr unreachable or 5xx; external-dns retries automatically |
 | `503 no manageable names` at startup | The token has no writable zone grants (or no zones exist yet). Grant one: `bindizr token grant <TOKEN_NAME> <zone>`; negotiation recovers on its own |
-| `502` although the records were applied | With `notify_mode = "sync"`, NOTIFY retries to an unreachable secondary can outlast the adapter's timeout after the change already committed. Set `[dns] notify_mode = "async"` or raise `--timeout-secs`; the retried sync is a no-op |
+| `502` although the records were applied | With `dns.notify.batch_ms = 0`, NOTIFY retries to an unreachable secondary can outlast the adapter's timeout after the change already committed. Set a `dns.notify.batch_ms` window so the write is answered at commit, or raise `--timeout-secs`; the retried sync is a no-op |
 | external-dns exits over a content-type error | The webhook URL does not point at the adapter |

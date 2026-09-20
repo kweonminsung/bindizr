@@ -1,18 +1,20 @@
 use crate::config::{
-    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogLevel, resolve_config_path_with_env,
+    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogFormat, LogLevel,
+    resolve_config_path_with_env,
 };
 
 /// Deviations from the base config TOML; the default renders a minimal valid
 /// sqlite config.
 struct TestConfigToml {
     api_listen_addr: &'static str,
-    require_authentication: bool,
+    authentication_required: bool,
     database_type: &'static str,
     /// Include the `[database.mysql]` / `[database.postgresql]` sections.
     unselected_databases: bool,
     secondary_addrs: &'static str,
-    /// Extra `[dns]` lines (newline-separated, no trailing newline).
-    dns_notify: &'static str,
+    /// Extra lines after the `[dns]` keys (newline-separated, no trailing
+    /// newline); a `[dns.*]` sub-table header may open one there.
+    dns_extra: &'static str,
     api_listen_port: u16,
     dns_listen_port: u16,
 }
@@ -22,11 +24,11 @@ impl Default for TestConfigToml {
     fn default() -> Self {
         Self {
             api_listen_addr: "127.0.0.1",
-            require_authentication: false,
+            authentication_required: false,
             database_type: "sqlite",
             unselected_databases: true,
             secondary_addrs: "",
-            dns_notify: "",
+            dns_extra: "",
             api_listen_port: 3000,
             dns_listen_port: 53,
         }
@@ -37,7 +39,7 @@ impl TestConfigToml {
     /// Render the configuration fixture as TOML.
     fn render(&self) -> String {
         let unselected_databases = if self.unselected_databases {
-            "\n[database.mysql]\nserver_url = \"\"\n\n[database.postgresql]\nserver_url = \"\"\n"
+            "\n[database.mysql]\nurl = \"\"\n\n[database.postgresql]\nurl = \"\"\n"
         } else {
             ""
         };
@@ -46,7 +48,7 @@ impl TestConfigToml {
 [api]
 listen_addr = "{api_listen_addr}"
 listen_port = {api_listen_port}
-require_authentication = {require_authentication}
+authentication_required = {authentication_required}
 
 [database]
 type = "{database_type}"
@@ -58,15 +60,15 @@ file_path = "file::memory:?cache=shared"
 listen_addr = "127.0.0.1"
 listen_port = {dns_listen_port}
 secondary_addrs = "{secondary_addrs}"
-{dns_notify}
+{dns_extra}
 [logging]
-log_level = "debug"
+level = "debug"
 "#,
             api_listen_addr = self.api_listen_addr,
-            require_authentication = self.require_authentication,
+            authentication_required = self.authentication_required,
             database_type = self.database_type,
             secondary_addrs = self.secondary_addrs,
-            dns_notify = self.dns_notify,
+            dns_extra = self.dns_extra,
             api_listen_port = self.api_listen_port,
             dns_listen_port = self.dns_listen_port,
         )
@@ -83,7 +85,7 @@ fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
 fn from_toml_accepts_valid_config() {
     let parsed = parse_config(&TestConfigToml {
         secondary_addrs: "127.0.0.1:53",
-        dns_notify: "notify_after_update = false\nnotify_on_startup = true\nnotify_retries = 4\nnotify_timeout_secs = 9\nnsupdate_allow_unsigned = true",
+        dns_extra: "nsupdate_tsig_required = false\n\n[dns.notify]\nafter_update = false\non_startup = true\nretries = 4\ntimeout_secs = 9",
         ..Default::default()
     })
     .unwrap();
@@ -95,11 +97,11 @@ fn from_toml_accepts_valid_config() {
         DatabaseType::Sqlite
     ));
     assert_eq!(parsed.api.listen_port, 3000);
-    assert!(!parsed.dns.notify_after_update);
-    assert!(parsed.dns.notify_on_startup);
-    assert_eq!(parsed.dns.notify_retries, 4);
-    assert_eq!(parsed.dns.notify_timeout_secs, 9);
-    assert!(parsed.dns.nsupdate_allow_unsigned);
+    assert!(!parsed.dns.notify.after_update);
+    assert!(parsed.dns.notify.on_startup);
+    assert_eq!(parsed.dns.notify.retries, 4);
+    assert_eq!(parsed.dns.notify.timeout_secs, 9);
+    assert!(!parsed.dns.nsupdate_tsig_required);
 }
 
 /// Verify that `from_toml` defaults missing optional fields.
@@ -109,13 +111,47 @@ fn from_toml_defaults_missing_optional_fields() {
 
     assert!(parsed.api.metrics_enabled);
     assert!(!parsed.api.external_dns_enabled);
-    assert!(parsed.dns.notify_after_update);
-    assert!(!parsed.dns.notify_on_startup);
-    assert_eq!(parsed.dns.notify_retries, 3);
-    assert_eq!(parsed.dns.notify_timeout_secs, 3);
-    assert!(!parsed.dns.nsupdate_allow_unsigned);
-    assert_eq!(parsed.dns.journal_retention_days, 365);
-    assert_eq!(parsed.dns.maintenance_interval_secs, 3600);
+    assert!(parsed.dns.notify.after_update);
+    assert!(!parsed.dns.notify.on_startup);
+    // 0 keeps NOTIFY ahead of the write's answer; only a window queues it.
+    assert_eq!(parsed.dns.notify.batch_ms, 0);
+    assert_eq!(parsed.dns.notify.retries, 3);
+    assert_eq!(parsed.dns.notify.timeout_secs, 3);
+    assert!(parsed.dns.transfer_cache.enabled);
+    assert_eq!(parsed.dns.transfer_cache.max_records, 500_000);
+    assert!(parsed.dns.nsupdate_tsig_required);
+    assert_eq!(parsed.dns.zone_history_retention_days, 365);
+    assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
+    assert_eq!(parsed.logging.format, LogFormat::Text);
+}
+
+/// Verify that `from_toml` defaults the fields of a sub-table left empty.
+#[test]
+fn from_toml_defaults_fields_of_an_empty_sub_table() {
+    // The sample file keeps every sub-table header and comments out the
+    // keys, so a header with nothing under it must read as the defaults.
+    let parsed = parse_config(&TestConfigToml {
+        dns_extra: "[dns.notify]\n\n[dns.transfer_cache]\nmax_records = 10",
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert_eq!(parsed.dns.notify, Default::default());
+    assert!(parsed.dns.transfer_cache.enabled);
+    assert_eq!(parsed.dns.transfer_cache.max_records, 10);
+}
+
+/// Verify that `from_toml` rejects a key it does not know.
+#[test]
+fn from_toml_rejects_an_unknown_key() {
+    // A mistyped key would otherwise be dropped and the default applied.
+    let err = parse_config(&TestConfigToml {
+        dns_extra: "listen_prot = 5300",
+        ..Default::default()
+    })
+    .unwrap_err();
+
+    assert!(err.contains("unknown field `listen_prot`"), "{}", err);
 }
 
 /// Verify that `from_toml` defaults unselected database sections.
@@ -131,8 +167,8 @@ fn from_toml_defaults_unselected_database_sections() {
         parsed.database.sqlite.file_path,
         "file::memory:?cache=shared"
     );
-    assert_eq!(parsed.database.mysql.server_url, "");
-    assert_eq!(parsed.database.postgresql.server_url, "");
+    assert_eq!(parsed.database.mysql.url, "");
+    assert_eq!(parsed.database.postgresql.url, "");
 }
 
 /// Verify that `from_toml` rejects invalid listen addr.
@@ -156,14 +192,14 @@ fn from_toml_rejects_empty_selected_database_url() {
     })
     .unwrap_err();
 
-    assert!(err.contains("database.mysql.server_url must not be empty"));
+    assert!(err.contains("database.mysql.url must not be empty"));
 }
 
 /// Verify that `apply_env_overrides` replaces config values before validation.
 #[test]
 fn apply_env_overrides_replaces_config_values_before_validation() {
     let mut overridden = parse_config(&TestConfigToml {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .unwrap();
@@ -171,30 +207,34 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     overridden
         .apply_env_overrides(|name| match name {
             "BINDIZR_API_LISTEN_ADDR" => Some("0.0.0.0".to_string()),
-            "BINDIZR_API_PORT" => Some("8000".to_string()),
-            "BINDIZR_API_REQUIRE_AUTHENTICATION" => Some("false".to_string()),
+            "BINDIZR_API_LISTEN_PORT" => Some("8000".to_string()),
+            "BINDIZR_API_AUTHENTICATION_REQUIRED" => Some("false".to_string()),
             "BINDIZR_API_METRICS_ENABLED" => Some("false".to_string()),
             "BINDIZR_API_EXTERNAL_DNS_ENABLED" => Some("true".to_string()),
             "BINDIZR_DATABASE_TYPE" => Some("mysql".to_string()),
             "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
             "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
-            "BINDIZR_DNS_PORT" => Some("5353".to_string()),
-            "BINDIZR_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
-            "BINDIZR_NSUPDATE_ALLOW_UNSIGNED" => Some("true".to_string()),
-            "BINDIZR_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
-            "BINDIZR_NOTIFY_ON_STARTUP" => Some("true".to_string()),
-            "BINDIZR_NOTIFY_RETRIES" => Some("7".to_string()),
-            "BINDIZR_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
-            "BINDIZR_JOURNAL_RETENTION_DAYS" => Some("0".to_string()),
-            "BINDIZR_MAINTENANCE_INTERVAL_SECS" => Some("0".to_string()),
-            "BINDIZR_LOG_LEVEL" => Some("info".to_string()),
+            "BINDIZR_DNS_LISTEN_PORT" => Some("5353".to_string()),
+            "BINDIZR_DNS_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
+            "BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED" => Some("false".to_string()),
+            "BINDIZR_DNS_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
+            "BINDIZR_DNS_NOTIFY_ON_STARTUP" => Some("true".to_string()),
+            "BINDIZR_DNS_NOTIFY_BATCH_MS" => Some("50".to_string()),
+            "BINDIZR_DNS_NOTIFY_RETRIES" => Some("7".to_string()),
+            "BINDIZR_DNS_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
+            "BINDIZR_DNS_TRANSFER_CACHE_ENABLED" => Some("false".to_string()),
+            "BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS" => Some("0".to_string()),
+            "BINDIZR_DNS_SCHEDULER_INTERVAL_SECS" => Some("0".to_string()),
+            "BINDIZR_DNS_ZONE_DEFAULTS_TTL" => Some("600".to_string()),
+            "BINDIZR_LOGGING_LEVEL" => Some("info".to_string()),
+            "BINDIZR_LOGGING_FORMAT" => Some("json".to_string()),
             _ => None,
         })
         .unwrap();
 
     assert_eq!(overridden.api.listen_addr.to_string(), "0.0.0.0");
     assert_eq!(overridden.api.listen_port, 8000);
-    assert!(!overridden.api.require_authentication);
+    assert!(!overridden.api.authentication_required);
     assert!(!overridden.api.metrics_enabled);
     assert!(overridden.api.external_dns_enabled);
     assert!(matches!(
@@ -202,7 +242,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         DatabaseType::Mysql
     ));
     assert_eq!(
-        overridden.database.mysql.server_url,
+        overridden.database.mysql.url,
         "mysql://user:p#ss&word@mysql:3306/bindizr"
     );
     assert_eq!(overridden.dns.listen_addr.to_string(), "127.0.0.2");
@@ -211,15 +251,19 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         overridden.dns.secondary_addrs,
         "192.0.2.10:53,192.0.2.11:53"
     );
-    assert!(overridden.dns.nsupdate_allow_unsigned);
-    assert!(!overridden.dns.notify_after_update);
-    assert!(overridden.dns.notify_on_startup);
-    assert_eq!(overridden.dns.notify_retries, 7);
-    assert_eq!(overridden.dns.notify_timeout_secs, 11);
-    assert_eq!(overridden.dns.journal_retention_days, 0);
+    assert!(!overridden.dns.nsupdate_tsig_required);
+    assert!(!overridden.dns.notify.after_update);
+    assert!(overridden.dns.notify.on_startup);
+    assert_eq!(overridden.dns.notify.batch_ms, 50);
+    assert_eq!(overridden.dns.notify.retries, 7);
+    assert_eq!(overridden.dns.notify.timeout_secs, 11);
+    assert!(!overridden.dns.transfer_cache.enabled);
+    assert_eq!(overridden.dns.zone_history_retention_days, 0);
     // 0 is the off switch, not a rejected value.
-    assert_eq!(overridden.dns.maintenance_interval_secs, 0);
-    assert!(matches!(overridden.logging.log_level, LogLevel::Info));
+    assert_eq!(overridden.dns.scheduler_interval_secs, 0);
+    assert_eq!(overridden.dns.zone_defaults.ttl, 600);
+    assert!(matches!(overridden.logging.level, LogLevel::Info));
+    assert_eq!(overridden.logging.format, LogFormat::Json);
 }
 
 /// Verify that `apply_env_overrides` rejects invalid values.
@@ -233,12 +277,12 @@ fn apply_env_overrides_rejects_invalid_values() {
 
     let err = overridden
         .apply_env_overrides(|name| match name {
-            "BINDIZR_API_PORT" => Some("not-a-port".to_string()),
+            "BINDIZR_API_LISTEN_PORT" => Some("not-a-port".to_string()),
             _ => None,
         })
         .unwrap_err();
 
-    assert!(err.contains("Invalid BINDIZR_API_PORT environment variable"));
+    assert!(err.contains("Invalid BINDIZR_API_LISTEN_PORT environment variable"));
 }
 
 /// Verify that `resolve_config_path` prefers argument then env then default.
@@ -316,7 +360,7 @@ fn from_toml_rejects_an_unparseable_secondary_address() {
 /// Verify that a reload refuses what a running process cannot adopt.
 #[test]
 fn a_reload_refuses_what_a_running_process_cannot_adopt() {
-    // require_authentication is in the list because the router is built
+    // authentication_required is in the list because the router is built
     // once: a section is fixed whole, not field by field.
     let current = parse_config(&TestConfigToml::default()).unwrap();
 
@@ -325,7 +369,7 @@ fn a_reload_refuses_what_a_running_process_cannot_adopt() {
     assert_eq!(current.fixed_settings_changed(&api_moved), ["api"]);
 
     let mut auth_toggled = current.clone();
-    auth_toggled.api.require_authentication = !current.api.require_authentication;
+    auth_toggled.api.authentication_required = !current.api.authentication_required;
     assert_eq!(current.fixed_settings_changed(&auth_toggled), ["api"]);
 
     let mut db_moved = current.clone();
@@ -347,7 +391,7 @@ fn a_reload_takes_the_settings_read_per_use() {
 
     let mut next = current.clone();
     next.dns.secondary_addrs = "192.0.2.1:53".to_string();
-    next.logging.log_level = LogLevel::Warn;
+    next.logging.level = LogLevel::Warn;
 
     assert!(current.fixed_settings_changed(&next).is_empty());
     assert_eq!(current.changed_settings(&next), ["dns", "logging"]);

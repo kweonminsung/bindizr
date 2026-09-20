@@ -43,8 +43,9 @@ $ curl -H "Authorization: Bearer $TOKEN" \
     'http://localhost:3000/tokens?limit=20&offset=40'
 ```
 
-The CLI reads whole tables instead: it talks to the daemon over its local
-socket, which applies no page limit.
+The CLI takes the same `--limit` and `--offset`, and pages at 1000 rather
+than 50 when neither is given. A table that did not fit says so on its last
+line: `Showing 1000 of 2001; page the rest with --limit and --offset.`
 
 `/zones` and `/records` also take `sort` and `order`. The row id follows the
 sort column, so paging stays stable even where the column has ties.
@@ -55,13 +56,27 @@ reaches them by name only, since their type is stored as a number and their
 rdata as wire bytes, a `priority` filter leaves them out because none carries
 one, and a `value` filter is refused rather than answered without them.
 
+## Rejected requests
+
+An unknown query parameter or body field is refused rather than ignored, so
+`DELETE /records?type=A` answers 400 naming `type` instead of quietly deleting
+every type at that name.
+
+A zone import that fails validation answers 422 and applies nothing, carrying
+the same body as a successful one so the per-record errors survive the status.
+Every other failure answers the usual `{"error", "code"}` envelope.
+
 ## Authentication
 
 Bootstrap the first token with the CLI:
 
 ```bash
-$ bindizr token create --name admin --global
+$ bindizr token create admin --global
 ```
+
+Every token is created through the CLI or through `POST /tokens` with a token
+that already exists, so the first one is always `bindizr token create` on the
+daemon host — in the container or pod when that is where bindizr runs.
 
 Tokens are scoped by default and act only on the zones they are
 [granted](../cli/tokens.md); `--global` covers every zone and the
@@ -81,7 +96,7 @@ the grants it holds; both work for scoped tokens too. The CLI stays the
 recovery path: if every global token is lost, create a new one on the daemon
 host.
 
-Setting `api.require_authentication = false` disables the check entirely — only
+Setting `api.authentication_required = false` disables the check entirely — only
 sensible when Bindizr is bound to a loopback address or an otherwise trusted
 network.
 

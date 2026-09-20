@@ -9,17 +9,40 @@ mod server;
 mod upstream;
 mod wire;
 
-use std::sync::Arc;
+use std::{future::IntoFuture, sync::Arc, time::Duration};
 
-use bindizr_core::logger;
+use bindizr_core::{errln, logger};
 use clap::Parser;
+use tokio::{
+    signal::unix::{SignalKind, signal},
+    sync::watch,
+    task::{JoinError, JoinHandle, JoinSet},
+};
+
+/// How long in-flight requests get once the adapter is asked to stop, bounded
+/// well inside the grace period Kubernetes allows before SIGKILL.
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The configuration is unusable, so a restart changes nothing — the code
+/// bindizr's own CLI uses for that class.
+const EXIT_CONFIG: i32 = 6;
+
+/// The listeners the adapter supervises, each yielding the name it is reported
+/// under and how it ended. `join_next` removes a finished task, so the select
+/// and the drain never await the same handle twice.
+type Servers = JoinSet<(&'static str, Result<std::io::Result<()>, JoinError>)>;
+
+/// Put a spawned listener under the adapter's supervision.
+fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<std::io::Result<()>>) {
+    servers.spawn(async move { (name, task.await) });
+}
 
 /// Parse arguments, start both listeners, and serve until interrupted.
 pub async fn execute() {
     let cli = config::Cli::parse();
     let adapter_config = config::AdapterConfig::from_cli(cli).unwrap_or_else(|e| {
-        eprintln!("{}", e);
-        std::process::exit(1);
+        errln!("Error: {}", e);
+        std::process::exit(EXIT_CONFIG);
     });
 
     logger::initialize_with_level(adapter_config.log_level);
@@ -38,8 +61,8 @@ pub async fn execute() {
         adapter_config.ca_file.as_deref(),
     )
     .unwrap_or_else(|e| {
-        eprintln!("{}", e);
-        std::process::exit(1);
+        errln!("Error: {}", e);
+        std::process::exit(EXIT_CONFIG);
     });
     let state = Arc::new(server::AppState { upstream });
 
@@ -71,23 +94,79 @@ pub async fn execute() {
         adapter_config.health_listen_addr
     );
 
-    let webhook = axum::serve(webhook_listener, server::webhook_router(state.clone()));
-    let health = axum::serve(health_listener, server::health_router(state));
+    // Both servers watch one flag, so a signal or a failed server stops both.
+    let (stop, _) = watch::channel(false);
+    let webhook = axum::serve(webhook_listener, server::webhook_router(state.clone()))
+        .with_graceful_shutdown(wait_for_stop(stop.subscribe()));
+    let health = axum::serve(health_listener, server::health_router(state))
+        .with_graceful_shutdown(wait_for_stop(stop.subscribe()));
+    let mut servers = Servers::new();
+    watch(&mut servers, "Webhook", tokio::spawn(webhook.into_future()));
+    watch(&mut servers, "Health", tokio::spawn(health.into_future()));
 
-    // Stop the adapter when either server exits or an interrupt arrives.
-    tokio::select! {
-        result = webhook => {
-            if let Err(e) = result {
-                log::error!("Webhook server error: {:?}", e);
-            }
+    let failed = tokio::select! {
+        Some(Ok((name, result))) = servers.join_next() => {
+            log_server_stopped(name, result);
+            true
         }
-        result = health => {
-            if let Err(e) = result {
-                log::error!("Health server error: {:?}", e);
-            }
-        }
-        _ = tokio::signal::ctrl_c() => {
+        () = wait_for_signal() => {
             log::info!("Shutting down");
+            false
         }
+    };
+
+    // Answer what external-dns already sent before going: a severed reply
+    // leaves it unable to tell an applied change from a dropped one.
+    let _ = stop.send(true);
+    let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
+        while servers.join_next().await.is_some() {}
+    })
+    .await;
+    if drained.is_err() {
+        log::warn!(
+            "In-flight requests did not finish within {}s; exiting anyway",
+            DRAIN_TIMEOUT.as_secs()
+        );
+    }
+
+    // A listener stopping on its own is a failure, so a supervisor set to
+    // restart only what failed brings the adapter back.
+    if failed {
+        std::process::exit(1);
+    }
+}
+
+/// Resolve once the adapter is asked to stop.
+async fn wait_for_stop(mut stop: watch::Receiver<bool>) {
+    while !*stop.borrow_and_update() {
+        if stop.changed().await.is_err() {
+            break;
+        }
+    }
+}
+
+/// Resolve on SIGTERM or SIGINT. PID 1 discards a signal it has no handler
+/// for, and the adapter is PID 1 of its container, so without this a stopping
+/// pod waits out its whole grace period.
+async fn wait_for_signal() {
+    let mut terminate = match signal(SignalKind::terminate()) {
+        Ok(terminate) => terminate,
+        Err(e) => {
+            log::error!("Failed to listen for SIGTERM: {}", e);
+            return;
+        }
+    };
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = terminate.recv() => {}
+    }
+}
+
+/// Log the server that stopped on its own, which stops the adapter with it.
+fn log_server_stopped(name: &str, result: Result<std::io::Result<()>, tokio::task::JoinError>) {
+    match result {
+        Ok(Ok(())) => log::error!("{} server stopped", name),
+        Ok(Err(e)) => log::error!("{} server error: {:?}", name, e),
+        Err(e) => log::error!("{} server task failed: {}", name, e),
     }
 }

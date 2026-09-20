@@ -26,6 +26,7 @@ static CONFIG_PATH: OnceLock<String> = OnceLock::new();
 
 /// Top-level bindizr configuration.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BindizrConfig {
     pub api: ApiConfig,
     pub database: DatabaseConfig,
@@ -35,10 +36,13 @@ pub struct BindizrConfig {
 
 /// HTTP API server settings.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
-    pub require_authentication: bool,
+    /// Require an API token on every request that touches zone data.
+    #[serde(default = "default_authentication_required")]
+    pub authentication_required: bool,
     /// Serve Prometheus metrics at GET /metrics (unauthenticated, aggregate counts only).
     #[serde(default = "default_metrics_enabled")]
     pub metrics_enabled: bool,
@@ -59,6 +63,16 @@ pub struct ApiConfig {
     pub tls_key_file: Option<String>,
 }
 
+/// Return the default nsupdate TSIG requirement.
+fn default_nsupdate_tsig_required() -> bool {
+    true
+}
+
+/// Return the default API authentication setting.
+fn default_authentication_required() -> bool {
+    true
+}
+
 /// Return the default metrics enabled setting.
 fn default_metrics_enabled() -> bool {
     true
@@ -66,6 +80,7 @@ fn default_metrics_enabled() -> bool {
 
 /// Database backend selection and per-backend connection settings.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
     #[serde(rename = "type")]
     pub database_type: DatabaseType,
@@ -114,70 +129,113 @@ impl std::str::FromStr for DatabaseType {
 
 /// MySQL connection settings.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct MysqlConfig {
-    pub server_url: String,
+    pub url: String,
 }
 
 /// SQLite connection settings.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SqliteConfig {
     pub file_path: String,
 }
 
 /// PostgreSQL connection settings.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostgresqlConfig {
-    pub server_url: String,
+    pub url: String,
 }
 
-/// DNS server and NOTIFY/nsupdate settings.
+/// DNS server settings; NOTIFY and the transfer cache sit in sub-tables.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DnsConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
     pub secondary_addrs: String,
-    #[serde(default = "default_notify_after_update")]
-    pub notify_after_update: bool,
-    /// `sync` sends NOTIFY inline; `async` hands it to a background worker.
-    #[serde(default = "default_notify_mode")]
-    pub notify_mode: NotifyMode,
-    /// Window (ms) over which async-mode NOTIFYs are collapsed to one per zone.
-    #[serde(default = "default_notify_batch_ms")]
-    pub notify_batch_ms: u64,
-    /// Cache each zone's records by serial so repeated AXFRs skip the DB read.
-    #[serde(default = "default_zone_cache")]
-    pub zone_cache: bool,
-    /// Records the zone cache may hold before evicting the least recently
-    /// used zone. A zone larger than this is served uncached.
-    #[serde(default = "default_zone_cache_max_records")]
-    pub zone_cache_max_records: u64,
+    /// Days of zone history to keep (0 = unlimited): the IXFR journal and the
+    /// versions rollback can reach. A secondary asking for a pruned serial
+    /// falls back to AXFR.
+    #[serde(default = "default_zone_history_retention_days")]
+    pub zone_history_retention_days: u32,
+    /// Seconds between passes of the background scheduler: signature renewal,
+    /// key rollover steps, and zone history pruning. `0` runs no pass on this
+    /// instance; every instance runs the whole pass, so all but one may turn
+    /// it off, but not all.
+    #[serde(default = "default_scheduler_interval_secs")]
+    pub scheduler_interval_secs: u64,
+    /// Require a TSIG signature on RFC 2136 updates.
+    #[serde(default = "default_nsupdate_tsig_required")]
+    pub nsupdate_tsig_required: bool,
     #[serde(default)]
-    pub notify_on_startup: bool,
-    #[serde(default = "default_notify_retries")]
-    pub notify_retries: u32,
-    #[serde(default = "default_notify_timeout_secs")]
-    pub notify_timeout_secs: u64,
-    /// Accept unsigned nsupdate requests. Not recommended in production;
-    /// signed requests are always verified.
+    pub notify: NotifyConfig,
     #[serde(default)]
-    pub nsupdate_allow_unsigned: bool,
-    /// Days of IXFR journal and SOA history to keep (0 = unlimited). Requests
-    /// for pruned serials fall back to AXFR; rollback reaches only kept serials.
-    #[serde(default = "default_journal_retention_days")]
-    pub journal_retention_days: u32,
-    /// Seconds between maintenance passes: signature refresh, journal
-    /// retention, and the rollover steps that advance on a deadline or the
-    /// parent's DS. `0` runs no pass on this instance — every instance runs
-    /// the whole pass, so all but one may turn it off, but not all.
-    #[serde(default = "default_maintenance_interval_secs")]
-    pub maintenance_interval_secs: u64,
+    pub transfer_cache: TransferCacheConfig,
     #[serde(default)]
     pub zone_defaults: ZoneDefaultsConfig,
+}
+
+/// When NOTIFY reaches the secondaries.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotifyConfig {
+    #[serde(default = "default_notify_after_update")]
+    pub after_update: bool,
+    #[serde(default)]
+    pub on_startup: bool,
+    /// Window (ms) that collects one zone's changes into one NOTIFY, sent
+    /// from a queue after the write is answered. `0` sends a NOTIFY for
+    /// every change before the write is answered.
+    #[serde(default)]
+    pub batch_ms: u64,
+    #[serde(default = "default_notify_retries")]
+    pub retries: u32,
+    #[serde(default = "default_notify_timeout_secs")]
+    pub timeout_secs: u64,
+}
+
+impl Default for NotifyConfig {
+    /// Build the default NOTIFY settings.
+    fn default() -> Self {
+        Self {
+            after_update: default_notify_after_update(),
+            on_startup: false,
+            batch_ms: 0,
+            retries: default_notify_retries(),
+            timeout_secs: default_notify_timeout_secs(),
+        }
+    }
+}
+
+/// The cache of each zone's transfer content, keyed by serial, so repeated
+/// AXFRs skip the database read.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransferCacheConfig {
+    #[serde(default = "default_transfer_cache_enabled")]
+    pub enabled: bool,
+    /// Records the cache may hold before evicting the least recently used
+    /// zone. A zone larger than this is served uncached.
+    #[serde(default = "default_transfer_cache_max_records")]
+    pub max_records: u64,
+}
+
+impl Default for TransferCacheConfig {
+    /// Build the default transfer cache settings.
+    fn default() -> Self {
+        Self {
+            enabled: default_transfer_cache_enabled(),
+            max_records: default_transfer_cache_max_records(),
+        }
+    }
 }
 
 /// What a zone takes when its creation request leaves a field out. Only the
 /// creation reads these: afterwards the values are the zone's own columns.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ZoneDefaultsConfig {
     #[serde(default = "default_zone_ttl")]
     pub ttl: i32,
@@ -232,14 +290,14 @@ fn default_zone_minimum_ttl() -> i32 {
     86_400
 }
 
-/// Return the default journal retention days setting.
-fn default_journal_retention_days() -> u32 {
+/// Return the default zone history retention days setting.
+fn default_zone_history_retention_days() -> u32 {
     365
 }
 
-/// Return the default maintenance interval setting: plenty next to the
+/// Return the default scheduler interval setting: plenty next to the
 /// day-scale windows a pass enforces.
-fn default_maintenance_interval_secs() -> u64 {
+fn default_scheduler_interval_secs() -> u64 {
     3_600
 }
 
@@ -248,58 +306,14 @@ fn default_notify_after_update() -> bool {
     true
 }
 
-/// Return the default notify mode setting.
-fn default_notify_mode() -> NotifyMode {
-    NotifyMode::Sync
-}
-
-/// Return the default notify batch ms setting.
-fn default_notify_batch_ms() -> u64 {
-    50
-}
-
-/// Return the default zone cache setting.
-fn default_zone_cache() -> bool {
+/// Return the default transfer cache enabled setting.
+fn default_transfer_cache_enabled() -> bool {
     true
 }
 
-/// Return the default zone cache max records setting.
-fn default_zone_cache_max_records() -> u64 {
+/// Return the default transfer cache max records setting.
+fn default_transfer_cache_max_records() -> u64 {
     500_000
-}
-
-/// When NOTIFY dispatch runs relative to the write request.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum NotifyMode {
-    /// Inline: the write returns only after NOTIFY is sent.
-    Sync,
-    /// Queued to a background worker: the write returns at commit.
-    Async,
-}
-
-impl fmt::Display for NotifyMode {
-    /// Write the notify mode in its display form.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let value = match self {
-            NotifyMode::Sync => "sync",
-            NotifyMode::Async => "async",
-        };
-        write!(f, "{}", value)
-    }
-}
-
-impl std::str::FromStr for NotifyMode {
-    type Err = String;
-
-    /// Parse a notify mode from its text representation.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "sync" => Ok(NotifyMode::Sync),
-            "async" => Ok(NotifyMode::Async),
-            _ => Err("expected sync or async".to_string()),
-        }
-    }
 }
 
 /// Return the default notify retries setting.
@@ -314,8 +328,45 @@ fn default_notify_timeout_secs() -> u64 {
 
 /// Logging settings.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct LoggingConfig {
-    pub log_level: LogLevel,
+    pub level: LogLevel,
+    /// `json` writes one object per line for log pipelines.
+    #[serde(default)]
+    pub format: LogFormat,
+}
+
+/// The shape of each log line.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogFormat {
+    #[default]
+    Text,
+    Json,
+}
+
+impl fmt::Display for LogFormat {
+    /// Write the log format in its display form.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            LogFormat::Text => "text",
+            LogFormat::Json => "json",
+        };
+        write!(f, "{}", value)
+    }
+}
+
+impl std::str::FromStr for LogFormat {
+    type Err = String;
+
+    /// Parse a log format from its text representation.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "text" => Ok(LogFormat::Text),
+            "json" => Ok(LogFormat::Json),
+            _ => Err("expected text or json".to_string()),
+        }
+    }
 }
 
 /// Console log verbosity levels.
@@ -360,22 +411,21 @@ impl std::str::FromStr for LogLevel {
 }
 
 /// Load configuration from `conf_file_path` (or the default path / env var),
-/// apply environment overrides, and store it as the global config.
-pub fn initialize(conf_file_path: Option<&str>) -> Result<(), String> {
+/// apply environment overrides, and store it as the global config, returning
+/// the file it came from: the logger is installed from what this loads, so
+/// only the caller can report it in the configured format.
+pub fn initialize(conf_file_path: Option<&str>) -> Result<String, String> {
     let conf_file_path = resolve_config_path(conf_file_path);
-
-    // Predates the logger, which is installed from the config this loads.
-    eprintln!("Initializing configuration from file: {}", conf_file_path);
 
     let bindizr_config = load_config_file(&conf_file_path)?;
     let mut stored = BINDIZR_CONFIG.write().map_err(|_| POISONED)?;
     if stored.is_some() {
         return Err("Bindizr configuration is already initialized".to_string());
     }
-    let _ = CONFIG_PATH.set(conf_file_path);
+    let _ = CONFIG_PATH.set(conf_file_path.clone());
     *stored = Some(Arc::new(bindizr_config));
 
-    Ok(())
+    Ok(conf_file_path)
 }
 
 const POISONED: &str = "Bindizr configuration lock is poisoned";
@@ -437,7 +487,10 @@ pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
             conf_file_path, e
         )
     })?;
+    // A parse or validation failure names no file, and the path may be a
+    // default the caller never spelled.
     BindizrConfig::from_toml(&text, |name| env::var(name).ok())
+        .map_err(|e| format!("{} (in {})", e, conf_file_path))
 }
 
 impl BindizrConfig {
@@ -506,12 +559,11 @@ impl DatabaseConfig {
     /// Validate the database configuration fields.
     fn validate(&self) -> Result<(), String> {
         match self.database_type {
-            DatabaseType::Mysql if self.mysql.server_url.trim().is_empty() => Err(
-                "database.mysql.server_url must not be empty when database.type is mysql"
-                    .to_string(),
-            ),
-            DatabaseType::Postgresql if self.postgresql.server_url.trim().is_empty() => Err(
-                "database.postgresql.server_url must not be empty when database.type is postgresql"
+            DatabaseType::Mysql if self.mysql.url.trim().is_empty() => {
+                Err("database.mysql.url must not be empty when database.type is mysql".to_string())
+            }
+            DatabaseType::Postgresql if self.postgresql.url.trim().is_empty() => Err(
+                "database.postgresql.url must not be empty when database.type is postgresql"
                     .to_string(),
             ),
             DatabaseType::Sqlite if self.sqlite.file_path.trim().is_empty() => Err(
@@ -553,10 +605,10 @@ impl DnsConfig {
         if self.listen_port == 0 {
             return Err("dns.listen_port must not be 0".to_string());
         }
-        // Zero would admit no zone at all, which zone_cache = false already says.
-        if self.zone_cache && self.zone_cache_max_records == 0 {
+        // Zero would admit no zone at all, which enabled = false already says.
+        if self.transfer_cache.enabled && self.transfer_cache.max_records == 0 {
             return Err(
-                "dns.zone_cache_max_records must not be 0; set dns.zone_cache = false to disable the cache"
+                "dns.transfer_cache.max_records must not be 0; set dns.transfer_cache.enabled = false to disable the cache"
                     .to_string(),
             );
         }

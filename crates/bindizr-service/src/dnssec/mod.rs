@@ -1,27 +1,27 @@
 //! DNSSEC zone signing: key management and rollover, the signed-view hook
-//! every zone-data mutation runs before its serial bump, and the maintenance
-//! scheduler. Whether a zone is signed is carried by its key rows, the
-//! parameters it signs under by the policy `zones.dnssec_policy_id` names;
+//! every zone-data mutation runs before its serial bump, and the scheduler.
+//! Whether a zone is signed is carried by its key rows, the parameters it
+//! signs under by the policy `zones.dnssec_policy_id` names;
 //! every transition journals its delta so secondaries follow via IXFR.
 //!
 //! Promotion waits for the publish TTL and, for SEP keys, parent DS confirmation
-//! by maintenance or `ds-seen`. Retired keys remain until their cache deadlines.
+//! by the scheduler or `ds-seen`. Retired keys remain until their cache deadlines.
 //! A parent probe runs inside the transaction that acts on its answer, under
 //! the zone lock, so the answer is about the keys and parent it then moves;
-//! `notify_timeout_secs` bounds each exchange.
+//! `dns.notify.timeout_secs` bounds each exchange.
 
 mod delegation;
 mod keys;
 mod lifecycle;
-mod maintenance;
 mod parent_ns_addrs;
 mod rollover;
+mod scheduler;
 mod status;
 mod withdraw;
 
 use bindizr_core::dns::dnssec::SignedViewParams;
 use chrono::{Duration, Utc};
-pub use maintenance::init_maintenance_scheduler;
+pub use scheduler::initialize_scheduler;
 
 use crate::{
     database::repository::LockLevel,

@@ -72,6 +72,17 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          # Without this the Service lists the pod through mysql_install_db,
+          # and bindizr crash-loops until the first boot finishes.
+          readinessProbe:
+            exec:
+              command:
+                - mysqladmin
+                - ping
+                - -h
+                - 127.0.0.1
+            periodSeconds: 10
+            failureThreshold: 6
           {{- with .Values.mysql.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

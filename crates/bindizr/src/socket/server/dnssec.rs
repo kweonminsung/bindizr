@@ -1,5 +1,8 @@
 use bindizr_service::{
-    authorization::Caller, dnssec::DnssecService, error::ServiceError, types::DnssecStatusResponse,
+    authorization::Caller,
+    dnssec::DnssecService,
+    error::ServiceError,
+    types::{DnssecStatusResponse, MessageResponse},
 };
 
 use crate::socket::{
@@ -39,9 +42,10 @@ pub(crate) async fn disable_dnssec(
 
     DnssecService::disable(&Caller::Global, &params.zone_name, params.skip_ds_check).await?;
 
+    let message = "DNSSEC disabled successfully".to_string();
     Ok(DaemonResponse {
-        message: "DNSSEC disabled successfully".to_string(),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 
@@ -65,9 +69,10 @@ pub(crate) async fn sign_zone(data: &serde_json::Value) -> Result<DaemonResponse
 
     DnssecService::sign(&Caller::Global, &params.name).await?;
 
+    let message = "Zone signed successfully".to_string();
     Ok(DaemonResponse {
-        message: "Zone signed successfully".to_string(),
-        data: serde_json::Value::Null,
+        message: message.clone(),
+        data: to_response_data(MessageResponse { message })?,
     })
 }
 
@@ -77,7 +82,7 @@ pub(crate) async fn start_dnssec_rollover(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: RolloverZoneDnssecParams = parse_params(data)?;
 
-    let status = DnssecService::rollover_start(
+    let status = DnssecService::start_rollover(
         &Caller::Global,
         &params.zone_name,
         params.request.role.as_deref(),
@@ -96,7 +101,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DsSeenZoneDnssecParams = parse_params(data)?;
 
-    let status = DnssecService::rollover_ds_seen(
+    let status = DnssecService::advance_rollover(
         &Caller::Global,
         &params.zone_name,
         params.skip_ds_check,
@@ -179,7 +184,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneNameParams = parse_params(data)?;
 
-    let status = DnssecService::withdraw_cancel(&Caller::Global, &params.name).await?;
+    let status = DnssecService::cancel_withdrawal(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
         message: "DS withdrawal cancelled successfully".to_string(),

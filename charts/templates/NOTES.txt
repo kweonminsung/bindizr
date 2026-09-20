@@ -7,8 +7,17 @@ Authoritative DNS service:
   {{ include "bindizr-chart.fullname" . }}-bind9:{{ .Values.bind9.service.dnsPort }} ({{ .Values.bind9.service.type }})
 
 BIND9 replicas are exposed for authoritative DNS traffic.
+{{- if .Values.bindizr.api.authenticationRequired }}
+
+The API answers 401 until a token exists. Create the first one with:
+
+  kubectl exec -n {{ .Release.Namespace }} deploy/{{ include "bindizr-chart.fullname" . }} -c bindizr -- \
+    bindizr token create admin --global
+
+Send it as `Authorization: Bearer <token>`; the secret is shown once.
+{{- end }}
 
 Before production use:
   - Set bindizr.image.repository and bindizr.image.tag if you need a different Bindizr image.
   - BIND9 accepts NOTIFY from any source by default through allow-notify { any; }.
-  - Set bindizr.database.existingSecret or bindizr.database.serverUrl when using mysql/postgresql.
+  - Set bindizr.database.existingSecret or bindizr.database.url when using mysql/postgresql.

@@ -75,6 +75,17 @@ impl RepositoryService {
         }
     }
 
+    /// Roll back however the work ended: a preview writes only to plan against.
+    pub(crate) async fn discard_tx<T, E: From<ServiceError>>(
+        tx: RepositoryTx<'static>,
+        apply_result: Result<T, E>,
+    ) -> Result<T, E> {
+        if let Err(e) = tx.rollback().await {
+            log::error!("Failed to rollback transaction: {}", e);
+        }
+        apply_result
+    }
+
     /// Find a zone by name.
     pub(crate) async fn get_zone_by_name(name: &str) -> Result<Option<Zone>, ServiceError> {
         get_zone_repository()
@@ -145,7 +156,7 @@ impl RepositoryService {
     }
 
     /// Probe the zones table to check database connectivity.
-    pub(crate) async fn ping_zones() -> Result<(), ServiceError> {
+    pub(crate) async fn ping() -> Result<(), ServiceError> {
         get_zone_repository()
             .ping()
             .await
@@ -225,7 +236,7 @@ impl RepositoryService {
     }
 
     /// Find an owner with a DS record but no NS delegation in the current transaction.
-    pub(crate) async fn get_record_ds_name_without_ns_tx(
+    pub(crate) async fn get_ds_name_without_ns_tx(
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
     ) -> Result<Option<String>, ServiceError> {
@@ -246,17 +257,6 @@ impl RepositoryService {
             .list_by_names_tx(tx, zone_id, names, lock_level)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to load records: {}", e)))
-    }
-
-    /// Insert a record in the current transaction.
-    pub(crate) async fn create_record_tx(
-        tx: &mut RepositoryTx<'_>,
-        record: Record,
-    ) -> Result<Record, ServiceError> {
-        get_record_repository()
-            .create_tx(tx, record)
-            .await
-            .map_err(|e| ServiceError::internal(format!("failed to create record: {}", e)))
     }
 
     /// Insert a batch of records in the current transaction.
@@ -1016,6 +1016,17 @@ impl RepositoryService {
             .map_err(|e| ServiceError::internal(format!("failed to delete TSIG grant: {}", e)))
     }
 
+    /// Delete every grant a TSIG key holds in a zone, returning how many went.
+    pub(crate) async fn delete_tsig_grants_by_key_id_and_zone_id(
+        tsig_key_id: i32,
+        zone_id: i32,
+    ) -> Result<u64, ServiceError> {
+        get_tsig_grant_repository()
+            .delete_by_key_id_and_zone_id(tsig_key_id, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete TSIG grants: {}", e)))
+    }
+
     /// Insert a token grant.
     pub(crate) async fn create_token_grant(grant: TokenGrant) -> Result<TokenGrant, ServiceError> {
         get_token_grant_repository()
@@ -1079,6 +1090,17 @@ impl RepositoryService {
             .delete(id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to delete token grant: {}", e)))
+    }
+
+    /// Delete every grant a token holds in a zone, returning how many went.
+    pub(crate) async fn delete_token_grants_by_token_id_and_zone_id(
+        api_token_id: i32,
+        zone_id: i32,
+    ) -> Result<u64, ServiceError> {
+        get_token_grant_repository()
+            .delete_by_token_id_and_zone_id(api_token_id, zone_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete token grants: {}", e)))
     }
 
     /// Insert an API token.

@@ -41,7 +41,7 @@ pub(crate) use record::build_display_value;
 pub use record::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
     DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, RecordItem, RecordResponse,
-    RecordValueRequest, UpdateRecordRequest,
+    RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
 };
 pub use token::{CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenResponse};
 pub use token_grant::{CreateTokenGrantRequest, GetTokenGrantResponse, TokenGrantResponse};
@@ -55,7 +55,7 @@ pub use version::{
     ZoneVersionResponse,
 };
 pub use zone::{
-    CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-    SecondaryStatusResponse, UpdateZoneRequest, ZoneDetailResponse, ZoneResponse,
-    ZoneStatusResponse, build_notify_message,
+    CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
+    SecondaryStatusResponse, UpdateZoneRequest, ZoneResponse, ZoneStatusResponse,
+    ZoneWriteResponse, build_notify_message,
 };

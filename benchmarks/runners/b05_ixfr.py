@@ -24,8 +24,8 @@ CHANGE_SIZES = [1, 10, 100, 1000, 10000]
 BASELINE = 1000
 
 
-def _serial(zone, host, port):
-    """Read a zone's SOA serial from the transfer endpoint."""
+def _query_serial(zone, host, port):
+    """Query a zone's SOA serial from the transfer endpoint."""
     ok, _, out = dnsutil.dig(zone, "SOA", host, port)
     if ok and len(out.split()) >= 3:
         try:
@@ -80,7 +80,7 @@ async def run(adapter, cfg, ctx) -> list:
         # serial has no delta history behind it and forces a full AXFR.
         base_serial = None
         for _ in range(10):
-            base_serial = await loop.run_in_executor(None, _serial, zone, xe.host, xe.port)
+            base_serial = await loop.run_in_executor(None, _query_serial, zone, xe.host, xe.port)
             if base_serial is not None:
                 break
             await asyncio.sleep(0.5)
@@ -103,7 +103,7 @@ async def run(adapter, cfg, ctx) -> list:
         propagated = False
         prev = None
         while time.monotonic() < deadline:
-            s = await loop.run_in_executor(None, _serial, zone, xe.host, xe.port)
+            s = await loop.run_in_executor(None, _query_serial, zone, xe.host, xe.port)
             _, count, _ = await loop.run_in_executor(
                 None, dnsutil.axfr, zone, xe.host, xe.port, 300)
             if s is not None and s > base_serial and (s, count) == prev:

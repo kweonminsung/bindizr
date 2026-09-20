@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, render_labels};
+use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, labels_to_presentation};
 use bindizr_db::repository::{DnssecRecordFilter, RecordFilter};
 
 use super::{ListedRecord, RecordService};
@@ -209,7 +209,7 @@ fn build_record_name_filter(name: Option<String>, zone_name: Option<&ZoneName>) 
             // absolute one against the FQDN the query builds.
             return Some(match decode_name_labels(trimmed) {
                 Ok((labels, absolute)) => {
-                    let rendered = render_labels(&labels);
+                    let rendered = labels_to_presentation(&labels);
                     if absolute {
                         format!("{rendered}.")
                     } else {

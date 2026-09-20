@@ -8,13 +8,13 @@ use crate::common::{TestApp, TestAppOptions};
 #[serial_test::serial(bindizr_e2e)]
 async fn tokens_are_created_listed_and_deleted_over_http() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
-    // Bootstrap over the socket; everything after this is HTTP.
-    let (bootstrap_name, bootstrap_token) = app.create_api_token().await;
-    app.set_auth_token(bootstrap_token.clone());
+    // The first token comes over the socket; everything after this is HTTP.
+    let (first_token_name, first_token) = app.create_api_token().await;
+    app.set_auth_token(first_token.clone());
 
     // The zone-name prefix keeps token names unique in compose mode.
     let scoped_name = app.zone_name("http-scoped");
@@ -54,7 +54,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    app.set_auth_token(bootstrap_token.clone());
+    app.set_auth_token(first_token.clone());
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -77,11 +77,11 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    app.set_auth_token(bootstrap_token.clone());
+    app.set_auth_token(first_token.clone());
     let (status, body) = app.send_request(Method::GET, "/tokens", None).await;
     assert_eq!(status, StatusCode::OK);
     let tokens = body["items"].as_array().unwrap();
-    for name in [&bootstrap_name, &scoped_name, &global_name] {
+    for name in [&first_token_name, &scoped_name, &global_name] {
         assert!(
             tokens.iter().any(|token| token["name"] == json!(name)),
             "{name} missing from {body}"
@@ -141,7 +141,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     let (status, _) = app.send_request(Method::GET, "/zones", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-    app.set_auth_token(bootstrap_token);
+    app.set_auth_token(first_token);
     let (status, _) = app
         .send_request(Method::DELETE, &format!("/tokens/{global_name}"), None)
         .await;
@@ -153,7 +153,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_cannot_manage_tokens() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -186,7 +186,7 @@ async fn scoped_token_cannot_manage_tokens() {
 #[serial_test::serial(bindizr_e2e)]
 async fn tokens_self_describes_the_bearer() {
     let mut app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: true,
+        authentication_required: true,
         ..Default::default()
     })
     .await;
@@ -211,7 +211,7 @@ async fn tokens_self_describes_the_bearer() {
 #[serial_test::serial(bindizr_e2e)]
 async fn tokens_self_needs_a_token_even_with_authentication_off() {
     let app = TestApp::start_with_options(TestAppOptions {
-        require_authentication: false,
+        authentication_required: false,
         ..Default::default()
     })
     .await;

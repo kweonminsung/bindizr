@@ -1,11 +1,10 @@
 use std::collections::HashSet;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_db::repository::LockLevel;
 
 use super::{
     RecordService, matches_record,
-    validation::{normalize_record_owner_name, parse_record_type, validate_delete_constraints},
+    validation::{normalize_record_owner_name, parse_record_type},
 };
 use crate::{
     authorization::{Caller, RecordWrite},
@@ -21,20 +20,16 @@ use crate::{
     },
 };
 
-/// Identity of the deleted record, carried out of the transaction for logging.
-struct DeletedRecord {
-    zone_name: ZoneName,
-    record_name: OwnerName,
-    record_type: String,
-    record_value: String,
-    record_id: i32,
-}
-
 impl RecordService {
     /// Delete a record by id, bumping the zone serial and recording a DEL
     /// change for IXFR. `caller` is authorized inside the delete transaction,
-    /// so a concurrent rename cannot outrun the check.
-    pub async fn delete(caller: &Caller, record_id: i32) -> Result<(), ServiceError> {
+    /// so a concurrent rename cannot outrun the check. A dry run answers with
+    /// the same preview the filtered delete builds and writes nothing.
+    pub async fn delete(
+        caller: &Caller,
+        record_id: i32,
+        dry_run: bool,
+    ) -> Result<DeleteRecordsResponse, ServiceError> {
         // Resolve zone_id with a non-locking read so the tx locks zone before
         // record (the create/bulk/import order); the reverse can deadlock.
         let zone_id = match RepositoryService::get_record(record_id).await {
@@ -50,7 +45,7 @@ impl RecordService {
 
         let mut tx = RepositoryService::begin_tx("Failed to delete record").await?;
 
-        let apply_result: Result<DeletedRecord, ServiceError> = async {
+        let apply_result: Result<DeleteRecordsResponse, ServiceError> = async {
             let zone = match RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive)
                 .await
             {
@@ -101,9 +96,41 @@ impl RecordService {
                 )
                 .await?;
 
-            let new_serial = generate_serial(Some(zone.serial))?;
+            // The owner's rows frame the diff, as they do for every change.
+            let records_at_name = RepositoryService::list_records_by_name_tx(
+                &mut tx,
+                zone.id,
+                &existing_record.name,
+                LockLevel::Exclusive,
+            )
+            .await?;
+            let before: Vec<ReconstructedRecord> = records_at_name
+                .iter()
+                .cloned()
+                .map(ReconstructedRecord::from)
+                .collect();
+            let after: Vec<ReconstructedRecord> = records_at_name
+                .iter()
+                .filter(|record| record.id != existing_record.id)
+                .cloned()
+                .map(ReconstructedRecord::from)
+                .collect();
 
-            validate_delete_constraints(&zone, std::slice::from_ref(&existing_record))?;
+            let response = DeleteRecordsResponse {
+                applied: !dry_run,
+                dry_run,
+                deleted: 1,
+                records: vec![GetRecordResponse::from_record_and_zone_name(
+                    &existing_record,
+                    &zone.name,
+                )],
+                diff: build_record_diff(&zone, &before, &after),
+            };
+            if dry_run {
+                return Ok(response);
+            }
+
+            let new_serial = generate_serial(Some(zone.serial))?;
 
             Self::delete_with_changes_tx(
                 &mut tx,
@@ -118,42 +145,31 @@ impl RecordService {
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
                 .await?;
 
-            Ok(DeletedRecord {
-                zone_name: zone.name,
-                record_name: existing_record.name,
-                record_type: existing_record.record_type.to_string(),
-                record_value: existing_record.value,
-                record_id: existing_record.id,
-            })
+            log::info!(
+                "event=record_delete zone={} name={} type={} value={} record_id={}",
+                zone.name,
+                existing_record.name,
+                existing_record.record_type,
+                existing_record.value,
+                existing_record.id
+            );
+            Ok(response)
         }
         .await;
 
-        let DeletedRecord {
-            zone_name,
-            record_name,
-            record_type,
-            record_value,
-            record_id,
-        } = RepositoryService::finish_tx(tx, apply_result, "Failed to delete record").await?;
+        let response =
+            RepositoryService::finish_tx(tx, apply_result, "Failed to delete record").await?;
 
-        log::info!(
-            "event=record_delete zone={} name={} type={} value={} record_id={}",
-            zone_name,
-            record_name,
-            record_type,
-            record_value,
-            record_id
-        );
-
-        if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
+        // Announce only a committed deletion, never a preview.
+        if response.applied
+            && let Some(zone_name) = response.records.first().map(|record| &record.zone_name)
+            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
+        {
             log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
-        Ok(())
+        Ok(response)
     }
-}
-
-impl RecordService {
     /// Delete every record matching `filter` in one transaction. Row by row
     /// would bump the serial once each and serve the half-removed set in
     /// between.
@@ -172,6 +188,15 @@ impl RecordService {
                 "value narrows a record within one type, so record_type is required with it",
             ));
         }
+        // Encoded the way a create encodes it, so a value finds the row it made.
+        let match_value = match (&filter.value, record_type.as_ref()) {
+            (Some(value), Some(record_type)) => Some(
+                value
+                    .to_encoded_value(record_type, filter.priority)
+                    .map_err(ServiceError::invalid_input)?,
+            ),
+            _ => None,
+        };
 
         let mut tx = RepositoryService::begin_tx("Failed to delete records").await?;
 
@@ -199,36 +224,35 @@ impl RecordService {
                 )
                 .await?;
 
-            let existing = RepositoryService::list_records_by_name_tx(
+            let records_at_name = RepositoryService::list_records_by_name_tx(
                 &mut tx,
                 zone.id,
                 &owner,
                 LockLevel::Exclusive,
             )
             .await?;
-            let matched: Vec<Record> = existing
+            let matched: Vec<Record> = records_at_name
                 .iter()
                 .filter(|record| {
                     matches_record(
                         record,
                         record_type.as_ref(),
-                        filter.value.as_deref(),
+                        match_value.as_deref(),
                         filter.priority,
                     )
                 })
                 .cloned()
                 .collect();
-            validate_delete_constraints(&zone, &matched)?;
 
             // Build the preview from the validated rows; dry runs and empty matches
             // return it before any records or serials are written.
-            let before: Vec<ReconstructedRecord> = existing
+            let before: Vec<ReconstructedRecord> = records_at_name
                 .iter()
                 .cloned()
                 .map(ReconstructedRecord::from)
                 .collect();
             let removed: HashSet<i32> = matched.iter().map(|record| record.id).collect();
-            let after: Vec<ReconstructedRecord> = existing
+            let after: Vec<ReconstructedRecord> = records_at_name
                 .iter()
                 .filter(|record| !removed.contains(&record.id))
                 .cloned()
@@ -236,7 +260,7 @@ impl RecordService {
                 .collect();
 
             let response = DeleteRecordsResponse {
-                applied: !filter.dry_run && !matched.is_empty(),
+                applied: !filter.dry_run,
                 dry_run: filter.dry_run,
                 deleted: matched.len(),
                 records: matched
@@ -245,7 +269,7 @@ impl RecordService {
                     .collect(),
                 diff: build_record_diff(&zone, &before, &after),
             };
-            if !response.applied {
+            if !response.applied || matched.is_empty() {
                 return Ok(response);
             }
 
@@ -272,8 +296,10 @@ impl RecordService {
             response.applied
         );
 
-        // Announce only a committed deletion, never a preview or an empty match.
+        // Announce only a committed deletion, never a preview or an empty
+        // match — which applies, but writes nothing and leaves the serial.
         if response.applied
+            && response.deleted > 0
             && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {
             log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);

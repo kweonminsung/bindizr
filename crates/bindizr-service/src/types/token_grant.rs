@@ -8,6 +8,7 @@ use crate::model::token_grant::TokenGrantWithNames;
 
 /// Request body for granting an API token record rights in a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateTokenGrantRequest {
     /// Name of an existing zone.
     #[schema(example = "example.com")]

@@ -11,11 +11,11 @@ use crate::{
     authorization::{Caller, RecordWrite},
     dnssec::DnssecService,
     error::ServiceError,
-    model::record::{Record, RecordWithZone},
+    model::record::Record,
     repository::RepositoryService,
     serial::generate_serial,
-    types::CreateRecordRequest,
-    zone::ZoneService,
+    types::{CreateRecordRequest, GetRecordResponse, RecordDiff, RecordWriteResponse},
+    zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
 };
 
 impl RecordService {
@@ -25,7 +25,7 @@ impl RecordService {
     pub async fn create(
         caller: &Caller,
         create_record_request: &CreateRecordRequest,
-    ) -> Result<RecordWithZone, ServiceError> {
+    ) -> Result<RecordWriteResponse, ServiceError> {
         let PreparedRecord {
             record_type,
             value: record_value,
@@ -94,6 +94,33 @@ impl RecordService {
                 None,
             )?;
 
+            // The owner's rows frame the diff, as they do for every change.
+            let before: Vec<ReconstructedRecord> = records_at_name
+                .iter()
+                .cloned()
+                .map(ReconstructedRecord::from)
+                .collect();
+            let candidate = Record {
+                id: 0,
+                name: owner_name,
+                record_type,
+                value: record_value,
+                ttl,
+                priority,
+                zone_id: zone.id,
+                created_at: Utc::now(),
+            };
+            let mut after = before.clone();
+            after.push(ReconstructedRecord::from(candidate.clone()));
+            let diff = build_record_diff(&zone, &before, &after);
+
+            // The record is validated and authorized, so a dry run stops here.
+            if create_record_request.dry_run {
+                return Ok::<(Record, ZoneName, RecordDiff), ServiceError>((
+                    candidate, zone.name, diff,
+                ));
+            }
+
             // Persist the validated record and its signed view as one journaled serial.
             let new_serial = generate_serial(Some(zone.serial))?;
 
@@ -101,16 +128,7 @@ impl RecordService {
                 &mut tx,
                 zone.id,
                 new_serial,
-                &[Record {
-                    id: 0,
-                    name: owner_name,
-                    record_type,
-                    value: record_value,
-                    ttl,
-                    priority,
-                    zone_id: zone.id,
-                    created_at: Utc::now(),
-                }],
+                std::slice::from_ref(&candidate),
             )
             .await?
             .pop()
@@ -124,15 +142,16 @@ impl RecordService {
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
                 .await?;
 
-            Ok::<(Record, ZoneName), ServiceError>((created_record, zone.name))
+            Ok::<(Record, ZoneName, RecordDiff), ServiceError>((created_record, zone.name, diff))
         }
         .await;
 
-        let (created_record, zone_name) =
+        let (created_record, zone_name, diff) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to create record").await?;
 
         log::info!(
-            "event=record_create zone={} name={} type={} ttl={} priority={} record_id={}",
+            "event=record_create dry_run={} zone={} name={} type={} ttl={} priority={} record_id={}",
+            create_record_request.dry_run,
             zone_name,
             create_record_request.name,
             create_record_request.record_type,
@@ -146,10 +165,17 @@ impl RecordService {
         );
 
         // Request secondary transfers only after the new record is committed.
-        if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await {
+        if !create_record_request.dry_run
+            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
+        {
             log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
         }
 
-        Ok(RecordWithZone::new(created_record, zone_name))
+        Ok(RecordWriteResponse {
+            applied: !create_record_request.dry_run,
+            dry_run: create_record_request.dry_run,
+            record: GetRecordResponse::from_record_and_zone_name(&created_record, &zone_name),
+            diff,
+        })
     }
 }

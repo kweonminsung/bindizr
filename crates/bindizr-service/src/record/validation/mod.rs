@@ -172,25 +172,8 @@ pub(crate) fn validate_record_name_in_zone(
     })
 }
 
-/// Reject deletions of the SOA record or the NS record referenced by `mname`.
-pub(crate) fn validate_delete_constraints(
-    zone: &Zone,
-    deleting_records: &[Record],
-) -> Result<(), ServiceError> {
-    for record in deleting_records {
-        if zone.mname_matches(&record.record_type, &record.name, &record.value) {
-            return Err(ServiceError::invalid_input(
-                "Cannot delete NS record referenced by zone mname".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
-}
-
 /// Validate an update whose new owner name is already normalized.
 pub(crate) fn validate_record_update_constraints_normalized(
-    zone: &Zone,
     records: &[Record],
     existing_record: &Record,
     updated_record: &Record,
@@ -203,27 +186,7 @@ pub(crate) fn validate_record_update_constraints_normalized(
         updated_record.ttl,
         updated_record.priority,
         Some(existing_record.id),
-    )?;
-
-    if zone.mname_matches(
-        &existing_record.record_type,
-        &existing_record.name,
-        &existing_record.value,
-    ) {
-        let still_primary = zone.mname_matches(
-            &updated_record.record_type,
-            &updated_record.name,
-            &updated_record.value,
-        );
-
-        if !still_primary {
-            return Err(ServiceError::invalid_input(
-                "Cannot modify the NS record referenced by zone mname".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
+    )
 }
 
 /// What an add resolves to against the records already in the zone.

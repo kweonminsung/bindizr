@@ -323,7 +323,11 @@ impl RecordType {
             RecordType::NAPTR => NaptrRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::TXT => Cow::Borrowed(value),
+            // Parsed like every other type, so the content a caller typed and
+            // the presentation form the row holds compare equal.
+            RecordType::TXT => TxtRecordValue::parse(value)
+                .map(|parsed| Cow::Owned(parsed.to_presentation()))
+                .unwrap_or(Cow::Borrowed(value)),
             RecordType::SRV => SrvRecordValue::parse(value, fallback_priority)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),

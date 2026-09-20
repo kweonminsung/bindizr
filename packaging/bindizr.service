@@ -5,15 +5,19 @@ After=network.target named.service
 [Service]
 Type=simple
 ExecStart=/usr/bin/bindizr start
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
-RestartPreventExitStatus=1
+# 6 is "the configuration file is unusable", the one failure a restart cannot
+# fix; systemd prints it as NOTCONFIGURED. Everything else, a database that is
+# not up yet included, is retried.
+RestartPreventExitStatus=6
 RestartSec=5
 TimeoutStopSec=30
 
 User=bindizr
 Group=bindizr
 
-# The DNS listener defaults to port 53; nothing else here needs privilege.
+# The DNS listener may be put on port 53; nothing else here needs privilege.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 

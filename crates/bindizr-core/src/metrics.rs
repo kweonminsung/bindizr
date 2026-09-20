@@ -34,7 +34,7 @@ pub struct Metrics {
     pub dnssec_keys_total: IntGaugeVec,
     pub dnssec_rrsigs_expiring_total: IntGauge,
     pub dnssec_rrsigs_expired_total: IntGauge,
-    dnssec_maintenance_runs_total: IntCounterVec,
+    dnssec_scheduler_runs_total: IntCounterVec,
     zone_cache_lookups_total: IntCounterVec,
     zone_cache_evictions_total: IntCounter,
     zone_cache_records: IntGauge,
@@ -234,15 +234,15 @@ impl Metrics {
         .expect("valid metric definition");
         register(&registry, &dnssec_rrsigs_expired_total);
 
-        let dnssec_maintenance_runs_total = IntCounterVec::new(
+        let dnssec_scheduler_runs_total = IntCounterVec::new(
             Opts::new(
-                "bindizr_dnssec_maintenance_runs_total",
-                "Hourly DNSSEC maintenance passes, by outcome.",
+                "bindizr_dnssec_scheduler_runs_total",
+                "Hourly DNSSEC scheduler passes, by outcome.",
             ),
             &["result"],
         )
         .expect("valid metric definition");
-        register(&registry, &dnssec_maintenance_runs_total);
+        register(&registry, &dnssec_scheduler_runs_total);
 
         let zone_cache_lookups_total = IntCounterVec::new(
             Opts::new(
@@ -258,14 +258,14 @@ impl Metrics {
         let zone_cache_evictions_total = IntCounter::new(
             "bindizr_zone_cache_evictions_total",
             "Zones dropped to make room; a rising count beside a low hit ratio \
-             means dns.zone_cache_max_records is too small for the working set.",
+             means dns.transfer_cache.max_records is too small for the working set.",
         )
         .expect("valid metric definition");
         register(&registry, &zone_cache_evictions_total);
 
         let zone_cache_records = IntGauge::new(
             "bindizr_zone_cache_records",
-            "Records the zone cache holds, against dns.zone_cache_max_records.",
+            "Records the zone cache holds, against dns.transfer_cache.max_records.",
         )
         .expect("valid metric definition");
         register(&registry, &zone_cache_records);
@@ -287,8 +287,8 @@ impl Metrics {
         for result in NotifyResult::ALL {
             notify_sent_total.with_label_values(&[result.label()]);
         }
-        for result in MaintenanceResult::ALL {
-            dnssec_maintenance_runs_total.with_label_values(&[result.label()]);
+        for result in SchedulerResult::ALL {
+            dnssec_scheduler_runs_total.with_label_values(&[result.label()]);
         }
         for table in ["journal", "version"] {
             pruned_rows_total.with_label_values(&[table]);
@@ -316,7 +316,7 @@ impl Metrics {
             dnssec_keys_total,
             dnssec_rrsigs_expiring_total,
             dnssec_rrsigs_expired_total,
-            dnssec_maintenance_runs_total,
+            dnssec_scheduler_runs_total,
             zone_cache_lookups_total,
             zone_cache_evictions_total,
             zone_cache_records,
@@ -506,17 +506,17 @@ pub fn track_serial_bump() {
     metrics().zone_serial_bumps_total.inc();
 }
 
-pub enum MaintenanceResult {
+pub enum SchedulerResult {
     Ok,
     Error,
     /// The pass unwound; the scheduler itself survived.
     Panic,
 }
 
-impl MaintenanceResult {
+impl SchedulerResult {
     const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::Panic];
 
-    /// The metric label value of this maintenance result.
+    /// The metric label value of this scheduler result.
     fn label(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
@@ -526,10 +526,10 @@ impl MaintenanceResult {
     }
 }
 
-/// Increment the counter for a DNSSEC maintenance pass result.
-pub fn track_dnssec_maintenance(result: MaintenanceResult) {
+/// Increment the counter for a DNSSEC scheduler pass result.
+pub fn track_dnssec_scheduler(result: SchedulerResult) {
     metrics()
-        .dnssec_maintenance_runs_total
+        .dnssec_scheduler_runs_total
         .with_label_values(&[result.label()])
         .inc();
 }

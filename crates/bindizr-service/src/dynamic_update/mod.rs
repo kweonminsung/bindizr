@@ -21,7 +21,7 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    record::{AddOutcome, RecordService, matches_record, validate_delete_constraints},
+    record::{AddOutcome, RecordService, matches_record},
     repository::RepositoryService,
     serial::generate_serial,
     tsig_key::grant::{authorize_prerequisite, authorize_update},
@@ -150,7 +150,7 @@ impl DynamicUpdateService {
         let mut tx = RepositoryService::begin_tx("failed to begin NSUPDATE transaction").await?;
 
         let apply_result: Result<(bool, Zone, i32), DynamicUpdateError> = async {
-            let zone = ZoneService::find_by_name_tx(
+            let zone = ZoneService::find_served_by_name_tx(
                 &mut tx,
                 update.zone_name.as_str(),
                 LockLevel::Exclusive,
@@ -208,7 +208,7 @@ impl DynamicUpdateService {
             );
 
             // Queue through the service like every other mutation path, so
-            // `dns.notify_mode` governs RFC 2136 writes too.
+            // `dns.notify.batch_ms` governs RFC 2136 writes too.
             if let Err(e) = crate::notify::send_notify_after_update(Some(zone.name.as_str())).await
             {
                 log::error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
@@ -408,9 +408,6 @@ async fn delete_matching_tx(
     if matched.is_empty() {
         return Ok(false);
     }
-
-    validate_delete_constraints(zone, &matched)
-        .map_err(|e| DynamicUpdateError::Refused(e.to_string()))?;
 
     RecordService::delete_with_changes_tx(tx, zone.id, new_serial, &matched).await?;
 

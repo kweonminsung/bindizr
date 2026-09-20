@@ -4,16 +4,10 @@ use bindizr_core::dns::{
 };
 use chrono::Utc;
 
-use super::{
-    normalize_record_owner_name, validate_delete_constraints,
-    validate_record_add_constraints_normalized,
-};
+use super::{normalize_record_owner_name, validate_record_add_constraints_normalized};
 use crate::{
     error::{ErrorCode, ServiceError},
-    model::{
-        record::{Record, RecordType},
-        zone::Zone,
-    },
+    model::record::{Record, RecordType},
 };
 
 /// TTL of every [`test_record`], so adds under test share their RRset's TTL
@@ -221,39 +215,6 @@ fn add_enforces_one_ttl_per_rrset() {
         None,
     );
     assert!(other_rrset.is_ok());
-}
-
-/// Verify that `validate_delete_constraints` protects the mname NS.
-#[test]
-fn validate_delete_constraints_protects_the_mname_ns() {
-    let zone = test_zone();
-
-    let mname = test_record(2, "", RecordType::NS, "ns1.example.com.", None);
-    assert!(validate_delete_constraints(&zone, &[mname]).is_err());
-
-    let secondary_ns = test_record(3, "", RecordType::NS, "ns2.example.com.", None);
-    assert!(validate_delete_constraints(&zone, &[secondary_ns]).is_ok());
-}
-
-/// Build a zone fixture for the test.
-fn test_zone() -> Zone {
-    Zone {
-        id: 1,
-        name: ZoneName::from_row("example.com"),
-        mname: "ns1.example.com".to_string(),
-        rname: "hostmaster@example.com".to_string(),
-        default_ttl: 3600,
-        serial: 2023010101,
-        refresh: 7200,
-        retry: 3600,
-        expire: 604800,
-        minimum_ttl: 86400,
-        dnssec_policy_id: None,
-        parent_ns_addrs: None,
-        enabled: true,
-        description: None,
-        created_at: Utc::now(),
-    }
 }
 
 /// Build a record fixture with the requested fields.
