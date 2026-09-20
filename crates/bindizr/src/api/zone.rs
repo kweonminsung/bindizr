@@ -347,6 +347,7 @@ pub(crate) async fn get_zone(
         request_body = CreateZoneRequest,
         responses(
             (status = 201, description = "DNS zone created successfully", body = ZoneWriteResponse),
+            (status = 200, description = "Dry run validated successfully, nothing applied", body = ZoneWriteResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "A global API token is required", body = ErrorResponse),
@@ -360,7 +361,13 @@ pub(crate) async fn create_zone(
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
     let response = ZoneService::create(&caller, &body).await?;
-    Ok((StatusCode::CREATED, Json(response)).into_response())
+    // 201 says a resource now exists; a preview created nothing.
+    let status = if response.applied {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    Ok((status, Json(response)).into_response())
 }
 
 /// Update an existing DNS zone.

@@ -172,9 +172,6 @@ fn print_config(config: &BindizrConfig) {
         "scheduler_interval_secs",
         config.dns.scheduler_interval_secs,
     );
-    outln!();
-
-    print_section("dns.nsupdate");
     print_value("nsupdate_tsig_required", config.dns.nsupdate_tsig_required);
     outln!();
 

@@ -647,6 +647,12 @@ paths:
               $ref: '#/components/schemas/CreateRecordRequest'
         required: true
       responses:
+        '200':
+          description: Dry run validated successfully, nothing applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordWriteResponse'
         '201':
           description: DNS record created successfully
           content:
@@ -1922,6 +1928,12 @@ paths:
               $ref: '#/components/schemas/CreateZoneRequest'
         required: true
       responses:
+        '200':
+          description: Dry run validated successfully, nothing applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZoneWriteResponse'
         '201':
           description: DNS zone created successfully
           content:

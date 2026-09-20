@@ -119,6 +119,7 @@ pub(crate) async fn get_record(
         request_body = CreateRecordRequest,
         responses(
             (status = 201, description = "DNS record created successfully", body = RecordWriteResponse),
+            (status = 200, description = "Dry run validated successfully, nothing applied", body = RecordWriteResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
             (status = 403, description = "The token's grants do not allow this record write", body = ErrorResponse),
@@ -133,7 +134,13 @@ pub(crate) async fn create_record(
     JsonBody(body): JsonBody<CreateRecordRequest>,
 ) -> Result<Response, ApiError> {
     let response = RecordService::create(&caller, &body).await?;
-    Ok((StatusCode::CREATED, Json(response)).into_response())
+    // 201 says a resource now exists; a preview created nothing.
+    let status = if response.applied {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    Ok((status, Json(response)).into_response())
 }
 
 /// Update an existing DNS record.
@@ -247,10 +254,11 @@ pub(crate) async fn create_records_bulk(
     let response =
         RecordService::create_bulk(&caller, &body.zone_name, &body.records, body.dry_run).await?;
 
-    let status = if body.dry_run {
-        StatusCode::OK
-    } else {
+    // 201 says a resource now exists; a preview created nothing.
+    let status = if response.applied {
         StatusCode::CREATED
+    } else {
+        StatusCode::OK
     };
     Ok((status, Json(response)).into_response())
 }
