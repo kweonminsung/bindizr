@@ -1,15 +1,10 @@
 //! The parent side of DNSSEC over the CLI: `dnssec set --parent-ns-addrs`,
 //! `check-ds`, and the DS gate on `disable`.
 
-use crate::common::{FakeParent, ServedDs, TestApp, assert_cli_failure_contains};
-
-/// Read a test zone's DNSSEC status through the CLI.
-async fn read_dnssec_status(app: &TestApp, zone_name: &str) -> serde_json::Value {
-    let status = app
-        .run_cli_success(&["dnssec", "status", zone_name, "--output", "json"])
-        .await;
-    serde_json::from_str(&status).expect("CLI did not return valid JSON")
-}
+use crate::{
+    cli::common::read_dnssec_status,
+    common::{FakeParent, ServedDs, TestApp, assert_cli_failure_contains},
+};
 
 /// Verify parent DS checks through the CLI.
 #[tokio::test]

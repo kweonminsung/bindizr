@@ -1,26 +1,79 @@
-use reqwest::{Method, StatusCode, header};
+use std::{
+    process::{Child, Command, Stdio},
+    time::Duration,
+};
+
+use reqwest::{Client, Method, StatusCode, header};
 use serde_json::{Value, json};
 
-use crate::common::{ExternalDnsAdapter, TestApp, TestAppOptions};
+use crate::common::{TestApp, TestAppOptions, reserve_tcp_port};
+
+/// A spawned bindizr-external-dns adapter process, killed on drop.
+struct ExternalDnsAdapter {
+    child: Child,
+    pub(crate) base_url: String,
+    /// The second listener, which serves `/healthz` and `/metrics`.
+    pub(crate) health_url: String,
+}
+
+impl ExternalDnsAdapter {
+    /// Spawn the adapter binary against `bindizr_url` on ephemeral localhost
+    /// ports and wait until its webhook listener answers.
+    async fn spawn(bindizr_url: &str, token: &str) -> Self {
+        let webhook_port = reserve_tcp_port();
+        let health_port = reserve_tcp_port();
+
+        let mut command = Command::new(env!("CARGO_BIN_EXE_bindizr-e2e-external-dns"));
+        command
+            .arg("--bindizr-url")
+            .arg(bindizr_url)
+            .arg("--listen-addr")
+            .arg(format!("127.0.0.1:{webhook_port}"))
+            .arg("--health-listen-addr")
+            .arg(format!("127.0.0.1:{health_port}"))
+            .arg("--log-level")
+            .arg("error")
+            .arg("--token")
+            .arg(token);
+
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to start bindizr-external-dns binary");
+
+        let base_url = format!("http://127.0.0.1:{webhook_port}");
+        let health_url = format!("http://127.0.0.1:{health_port}");
+        let client = Client::new();
+        for _ in 0..100 {
+            if let Some(status) = child.try_wait().expect("failed to check adapter status") {
+                panic!("bindizr-external-dns exited before it was ready: {status}");
+            }
+            // Any HTTP response means the webhook listener is up.
+            if client.get(&base_url).send().await.is_ok() {
+                return Self {
+                    child,
+                    base_url,
+                    health_url,
+                };
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        panic!("bindizr-external-dns did not become ready");
+    }
+}
+
+impl Drop for ExternalDnsAdapter {
+    /// Stop the external-dns adapter process when the test fixture is dropped.
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
 
 const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
-
-/// Create a zone fixture through the API.
-async fn create_zone(app: &TestApp, zone_name: &str) {
-    let (status, _) = app
-        .send_request(
-            Method::POST,
-            "/zones",
-            Some(json!({
-                "name": zone_name,
-                "mname": format!("ns1.{zone_name}"),
-                "rname": "admin@example.com",
-                "default_ttl": 3600,
-            })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-}
 
 /// Grant the test token access to a zone.
 async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
@@ -72,8 +125,8 @@ async fn external_dns_domain_listing_reflects_token_grants() {
 
     let granted_zone = app.zone_name("granted.com");
     let other_zone = app.zone_name("other.com");
-    create_zone(&app, &granted_zone).await;
-    create_zone(&app, &other_zone).await;
+    app.create_named_zone(&granted_zone).await;
+    app.create_named_zone(&other_zone).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     grant_zone(&app, &granted_zone, &scoped_name).await;
@@ -110,7 +163,7 @@ async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
     app.set_auth_token(global_token);
 
     let zone_name = app.zone_name("narrowed.com");
-    create_zone(&app, &zone_name).await;
+    app.create_named_zone(&zone_name).await;
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(&[
         "token",
@@ -168,7 +221,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
     })
     .await;
     let zone_name = app.zone_name("example.com");
-    create_zone(&app, &zone_name).await;
+    app.create_named_zone(&zone_name).await;
     let base_serial = app.read_zone_serial(&zone_name).await;
 
     let create = json!({
@@ -266,8 +319,8 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
 
     let granted_zone = app.zone_name("granted.com");
     let ungranted_zone = app.zone_name("blocked.com");
-    create_zone(&app, &granted_zone).await;
-    create_zone(&app, &ungranted_zone).await;
+    app.create_named_zone(&granted_zone).await;
+    app.create_named_zone(&ungranted_zone).await;
     let base_serial = app.read_zone_serial(&granted_zone).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
@@ -318,8 +371,8 @@ async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent(
 
     let parent_zone = app.zone_name("example.com");
     let child_zone = format!("internal.{parent_zone}");
-    create_zone(&app, &parent_zone).await;
-    create_zone(&app, &child_zone).await;
+    app.create_named_zone(&parent_zone).await;
+    app.create_named_zone(&child_zone).await;
 
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     grant_zone(&app, &parent_zone, &scoped_name).await;
@@ -369,7 +422,7 @@ async fn external_dns_changes_enforce_record_validation() {
     })
     .await;
     let zone_name = app.zone_name("example.com");
-    create_zone(&app, &zone_name).await;
+    app.create_named_zone(&zone_name).await;
 
     let (status, _) = app
         .send_request(
@@ -425,7 +478,7 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
     app.set_auth_token(global_token);
 
     let zone_name = app.zone_name("example.com");
-    create_zone(&app, &zone_name).await;
+    app.create_named_zone(&zone_name).await;
 
     // The adapter runs with a scoped token granted exactly this zone.
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
@@ -547,7 +600,7 @@ async fn external_dns_record_listing_spans_read_pages() {
     })
     .await;
     let zone_name = app.zone_name("paged.com");
-    create_zone(&app, &zone_name).await;
+    app.create_named_zone(&zone_name).await;
 
     // Past the read page, so the listing has to tile without dropping a row.
     const RECORDS: usize = 5_100;

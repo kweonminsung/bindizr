@@ -536,10 +536,20 @@ never bare `pub`):
    `#[cfg(test)]` tests module with at most `pub(crate)` (e.g.
    `nsupdate/parser/tests.rs::minimal_update_with_ztype`). No crate-wide
    `test_util` grab-bag modules.
-3. **e2e suite**: shared helpers live in `tests/common/` as `pub(crate)`
-   (private when only their own module needs them); the single harness `e2e.rs`
-   declares plain private `mod`s. `common/` holds helpers only — test
-   functions belong under `api/` / `cli/` / `dns/`.
+3. **e2e suite**: `e2e.rs` is the one harness binary — a `tests/*.rs` sibling
+   would be built as a second one — and it declares a flat group per surface a
+   request arrives on: `api/`, `cli/`, `nsupdate/` (RFC 2136), `xfr/` (a
+   secondary's transfer and what authorizes it). What bindizr drives outward
+   (NOTIFY, SOA and parent-DS probes, an inbound AXFR) stays with the surface
+   that triggers it. A group splits into files only where a distinct command or
+   route earns one — `zone import`, `POST /records/bulk` — and everything else,
+   the CRUD and its listing and validation, stays in the group's `mod.rs`.
+   Helpers sit at the narrowest scope that serves them: `tests/common/` when
+   more than one group uses them, `<group>/common.rs` when one does, and
+   private to the file otherwise. `common/dns/` holds the shared DNS logic
+   every group pulls from (queries, transfers, the RFC 2136 builder, the fake
+   parent), so its own unit tests live beside it in `common/dns/tests.rs`;
+   apart from those, `common/` holds helpers only.
 4. **Never across crates**: no `test-util` features or helper crates;
    duplicate small fixtures per crate instead.
 

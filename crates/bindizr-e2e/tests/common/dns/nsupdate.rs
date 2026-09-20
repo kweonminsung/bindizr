@@ -14,7 +14,7 @@ use domain::{
     tsig::{Algorithm, ClientTransaction, Key, KeyName},
 };
 
-use crate::common::dns::parse_name;
+use crate::common::{TestApp, dns::parse_name};
 
 /// The key an update is signed with, as `tsig-key get` reports it.
 pub(crate) struct SigningKey {
@@ -205,4 +205,26 @@ fn sign(builder: &mut AdditionalBuilder<Vec<u8>>, key: &SigningKey) -> Result<()
     ClientTransaction::request(key.to_tsig_key()?, builder, Time48::now())
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Create a TSIG key through the CLI and read back the secret it printed,
+/// global when asked so it reaches every zone without a grant.
+pub(crate) async fn create_tsig_key(app: &TestApp, name: &str, global: bool) -> SigningKey {
+    let mut args = vec!["tsig-key", "create", name];
+    if global {
+        args.push("--global");
+    }
+    app.run_cli_success(&args).await;
+    let fetched = app
+        .run_cli_success(&["tsig-key", "get", name, "--output", "json"])
+        .await;
+    let fetched: serde_json::Value =
+        serde_json::from_str(&fetched).expect("tsig-key get did not print JSON");
+    SigningKey {
+        name: name.to_string(),
+        secret: fetched["secret"]
+            .as_str()
+            .expect("tsig-key get prints the secret")
+            .to_string(),
+    }
 }

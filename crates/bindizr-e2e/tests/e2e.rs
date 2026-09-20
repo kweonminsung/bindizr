@@ -1,8 +1,8 @@
 mod common;
 
 mod api {
+    mod common;
     mod dnssec;
-    mod dnssec_delegation;
     mod dnssec_policy;
     mod external_dns;
     mod health;
@@ -17,18 +17,11 @@ mod api {
     mod zone;
 }
 
-mod dns {
-    mod dnssec;
-    mod harness;
-    mod nsupdate;
-    mod transfer;
-}
-
 mod cli {
+    mod common;
     mod config;
     mod daemon;
     mod dnssec;
-    mod dnssec_delegation;
     mod dnssec_policy;
     mod doctor;
     mod notify;
@@ -37,3 +30,6 @@ mod cli {
     mod tsig_key;
     mod zone;
 }
+
+mod nsupdate;
+mod xfr;

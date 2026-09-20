@@ -3,30 +3,13 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
-/// Create a named zone fixture through the API.
-async fn create_zone(app: &TestApp, zone_name: &str) {
-    let (status, _) = app
-        .send_request(
-            Method::POST,
-            "/zones",
-            Some(json!({
-                "name": zone_name,
-                "mname": format!("ns1.{zone_name}"),
-                "rname": "admin@test.com",
-                "default_ttl": 3600,
-            })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-}
-
 /// Verify TSIG grant management and deletion guards for keys in use.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn tsig_grant_lifecycle_and_delete_guard() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("tsig-zone.example");
-    create_zone(&app, &zone_name).await;
+    app.create_named_zone(&zone_name).await;
 
     let (status, _) = app
         .send_request(

@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     env,
     io::Write,
     net::TcpListener,
@@ -16,19 +15,17 @@ use tempfile::TempDir;
 
 mod assertions;
 mod compose;
-mod external_dns;
 mod local;
 
 use compose::ComposeStack;
-pub(crate) use external_dns::ExternalDnsAdapter;
 pub(crate) mod dns;
-pub(crate) mod nsupdate;
+mod verify;
 
 pub(crate) use assertions::{assert_cli_failure_contains, assert_cli_success};
 pub(crate) use dns::{
     FakeParent, ServedDs, TransferOutcome, axfr, probe_zone_soa, wait_for_any_dns_record,
 };
-use dns::{build_dns_expected_value, dns_record_type, extract_dns_key, wait_for_dns_records};
+use verify::{PreviousDnsKey, to_fqdn};
 
 /// The most a listing returns in one call; the HTTP API refuses more.
 const RECORD_PAGE_LIMIT: u32 = 1000;
@@ -370,7 +367,11 @@ impl TestApp {
                 self.read_previous_dns_key(&Method::DELETE, &format!("/records/{record_id}"))
                     .await
             }
-            ["zone", "delete", zone_name, ..] => Some((zone_name.to_string(), 6)),
+            ["zone", "delete", zone_name, ..] => Some(PreviousDnsKey {
+                zone_name: to_fqdn(zone_name),
+                name: to_fqdn(zone_name),
+                record_type: 6,
+            }),
             _ => None,
         };
         let mut command = match &self.runtime {
@@ -431,101 +432,6 @@ impl TestApp {
         assert_cli_success(args, &output);
         String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8")
     }
-
-    /// Capture the record owner and type before an API mutation.
-    async fn read_previous_dns_key(&self, method: &Method, path: &str) -> Option<(String, u16)> {
-        if !matches!(*method, Method::PUT | Method::DELETE) {
-            return None;
-        }
-
-        if path.starts_with("/records/") {
-            let (status, body) = self.send_http(Method::GET, path, None).await;
-            return status
-                .is_success()
-                .then(|| extract_dns_key(&body["record"]));
-        }
-
-        if let Some(zone_name) = path.strip_prefix("/zones/") {
-            return Some((zone_name.to_string(), 6));
-        }
-
-        None
-    }
-
-    /// Wait until secondary DNS answers match the API's records.
-    async fn assert_dns_matches_api(&self, previous_dns_key: Option<(String, u16)>) {
-        if self.dns_secondary_ports.is_empty() {
-            return;
-        }
-
-        // Use the API's current records as the expected state for all
-        // secondaries. Read every page: one short of the whole set would call
-        // a propagated record missing, or a split RRset half-served.
-        let mut records = Vec::new();
-        let mut offset = 0u64;
-        loop {
-            let (status, body) = self
-                .send_http(
-                    Method::GET,
-                    &format!(
-                        "/records?search={}&limit={RECORD_PAGE_LIMIT}&offset={offset}",
-                        self.namespace
-                    ),
-                    None,
-                )
-                .await;
-            assert_eq!(
-                status,
-                StatusCode::OK,
-                "failed to list records for DNS verification"
-            );
-            let page = body["items"]
-                .as_array()
-                .expect("record list response did not contain items")
-                .clone();
-            let read = page.len();
-            records.extend(page);
-            let total = body["pagination"]["total"]
-                .as_u64()
-                .expect("record list response did not contain a total");
-            offset += read as u64;
-            if read == 0 || offset >= total {
-                break;
-            }
-        }
-
-        let mut expected = HashMap::<(String, u16), Vec<Value>>::new();
-        for record in &records {
-            let name = record["name"]
-                .as_str()
-                .expect("record did not contain a name")
-                .to_string();
-            let record_type = record["type"]
-                .as_str()
-                .and_then(dns_record_type)
-                .expect("record contained an unsupported DNS type");
-            expected
-                .entry((name, record_type))
-                .or_default()
-                .push(build_dns_expected_value(record, record_type));
-        }
-
-        // Wait for each name and type to converge on every configured secondary.
-        for ((name, record_type), values) in &expected {
-            for port in &self.dns_secondary_ports {
-                wait_for_dns_records(*port, name, *record_type, values).await;
-            }
-        }
-
-        // A deleted name/type is absent from the API list but must also disappear in DNS.
-        if let Some((name, record_type)) = previous_dns_key
-            && !expected.contains_key(&(name.clone(), record_type))
-        {
-            for port in &self.dns_secondary_ports {
-                wait_for_dns_records(*port, &name, record_type, &[]).await;
-            }
-        }
-    }
 }
 
 impl Drop for TestApp {
@@ -564,7 +470,7 @@ fn env_flag(name: &str) -> bool {
 }
 
 /// Find an available local TCP port for a test listener.
-fn reserve_tcp_port() -> u16 {
+pub(crate) fn reserve_tcp_port() -> u16 {
     TcpListener::bind(("127.0.0.1", 0))
         .expect("failed to bind ephemeral TCP port")
         .local_addr()

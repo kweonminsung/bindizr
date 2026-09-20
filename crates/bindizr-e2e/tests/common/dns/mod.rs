@@ -11,6 +11,9 @@ pub(crate) use parent::{FakeParent, ServedDs};
 use serde_json::{Value, json};
 pub(crate) use transfer::{TransferOutcome, axfr};
 
+pub(crate) mod nsupdate;
+mod tests;
+
 /// Build the DNS comparison form of an API record value.
 pub(crate) fn build_dns_expected_value(record: &Value, record_type: u16) -> Value {
     let value = record["value"].clone();

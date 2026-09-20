@@ -3,6 +3,8 @@ use serde_json::json;
 
 use crate::common::{TestApp, TestAppOptions};
 
+mod delegation;
+
 /// Verify the DNSSEC enable, status, re-sign, and disable lifecycle.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -216,6 +218,293 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
     assert_eq!(body["code"], "DNSSEC_NOT_ENABLED");
 }
 
+/// Verify DNSSEC enablement with NSEC3 and separate key roles.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn dnssec_enable_with_nsec3_and_split_keys() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let policy_name = format!("{}-nsec3-split", app.namespace());
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            "/dnssec-policies",
+            Some(json!({ "name": policy_name, "denial": "nsec3", "split_keys": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let dnssec = &body["dnssec"];
+    assert_eq!(dnssec["policy"]["denial"], "nsec3");
+    assert_eq!(dnssec["policy"]["split_keys"], true);
+
+    let keys = dnssec["keys"].as_array().unwrap();
+    assert_eq!(keys.len(), 2);
+    let key_with_role = |role: &str| {
+        keys.iter()
+            .find(|key| key["role"] == role)
+            .unwrap_or_else(|| panic!("no {role} key in {keys:?}"))
+    };
+    let ksk = key_with_role("ksk");
+    assert_eq!(ksk["state"], "active");
+    assert_eq!(key_with_role("zsk")["state"], "active");
+
+    // The parent DS set names only SEP keys, so the ZSK contributes no DS.
+    let ds_records = dnssec["ds_records"].as_array().unwrap();
+    assert_eq!(ds_records.len(), 1);
+    assert_eq!(ds_records[0]["key_tag"], ksk["key_tag"]);
+
+    // A split-key zone has two rollable keys, so the role must be named.
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover"),
+            Some(json!({ "role": "zsk" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let keys = body["dnssec"]["keys"].as_array().unwrap();
+    assert_eq!(keys.len(), 3);
+    let published = keys
+        .iter()
+        .find(|key| key["state"] == "published")
+        .expect("rollover start pre-publishes the replacement key");
+    assert_eq!(published["role"], "zsk");
+
+    // ds-seen has no meaning for a ZSK rollover — no parent DS is involved —
+    // and must not bypass the publish hold-down.
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// Verify that DNSSEC enable requires a global token.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn dnssec_enable_requires_a_global_token() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..TestAppOptions::default()
+    })
+    .await;
+    let (_, global_token) = app.create_api_token().await;
+    app.set_auth_token(global_token);
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // Grant the zone to the scoped token so the 403 proves the global
+    // requirement, not zone invisibility (which would read as 404).
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&["token", "grant", &scoped_name, zone_name])
+        .await;
+    app.set_auth_token(scoped_token);
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["code"], "FORBIDDEN");
+}
+
+/// Verify that records listing signed pages the derived plane.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn records_listing_signed_pages_the_derived_plane() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "www",
+                "type": "A",
+                "value": "192.0.2.10",
+                "zone_name": zone_name,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let user_total = body["pagination"]["total"].as_u64().unwrap();
+    assert!(
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["id"].is_i64()),
+        "the unsigned listing holds only addressable user records"
+    );
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(
+        body["pagination"]["total"].as_u64().unwrap() as usize,
+        items.len()
+    );
+    assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
+    let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
+    for record_type in ["DNSKEY", "NSEC3", "RRSIG"] {
+        assert!(
+            derived.iter().any(|item| item["type"] == record_type),
+            "signed listing must carry a {record_type} row: {items:?}"
+        );
+    }
+    assert!(derived.iter().all(|item| item["priority"].is_null()));
+
+    // The derived plane pages after the user records under one offset space.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true&offset={user_total}&limit=2"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().all(|item| item["id"].is_null()));
+
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&signed=true&type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert!(!items.is_empty());
+    assert!(items.iter().all(|item| item["type"] == "RRSIG"));
+
+    // A derived type is only addressable through the signed view.
+    let (status, _) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&type=RRSIG"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// Verify that a signed listing searches the derived plane by name.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_signed_listing_searches_the_derived_plane_by_name() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(json!({
+                "name": "searchable", "type": "A", "value": "192.0.2.1",
+                "zone_name": zone_name
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/dnssec"),
+            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // The search must reach the derived rows, not only the stored ones.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&search=searchable&signed=true&limit=1000"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let types: Vec<&str> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| record["type"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"A"), "{body}");
+    assert!(types.contains(&"RRSIG"), "{body}");
+
+    // Refused rather than quietly answered without the rows it cannot narrow.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/records?zone_name={zone_name}&value=192.0.2.1&signed=true"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("value cannot narrow the derived"),
+        "{body}"
+    );
+}
+
 /// Verify a complete rollover with combined signing keys.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -351,291 +640,4 @@ async fn dnssec_csk_rollover_lifecycle() {
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "DNSSEC_NO_ROLLOVER_IN_PROGRESS");
-}
-
-/// Verify DNSSEC enablement with NSEC3 and separate key roles.
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
-async fn dnssec_enable_with_nsec3_and_split_keys() {
-    let app = TestApp::start().await;
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
-
-    let policy_name = format!("{}-nsec3-split", app.namespace());
-    let (status, _) = app
-        .send_request(
-            Method::POST,
-            "/dnssec-policies",
-            Some(json!({ "name": policy_name, "denial": "nsec3", "split_keys": true })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-
-    let (status, body) = app
-        .send_request(
-            Method::POST,
-            &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-    let dnssec = &body["dnssec"];
-    assert_eq!(dnssec["policy"]["denial"], "nsec3");
-    assert_eq!(dnssec["policy"]["split_keys"], true);
-
-    let keys = dnssec["keys"].as_array().unwrap();
-    assert_eq!(keys.len(), 2);
-    let key_with_role = |role: &str| {
-        keys.iter()
-            .find(|key| key["role"] == role)
-            .unwrap_or_else(|| panic!("no {role} key in {keys:?}"))
-    };
-    let ksk = key_with_role("ksk");
-    assert_eq!(ksk["state"], "active");
-    assert_eq!(key_with_role("zsk")["state"], "active");
-
-    // The parent DS set names only SEP keys, so the ZSK contributes no DS.
-    let ds_records = dnssec["ds_records"].as_array().unwrap();
-    assert_eq!(ds_records.len(), 1);
-    assert_eq!(ds_records[0]["key_tag"], ksk["key_tag"]);
-
-    // A split-key zone has two rollable keys, so the role must be named.
-    let (status, _) = app
-        .send_request(
-            Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover"),
-            Some(json!({})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-
-    let (status, body) = app
-        .send_request(
-            Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover"),
-            Some(json!({ "role": "zsk" })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let keys = body["dnssec"]["keys"].as_array().unwrap();
-    assert_eq!(keys.len(), 3);
-    let published = keys
-        .iter()
-        .find(|key| key["state"] == "published")
-        .expect("rollover start pre-publishes the replacement key");
-    assert_eq!(published["role"], "zsk");
-
-    // ds-seen has no meaning for a ZSK rollover — no parent DS is involved —
-    // and must not bypass the publish hold-down.
-    let (status, _) = app
-        .send_request(
-            Method::POST,
-            &format!("/zones/{zone_name}/dnssec/rollover/ds-seen"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-/// Verify that records listing signed pages the derived plane.
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
-async fn records_listing_signed_pages_the_derived_plane() {
-    let app = TestApp::start().await;
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
-    let (status, _) = app
-        .send_request(
-            Method::POST,
-            "/records",
-            Some(json!({
-                "name": "www",
-                "type": "A",
-                "value": "192.0.2.10",
-                "zone_name": zone_name,
-            })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-
-    let (status, _) = app
-        .send_request(
-            Method::POST,
-            &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            &format!("/records?zone_name={zone_name}"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let user_total = body["pagination"]["total"].as_u64().unwrap();
-    assert!(
-        body["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|item| item["id"].is_i64()),
-        "the unsigned listing holds only addressable user records"
-    );
-
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            &format!("/records?zone_name={zone_name}&signed=true"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let items = body["items"].as_array().unwrap();
-    assert_eq!(
-        body["pagination"]["total"].as_u64().unwrap() as usize,
-        items.len()
-    );
-    assert!(body["pagination"]["total"].as_u64().unwrap() > user_total);
-    let derived: Vec<_> = items.iter().filter(|item| item["id"].is_null()).collect();
-    for record_type in ["DNSKEY", "NSEC3", "RRSIG"] {
-        assert!(
-            derived.iter().any(|item| item["type"] == record_type),
-            "signed listing must carry a {record_type} row: {items:?}"
-        );
-    }
-    assert!(derived.iter().all(|item| item["priority"].is_null()));
-
-    // The derived plane pages after the user records under one offset space.
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            &format!("/records?zone_name={zone_name}&signed=true&offset={user_total}&limit=2"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let items = body["items"].as_array().unwrap();
-    assert_eq!(items.len(), 2);
-    assert!(items.iter().all(|item| item["id"].is_null()));
-
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            &format!("/records?zone_name={zone_name}&signed=true&type=RRSIG"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let items = body["items"].as_array().unwrap();
-    assert!(!items.is_empty());
-    assert!(items.iter().all(|item| item["type"] == "RRSIG"));
-
-    // A derived type is only addressable through the signed view.
-    let (status, _) = app
-        .send_request(
-            Method::GET,
-            &format!("/records?zone_name={zone_name}&type=RRSIG"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-/// Verify that DNSSEC enable requires a global token.
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
-async fn dnssec_enable_requires_a_global_token() {
-    let mut app = TestApp::start_with_options(TestAppOptions {
-        authentication_required: true,
-        ..TestAppOptions::default()
-    })
-    .await;
-    let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token);
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
-
-    // Grant the zone to the scoped token so the 403 proves the global
-    // requirement, not zone invisibility (which would read as 404).
-    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&["token", "grant", &scoped_name, zone_name])
-        .await;
-    app.set_auth_token(scoped_token);
-
-    let (status, body) = app
-        .send_request(
-            Method::POST,
-            &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["code"], "FORBIDDEN");
-}
-
-/// Verify that a signed listing searches the derived plane by name.
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
-async fn a_signed_listing_searches_the_derived_plane_by_name() {
-    let app = TestApp::start().await;
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
-
-    let (status, body) = app
-        .send_request(
-            Method::POST,
-            "/records",
-            Some(json!({
-                "name": "searchable", "type": "A", "value": "192.0.2.1",
-                "zone_name": zone_name
-            })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
-    let (status, body) = app
-        .send_request(
-            Method::POST,
-            &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
-
-    // The search must reach the derived rows, not only the stored ones.
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            &format!("/records?zone_name={zone_name}&search=searchable&signed=true&limit=1000"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let types: Vec<&str> = body["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|record| record["type"].as_str().unwrap())
-        .collect();
-    assert!(types.contains(&"A"), "{body}");
-    assert!(types.contains(&"RRSIG"), "{body}");
-
-    // Refused rather than quietly answered without the rows it cannot narrow.
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            &format!("/records?zone_name={zone_name}&value=192.0.2.1&signed=true"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(
-        body["error"]
-            .as_str()
-            .unwrap()
-            .contains("value cannot narrow the derived"),
-        "{body}"
-    );
 }

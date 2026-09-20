@@ -3,7 +3,7 @@ use serial_test::serial;
 
 use crate::common::{
     TestApp, TestAppOptions,
-    nsupdate::{PrereqRr, SigningKey, UpdateRr, send_signed_update, send_update},
+    dns::nsupdate::{PrereqRr, UpdateRr, create_tsig_key, send_signed_update, send_update},
 };
 
 /// These drive bindizr's own DNS listener over UDP with unsigned updates, so
@@ -318,24 +318,6 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
     assert_eq!(app.read_zone_serial(&zone_name).await, before + 1);
 }
 
-/// Create a TSIG key fixture for signed update requests.
-async fn create_key(app: &TestApp, name: &str) -> SigningKey {
-    app.run_cli_success(&["tsig-key", "create", name]).await;
-    let fetched = app
-        .run_cli_success(&["tsig-key", "get", name, "--output", "json"])
-        .await;
-    let fetched: serde_json::Value =
-        serde_json::from_str(&fetched).expect("tsig-key get did not print JSON");
-    let secret = fetched["secret"]
-        .as_str()
-        .expect("tsig-key get prints the secret")
-        .to_string();
-    SigningKey {
-        name: name.to_string(),
-        secret,
-    }
-}
-
 /// Verify that a signed update requires a zone grant for its TSIG key.
 ///
 /// The unsigned cases exercise address authorization; this case checks the key-based path.
@@ -346,7 +328,7 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     let zone_name = app.zone_name("nsupdate-policy.example");
     app.create_zone_cli(&zone_name, "3600").await;
     let port = app.dns_port();
-    let key = create_key(&app, "nsupdate-policy-key").await;
+    let key = create_tsig_key(&app, "nsupdate-policy-key", false).await;
 
     let add = |owner: String| UpdateRr::AddA {
         name: owner,
@@ -419,7 +401,7 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
     let zone_name = app.zone_name("nsupdate-prereq.example");
     app.create_zone_cli(&zone_name, "3600").await;
     let port = app.dns_port();
-    let key = create_key(&app, "nsupdate-prereq-key").await;
+    let key = create_tsig_key(&app, "nsupdate-prereq-key", false).await;
     app.run_cli_success(&[
         "tsig-key",
         "grant",
