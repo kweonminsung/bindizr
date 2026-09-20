@@ -120,7 +120,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS catalog_zone_state (
+        CREATE TABLE IF NOT EXISTS catalog_zones (
             name VARCHAR(255) PRIMARY KEY,
             digest VARCHAR(64) NOT NULL,
             serial INTEGER NOT NULL

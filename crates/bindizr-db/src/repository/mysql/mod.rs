@@ -1,5 +1,5 @@
 mod api_token_repository_impl;
-mod catalog_zone_state_repository_impl;
+mod catalog_zone_repository_impl;
 mod dnssec_key_repository_impl;
 mod dnssec_policy_repository_impl;
 mod dnssec_record_repository_impl;
@@ -13,7 +13,7 @@ mod zone_repository_impl;
 mod zone_version_repository_impl;
 
 pub(crate) use api_token_repository_impl::MySqlApiTokenRepository;
-pub(crate) use catalog_zone_state_repository_impl::MySqlCatalogZoneStateRepository;
+pub(crate) use catalog_zone_repository_impl::MySqlCatalogZoneRepository;
 pub(crate) use dnssec_key_repository_impl::MySqlDnssecKeyRepository;
 pub(crate) use dnssec_policy_repository_impl::MySqlDnssecPolicyRepository;
 pub(crate) use dnssec_record_repository_impl::MySqlDnssecRecordRepository;

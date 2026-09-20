@@ -392,9 +392,9 @@ pub fn get_zone_version_repository() -> Box<dyn repository::ZoneVersionRepositor
     pool().zone_version_repository()
 }
 
-/// Return the initialized catalog zone state repository.
-pub fn get_catalog_zone_state_repository() -> Box<dyn repository::CatalogZoneStateRepository> {
-    pool().catalog_zone_state_repository()
+/// Return the initialized catalog zone repository.
+pub fn get_catalog_zone_repository() -> Box<dyn repository::CatalogZoneRepository> {
+    pool().catalog_zone_repository()
 }
 
 /// Return the initialized DNSSEC withdrawal repository.

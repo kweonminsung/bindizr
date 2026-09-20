@@ -1,4 +1,4 @@
-mod catalog_zone_state;
+mod catalog_zone;
 mod create;
 mod delete;
 pub(crate) mod diff;

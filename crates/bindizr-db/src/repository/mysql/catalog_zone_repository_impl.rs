@@ -2,14 +2,14 @@ use async_trait::async_trait;
 
 use crate::{
     error::DatabaseError,
-    repository::{CatalogZoneStateRepository, RepositoryTx},
+    repository::{CatalogZoneRepository, RepositoryTx},
 };
 
 /// Every method runs on the caller's transaction, so no pool is held.
-pub(crate) struct MySqlCatalogZoneStateRepository;
+pub(crate) struct MySqlCatalogZoneRepository;
 
 #[async_trait]
-impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
+impl CatalogZoneRepository for MySqlCatalogZoneRepository {
     /// Store a catalog digest and advance its serial when the digest changes in the current
     /// transaction.
     async fn upsert_tx(
@@ -25,7 +25,7 @@ impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
         // monotonic, so secondaries re-transfer the catalog zone only on real changes.
         sqlx::query(
             r#"
-            INSERT INTO catalog_zone_state (name, digest, serial)
+            INSERT INTO catalog_zones (name, digest, serial)
             VALUES (?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 serial = IF(digest = VALUES(digest), serial, GREATEST(serial + 1, VALUES(serial))),
@@ -42,7 +42,7 @@ impl CatalogZoneStateRepository for MySqlCatalogZoneStateRepository {
         sqlx::query_scalar::<_, i32>(
             r#"
             SELECT serial
-            FROM catalog_zone_state
+            FROM catalog_zones
             WHERE name = ?
             "#,
         )

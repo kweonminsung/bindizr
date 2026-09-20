@@ -12,8 +12,7 @@ impl ZoneService {
         let mut tx = RepositoryService::begin_tx("Failed to update catalog state").await?;
 
         let apply_result =
-            RepositoryService::upsert_catalog_zone_state_tx(&mut tx, name, digest, base_serial)
-                .await;
+            RepositoryService::upsert_catalog_zone_tx(&mut tx, name, digest, base_serial).await;
 
         RepositoryService::finish_tx(tx, apply_result, "Failed to update catalog state").await
     }

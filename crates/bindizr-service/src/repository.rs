@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use super::error::{ErrorCode, ServiceError};
 pub(crate) use crate::database::repository::RepositoryTx;
 use crate::database::{
-    get_api_token_repository, get_catalog_zone_state_repository, get_dnssec_key_repository,
+    get_api_token_repository, get_catalog_zone_repository, get_dnssec_key_repository,
     get_dnssec_policy_repository, get_dnssec_record_repository, get_dnssec_withdrawal_repository,
     get_record_repository, get_token_grant_repository, get_tsig_grant_repository,
     get_tsig_key_repository, get_zone_change_repository, get_zone_repository,
@@ -198,13 +198,13 @@ impl RepositoryService {
 
     /// Store a catalog digest and advance its serial when the digest changes in the current
     /// transaction.
-    pub(crate) async fn upsert_catalog_zone_state_tx(
+    pub(crate) async fn upsert_catalog_zone_tx(
         tx: &mut RepositoryTx<'_>,
         name: &str,
         digest: &str,
         base_serial: i32,
     ) -> Result<i32, ServiceError> {
-        get_catalog_zone_state_repository()
+        get_catalog_zone_repository()
             .upsert_tx(tx, name, digest, base_serial)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to update catalog state: {}", e)))

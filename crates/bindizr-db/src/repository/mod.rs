@@ -691,7 +691,7 @@ pub trait DnssecWithdrawalRepository: Send + Sync {
 }
 
 #[async_trait]
-pub trait CatalogZoneStateRepository: Send + Sync {
+pub trait CatalogZoneRepository: Send + Sync {
     /// The serial advances only when `digest` changed; returns the serial in
     /// effect after the upsert.
     async fn upsert_tx(
@@ -839,12 +839,12 @@ impl DatabasePool {
         }
     }
 
-    /// The catalog zone state repository for this pool's backend.
-    pub(crate) fn catalog_zone_state_repository(&self) -> Box<dyn CatalogZoneStateRepository> {
+    /// The catalog zone repository for this pool's backend.
+    pub(crate) fn catalog_zone_repository(&self) -> Box<dyn CatalogZoneRepository> {
         match self {
-            DatabasePool::MySQL(_) => Box::new(mysql::MySqlCatalogZoneStateRepository),
-            DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresCatalogZoneStateRepository),
-            DatabasePool::SQLite(_) => Box::new(sqlite::SqliteCatalogZoneStateRepository),
+            DatabasePool::MySQL(_) => Box::new(mysql::MySqlCatalogZoneRepository),
+            DatabasePool::PostgreSQL(_) => Box::new(postgres::PostgresCatalogZoneRepository),
+            DatabasePool::SQLite(_) => Box::new(sqlite::SqliteCatalogZoneRepository),
         }
     }
 
