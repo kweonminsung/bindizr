@@ -36,10 +36,12 @@ fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<()>) {
 /// the settings whose readers captured them at startup.
 pub(crate) fn reload_config() -> Result<Vec<String>, String> {
     let changed = config::reload()?;
+
     // The installed logger reads its level and format per record, so this is enough.
     let config = config::bindizr_config();
     logger::set_level(config.logging.level);
     logger::set_format(config.logging.format);
+
     // A no-op unless this instance had no scheduler, which a zero interval
     // leaves it without.
     service::dnssec::initialize_scheduler();
@@ -53,9 +55,11 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     }
 
     // Prepare configuration and background services before accepting requests.
-    config::initialize(config_file).map_err(CliError::configuration)?;
+    let config_path = config::initialize(config_file).map_err(CliError::configuration)?;
 
     logger::initialize();
+    // Reported after the logger exists, so it carries the configured format.
+    log::info!("Configuration loaded from {}", config_path);
     // Touch the metrics registry so bindizr_started_at_seconds reflects process start.
     bindizr_core::metrics::metrics();
 
@@ -199,6 +203,7 @@ async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_task: Option<Jo
 
     let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
         while servers.join_next().await.is_some() {}
+
         // The worker outlives the front ends: an in-flight write still enqueues.
         service::notify::stop_worker();
         // Not a front end: it may be absent, and its exit never ends the daemon.
@@ -207,6 +212,7 @@ async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_task: Option<Jo
         }
     })
     .await;
+
     if drained.is_err() {
         log::error!(
             "Servers did not finish within {:?}, exiting anyway.",

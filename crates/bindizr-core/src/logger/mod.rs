@@ -95,7 +95,7 @@ pub fn initialize_with_level(level: config::LogLevel) {
     let log_level = Level::from(level);
 
     if let Err(e) = log::set_boxed_logger(Box::new(Logger)) {
-        eprintln!("Failed to set logger: {}", e);
+        crate::errln!("Failed to set logger: {}", e);
         return;
     }
     set_level(level);

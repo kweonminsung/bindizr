@@ -411,22 +411,21 @@ impl std::str::FromStr for LogLevel {
 }
 
 /// Load configuration from `conf_file_path` (or the default path / env var),
-/// apply environment overrides, and store it as the global config.
-pub fn initialize(conf_file_path: Option<&str>) -> Result<(), String> {
+/// apply environment overrides, and store it as the global config, returning
+/// the file it came from: the logger is installed from what this loads, so
+/// only the caller can report it in the configured format.
+pub fn initialize(conf_file_path: Option<&str>) -> Result<String, String> {
     let conf_file_path = resolve_config_path(conf_file_path);
-
-    // Predates the logger, which is installed from the config this loads.
-    eprintln!("Initializing configuration from file: {}", conf_file_path);
 
     let bindizr_config = load_config_file(&conf_file_path)?;
     let mut stored = BINDIZR_CONFIG.write().map_err(|_| POISONED)?;
     if stored.is_some() {
         return Err("Bindizr configuration is already initialized".to_string());
     }
-    let _ = CONFIG_PATH.set(conf_file_path);
+    let _ = CONFIG_PATH.set(conf_file_path.clone());
     *stored = Some(Arc::new(bindizr_config));
 
-    Ok(())
+    Ok(conf_file_path)
 }
 
 const POISONED: &str = "Bindizr configuration lock is poisoned";
@@ -488,7 +487,10 @@ pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
             conf_file_path, e
         )
     })?;
+    // A parse or validation failure names no file, and the path may be a
+    // default the caller never spelled.
     BindizrConfig::from_toml(&text, |name| env::var(name).ok())
+        .map_err(|e| format!("{} (in {})", e, conf_file_path))
 }
 
 impl BindizrConfig {

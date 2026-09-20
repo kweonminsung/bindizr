@@ -11,7 +11,7 @@ mod wire;
 
 use std::{future::IntoFuture, sync::Arc, time::Duration};
 
-use bindizr_core::logger;
+use bindizr_core::{errln, logger};
 use clap::Parser;
 use tokio::{
     signal::unix::{SignalKind, signal},
@@ -41,7 +41,7 @@ fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<std::io::Re
 pub async fn execute() {
     let cli = config::Cli::parse();
     let adapter_config = config::AdapterConfig::from_cli(cli).unwrap_or_else(|e| {
-        eprintln!("{}", e);
+        errln!("Error: {}", e);
         std::process::exit(EXIT_CONFIG);
     });
 
@@ -61,7 +61,7 @@ pub async fn execute() {
         adapter_config.ca_file.as_deref(),
     )
     .unwrap_or_else(|e| {
-        eprintln!("{}", e);
+        errln!("Error: {}", e);
         std::process::exit(EXIT_CONFIG);
     });
     let state = Arc::new(server::AppState { upstream });
