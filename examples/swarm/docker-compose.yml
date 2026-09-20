@@ -1,6 +1,6 @@
 services:
   bindizr:
-    image: kweonminsung/bindizr:0.1.0-beta.7
+    image: kweonminsung/bindizr:0.1.0-rc.1
     environment:
       BINDIZR_DATABASE_TYPE: postgresql
       BINDIZR_DATABASE_URL: postgresql://bindizr:bindizr@postgres:5432/bindizr

@@ -407,8 +407,10 @@ pub(crate) async fn update_zone(
         path = "/zones/{name}",
         tag = "Zone",
         summary = "Delete a specific DNS zone",
+        description = "Deletes the zone with its records and saved versions, and answers with what went. With `dry_run=true` the counts are reported and nothing is removed.",
         params(
-            ("name" = String, Path, description = "The name of the DNS zone to delete.")
+            ("name" = String, Path, description = "The name of the DNS zone to delete."),
+            ("dry_run" = Option<bool>, Query, description = "Report what would go without removing it.")
         ),
         responses(
             (status = 200, description = "DNS zone deleted successfully", body = DeleteZoneResponse),

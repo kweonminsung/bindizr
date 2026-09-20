@@ -62,7 +62,7 @@ at your database instead.
 
 ```bash
 $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
-  --version 0.1.0-beta.7 --set postgresql.enabled=true
+  --version 0.1.0-rc.1 --set postgresql.enabled=true
 ```
 
 ### Docker Compose
