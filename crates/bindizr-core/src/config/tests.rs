@@ -426,6 +426,25 @@ fn is_catalog_zone_matches_the_configured_name_ignoring_case() {
     assert!(!parsed.dns.is_catalog_zone("catalog.prod.example"));
 }
 
+/// Verify that the catalog zone name is stored canonically, so an FQDN or a
+/// padded spelling still matches a query name.
+#[test]
+fn catalog_zone_name_is_canonicalized_on_load() {
+    for dns_extra in [
+        "catalog_zone_name = \"catalog.Prod.\"",
+        "catalog_zone_name = \" catalog.prod \"",
+    ] {
+        let parsed = parse_config(&TestConfigToml {
+            dns_extra,
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(parsed.dns.catalog_zone_name, "catalog.prod");
+        assert!(parsed.dns.is_catalog_zone("catalog.prod"));
+    }
+}
+
 /// Verify that a reload takes the settings read per use.
 #[test]
 fn a_reload_takes_the_settings_read_per_use() {

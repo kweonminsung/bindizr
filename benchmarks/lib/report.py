@@ -151,23 +151,29 @@ def _bulk_linearity_note(rows: list[dict]) -> str:
 QUERY_NOISE_TOLERANCE_PCT = 5.0
 
 
+#: The conclusion compares Bindizr's BIND9 secondaries against the same BIND9
+#: run natively, so only that pairing can carry it.
+BINDIZR_BIND9_LABEL = "Bindizr + BIND9"
+
+
 def _b08_conclusion(native: dict | None, base: Any, ok: list[dict]) -> str:
     """The no-overhead claim is a measured outcome, not a premise: state it only
     when both sides produced a QPS and the gap is inside the tolerance."""
-    bindizr = next((r for r in ok if "Bindizr" in r["system"]), None)
+    bindizr = next((r for r in ok if r["system"] == BINDIZR_BIND9_LABEL), None)
     if not native or not base or not bindizr or not bindizr.get("qps"):
-        return ("\n> ⚠️ No-overhead conclusion unavailable: this run has no "
-                "successful Native BIND9 and Bindizr pair to compare.\n")
+        return (f"\n> ⚠️ No-overhead conclusion unavailable: this run has no "
+                f"successful Native BIND9 and `{BINDIZR_BIND9_LABEL}` pair to "
+                "compare.\n")
 
     loss = (1 - bindizr["qps"] / base) * 100
     if abs(loss) > QUERY_NOISE_TOLERANCE_PCT:
-        return (f"\n> ⚠️ `Bindizr + BIND9` differs from `Native BIND9` by {loss:+.1f}%, "
+        return (f"\n> ⚠️ `{BINDIZR_BIND9_LABEL}` differs from `Native BIND9` by {loss:+.1f}%, "
                 f"outside the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% noise tolerance — this "
                 "run does not support the no-overhead conclusion.\n")
 
     return ("\n> **Bindizr introduces no measurable DNS query overhead because it "
             "is outside the DNS data plane.** Queries are served by the BIND9 "
-            "secondaries, not by Bindizr — so `Bindizr + BIND9` tracks `Native "
+            f"secondaries, not by Bindizr — so `{BINDIZR_BIND9_LABEL}` tracks `Native "
             f"BIND9` ({loss:+.1f}%, within the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% "
             "run-to-run tolerance).\n")
 
@@ -182,7 +188,10 @@ def _render_b07(rows: list[dict]) -> str:
 
     if crud:
         out.append("\n### 7a — CRUD throughput by backend\n")
+        crud = sorted(crud, key=lambda r: (r.get("system", ""),
+                                           r.get("backend", "")))
         crud_rows = [[
+            r.get("system", "-"),
             r.get("backend", "-"), _pm(r, "create_tps"), _pm(r, "read_tps"),
             _pm(r, "create_p95_ms", 2), _pm(r, "read_p95_ms", 2),
             f'{r.get("error_rate", 0) * 100:.2f}%', r.get("peak_mem_mb", "-"),
@@ -190,7 +199,7 @@ def _render_b07(rows: list[dict]) -> str:
             r.get("runs", 1),
         ] for r in crud]
         out.append(_md_table(
-            ["Backend", "Create TPS", "Read TPS", "Create p95 (ms)",
+            ["Pairing", "Backend", "Create TPS", "Read TPS", "Create p95 (ms)",
              "Read p95 (ms)", "Error Rate", "Peak mem (MB)",
              "Bindizr mem (MB)", "DB mem (MB)", "Runs"], crud_rows))
         out.append("\n> Peak mem is the highest per-tick stack total (Bindizr "
@@ -201,16 +210,18 @@ def _render_b07(rows: list[dict]) -> str:
 
     if bulk:
         out.append("\n### 7b — Bulk import by backend\n")
-        bulk = sorted(bulk, key=lambda r: (r.get("backend", ""), r.get("size", 0)))
+        bulk = sorted(bulk, key=lambda r: (r.get("system", ""),
+                                           r.get("backend", ""),
+                                           r.get("size", 0)))
         bulk_rows = [[
-            r.get("backend", "-"), r.get("size", "-"),
+            r.get("system", "-"), r.get("backend", "-"), r.get("size", "-"),
             _pm(r, "import_secs", 3), _pm(r, "records_per_sec"),
             r.get("import_errors", "-"), r.get("peak_mem_mb", "-"),
             r.get("bindizr_peak_mem_mb", "-"), r.get("db_peak_mem_mb", "-"),
             r.get("runs", 1),
         ] for r in bulk]
         out.append(_md_table(
-            ["Backend", "Records", "Import (s)", "Records/sec", "Errors",
+            ["Pairing", "Backend", "Records", "Import (s)", "Records/sec", "Errors",
              "Peak mem (MB)", "Bindizr mem (MB)", "DB mem (MB)", "Runs"],
             bulk_rows))
         out.append(_bulk_linearity_note(
@@ -218,7 +229,8 @@ def _render_b07(rows: list[dict]) -> str:
 
     if failed:
         out.append("\n> ⚠️ Failed backends: " +
-                   ", ".join(f'{r.get("backend")} ({r.get("error", "?")})'
+                   ", ".join(f'{r.get("system", "-")} / {r.get("backend")} '
+                             f'({r.get("error", "?")})'
                              for r in failed) + "\n")
     return "".join(out)
 

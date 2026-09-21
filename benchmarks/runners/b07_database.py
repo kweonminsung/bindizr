@@ -39,7 +39,7 @@ def _mem_split(res: dict) -> tuple[float, float]:
             by_service.get("mysql", 0) + by_service.get("postgres", 0))
 
 
-async def _bench_backend(adapter, cfg, zone, label) -> dict:
+async def _bench_backend(adapter, cfg, zone, label, pairing) -> dict:
     """Measure create/read throughput, latency, and resource use for one backend."""
     c = cfg["crud"]
     conc, dur, warm = c["concurrency"], min(c["duration_secs"], 15), c["warmup_secs"]
@@ -77,6 +77,7 @@ async def _bench_backend(adapter, cfg, zone, label) -> dict:
     cs, rs = cr.summary(), rr.summary()
     bindizr_mem, db_mem = _mem_split(res)
     return {
+        "system": pairing,
         "backend": label,
         "create_tps": cs["tps"],
         "read_tps": rs["tps"],
@@ -90,7 +91,7 @@ async def _bench_backend(adapter, cfg, zone, label) -> dict:
     }
 
 
-async def _bulk_backend(adapter, cfg, zone, backend, size) -> dict:
+async def _bulk_backend(adapter, cfg, zone, backend, size, pairing) -> dict:
     """Import `size` records into a fresh zone via the backend and time it,
     sampling the DB container's resource usage."""
     await adapter.delete_zone(zone)
@@ -111,6 +112,7 @@ async def _bulk_backend(adapter, cfg, zone, backend, size) -> dict:
 
     bindizr_mem, db_mem = _mem_split(res)
     return {
+        "system": pairing,
         "backend": backend,
         "size": size,
         "import_secs": round(elapsed, 3),
@@ -126,6 +128,7 @@ async def _bulk_backend(adapter, cfg, zone, backend, size) -> dict:
 async def run(_adapter, cfg, ctx) -> list:
     """Compare CRUD and bulk import performance across database backends."""
     zone = ctx["zone"]
+    pairing = ctx["label"]
     rows = []
     # The system key selects which secondary runs beside Bindizr; the backend
     # comparison is the same either way, so the four pairings should agree.
@@ -138,19 +141,20 @@ async def run(_adapter, cfg, ctx) -> list:
         try:
             print(f"    backend {backend}: setup...", flush=True)
             await adapter.setup()
-            row = await _bench_backend(adapter, cfg, zone, backend)
+            row = await _bench_backend(adapter, cfg, zone, backend, pairing)
             rows.append(row)
             print(f"    backend {backend} (crud): {row}", flush=True)
 
             for size in cfg.get("db_bulk_sizes", []):
-                brow = await _bulk_backend(adapter, cfg, zone, backend, size)
+                brow = await _bulk_backend(adapter, cfg, zone, backend, size,
+                                           pairing)
                 rows.append(brow)
                 print(f"    backend {backend} (bulk {size}): {brow}", flush=True)
         except Exception as e:
             print(f"    backend {backend} FAILED: {e}")
             # Report the failure faithfully instead of silently omitting it.
-            rows.append({"backend": backend, "status": "FAILED",
-                         "error": str(e)[:120]})
+            rows.append({"system": pairing, "backend": backend,
+                         "status": "FAILED", "error": str(e)[:120]})
         finally:
             await adapter.teardown()
     return rows

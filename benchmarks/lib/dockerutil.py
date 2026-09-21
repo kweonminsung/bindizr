@@ -18,6 +18,11 @@ def run(cmd: list[str], check: bool = True, capture: bool = True) -> subprocess.
     )
 
 
+def arm_overrides_enabled() -> bool:
+    """Whether BENCH_ARM asks for each system's `compose.arm.yml`."""
+    return os.environ.get("BENCH_ARM", "").lower() in ("1", "true", "yes")
+
+
 class Compose:
     """Wrapper for a single docker compose project."""
 
@@ -29,8 +34,7 @@ class Compose:
         self.env = env or {}
         self.files = [self.file]
         arm_override = self.file.with_name("compose.arm.yml")
-        if os.environ.get("BENCH_ARM", "").lower() in ("1", "true", "yes") \
-                and arm_override.exists():
+        if arm_overrides_enabled() and arm_override.exists():
             self.files.append(arm_override)
 
     def _base(self) -> list[str]:

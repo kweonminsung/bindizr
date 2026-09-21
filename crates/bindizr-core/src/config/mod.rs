@@ -625,15 +625,19 @@ impl DnsConfig {
         zone_name.eq_ignore_ascii_case(&self.catalog_zone_name)
     }
 
-    /// Validate the DNS configuration fields.
-    fn validate(&self) -> Result<(), String> {
+    /// Validate the DNS configuration fields, leaving the catalog zone name
+    /// canonical.
+    fn validate(&mut self) -> Result<(), String> {
         if self.listen_port == 0 {
             return Err("dns.listen_port must not be 0".to_string());
         }
         // The name is served as a zone and spelled into every secondary's
-        // configuration, so an unusable one must not reach startup.
-        if let Err(e) = crate::dns::name::ZoneName::parse(&self.catalog_zone_name) {
-            return Err(format!("dns.catalog_zone_name is not a zone name: {}", e));
+        // configuration, so an unusable one must not reach startup. Parsing is
+        // also what canonicalizes it: the FQDN `catalog.prod.` would otherwise
+        // match no query name, which carries no root dot.
+        match crate::dns::name::ZoneName::parse(&self.catalog_zone_name) {
+            Ok(name) => self.catalog_zone_name = name.to_string(),
+            Err(e) => return Err(format!("dns.catalog_zone_name is not a zone name: {}", e)),
         }
         // Zero would admit no zone at all, which enabled = false already says.
         if self.transfer_cache.enabled && self.transfer_cache.max_records == 0 {

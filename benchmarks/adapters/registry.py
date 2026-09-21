@@ -36,6 +36,16 @@ _CLASS = {
 }
 
 
+#: The systems running the Bindizr control plane, whichever secondary serves
+#: queries for them. They take the same adapter keywords.
+BINDIZR_SYSTEMS = ("bindizr", "bindizr_knot", "bindizr_nsd", "bindizr_pdns")
+
+
+def is_bindizr(key: str) -> bool:
+    """Whether this system runs the Bindizr control plane."""
+    return key in BINDIZR_SYSTEMS
+
+
 def build(key: str, cfg: dict, project: str, **kwargs):
     """Construct the adapter for a benchmark system and project."""
     mod = _load_adapter_module(key)

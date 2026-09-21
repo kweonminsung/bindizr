@@ -80,7 +80,7 @@ async def run_one(bench: str, system: str, cfg: dict) -> dict | None:
             return None
 
     kwargs = {}
-    if system == "bindizr":
+    if registry.is_bindizr(system):
         kwargs["notify_after_update"] = bindizr_notify_for(bench)
     try:
         adapter = registry.build(system, cfg, proj, **kwargs)
