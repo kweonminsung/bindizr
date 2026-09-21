@@ -126,7 +126,7 @@ def _pm(row: dict, key: str, prec: int = 1, default: Any = "-") -> str:
 
 
 def _bulk_linearity_note(rows: list[dict]) -> str:
-    """Per-system 10k→100k scaling: import time should grow ~10x for 10x records."""
+    """Per-series 10k→100k scaling: import time should grow ~10x for 10x records."""
     by_sys: dict[str, dict[int, float]] = {}
     for r in rows:
         secs = r.get("import_secs")
@@ -224,8 +224,10 @@ def _render_b07(rows: list[dict]) -> str:
             ["Pairing", "Backend", "Records", "Import (s)", "Records/sec", "Errors",
              "Peak mem (MB)", "Bindizr mem (MB)", "DB mem (MB)", "Runs"],
             bulk_rows))
+        # One series per pairing and backend, so the note keys on both.
         out.append(_bulk_linearity_note(
-            [{**r, "system": r.get("backend", "-")} for r in bulk]))
+            [{**r, "system": f'{r.get("system", "-")} / {r.get("backend", "-")}'}
+             for r in bulk]))
 
     if failed:
         out.append("\n> ⚠️ Failed backends: " +

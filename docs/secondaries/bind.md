@@ -86,7 +86,7 @@ that address, which covers the catalog zone and every member zone alike:
 ```text
 key "xfr-key" {
     algorithm hmac-sha256;
-    secret "<base64 secret from bindizr tsig-key create>";
+    secret "<base64 secret from bindizr tsig-key create --global>";
 };
 
 server 10.0.0.5 {

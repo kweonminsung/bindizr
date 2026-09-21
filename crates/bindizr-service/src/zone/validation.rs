@@ -49,6 +49,7 @@ pub(crate) fn normalize_create_zone_request(
     request: &CreateZoneRequest,
 ) -> Result<NormalizedCreateZoneRequest, ServiceError> {
     let zone_name = normalize_zone_name(&request.name)?;
+    reject_catalog_zone_name(&zone_name)?;
     let mname = normalize_domain_name(&request.mname, "mname")?.to_string();
     let rname = normalize_email(&request.rname)?;
     let ttl = validate_ttl(
@@ -73,6 +74,21 @@ pub(crate) fn normalize_create_zone_request(
 }
 
 /// Validate and normalize a zone name.
+/// Refuse the name the virtual catalog zone answers to: a transfer or SOA
+/// query for it is served from the catalog before any stored zone, and the
+/// catalog leaves that name out of its members, so a zone stored under it
+/// would be reachable as neither. Only taking the name is refused; looking
+/// it up is not.
+pub(crate) fn reject_catalog_zone_name(name: &ZoneName) -> Result<(), ServiceError> {
+    if bindizr_config().dns.is_catalog_zone(name.as_str()) {
+        return Err(ServiceError::invalid_zone_field(format!(
+            "'{}' is the catalog zone name (dns.catalog_zone_name); a zone cannot take it",
+            name
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn normalize_zone_name(value: &str) -> Result<ZoneName, ServiceError> {
     let trimmed = value.trim();
 

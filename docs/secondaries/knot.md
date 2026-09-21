@@ -60,8 +60,14 @@ every member transfer the template derives from that remote:
 key:
   - id: xfr-key
     algorithm: hmac-sha256
-    secret: <base64 secret from bindizr tsig-key create>
+    secret: <base64 secret from bindizr tsig-key create --global>
+```
 
+Then add `key` to the `bindizr` remote declared above — Knot refuses a repeated
+`id` with `duplicate identifier`, so this edits that block rather than adding a
+second one, and the address is wherever Bindizr listens:
+
+```yaml
 remote:
   - id: bindizr
     address: 10.0.0.5@5300

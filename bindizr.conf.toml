@@ -24,7 +24,7 @@ url = "postgresql://user:password@hostname:port/database"
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 secondary_addrs = "127.0.0.1:53"  # Comma-separated; they receive NOTIFY and are the only clients
-                              # allowed to pull zones. The default is the BIND `setup_bind.sh` installs.
+                              # allowed to pull zones. The default is a secondary on this host.
 # catalog_zone_name = "catalog.bindizr"  # The RFC 9432 catalog zone secondaries follow. A secondary
                               # holds one zone per name, so two primaries feeding one secondary need
                               # two names. Fixed while bindizr runs.

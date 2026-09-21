@@ -1,7 +1,7 @@
 # Technitium DNS Server — integrated authoritative server with an HTTP API.
 services:
   technitium:
-    image: technitium/dns-server:latest
+    image: technitium/dns-server:15.5.0
     environment:
       DNS_SERVER_ADMIN_PASSWORD: "admin"
       DNS_SERVER_WEB_SERVICE_HTTP_PORT: "5380"

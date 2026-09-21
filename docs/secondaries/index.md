@@ -42,9 +42,14 @@ Bindizr's side of this is two settings — see [Configuration](../configuration.
 
 The address list authorizes a secondary by where it connects from, which is
 all a loopback pair needs. Where the secondary is elsewhere, give it a TSIG
-key: create one with [`bindizr tsig-key create`](../cli/tsig-keys.md), then
-name it on the secondary's primary reference. Bindizr answers under that key
-and each server page shows the syntax.
+key: create one with
+[`bindizr tsig-key create <name> --global`](../cli/tsig-keys.md), then name it
+on the secondary's primary reference. Bindizr answers under that key and each
+server page shows the syntax.
+
+    `--global` is required, not a convenience: the catalog zone is virtual, so
+    there is no zone row to grant a scoped key against, and a transfer of it
+    signed by one is refused.
 
 !!! warning "PowerDNS does not sign member transfers"
 

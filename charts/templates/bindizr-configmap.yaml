@@ -31,6 +31,7 @@ data:
     [dns]
     listen_addr = "{{ .Values.bindizr.dns.listenAddr }}"
     listen_port = {{ .Values.bindizr.dns.port }}
+    catalog_zone_name = "{{ .Values.bindizr.dns.catalogZoneName }}"
     nsupdate_tsig_required = {{ .Values.bindizr.dns.nsupdateTsigRequired }}
     secondary_addrs = "{{ include "bindizr-chart.secondaryAddrs" . }}"
     zone_history_retention_days = {{ .Values.bindizr.dns.zoneHistoryRetentionDays }}

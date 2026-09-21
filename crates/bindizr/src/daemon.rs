@@ -74,6 +74,10 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     let config = config::bindizr_config();
     database::initialize().await.map_err(|e| e.to_string())?;
 
+    service::zone::ZoneService::validate_catalog_zone_name()
+        .await
+        .map_err(|e| e.message)?;
+
     // Authentication with no token answers 401 to everything, which reads as a
     // broken deployment rather than one nobody has been let into yet.
     if config.api.authentication_required {

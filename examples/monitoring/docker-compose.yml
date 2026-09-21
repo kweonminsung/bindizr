@@ -1,6 +1,6 @@
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.14.0
     ports:
       - "9090:9090"
     volumes:
@@ -10,7 +10,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.2.2
     ports:
       # Grafana's default 3000 is left to the bindizr API.
       - "3001:3000"

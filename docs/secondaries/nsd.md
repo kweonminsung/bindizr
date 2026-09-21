@@ -85,14 +85,26 @@ pattern as well as the catalog zone, so member transfers are signed too:
 key:
     name: "xfr-key"
     algorithm: hmac-sha256
-    secret: "<base64 secret from bindizr tsig-key create>"
+    secret: "<base64 secret from bindizr tsig-key create --global>"
 
 pattern:
     name: "catalog-member"
     zonefile: "members/%s.zone"
     allow-notify: 10.0.0.5 NOKEY
     request-xfr: 10.0.0.5@5300 xfr-key
+
+zone:
+    name: "catalog.bindizr"
+    zonefile: "catalog.bindizr.zone"
+    catalog: consumer
+    catalog-member-pattern: "catalog-member"
+    allow-notify: 10.0.0.5 NOKEY
+    request-xfr: 10.0.0.5@5300 xfr-key
 ```
+
+The catalog zone takes the key too: it is the transfer every member is
+provisioned from, so leaving it on `NOKEY` signs everything except the one
+that has to arrive first.
 
 `allow-notify` stays `NOKEY`: Bindizr sends NOTIFY unsigned, so requiring the
 key there would reject it.
