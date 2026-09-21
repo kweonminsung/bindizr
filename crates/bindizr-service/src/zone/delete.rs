@@ -1,4 +1,4 @@
-use bindizr_core::dns::CATALOG_ZONE_NAME;
+use bindizr_core::config::bindizr_config;
 use bindizr_db::repository::{LockLevel, RecordFilter};
 
 use super::ZoneService;
@@ -61,10 +61,16 @@ impl ZoneService {
             RepositoryService::finish_tx(tx, apply_result, "Failed to delete zone").await?;
 
         // Send catalog NOTIFY so secondaries drop the removed zone
+        let config = bindizr_config();
         if response.applied
-            && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
+            && let Err(e) =
+                crate::notify::send_notify_after_update(Some(&config.dns.catalog_zone_name)).await
         {
-            log::warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
+            log::warn!(
+                "Failed to send NOTIFY for {}: {}",
+                config.dns.catalog_zone_name,
+                e
+            );
         }
 
         Ok(response)

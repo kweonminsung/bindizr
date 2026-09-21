@@ -90,11 +90,11 @@ $ sudo rpm -i bindizr-*.x86_64.rpm    # Fedora, CentOS, RHEL (bindizr-*.aarch64.
 ```
 
 The package runs on SQLite out of the box and serves zone transfers on port
-5300, leaving 53 to BIND9. Point BIND9 at the catalog zone with the bundled
-script, then start.
+5300, leaving 53 to the secondary. Point the secondary at the catalog zone —
+[Secondary Servers](https://kweonminsung.github.io/bindizr/secondaries/)
+has the configuration for BIND, Knot DNS, NSD, and PowerDNS — then start.
 
 ```bash
-$ sudo /usr/share/bindizr/setup_bind.sh && sudo systemctl restart named   # bind9 on Debian
 $ sudo systemctl start bindizr
 ```
 

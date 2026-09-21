@@ -522,6 +522,33 @@ async fn a_rollback_keeps_every_restored_record_inside_the_wire_limit() {
     assert!(body.to_string().contains("bytes or fewer"), "{body}");
 }
 
+/// Verify that a zone cannot take the catalog zone's name, however spelled.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_cannot_take_the_catalog_zone_name() {
+    let app = TestApp::start().await;
+
+    for name in ["catalog.bindizr", "Catalog.Bindizr", " catalog.bindizr. "] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/zones",
+                Some(json!({
+                    "name": name,
+                    "mname": "ns1.catalog.bindizr",
+                    "rname": "hostmaster@catalog.bindizr",
+                    "default_ttl": 3600
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "name: {name}");
+        assert!(
+            body.to_string().contains("catalog zone name"),
+            "name: {name}, body: {body}"
+        );
+    }
+}
+
 /// Verify zone-field validation and normalization.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

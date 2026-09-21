@@ -1,0 +1,20 @@
+# ARM override, layered when BENCH_ARM=true; see ../bind9.arm.Dockerfile.
+# The entrypoint reproduces the ISC image's, so `command` stays named's
+# arguments, and the seed chowns by name because Debian's bind is not uid 53.
+services:
+  seed:
+    image: bindizr-bench-bind9:local
+    build:
+      context: ..
+      dockerfile: bind9.arm.Dockerfile
+    command:
+      - |
+        cp /seed/bench.example.zone /var/cache/bind/bench.example.zone
+        chown bind:bind /var/cache/bind/bench.example.zone
+
+  bind9:
+    image: bindizr-bench-bind9:local
+    build:
+      context: ..
+      dockerfile: bind9.arm.Dockerfile
+    entrypoint: ["/usr/sbin/named", "-u", "bind"]

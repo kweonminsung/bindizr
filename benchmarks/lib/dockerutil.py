@@ -18,22 +18,37 @@ def run(cmd: list[str], check: bool = True, capture: bool = True) -> subprocess.
     )
 
 
+def arm_overrides_enabled() -> bool:
+    """Whether BENCH_ARM asks for each system's `compose.arm.yml`."""
+    return os.environ.get("BENCH_ARM", "").lower() in ("1", "true", "yes")
+
+
 class Compose:
     """Wrapper for a single docker compose project."""
 
     def __init__(self, file: Path, project: str, env: dict[str, str] | None = None):
-        """Store the Compose file, project name, and environment overrides."""
+        """Store the Compose file, project name, and environment overrides. A
+        system's `compose.arm.yml` is layered on top when BENCH_ARM is set."""
         self.file = Path(file)
         self.project = project
         self.env = env or {}
+        self.files = [self.file]
+        arm_override = self.file.with_name("compose.arm.yml")
+        if arm_overrides_enabled() and arm_override.exists():
+            self.files.append(arm_override)
 
     def _base(self) -> list[str]:
         """Build the Docker Compose command prefix for this project."""
-        return ["docker", "compose", "-f", str(self.file), "-p", self.project]
+        cmd = ["docker", "compose"]
+        for file in self.files:
+            cmd += ["-f", str(file)]
+        return cmd + ["-p", self.project]
 
     def up(self, *services: str, wait: bool = True) -> None:
         """Start the requested Compose services and optionally wait for readiness."""
-        cmd = self._base() + ["up", "-d"]
+        # --build so a system built from this repository is measured as it
+        # stands now rather than from a stale image.
+        cmd = self._base() + ["up", "-d", "--build"]
         if wait:
             cmd.append("--wait")
         cmd += list(services)
@@ -42,10 +57,12 @@ class Compose:
     def down(self) -> None:
         """Remove the project containers, volumes, and orphaned services."""
 
-        # All profiles, so `down` also removes Bindizr's optional mysql/postgres
-        # services and their volumes rather than leaving stale data behind.
+        # All profiles, so `down` also removes the optional database and
+        # secondary services and their volumes. A profile missing here leaves
+        # its containers running into the next system's run.
         env = {**os.environ, **self.env}
-        env["COMPOSE_PROFILES"] = "mysql,postgres"
+        profiles = ["mysql", "postgres", *self.env.get("COMPOSE_PROFILES", "").split(",")]
+        env["COMPOSE_PROFILES"] = ",".join(dict.fromkeys(p for p in profiles if p))
         subprocess.run(
             self._base() + ["down", "-v", "--remove-orphans"],
             check=False, text=True, env=env,

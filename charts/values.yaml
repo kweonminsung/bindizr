@@ -31,6 +31,9 @@ bindizr:
   dns:
     listenAddr: "0.0.0.0"
     port: 53
+    # The RFC 9432 catalog zone the BIND9 pods follow. A secondary holds one
+    # zone per name, so two releases feeding one need two names.
+    catalogZoneName: "catalog.bindizr"
     # Require a TSIG signature on RFC 2136 updates; false accepts them from
     # anyone (testing only).
     nsupdateTsigRequired: true

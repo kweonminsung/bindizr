@@ -9,6 +9,8 @@ from pathlib import Path
 
 import yaml
 
+from lib.dockerutil import arm_overrides_enabled
+
 SYSTEMS_DIR = Path(__file__).resolve().parent.parent / "systems"
 
 
@@ -24,18 +26,25 @@ def _read_command_output(args: list[str]) -> str:
 
 def _load_compose_images() -> dict[str, str]:
     """Image tag per service across systems/*/compose.yml, derived so the report
-    cannot drift from what the stack runs. `seed` containers are scaffolding."""
+    cannot drift from what the stack runs. An ARM run layers each system's
+    `compose.arm.yml` exactly as the harness does, since it swaps images.
+    `seed` containers are scaffolding."""
     images: dict[str, str] = {}
     for compose in sorted(SYSTEMS_DIR.glob("*/compose.yml")):
-        try:
-            with open(compose) as fh:
-                services = (yaml.safe_load(fh) or {}).get("services") or {}
-        except Exception:
-            continue
-        for name, service in services.items():
-            image = (service or {}).get("image")
-            if image and name != "seed":
-                images[name] = image
+        files = [compose]
+        override = compose.with_name("compose.arm.yml")
+        if arm_overrides_enabled() and override.exists():
+            files.append(override)
+        for file in files:
+            try:
+                with open(file) as fh:
+                    services = (yaml.safe_load(fh) or {}).get("services") or {}
+            except Exception:
+                continue
+            for name, service in services.items():
+                image = (service or {}).get("image")
+                if image and name != "seed":
+                    images[name] = image
     if "bindizr" in images:
         images["bindizr"] += " (built from source)"
     return dict(sorted(images.items()))

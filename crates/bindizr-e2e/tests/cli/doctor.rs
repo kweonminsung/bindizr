@@ -112,8 +112,4 @@ fn doctor_without_a_daemon_runs_the_offline_checks() {
     assert!(stdout.contains("Database check skipped"), "{stdout}");
     assert!(stdout.contains("DNS port free"), "{stdout}");
     assert!(stdout.contains("API port free"), "{stdout}");
-    assert!(
-        stdout.contains("BIND check skipped") || stdout.contains("BIND catalog"),
-        "{stdout}"
-    );
 }

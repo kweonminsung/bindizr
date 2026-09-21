@@ -84,13 +84,13 @@ async fn scoped_token_cannot_notify_the_catalog_zone() {
     app.set_auth_token(scoped_token);
 
     let (status, _) = app
-        .send_request(Method::POST, "/zones/catalog.bind/notify", None)
+        .send_request(Method::POST, "/zones/catalog.bindizr/notify", None)
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     app.set_auth_token(global_token);
     let (status, _) = app
-        .send_request(Method::POST, "/zones/catalog.bind/notify", None)
+        .send_request(Method::POST, "/zones/catalog.bindizr/notify", None)
         .await;
     assert_eq!(status, StatusCode::OK);
 }

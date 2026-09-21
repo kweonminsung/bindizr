@@ -13,16 +13,14 @@ is down. The tables below pair the messages you will meet with what to do.
 | `Permission denied on the daemon socket` | any CLI command | The socket is owner-only. Run the CLI as the daemon's user: `sudo bindizr …` on a package install, `docker exec` / `kubectl exec` in a container. |
 | `unknown field \`…\`` | start, `config check` | A mistyped configuration key; the message lists the keys the section accepts. |
 | `… connection failed (check database.mysql.url)` | start, doctor | The key the message names is wrong, or the database is unreachable from this host. `bindizr doctor` repeats the connection without the daemon. |
-| `Address already in use` / `DNS port in use` | start, doctor | BIND on the same host holds the port. Keep `dns.listen_port` off 53 (the package default is 5300) and rerun `setup_bind.sh` so BIND fetches the catalog from that port. |
+| `Address already in use` / `DNS port in use` | start, doctor | The secondary on the same host holds the port. Keep `dns.listen_port` off 53 (the package default is 5300) and point the secondary's catalog zone at that port. |
 | `these settings are fixed while bindizr runs` | `config reload` | `[api]`, `[database]`, and the DNS listen address and port need a restart: `sudo systemctl restart bindizr`. |
 
 ## Secondaries
 
 | Symptom | Where | Fix |
 | --- | --- | --- |
-| `BIND catalog zone not configured` | doctor | Run `/usr/share/bindizr/setup_bind.sh [host] [port]`, check with `named-checkconf`, and restart BIND. |
-| `BIND fetches the catalog from port N but bindizr listens on M` | doctor | Rerun `setup_bind.sh` with bindizr's `dns.listen_port`. |
-| BIND never picks up a new zone | `bindizr zone status`, BIND's log | BIND learns zones from `catalog.bind`. Check doctor's BIND line, then BIND's log for the catalog transfer; `bindizr zone notify` resends NOTIFY for every zone. |
+| A secondary never picks up a new zone | `bindizr zone status`, the secondary's log | A secondary learns zones from `catalog.bindizr`. Check that it reached the catalog serial `bindizr doctor` reports, then its log for the catalog transfer; `bindizr zone notify` resends NOTIFY for every zone. [Secondary Servers](secondaries/index.md) has each server's command for inspecting a zone. |
 | `Secondary unreachable` | doctor, `zone status` | The address in `dns.secondary_addrs` is wrong, or a firewall sits between bindizr and the secondary. |
 | `Secondary out of sync` | doctor, `zone status` | The secondary has not pulled the current serial. BIND's log names the reason it refused or deferred the transfer. |
 | `NOTIFY rejected` | doctor | BIND's `allow-notify` does not admit bindizr's address; the setup script adds `allow-notify { any; }`. |

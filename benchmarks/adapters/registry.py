@@ -23,6 +23,9 @@ def _load_adapter_module(key: str):
 
 _CLASS = {
     "bindizr": "BindizrAdapter",
+    "bindizr_knot": "BindizrKnotAdapter",
+    "bindizr_nsd": "BindizrNsdAdapter",
+    "bindizr_pdns": "BindizrPdnsAdapter",
     "powerdns": "PowerDnsAdapter",
     "technitium": "TechnitiumAdapter",
     "bind9_nsupdate": "Bind9NsupdateAdapter",
@@ -31,6 +34,16 @@ _CLASS = {
     "coredns": "CoreDnsAdapter",
     "knot": "KnotAdapter",
 }
+
+
+#: The systems running the Bindizr control plane, whichever secondary serves
+#: queries for them. They take the same adapter keywords.
+BINDIZR_SYSTEMS = ("bindizr", "bindizr_knot", "bindizr_nsd", "bindizr_pdns")
+
+
+def is_bindizr(key: str) -> bool:
+    """Whether this system runs the Bindizr control plane."""
+    return key in BINDIZR_SYSTEMS
 
 
 def build(key: str, cfg: dict, project: str, **kwargs):

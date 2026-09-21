@@ -68,6 +68,13 @@ fn default_nsupdate_tsig_required() -> bool {
     true
 }
 
+/// Return the default catalog zone name.
+fn default_catalog_zone_name() -> String {
+    // RFC 9432, Section 3 leaves the name to the operator; this one says which
+    // primary a secondary is holding the catalog of.
+    "catalog.bindizr".to_string()
+}
+
 /// Return the default API authentication setting.
 fn default_authentication_required() -> bool {
     true
@@ -155,6 +162,11 @@ pub struct DnsConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
     pub secondary_addrs: String,
+    /// Name of the virtual RFC 9432 catalog zone this instance serves. A
+    /// secondary holds one zone per name, so two primaries feeding the same
+    /// secondary need two names.
+    #[serde(default = "default_catalog_zone_name")]
+    pub catalog_zone_name: String,
     /// Days of zone history to keep (0 = unlimited): the IXFR journal and the
     /// versions rollback can reach. A secondary asking for a pruned serial
     /// falls back to AXFR.
@@ -522,6 +534,12 @@ impl BindizrConfig {
         if self.dns.listen_port != next.dns.listen_port {
             fixed.push("dns.listen_port".to_string());
         }
+        // Every secondary names the catalog zone in its own configuration, and
+        // the stored catalog row is keyed by that name: renaming it live would
+        // strand both.
+        if self.dns.catalog_zone_name != next.dns.catalog_zone_name {
+            fixed.push("dns.catalog_zone_name".to_string());
+        }
         fixed
     }
 
@@ -600,10 +618,26 @@ impl ApiConfig {
 }
 
 impl DnsConfig {
-    /// Validate the DNS configuration fields.
-    fn validate(&self) -> Result<(), String> {
+    /// Whether `zone_name` is the virtual RFC 9432 catalog zone this instance
+    /// serves. Case-insensitive per RFC 4343; callers pass client-cased query
+    /// names as-is.
+    pub fn is_catalog_zone(&self, zone_name: &str) -> bool {
+        zone_name.eq_ignore_ascii_case(&self.catalog_zone_name)
+    }
+
+    /// Validate the DNS configuration fields, leaving the catalog zone name
+    /// canonical.
+    fn validate(&mut self) -> Result<(), String> {
         if self.listen_port == 0 {
             return Err("dns.listen_port must not be 0".to_string());
+        }
+        // The name is served as a zone and spelled into every secondary's
+        // configuration, so an unusable one must not reach startup. Parsing is
+        // also what canonicalizes it: the FQDN `catalog.prod.` would otherwise
+        // match no query name, which carries no root dot.
+        match crate::dns::name::ZoneName::parse(&self.catalog_zone_name) {
+            Ok(name) => self.catalog_zone_name = name.to_string(),
+            Err(e) => return Err(format!("dns.catalog_zone_name is not a zone name: {}", e)),
         }
         // Zero would admit no zone at all, which enabled = false already says.
         if self.transfer_cache.enabled && self.transfer_cache.max_records == 0 {

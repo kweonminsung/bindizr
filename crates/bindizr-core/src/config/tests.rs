@@ -120,6 +120,7 @@ fn from_toml_defaults_missing_optional_fields() {
     assert!(parsed.dns.transfer_cache.enabled);
     assert_eq!(parsed.dns.transfer_cache.max_records, 500_000);
     assert!(parsed.dns.nsupdate_tsig_required);
+    assert_eq!(parsed.dns.catalog_zone_name, "catalog.bindizr");
     assert_eq!(parsed.dns.zone_history_retention_days, 365);
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
     assert_eq!(parsed.logging.format, LogFormat::Text);
@@ -216,6 +217,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
             "BINDIZR_DNS_LISTEN_PORT" => Some("5353".to_string()),
             "BINDIZR_DNS_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
+            "BINDIZR_DNS_CATALOG_ZONE_NAME" => Some("catalog.staging".to_string()),
             "BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED" => Some("false".to_string()),
             "BINDIZR_DNS_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
             "BINDIZR_DNS_NOTIFY_ON_STARTUP" => Some("true".to_string()),
@@ -251,6 +253,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
         overridden.dns.secondary_addrs,
         "192.0.2.10:53,192.0.2.11:53"
     );
+    assert_eq!(overridden.dns.catalog_zone_name, "catalog.staging");
     assert!(!overridden.dns.nsupdate_tsig_required);
     assert!(!overridden.dns.notify.after_update);
     assert!(overridden.dns.notify.on_startup);
@@ -382,6 +385,64 @@ fn a_reload_refuses_what_a_running_process_cannot_adopt() {
         current.fixed_settings_changed(&dns_moved),
         ["dns.listen_port"]
     );
+
+    let mut catalog_renamed = current.clone();
+    catalog_renamed.dns.catalog_zone_name = "catalog.other".to_string();
+    assert_eq!(
+        current.fixed_settings_changed(&catalog_renamed),
+        ["dns.catalog_zone_name"]
+    );
+}
+
+/// Verify that `from_toml` rejects a catalog zone name that is not a zone name.
+#[test]
+fn from_toml_rejects_an_unusable_catalog_zone_name() {
+    // The name is served as a zone and copied into every secondary's
+    // configuration, so it must fail at startup rather than on transfer.
+    let error = parse_config(&TestConfigToml {
+        dns_extra: "catalog_zone_name = \"catalog bindizr\"",
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(
+        error.contains("dns.catalog_zone_name"),
+        "unexpected error: {error}"
+    );
+}
+
+/// Verify that `is_catalog_zone` matches the configured name, ignoring case.
+#[test]
+fn is_catalog_zone_matches_the_configured_name_ignoring_case() {
+    let parsed = parse_config(&TestConfigToml {
+        dns_extra: "catalog_zone_name = \"catalog.prod\"",
+        ..Default::default()
+    })
+    .unwrap();
+
+    // RFC 4343: a query name arrives in whatever case the client used.
+    assert!(parsed.dns.is_catalog_zone("catalog.prod"));
+    assert!(parsed.dns.is_catalog_zone("CATALOG.PROD"));
+    assert!(!parsed.dns.is_catalog_zone("catalog.bindizr"));
+    assert!(!parsed.dns.is_catalog_zone("catalog.prod.example"));
+}
+
+/// Verify that the catalog zone name is stored canonically, so an FQDN or a
+/// padded spelling still matches a query name.
+#[test]
+fn catalog_zone_name_is_canonicalized_on_load() {
+    for dns_extra in [
+        "catalog_zone_name = \"catalog.Prod.\"",
+        "catalog_zone_name = \" catalog.prod \"",
+    ] {
+        let parsed = parse_config(&TestConfigToml {
+            dns_extra,
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(parsed.dns.catalog_zone_name, "catalog.prod");
+        assert!(parsed.dns.is_catalog_zone("catalog.prod"));
+    }
 }
 
 /// Verify that a reload takes the settings read per use.

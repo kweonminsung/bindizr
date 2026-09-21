@@ -18,7 +18,7 @@ services:
       BINDIZR_API_AUTHENTICATION_REQUIRED: "false"
       BINDIZR_DNS_LISTEN_ADDR: "0.0.0.0"
       BINDIZR_DNS_LISTEN_PORT: "53"
-      BINDIZR_DNS_SECONDARY_ADDRS: bind9:53
+      BINDIZR_DNS_SECONDARY_ADDRS: ${BINDIZR_SECONDARY_ADDRS:-bind9:53}
       BINDIZR_DNS_NOTIFY_AFTER_UPDATE: ${BINDIZR_NOTIFY_AFTER_UPDATE:-true}
       # 0 = NOTIFY inline on the write path; a window (ms) answers the write at
       # commit and coalesces NOTIFYs per zone over that window from a queue.
@@ -77,6 +77,90 @@ services:
           memory: ${BENCH_MEM_LIMIT:-4g}
     restart: unless-stopped
 
+  # The three alternative secondaries. Each is profile-gated and publishes the
+  # same host port as bind9, since exactly one of them runs per benchmark.
+  knot:
+    image: cznic/knot:3.6
+    profiles: ["knot"]
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        IP=$$(getent hosts bindizr | awk '{print $$1; exit}')
+        sed "s/__BINDIZR_IP__/$$IP/g" /config/knot.conf.template > /tmp/knot.conf
+        exec knotd -c /tmp/knot.conf
+    depends_on:
+      bindizr:
+        condition: service_started
+    ports:
+      - "${BINDIZR_DNS_HOST_PORT:-15353}:53/tcp"
+      - "${BINDIZR_DNS_HOST_PORT:-15353}:53/udp"
+    volumes:
+      - ./knot.conf.template:/config/knot.conf.template:ro
+      - knot-storage:/storage
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    restart: unless-stopped
+
+  nsd:
+    build:
+      context: .
+      dockerfile: nsd.Dockerfile
+    image: bindizr-bench-nsd:local
+    profiles: ["nsd"]
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        IP=$$(getent hosts bindizr | awk '{print $$1; exit}')
+        sed "s/__BINDIZR_IP__/$$IP/g" /config/nsd.conf.template > /tmp/nsd.conf
+        # NSD writes each member's zone file but not the directory holding them.
+        mkdir -p /var/db/nsd/members
+        exec nsd -d -c /tmp/nsd.conf
+    depends_on:
+      bindizr:
+        condition: service_started
+    ports:
+      - "${BINDIZR_DNS_HOST_PORT:-15353}:53/tcp"
+      - "${BINDIZR_DNS_HOST_PORT:-15353}:53/udp"
+    volumes:
+      - ./nsd.conf.template:/config/nsd.conf.template:ro
+      - nsd-data:/var/db/nsd
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    restart: unless-stopped
+
+  pdns:
+    image: powerdns/pdns-auth-49:4.9.17
+    profiles: ["pdns"]
+    entrypoint: ["/pdns-entrypoint.sh"]
+    depends_on:
+      bindizr:
+        condition: service_started
+    ports:
+      - "${BINDIZR_DNS_HOST_PORT:-15353}:53/tcp"
+      - "${BINDIZR_DNS_HOST_PORT:-15353}:53/udp"
+    volumes:
+      - ./pdns.conf:/etc/powerdns/pdns.conf:ro
+      - ./pdns-entrypoint.sh:/pdns-entrypoint.sh:ro
+      - pdns-data:/var/lib/powerdns
+    networks:
+      - bench-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${BENCH_CPU_LIMIT:-4}"
+          memory: ${BENCH_MEM_LIMIT:-4g}
+    restart: unless-stopped
+
   mysql:
     image: mysql:26.7
     profiles: ["mysql"]
@@ -126,3 +210,6 @@ networks:
 volumes:
   bindizr-data:
   bind9-cache:
+  knot-storage:
+  nsd-data:
+  pdns-data:

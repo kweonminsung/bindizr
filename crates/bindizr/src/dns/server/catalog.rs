@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-pub(crate) use bindizr_core::dns::{CATALOG_ZONE_NAME, is_catalog_zone};
 use bindizr_core::{
+    config::bindizr_config,
     dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
     model::zone::Zone,
 };
@@ -14,7 +14,9 @@ use crate::dns::error::XfrError;
 
 /// Generates the catalog zone and its member zone list.
 pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
-    log::info!("Generating catalog zone: {}", CATALOG_ZONE_NAME);
+    let config = bindizr_config();
+    let catalog_zone_name = config.dns.catalog_zone_name.as_str();
+    log::info!("Generating catalog zone: {}", catalog_zone_name);
 
     let all_zones = ZoneService::list().await?;
 
@@ -22,7 +24,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     let member_zones: Vec<String> = all_zones
         .iter()
         .map(|z| z.name.clone())
-        .filter(|name| !is_catalog_zone(name.as_str()))
+        .filter(|name| !config.dns.is_catalog_zone(name.as_str()))
         .map(|name| name.to_string())
         .collect();
 
@@ -32,11 +34,11 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     let digest = catalog_digest(&member_zones, &all_zones);
     let base_serial = all_zones.iter().map(|z| z.serial).max().unwrap_or(1);
     let serial =
-        ZoneService::advance_catalog_serial(CATALOG_ZONE_NAME, &digest, base_serial).await?;
+        ZoneService::advance_catalog_serial(catalog_zone_name, &digest, base_serial).await?;
 
     let catalog_zone = Zone {
         id: 0,
-        name: ZoneName::from_row(CATALOG_ZONE_NAME),
+        name: ZoneName::from_row(catalog_zone_name),
         mname: "invalid".to_string(),
         rname: "invalid".to_string(),
         default_ttl: 3600,
@@ -90,7 +92,10 @@ pub(crate) async fn handle_catalog_axfr(
     response_qtype: Rtype,
     signer: Option<TransferSigner>,
 ) -> Result<(), XfrError> {
-    log::info!("AXFR request for catalog zone: {}", CATALOG_ZONE_NAME);
+    log::info!(
+        "AXFR request for catalog zone: {}",
+        bindizr_config().dns.catalog_zone_name
+    );
 
     // Materialize the virtual catalog from the current member zones.
     let (catalog_zone, member_zones) = generate_catalog_zone().await?;

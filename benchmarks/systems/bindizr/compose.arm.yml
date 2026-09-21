@@ -1,0 +1,8 @@
+# ARM override, layered by the harness when BENCH_ARM=true. See
+# ../bind9.arm.Dockerfile for why the image is built rather than pulled.
+services:
+  bind9:
+    build:
+      context: ..
+      dockerfile: bind9.arm.Dockerfile
+    image: bindizr-bench-bind9:local

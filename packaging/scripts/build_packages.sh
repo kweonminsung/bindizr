@@ -31,7 +31,6 @@ trap 'rm -rf -- "$TMP_DIR"' EXIT
 mkdir -p "$TMP_DIR/usr/bin"
 mkdir -p "$TMP_DIR/etc/bindizr"
 mkdir -p "$TMP_DIR/usr/lib/systemd/system"
-mkdir -p "$TMP_DIR/usr/share/bindizr"
 mkdir -p "$TMP_DIR/usr/share/doc/bindizr"
 mkdir -p "$TMP_DIR/usr/share/licenses/bindizr"
 mkdir -p "$TMP_DIR/usr/share/man/man1"
@@ -42,7 +41,6 @@ mkdir -p "$TMP_DIR/usr/share/fish/vendor_completions.d"
 # Copy files
 echo "Copying files..."
 install -D -m 755 "target/$TARGET/release/bindizr" "$TMP_DIR/usr/bin/bindizr"
-install -p -m 755 packaging/scripts/setup_bind.sh "$TMP_DIR/usr/share/bindizr/setup_bind.sh"
 # Keep credentials owner-only in the package; postinstall grants the daemon group access.
 install -p -m 600 bindizr.conf.toml "$TMP_DIR/etc/bindizr/bindizr.conf.toml"
 install -p -m 644 packaging/bindizr.service "$TMP_DIR/usr/lib/systemd/system/bindizr.service"
@@ -70,7 +68,7 @@ fpm -s dir -t deb -n bindizr -v "$VERSION" --iteration "$RELEASE" \
     --after-install packaging/scripts/postinstall.sh \
     --after-remove packaging/scripts/postremove.sh \
     -C "$TMP_DIR" \
-    usr/bin/bindizr usr/lib/systemd/system/bindizr.service etc/bindizr/bindizr.conf.toml usr/share/bindizr/setup_bind.sh usr/share/doc/bindizr/README.md usr/share/licenses/bindizr/LICENSE usr/share/man/man1/bindizr.1.gz usr/share/bash-completion/completions/bindizr usr/share/zsh/site-functions/_bindizr usr/share/fish/vendor_completions.d/bindizr.fish
+    usr/bin/bindizr usr/lib/systemd/system/bindizr.service etc/bindizr/bindizr.conf.toml usr/share/doc/bindizr/README.md usr/share/licenses/bindizr/LICENSE usr/share/man/man1/bindizr.1.gz usr/share/bash-completion/completions/bindizr usr/share/zsh/site-functions/_bindizr usr/share/fish/vendor_completions.d/bindizr.fish
 
 fpm -s dir -t rpm -n bindizr -v "$VERSION" --iteration "$RELEASE" \
     -a "$RPM_ARCH" -m "Minsung Kweon <kevin136583@gmail.com>" \
@@ -81,7 +79,7 @@ fpm -s dir -t rpm -n bindizr -v "$VERSION" --iteration "$RELEASE" \
     --after-install packaging/scripts/postinstall.sh \
     --after-remove packaging/scripts/postremove.sh \
     -C "$TMP_DIR" \
-    usr/bin/bindizr usr/lib/systemd/system/bindizr.service etc/bindizr/bindizr.conf.toml usr/share/bindizr/setup_bind.sh usr/share/doc/bindizr/README.md usr/share/licenses/bindizr/LICENSE usr/share/man/man1/bindizr.1.gz usr/share/bash-completion/completions/bindizr usr/share/zsh/site-functions/_bindizr usr/share/fish/vendor_completions.d/bindizr.fish
+    usr/bin/bindizr usr/lib/systemd/system/bindizr.service etc/bindizr/bindizr.conf.toml usr/share/doc/bindizr/README.md usr/share/licenses/bindizr/LICENSE usr/share/man/man1/bindizr.1.gz usr/share/bash-completion/completions/bindizr usr/share/zsh/site-functions/_bindizr usr/share/fish/vendor_completions.d/bindizr.fish
 
 echo "Packages created successfully."
 ls -l bindizr*.{deb,rpm}

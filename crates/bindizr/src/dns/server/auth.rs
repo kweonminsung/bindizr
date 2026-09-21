@@ -6,8 +6,8 @@
 use std::net::IpAddr;
 
 use bindizr_core::{
+    config::bindizr_config,
     dns::{
-        is_catalog_zone,
         message::{ParsedQuery, Rcode},
         tsig::{
             RequestSignature, TransferSigner, TsigError, request_signature, verify_tsig_sequence,
@@ -115,7 +115,7 @@ pub(crate) async fn authenticate_transfer(
     let signer = verify_tsig_sequence(query_data, domain_key).map_err(TransferRefusal::from)?;
 
     let key = key.expect("verification succeeded, so the key is known");
-    if is_catalog_zone(zone_name) && !key.is_global {
+    if bindizr_config().dns.is_catalog_zone(zone_name) && !key.is_global {
         return Err(TransferRefusal::refused(
             format!(
                 "TSIG key '{}' is not granted zone '{}' whole",

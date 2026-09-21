@@ -1,6 +1,9 @@
 use std::net::IpAddr;
 
-use bindizr_core::dns::{message, message::Rtype};
+use bindizr_core::{
+    config::bindizr_config,
+    dns::{message, message::Rtype},
+};
 use bindizr_service::zone::TransferAccess;
 use tokio::net::TcpStream;
 
@@ -26,7 +29,7 @@ pub(crate) async fn handle_axfr(
         client_ip
     );
 
-    if catalog::is_catalog_zone(zone_name_str) {
+    if bindizr_config().dns.is_catalog_zone(zone_name_str) {
         return catalog::handle_catalog_axfr(stream, query, response_qtype, identity.signer.take())
             .await;
     }

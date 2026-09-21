@@ -103,8 +103,11 @@ async fn handle_soa_request(
         }
     };
 
-    if catalog::is_catalog_zone(zone_name_str) {
-        log::info!("SOA query for catalog zone: {}", catalog::CATALOG_ZONE_NAME);
+    if config::bindizr_config().dns.is_catalog_zone(zone_name_str) {
+        log::info!(
+            "SOA query for catalog zone: {}",
+            config::bindizr_config().dns.catalog_zone_name
+        );
         let (catalog_zone, _) = catalog::generate_catalog_zone().await?;
         let mut builder = build(identity.signer);
         builder.add_catalog_soa(

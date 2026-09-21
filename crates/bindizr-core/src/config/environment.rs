@@ -68,6 +68,9 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_DNS_SECONDARY_ADDRS") {
             self.dns.secondary_addrs = value;
         }
+        if let Some(value) = get_env("BINDIZR_DNS_CATALOG_ZONE_NAME") {
+            self.dns.catalog_zone_name = value;
+        }
         if let Some(value) = get_env("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED") {
             self.dns.nsupdate_tsig_required =
                 parse_env_value("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED", &value)?;

@@ -1,0 +1,40 @@
+# Knot DNS as a Bindizr secondary: it learns every zone from the catalog zone.
+# __BINDIZR_IP__ is substituted at startup, so no fixed subnet is needed.
+server:
+    rundir: /rundir
+    listen: 0.0.0.0@53
+
+log:
+  - target: stdout
+    any: warning
+
+database:
+    storage: /storage
+
+remote:
+  - id: bindizr
+    address: __BINDIZR_IP__@53
+
+acl:
+  - id: notify_from_bindizr
+    address: __BINDIZR_IP__
+    action: notify
+
+  - id: benchmark_transfer
+    action: transfer  # let the AXFR/IXFR benchmarks pull the propagated zone
+
+template:
+  - id: catalog_member
+    master: bindizr
+    acl: [notify_from_bindizr, benchmark_transfer]
+    storage: /storage
+    # Serve from the journal so member zones need no zone file on disk.
+    zonefile-load: none
+    journal-content: all
+
+zone:
+  - domain: catalog.bindizr
+    master: bindizr
+    acl: [notify_from_bindizr, benchmark_transfer]
+    catalog-role: interpret
+    catalog-template: catalog_member

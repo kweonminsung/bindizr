@@ -2,7 +2,7 @@
 # SQLite schema on first boot (idempotent) then execs pdns_server.
 services:
   powerdns:
-    image: powerdns/pdns-auth-49:latest
+    image: powerdns/pdns-auth-49:4.9.17
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |

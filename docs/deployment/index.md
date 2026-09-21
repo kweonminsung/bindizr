@@ -11,8 +11,9 @@ package-based setup.
 | [Manual Installation](manual.md) | Running on a VM or bare-metal host from a `.deb` / `.rpm` | SQLite, MySQL, PostgreSQL |
 
 Whichever you pick, the shape is the same: Bindizr owns the zone data and serves
-it over AXFR/IXFR, and one or more BIND9 secondaries discover zones through the
-catalog zone and answer client queries.
+it over AXFR/IXFR, and one or more secondaries discover zones through the
+catalog zone and answer client queries. The secondary can be BIND, Knot DNS,
+NSD, or PowerDNS — see [Secondary Servers](../secondaries/index.md).
 
 Zones already served by another nameserver move over without exporting files
 by hand — see [Migrating an Existing Primary](migrating.md).
