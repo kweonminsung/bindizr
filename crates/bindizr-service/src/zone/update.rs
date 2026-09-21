@@ -1,4 +1,4 @@
-use bindizr_core::dns::{CATALOG_ZONE_NAME, name::OwnerName};
+use bindizr_core::{config::bindizr_config, dns::name::OwnerName};
 use bindizr_db::repository::LockLevel;
 
 use super::ZoneService;
@@ -270,11 +270,17 @@ impl ZoneService {
         }
 
         // Renaming or toggling a zone also changes the catalog seen by secondaries.
+        let config = bindizr_config();
         if !dry_run
             && catalog_changed
-            && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
+            && let Err(e) =
+                crate::notify::send_notify_after_update(Some(&config.dns.catalog_zone_name)).await
         {
-            log::warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
+            log::warn!(
+                "Failed to send NOTIFY for {}: {}",
+                config.dns.catalog_zone_name,
+                e
+            );
         }
 
         Ok(updated_zone)

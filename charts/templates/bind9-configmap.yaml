@@ -21,13 +21,13 @@ data:
       ixfr-from-differences yes;
 
       catalog-zones {
-        zone "catalog.bind" default-primaries { __BINDIZR_DNS_ADDR__ port {{ .Values.bindizr.dns.service.port }}; };
+        zone "catalog.bindizr" default-primaries { __BINDIZR_DNS_ADDR__ port {{ .Values.bindizr.dns.service.port }}; };
       };
     };
 
-    zone "catalog.bind" {
+    zone "catalog.bindizr" {
       type secondary;
       primaries { __BINDIZR_DNS_ADDR__ port {{ .Values.bindizr.dns.service.port }}; };
-      file "/var/cache/bind/catalog.bind.zone";
+      file "/var/cache/bind/catalog.bindizr.zone";
       ixfr-from-differences yes;
     };

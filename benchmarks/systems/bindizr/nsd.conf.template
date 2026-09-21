@@ -1,0 +1,38 @@
+# NSD as a Bindizr secondary: it learns every zone from the catalog zone.
+# __BINDIZR_IP__ is substituted at startup, so no fixed subnet is needed.
+server:
+    server-count: 1
+    ip-address: 0.0.0.0
+    port: 53
+    username: ""
+    zonesdir: "/var/db/nsd"
+    verbosity: 0
+    # Reload as each transfer lands. NSD's default debounces by a second, which
+    # Benchmark 3 would read as propagation latency while BIND and Knot apply
+    # transfers immediately.
+    xfrd-reload-timeout: 0
+    pidfile: "/var/run/nsd.pid"
+    xfrdfile: "/var/db/nsd/xfrd.state"
+    zonelistfile: "/var/db/nsd/zone.list"
+
+pattern:
+    name: "catalog-member"
+    zonefile: "members/%s.zone"
+    allow-notify: __BINDIZR_IP__ NOKEY
+    request-xfr: __BINDIZR_IP__@53 NOKEY
+    # NSD denies outgoing transfers by default; the AXFR/IXFR benchmarks pull
+    # the propagated zone from here.
+    provide-xfr: 0.0.0.0/0 NOKEY
+    # Keep received deltas, so Benchmark 5 gets an incremental answer rather
+    # than the full transfer NSD otherwise falls back to.
+    store-ixfr: yes
+
+zone:
+    name: "catalog.bindizr"
+    zonefile: "catalog.bindizr.zone"
+    catalog: consumer
+    catalog-member-pattern: "catalog-member"
+    allow-notify: __BINDIZR_IP__ NOKEY
+    request-xfr: __BINDIZR_IP__@53 NOKEY
+    provide-xfr: 0.0.0.0/0 NOKEY
+    store-ixfr: yes

@@ -9,13 +9,13 @@ options {
 
     ixfr-from-differences yes;
     catalog-zones {
-        zone "catalog.bind" default-primaries { __BINDIZR_PRIMARY__ port 53; };
+        zone "catalog.bindizr" default-primaries { __BINDIZR_PRIMARY__ port 53; };
     };
 };
 
-zone "catalog.bind" {
+zone "catalog.bindizr" {
     type secondary;
     primaries { __BINDIZR_PRIMARY__ port 53; };
-    file "/var/cache/bind/catalog.bind.zone";
+    file "/var/cache/bind/catalog.bindizr.zone";
     ixfr-from-differences yes;
 };

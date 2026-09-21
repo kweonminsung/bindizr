@@ -6,11 +6,13 @@ use std::{
     time::Instant,
 };
 
-use bindizr_core::dns::{
-    CATALOG_ZONE_NAME,
-    address::is_address_target,
-    name::{OwnerName, ZoneName},
-    zonefile::{ParsedZoneFile, ZoneFileValue},
+use bindizr_core::{
+    config::bindizr_config,
+    dns::{
+        address::is_address_target,
+        name::{OwnerName, ZoneName},
+        zonefile::{ParsedZoneFile, ZoneFileValue},
+    },
 };
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
@@ -458,10 +460,16 @@ impl RecordService {
         let t = Instant::now();
         // The catalog goes first: a secondary that has not seen the new member
         // there cannot act on the zone's own NOTIFY below.
+        let config = bindizr_config();
         if created
-            && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
+            && let Err(e) =
+                crate::notify::send_notify_after_update(Some(&config.dns.catalog_zone_name)).await
         {
-            log::warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
+            log::warn!(
+                "Failed to send NOTIFY for {}: {}",
+                config.dns.catalog_zone_name,
+                e
+            );
         }
         // Notify after commit only when the import changed the served zone.
         if changed

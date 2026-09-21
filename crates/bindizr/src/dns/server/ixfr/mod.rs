@@ -7,6 +7,7 @@ mod send;
 use std::{collections::HashMap, net::IpAddr};
 
 use bindizr_core::{
+    config::bindizr_config,
     dns::{message, message::Rtype},
     model::zone_version::ZoneVersion,
 };
@@ -17,7 +18,7 @@ use self::{
     delta::delta_gap,
     send::{IxfrSendError, send_ixfr_response, send_soa_response},
 };
-use super::{auth::TransferIdentity, axfr, catalog};
+use super::{auth::TransferIdentity, axfr};
 use crate::dns::error::XfrError;
 
 /// Answer an IXFR request using journal changes or an AXFR fallback.
@@ -37,7 +38,7 @@ pub(crate) async fn handle_ixfr(
     );
 
     // Choose a full transfer or an SOA-only reply before loading incremental history.
-    if catalog::is_catalog_zone(zone_name_str) {
+    if bindizr_config().dns.is_catalog_zone(zone_name_str) {
         log::info!("IXFR: Catalog zone requested, falling back to AXFR");
         return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, identity).await;
     }

@@ -9,7 +9,13 @@ cd benchmarks
 pip install -r requirements.txt      # aiohttp, PyYAML, matplotlib (use --user/--break-system-packages if needed)
 ./benchmark.sh --ci                  # quick run (small sizes)
 ./benchmark.sh                       # full run
+BENCH_ARM=true ./benchmark.sh        # on an ARM host (e.g. Apple Silicon)
 ```
+
+`BENCH_ARM=true` layers each system's `compose.arm.yml`, building BIND from
+Debian: the ISC image is amd64-only and segfaults under emulation, taking every
+`bind9`-based system with it. That is BIND 9.20 against ISC's 9.21, so ARM
+numbers are internally consistent but not comparable with amd64 ones.
 
 Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory:
 `performance.md` (paste-into-README tables), `performance.csv`,
@@ -20,6 +26,9 @@ Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory:
 | Key | Label | Kind |
 | --- | --- | --- |
 | `bindizr` | Bindizr + BIND9 | control plane (writes DB, propagates via AXFR/IXFR; **outside the query data plane**) |
+| `bindizr_knot` | Bindizr + Knot DNS | same control plane, Knot DNS as the secondary |
+| `bindizr_nsd` | Bindizr + NSD | same control plane, NSD as the secondary |
+| `bindizr_pdns` | Bindizr + PowerDNS | same control plane, PowerDNS as the secondary |
 | `powerdns` | PowerDNS Authoritative | integrated server + REST API (gsqlite3) |
 | `technitium` | Technitium DNS | integrated server + HTTP API |
 | `bind9_nsupdate` | BIND9 + nsupdate | RFC 2136 dynamic updates |
@@ -27,6 +36,25 @@ Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory:
 | `bind9_native` | Native BIND9 | plain authoritative primary (query baseline) |
 | `knot` | Knot DNS | RFC 2136 dynamic updates + journal-backed IXFR |
 | `coredns` | CoreDNS | zone file + `file` plugin mtime-poll reload (no management API) |
+
+> **The four Bindizr pairings.** `bindizr*` share one control plane and differ
+> only in which server answers queries. B7 turns NOTIFY off and the four agree
+> there (within ~2%), but writes elsewhere do not: each one sends a NOTIFY the
+> secondary answers with a transfer, so B1's create throughput varies with which
+> secondary absorbs that. Reads, which notify nobody, agree throughout.
+> `knot` and `powerdns` without the prefix are a different comparison — those
+> run standalone with their own write plane.
+
+> **Two NSD defaults are overridden** so B3 and B5 measure the transfer rather
+> than NSD's scheduling, since BIND and Knot have no equivalent. `xfrd-reload-timeout: 0`
+> applies a transfer as it lands (default 1s: **1050ms vs 6.7ms** p50 visibility,
+> at **1.7% vs 16.5%** CPU), and `store-ixfr: yes` keeps received deltas so an
+> IXFR is answered with one (**700 bytes vs 55KB** for a single-record change).
+> With both set NSD re-serves byte-identical deltas to Knot's.
+
+> **PowerDNS propagation** is roughly 1s p50 on B3, because PowerDNS acts on a
+> NOTIFY when its secondary communicator next runs. There is no setting to
+> raise it, so it is reported as measured.
 
 > **CoreDNS scope.** CoreDNS has no management API and no RFC 2136 dynamic
 > update — a write means rewriting the zone file and waiting for the `file`
@@ -42,15 +70,15 @@ Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory:
 
 | # | Key | What it measures | Systems |
 | --- | --- | --- | --- |
-| 1 | `b01_crud_tps` | Record Create/Read/Update/Delete TPS, p50/p95/p99, error rate | bindizr, powerdns, technitium, bind9_nsupdate, knot |
-| 2 | `b02_bulk_import` | Import 1K–1M records: time, records/sec, peak mem/CPU | bindizr, powerdns, technitium, bind9_rndc, knot, coredns* |
-| 3 | `b03_propagation` | Create → API done → **DNS-visible** latency (p50/p95/p99) | bindizr, powerdns, technitium, bind9_nsupdate, knot |
-| 4 | `b04_axfr` | Full zone transfer time, size, records/sec | bindizr, powerdns, technitium, knot, coredns |
-| 5 | `b05_ixfr` | Incremental transfer size/time for 1–1000 changes | bindizr, powerdns, technitium, knot |
-| 6 | `b06_large_zone` | Zone create/populate/export/delete + mem/CPU by size | bindizr |
-| 7 | `b07_database` | Bindizr CRUD **and bulk import (10k/100k)** across SQLite / MySQL / PostgreSQL | bindizr |
-| 8 | `b08_query_perf` | DNS **QPS** + latency; proves zero query-path overhead | native, bindizr, powerdns, technitium, knot, coredns |
-| 9 | `b09_resource_usage` | CPU/mem/net under steady query load | bindizr, powerdns, technitium, knot, coredns |
+| 1 | `b01_crud_tps` | Record Create/Read/Update/Delete TPS, p50/p95/p99, error rate | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_nsupdate, knot |
+| 2 | `b02_bulk_import` | Import 1K–1M records: time, records/sec, peak mem/CPU | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_rndc, knot, coredns* |
+| 3 | `b03_propagation` | Create → API done → **DNS-visible** latency (p50/p95/p99) | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_nsupdate, knot |
+| 4 | `b04_axfr` | Full zone transfer time, size, records/sec | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot, coredns |
+| 5 | `b05_ixfr` | Incremental transfer size/time for 1–1000 changes | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot |
+| 6 | `b06_large_zone` | Zone create/populate/export/delete + mem/CPU by size | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns |
+| 7 | `b07_database` | Bindizr CRUD **and bulk import (10k/100k)** across SQLite / MySQL / PostgreSQL | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns |
+| 8 | `b08_query_perf` | DNS **QPS** + latency; proves zero query-path overhead | native, bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot, coredns |
+| 9 | `b09_resource_usage` | CPU/mem/net under steady query load | bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot, coredns |
 
 <sub>\* CoreDNS's bulk number includes its zone-file reload poll — see the CoreDNS scope note above.</sub>
 

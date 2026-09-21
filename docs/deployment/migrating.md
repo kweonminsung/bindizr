@@ -77,14 +77,10 @@ that did not survive the import.
 
 Only now do the secondaries change. Each one drops its old `zone` statements
 and takes bindizr's catalog zone instead, after which created and deleted
-zones reach it without further configuration — see
-[Manual Installation](manual.md#3-configure-bind-as-secondary-with-catalog-zone)
-for the BIND side, or run the bundled script:
-
-```bash
-$ sudo /usr/share/bindizr/setup_bind.sh <bindizr-host> 5300
-$ sudo systemctl restart named
-```
+zones reach it without further configuration.
+[Secondary Servers](../secondaries/index.md) has the configuration for BIND,
+Knot DNS, NSD, and PowerDNS; use `<bindizr-host>` port 5300 in place of the
+loopback address there, then restart the secondary.
 
 Then confirm every secondary is serving bindizr's serial:
 

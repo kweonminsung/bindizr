@@ -59,7 +59,7 @@ url = "postgresql://user:password@hostname:port/database"
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 secondary_addrs = "127.0.0.1:53"  # Comma-separated; they receive NOTIFY and are the only clients
-                              # allowed to pull zones. The default is the BIND `setup_bind.sh` installs.
+                              # allowed to pull zones. The default is a secondary on this host.
 nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false admits anyone
 # zone_history_retention_days = 365 # Days of history kept for rollback and secondary catch-up (0 = forever)
 # scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning

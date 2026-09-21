@@ -10,7 +10,6 @@ pub mod tsig;
 pub mod zonefile;
 
 pub(crate) use catalog_zone::zone_name_to_member_id;
-pub use catalog_zone::{CATALOG_ZONE_NAME, is_catalog_zone};
 
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix,
 /// RFC 1035, Section 4.2.2). The record-value size caps derive from it.

@@ -47,6 +47,21 @@ systems:
     enabled: true
     label: "Bindizr + BIND9"
     kind: control_plane      # writes DB, propagates via XFR; outside query data-plane
+  # The same control plane paired with each of the other catalog-zone
+  # consumers. Bindizr's own numbers should not move between these four; what
+  # moves is the query and transfer side the secondary owns.
+  bindizr_knot:
+    enabled: true
+    label: "Bindizr + Knot DNS"
+    kind: control_plane
+  bindizr_nsd:
+    enabled: true
+    label: "Bindizr + NSD"
+    kind: control_plane
+  bindizr_pdns:
+    enabled: true
+    label: "Bindizr + PowerDNS"
+    kind: control_plane
   powerdns:
     enabled: true
     label: "PowerDNS Authoritative"
@@ -81,15 +96,15 @@ systems:
 # of per-record CRUD (b01), propagation (b03), and IXFR (b05, no journal), where
 # the poll interval rather than the server would dominate the result.
 benchmarks:
-  b01_crud_tps:      [bindizr, powerdns, technitium, bind9_nsupdate, knot]
-  b02_bulk_import:   [bindizr, powerdns, technitium, bind9_rndc, knot, coredns]
-  b03_propagation:   [bindizr, powerdns, technitium, bind9_nsupdate, knot]
-  b04_axfr:          [bindizr, powerdns, technitium, knot, coredns]
-  b05_ixfr:          [bindizr, powerdns, technitium, knot]
-  b06_large_zone:    [bindizr]
-  b07_database:      [bindizr]   # SQLite / MySQL / PostgreSQL backends
-  b08_query_perf:    [bind9_native, bindizr, powerdns, technitium, knot, coredns]
-  b09_resource_usage: [bindizr, powerdns, technitium, knot, coredns]
+  b01_crud_tps:      [bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_nsupdate, knot]
+  b02_bulk_import:   [bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_rndc, knot, coredns]
+  b03_propagation:   [bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_nsupdate, knot]
+  b04_axfr:          [bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot, coredns]
+  b05_ixfr:          [bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot]
+  b06_large_zone:    [bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns]
+  b07_database:      [bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns]   # SQLite / MySQL / PostgreSQL backends
+  b08_query_perf:    [bind9_native, bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot, coredns]
+  b09_resource_usage: [bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, knot, coredns]
 
 # IXFR (Benchmark 5): the baseline zone size, then the change-batch sizes applied
 # on top of it. A large baseline (100k) with a 10k change batch checks that the

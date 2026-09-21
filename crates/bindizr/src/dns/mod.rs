@@ -39,7 +39,7 @@ pub(crate) async fn initialize(
         Ok((catalog, _)) => {
             log::info!(
                 "Catalog zone '{}' is ready (serial: {})",
-                server::catalog::CATALOG_ZONE_NAME,
+                config::bindizr_config().dns.catalog_zone_name,
                 catalog.serial
             );
         }

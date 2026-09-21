@@ -2,7 +2,6 @@
 //! running daemon answers for itself; without one, the checks a failed start
 //! would have hit run here.
 
-mod bind;
 mod daemon;
 mod offline;
 
@@ -110,18 +109,12 @@ pub(crate) async fn handle_command(
             None
         }
     };
-    // The file this CLI read may not be the one the daemon runs with, so BIND
-    // is compared against the listener actually serving.
-    let mut listen_port = file_config.as_ref().map(|config| config.dns.listen_port);
     if daemon::check_running(&mut report).await {
         let daemon_config = client::send_control_command(DaemonCommandKind::Config)
             .await
             .and_then(|response| Ok(parse_response::<BindizrConfig>(&response.data)?));
         match daemon_config {
-            Ok(config) => {
-                listen_port = Some(config.dns.listen_port);
-                daemon::check_api(&config, &mut report).await;
-            }
+            Ok(config) => daemon::check_api(&config, &mut report).await,
             Err(e) => report.fail(format!("Daemon config not readable: {}", e.message)),
         }
         daemon::check_services(&mut report).await;
@@ -133,7 +126,6 @@ pub(crate) async fn handle_command(
     } else {
         report.skip("API, database, and port checks skipped: no valid configuration");
     }
-    bind::check_catalog(listen_port, &mut report);
 
     if format == OutputFormat::Table {
         outln!();

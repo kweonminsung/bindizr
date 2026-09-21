@@ -127,10 +127,13 @@ async def run(_adapter, cfg, ctx) -> list:
     """Compare CRUD and bulk import performance across database backends."""
     zone = ctx["zone"]
     rows = []
+    # The system key selects which secondary runs beside Bindizr; the backend
+    # comparison is the same either way, so the four pairings should agree.
+    system = ctx["system"]
     for backend in cfg["databases"]:
-        proj = f"bench-bindizr-db-{backend}"
+        proj = f"bench-{system.replace('_', '-')}-db-{backend}"
         # notify off: isolate database write throughput from NOTIFY/XFR cost.
-        adapter = registry.build("bindizr", cfg, proj, db_type=backend,
+        adapter = registry.build(system, cfg, proj, db_type=backend,
                                  notify_after_update=False)
         try:
             print(f"    backend {backend}: setup...", flush=True)

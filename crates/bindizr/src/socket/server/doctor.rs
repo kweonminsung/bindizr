@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, time::Duration};
 
-use bindizr_core::{config, dns::CATALOG_ZONE_NAME};
+use bindizr_core::config;
 use bindizr_service::{
     authorization::Caller,
     dns_client::{notify, probe},
@@ -52,7 +52,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
     let timeout = Duration::from_secs(config.dns.notify.timeout_secs);
 
     let (dns_server, catalog_serial) =
-        match probe::probe_server(dns_addr, CATALOG_ZONE_NAME, timeout).await {
+        match probe::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout).await {
             Ok(serial) => (
                 DoctorCheckResult {
                     ok: true,
@@ -70,7 +70,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         };
 
     // Capture secondary serials before the NOTIFY check can trigger a refresh.
-    let secondaries = probe::probe_secondaries(CATALOG_ZONE_NAME)
+    let secondaries = probe::probe_secondaries(&config.dns.catalog_zone_name)
         .await
         .map_err(ServiceError::internal)?
         .into_iter()
@@ -89,7 +89,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         .collect();
 
     // Actively test NOTIFY delivery; this can prompt secondaries to transfer the catalog.
-    let notifies = notify::send_notify_to_secondaries(CATALOG_ZONE_NAME)
+    let notifies = notify::send_notify_to_secondaries(&config.dns.catalog_zone_name)
         .await
         .map_err(ServiceError::internal)?
         .into_iter()

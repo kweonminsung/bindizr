@@ -26,7 +26,7 @@ always describes the running process:
 | | |
 | --- | --- |
 | Reloadable | the whole `[dns]` section (including `secondary_addrs`, read per transfer) and `[logging]` |
-| Fixed while running | the `[api]` and `[database]` sections, `dns.listen_addr`, `dns.listen_port` |
+| Fixed while running | the `[api]` and `[database]` sections, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name` |
 
 A reload names the sections it changed; a refusal names the settings that
 would need a restart and leaves the running configuration alone.
@@ -64,7 +64,10 @@ url = "postgresql://user:password@hostname:port/database"
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
 secondary_addrs = "127.0.0.1:53"  # Comma-separated; they receive NOTIFY and are the only clients
-                              # allowed to pull zones. The default is the BIND `setup_bind.sh` installs.
+                              # allowed to pull zones. The default is a secondary on this host.
+# catalog_zone_name = "catalog.bindizr"  # The RFC 9432 catalog zone secondaries follow. A secondary
+                              # holds one zone per name, so two primaries feeding one secondary need
+                              # two names. Fixed while bindizr runs.
 nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false admits anyone
 # zone_history_retention_days = 365 # Days of history kept for rollback and secondary catch-up (0 = forever)
 # scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
@@ -125,6 +128,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_LISTEN_ADDR` | `dns.listen_addr` | |
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
 | `BINDIZR_DNS_SECONDARY_ADDRS` | `dns.secondary_addrs` | |
+| `BINDIZR_DNS_CATALOG_ZONE_NAME` | `dns.catalog_zone_name` | every secondary names the same zone in its own configuration |
 | `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate_tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |

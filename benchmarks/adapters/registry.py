@@ -23,6 +23,9 @@ def _load_adapter_module(key: str):
 
 _CLASS = {
     "bindizr": "BindizrAdapter",
+    "bindizr_knot": "BindizrKnotAdapter",
+    "bindizr_nsd": "BindizrNsdAdapter",
+    "bindizr_pdns": "BindizrPdnsAdapter",
     "powerdns": "PowerDnsAdapter",
     "technitium": "TechnitiumAdapter",
     "bind9_nsupdate": "Bind9NsupdateAdapter",

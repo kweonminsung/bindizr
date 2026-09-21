@@ -1,4 +1,4 @@
-// The catalog discovers member zones (RFC 9432); only catalog.bind is declared here.
+// The catalog discovers member zones (RFC 9432); only catalog.bindizr is declared here.
 // Compose substitutes the resolved Bindizr IP at container startup.
 options {
     directory "/var/cache/bind";
@@ -12,13 +12,13 @@ options {
 
     ixfr-from-differences yes;
     catalog-zones {
-        zone "catalog.bind" default-primaries { __BINDIZR_IP__ port 53; };
+        zone "catalog.bindizr" default-primaries { __BINDIZR_IP__ port 53; };
     };
 };
 
-zone "catalog.bind" {
+zone "catalog.bindizr" {
     type secondary;
     primaries { __BINDIZR_IP__ port 53; };
-    file "/var/cache/bind/catalog.bind.zone";
+    file "/var/cache/bind/catalog.bindizr.zone";
     ixfr-from-differences yes;
 };

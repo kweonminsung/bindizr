@@ -1,6 +1,6 @@
 //! Manual NOTIFY orchestration; delivery goes through the registered sender.
 
-use bindizr_core::dns::is_catalog_zone;
+use bindizr_core::config::bindizr_config;
 
 use super::ZoneService;
 use crate::{authorization::Caller, error::ServiceError};
@@ -20,7 +20,7 @@ impl ZoneService {
         match zone_name {
             // The virtual catalog zone has no row: nothing to bump, and no
             // zone grant can cover it, so only a global caller may notify it.
-            Some(name) if is_catalog_zone(name) => {
+            Some(name) if bindizr_config().dns.is_catalog_zone(name) => {
                 caller.authorize_global("send NOTIFY for the catalog zone")?;
                 if force {
                     log::info!("Skipping forced serial increment for virtual catalog zone");

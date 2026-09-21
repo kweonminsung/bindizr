@@ -23,6 +23,7 @@ url = ""
 listen_addr = "0.0.0.0"
 listen_port = 53
 secondary_addrs = ""
+catalog_zone_name = "catalog.bindizr"
 nsupdate_tsig_required = true  # false accepts updates from anyone (testing only)
 zone_history_retention_days = 365
 scheduler_interval_secs = 3600

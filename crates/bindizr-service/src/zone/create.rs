@@ -1,4 +1,4 @@
-use bindizr_core::{config::bindizr_config, dns::CATALOG_ZONE_NAME};
+use bindizr_core::config::bindizr_config;
 use bindizr_db::repository::RepositoryTx;
 use chrono::Utc;
 
@@ -54,10 +54,16 @@ impl ZoneService {
         );
 
         // Send catalog NOTIFY so secondaries pick up the new zone
+        let config = bindizr_config();
         if !create_zone_request.dry_run
-            && let Err(e) = crate::notify::send_notify_after_update(Some(CATALOG_ZONE_NAME)).await
+            && let Err(e) =
+                crate::notify::send_notify_after_update(Some(&config.dns.catalog_zone_name)).await
         {
-            log::warn!("Failed to send NOTIFY for {}: {}", CATALOG_ZONE_NAME, e);
+            log::warn!(
+                "Failed to send NOTIFY for {}: {}",
+                config.dns.catalog_zone_name,
+                e
+            );
         }
 
         Ok(ZoneWriteResponse {

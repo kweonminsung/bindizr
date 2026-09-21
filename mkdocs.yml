@@ -96,6 +96,12 @@ nav:
       - Docker Compose: deployment/docker-compose.md
       - Manual Installation: deployment/manual.md
       - Migrating an Existing Primary: deployment/migrating.md
+  - Secondary Servers:
+      - Overview: secondaries/index.md
+      - BIND: secondaries/bind.md
+      - Knot DNS: secondaries/knot.md
+      - NSD: secondaries/nsd.md
+      - PowerDNS: secondaries/powerdns.md
   - Configuration: configuration.md
   - DNSSEC: dnssec.md
   - ExternalDNS: external-dns.md

@@ -27,7 +27,9 @@ POST_ATTEMPTS = 4
 
 class BindizrAdapter(DnsAdapter):
     key = "bindizr"
-    resource_services = ["bindizr", "bind9"]
+    #: Compose service that answers queries. Bindizr drives every secondary
+    #: the same way, so a subclass swaps the implementation and nothing else.
+    secondary_service = "bind9"
     supports_ixfr = True
     supports_zone_import = True
     # Records per request. Each chunk is one server-side transaction — a single
@@ -49,7 +51,7 @@ class BindizrAdapter(DnsAdapter):
         self.db_type = db_type
         # mysql/postgres run as their own containers, so b07's per-backend
         # CPU/mem columns only cover the backend if it is sampled too.
-        self.resource_services = ["bindizr", "bind9"]
+        self.resource_services = ["bindizr", self.secondary_service]
         if db_type == "mysql":
             self.resource_services.append("mysql")
         elif db_type == "postgresql":
@@ -73,17 +75,24 @@ class BindizrAdapter(DnsAdapter):
                "BINDIZR_NOTIFY_AFTER_UPDATE": "true" if notify_after_update else "false",
                "BINDIZR_NOTIFY_BATCH_MS": str(self.notify_batch_ms),
                "BINDIZR_TRANSFER_CACHE": "true" if self.transfer_cache else "false",
-               "BINDIZR_LOG_LEVEL": self.log_level}
+               "BINDIZR_LOG_LEVEL": self.log_level,
+               "BINDIZR_SECONDARY_ADDRS": f"{self.secondary_service}:53"}
+        # bind9 carries no profile, so the default system starts as it always has.
+        profiles = []
         if db_type == "mysql":
-            env["COMPOSE_PROFILES"] = "mysql"
+            profiles.append("mysql")
         elif db_type == "postgresql":
-            env["COMPOSE_PROFILES"] = "postgres"
+            profiles.append("postgres")
+        if self.secondary_service != "bind9":
+            profiles.append(self.secondary_service)
+        if profiles:
+            env["COMPOSE_PROFILES"] = ",".join(profiles)
         self.compose = dockerutil.Compose(HERE / "compose.yml", project, env=env)
 
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
         self.compose.down()  # clean slate: remove any leftovers from a prior run
-        services = ["bindizr", "bind9"]
+        services = ["bindizr", self.secondary_service]
         if self.db_type == "mysql":
             services = ["mysql", *services]
         elif self.db_type == "postgresql":
