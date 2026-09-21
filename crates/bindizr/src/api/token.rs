@@ -190,9 +190,10 @@ pub(crate) async fn delete_token(
         path = "/tokens/{name}/grants",
         tag = "Token",
         summary = "List an API token's grants",
-        params(PageFilter),
         params(
-            ("name" = String, Path, description = "The name of the API token.")
+            ("name" = String, Path, description = "The name of the API token."),
+            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Grants per page; defaults to 50."),
+            ("offset" = Option<u64>, Query, description = "Number of grants to skip.")
         ),
         responses(
             (status = 200, description = "The token's grants", body = PaginatedResponse<GetTokenGrantResponse>),
@@ -288,9 +289,10 @@ pub(crate) async fn delete_token_grant(
         path = "/zones/{name}/token-grants",
         tag = "Token",
         summary = "List the API token grants that apply to a zone",
-        params(PageFilter),
         params(
-            ("name" = String, Path, description = "The name of the DNS zone.")
+            ("name" = String, Path, description = "The name of the DNS zone."),
+            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Grants per page; defaults to 50."),
+            ("offset" = Option<u64>, Query, description = "Number of grants to skip.")
         ),
         responses(
             (status = 200, description = "Grants covering the zone", body = PaginatedResponse<GetTokenGrantResponse>),

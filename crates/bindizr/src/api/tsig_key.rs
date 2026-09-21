@@ -169,9 +169,10 @@ pub(crate) async fn delete_tsig_key(
         path = "/tsig-keys/{name}/grants",
         tag = "TSIG",
         summary = "List a TSIG key's grants",
-        params(PageFilter),
         params(
-            ("name" = String, Path, description = "The name of the TSIG key.")
+            ("name" = String, Path, description = "The name of the TSIG key."),
+            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Grants per page; defaults to 50."),
+            ("offset" = Option<u64>, Query, description = "Number of grants to skip.")
         ),
         responses(
             (status = 200, description = "The key's grants", body = PaginatedResponse<GetTsigGrantResponse>),
@@ -267,9 +268,10 @@ pub(crate) async fn delete_tsig_grant(
         path = "/zones/{name}/tsig-grants",
         tag = "TSIG",
         summary = "List the TSIG grants that apply to a zone",
-        params(PageFilter),
         params(
-            ("name" = String, Path, description = "The name of the DNS zone.")
+            ("name" = String, Path, description = "The name of the DNS zone."),
+            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Grants per page; defaults to 50."),
+            ("offset" = Option<u64>, Query, description = "Number of grants to skip.")
         ),
         responses(
             (status = 200, description = "Grants covering the zone", body = PaginatedResponse<GetTsigGrantResponse>),

@@ -1255,6 +1255,23 @@ paths:
         required: true
         schema:
           type: string
+      - name: limit
+        in: query
+        description: Grants per page; defaults to 50.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: offset
+        in: query
+        description: Number of grants to skip.
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: The token's grants
@@ -1614,6 +1631,23 @@ paths:
         required: true
         schema:
           type: string
+      - name: limit
+        in: query
+        description: Grants per page; defaults to 50.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: offset
+        in: query
+        description: Number of grants to skip.
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: The key's grants
@@ -2945,6 +2979,23 @@ paths:
         required: true
         schema:
           type: string
+      - name: limit
+        in: query
+        description: Grants per page; defaults to 50.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: offset
+        in: query
+        description: Number of grants to skip.
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: Grants covering the zone
@@ -2989,6 +3040,23 @@ paths:
         required: true
         schema:
           type: string
+      - name: limit
+        in: query
+        description: Grants per page; defaults to 50.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: offset
+        in: query
+        description: Number of grants to skip.
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
       responses:
         '200':
           description: Grants covering the zone
