@@ -92,12 +92,12 @@ class BindizrAdapter(DnsAdapter):
     async def setup(self) -> None:
         """Start the benchmark system and wait for it to become ready."""
         self.compose.down()  # clean slate: remove any leftovers from a prior run
-        services = ["bindizr", self.secondary_service]
-        if self.db_type == "mysql":
-            services = ["mysql", *services]
-        elif self.db_type == "postgresql":
-            services = ["postgres", *services]
-        self.compose.up(*services, wait=True)
+        # A networked backend waits on its own: bindizr exits when the DB host
+        # does not resolve yet, and that exit alone fails a shared `up --wait`.
+        db_service = {"mysql": "mysql", "postgresql": "postgres"}.get(self.db_type)
+        if db_service:
+            self.compose.up(db_service, wait=True)
+        self.compose.up("bindizr", self.secondary_service, wait=True)
         self.session = aiohttp.ClientSession()
         await self._wait_api()
 
