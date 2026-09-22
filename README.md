@@ -3,7 +3,7 @@
     <img src="docs/assets/bindizr_horizontal.png" width="400px" alt="Bindizr">
 </p>
 
-DNS Synchronization Service for BIND9
+Open-source control plane for authoritative DNS
 
 <p>
     <a href="https://github.com/netbirdio/netbird/blob/main/LICENSE">
@@ -22,11 +22,11 @@ DNS Synchronization Service for BIND9
 
 </div>
 
-**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to BIND9 secondary servers via AXFR/IXFR using DNS Catalog Zones.
+**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to BIND9, Knot DNS, NSD, or PowerDNS secondaries via AXFR/IXFR using DNS Catalog Zones.
 
-&nbsp;<img src="docs/assets/concepts.png" width="462px" alt="Bindizr control plane and XFR server feeding BIND9 secondaries, which answer client queries">
+&nbsp;<img src="docs/assets/concepts.png" width="462px" alt="Bindizr control plane and XFR server feeding the secondaries, which answer client queries">
 
-Bindizr owns the zone data and the transfer path; standard BIND9 secondaries discover zones through the catalog zone (RFC 9432) and answer client queries. Adding it in front of BIND9 costs nothing on the query path — `Bindizr + BIND9` serves **58,414 QPS against native BIND9's 58,179**.
+Bindizr owns the zone data and the transfer path; any secondary that consumes a catalog zone (RFC 9432) — BIND9, Knot DNS, NSD, or PowerDNS — discovers zones through it and answers client queries. Adding it in front of a server costs nothing on the query path — `Bindizr + BIND9` serves **59,397 QPS against native BIND9's 59,904**, and the Knot DNS and PowerDNS pairings track their servers the same way.
 
 ## Features
 

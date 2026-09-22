@@ -1,5 +1,5 @@
 site_name: Bindizr
-site_description: DNS control plane for BIND9 — manage zones and records over HTTP/CLI and propagate them with AXFR/IXFR and catalog zones.
+site_description: Open-source control plane for authoritative DNS — manage zones and records over HTTP/CLI and propagate them to BIND9, Knot DNS, NSD, or PowerDNS with AXFR/IXFR and catalog zones.
 site_url: https://kweonminsung.github.io/bindizr/
 site_author: kweonminsung
 
