@@ -5,10 +5,29 @@ on:
     tags:
       - 'v*'
 
+# Only the release job writes to the repository; the others publish elsewhere.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  version:
+    name: Validate the tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+
+    steps:
+      # The tag names the image, so it must be SemVer with at most a prerelease
+      # part: a Docker tag cannot carry build metadata's '+'.
+      - name: Validate the tag
+        id: tag
+        run: |
+          if [[ ! "${GITHUB_REF_NAME#v}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Malformed tag '$GITHUB_REF_NAME'" >&2
+            exit 1
+          fi
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build packages (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -25,6 +44,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up Ruby and FPM
         run: |
@@ -61,6 +82,7 @@ jobs:
 
   image:
     name: Build image (${{ matrix.arch }})
+    needs: version
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -75,6 +97,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -111,7 +135,9 @@ jobs:
 
   manifest:
     name: Push image manifest
-    needs: image
+    # The packages come first, so a failed package build leaves Docker Hub
+    # without a version tag for a release that never happened.
+    needs: [version, build, image]
     runs-on: ubuntu-latest
 
     steps:
@@ -131,21 +157,24 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # The version is the tag; latest follows it, as build_image.sh does.
+      # latest follows the version, as build_image.sh does.
       - name: Create the multi-arch manifest
         working-directory: /tmp/digests
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           refs=()
           for digest in *; do refs+=("kweonminsung/bindizr@sha256:$digest"); done
           docker buildx imagetools create \
             -t "kweonminsung/bindizr:$VERSION" -t "kweonminsung/bindizr:latest" "${refs[@]}"
           docker buildx imagetools inspect "kweonminsung/bindizr:$VERSION"
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
 
   release:
     name: Create Release
     needs: [build, manifest]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Download packages
