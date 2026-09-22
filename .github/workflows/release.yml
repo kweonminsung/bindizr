@@ -32,7 +32,8 @@ jobs:
           sudo apt-get install -y ruby ruby-dev build-essential
           sudo gem install --no-document fpm
 
-      # SQLite is bundled, so only the musl C compiler is needed beyond build-essential.
+      # SQLite is bundled, so beyond build-essential only the musl C compiler is
+      # needed.
       - name: Install musl tools
         run: |
           sudo apt-get update
@@ -44,7 +45,8 @@ jobs:
           toolchain: stable
           target: ${{ matrix.target }}
 
-      # Each target builds on a host of its own architecture, so musl-gcc links natively.
+      # Each target builds on a host of its own architecture, so musl-gcc links
+      # natively.
       - name: Build packages
         run: TARGET=${{ matrix.target }} ./packaging/scripts/build_packages.sh
 
@@ -57,9 +59,92 @@ jobs:
             bindizr-*.rpm
           if-no-files-found: error
 
+  image:
+    name: Build image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Each half builds natively on a runner of its own architecture and is
+      # pushed by digest; the manifest job names the tags.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=docker.io/kweonminsung/bindizr,push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - name: Upload digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+
+  manifest:
+    name: Push image manifest
+    needs: image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # The version is the tag; latest follows it, as build_image.sh does.
+      - name: Create the multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          refs=()
+          for digest in *; do refs+=("kweonminsung/bindizr@sha256:$digest"); done
+          docker buildx imagetools create \
+            -t "kweonminsung/bindizr:$VERSION" -t "kweonminsung/bindizr:latest" "${refs[@]}"
+          docker buildx imagetools inspect "kweonminsung/bindizr:$VERSION"
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, manifest]
     runs-on: ubuntu-latest
 
     steps:
