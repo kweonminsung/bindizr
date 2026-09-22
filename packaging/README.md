@@ -36,18 +36,29 @@ You can verify the installation by checking the version:
 fpm --version
 ```
 
-### 2. Rust Toolchain
+### 2. Rust Toolchain and musl
 
-You'll also need the Rust compiler, Cargo, and `musl-tools` for static linking.
+Install Rust with [rustup](https://rustup.rs/) — Debian and Ubuntu package a
+compiler older than the 1.94 the workspace requires — and the musl C compiler
+the static build links with. That target has no system OpenSSL, so the build
+compiles its own, which needs perl and make.
 
-*   **On Debian/Ubuntu:**
+*   **On Debian/Ubuntu** (perl and make come with `build-essential` above):
     ```bash
-    sudo apt install -y rustc cargo musl-tools
+    sudo apt install -y musl-tools
     ```
 *   **On Fedora/CentOS/RHEL:**
     ```bash
-    sudo dnf install -y rust cargo musl-tools
+    sudo dnf install -y musl-gcc make perl-core
     ```
+
+Then add the target the script builds for:
+```bash
+rustup target add x86_64-unknown-linux-musl    # aarch64-unknown-linux-musl on arm64
+```
+
+[Building from Source](https://kweonminsung.github.io/bindizr/deployment/source/)
+covers the toolchain and the dynamic build in more detail.
 
 ## Building Packages
 

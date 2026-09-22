@@ -95,6 +95,7 @@ nav:
       - Helm: deployment/helm.md
       - Docker Compose: deployment/docker-compose.md
       - Manual Installation: deployment/manual.md
+      - Building from Source: deployment/source.md
       - Migrating an Existing Primary: deployment/migrating.md
   - Secondary Servers:
       - Overview: secondaries/index.md
