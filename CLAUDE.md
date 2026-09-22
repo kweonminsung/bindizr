@@ -2,9 +2,10 @@
 
 ## Overview
 
-Bindizr is a Rust DNS control plane for BIND9. It manages zones/records via an
-HTTP API or CLI, stores them in MySQL / PostgreSQL / SQLite, and propagates
-changes to BIND9 secondaries via AXFR/IXFR using DNS Catalog Zones (RFC 9432).
+Bindizr is a Rust DNS control plane for authoritative name servers (BIND9,
+Knot DNS, NSD, PowerDNS). It manages zones/records via an HTTP API or CLI,
+stores them in MySQL / PostgreSQL / SQLite, and propagates changes to the
+secondaries via AXFR/IXFR using DNS Catalog Zones (RFC 9432).
 It also serves RFC 2136 dynamic updates (nsupdate).
 
 ## Build / Test / Lint

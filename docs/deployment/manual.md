@@ -28,8 +28,7 @@ BIND is what the rest of this page installs.
 You can download the latest bindizr binary from
 [Release](https://github.com/kweonminsung/bindizr/releases/latest).
 
-For building from source, see the
-[packaging documentation](https://github.com/kweonminsung/bindizr/blob/main/packaging/README.md).
+To build the binary yourself instead, see [Building from Source](source.md).
 
 === "Debian Packages (DPKG)"
 

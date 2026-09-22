@@ -17,8 +17,10 @@ message, or reporting something that confused you all count.
 
 ## Getting started
 
-You need Rust 1.94 or newer. Docker is only needed for the end-to-end tests and
-the benchmark suite.
+You need Rust 1.94 or newer and the native build dependencies — a C compiler,
+pkg-config, and the OpenSSL headers — listed per platform in
+[Building from Source](https://kweonminsung.github.io/bindizr/deployment/source/).
+Docker is only needed for the end-to-end tests and the benchmark suite.
 
 ```bash
 $ git clone https://github.com/kweonminsung/bindizr.git

@@ -8,8 +8,8 @@ Semantics notes:
 - For systems without a REST record API (BIND9+nsupdate/rndc) the handle is the
   record name; update/delete operate by name.
 - `dns_endpoint()` returns (host, port) of a resolver that answers queries for
-  the managed zone — for Bindizr this is a BIND9 secondary, proving the control
-  plane is outside the data plane.
+  the managed zone — for Bindizr this is its secondary (BIND9, Knot DNS, NSD,
+  or PowerDNS), proving the control plane is outside the data plane.
 """
 from __future__ import annotations
 

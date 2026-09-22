@@ -23,11 +23,11 @@ pub(crate) async fn track_http_metrics(request: Request, next: Next) -> Response
     let metrics = metrics();
     metrics
         .http_requests_total
-        .with_label_values(&[&method, &route, response.status().as_str()])
+        .with_label_values(&[method.as_str(), route.as_str(), response.status().as_str()])
         .inc();
     metrics
         .http_request_duration_seconds
-        .with_label_values(&[&method, &route])
+        .with_label_values(&[method.as_str(), route.as_str()])
         .observe(started.elapsed().as_secs_f64());
 
     response
