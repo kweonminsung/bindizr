@@ -153,12 +153,10 @@ impl RecordService {
             "event=record_create dry_run={} zone={} name={} type={} ttl={} priority={} record_id={}",
             create_record_request.dry_run,
             zone_name,
-            create_record_request.name,
-            create_record_request.record_type,
-            create_record_request
-                .ttl
-                .map_or("null".to_string(), |v| v.to_string()),
-            create_record_request
+            created_record.name,
+            created_record.record_type,
+            created_record.ttl,
+            created_record
                 .priority
                 .map_or("null".to_string(), |v| v.to_string()),
             created_record.id

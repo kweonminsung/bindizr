@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use bindizr_core::dns::name::OwnerName;
 use bindizr_db::repository::LockLevel;
 
 use super::{
@@ -200,7 +201,7 @@ impl RecordService {
 
         let mut tx = RepositoryService::begin_tx("Failed to delete records").await?;
 
-        let result: Result<DeleteRecordsResponse, ServiceError> = async {
+        let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
             // Resolve matches and authorization under the zone lock, including previews.
             let zone = ZoneService::get_visible_by_name_tx(
                 &mut tx,
@@ -270,7 +271,7 @@ impl RecordService {
                 diff: build_record_diff(&zone, &before, &after),
             };
             if !response.applied || matched.is_empty() {
-                return Ok(response);
+                return Ok((response, owner));
             }
 
             // Apply the complete deletion and refresh signatures in the same transaction.
@@ -281,17 +282,18 @@ impl RecordService {
             ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
                 .await?;
 
-            Ok(response)
+            Ok((response, owner))
         }
         .await;
 
-        let response = RepositoryService::finish_tx(tx, result, "Failed to delete records").await?;
+        let (response, owner) =
+            RepositoryService::finish_tx(tx, result, "Failed to delete records").await?;
 
         log::info!(
             "event=record_delete_matching zone={} name={} type={:?} deleted={} applied={}",
             zone_name,
-            filter.name,
-            filter.record_type,
+            owner,
+            record_type,
             response.deleted,
             response.applied
         );
