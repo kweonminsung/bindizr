@@ -31,5 +31,5 @@
   <circle cx="600.0" cy="162.1" r="4" fill="#3987e5"/>
   <circle cx="778.0" cy="119.6" r="4" fill="#3987e5"/>
   <text x="790.0" y="123.6" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#ffffff" text-anchor="start">Bindizr</text>
-  <text x="16.0" y="318.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#9a998f" text-anchor="start">Bindizr answers with a true delta; PowerDNS falls back to a full zone transfer. Knot DNS and Technitium track the Bindizr curve.</text>
+  <text x="16.0" y="318.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#9a998f" text-anchor="start">Bindizr answers with a true delta, re-served byte for byte by BIND9, Knot DNS, and NSD; PowerDNS, standalone or as the secondary, sends the whole zone.</text>
 </svg>

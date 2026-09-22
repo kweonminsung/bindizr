@@ -3,25 +3,25 @@
   <text x="16.0" y="43.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">records/sec, 5-run mean — higher is better</text>
   <text x="148.0" y="76.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#c3c2b7" text-anchor="end">Bindizr (zone file)</text>
   <path d="M160.0,62.0 H806.0 A4,4 0 0 1 810.0,66.0 V78.0 A4,4 0 0 1 806.0,82.0 H160.0 Z" fill="#3987e5"/>
-  <text x="818.0" y="76.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#ffffff" text-anchor="start">103,306</text>
+  <text x="818.0" y="76.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#ffffff" text-anchor="start">112,820</text>
   <text x="148.0" y="108.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#c3c2b7" text-anchor="end">Bindizr (bulk API)</text>
-  <path d="M160.0,94.0 H749.5 A4,4 0 0 1 753.5,98.0 V110.0 A4,4 0 0 1 749.5,114.0 H160.0 Z" fill="#3987e5"/>
-  <text x="761.5" y="108.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#ffffff" text-anchor="start">94,331</text>
+  <path d="M160.0,94.0 H715.0 A4,4 0 0 1 719.0,98.0 V110.0 A4,4 0 0 1 715.0,114.0 H160.0 Z" fill="#3987e5"/>
+  <text x="727.0" y="108.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#ffffff" text-anchor="start">96,925</text>
   <text x="148.0" y="140.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">BIND9 + rndc</text>
-  <path d="M160.0,126.0 H381.0 A4,4 0 0 1 385.0,130.0 V142.0 A4,4 0 0 1 381.0,146.0 H160.0 Z" fill="#7a7972"/>
-  <text x="393.0" y="140.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#ffffff" text-anchor="start">35,766</text>
+  <path d="M160.0,126.0 H684.0 A4,4 0 0 1 688.0,130.0 V142.0 A4,4 0 0 1 684.0,146.0 H160.0 Z" fill="#7a7972"/>
+  <text x="696.0" y="140.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#ffffff" text-anchor="start">91,506</text>
   <text x="148.0" y="172.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">PowerDNS</text>
-  <path d="M160.0,158.0 H364.8 A4,4 0 0 1 368.8,162.0 V174.0 A4,4 0 0 1 364.8,178.0 H160.0 Z" fill="#7a7972"/>
-  <text x="376.8" y="172.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#ffffff" text-anchor="start">33,189</text>
+  <path d="M160.0,158.0 H353.9 A4,4 0 0 1 357.9,162.0 V174.0 A4,4 0 0 1 353.9,178.0 H160.0 Z" fill="#7a7972"/>
+  <text x="365.9" y="172.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#ffffff" text-anchor="start">33,857</text>
   <text x="148.0" y="204.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">Knot DNS</text>
-  <path d="M160.0,190.0 H287.2 A4,4 0 0 1 291.2,194.0 V206.0 A4,4 0 0 1 287.2,210.0 H160.0 Z" fill="#7a7972"/>
-  <text x="299.2" y="204.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#ffffff" text-anchor="start">20,855</text>
+  <path d="M160.0,190.0 H261.0 A4,4 0 0 1 265.0,194.0 V206.0 A4,4 0 0 1 261.0,210.0 H160.0 Z" fill="#7a7972"/>
+  <text x="273.0" y="204.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#ffffff" text-anchor="start">17,644</text>
   <text x="148.0" y="236.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">CoreDNS</text>
-  <path d="M160.0,222.0 H239.4 A4,4 0 0 1 243.4,226.0 V238.0 A4,4 0 0 1 239.4,242.0 H160.0 Z" fill="#7a7972"/>
-  <text x="251.4" y="236.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#ffffff" text-anchor="start">13,253</text>
+  <path d="M160.0,222.0 H217.4 A4,4 0 0 1 221.4,226.0 V238.0 A4,4 0 0 1 217.4,242.0 H160.0 Z" fill="#7a7972"/>
+  <text x="229.4" y="236.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#ffffff" text-anchor="start">10,018</text>
   <text x="148.0" y="268.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">Technitium</text>
-  <path d="M160.0,254.0 H209.4 A4,4 0 0 1 213.4,258.0 V270.0 A4,4 0 0 1 209.4,274.0 H160.0 Z" fill="#7a7972"/>
-  <text x="221.4" y="268.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#ffffff" text-anchor="start">8,491</text>
+  <path d="M160.0,254.0 H210.8 A4,4 0 0 1 214.8,258.0 V270.0 A4,4 0 0 1 210.8,274.0 H160.0 Z" fill="#7a7972"/>
+  <text x="222.8" y="268.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#ffffff" text-anchor="start">8,865</text>
   <line x1="160" y1="56" x2="160" y2="280" stroke="#3a3a37" stroke-width="1"/>
   <text x="16.0" y="302.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#9a998f" text-anchor="start">The file-based systems carry their write-visibility cost here: CoreDNS its reload poll, BIND9 + rndc the zone-file copy and reload.</text>
 </svg>
