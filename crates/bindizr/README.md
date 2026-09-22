@@ -1,15 +1,15 @@
 # Bindizr
 
-`bindizr` is a Rust-based DNS control plane for managing BIND9-backed zones and records.
+`bindizr` is a Rust-based DNS control plane for BIND9, Knot DNS, NSD, and PowerDNS.
 It provides an HTTP API, a CLI, database-backed storage, and DNS zone transfer support for
-secondary DNS servers.
+the secondary DNS servers, which discover zones through a catalog zone.
 
 ## Features
 
 - Manage DNS zones and records through an HTTP API or CLI.
 - Store state in MySQL, PostgreSQL, or SQLite.
 - Serve AXFR and IXFR zone transfers to secondary DNS servers.
-- Publish DNS Catalog Zones (RFC 9432) for automatic BIND9 secondary configuration.
+- Publish DNS Catalog Zones (RFC 9432) for automatic secondary configuration.
 - Send DNS NOTIFY messages after zone changes.
 - Support RFC 2136 dynamic updates with TSIG keys and per-zone grants.
 - Sign zones with DNSSEC: key lifecycle, NSEC and NSEC3 denial, scheduled

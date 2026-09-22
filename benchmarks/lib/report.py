@@ -151,31 +151,58 @@ def _bulk_linearity_note(rows: list[dict]) -> str:
 QUERY_NOISE_TOLERANCE_PCT = 5.0
 
 
-#: The conclusion compares Bindizr's BIND9 secondaries against the same BIND9
-#: run natively, so only that pairing can carry it.
-BINDIZR_BIND9_LABEL = "Bindizr + BIND9"
+#: Each Bindizr pairing is read against the same server run standalone, since
+#: that server, not Bindizr, answers the pairing's queries. NSD has no
+#: standalone run, so its pairing carries no comparison.
+QUERY_BASELINES = {
+    "Bindizr + BIND9": "Native BIND9",
+    "Bindizr + Knot DNS": "Knot DNS",
+    "Bindizr + PowerDNS": "PowerDNS Authoritative",
+}
 
 
-def _b08_conclusion(native: dict | None, base: Any, ok: list[dict]) -> str:
-    """The no-overhead claim is a measured outcome, not a premise: state it only
-    when both sides produced a QPS and the gap is inside the tolerance."""
-    bindizr = next((r for r in ok if r["system"] == BINDIZR_BIND9_LABEL), None)
-    if not native or not base or not bindizr or not bindizr.get("qps"):
-        return (f"\n> ⚠️ No-overhead conclusion unavailable: this run has no "
-                f"successful Native BIND9 and `{BINDIZR_BIND9_LABEL}` pair to "
-                "compare.\n")
+def _b08_query_delta(row: dict, comparable: dict[str, dict]) -> str:
+    """Render a query row's QPS relative to its standalone server: the signed
+    percentage for a pairing whose server ran, `baseline` for a server a
+    pairing is read against, `-` otherwise or where either side lacks a
+    positive QPS."""
+    standalone = comparable.get(QUERY_BASELINES.get(row["system"], ""))
+    if standalone and row["system"] in comparable:
+        return f'{(row["qps"] / standalone["qps"] - 1) * 100:+.1f}%'
+    if row["system"] in QUERY_BASELINES.values():
+        return "baseline"
+    return "-"
 
-    loss = (1 - bindizr["qps"] / base) * 100
-    if abs(loss) > QUERY_NOISE_TOLERANCE_PCT:
-        return (f"\n> ⚠️ `{BINDIZR_BIND9_LABEL}` differs from `Native BIND9` by {loss:+.1f}%, "
-                f"outside the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% noise tolerance — this "
-                "run does not support the no-overhead conclusion.\n")
 
-    return ("\n> **Bindizr introduces no measurable DNS query overhead because it "
-            "is outside the DNS data plane.** Queries are served by the BIND9 "
-            f"secondaries, not by Bindizr — so `{BINDIZR_BIND9_LABEL}` tracks `Native "
-            f"BIND9` ({loss:+.1f}%, within the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% "
-            "run-to-run tolerance).\n")
+def _b08_conclusion(comparable: dict[str, dict]) -> str:
+    """The no-overhead claim is a measured outcome, not a premise: state it per
+    pairing, only where both sides produced a positive QPS and the gap is
+    inside the tolerance."""
+    within: list[str] = []
+    outside: list[str] = []
+    for pairing, standalone in QUERY_BASELINES.items():
+        p, s = comparable.get(pairing), comparable.get(standalone)
+        if not p or not s:
+            continue
+        delta = (p["qps"] / s["qps"] - 1) * 100
+        entry = f"`{pairing}` vs `{standalone}` ({delta:+.1f}%)"
+        (within if abs(delta) <= QUERY_NOISE_TOLERANCE_PCT else outside).append(entry)
+    if not within and not outside:
+        return ("\n> ⚠️ No-overhead conclusion unavailable: this run has no Bindizr "
+                "pairing and standalone run of the same server to compare.\n")
+
+    out = ""
+    if within:
+        out += ("\n> **Bindizr introduces no measurable DNS query overhead because it "
+                "is outside the DNS data plane.** Queries are served by the secondary, "
+                "not by Bindizr, so each pairing tracks that server run standalone: "
+                + ", ".join(within)
+                + f" — within the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% run-to-run tolerance.\n")
+    if outside:
+        out += (f"\n> ⚠️ Outside the ±{QUERY_NOISE_TOLERANCE_PCT:.0f}% noise tolerance, "
+                "so this run does not support the no-overhead conclusion there: "
+                + ", ".join(outside) + ".\n")
+    return out
 
 
 def _render_b07(rows: list[dict]) -> str:
@@ -340,23 +367,23 @@ def _render_markdown(env: dict, data: dict) -> str:
 
         failed = [r for r in results if not _ok(r)]
         ok = [r for r in results if _ok(r)]
-        native = next((r for r in ok if "Native" in r["system"]), None)
-        base = native.get("qps") if native else None
+        # A run whose every timed query failed reports qps 0.0 without being
+        # FAILED; it is listed, but cannot anchor or receive a comparison.
+        comparable = {r["system"]: r for r in ok if r["qps"] > 0}
         out.append("\n## Benchmark 8 — DNS Query Performance\n")
         rows = []
         for r in ok:
-            overhead = "baseline" if r is native else (
-                f'{(1 - r["qps"] / base) * 100:+.1f}%' if base else "-")
             rows.append([r["system"], r.get("qps", "-"), r.get("avg_latency_ms", "-"),
-                         r.get("p95_ms", "-"), r.get("p99_ms", "-"), overhead])
+                         r.get("p95_ms", "-"), r.get("p99_ms", "-"),
+                         _b08_query_delta(r, comparable)])
         out.append(_md_table(
             ["Server", "QPS", "Avg latency (ms)", "p95 (ms)", "p99 (ms)",
-             "QPS loss vs Native BIND9"], rows))
+             "QPS vs. same server standalone"], rows))
         if failed:
             out.append("\n> ⚠️ Failed runs: " +
                        ", ".join(f'{r.get("system", "?")} ({r.get("error", "?")})'
                                  for r in failed) + "\n")
-        out.append(_b08_conclusion(native, base, ok))
+        out.append(_b08_conclusion(comparable))
 
     if "b09_resource_usage" in data:
         results = _rows(data, "b09_resource_usage")

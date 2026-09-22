@@ -7,11 +7,11 @@ hide:
 
 # ![Bindizr](assets/bindizr_horizontal.png)
 
-DNS Synchronization Service for BIND9
+Open-source control plane for authoritative DNS
 
 </div>
 
-**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to BIND9 secondary servers via AXFR/IXFR using DNS Catalog Zones.
+**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to BIND9, Knot DNS, NSD, or PowerDNS secondaries via AXFR/IXFR using DNS Catalog Zones.
 
 <div class="grid cards" markdown>
 
@@ -44,10 +44,10 @@ DNS Synchronization Service for BIND9
 :   Built-in AXFR (full zone transfer) and IXFR (incremental zone transfer) server that serves zone data to secondary DNS servers. SOA serial numbers are automatically incremented on each change.
 
 **Catalog Zones**
-:   Bindizr uses DNS Catalog Zones (RFC 9432) to automatically propagate zone configuration to BIND9 secondary servers. When you create or delete a zone via the API/CLI, BIND9 automatically discovers and configures it without manual intervention.
+:   Bindizr uses DNS Catalog Zones (RFC 9432) to automatically propagate zone configuration to the secondary servers. When you create or delete a zone via the API/CLI, the secondaries discover and configure it without manual intervention.
 
 **Secondary DNS Servers**
-:   Standard BIND9 (or any RFC-compliant DNS server) instances configured as secondaries. They automatically discover zones through the catalog zone, pull zone updates from Bindizr's XFR server via zone transfer, and respond to DNS queries from clients.
+:   BIND9, Knot DNS, NSD, or PowerDNS instances configured as secondaries — any server that consumes a catalog zone. They automatically discover zones through the catalog zone, pull zone updates from Bindizr's XFR server via zone transfer, and respond to DNS queries from clients. See [Secondary Servers](secondaries/index.md).
 
 ## Features
 
@@ -57,7 +57,7 @@ DNS Synchronization Service for BIND9
 
 - **Zone Transfers (AXFR/IXFR)**: Serve full and incremental zone transfers to secondaries, with automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
 
-- **Automatic Zone Provisioning**: DNS Catalog Zones (RFC 9432) let BIND9 secondaries discover created and deleted zones without configuration changes.
+- **Automatic Zone Provisioning**: DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 
 - **DNS NOTIFY**: Notify secondaries after each change, with configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 
@@ -71,10 +71,11 @@ DNS Synchronization Service for BIND9
 
 ## Performance
 
-Bindizr never answers a client query — the BIND9 secondaries do. It owns the
-zone data and the transfer path, so putting it in front of BIND9 costs
+Bindizr never answers a client query — the secondaries do. It owns the zone
+data and the transfer path, so putting it in front of a server costs
 [nothing on the query path](benchmarks.md#no-overhead-on-the-query-path):
-`Bindizr + BIND9` serves **58,414 QPS against native BIND9's 58,179**.
+`Bindizr + BIND9` serves **59,397 QPS against native BIND9's 59,904**, and
+the Knot DNS and PowerDNS pairings track their servers the same way.
 
 ## License
 

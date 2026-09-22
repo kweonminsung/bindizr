@@ -63,7 +63,7 @@ fpm -s dir -t deb -n bindizr -v "$VERSION" --iteration "$RELEASE" \
     -a "$DEB_ARCH" -m "Minsung Kweon <kevin136583@gmail.com>" \
     --url "https://github.com/kweonminsung/bindizr" \
     --license "Apache-2.0" \
-    --description "DNS Synchronization Service for BIND9" \
+    --description "Open-source control plane for authoritative DNS" \
     --config-files /etc/bindizr/bindizr.conf.toml \
     --after-install packaging/scripts/postinstall.sh \
     --after-remove packaging/scripts/postremove.sh \
@@ -74,7 +74,7 @@ fpm -s dir -t rpm -n bindizr -v "$VERSION" --iteration "$RELEASE" \
     -a "$RPM_ARCH" -m "Minsung Kweon <kevin136583@gmail.com>" \
     --url "https://github.com/kweonminsung/bindizr" \
     --license "Apache-2.0" \
-    --description "DNS Synchronization Service for BIND9" \
+    --description "Open-source control plane for authoritative DNS" \
     --config-files /etc/bindizr/bindizr.conf.toml \
     --after-install packaging/scripts/postinstall.sh \
     --after-remove packaging/scripts/postremove.sh \

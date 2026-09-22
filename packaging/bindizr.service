@@ -1,5 +1,5 @@
 [Unit]
-Description=Bindizr DNS Synchronization Service
+Description=Bindizr DNS Control Plane
 After=network.target named.service
 
 [Service]

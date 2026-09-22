@@ -1,8 +1,8 @@
 # Bindizr Benchmark Suite
 
-Reproducible, apples-to-apples benchmarks comparing **Bindizr + BIND9** against
-other DNS management approaches on identical hardware, datasets, and network
-conditions. Everything runs in Docker Compose and is driven by a single command.
+Reproducible, apples-to-apples benchmarks comparing **Bindizr**, paired with
+each secondary it supports (BIND9, Knot DNS, NSD, PowerDNS), against other DNS
+management approaches on identical hardware, datasets, and network conditions. Everything runs in Docker Compose and is driven by a single command.
 
 ```bash
 cd benchmarks
@@ -84,9 +84,12 @@ Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory:
 
 ### The Benchmark 8 claim
 
-Bindizr sits **outside the DNS data plane**: clients query the BIND9 secondaries,
-not Bindizr. Benchmark 8 verifies that `Bindizr + BIND9` QPS matches `Native
-BIND9` — i.e. **Bindizr introduces no measurable DNS query overhead**.
+Bindizr sits **outside the DNS data plane**: clients query the secondary, not
+Bindizr. Benchmark 8 verifies that each pairing's QPS matches the same server
+run standalone — `Bindizr + BIND9` against `Native BIND9`, `Bindizr + Knot DNS`
+against `Knot DNS`, `Bindizr + PowerDNS` against `PowerDNS Authoritative` —
+i.e. **Bindizr introduces no measurable DNS query overhead**. NSD has no
+standalone run, so its pairing is reported without a comparison.
 
 ## Methodology & fairness
 

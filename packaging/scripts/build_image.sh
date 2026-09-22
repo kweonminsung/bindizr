@@ -6,9 +6,6 @@ VERSION=$(grep '^version =' Cargo.toml | cut -d '"' -f 2)
 TAG="${1:-$VERSION}"
 IMAGE="${IMAGE:-kweonminsung/bindizr}"
 
-##################################
-# 1. Build both platforms and push the manifest
-##################################
 # The non-native half builds under emulation: slow, but no cross toolchain.
 docker buildx build \
     --platform linux/amd64,linux/arm64 \

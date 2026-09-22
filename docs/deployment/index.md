@@ -10,6 +10,9 @@ package-based setup.
 | [Docker Swarm](docker-compose.md#docker-swarm) | Running a containerized stack across a Swarm | PostgreSQL |
 | [Manual Installation](manual.md) | Running on a VM or bare-metal host from a `.deb` / `.rpm` | SQLite, MySQL, PostgreSQL |
 
+The binary the packages carry can also be built from source, for a host they
+do not cover — see [Building from Source](source.md).
+
 Whichever you pick, the shape is the same: Bindizr owns the zone data and serves
 it over AXFR/IXFR, and one or more secondaries discover zones through the
 catalog zone and answer client queries. The secondary can be BIND, Knot DNS,

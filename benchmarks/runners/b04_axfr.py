@@ -3,8 +3,8 @@
 Loads an N-record zone, then performs a full zone transfer (AXFR) from the
 system's XFR endpoint, measuring transfer time, wire size, and records/sec.
 
-For Bindizr the transfer is pulled from the BIND9 secondary (which received the
-zone from Bindizr's XFR server), so we first wait for propagation to complete.
+For Bindizr the transfer is pulled from the secondary (which received the zone
+from Bindizr's XFR server), so we first wait for propagation to complete.
 """
 from __future__ import annotations
 
