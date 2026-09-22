@@ -161,26 +161,27 @@ QUERY_BASELINES = {
 }
 
 
-def _b08_query_delta(row: dict, by_label: dict[str, dict]) -> str:
+def _b08_query_delta(row: dict, comparable: dict[str, dict]) -> str:
     """Render a query row's QPS relative to its standalone server: the signed
     percentage for a pairing whose server ran, `baseline` for a server a
-    pairing is read against, `-` otherwise."""
-    standalone = by_label.get(QUERY_BASELINES.get(row["system"], ""))
-    if standalone:
+    pairing is read against, `-` otherwise or where either side lacks a
+    positive QPS."""
+    standalone = comparable.get(QUERY_BASELINES.get(row["system"], ""))
+    if standalone and row["system"] in comparable:
         return f'{(row["qps"] / standalone["qps"] - 1) * 100:+.1f}%'
     if row["system"] in QUERY_BASELINES.values():
         return "baseline"
     return "-"
 
 
-def _b08_conclusion(by_label: dict[str, dict]) -> str:
+def _b08_conclusion(comparable: dict[str, dict]) -> str:
     """The no-overhead claim is a measured outcome, not a premise: state it per
-    pairing, only where its standalone server produced a QPS and the gap is
+    pairing, only where both sides produced a positive QPS and the gap is
     inside the tolerance."""
     within: list[str] = []
     outside: list[str] = []
     for pairing, standalone in QUERY_BASELINES.items():
-        p, s = by_label.get(pairing), by_label.get(standalone)
+        p, s = comparable.get(pairing), comparable.get(standalone)
         if not p or not s:
             continue
         delta = (p["qps"] / s["qps"] - 1) * 100
@@ -366,13 +367,15 @@ def _render_markdown(env: dict, data: dict) -> str:
 
         failed = [r for r in results if not _ok(r)]
         ok = [r for r in results if _ok(r)]
-        by_label = {r["system"]: r for r in ok}
+        # A run whose every timed query failed reports qps 0.0 without being
+        # FAILED; it is listed, but cannot anchor or receive a comparison.
+        comparable = {r["system"]: r for r in ok if r["qps"] > 0}
         out.append("\n## Benchmark 8 — DNS Query Performance\n")
         rows = []
         for r in ok:
             rows.append([r["system"], r.get("qps", "-"), r.get("avg_latency_ms", "-"),
                          r.get("p95_ms", "-"), r.get("p99_ms", "-"),
-                         _b08_query_delta(r, by_label)])
+                         _b08_query_delta(r, comparable)])
         out.append(_md_table(
             ["Server", "QPS", "Avg latency (ms)", "p95 (ms)", "p99 (ms)",
              "QPS vs. same server standalone"], rows))
@@ -380,7 +383,7 @@ def _render_markdown(env: dict, data: dict) -> str:
             out.append("\n> ⚠️ Failed runs: " +
                        ", ".join(f'{r.get("system", "?")} ({r.get("error", "?")})'
                                  for r in failed) + "\n")
-        out.append(_b08_conclusion(by_label))
+        out.append(_b08_conclusion(comparable))
 
     if "b09_resource_usage" in data:
         results = _rows(data, "b09_resource_usage")
