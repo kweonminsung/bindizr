@@ -114,6 +114,10 @@ Without a package, the pieces it would have put in place are in
   packages install; `/etc/bindizr/bindizr.conf.toml` is where the daemon
   looks by default.
 
+The binary is `target/release/bindizr` from step 3; the static build in step 4
+leaves it under `target/<target>/release/` instead, so install from there when
+that is the one you want.
+
 ```bash
 $ sudo install -m 755 target/release/bindizr /usr/bin/bindizr
 $ sudo install -D -m 600 bindizr.conf.toml /etc/bindizr/bindizr.conf.toml
