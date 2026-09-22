@@ -9,7 +9,8 @@ on:
       - ".github/workflows/update-github-pages.yml"
   workflow_dispatch:
 
-# build installs from PyPI and npm, so Pages and OIDC scope live on deploy only.
+# The build job installs from PyPI and npm, so the Pages and OIDC scopes live on
+# the deploy job only.
 permissions:
   contents: read
 
