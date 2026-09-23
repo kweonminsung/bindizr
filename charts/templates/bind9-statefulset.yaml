@@ -23,6 +23,8 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ include "bindizr-chart.serviceAccountName" . }}
+      # No pod calls the Kubernetes API.
+      automountServiceAccountToken: false
       {{- with .Values.bind9.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}

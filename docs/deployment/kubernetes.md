@@ -90,7 +90,7 @@ $ dig +tcp @127.0.0.1 -p 5353 www.example.com A +short
 ```
 
 Real clients need the Service to have an address of its own — see
-[Reaching the BIND secondaries](#reaching-the-bind9-secondaries).
+[Reaching the BIND secondaries](#reaching-the-bind-secondaries).
 
 ## 4. The first API token
 
@@ -142,7 +142,7 @@ For MySQL, add `--set bindizr.database.type=mysql`.
 
 ## Reaching the BIND secondaries
 
-Clients query the `<release>-bind9` Service; its address is what the zones'
+Clients query the `bindizr-bindizr-chart-bind9` Service; its address is what the zones'
 `NS` records point at. Its type, `bind9.service.type`, is `LoadBalancer`.
 Where nothing provisions one — kind, bare metal without MetalLB — the
 external IP stays `<pending>` forever. Use `NodePort` there, and pin the
@@ -173,7 +173,7 @@ $ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --set 'bindizr.dns.extraSecondaryAddrs={ns2.example.net:53,192.0.2.7}'
 ```
 
-That server has to reach Bindizr's DNS Service in turn, `<release>-dns`,
+That server has to reach Bindizr's DNS Service in turn, `bindizr-bindizr-chart-dns`,
 which the chart keeps `ClusterIP`: expose it yourself and point the
 secondary's catalog zone at it.
 

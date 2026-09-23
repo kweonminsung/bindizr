@@ -25,6 +25,8 @@ spec:
       terminationGracePeriodSeconds: {{ . }}
       {{- end }}
       serviceAccountName: {{ include "bindizr-chart.serviceAccountName" . }}
+      # No pod calls the Kubernetes API.
+      automountServiceAccountToken: false
       {{- with .Values.bindizr.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}

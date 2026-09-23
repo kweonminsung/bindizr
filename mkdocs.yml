@@ -88,6 +88,10 @@ markdown_extensions:
 plugins:
   - search
 
+# A link to a heading that no longer exists fails the strict build.
+validation:
+  anchors: warn
+
 nav:
   - Home: index.md
   - Deployment:
