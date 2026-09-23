@@ -146,7 +146,6 @@ url = ""
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = {dns_port}
-secondary_addrs = "{secondary_addrs}"
 nsupdate_tsig_required = {nsupdate_tsig_required}
 
 
@@ -174,7 +173,6 @@ level = "error"
             }
             false => String::new(),
         },
-        secondary_addrs = options.secondary_addrs,
     );
 
     fs::write(config_path, config).expect("failed to write bindizr config");

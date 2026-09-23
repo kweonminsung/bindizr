@@ -117,9 +117,7 @@ pub(crate) async fn exchange_over_udp(
 }
 
 /// Resolve a comma-separated `host[:port]` list into per-entry results: the
-/// entry text plus every resolved address, or the failure. `resolve_timeout`
-/// bounds each lookup so a stalled system resolver fails the entry instead
-/// of hanging the caller.
+/// entry text plus every resolved address, or the failure.
 pub(crate) async fn resolve_address_entries(
     raw: &str,
     resolve_timeout: Duration,
@@ -131,39 +129,48 @@ pub(crate) async fn resolve_address_entries(
         if trimmed.is_empty() {
             continue;
         }
-
-        let result = match ParsedAddress::parse(trimmed, 53) {
-            ParsedAddress::SocketAddr(addr) => Ok(vec![addr]),
-            ParsedAddress::HostPort(host_port) => {
-                match tokio::time::timeout(resolve_timeout, lookup_host(&host_port)).await {
-                    Ok(Ok(resolved)) => {
-                        let addrs: Vec<SocketAddr> = resolved.collect();
-                        if addrs.is_empty() {
-                            Err("no addresses".to_string())
-                        } else {
-                            Ok(addrs)
-                        }
-                    }
-                    Ok(Err(e)) => {
-                        log::error!("Invalid server address '{}': {}", trimmed, e);
-                        Err(e.to_string())
-                    }
-                    Err(_) => {
-                        log::error!(
-                            "Resolving server address '{}' timed out after {} seconds",
-                            trimmed,
-                            resolve_timeout.as_secs()
-                        );
-                        Err(format!(
-                            "resolution timed out after {} seconds",
-                            resolve_timeout.as_secs()
-                        ))
-                    }
-                }
-            }
-        };
+        let result = resolve_address_entry(trimmed, resolve_timeout).await;
         entries.push((trimmed.to_string(), result));
     }
 
     entries
+}
+
+/// Resolve one `host[:port]` entry (port 53 default) into every address it
+/// names. `resolve_timeout` bounds the lookup so a stalled system resolver
+/// fails the entry instead of hanging the caller.
+pub(crate) async fn resolve_address_entry(
+    entry: &str,
+    resolve_timeout: Duration,
+) -> Result<Vec<SocketAddr>, String> {
+    match ParsedAddress::parse(entry, 53) {
+        ParsedAddress::SocketAddr(addr) => Ok(vec![addr]),
+        ParsedAddress::HostPort(host_port) => {
+            match tokio::time::timeout(resolve_timeout, lookup_host(&host_port)).await {
+                Ok(Ok(resolved)) => {
+                    let addrs: Vec<SocketAddr> = resolved.collect();
+                    if addrs.is_empty() {
+                        Err("no addresses".to_string())
+                    } else {
+                        Ok(addrs)
+                    }
+                }
+                Ok(Err(e)) => {
+                    log::error!("Invalid server address '{}': {}", entry, e);
+                    Err(e.to_string())
+                }
+                Err(_) => {
+                    log::error!(
+                        "Resolving server address '{}' timed out after {} seconds",
+                        entry,
+                        resolve_timeout.as_secs()
+                    );
+                    Err(format!(
+                        "resolution timed out after {} seconds",
+                        resolve_timeout.as_secs()
+                    ))
+                }
+            }
+        }
+    }
 }

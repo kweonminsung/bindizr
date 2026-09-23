@@ -75,8 +75,7 @@ class BindizrAdapter(DnsAdapter):
                "BINDIZR_NOTIFY_AFTER_UPDATE": "true" if notify_after_update else "false",
                "BINDIZR_NOTIFY_BATCH_MS": str(self.notify_batch_ms),
                "BINDIZR_TRANSFER_CACHE": "true" if self.transfer_cache else "false",
-               "BINDIZR_LOG_LEVEL": self.log_level,
-               "BINDIZR_SECONDARY_ADDRS": f"{self.secondary_service}:53"}
+               "BINDIZR_LOG_LEVEL": self.log_level}
         # bind9 carries no profile, so the default system starts as it always has.
         profiles = []
         if db_type == "mysql":
@@ -100,6 +99,14 @@ class BindizrAdapter(DnsAdapter):
         self.compose.up("bindizr", self.secondary_service, wait=True)
         self.session = aiohttp.ClientSession()
         await self._wait_api()
+        await self._register_secondary()
+
+    async def _register_secondary(self) -> None:
+        """Register the secondary service so it receives NOTIFY and may transfer."""
+        body = {"name": self.secondary_service, "address": f"{self.secondary_service}:53"}
+        async with self.session.post(self.base + "/secondaries", json=body) as r:
+            if r.status != 201:
+                raise RuntimeError(f"registering the secondary failed: {r.status} {await r.text()}")
 
     async def _wait_api(self, timeout: int = 60) -> None:
         """Wait until the system API is ready."""

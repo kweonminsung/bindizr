@@ -47,9 +47,6 @@ Bindizr owns the zone data and the transfer path; any secondary that consumes a 
 - **Per-zone ACLs** — transfer and SOA access is one server-wide list today.
   Scoping it per zone lets one deployment serve secondaries that each hold
   part of the catalog.
-- **Secondaries managed at runtime** — the secondary list is a config field,
-  reloadable but still a file. Moving it into the database puts it behind the
-  API and CLI, like zones, tokens, and signing policies already are.
 
 ## Quick Start
 

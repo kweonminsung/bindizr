@@ -43,9 +43,11 @@ bindizr:
     # pruning. Every replica runs the whole pass; 0 stands one down, but at
     # least one must keep it.
     schedulerIntervalSecs: 3600
-    # Secondaries outside the chart, host[:port] each, appended to the BIND
-    # pods in dns.secondary_addrs.
-    extraSecondaryAddrs: []
+    # Secondaries outside the chart, registered beside the BIND pods when a
+    # bindizr pod starts; each needs a name and a host[:port] address.
+    extraSecondaries: []
+    # - name: ns2
+    #   address: ns2.example.net:53
     # NOTIFY to the secondaries.
     notify:
       # Notify after zone changes, and for every zone at startup.

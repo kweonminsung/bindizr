@@ -1,4 +1,4 @@
-//! A zone's serial next to what each configured secondary is serving.
+//! A zone's serial next to what each enabled secondary is serving.
 
 use super::ZoneService;
 use crate::{
@@ -6,8 +6,8 @@ use crate::{
 };
 
 impl ZoneService {
-    /// Probe every configured secondary for the zone and classify each
-    /// against the zone's serial; empty with no secondaries configured.
+    /// Probe every enabled secondary for the zone and classify each
+    /// against the zone's serial; empty with no enabled secondaries.
     pub async fn get_status(
         caller: &Caller,
         zone_name: &str,

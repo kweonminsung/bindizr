@@ -3,10 +3,10 @@
 
 use bindizr_service::types::{
     CreatedTokenResponse, DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse,
-    GetTokenGrantResponse, GetTokenResponse, GetTsigGrantResponse, GetTsigKeyResponse,
-    GetZoneResponse, ImportZoneResponse, RecordValueRequest, RollbackZoneResponse,
-    SecondaryStatusResponse, TsigKeyResponse, VersionRecordResponse, ZoneStatusResponse,
-    ZoneVersionResponse,
+    GetSecondaryResponse, GetTokenGrantResponse, GetTokenResponse, GetTsigGrantResponse,
+    GetTsigKeyResponse, GetZoneResponse, ImportZoneResponse, RecordValueRequest,
+    RollbackZoneResponse, SecondaryStatusResponse, TsigKeyResponse, VersionRecordResponse,
+    ZoneStatusResponse, ZoneVersionResponse,
 };
 use tabled::Tabled;
 
@@ -241,6 +241,33 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
                 format!("{}d", policy.zsk_lifetime_days)
             },
             created_at: display_time(policy.created_at),
+        }
+    }
+}
+
+#[derive(Debug, Tabled)]
+pub(crate) struct SecondaryRow {
+    #[tabled(rename = "ID")]
+    pub(crate) id: i32,
+    #[tabled(rename = "NAME")]
+    pub(crate) name: String,
+    #[tabled(rename = "ADDRESS")]
+    pub(crate) address: String,
+    #[tabled(rename = "ENABLED")]
+    pub(crate) enabled: String,
+    #[tabled(rename = "CREATED-AT")]
+    pub(crate) created_at: String,
+}
+
+impl From<&GetSecondaryResponse> for SecondaryRow {
+    /// Build a CLI table row from the secondary response.
+    fn from(secondary: &GetSecondaryResponse) -> Self {
+        SecondaryRow {
+            id: secondary.id,
+            name: secondary.name.clone(),
+            address: secondary.address.clone(),
+            enabled: display_yes_no(secondary.enabled),
+            created_at: display_time(secondary.created_at),
         }
     }
 }

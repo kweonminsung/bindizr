@@ -18,7 +18,6 @@ services:
       BINDIZR_API_AUTHENTICATION_REQUIRED: "false"
       BINDIZR_DNS_LISTEN_ADDR: "0.0.0.0"
       BINDIZR_DNS_LISTEN_PORT: "53"
-      BINDIZR_DNS_SECONDARY_ADDRS: ${BINDIZR_SECONDARY_ADDRS:-bind9:53}
       BINDIZR_DNS_NOTIFY_AFTER_UPDATE: ${BINDIZR_NOTIFY_AFTER_UPDATE:-true}
       # 0 = NOTIFY inline on the write path; a window (ms) answers the write at
       # commit and coalesces NOTIFYs per zone over that window from a queue.

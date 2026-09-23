@@ -1,7 +1,7 @@
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::{TestApp, TestAppOptions, probe_zone_soa};
+use crate::common::{TestApp, probe_zone_soa};
 
 mod history;
 mod import;
@@ -811,11 +811,8 @@ async fn zone_status_reports_secondaries() {
 #[serial_test::serial(bindizr_e2e)]
 async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {
     // The transfer ACL must admit the test's own loopback AXFR.
-    let app = TestApp::start_with_options(TestAppOptions {
-        secondary_addrs: "127.0.0.1".to_string(),
-        ..Default::default()
-    })
-    .await;
+    let app = TestApp::start_local().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
     let server = format!("127.0.0.1:{}", app.dns_port());

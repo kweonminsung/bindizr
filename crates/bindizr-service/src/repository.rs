@@ -6,15 +6,16 @@ pub(crate) use crate::database::repository::RepositoryTx;
 use crate::database::{
     get_api_token_repository, get_catalog_zone_repository, get_dnssec_key_repository,
     get_dnssec_policy_repository, get_dnssec_record_repository, get_dnssec_withdrawal_repository,
-    get_record_repository, get_token_grant_repository, get_tsig_grant_repository,
-    get_tsig_key_repository, get_zone_change_repository, get_zone_repository,
-    get_zone_version_repository,
+    get_record_repository, get_secondary_repository, get_token_grant_repository,
+    get_tsig_grant_repository, get_tsig_key_repository, get_zone_change_repository,
+    get_zone_repository, get_zone_version_repository,
     model::{
         api_token::ApiToken,
         dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
         dnssec_policy::DnssecPolicy,
         dnssec_record::{DnssecRecord, DnssecRecordWithZone},
         record::{Record, RecordWithZone},
+        secondary::Secondary,
         token_grant::TokenGrant,
         tsig_grant::TsigGrant,
         tsig_key::TsigKey,
@@ -895,6 +896,97 @@ impl RepositoryService {
                     ServiceError::internal(format!("failed to delete DNSSEC policy: {}", e))
                 }
             })
+    }
+
+    /// Insert a secondary.
+    pub(crate) async fn create_secondary(secondary: Secondary) -> Result<Secondary, ServiceError> {
+        let name = secondary.name.clone();
+        let address = secondary.address.clone();
+        get_secondary_repository()
+            .create(secondary)
+            .await
+            .map_err(|e| {
+                // The UNIQUE(name) / UNIQUE(address) backstop for the
+                // service-level pre-checks.
+                if e.is_unique_violation() {
+                    ServiceError::secondary_conflict(format!(
+                        "Secondary with name '{}' or address '{}' already exists",
+                        name, address
+                    ))
+                } else {
+                    ServiceError::internal(format!("failed to create secondary: {}", e))
+                }
+            })
+    }
+
+    /// Find a secondary by name.
+    pub(crate) async fn get_secondary_by_name(
+        name: &str,
+    ) -> Result<Option<Secondary>, ServiceError> {
+        get_secondary_repository()
+            .get_by_name(name)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load secondary: {}", e)))
+    }
+
+    /// Find a secondary by name in the current transaction.
+    pub(crate) async fn get_secondary_by_name_tx(
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+        lock_level: LockLevel,
+    ) -> Result<Option<Secondary>, ServiceError> {
+        get_secondary_repository()
+            .get_by_name_tx(tx, name, lock_level)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load secondary: {}", e)))
+    }
+
+    /// Find a secondary by address.
+    pub(crate) async fn get_secondary_by_address(
+        address: &str,
+    ) -> Result<Option<Secondary>, ServiceError> {
+        get_secondary_repository()
+            .get_by_address(address)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load secondary: {}", e)))
+    }
+
+    /// List all secondaries, disabled ones included.
+    pub(crate) async fn list_secondaries() -> Result<Vec<Secondary>, ServiceError> {
+        get_secondary_repository()
+            .list_all()
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load secondaries: {}", e)))
+    }
+
+    /// Write a secondary's address and enabled flag.
+    pub(crate) async fn update_secondary_tx(
+        tx: &mut RepositoryTx<'_>,
+        secondary: Secondary,
+    ) -> Result<Secondary, ServiceError> {
+        let address = secondary.address.clone();
+        get_secondary_repository()
+            .update_tx(tx, secondary)
+            .await
+            .map_err(|e| {
+                // The UNIQUE(address) backstop for the service-level pre-check.
+                if e.is_unique_violation() {
+                    ServiceError::secondary_conflict(format!(
+                        "Secondary with address '{}' already exists",
+                        address
+                    ))
+                } else {
+                    ServiceError::internal(format!("failed to update secondary: {}", e))
+                }
+            })
+    }
+
+    /// Delete a secondary by ID.
+    pub(crate) async fn delete_secondary(id: i32) -> Result<(), ServiceError> {
+        get_secondary_repository()
+            .delete(id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to delete secondary: {}", e)))
     }
 
     /// Insert a TSIG key.

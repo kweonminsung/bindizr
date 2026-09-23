@@ -82,12 +82,16 @@ pub(crate) async fn authenticate_transfer(
         RequestSignature::Key(key_name) => key_name,
         RequestSignature::Absent => {
             return match acl::is_client_allowed(client_ip).await {
-                true => Ok(TransferIdentity {
+                Ok(true) => Ok(TransferIdentity {
                     key: None,
                     signer: None,
                 }),
-                false => Err(TransferRefusal::refused(
-                    format!("IP {} is not a configured secondary", client_ip),
+                Ok(false) => Err(TransferRefusal::refused(
+                    format!("IP {} is not an enabled secondary", client_ip),
+                    None,
+                )),
+                Err(e) => Err(TransferRefusal::refused(
+                    format!("failed to load secondaries: {}", e),
                     None,
                 )),
             };

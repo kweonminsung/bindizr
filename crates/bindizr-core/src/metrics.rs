@@ -156,7 +156,7 @@ impl Metrics {
             Opts::new(
                 "bindizr_soa_queries_total",
                 "SOA queries answered, by outcome; secondaries poll these on their refresh \
-                 timer, so a rise in `refused` means one stopped being a configured secondary",
+                 timer, so a rise in `refused` means one stopped being an enabled secondary",
             ),
             &["result"],
         )

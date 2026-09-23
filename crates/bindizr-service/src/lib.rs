@@ -12,6 +12,7 @@ pub(crate) mod grant_pattern;
 pub mod notify;
 pub mod record;
 mod repository;
+pub mod secondary;
 pub(crate) mod serial;
 pub(crate) mod timing;
 pub mod token;

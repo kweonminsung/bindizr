@@ -12,8 +12,6 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::dns::address::is_address_target;
-
 const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 /// Swappable so `reload` can replace it; readers take a snapshot, so a
@@ -161,7 +159,6 @@ pub struct PostgresqlConfig {
 pub struct DnsConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
-    pub secondary_addrs: String,
     /// Name of the virtual RFC 9432 catalog zone this instance serves. A
     /// secondary holds one zone per name, so two primaries feeding the same
     /// secondary need two names.
@@ -645,27 +642,6 @@ impl DnsConfig {
                 "dns.transfer_cache.max_records must not be 0; set dns.transfer_cache.enabled = false to disable the cache"
                     .to_string(),
             );
-        }
-
-        let raw = &self.secondary_addrs;
-        if raw.trim().is_empty() {
-            return Ok(());
-        }
-        // Separators only (e.g. ",") would otherwise read as "no secondaries".
-        if raw.split(',').all(|entry| entry.trim().is_empty()) {
-            return Err(
-                "dns.secondary_addrs contains no addresses; use \"\" when there are no secondaries"
-                    .to_string(),
-            );
-        }
-        for entry in raw.split(',').map(str::trim).filter(|e| !e.is_empty()) {
-            // An unparseable entry silently notifies nobody and admits nobody.
-            if !is_address_target(entry) {
-                return Err(format!(
-                    "dns.secondary_addrs entry '{}' is not a host[:port] address",
-                    entry
-                ));
-            }
         }
         Ok(())
     }

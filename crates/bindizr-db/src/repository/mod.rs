@@ -18,6 +18,7 @@ use super::model::{
     dnssec_policy::DnssecPolicy,
     dnssec_record::{DnssecRecord, DnssecRecordWithZone},
     record::{Record, RecordType, RecordWithZone},
+    secondary::Secondary,
     token_grant::TokenGrant,
     tsig_grant::TsigGrant,
     tsig_key::TsigKey,
@@ -226,6 +227,39 @@ pub trait DnssecPolicyRepository: Send + Sync {
     ) -> Result<DnssecPolicy, DatabaseError>;
 
     /// Delete a DNSSEC policy by ID.
+    async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+}
+
+#[async_trait]
+pub trait SecondaryRepository: Send + Sync {
+    /// Insert a secondary.
+    async fn create(&self, secondary: Secondary) -> Result<Secondary, DatabaseError>;
+
+    /// Find a secondary by name.
+    async fn get_by_name(&self, name: &str) -> Result<Option<Secondary>, DatabaseError>;
+
+    /// Find a secondary by name in the current transaction.
+    async fn get_by_name_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        name: &str,
+        lock_level: LockLevel,
+    ) -> Result<Option<Secondary>, DatabaseError>;
+
+    /// Find a secondary by address.
+    async fn get_by_address(&self, address: &str) -> Result<Option<Secondary>, DatabaseError>;
+
+    /// List all secondaries, disabled ones included.
+    async fn list_all(&self) -> Result<Vec<Secondary>, DatabaseError>;
+
+    /// Write the address and enabled flag; the name is fixed at creation.
+    async fn update_tx(
+        &self,
+        tx: &mut RepositoryTx<'_>,
+        secondary: Secondary,
+    ) -> Result<Secondary, DatabaseError>;
+
+    /// Delete a secondary by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
 
@@ -746,6 +780,21 @@ impl DatabasePool {
             DatabasePool::SQLite(sqlite_pool) => Box::new(
                 sqlite::SqliteDnssecPolicyRepository::new(sqlite_pool.clone()),
             ),
+        }
+    }
+
+    /// The secondary repository for this pool's backend.
+    pub(crate) fn secondary_repository(&self) -> Box<dyn SecondaryRepository> {
+        match self {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlSecondaryRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresSecondaryRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteSecondaryRepository::new(sqlite_pool.clone()))
+            }
         }
     }
 

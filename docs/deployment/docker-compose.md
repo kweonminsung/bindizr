@@ -21,9 +21,21 @@ stack, which suits a laptop and nothing reachable by others. On arm64 hosts
 add `-f examples/compose/docker-compose.arm.yml`, which swaps the amd64-only
 ISC BIND image.
 
-## 2. Create a zone
+## 2. Register the secondaries
 
 The CLI has no remote mode; it runs inside the container through `exec`.
+Register the two BIND replicas by their service names, so they receive NOTIFY
+and may pull zones — see [Secondaries](../cli/secondaries.md):
+
+```bash
+$ docker compose -f examples/compose/docker-compose.yml exec bindizr \
+  bindizr secondary create bind9-1 --address bind9-1
+$ docker compose -f examples/compose/docker-compose.yml exec bindizr \
+  bindizr secondary create bind9-2 --address bind9-2
+```
+
+## 3. Create a zone
+
 Create a zone, give it its `NS` record (BIND will not load a zone without
 one), and add a record to look up:
 
@@ -40,7 +52,7 @@ Bindizr notifies both BIND replicas after each change and they pull the
 zone within a second; `bindizr doctor` and `bindizr zone status example.com`,
 run the same way through `exec`, show whether each has caught up.
 
-## 3. Query it
+## 4. Query it
 
 dnsdist on `127.0.0.1:53` spreads queries over the two replicas:
 
@@ -66,7 +78,13 @@ $ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
 ```
 
 The CLI runs in the `bindizr` service's container, through `docker exec` on
-the node that runs it.
+the node that runs it. Register the BIND service there as one secondary under
+its `tasks.bind9` name, which resolves to every replica, so NOTIFY reaches
+them all and each may transfer:
+
+```bash
+$ docker exec <bindizr-container> bindizr secondary create bind9 --address tasks.bind9
+```
 
 ## Using a different database
 

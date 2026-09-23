@@ -211,7 +211,7 @@ pub(crate) async fn get_zone_status(
         .filter(|s| s.is_in_sync())
         .count();
     let message = if response.secondaries.is_empty() {
-        "No secondaries configured".to_string()
+        "No enabled secondaries".to_string()
     } else {
         format!(
             "{} of {} secondaries in sync with serial {}",

@@ -17,7 +17,6 @@ file_path = "bindizr.sqlite"
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = 5300
-secondary_addrs = ""
 
 [logging]
 level = "info"
@@ -66,7 +65,7 @@ async fn doctor_reports_healthy_installation() {
         assert!(output.contains("Secondary in sync"));
         assert!(output.contains("NOTIFY accepted"));
     } else {
-        assert!(output.contains("No secondaries configured"));
+        assert!(output.contains("No enabled secondaries"));
     }
 }
 

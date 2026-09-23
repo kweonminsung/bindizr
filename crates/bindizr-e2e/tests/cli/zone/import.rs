@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::{
     cli::common::{summary_cells, summary_row},
-    common::{TestApp, TestAppOptions},
+    common::TestApp,
 };
 
 /// Verify that a rejected import applies nothing and exits non-zero.
@@ -119,11 +119,8 @@ async fn zone_import_dry_run_shows_the_diff_via_cli() {
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_from_server_round_trips_over_axfr() {
     // The transfer ACL must admit the test's own loopback AXFR.
-    let app = TestApp::start_with_options(TestAppOptions {
-        secondary_addrs: "127.0.0.1".to_string(),
-        ..Default::default()
-    })
-    .await;
+    let app = TestApp::start_local().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
     let zone_name = app.zone_name("axfr-import.example");
     app.create_zone_cli(&zone_name, "3600").await;
 

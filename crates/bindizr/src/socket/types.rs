@@ -1,7 +1,7 @@
 use bindizr_service::types::{
     CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest,
     ImportZoneRequest, PageFilter, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
-    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateZoneRequest,
+    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +15,11 @@ pub(crate) enum DaemonCommandKind {
     CreateToken,
     ListTokens,
     DeleteToken,
+    CreateSecondary,
+    ListSecondaries,
+    GetSecondary,
+    UpdateSecondary,
+    DeleteSecondary,
     CreateTsigKey,
     ListTsigKeys,
     GetTsigKey,
@@ -121,6 +126,20 @@ pub(crate) struct DeleteRecordParams {
     /// Report what would go without removing it, as the filtered delete does.
     #[serde(default)]
     pub(crate) dry_run: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SecondaryNameParams {
+    pub(crate) name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct UpdateSecondaryParams {
+    pub(crate) name: String,
+    #[serde(flatten)]
+    pub(crate) request: UpdateSecondaryRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -355,8 +374,8 @@ pub(crate) struct DaemonStatusResponse {
     pub(crate) api_authentication: bool,
     pub(crate) dns_addr: String,
     pub(crate) database_type: String,
-    /// Configured secondary addresses.
-    pub(crate) secondaries: usize,
+    /// Enabled secondaries; `None` when the database did not answer.
+    pub(crate) secondaries: Option<usize>,
     /// `None`, with `database_error` set, when the database did not answer;
     /// `status` prints the block and then exits non-zero.
     pub(crate) zones: Option<u64>,
