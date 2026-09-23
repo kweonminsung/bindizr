@@ -17,10 +17,12 @@ spec:
       labels:
         {{- include "bindizr-chart.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: bind9
-      {{- with .Values.bind9.podAnnotations }}
       annotations:
+        # A changed named.conf rolls the pods; named reads it at start.
+        checksum/config: {{ include (print $.Template.BasePath "/bind9-configmap.yaml") . | sha256sum }}
+        {{- with .Values.bind9.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "bindizr-chart.serviceAccountName" . }}
       # No pod calls the Kubernetes API.

@@ -173,7 +173,8 @@ $ helm upgrade bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
   --set 'bindizr.dns.extraSecondaryAddrs={ns2.example.net:53,192.0.2.7}'
 ```
 
-That server has to reach Bindizr's DNS Service in turn, `bindizr-bindizr-chart-dns`,
+A changed configuration rolls the Bindizr pods, which read it at start, so
+the new secondary is notified from the next change on. That server has to reach Bindizr's DNS Service in turn, `bindizr-bindizr-chart-dns`,
 which the chart keeps `ClusterIP`: expose it yourself and point the
 secondary's catalog zone at it.
 

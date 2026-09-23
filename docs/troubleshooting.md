@@ -10,8 +10,8 @@ is down. The tables below pair the messages you will meet with what to do.
 | --- | --- | --- |
 | `Is the bindizr daemon running?` | any CLI command | Start it: `sudo systemctl start bindizr`, or `bindizr start` in the foreground. `journalctl -u bindizr` shows why a start failed. |
 | `Bindizr is already running.` | `bindizr start` | Another daemon is running. Stop it with `bindizr stop` or `systemctl stop bindizr` rather than starting a second one. |
-| `socket directory '/tmp/bindizr' belongs to uid …` | `bindizr start` | A daemon another user ran left `/tmp/bindizr` behind, and Bindizr will not start in a directory someone else owns. Remove it as that user. |
 | `Permission denied on the daemon socket` | any CLI command | Run the CLI as the daemon's user: `sudo bindizr …` on a package install, `docker exec` / `kubectl exec` in a container. |
+| `The daemon at '/tmp/bindizr/bindizr.sock' runs as uid …` | any CLI command | The socket the CLI reached belongs to a daemon another user is running, or left behind. Run the CLI as that user, or remove the socket as that user. |
 | `unknown field \`…\`` | start, `config check` | A mistyped configuration key; the message lists the keys the section accepts. |
 | `… connection failed (check database.mysql.url)` | start, doctor | The key the message names is wrong, or the database is unreachable from this host. `bindizr doctor` repeats the connection without the daemon. |
 | `Address already in use` / `DNS port in use` | start, doctor | The secondary on the same host holds the port. Keep `dns.listen_port` off 53 (the package default is 5300) and point the secondary's catalog zone at that port. |

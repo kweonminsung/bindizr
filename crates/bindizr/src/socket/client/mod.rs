@@ -7,7 +7,7 @@ use tokio::{
 use crate::{
     cli::error::CliError,
     socket::{
-        FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
+        FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_peer, read_own_uid,
         types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
     },
 };
@@ -95,18 +95,18 @@ pub(crate) async fn send_command(
 
     Ok(serde_json::from_str(&response).map_err(|e| format!("Failed to parse response: {}", e))?)
 }
-/// Open a connection to the daemon's control socket.
+/// Open a connection to the daemon's control socket, refusing a daemon that
+/// is neither this user's nor root's (a socket another user planted in /tmp).
 async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
-    try_connect_daemon_socket()
+    let stream = try_connect_daemon_socket()
         .await
         .map_err(|(err, fallback_err)| match fallback_err {
-            // Owner-only by design: connecting grants global access.
-            _ if err.kind() == std::io::ErrorKind::PermissionDenied => CliError::from(format!(
-                "Permission denied on the daemon socket at '{}'. The socket is owner-only, so \
-                 run the CLI as the user the daemon runs as (for a package install, `sudo \
-                 bindizr ...`).",
-                SOCKET_FILE_PATH
-            )),
+            // Owner-only by design: connecting grants global access. Either
+            // path may be the one that refused.
+            _ if err.kind() == std::io::ErrorKind::PermissionDenied => denied(SOCKET_FILE_PATH),
+            Some(fallback_err) if fallback_err.kind() == std::io::ErrorKind::PermissionDenied => {
+                denied(FALLBACK_SOCKET_FILE_PATH)
+            }
             Some(fallback_err) => CliError::daemon_unreachable(format!(
                 "Could not connect to the daemon socket at '{}' or fallback '{}': {}; fallback error: {}\nIs the bindizr daemon running?",
                 SOCKET_FILE_PATH, FALLBACK_SOCKET_FILE_PATH, err, fallback_err
@@ -115,7 +115,37 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
                 "Could not connect to the daemon socket at '{}': {}\nIs the bindizr daemon running?",
                 SOCKET_FILE_PATH, err
             )),
-        })
+        })?;
+
+    let peer_uid = stream
+        .peer_cred()
+        .map_err(|e| format!("Could not identify the daemon behind its socket: {}", e))?
+        .uid();
+    let own_uid =
+        read_own_uid().map_err(|e| format!("Could not read this process's uid: {}", e))?;
+    // Root drives any daemon, as `sudo bindizr` on a package install does.
+    if own_uid != 0 && !is_trusted_peer(peer_uid, own_uid) {
+        let path = stream
+            .peer_addr()
+            .ok()
+            .and_then(|addr| addr.as_pathname().map(|p| p.display().to_string()))
+            .unwrap_or_else(|| "?".to_string());
+        return Err(CliError::from(format!(
+            "The daemon at '{}' runs as uid {}, neither this user nor root. Run the CLI as that \
+             user, or remove a socket another user left there.",
+            path, peer_uid
+        )));
+    }
+    Ok(stream)
+}
+
+/// The error for a socket this user may not open.
+fn denied(socket_path: &str) -> CliError {
+    CliError::from(format!(
+        "Permission denied on the daemon socket at '{}'. The socket is owner-only, so run the \
+         CLI as the user the daemon runs as (for a package install, `sudo bindizr ...`).",
+        socket_path
+    ))
 }
 
 /// Io-level connect attempt, preserving the error(s) so callers can tell a

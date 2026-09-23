@@ -1,5 +1,6 @@
-//! Unix-socket daemon API for the CLI; reachable only by the local daemon
-//! owner, so every command runs with global access (no token scoping).
+//! Unix-socket daemon API for the CLI. Every command runs with global access
+//! (no token scoping), so a connection is admitted only from the daemon's own
+//! user or root, by the peer credentials the kernel reports.
 
 pub(crate) mod control;
 mod dnssec;
@@ -15,7 +16,7 @@ mod zone;
 use std::{
     fs::Permissions,
     io,
-    os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt},
+    os::unix::fs::{FileTypeExt, PermissionsExt},
     path::Path,
 };
 
@@ -30,7 +31,7 @@ use tokio::{
 use crate::{
     shutdown::Shutdown,
     socket::{
-        FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH,
+        FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_peer, read_own_uid,
         types::{DaemonCommand, DaemonCommandKind},
     },
 };
@@ -171,14 +172,16 @@ async fn handle_client(stream: UnixStream) {
     }
 }
 
-/// Serve control commands on an already-bound socket until `shutdown` fires.
+/// Serve control commands on an already-bound socket until `shutdown` fires,
+/// admitting only the daemon's own user and root.
 ///
 /// The daemon removes the socket file once everything has drained: `bindizr
 /// stop` waits for it to disappear, so removing it earlier would report a stop
 /// that is still in progress.
-pub(crate) fn serve(listener: UnixListener, shutdown: &Shutdown) -> JoinHandle<()> {
+pub(crate) fn serve(listener: UnixListener, shutdown: &Shutdown) -> Result<JoinHandle<()>, String> {
+    let own_uid = read_own_uid().map_err(|e| format!("Failed to read the daemon's uid: {}", e))?;
     let stop = shutdown.waiter();
-    tokio::spawn(async move {
+    Ok(tokio::spawn(async move {
         tokio::pin!(stop);
 
         loop {
@@ -188,11 +191,26 @@ pub(crate) fn serve(listener: UnixListener, shutdown: &Shutdown) -> JoinHandle<(
             };
 
             match accepted {
-                Ok((stream, _)) => {
-                    tokio::spawn(async move {
-                        handle_client(stream).await;
-                    });
-                }
+                // Connecting grants global access, so the peer is checked before a byte is read.
+                Ok((stream, _)) => match stream.peer_cred() {
+                    Ok(peer) if is_trusted_peer(peer.uid(), own_uid) => {
+                        tokio::spawn(async move {
+                            handle_client(stream).await;
+                        });
+                    }
+                    Ok(peer) => {
+                        log::warn!("Refused a daemon socket connection from uid {}", peer.uid());
+                    }
+                    // Another `bindizr start` probing whether this daemon is alive
+                    // has hung up already, and macOS keeps no credentials past that.
+                    Err(e) if e.kind() == io::ErrorKind::NotConnected => {}
+                    Err(e) => {
+                        log::warn!(
+                            "Refused a daemon socket connection with no peer credentials: {}",
+                            e
+                        );
+                    }
+                },
                 Err(e) => {
                     log::error!("Error accepting connection: {}", e);
                 }
@@ -201,7 +219,7 @@ pub(crate) fn serve(listener: UnixListener, shutdown: &Shutdown) -> JoinHandle<(
 
         drop(listener);
         log::info!("Daemon socket server stopped");
-    })
+    }))
 }
 
 /// Remove the daemon's socket file, once nothing is serving on it.
@@ -249,42 +267,15 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), String> {
 async fn bind_socket(socket_path: &str) -> io::Result<UnixListener> {
     prepare_socket_path(socket_path).await?;
     let listener = UnixListener::bind(socket_path)?;
-    // Connecting grants global access; the file mode is the auth boundary.
+    // Owner-only refuses strangers at connect; the peer check in `serve` is the boundary.
     fs::set_permissions(socket_path, Permissions::from_mode(0o600)).await?;
     Ok(listener)
 }
 
 /// Prepare the control socket path and remove a stale socket if needed.
-///
-/// 0700 on the directory before the socket exists closes the bind-then-chmod
-/// window. Only the owner may chmod: root's directory (a Kubernetes emptyDir)
-/// stays as made; any other owner is a planted /tmp directory and is refused.
 async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     if let Some(parent) = Path::new(socket_path).parent() {
         fs::create_dir_all(parent).await?;
-        match fs::set_permissions(parent, Permissions::from_mode(0o700)).await {
-            Ok(()) => {}
-            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
-                // Not followed: a planted symlink to root's directory is not root's.
-                let owner = fs::symlink_metadata(parent).await?.uid();
-                if owner != 0 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        format!(
-                            "socket directory '{}' belongs to uid {}, not this daemon or root",
-                            parent.display(),
-                            owner
-                        ),
-                    ));
-                }
-                log::debug!(
-                    "Daemon socket directory '{}' is root's; leaving its mode: {}",
-                    parent.display(),
-                    e
-                );
-            }
-            Err(e) => return Err(e),
-        }
     }
 
     match fs::symlink_metadata(socket_path).await {

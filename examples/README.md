@@ -80,10 +80,9 @@ records in a Bindizr-managed zone. Full reference:
 [docs/external-dns.md](../docs/external-dns.md).
 
 ```sh
-# 1. Enable the provider API (config file change, so restart bindizr).
+# 1. Enable the provider API; the changed configuration rolls the bindizr pods.
 helm upgrade bindizr charts -n bindizr -f examples/kind/values.yaml \
   -f examples/kind/values.external-dns.yaml   # plus values.arm.yaml on arm64
-kubectl -n bindizr rollout restart deploy/bindizr
 
 # 2. Create the zone ExternalDNS will manage, and a token granted to it.
 kubectl -n bindizr exec deploy/bindizr -- bindizr zone create example.com \
