@@ -640,7 +640,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let status: ZoneStatusResponse = parse_response(&response.data)?;
             outln!("Zone {} (serial {})", status.zone, status.serial);
             if status.secondaries.is_empty() {
-                outln!("No secondaries configured.");
+                outln!("No enabled secondaries.");
                 return Ok(());
             }
             print_table(SecondaryStatusRow::rows_from_status(&status));

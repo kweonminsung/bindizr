@@ -23,10 +23,10 @@ is down. The tables below pair the messages you will meet with what to do.
 | Symptom | Where | Fix |
 | --- | --- | --- |
 | A secondary never picks up a new zone | `bindizr zone status`, the secondary's log | A secondary learns zones from `catalog.bindizr`. Check that it reached the catalog serial `bindizr doctor` reports, then its log for the catalog transfer; `bindizr zone notify` resends NOTIFY for every zone. [Secondary Servers](secondaries/index.md) has each server's command for inspecting a zone. |
-| `Secondary unreachable` | doctor, `zone status` | The address in `dns.secondary_addrs` is wrong, or a firewall sits between Bindizr and the secondary. |
+| `Secondary unreachable` | doctor, `zone status` | The address it was registered with (`bindizr secondary list`) is wrong, or a firewall sits between Bindizr and the secondary. |
 | `Secondary out of sync` | doctor, `zone status` | The secondary has not pulled the current serial: the catalog zone's for `doctor`, a member zone's for `zone status`, so the two can disagree for the moment a transfer takes. Persisting, BIND's log names the reason it refused or deferred the transfer. |
 | `NOTIFY rejected` | doctor | BIND's `allow-notify` does not admit Bindizr's address; the setup script adds `allow-notify { any; }`. |
-| A secondary's transfer is `REFUSED` | BIND's log, `bindizr_xfr_total{result="refused"}` | The secondary is not listed in `dns.secondary_addrs`, its address changed since it was (list it by [hostname](configuration.md#secondaries) instead), or it signs with a key Bindizr does not know — see [TSIG Keys](cli/tsig-keys.md#signing-zone-transfers). |
+| A secondary's transfer is `REFUSED` | BIND's log, `bindizr_xfr_total{result="refused"}` | The secondary is not registered or is disabled (`bindizr secondary list`), its address changed since it was registered (register it by [hostname](cli/secondaries.md#addresses) instead), or it signs with a key Bindizr does not know — see [TSIG Keys](cli/tsig-keys.md#signing-zone-transfers). |
 
 ## The HTTP API
 

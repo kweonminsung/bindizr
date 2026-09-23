@@ -60,7 +60,9 @@ server that understands catalog zones will do, so the secondary does not
 have to be BIND.
 
 Follow the page for the server you installed in step 1, using Bindizr's
-packaged defaults — DNS on `127.0.0.1` port 5300, leaving 53 to the secondary:
+packaged defaults — DNS on `127.0.0.1` port 5300, leaving 53 to the secondary.
+Its first step, registering the secondary in Bindizr, needs the daemon
+running, so it is done in step 5 below:
 
 - [BIND](../secondaries/bind.md)
 - [Knot DNS](../secondaries/knot.md)
@@ -88,6 +90,10 @@ $ sudo systemctl start bindizr
 
 # Create an admin API token. The CLI runs as the service user, so it needs sudo.
 $ sudo bindizr token create admin --global
+
+# Register the secondary from step 3: it receives NOTIFY and may pull zones from
+# this address. See Secondaries under CLI for a server elsewhere.
+$ sudo bindizr secondary create local --address 127.0.0.1
 ```
 
 Then confirm the whole path works end to end:

@@ -1,5 +1,5 @@
-//! Client-side SOA probing of configured secondaries, used to report how far
-//! each secondary has caught up with a zone.
+//! Client-side SOA probing of the enabled secondaries, used to report how
+//! far each has caught up with a zone.
 
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
@@ -11,35 +11,38 @@ use bindizr_core::{
     },
 };
 
-/// Result of probing one configured secondary: the serial its SOA answer
-/// carries, or the reason the probe failed.
+use crate::secondary::SecondaryService;
+
+/// Result of probing one secondary: the serial its SOA answer carries, or
+/// the reason the probe failed.
 pub struct ProbeReport {
     pub address: String,
     pub result: Result<u32, String>,
 }
 
-/// Query every configured secondary for the zone's SOA serial, in parallel.
-/// One probe per configured entry; a hostname entry is tried at each resolved
-/// address until one answers. An empty `secondary_addrs` yields an empty list.
+/// Query every enabled secondary for the zone's SOA serial, in parallel. One
+/// probe per secondary; a hostname is tried at each resolved address until
+/// one answers. No enabled secondary yields an empty list.
 pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<ProbeReport>, String> {
-    let dns_config = &config::bindizr_config().dns;
-    let raw = dns_config.secondary_addrs.as_str();
-    if raw.trim().is_empty() {
+    let secondaries = SecondaryService::list_enabled()
+        .await
+        .map_err(|e| e.to_string())?;
+    if secondaries.is_empty() {
         return Ok(Vec::new());
     }
-    let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
+    let timeout = Duration::from_secs(config::bindizr_config().dns.notify.timeout_secs);
 
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
 
     let mut probes = Vec::new();
     let mut tasks = Vec::new();
-    for (entry, result) in super::resolve_address_entries(raw, timeout).await {
-        let addrs = match result {
+    for secondary in secondaries {
+        let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
             Ok(addrs) => addrs,
             Err(e) => {
                 probes.push(ProbeReport {
-                    address: entry,
+                    address: secondary.address,
                     result: Err(format!("failed to resolve: {}", e)),
                 });
                 continue;
@@ -48,7 +51,7 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<ProbeReport>, Stri
 
         let qname = qname.clone();
         tasks.push((
-            entry,
+            secondary.address,
             tokio::spawn(async move { probe_entry(&qname, addrs, timeout).await }),
         ));
     }
@@ -95,7 +98,7 @@ async fn probe_entry(
         }
     }
 
-    last.expect("resolve_address_entries never yields an empty Ok")
+    last.expect("resolve_address_entry never yields an empty Ok")
 }
 
 /// Query one secondary server for its SOA status.

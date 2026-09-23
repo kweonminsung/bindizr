@@ -11,6 +11,7 @@ mod notify;
 mod openapi;
 mod record;
 mod router;
+mod secondary;
 mod token;
 mod tsig_key;
 mod zone;

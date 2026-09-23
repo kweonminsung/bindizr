@@ -12,6 +12,7 @@ mod external_dns;
 mod import;
 mod pagination;
 mod record;
+mod secondary;
 mod token;
 mod token_grant;
 mod tsig;
@@ -42,6 +43,9 @@ pub use record::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
     DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, RecordItem, RecordResponse,
     RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
+};
+pub use secondary::{
+    CreateSecondaryRequest, GetSecondaryResponse, SecondaryResponse, UpdateSecondaryRequest,
 };
 pub use token::{CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenResponse};
 pub use token_grant::{CreateTokenGrantRequest, GetTokenGrantResponse, TokenGrantResponse};

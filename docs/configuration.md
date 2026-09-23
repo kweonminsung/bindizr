@@ -25,7 +25,7 @@ always describes the running process:
 
 | | |
 | --- | --- |
-| Reloadable | the whole `[dns]` section (including `secondary_addrs`, effective from the next transfer) and `[logging]` |
+| Reloadable | the whole `[dns]` section and `[logging]` |
 | Fixed while running | the `[api]` and `[database]` sections, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name` |
 
 A reload names the sections it changed; a refusal names the settings that
@@ -63,8 +63,6 @@ url = "postgresql://user:password@hostname:port/database"
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
-secondary_addrs = "127.0.0.1:53"  # Comma-separated host[:port] — see Secondaries below. They receive
-                              # NOTIFY and are the only clients allowed to pull zones unsigned.
 # catalog_zone_name = "catalog.bindizr"  # The RFC 9432 catalog zone secondaries follow. A secondary
                               # holds one zone per name, so two primaries feeding one secondary need
                               # two names. Fixed while bindizr runs.
@@ -127,7 +125,6 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DATABASE_SQLITE_FILE_PATH` | `database.sqlite.file_path` | |
 | `BINDIZR_DNS_LISTEN_ADDR` | `dns.listen_addr` | |
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
-| `BINDIZR_DNS_SECONDARY_ADDRS` | `dns.secondary_addrs` | see [Secondaries](#secondaries) |
 | `BINDIZR_DNS_CATALOG_ZONE_NAME` | `dns.catalog_zone_name` | every secondary names the same zone in its own configuration |
 | `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate_tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
@@ -153,18 +150,10 @@ backend `BINDIZR_DATABASE_TYPE` selected.
 
 ## Secondaries
 
-`dns.secondary_addrs` is a comma-separated list of `host[:port]` entries —
-`192.0.2.7`, `[2001:db8::7]:53`, `ns2.example.net:53` — with 53 as the port
-when left out. Every entry receives NOTIFY, and an unsigned transfer is
-answered only from an entry's address; a signed one is authorized by its key
-— see [TSIG Keys](cli/tsig-keys.md#signing-zone-transfers).
-
-A hostname is resolved when used, not when the file is read, so a changed
-address is picked up on its own, within a minute. Where the address is not
-stable, a Kubernetes pod or a DHCP lease, list the secondary by a name that
-follows it; an entry that no longer resolves to it refuses its next transfer.
-
-`bindizr config reload` applies an edit without a restart.
+The secondaries are not in this file. They are registered at runtime with
+`bindizr secondary create` or `POST /secondaries`, stored beside the zones,
+and take effect on the next NOTIFY or transfer — see
+[Secondaries](cli/secondaries.md).
 
 ## Batching NOTIFY
 

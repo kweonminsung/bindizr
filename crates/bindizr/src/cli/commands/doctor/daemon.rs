@@ -165,7 +165,7 @@ pub(crate) async fn check_services(report: &mut Report) {
     }
 
     if doctor.secondaries.is_empty() {
-        report.skip("No secondaries configured");
+        report.skip("No enabled secondaries");
         return;
     }
 

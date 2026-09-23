@@ -109,6 +109,9 @@ impl CliError {
             ErrorCode::VersionNotFound => {
                 Some("Run 'bindizr zone version list <NAME>' to see available serials.")
             }
+            ErrorCode::SecondaryNotFound => {
+                Some("Run 'bindizr secondary list' to see the registered secondaries.")
+            }
             ErrorCode::TsigKeyNotFound => {
                 Some("Run 'bindizr tsig-key list' to see available keys.")
             }
@@ -164,6 +167,7 @@ impl CliError {
             | ErrorCode::ZoneConflict
             | ErrorCode::RecordConflict
             | ErrorCode::TokenConflict
+            | ErrorCode::SecondaryConflict
             | ErrorCode::TsigKeyConflict
             | ErrorCode::DnssecPolicyConflict
             | ErrorCode::DnssecDsPublished

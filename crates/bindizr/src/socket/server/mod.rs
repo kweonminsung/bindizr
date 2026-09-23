@@ -8,6 +8,7 @@ mod dnssec_policy;
 mod doctor;
 mod notify;
 mod record;
+mod secondary;
 pub(crate) mod status;
 mod token;
 mod tsig_key;
@@ -63,6 +64,11 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::CreateToken => token::create_token(&cmd.data).await,
                 DaemonCommandKind::ListTokens => token::list_tokens(&cmd.data).await,
                 DaemonCommandKind::DeleteToken => token::delete_token(&cmd.data).await,
+                DaemonCommandKind::CreateSecondary => secondary::create_secondary(&cmd.data).await,
+                DaemonCommandKind::ListSecondaries => secondary::list_secondaries(&cmd.data).await,
+                DaemonCommandKind::GetSecondary => secondary::get_secondary(&cmd.data).await,
+                DaemonCommandKind::UpdateSecondary => secondary::update_secondary(&cmd.data).await,
+                DaemonCommandKind::DeleteSecondary => secondary::delete_secondary(&cmd.data).await,
                 DaemonCommandKind::CreateTsigKey => tsig_key::create_tsig_key(&cmd.data).await,
                 DaemonCommandKind::ListTsigKeys => tsig_key::list_tsig_keys(&cmd.data).await,
                 DaemonCommandKind::GetTsigKey => tsig_key::get_tsig_key(&cmd.data).await,

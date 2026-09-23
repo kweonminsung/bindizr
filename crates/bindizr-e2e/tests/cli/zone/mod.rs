@@ -149,7 +149,7 @@ async fn zone_status_via_cli() {
     assert!(status.contains(&format!("Zone {} (serial 2)", zone_name)));
 
     if !app.has_dns_secondaries() {
-        assert!(status.contains("No secondaries configured."));
+        assert!(status.contains("No enabled secondaries."));
     }
 }
 

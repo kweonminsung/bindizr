@@ -7,18 +7,50 @@ use serde_json::json;
 use serial_test::serial;
 
 use crate::common::{
-    TestApp, TestAppOptions, TransferOutcome, axfr,
+    TestApp, TransferOutcome, axfr,
     dns::nsupdate::{SigningKey, create_tsig_key},
     wait_for_any_dns_record,
 };
 
 /// A bindizr whose transfer ACL admits the test's own loopback pull.
 async fn transfer_app() -> TestApp {
-    TestApp::start_with_options(TestAppOptions {
-        secondary_addrs: "127.0.0.1".to_string(),
-        ..TestAppOptions::default()
-    })
-    .await
+    let app = TestApp::start_local().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
+    app
+}
+
+/// Verify that an unsigned transfer is admitted only while its secondary is
+/// registered and enabled.
+#[tokio::test]
+#[serial]
+async fn an_unsigned_transfer_follows_the_secondary_registry() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // Nobody is registered yet, so the address admits nothing.
+    let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
+    assert_eq!(outcome.refusal(), Rcode::REFUSED);
+
+    app.create_secondary("loopback", "127.0.0.1").await;
+    let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
+    assert!(outcome.records() >= 3);
+
+    // Disabling keeps the row but closes the ACL from the next request on.
+    app.run_cli_success(&["secondary", "update", "loopback", "--enabled", "false"])
+        .await;
+    let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
+    assert_eq!(outcome.refusal(), Rcode::REFUSED);
+
+    app.run_cli_success(&["secondary", "update", "loopback", "--enabled", "true"])
+        .await;
+    let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
+    assert!(outcome.records() >= 3);
+
+    app.run_cli_success(&["secondary", "delete", "loopback"])
+        .await;
+    let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
+    assert_eq!(outcome.refusal(), Rcode::REFUSED);
 }
 
 /// Verify that an unsigned transfer still runs under the address acl.

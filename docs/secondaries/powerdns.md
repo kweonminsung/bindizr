@@ -6,24 +6,19 @@ interoperability run covers 4.9.
 ## 1. Register the secondary in Bindizr
 
 Bindizr sends NOTIFY to, and accepts unsigned transfers from, only the
-entries of `dns.secondary_addrs`; a PowerDNS missing from it gets every
-transfer refused. The packaged default, `127.0.0.1:53`, covers a PowerDNS on
-the same host. One elsewhere is added by address or hostname — see
-[Configuration](../configuration.md#secondaries) — and the list reloads
-without a restart:
-
-```toml title="/etc/bindizr/bindizr.conf.toml"
-[dns]
-secondary_addrs = "10.0.0.14:53"
-```
+secondaries registered with it; a PowerDNS missing from them gets every
+transfer refused. Register it by address or hostname — see
+[Secondaries](../cli/secondaries.md) — and it is fed from the next change
+on, with no restart:
 
 ```bash
-$ sudo bindizr config reload
+# A PowerDNS on this host; elsewhere, its address or hostname
+$ sudo bindizr secondary create powerdns --address 127.0.0.1
 ```
 
 PowerDNS signs only the catalog transfer (see
-[below](#tsig-does-not-reach-member-zones)), so the list is what authorizes
-its member transfers.
+[below](#tsig-does-not-reach-member-zones)), so the registered address is
+what authorizes its member transfers.
 
 ## 2. Configure the catalog zone
 
@@ -88,8 +83,8 @@ $ sudo pdnsutil set-meta example.com AXFR-MASTER-TSIG xfr-key
 — but those zones appear on their own as the catalog grows, so there is no
 point at which to do it.
 
-**With PowerDNS, treat `dns.secondary_addrs` as the only thing authorizing a
-member transfer.** Bindizr logs each transfer with `signed=true` or
+**With PowerDNS, treat the registered address as the only thing authorizing
+a member transfer.** Bindizr logs each transfer with `signed=true` or
 `signed=false`, so the difference is visible:
 
 ```text

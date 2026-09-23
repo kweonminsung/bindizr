@@ -41,20 +41,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
-{{- /* NOTIFY must reach every replica individually, so enumerate stable
-per-pod headless names instead of the load-balanced service, then the
-secondaries configured outside the chart. */ -}}
-{{- define "bindizr-chart.secondaryAddrs" -}}
+{{- /* The secondaries a bindizr pod registers at start, as name=address words:
+each BIND replica by its headless name (NOTIFY must reach every replica), then
+extraSecondaries. */ -}}
+{{- define "bindizr-chart.secondaries" -}}
 {{- $fullname := include "bindizr-chart.fullname" . -}}
 {{- $headless := printf "%s-bind9-headless" $fullname -}}
-{{- $addrs := list -}}
+{{- $entries := list -}}
 {{- range $i, $_ := until (.Values.bind9.replicas | int) -}}
-{{- $addrs = append $addrs (printf "%s-bind9-%d.%s:53" $fullname $i $headless) -}}
+{{- $entries = append $entries (printf "bind9-%d=%s-bind9-%d.%s:53" $i $fullname $i $headless) -}}
 {{- end -}}
-{{- range .Values.bindizr.dns.extraSecondaryAddrs -}}
-{{- $addrs = append $addrs (toString .) -}}
+{{- range .Values.bindizr.dns.extraSecondaries -}}
+{{- $entries = append $entries (printf "%s=%s" (required "extraSecondaries entries need a name" .name) (required "extraSecondaries entries need an address" .address)) -}}
 {{- end -}}
-{{- join "," $addrs -}}
+{{- join " " $entries -}}
 {{- end -}}
 
 {{- /* Choose the secret containing the database connection URL. */ -}}

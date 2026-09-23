@@ -56,13 +56,13 @@ impl ZoneApi {
     }
 }
 
-/// Report the sync state of every configured secondary for a zone.
+/// Report the sync state of every enabled secondary for a zone.
 #[utoipa::path(
         get,
         path = "/zones/{name}/status",
         tag = "Zone",
         summary = "Check how far each secondary has caught up with a zone",
-        description = "Queries every configured secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no secondaries configured the list is empty.",
+        description = "Queries every enabled secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no enabled secondaries the list is empty.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),

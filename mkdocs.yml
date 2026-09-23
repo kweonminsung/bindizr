@@ -117,6 +117,7 @@ nav:
   - CLI:
       - Commands: cli/index.md
       - Zones and Records: cli/zones.md
+      - Secondaries: cli/secondaries.md
       - Dynamic Updates: cli/nsupdate.md
       - TSIG Keys: cli/tsig-keys.md
       - API Tokens: cli/tokens.md

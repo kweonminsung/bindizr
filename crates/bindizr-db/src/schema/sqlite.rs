@@ -127,6 +127,15 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS secondaries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            address TEXT UNIQUE NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at DATETIME NOT NULL
+        );
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS dnssec_withdrawals (
             zone_id INTEGER PRIMARY KEY,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE

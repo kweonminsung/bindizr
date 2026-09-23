@@ -17,6 +17,7 @@ Kubernetes. There is no remote mode.
 | `start`, `stop`, `restart`, `status`, `doctor`, `config` | The daemon and its configuration | this page |
 | `completion`, `man` | The shell completion scripts and the man page | this page |
 | `zone`, `record` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | [Zones and Records](zones.md) |
+| `secondary` | The secondary servers: who receives NOTIFY and may pull zones | [Secondaries](secondaries.md) |
 | `token` | API tokens and the zones each is granted over HTTP | [API Tokens](tokens.md) |
 | `tsig-key` | TSIG keys and the zones each is granted for nsupdate | [TSIG Keys](tsig-keys.md), [Dynamic Updates](nsupdate.md) |
 | `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec/index.md) |
@@ -56,7 +57,7 @@ $ bindizr config check [-c <FILE>]
 
 # Show the configuration loaded by the running daemon, or one value by dotted key
 $ bindizr config list
-$ bindizr config get dns.secondary_addrs
+$ bindizr config get dns.listen_port
 
 # Re-read the configuration file without restarting (`systemctl reload bindizr` or SIGHUP does the same)
 $ bindizr config reload

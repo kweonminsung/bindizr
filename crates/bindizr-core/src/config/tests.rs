@@ -11,7 +11,6 @@ struct TestConfigToml {
     database_type: &'static str,
     /// Include the `[database.mysql]` / `[database.postgresql]` sections.
     unselected_databases: bool,
-    secondary_addrs: &'static str,
     /// Extra lines after the `[dns]` keys (newline-separated, no trailing
     /// newline); a `[dns.*]` sub-table header may open one there.
     dns_extra: &'static str,
@@ -27,7 +26,6 @@ impl Default for TestConfigToml {
             authentication_required: false,
             database_type: "sqlite",
             unselected_databases: true,
-            secondary_addrs: "",
             dns_extra: "",
             api_listen_port: 3000,
             dns_listen_port: 53,
@@ -59,7 +57,6 @@ file_path = "file::memory:?cache=shared"
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = {dns_listen_port}
-secondary_addrs = "{secondary_addrs}"
 {dns_extra}
 [logging]
 level = "debug"
@@ -67,7 +64,6 @@ level = "debug"
             api_listen_addr = self.api_listen_addr,
             authentication_required = self.authentication_required,
             database_type = self.database_type,
-            secondary_addrs = self.secondary_addrs,
             dns_extra = self.dns_extra,
             api_listen_port = self.api_listen_port,
             dns_listen_port = self.dns_listen_port,
@@ -84,7 +80,6 @@ fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
 #[test]
 fn from_toml_accepts_valid_config() {
     let parsed = parse_config(&TestConfigToml {
-        secondary_addrs: "127.0.0.1:53",
         dns_extra: "nsupdate_tsig_required = false\n\n[dns.notify]\nafter_update = false\non_startup = true\nretries = 4\ntimeout_secs = 9",
         ..Default::default()
     })
@@ -216,7 +211,6 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DATABASE_URL" => Some("mysql://user:p#ss&word@mysql:3306/bindizr".to_string()),
             "BINDIZR_DNS_LISTEN_ADDR" => Some("127.0.0.2".to_string()),
             "BINDIZR_DNS_LISTEN_PORT" => Some("5353".to_string()),
-            "BINDIZR_DNS_SECONDARY_ADDRS" => Some("192.0.2.10:53,192.0.2.11:53".to_string()),
             "BINDIZR_DNS_CATALOG_ZONE_NAME" => Some("catalog.staging".to_string()),
             "BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED" => Some("false".to_string()),
             "BINDIZR_DNS_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
@@ -249,10 +243,6 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     );
     assert_eq!(overridden.dns.listen_addr.to_string(), "127.0.0.2");
     assert_eq!(overridden.dns.listen_port, 5353);
-    assert_eq!(
-        overridden.dns.secondary_addrs,
-        "192.0.2.10:53,192.0.2.11:53"
-    );
     assert_eq!(overridden.dns.catalog_zone_name, "catalog.staging");
     assert!(!overridden.dns.nsupdate_tsig_required);
     assert!(!overridden.dns.notify.after_update);
@@ -304,18 +294,6 @@ fn resolve_config_path_prefers_argument_then_env_then_default() {
     );
 }
 
-/// Verify that `from_toml` rejects entryless secondary addrs.
-#[test]
-fn from_toml_rejects_entryless_secondary_addrs() {
-    let err = parse_config(&TestConfigToml {
-        secondary_addrs: ",",
-        ..Default::default()
-    })
-    .unwrap_err();
-
-    assert!(err.contains("dns.secondary_addrs contains no addresses"));
-}
-
 /// Verify that `from_toml` rejects port zero.
 #[test]
 fn from_toml_rejects_port_zero() {
@@ -346,18 +324,6 @@ fn from_toml_rejects_listeners_sharing_a_port() {
     .unwrap_err();
 
     assert!(err.contains("cannot share port 5353"), "{}", err);
-}
-
-/// Verify that `from_toml` rejects an unparseable secondary address.
-#[test]
-fn from_toml_rejects_an_unparseable_secondary_address() {
-    let err = parse_config(&TestConfigToml {
-        secondary_addrs: "192.0.2.1, not a host",
-        ..Default::default()
-    })
-    .unwrap_err();
-
-    assert!(err.contains("is not a host[:port] address"), "{}", err);
 }
 
 /// Verify that a reload refuses what a running process cannot adopt.
@@ -451,7 +417,7 @@ fn a_reload_takes_the_settings_read_per_use() {
     let current = parse_config(&TestConfigToml::default()).unwrap();
 
     let mut next = current.clone();
-    next.dns.secondary_addrs = "192.0.2.1:53".to_string();
+    next.dns.notify.retries = 9;
     next.logging.level = LogLevel::Warn;
 
     assert!(current.fixed_settings_changed(&next).is_empty());

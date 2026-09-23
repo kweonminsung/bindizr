@@ -48,7 +48,11 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
                 }
                 (None, None) => outln!("Database: {}", status.database_type),
             }
-            outln!("Secondaries: {} configured", status.secondaries);
+            match status.secondaries {
+                Some(1) => outln!("Secondaries: 1 enabled"),
+                Some(secondaries) => outln!("Secondaries: {} enabled", secondaries),
+                None => {}
+            }
         }
         _ => print_payload(&response.data, output)?,
     }

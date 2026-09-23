@@ -6,7 +6,9 @@ use std::{
 };
 
 use bindizr_core::config;
-use bindizr_service::{error::ServiceError, types::MessageResponse, zone::ZoneService};
+use bindizr_service::{
+    error::ServiceError, secondary::SecondaryService, types::MessageResponse, zone::ZoneService,
+};
 
 use crate::socket::{
     server::to_response_data,
@@ -31,11 +33,17 @@ pub(crate) fn mark_start_time() {
 /// Return the daemon's current status as JSON.
 pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
     let config = config::bindizr_config();
-    let (zones, database_error) =
-        match tokio::time::timeout(DB_COUNT_TIMEOUT, ZoneService::count_all()).await {
-            Ok(Ok(zones)) => (Some(zones), None),
-            Ok(Err(e)) => (None, Some(e.to_string())),
+    let counts = async {
+        let zones = ZoneService::count_all().await?;
+        let secondaries = SecondaryService::list_enabled().await?.len();
+        Ok::<_, ServiceError>((zones, secondaries))
+    };
+    let (zones, secondaries, database_error) =
+        match tokio::time::timeout(DB_COUNT_TIMEOUT, counts).await {
+            Ok(Ok((zones, secondaries))) => (Some(zones), Some(secondaries), None),
+            Ok(Err(e)) => (None, None, Some(e.to_string())),
             Err(_) => (
+                None,
                 None,
                 Some(format!(
                     "timed out after {} seconds",
@@ -60,12 +68,7 @@ pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
         api_authentication: config.api.authentication_required,
         dns_addr: SocketAddr::new(config.dns.listen_addr, config.dns.listen_port).to_string(),
         database_type: config.database.database_type.to_string(),
-        secondaries: config
-            .dns
-            .secondary_addrs
-            .split(',')
-            .filter(|entry| !entry.trim().is_empty())
-            .count(),
+        secondaries,
         zones,
         database_error,
     };

@@ -42,7 +42,7 @@ running configuration always describes the running process.")]
     },
     /// Show a single configuration value by dotted key (e.g. api.listen_port)
     Get {
-        /// Dotted configuration key, e.g. dns.secondary_addrs
+        /// Dotted configuration key, e.g. dns.listen_port
         key: String,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
@@ -163,7 +163,6 @@ fn print_config(config: &BindizrConfig) {
     print_section("dns");
     print_value("listen_addr", config.dns.listen_addr);
     print_value("listen_port", config.dns.listen_port);
-    print_value("secondary_addrs", &config.dns.secondary_addrs);
     print_value(
         "zone_history_retention_days",
         config.dns.zone_history_retention_days,

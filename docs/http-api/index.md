@@ -1,7 +1,7 @@
 # HTTP API
 
-Bindizr exposes zones, records, versions, TSIG keys, and tokens over an HTTP
-API served on `api.listen_addr:api.listen_port` (`127.0.0.1:3000` by default).
+Bindizr exposes zones, records, versions, secondaries, TSIG keys, and tokens
+over an HTTP API served on `api.listen_addr:api.listen_port` (`127.0.0.1:3000` by default).
 
 [Open the full API reference :material-open-in-new:](https://kweonminsung.github.io/bindizr/api/){ .md-button .md-button--primary }
 

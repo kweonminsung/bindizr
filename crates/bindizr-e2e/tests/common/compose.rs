@@ -18,6 +18,8 @@ const COMPOSE_PROJECT_NAME: &str = "bindizr-e2e-dns";
 const COMPOSE_API_BASE_URL: &str = "http://127.0.0.1:8000";
 const ARM_STACK_ENV: &str = "BINDIZR_E2E_ARM";
 const SECONDARY_PORTS: [u16; 2] = [1053, 1054];
+/// The BIND9 services of the compose file, by the names the daemon reaches them at.
+const COMPOSE_SECONDARY_SERVICES: [&str; 2] = ["bind9-1", "bind9-2"];
 const COMPOSE_COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
 static COMPOSE_STACK: OnceLock<ComposeStack> = OnceLock::new();
 
@@ -27,6 +29,7 @@ impl TestApp {
         let compose_stack = COMPOSE_STACK.get_or_init(ComposeStack::start);
         let client = Client::new();
         wait_for_compose_api(&client).await;
+        register_compose_secondaries(&client).await;
 
         Self {
             runtime: TestRuntime::Compose(compose_stack),
@@ -37,6 +40,33 @@ impl TestApp {
             namespace: test_namespace(),
             auth_token: None,
         }
+    }
+}
+
+/// Register the stack's BIND9 services as secondaries; the stack is reused
+/// across tests, so one already registered is left alone.
+async fn register_compose_secondaries(client: &Client) {
+    for name in COMPOSE_SECONDARY_SERVICES {
+        let url = format!("{COMPOSE_API_BASE_URL}/secondaries/{name}");
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .expect("GET /secondaries/{name}");
+        if response.status() == StatusCode::OK {
+            continue;
+        }
+        let response = client
+            .post(format!("{COMPOSE_API_BASE_URL}/secondaries"))
+            .json(&serde_json::json!({ "name": name, "address": format!("{name}:53") }))
+            .send()
+            .await
+            .expect("POST /secondaries");
+        assert_eq!(
+            response.status(),
+            StatusCode::CREATED,
+            "registering the compose secondary {name}"
+        );
     }
 }
 

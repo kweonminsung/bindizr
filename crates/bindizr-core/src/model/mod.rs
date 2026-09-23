@@ -5,6 +5,7 @@ pub mod dnssec_key;
 pub mod dnssec_policy;
 pub mod dnssec_record;
 pub mod record;
+pub mod secondary;
 pub mod token_grant;
 pub mod tsig_grant;
 pub mod tsig_key;

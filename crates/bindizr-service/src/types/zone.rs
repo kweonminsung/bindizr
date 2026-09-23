@@ -277,7 +277,7 @@ pub struct ExportZoneFileResponse {
     pub zone_file: String,
 }
 
-/// Sync state of one configured secondary for a zone.
+/// Sync state of one enabled secondary for a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct SecondaryStatusResponse {
     #[schema(example = "10.0.1.10:53")]
@@ -304,7 +304,7 @@ impl SecondaryStatusResponse {
     }
 }
 
-/// A zone's serial and the sync state of every configured secondary, probed
+/// A zone's serial and the sync state of every enabled secondary, probed
 /// live via SOA queries.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ZoneStatusResponse {

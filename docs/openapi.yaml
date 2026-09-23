@@ -1018,6 +1018,269 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /secondaries:
+    get:
+      tags:
+      - Secondary
+      summary: List all secondaries
+      description: Lists every registered secondary, disabled ones included. An enabled secondary receives NOTIFY for every zone, may pull zones unsigned from its address, and is probed for the serial it serves.
+      operationId: list_secondaries
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+      responses:
+        '200':
+          description: All secondaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse_GetSecondaryResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Secondary
+      summary: Register a secondary
+      description: Registers a secondary by name and `host[:port]` address (port 53 when left out). It receives NOTIFY from the next change on and may pull zones unsigned from that address; a hostname is resolved when used. A signed transfer is authorized by its key instead, but NOTIFY still goes only to the registered secondaries.
+      operationId: create_secondary
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecondaryRequest'
+        required: true
+      responses:
+        '201':
+          description: Secondary registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondaryResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A secondary with the same name or address already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /secondaries/{name}:
+    get:
+      tags:
+      - Secondary
+      summary: Get a secondary
+      operationId: get_secondary
+      parameters:
+      - name: name
+        in: path
+        description: The name of the secondary.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The secondary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondaryResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Secondary not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+      - Secondary
+      summary: Update a secondary
+      description: Changes the address, or enables or disables the secondary; an omitted field keeps its value. A disabled secondary receives no NOTIFY, may not transfer unsigned, and is not probed, but stays registered.
+      operationId: update_secondary
+      parameters:
+      - name: name
+        in: path
+        description: The name of the secondary.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSecondaryRequest'
+        required: true
+      responses:
+        '200':
+          description: Secondary updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondaryResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Secondary not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Another secondary already has the address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - Secondary
+      summary: Delete a secondary
+      description: 'Forgets the secondary: it receives no further NOTIFY and its unsigned transfers are refused from the next request on.'
+      operationId: delete_secondary
+      parameters:
+      - name: name
+        in: path
+        description: The name of the secondary.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Secondary deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Secondary not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /tokens:
     get:
       tags:
@@ -2932,7 +3195,7 @@ paths:
       tags:
       - Zone
       summary: Check how far each secondary has caught up with a zone
-      description: Queries every configured secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no secondaries configured the list is empty.
+      description: Queries every enabled secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no enabled secondaries the list is empty.
       operationId: get_zone_status
       parameters:
       - name: name
@@ -3473,6 +3736,27 @@ components:
           type: string
           example: example.com
       additionalProperties: false
+    CreateSecondaryRequest:
+      type: object
+      description: Request body for registering a secondary.
+      required:
+      - name
+      - address
+      properties:
+        address:
+          type: string
+          description: |-
+            `host[:port]`, port 53 when left out. A hostname is resolved when
+            used, so a name that follows the server keeps working when its
+            address changes.
+          example: ns2.example.net:53
+        name:
+          type: string
+          description: |-
+            The operator's handle for the server; a plain identifier, since it
+            travels in URL paths.
+          example: ns2
+      additionalProperties: false
     CreateTokenGrantRequest:
       type: object
       description: Request body for granting an API token record rights in a zone.
@@ -3965,10 +4249,12 @@ components:
             `INVALID_RECORD_VALUE`, `INVALID_JSON_BODY`, `UNAUTHORIZED`,
             `INVALID_TOKEN`, `FORBIDDEN`, `ENDPOINT_NOT_FOUND`,
             `METHOD_NOT_ALLOWED`, `ZONE_NOT_FOUND`, `RECORD_NOT_FOUND`,
-            `TOKEN_NOT_FOUND`, `VERSION_NOT_FOUND`, `TSIG_KEY_NOT_FOUND`,
+            `TOKEN_NOT_FOUND`, `VERSION_NOT_FOUND`, `SECONDARY_NOT_FOUND`,
+            `TSIG_KEY_NOT_FOUND`,
             `TSIG_GRANT_NOT_FOUND`, `TOKEN_GRANT_NOT_FOUND`,
             `DNSSEC_POLICY_NOT_FOUND`, `ZONE_CONFLICT`, `RECORD_CONFLICT`,
-            `TOKEN_CONFLICT`, `TSIG_KEY_CONFLICT`, `TSIG_KEY_IN_USE`,
+            `TOKEN_CONFLICT`, `SECONDARY_CONFLICT`, `TSIG_KEY_CONFLICT`,
+            `TSIG_KEY_IN_USE`,
             `DNSSEC_POLICY_CONFLICT`, `DNSSEC_POLICY_IN_USE`,
             `DNSSEC_ALREADY_ENABLED`, `DNSSEC_NOT_ENABLED`,
             `DNSSEC_ROLLOVER_IN_PROGRESS`, `DNSSEC_NO_ROLLOVER_IN_PROGRESS`,
@@ -4177,11 +4463,11 @@ components:
       properties:
         delegation:
           oneOf:
-          - type: 'null'
           - $ref: '#/components/schemas/DnssecDelegationInfo'
             description: |-
               The parent's answer about the zone's DS; present only when this
               status comes from a parent check.
+          - type: 'null'
         ds_records:
           type: array
           items:
@@ -4222,9 +4508,9 @@ components:
           example: a.gtld-servers.net,b.gtld-servers.net
         policy:
           oneOf:
-          - type: 'null'
           - $ref: '#/components/schemas/GetDnssecPolicyResponse'
             description: The policy the zone signs under; absent for an unsigned zone.
+          - type: 'null'
         serial:
           type: integer
           format: int32
@@ -4289,6 +4575,32 @@ components:
         zone_name:
           type: string
           example: example.com
+    GetSecondaryResponse:
+      type: object
+      description: API representation of a secondary.
+      required:
+      - id
+      - name
+      - address
+      - enabled
+      - created_at
+      properties:
+        address:
+          type: string
+          example: ns2.example.net:53
+        created_at:
+          type: string
+          format: date-time
+        enabled:
+          type: boolean
+          example: true
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: ns2
     GetTokenGrantResponse:
       type: object
       description: API representation of a token grant.
@@ -4733,6 +5045,43 @@ components:
               zone_name:
                 type: string
                 example: example.com
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetSecondaryResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a secondary.
+            required:
+            - id
+            - name
+            - address
+            - enabled
+            - created_at
+            properties:
+              address:
+                type: string
+                example: ns2.example.net:53
+              created_at:
+                type: string
+                format: date-time
+              enabled:
+                type: boolean
+                example: true
+              id:
+                type: integer
+                format: int32
+                example: 1
+              name:
+                type: string
+                example: ns2
         pagination:
           $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetTokenGrantResponse:
@@ -5316,9 +5665,17 @@ components:
             omitted for CSK zones.
           example: zsk
       additionalProperties: false
+    SecondaryResponse:
+      type: object
+      description: A secondary wrapped in a response envelope.
+      required:
+      - secondary
+      properties:
+        secondary:
+          $ref: '#/components/schemas/GetSecondaryResponse'
     SecondaryStatusResponse:
       type: object
-      description: Sync state of one configured secondary for a zone.
+      description: Sync state of one enabled secondary for a zone.
       required:
       - address
       - status
@@ -5465,8 +5822,26 @@ components:
           example: A
         value:
           oneOf:
-          - type: 'null'
           - $ref: '#/components/schemas/RecordValueRequest'
+          - type: 'null'
+      additionalProperties: false
+    UpdateSecondaryRequest:
+      type: object
+      description: Request body for changing a secondary; an omitted field keeps its value.
+      properties:
+        address:
+          type:
+          - string
+          - 'null'
+          example: 192.0.2.7:53
+        enabled:
+          type:
+          - boolean
+          - 'null'
+          description: |-
+            `false` stops NOTIFY, unsigned transfers, and probes for the server
+            without forgetting it.
+          example: true
       additionalProperties: false
     UpdateZoneRequest:
       type: object
@@ -5617,7 +5992,7 @@ components:
     ZoneStatusResponse:
       type: object
       description: |-
-        A zone's serial and the sync state of every configured secondary, probed
+        A zone's serial and the sync state of every enabled secondary, probed
         live via SOA queries.
       required:
       - zone
@@ -5734,6 +6109,8 @@ tags:
   description: Manage DNS records including creation, update, deletion, and retrieval.
 - name: Notify
   description: Send DNS NOTIFY messages to secondary servers.
+- name: Secondary
+  description: 'The secondary servers: each receives NOTIFY, may pull zones unsigned from its address, and is probed for the serial it serves.'
 - name: TSIG
   description: Manage TSIG keys and the zone grants each holds for nsupdate.
 - name: Token
