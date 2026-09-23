@@ -15,7 +15,7 @@ mod zone;
 use std::{
     fs::Permissions,
     io,
-    os::unix::fs::{FileTypeExt, PermissionsExt},
+    os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt},
     path::Path,
 };
 
@@ -255,12 +255,36 @@ async fn bind_socket(socket_path: &str) -> io::Result<UnixListener> {
 }
 
 /// Prepare the control socket path and remove a stale socket if needed.
+///
+/// 0700 on the directory before the socket exists closes the bind-then-chmod
+/// window. Only the owner may chmod: root's directory (a Kubernetes emptyDir)
+/// stays as made; any other owner is a planted /tmp directory and is refused.
 async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     if let Some(parent) = Path::new(socket_path).parent() {
         fs::create_dir_all(parent).await?;
-        // 0700 before the socket exists: the directory gates access, so the
-        // bind-then-chmod window cannot leak a umask-permissive socket.
-        fs::set_permissions(parent, Permissions::from_mode(0o700)).await?;
+        match fs::set_permissions(parent, Permissions::from_mode(0o700)).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                // Not followed: a planted symlink to root's directory is not root's.
+                let owner = fs::symlink_metadata(parent).await?.uid();
+                if owner != 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        format!(
+                            "socket directory '{}' belongs to uid {}, not this daemon or root",
+                            parent.display(),
+                            owner
+                        ),
+                    ));
+                }
+                log::debug!(
+                    "Daemon socket directory '{}' is root's; leaving its mode: {}",
+                    parent.display(),
+                    e
+                );
+            }
+            Err(e) => return Err(e),
+        }
     }
 
     match fs::symlink_metadata(socket_path).await {

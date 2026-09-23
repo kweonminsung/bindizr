@@ -59,7 +59,7 @@ $ bindizr tsig-key grant xfr-key example.com --read-only
 $ bindizr tsig-key grant update-key example.com
 ```
 
-A key bindizr does not hold is refused (`BADKEY`) rather than falling back to
+A key Bindizr does not hold is refused (`BADKEY`) rather than falling back to
 the address list: signing must not be a way around the check.
 
 TSIG keys and their grants are also manageable over the HTTP API

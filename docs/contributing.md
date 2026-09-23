@@ -1,7 +1,7 @@
 # Contributing
 
 Help is welcome at any level — whether you are new to Rust or to DNS, or have
-run BIND9 for twenty years. Fixing a typo, sharpening an error message, or
+run BIND for twenty years. Fixing a typo, sharpening an error message, or
 reporting something that confused you all count.
 
 ## Getting started
@@ -50,7 +50,7 @@ on GitHub.
 
     The API reference comes from the `#[utoipa::path]` annotations in
     `crates/bindizr/src/api/`. Change the annotations, then regenerate the spec
-    from a bindizr running with `api.openapi_enabled = true` — never edit the
+    from a Bindizr running with `api.openapi_enabled = true` — never edit the
     YAML by hand.
 
 ## The rest

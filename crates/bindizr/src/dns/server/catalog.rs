@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use bindizr_core::{
     config::bindizr_config,
     dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
@@ -31,7 +29,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     log::info!("Catalog zone contains {} member zones", member_zones.len());
 
     // The catalog zone is virtual (no DB row).
-    let digest = catalog_digest(&member_zones, &all_zones);
+    let digest = catalog_digest(&member_zones);
     let base_serial = all_zones.iter().map(|z| z.serial).max().unwrap_or(1);
     let serial =
         ZoneService::advance_catalog_serial(catalog_zone_name, &digest, base_serial).await?;
@@ -57,25 +55,20 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     Ok((catalog_zone, member_zones))
 }
 
-/// Hash catalog member names and serials to detect changes.
-fn catalog_digest(member_zones: &[String], zones: &[Zone]) -> String {
-    // Names are canonical, so the index needs no case folding.
-    let serial_by_name: HashMap<String, i32> = zones
-        .iter()
-        .map(|z| (z.name.to_string(), z.serial))
-        .collect();
-
+/// Hash the sorted member names, so the catalog serial advances only when
+/// membership changes.
+///
+/// A member's serial stays out: re-transferring the catalog re-provisions
+/// nothing, so hashing it would turn every record write into a catalog change.
+fn catalog_digest(member_zones: &[String]) -> String {
+    // Names are canonical, so sorting needs no case folding.
     let mut members = member_zones.to_vec();
     members.sort();
 
     let mut hasher = Sha256::new();
     for member in members {
-        if let Some(serial) = serial_by_name.get(&member) {
-            hasher.update(member.as_bytes());
-            hasher.update(b"\0");
-            hasher.update(serial.to_string().as_bytes());
-            hasher.update(b"\n");
-        }
+        hasher.update(member.as_bytes());
+        hasher.update(b"\n");
     }
 
     hasher
@@ -164,57 +157,20 @@ pub(crate) async fn handle_catalog_axfr(
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::dns::name::ZoneName;
-
     use super::*;
 
-    /// Verify that catalog digest changes when members change.
+    /// Verify that the catalog digest changes when members change and is
+    /// indifferent to their order.
     #[test]
-    fn catalog_digest_changes_when_members_change() {
-        let zones = vec![
-            Zone {
-                id: 1,
-                name: ZoneName::from_row("example.com"),
-                mname: "ns1.example.com".to_string(),
-                rname: "admin.example.com".to_string(),
-                default_ttl: 3600,
-                serial: 100,
-                refresh: 3600,
-                retry: 3600,
-                expire: 604800,
-                minimum_ttl: 3600,
-                dnssec_policy_id: None,
-                parent_ns_addrs: None,
-                enabled: true,
-                description: None,
-                created_at: Utc::now(),
-            },
-            Zone {
-                id: 2,
-                name: ZoneName::from_row("test.com"),
-                mname: "ns1.test.com".to_string(),
-                rname: "admin.test.com".to_string(),
-                default_ttl: 3600,
-                serial: 200,
-                refresh: 3600,
-                retry: 3600,
-                expire: 604800,
-                minimum_ttl: 3600,
-                dnssec_policy_id: None,
-                parent_ns_addrs: None,
-                enabled: true,
-                description: None,
-                created_at: Utc::now(),
-            },
-        ];
+    fn catalog_digest_follows_membership_only() {
+        let members = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
 
-        let member_zones = zones
-            .iter()
-            .map(|zone| zone.name.to_string())
-            .collect::<Vec<_>>();
-        let original = catalog_digest(&member_zones, &zones);
-        let updated_members = vec!["example.com".to_string()];
-
-        assert_ne!(original, catalog_digest(&updated_members, &zones));
+        let original = catalog_digest(&members(&["example.com", "test.com"]));
+        assert_ne!(original, catalog_digest(&members(&["example.com"])));
+        // Order is not membership, so it must not read as a change.
+        assert_eq!(
+            original,
+            catalog_digest(&members(&["test.com", "example.com"]))
+        );
     }
 }

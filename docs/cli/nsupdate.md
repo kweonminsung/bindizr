@@ -13,9 +13,9 @@ authenticated with TSIG. Authorization is built from two pieces:
 :   Give a non-global key update rights in one zone, optionally restricted to a
     record name pattern and record types.
 
-For each incoming update, bindizr resolves the key named in the TSIG record and
+For each incoming update, Bindizr resolves the key named in the TSIG record and
 verifies the signature and signing time. A global key is then authorized for
-everything; for any other key, bindizr loads its grants for the target zone
+everything; for any other key, Bindizr loads its grants for the target zone
 and every record in the update must match at least one of them (name pattern and
 type). Otherwise the whole update is refused and nothing is partially applied.
 
@@ -59,8 +59,8 @@ which may update any zone.
 
 ## The first key
 
-A TSIG key needs no bootstrapping of its own: with the first API token, which a
-fresh install seeds, a key is created over the API from anywhere.
+A TSIG key needs no bootstrapping of its own: with a global API token, a key
+is created over the HTTP API from anywhere.
 
 ```bash
 $ curl -X POST https://bindizr:3000/tsig-keys \

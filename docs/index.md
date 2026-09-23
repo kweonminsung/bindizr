@@ -11,13 +11,14 @@ Open-source control plane for authoritative DNS
 
 </div>
 
-**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to BIND9, Knot DNS, NSD, or PowerDNS secondaries via AXFR/IXFR using DNS Catalog Zones.
+**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to BIND, Knot DNS, NSD, or PowerDNS secondaries via AXFR/IXFR using DNS Catalog Zones.
 
 <div class="grid cards" markdown>
 
 -   :material-rocket-launch: **[Deploy it](deployment/index.md)**
 
-    Helm, Docker Compose, or a package install on a VM.
+    Helm, Docker Compose, or a package install on a VM, walked through to a
+    zone that answers.
 
 -   :material-tune: **[Configure it](configuration.md)**
 
@@ -44,10 +45,10 @@ Open-source control plane for authoritative DNS
 :   Built-in AXFR (full zone transfer) and IXFR (incremental zone transfer) server that serves zone data to secondary DNS servers. SOA serial numbers are automatically incremented on each change.
 
 **Catalog Zones**
-:   Bindizr uses DNS Catalog Zones (RFC 9432) to automatically propagate zone configuration to the secondary servers. When you create or delete a zone via the API/CLI, the secondaries discover and configure it without manual intervention.
+:   Bindizr uses DNS Catalog Zones (RFC 9432) to automatically propagate zone configuration to the secondary servers. When you create or delete a zone via the HTTP API or CLI, the secondaries discover and configure it without manual intervention.
 
 **Secondary DNS Servers**
-:   BIND9, Knot DNS, NSD, or PowerDNS instances configured as secondaries — any server that consumes a catalog zone. They automatically discover zones through the catalog zone, pull zone updates from Bindizr's XFR server via zone transfer, and respond to DNS queries from clients. See [Secondary Servers](secondaries/index.md).
+:   BIND, Knot DNS, NSD, or PowerDNS instances configured as secondaries — any server that consumes a catalog zone. They automatically discover zones through the catalog zone, pull zone updates from Bindizr's XFR server via zone transfer, and respond to DNS queries from clients. See [Secondary Servers](secondaries/index.md).
 
 ## Features
 
@@ -63,7 +64,7 @@ Open-source control plane for authoritative DNS
 
 - **nsupdate (Dynamic Update)**: RFC 2136 dynamic updates with TSIG-signed requests, managed TSIG keys, and per-zone grants.
 
-- **DNSSEC**: Named signing policies (algorithm, NSEC/NSEC3, CSK or KSK/ZSK, timing), automatic signing and re-signing, key rollovers (ZSK rolls scheduled and promoted automatically, CSK/KSK rolls confirmed by the operator), BIND-format key import/export, and RFC 8078 DS withdrawal — see [DNSSEC](dnssec.md).
+- **DNSSEC**: Named signing policies (algorithm, NSEC/NSEC3, CSK or KSK/ZSK, timing), automatic signing and re-signing, key rollovers (ZSK rolls scheduled and promoted automatically, CSK/KSK rolls confirmed by the operator), BIND-format key import/export, and RFC 8078 DS withdrawal — see [DNSSEC](dnssec/index.md).
 
 - **Zone Versions**: A version per serial, with diffs between serials and rollback to a previous serial.
 
@@ -74,7 +75,7 @@ Open-source control plane for authoritative DNS
 Bindizr never answers a client query — the secondaries do. It owns the zone
 data and the transfer path, so putting it in front of a server costs
 [nothing on the query path](benchmarks.md#no-overhead-on-the-query-path):
-`Bindizr + BIND9` serves **59,397 QPS against native BIND9's 59,904**, and
+`Bindizr + BIND9` serves **59,397 QPS against native BIND's 59,904**, and
 the Knot DNS and PowerDNS pairings track their servers the same way.
 
 ## License

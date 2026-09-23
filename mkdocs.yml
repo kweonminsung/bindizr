@@ -1,5 +1,5 @@
 site_name: Bindizr
-site_description: Open-source control plane for authoritative DNS — manage zones and records over HTTP/CLI and propagate them to BIND9, Knot DNS, NSD, or PowerDNS with AXFR/IXFR and catalog zones.
+site_description: Open-source control plane for authoritative DNS — manage zones and records over HTTP/CLI and propagate them to BIND, Knot DNS, NSD, or PowerDNS with AXFR/IXFR and catalog zones.
 site_url: https://kweonminsung.github.io/bindizr/
 site_author: kweonminsung
 
@@ -104,10 +104,15 @@ nav:
       - NSD: secondaries/nsd.md
       - PowerDNS: secondaries/powerdns.md
   - Configuration: configuration.md
-  - DNSSEC: dnssec.md
+  - DNSSEC:
+      - Overview: dnssec/index.md
+      - Policies: dnssec/policies.md
+      - Key Rollover: dnssec/rollover.md
+      - Key Import and Export: dnssec/keys.md
   - ExternalDNS: external-dns.md
   - CLI:
       - Commands: cli/index.md
+      - Zones and Records: cli/zones.md
       - Dynamic Updates: cli/nsupdate.md
       - TSIG Keys: cli/tsig-keys.md
       - API Tokens: cli/tokens.md

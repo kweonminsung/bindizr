@@ -11,10 +11,10 @@ generator.
 
 ## TLS
 
-Requests carry their API token in an `Authorization` header, so the API is
+Requests carry their API token in an `Authorization` header, so the HTTP API is
 loopback-only out of the box. Anything reachable off the host needs TLS —
 point `api.tls_cert_file` and `api.tls_key_file` at a PEM certificate chain
-and private key and bindizr serves HTTPS on the same port:
+and private key and Bindizr serves HTTPS on the same port:
 
 ```toml
 [api]
@@ -30,7 +30,7 @@ running — a `config reload` that changes them is refused whole.
 
 A TLS-terminating proxy or Ingress in front is the other way, and the one to
 use where certificates are already managed there. Terminating in front leaves
-bindizr's own port plain, so keep it on loopback or a private network.
+Bindizr's own port plain, so keep it on loopback or a private network.
 
 ## Listings
 
@@ -47,14 +47,14 @@ The CLI takes the same `--limit` and `--offset`, and pages at 1000 rather
 than 50 when neither is given. A table that did not fit says so on its last
 line: `Showing 1000 of 2001; page the rest with --limit and --offset.`
 
-`/zones` and `/records` also take `sort` and `order`. The row id follows the
-sort column, so paging stays stable even where the column has ties.
+`/zones` and `/records` also take `sort` and `order`. Equal values are
+ordered by `id`, so paging stays stable even where the column has ties.
 
 `/records?signed=true` pages the zone's derived DNSSEC records after its user
 records. They are narrowed by the same name, type, and TTL filters; a `search`
-reaches them by name only, since their type is stored as a number and their
-rdata as wire bytes, a `priority` filter leaves them out because none carries
-one, and a `value` filter is refused rather than answered without them.
+reaches them by name only, a `priority` filter leaves them out because none
+carries one, and a `value` filter is refused rather than answered without
+them.
 
 ## Rejected requests
 
@@ -76,7 +76,7 @@ $ bindizr token create admin --global
 
 Every token is created through the CLI or through `POST /tokens` with a token
 that already exists, so the first one is always `bindizr token create` on the
-daemon host — in the container or pod when that is where bindizr runs.
+daemon host — in the container or pod when that is where Bindizr runs.
 
 Tokens are scoped by default and act only on the zones they are
 [granted](../cli/tokens.md); `--global` covers every zone and the

@@ -76,14 +76,10 @@ spec:
               readOnly: true
             - name: data
               mountPath: /var/lib/bind
-            - name: cache
-              mountPath: /var/cache/bind
       volumes:
         - name: config-template
           configMap:
             name: {{ include "bindizr-chart.fullname" . }}-bind9-config
-        - name: cache
-          emptyDir: {}
         {{- if not .Values.bind9.persistence.enabled }}
         - name: data
           emptyDir: {}

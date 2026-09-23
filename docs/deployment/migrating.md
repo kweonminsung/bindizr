@@ -1,17 +1,17 @@
 # Migrating from an Existing Primary
 
-Bindizr takes over as the primary for zones another nameserver serves today.
+Bindizr takes over as the primary for zones another name server serves today.
 Nothing about the old server has to change until the last step, so each zone
 can be moved and verified on its own.
 
-The shape of the move: bindizr pulls each zone's records over a transfer, you
+The shape of the move: Bindizr pulls each zone's records over a transfer, you
 compare the result against the source, and only then do the secondaries start
-answering from bindizr's catalog.
+answering from Bindizr's catalog.
 
-## 1. Let bindizr transfer from the old primary
+## 1. Let Bindizr transfer from the old primary
 
 Bindizr pulls with an ordinary AXFR, so the old primary has to allow the
-transfer from bindizr's address. In BIND that is an `allow-transfer` entry on
+transfer from Bindizr's address. In BIND that is an `allow-transfer` entry on
 the zone, or in its `options`:
 
 ```text
@@ -21,7 +21,7 @@ zone "example.com" {
 };
 ```
 
-Check it from the bindizr host before going further:
+Check it from the Bindizr host before going further:
 
 ```bash
 $ dig @<old-primary> example.com AXFR | head
@@ -29,7 +29,7 @@ $ dig @<old-primary> example.com AXFR | head
 
 ## 2. Import the zone, dry run first
 
-`--create` builds the zone from the transferred SOA — its primary nameserver,
+`--create` builds the zone from the transferred SOA — its primary name server,
 contact, timers, and **serial** — so the zone does not have to exist first.
 Carrying the serial over matters: a secondary that already holds the old
 primary's higher serial would ignore a zone that started from 1.
@@ -43,7 +43,7 @@ $ bindizr zone import example.com --from-server <old-primary>:53 --mode replace 
 $ bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create
 ```
 
-A zone file written for BIND often carries record types bindizr does not
+A zone file written for BIND often carries record types Bindizr does not
 store, and one of them fails the whole import. `--skip-unsupported` passes
 over those lines and lists each one, so you can decide whether what it skipped
 matters:
@@ -62,7 +62,7 @@ $ bindizr zone import example.com --from-server <old-primary>:53 --mode replace
 
 ## 3. Compare before cutting over
 
-Export what bindizr now serves and diff it against the source:
+Export what Bindizr now serves and diff it against the source:
 
 ```bash
 $ dig @<old-primary> example.com AXFR > /tmp/old.zone
@@ -73,23 +73,23 @@ $ diff <(sort /tmp/old.zone) <(sort /tmp/new.zone)
 Expect the SOA line and record ordering to differ. Anything else is a record
 that did not survive the import.
 
-## 4. Point the secondaries at bindizr
+## 4. Point the secondaries at Bindizr
 
 Only now do the secondaries change. Each one drops its old `zone` statements
-and takes bindizr's catalog zone instead, after which created and deleted
+and takes Bindizr's catalog zone instead, after which created and deleted
 zones reach it without further configuration.
 [Secondary Servers](../secondaries/index.md) has the configuration for BIND,
 Knot DNS, NSD, and PowerDNS; use `<bindizr-host>` port 5300 in place of the
 loopback address there, then restart the secondary.
 
-Then confirm every secondary is serving bindizr's serial:
+Then confirm every secondary is serving Bindizr's serial:
 
 ```bash
 $ bindizr zone status example.com
 $ bindizr doctor
 ```
 
-Leave the old primary running until the secondaries report bindizr's serial;
+Leave the old primary running until the secondaries report Bindizr's serial;
 rolling back before that is only a matter of restoring their previous `zone`
 statements.
 
@@ -97,13 +97,13 @@ statements.
 
 Import the records first, then decide between two paths:
 
-- **Re-sign with bindizr's own keys.** `bindizr dnssec enable example.com
-  --parent-ns-addrs <parent nameservers>` generates fresh keys, and the
+- **Re-sign with Bindizr's own keys.** `bindizr dnssec enable example.com
+  --parent-ns-addrs <parent name servers>` generates fresh keys, and the
   parent's DS has to be replaced with the new one before the old keys stop
   being published.
 - **Keep the existing keys.** Import them in BIND's `K*.key` / `K*.private`
   form with `bindizr dnssec keys import`, and the chain of trust at the parent
   stays valid across the move.
 
-[DNSSEC](../dnssec.md) covers both, including what the parent must publish and
+[DNSSEC](../dnssec/index.md) covers both, including what the parent must publish and
 when.

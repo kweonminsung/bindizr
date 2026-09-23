@@ -56,16 +56,21 @@ fn command_payloads_round_trip_between_client_and_server() {
     assert_eq!(parsed.request.default_ttl, Some(300));
 }
 
-/// Verify that `prepare_socket_path` creates parent directory.
+/// Verify that `prepare_socket_path` creates the parent directory and closes
+/// it to its owner.
 #[tokio::test]
-async fn prepare_socket_path_creates_parent_directory() {
+async fn prepare_socket_path_creates_and_closes_parent_directory() {
     let dir = tempfile::tempdir().unwrap();
     let socket_path = dir.path().join("run").join("bindizr.sock");
     let socket_path = socket_path.to_str().unwrap();
 
     prepare_socket_path(socket_path).await.unwrap();
 
-    assert!(Path::new(socket_path).parent().unwrap().exists());
+    let parent = Path::new(socket_path).parent().unwrap();
+    assert!(parent.exists());
+    // The directory gates the socket until its own 0600 lands.
+    let mode = std::fs::metadata(parent).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o700);
 }
 
 /// Verify that `prepare_socket_path` removes stale socket.

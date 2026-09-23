@@ -21,7 +21,7 @@ $ rustc --version
 ## 2. Install the build dependencies
 
 A C compiler builds the three native libraries in the dependency tree (the
-DNSSEC cryptography, the bundled SQLite, and the TLS stack behind the API),
+DNSSEC cryptography, the bundled SQLite, and the TLS stack behind the HTTP API),
 and the system OpenSSL is linked for the signing backend, located through
 pkg-config. Nothing else is needed: no CMake, no bindgen, and no SQLite
 package, since that one is built in.

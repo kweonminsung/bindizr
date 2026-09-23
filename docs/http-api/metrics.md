@@ -1,6 +1,6 @@
 # Prometheus Metrics
 
-When `api.metrics_enabled` is on (the default), bindizr serves Prometheus
+When `api.metrics_enabled` is on (the default), Bindizr serves Prometheus
 text-format metrics at `GET /metrics`. Like `/health`, the endpoint is
 unauthenticated — it exposes only aggregate counters and gauges, never zone data
 — and it is not part of the OpenAPI spec.

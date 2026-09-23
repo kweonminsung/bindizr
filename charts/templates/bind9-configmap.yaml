@@ -11,13 +11,13 @@ metadata:
 data:
   named.conf: |
     options {
-      directory "/var/cache/bind";
+      // On the persistent volume, so a restarted pod answers before its first transfer.
+      directory "/var/lib/bind";
       listen-on port 53 { any; };
       listen-on-v6 port 53 { any; };
       recursion no;
       allow-query { any; };
       allow-notify { any; };
-      dnssec-validation auto;
       ixfr-from-differences yes;
 
       catalog-zones {
@@ -28,6 +28,6 @@ data:
     zone "{{ .Values.bindizr.dns.catalogZoneName }}" {
       type secondary;
       primaries { __BINDIZR_DNS_ADDR__ port {{ .Values.bindizr.dns.service.port }}; };
-      file "/var/cache/bind/{{ .Values.bindizr.dns.catalogZoneName }}.zone";
+      file "/var/lib/bind/{{ .Values.bindizr.dns.catalogZoneName }}.zone";
       ixfr-from-differences yes;
     };

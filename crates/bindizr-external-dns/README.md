@@ -3,8 +3,8 @@
 ExternalDNS webhook provider adapter for the `bindizr` DNS control plane.
 
 This crate serves the ExternalDNS webhook protocol on a localhost listener and forwards every
-operation to bindizr's HTTP API with a Bearer token. It holds no DNS logic and no state of its
-own; bindizr's `/external-dns` endpoints do the work (enable them with
+operation to Bindizr's HTTP API with a Bearer token. It holds no DNS logic and no state of its
+own; Bindizr's `/external-dns` endpoints do the work (enable them with
 `api.external_dns_enabled`).
 
 The API token's zone grants are the domain filter: ExternalDNS may only touch zones the token has

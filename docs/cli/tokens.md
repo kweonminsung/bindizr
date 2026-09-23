@@ -69,8 +69,8 @@ diff — needs a grant restricting neither name nor type: half a zone re-applied
 deletes what it left out.
 
 Creating, updating, or deleting zones — and managing tokens, keys, or grants
-over HTTP — always requires a global token. The CLI talks to the daemon over its local socket and is not subject
-to token scoping.
+over HTTP — always requires a global token. The CLI needs no token and is
+not subject to scoping.
 
 See [HTTP API](../http-api/index.md#authentication) for how to present a token
 on a request.

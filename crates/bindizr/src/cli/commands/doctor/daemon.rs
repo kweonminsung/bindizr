@@ -169,19 +169,21 @@ pub(crate) async fn check_services(report: &mut Report) {
         return;
     }
 
+    // These serials are the catalog zone's, unlike `zone status`, so say so.
+    let catalog_zone = &doctor.catalog_zone;
     for secondary in &doctor.secondaries {
         match (secondary.serial, doctor.catalog_serial) {
             (Some(serial), Some(expected)) if serial == expected => report.ok(format!(
-                "Secondary in sync: {} (catalog serial {})",
-                secondary.address, serial
+                "Secondary in sync: {} (catalog zone {} at serial {})",
+                secondary.address, catalog_zone, serial
             )),
             (Some(serial), Some(expected)) => report.fail(format!(
-                "Secondary out of sync: {} (serving catalog serial {}, expected {})",
-                secondary.address, serial, expected
+                "Secondary out of sync: {} (catalog zone {} at serial {}; bindizr serves {})",
+                secondary.address, catalog_zone, serial, expected
             )),
             (Some(serial), None) => report.ok(format!(
-                "Secondary reachable: {} (catalog serial {})",
-                secondary.address, serial
+                "Secondary reachable: {} (catalog zone {} at serial {})",
+                secondary.address, catalog_zone, serial
             )),
             _ => report.fail(format!(
                 "Secondary unreachable: {} ({})",
