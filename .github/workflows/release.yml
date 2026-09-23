@@ -18,12 +18,13 @@ jobs:
 
     steps:
       # The tag names the image, so it must be SemVer with at most a prerelease
-      # part: a Docker tag cannot carry build metadata's '+'.
+      # part: a Docker tag cannot carry build metadata's '+', and is at most 128
+      # characters, each prerelease identifier checked as SemVer requires.
       - name: Validate the tag
         id: tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$ ]] || [ ${#VERSION} -gt 128 ]; then
             echo "Malformed tag '$GITHUB_REF_NAME'" >&2
             exit 1
           fi
@@ -31,6 +32,7 @@ jobs:
 
   build:
     name: Build packages (${{ matrix.arch }})
+    needs: version
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:

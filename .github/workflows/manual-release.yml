@@ -27,12 +27,13 @@ jobs:
 
       # Cargo.toml is the single source of the version: tag, packages, binary,
       # image. It must be SemVer with at most a prerelease part: a Docker tag
-      # cannot carry build metadata's '+'.
+      # cannot carry build metadata's '+', and is at most 128 characters, each
+      # prerelease identifier checked as SemVer requires.
       - name: Resolve version from Cargo.toml
         id: file
         run: |
           VERSION=$(grep '^version =' Cargo.toml | cut -d '"' -f 2)
-          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$ ]] || [ ${#VERSION} -gt 128 ]; then
             echo "Malformed version '$VERSION' in Cargo.toml" >&2
             exit 1
           fi
@@ -40,6 +41,7 @@ jobs:
 
   build:
     name: Build packages (${{ matrix.arch }})
+    needs: version
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -207,7 +209,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git tag "$VERSION"
-            git push origin "$VERSION"
+            git push origin "refs/tags/$VERSION"
           fi
 
       - name: Create GitHub Release and Upload Assets
