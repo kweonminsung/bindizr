@@ -41,6 +41,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      # No pod calls the Kubernetes API.
+      automountServiceAccountToken: false
       {{- with .Values.mysql.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}

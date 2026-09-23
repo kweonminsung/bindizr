@@ -3,7 +3,7 @@
 Open-source control plane for authoritative DNS.
 
 `bindizr` manages zones and records through an HTTP API or CLI, stores them in
-MySQL, PostgreSQL, or SQLite, and propagates changes to BIND9, Knot DNS, NSD, or
+MySQL, PostgreSQL, or SQLite, and propagates changes to BIND, Knot DNS, NSD, or
 PowerDNS secondaries over AXFR/IXFR. The secondaries discover zones through a
 DNS Catalog Zone (RFC 9432), so a zone created here needs no configuration
 there.
@@ -89,7 +89,7 @@ level = "debug"               # error, warn, info, debug, trace
 # format = "text"             # text, or json for one object per line
 ```
 
-Start bindizr:
+Start Bindizr:
 
 ```bash
 bindizr start --config /etc/bindizr/bindizr.conf.toml

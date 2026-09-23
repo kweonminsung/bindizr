@@ -52,7 +52,6 @@ services:
         protocol: udp
         mode: host
     volumes:
-      - bind9-cache:/var/cache/bind
       - bind9-data:/var/lib/bind
     networks:
       - bindizr-net
@@ -87,6 +86,5 @@ networks:
 
 volumes:
   bindizr-data:
-  bind9-cache:
   bind9-data:
   postgres-data:

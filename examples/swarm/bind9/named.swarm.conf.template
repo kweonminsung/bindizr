@@ -1,11 +1,11 @@
 options {
-    directory "/var/cache/bind";
+    // On the bind9-data volume, so a restarted task answers before its first transfer.
+    directory "/var/lib/bind";
     listen-on port 53 { any; };
     listen-on-v6 port 53 { any; };
     recursion no;
     allow-query { any; };
     allow-notify { any; };
-    dnssec-validation auto;
 
     ixfr-from-differences yes;
     catalog-zones {
@@ -16,6 +16,6 @@ options {
 zone "catalog.bindizr" {
     type secondary;
     primaries { __BINDIZR_PRIMARY__ port 53; };
-    file "/var/cache/bind/catalog.bindizr.zone";
+    file "/var/lib/bind/catalog.bindizr.zone";
     ixfr-from-differences yes;
 };

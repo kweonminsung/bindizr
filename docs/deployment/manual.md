@@ -25,7 +25,7 @@ BIND is what the rest of this page installs.
 
 ## 2. Download Bindizr and install
 
-You can download the latest bindizr binary from
+You can download the latest Bindizr binary from
 [Release](https://github.com/kweonminsung/bindizr/releases/latest).
 
 To build the binary yourself instead, see [Building from Source](source.md).
@@ -52,10 +52,12 @@ To build the binary yourself instead, see [Building from Source](source.md).
 
 ## 3. Configure the secondary
 
-The `catalog.bindizr` zone is what makes this hands-off from here on: create or
-delete a zone via the API or CLI and the secondary picks it up, with no
-configuration of its own. It is an ordinary RFC 9432 catalog zone, so the
-secondary does not have to be BIND.
+The secondary learns which zones exist from `catalog.bindizr`, a zone
+Bindizr serves whose records list the other zones (RFC 9432). That is what
+makes this hands-off from here on: create or delete a zone via the HTTP API or
+CLI and the secondary picks it up, with no configuration of its own. Any
+server that understands catalog zones will do, so the secondary does not
+have to be BIND.
 
 Follow the page for the server you installed in step 1, using Bindizr's
 packaged defaults — DNS on `127.0.0.1` port 5300, leaving 53 to the secondary:
@@ -84,8 +86,7 @@ credentials and the service reads it as the `bindizr` user.
 # Start Bindizr service (the package already enabled it at boot)
 $ sudo systemctl start bindizr
 
-# Create an admin API token for authentication. The control socket belongs to
-# the service user and is owner-only, so the CLI needs sudo.
+# Create an admin API token. The CLI runs as the service user, so it needs sudo.
 $ sudo bindizr token create admin --global
 ```
 
@@ -119,5 +120,5 @@ The package also installs shell completions and `man bindizr`, so the command
 surface is reachable without the docs.
 
 From here the [CLI](../cli/index.md) and the [HTTP API](../http-api/index.md)
-cover the rest. To move zones from a nameserver you already run, see
+cover the rest. To move zones from a name server you already run, see
 [Migrating an Existing Primary](migrating.md).

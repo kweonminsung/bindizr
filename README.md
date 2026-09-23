@@ -22,11 +22,11 @@ Open-source control plane for authoritative DNS
 
 </div>
 
-**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to BIND9, Knot DNS, NSD, or PowerDNS secondaries via AXFR/IXFR using DNS Catalog Zones.
+**Bindizr** is a Rust-based DNS control plane that manages zones and records via an HTTP API or CLI, stores data in a database backend (MySQL, PostgreSQL, or SQLite), and propagates changes to BIND, Knot DNS, NSD, or PowerDNS secondaries via AXFR/IXFR using DNS Catalog Zones.
 
 &nbsp;<img src="docs/assets/concepts.png" width="462px" alt="Bindizr control plane and XFR server feeding the secondaries, which answer client queries">
 
-Bindizr owns the zone data and the transfer path; any secondary that consumes a catalog zone (RFC 9432) — BIND9, Knot DNS, NSD, or PowerDNS — discovers zones through it and answers client queries. Adding it in front of a server costs nothing on the query path — `Bindizr + BIND9` serves **59,397 QPS against native BIND9's 59,904**, and the Knot DNS and PowerDNS pairings track their servers the same way.
+Bindizr owns the zone data and the transfer path; any secondary that consumes a catalog zone (RFC 9432) — BIND, Knot DNS, NSD, or PowerDNS — discovers zones through it and answers client queries. Adding it in front of a server costs nothing on the query path — `Bindizr + BIND9` serves **59,397 QPS against native BIND's 59,904**, and the Knot DNS and PowerDNS pairings track their servers the same way.
 
 ## Features
 
@@ -69,7 +69,7 @@ $ helm install bindizr oci://registry-1.docker.io/kweonminsung/bindizr-chart \
 ### Docker Compose
 
 Builds the image from the working tree and brings up Bindizr, PostgreSQL, and
-two BIND9 secondaries on one host.
+two BIND secondaries on one host.
 
 ```bash
 $ docker compose -f examples/compose/docker-compose.yml up -d --build
@@ -77,7 +77,7 @@ $ docker compose -f examples/compose/docker-compose.yml up -d --build
 
 ### Docker Swarm
 
-Brings up Bindizr, PostgreSQL, and BIND9 on an overlay network.
+Brings up Bindizr, PostgreSQL, and BIND on an overlay network.
 
 ```bash
 $ docker stack deploy -c examples/swarm/docker-compose.yml bindizr
@@ -107,12 +107,11 @@ However you installed it, this checks the whole path end to end:
 $ sudo bindizr doctor
 ```
 
-The daemon's control socket is owner-only, so the CLI runs as the user the
-daemon runs as: `sudo` for a package install, `docker exec` / `kubectl exec`
-into the container for Compose and Helm.
+The CLI runs as the user the daemon runs as: `sudo` for a package install,
+`docker exec` / `kubectl exec` into the container for Compose and Kubernetes.
 
-API authentication is on by default for Helm and package installs — the Compose
-stack ships with it off. Create a token before calling the API:
+API authentication is on by default for Kubernetes and package installs — the Compose
+stack ships with it off. Create a token before calling the HTTP API:
 
 ```bash
 $ sudo bindizr token create admin --global

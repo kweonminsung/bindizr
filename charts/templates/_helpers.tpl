@@ -42,14 +42,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- /* NOTIFY must reach every replica individually, so enumerate stable
-per-pod headless names instead of the load-balanced service. */ -}}
+per-pod headless names instead of the load-balanced service, then the
+secondaries configured outside the chart. */ -}}
 {{- define "bindizr-chart.secondaryAddrs" -}}
 {{- $fullname := include "bindizr-chart.fullname" . -}}
 {{- $headless := printf "%s-bind9-headless" $fullname -}}
+{{- $addrs := list -}}
 {{- range $i, $_ := until (.Values.bind9.replicas | int) -}}
-{{- if $i }},{{ end -}}
-{{- printf "%s-bind9-%d.%s:53" $fullname $i $headless -}}
+{{- $addrs = append $addrs (printf "%s-bind9-%d.%s:53" $fullname $i $headless) -}}
 {{- end -}}
+{{- range .Values.bindizr.dns.extraSecondaryAddrs -}}
+{{- $addrs = append $addrs (toString .) -}}
+{{- end -}}
+{{- join "," $addrs -}}
 {{- end -}}
 
 {{- /* Choose the secret containing the database connection URL. */ -}}

@@ -56,7 +56,10 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
             Ok(serial) => (
                 DoctorCheckResult {
                     ok: true,
-                    detail: format!("{} (catalog serial {})", dns_addr, serial),
+                    detail: format!(
+                        "{} (catalog zone {} at serial {})",
+                        dns_addr, config.dns.catalog_zone_name, serial
+                    ),
                 },
                 Some(serial),
             ),
@@ -103,6 +106,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
     let response = DaemonDoctorResponse {
         database,
         dns_server,
+        catalog_zone: config.dns.catalog_zone_name.clone(),
         catalog_serial,
         secondaries,
         notifies,

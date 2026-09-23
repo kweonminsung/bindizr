@@ -2,7 +2,7 @@
 
 ## Overview
 
-Bindizr is a Rust DNS control plane for authoritative name servers (BIND9,
+Bindizr is a Rust DNS control plane for authoritative name servers (BIND,
 Knot DNS, NSD, PowerDNS). It manages zones/records via an HTTP API or CLI,
 stores them in MySQL / PostgreSQL / SQLite, and propagates changes to the
 secondaries via AXFR/IXFR using DNS Catalog Zones (RFC 9432).
@@ -61,7 +61,10 @@ cargo +nightly fmt                                         # format (needs night
   reach takes a `Caller` first and gates itself; a transport never calls
   `authorize_global` on its own. The daemon socket passes `Caller::Global`.
   Service-internal lookups that must skip visibility are `pub(crate)` under
-  their own name (`ZoneService::lookup_by_name`). DNS-plane operations
+  their own name (`ZoneService::lookup_by_name`). The daemon socket
+  authenticates its peer by uid (`peer_cred` on both ends: the daemon's own
+  user or root); the socket's file mode is a courtesy, not the boundary.
+  DNS-plane operations
   (transfers, NOTIFY, nsupdate) take no caller — ACL and TSIG authorize there.
   So do operations with nothing to gate: pure request normalization
   (`ExternalDnsService::adjust_records`), a token reading itself

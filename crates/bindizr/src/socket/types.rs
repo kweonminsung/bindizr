@@ -368,6 +368,9 @@ pub(crate) struct DaemonStatusResponse {
 pub(crate) struct DaemonDoctorResponse {
     pub(crate) database: DoctorCheckResult,
     pub(crate) dns_server: DoctorCheckResult,
+    /// The zone the serials below belong to; `zone status` probes a member
+    /// zone instead.
+    pub(crate) catalog_zone: String,
     /// Catalog serial served by bindizr's own DNS listener, when reachable.
     pub(crate) catalog_serial: Option<u32>,
     pub(crate) secondaries: Vec<DoctorProbeResult>,

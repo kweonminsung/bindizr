@@ -104,7 +104,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     }
 
     let mut control_rx = socket::server::control::initialize();
-    let socket_task = socket::server::serve(socket_listener, &shutdown);
+    let socket_task = socket::server::serve(socket_listener, &shutdown)?;
     let api_task = api::initialize(&shutdown).await?;
 
     // A front end that stops on its own ends the daemon: the control socket

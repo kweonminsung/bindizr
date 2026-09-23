@@ -1,9 +1,12 @@
 # Secondary Servers
 
-Bindizr owns the zone data and serves it over AXFR and IXFR; the secondary
-answers client queries. Nothing in that path is vendor-specific — it is
-NOTIFY, zone transfer, and a catalog zone (RFC 9432) — so the secondary can be
-any implementation that consumes catalog zones.
+A secondary is the name server clients actually query. Bindizr is its
+primary: it keeps the zone data, hands it over by zone transfer (AXFR sends
+a whole zone, IXFR the changes since a serial), and sends a NOTIFY whenever
+a zone changed. Which zones to hold, the secondary learns from Bindizr's
+**catalog zone** (RFC 9432): a zone whose records list the other zones. All
+of that is standard DNS, so the secondary can be any server that understands
+catalog zones.
 
 | | Catalog zones | Verified on | Notes |
 | --- | --- | --- | --- |
@@ -31,11 +34,13 @@ Create a zone in Bindizr and it appears in the catalog; the secondary picks it
 up on the NOTIFY that follows, with no configuration of its own. Delete the
 zone and it goes away the same way.
 
-Bindizr's side of this is two settings — see [Configuration](../configuration.md):
+Bindizr's side is two settings, and the first is the one a new setup
+forgets: a secondary Bindizr does not know gets no NOTIFY and has its
+transfers refused. See [Configuration](../configuration.md#secondaries):
 
 | Setting | What it does |
 | --- | --- |
-| `dns.secondary_addrs` | Who receives NOTIFY, and the only addresses allowed to pull a zone |
+| `dns.secondary_addrs` | Who receives NOTIFY, and the only clients allowed to pull a zone unsigned: `host[:port]` entries, a hostname resolved when used |
 | `dns.catalog_zone_name` | The catalog zone's name. A secondary holds one zone per name, so two Bindizr instances feeding one secondary need two names |
 
 ## Signing the transfers
@@ -47,9 +52,10 @@ key: create one with
 on the secondary's primary reference. Bindizr answers under that key and each
 server page shows the syntax.
 
-    `--global` is required, not a convenience: the catalog zone is virtual, so
-    there is no zone row to grant a scoped key against, and a transfer of it
-    signed by one is refused.
+!!! note "`--global` is required, not a convenience"
+
+    A scoped key is granted zones you created, and the catalog zone is not
+    one of them: a catalog transfer signed by a scoped key is refused.
 
 !!! warning "PowerDNS does not sign member transfers"
 

@@ -2,7 +2,7 @@
 
 Bindizr reads configuration from `/etc/bindizr/bindizr.conf.toml`, and every
 option can also be set with an environment variable. Container deployments use
-the environment form; the Docker and Helm files in this repository set the same
+the environment form; the Compose files and the Helm chart in this repository set the same
 options that way.
 
 The file path can be overridden with `-c <FILE>` on `start`, `doctor`, and
@@ -25,7 +25,7 @@ always describes the running process:
 
 | | |
 | --- | --- |
-| Reloadable | the whole `[dns]` section (including `secondary_addrs`, read per transfer) and `[logging]` |
+| Reloadable | the whole `[dns]` section (including `secondary_addrs`, effective from the next transfer) and `[logging]` |
 | Fixed while running | the `[api]` and `[database]` sections, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name` |
 
 A reload names the sections it changed; a refusal names the settings that
@@ -35,7 +35,7 @@ would need a restart and leaves the running configuration alone.
 
 For manual installation, create the configuration file and adjust the values to
 match your environment. Commented-out keys show their default and can be left
-out; a key bindizr does not know is an error, so `config check` catches a typo.
+out; a key Bindizr does not know is an error, so `config check` catches a typo.
 
 ```toml title="/etc/bindizr/bindizr.conf.toml"
 [api]
@@ -45,8 +45,8 @@ authentication_required = true # Require an API token; `bindizr token create` ma
 metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
 external_dns_enabled = false  # ExternalDNS provider API at /external-dns
 openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
-# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # Set both to serve HTTPS; without them the API is
-# tls_key_file = "/etc/bindizr/tls/tls.key"   # plain HTTP and its tokens travel in the clear
+# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # Set both to serve HTTPS; without them the HTTP API is
+# tls_key_file = "/etc/bindizr/tls/tls.key"   # unencrypted and its tokens travel in the clear
 
 [database]
 type = "sqlite"               # sqlite, mysql, or postgresql
@@ -63,8 +63,8 @@ url = "postgresql://user:password@hostname:port/database"
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
-secondary_addrs = "127.0.0.1:53"  # Comma-separated; they receive NOTIFY and are the only clients
-                              # allowed to pull zones. The default is a secondary on this host.
+secondary_addrs = "127.0.0.1:53"  # Comma-separated host[:port] — see Secondaries below. They receive
+                              # NOTIFY and are the only clients allowed to pull zones unsigned.
 # catalog_zone_name = "catalog.bindizr"  # The RFC 9432 catalog zone secondaries follow. A secondary
                               # holds one zone per name, so two primaries feeding one secondary need
                               # two names. Fixed while bindizr runs.
@@ -97,12 +97,12 @@ level = "info"                # error, warn, info, debug, trace
 
 A reserved character in the user, password, or database of a database `url`
 (`#`, `@`, `:`, `/`, `?`, a space) is percent-encoded, `p@ss` as `p%40ss`;
-bindizr decodes the components before connecting. The Helm chart encodes
+Bindizr decodes the components before connecting. The Helm chart encodes
 the credentials it assembles from the bundled database's `auth` values.
 
 Whether a zone is signed, and the signing parameters it uses, are not
 configuration: enable DNSSEC per zone under a DNSSEC policy managed through
-the API or CLI — see [DNSSEC](dnssec.md).
+the HTTP API or CLI — see [DNSSEC](dnssec/index.md).
 
 ## Environment variables
 
@@ -111,7 +111,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 
 | Variable | Sets | Notes |
 | --- | --- | --- |
-| `BINDIZR_CONFIG_PATH` | config file path | Falls back to `/etc/bindizr/bindizr.conf.toml` |
+| `BINDIZR_CONFIG_PATH` | configuration file path | Falls back to `/etc/bindizr/bindizr.conf.toml` |
 | `BINDIZR_API_LISTEN_ADDR` | `api.listen_addr` | |
 | `BINDIZR_API_LISTEN_PORT` | `api.listen_port` | |
 | `BINDIZR_API_AUTHENTICATION_REQUIRED` | `api.authentication_required` | |
@@ -127,7 +127,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DATABASE_SQLITE_FILE_PATH` | `database.sqlite.file_path` | |
 | `BINDIZR_DNS_LISTEN_ADDR` | `dns.listen_addr` | |
 | `BINDIZR_DNS_LISTEN_PORT` | `dns.listen_port` | |
-| `BINDIZR_DNS_SECONDARY_ADDRS` | `dns.secondary_addrs` | |
+| `BINDIZR_DNS_SECONDARY_ADDRS` | `dns.secondary_addrs` | see [Secondaries](#secondaries) |
 | `BINDIZR_DNS_CATALOG_ZONE_NAME` | `dns.catalog_zone_name` | every secondary names the same zone in its own configuration |
 | `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate_tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
@@ -150,6 +150,21 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 `BINDIZR_DATABASE_URL` is a convenience for container deployments where the URL
 arrives from one secret regardless of backend: it writes to whichever
 backend `BINDIZR_DATABASE_TYPE` selected.
+
+## Secondaries
+
+`dns.secondary_addrs` is a comma-separated list of `host[:port]` entries —
+`192.0.2.7`, `[2001:db8::7]:53`, `ns2.example.net:53` — with 53 as the port
+when left out. Every entry receives NOTIFY, and an unsigned transfer is
+answered only from an entry's address; a signed one is authorized by its key
+— see [TSIG Keys](cli/tsig-keys.md#signing-zone-transfers).
+
+A hostname is resolved when used, not when the file is read, so a changed
+address is picked up on its own, within a minute. Where the address is not
+stable, a Kubernetes pod or a DHCP lease, list the secondary by a name that
+follows it; an entry that no longer resolves to it refuses its next transfer.
+
+`bindizr config reload` applies an edit without a restart.
 
 ## Batching NOTIFY
 

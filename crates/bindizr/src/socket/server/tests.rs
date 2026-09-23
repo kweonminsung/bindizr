@@ -68,6 +68,26 @@ async fn prepare_socket_path_creates_parent_directory() {
     assert!(Path::new(socket_path).parent().unwrap().exists());
 }
 
+/// Verify that a bound socket is owner-only and that an accepted connection
+/// carries the peer's uid, which is what `serve` admits or refuses on.
+#[tokio::test]
+async fn accepted_connection_reports_the_peer_uid() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket_path = dir.path().join("bindizr.sock");
+    let socket_path = socket_path.to_str().unwrap();
+
+    let listener = bind_socket(socket_path).await.unwrap();
+    let mode = std::fs::metadata(socket_path).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+
+    let (client, accepted) = tokio::join!(UnixStream::connect(socket_path), listener.accept());
+    // macOS reports no credentials once the peer has hung up, so the client
+    // stays open while the daemon side asks.
+    let _client = client.unwrap();
+    let (stream, _) = accepted.unwrap();
+    assert_eq!(stream.peer_cred().unwrap().uid(), read_own_uid().unwrap());
+}
+
 /// Verify that `prepare_socket_path` removes stale socket.
 #[tokio::test]
 async fn prepare_socket_path_removes_stale_socket() {

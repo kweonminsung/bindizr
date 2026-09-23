@@ -2,12 +2,12 @@
 
 Bindizr can act as an [ExternalDNS](https://github.com/kubernetes-sigs/external-dns)
 provider: hostnames on Kubernetes Ingresses and Services become records in
-zones bindizr manages.
+zones Bindizr manages.
 
 Because the external-dns webhook client cannot send an `Authorization`
-header, bindizr ships a small adapter binary (`bindizr-external-dns`, in the
+header, Bindizr ships a small adapter binary (`bindizr-external-dns`, in the
 same image) that runs as a sidecar in the external-dns pod and calls the
-bindizr API with a token:
+HTTP API with a token:
 
 ```text
 external-dns ──127.0.0.1:8888──▶ bindizr-external-dns ──Bearer token──▶ bindizr
@@ -15,17 +15,19 @@ external-dns ──127.0.0.1:8888──▶ bindizr-external-dns ──Bearer tok
 
 Validated against external-dns **v0.21.0**.
 
-## Setup
+## 1. Enable the provider API
 
-**1. Enable the provider API** on the bindizr server:
+On the Bindizr server:
 
 ```toml
 [api]
 external_dns_enabled = true
 ```
 
-**2. Create a token and grant it the zones** external-dns should manage. The
-zones must already exist — ExternalDNS never creates or deletes zones:
+## 2. Create a token and grant it the zones
+
+Grant the zones external-dns should manage. They must already exist —
+ExternalDNS never creates or deletes zones:
 
 ```bash
 $ bindizr token create external-dns
@@ -41,13 +43,15 @@ A grant narrowed to a subtree (`--pattern '*.k8s'`) filters to that subtree
 rather than its zone, so ExternalDNS plans inside it. A filter entry always
 covers the name and everything under it, which is all ExternalDNS can express:
 a grant narrowed by record type, to the apex, or to one exact name reads wider
-there than it is, and ExternalDNS will plan changes bindizr rejects. Keep the
+there than it is, and ExternalDNS will plan changes Bindizr rejects. Keep the
 type list covering what your sources produce, TXT included, or ownership
 records (`--registry=txt`) fail. A read-only grant is left out of the filter
 entirely.
 
-**3. Add the adapter** as a second container in the external-dns Deployment.
-The default webhook URL (`http://localhost:8888`) already points at it:
+## 3. Add the adapter
+
+It runs as a second container in the external-dns Deployment; the default
+webhook URL (`http://localhost:8888`) already points at it:
 
 ```yaml
 apiVersion: apps/v1
@@ -84,11 +88,13 @@ spec:
               port: 8080
 ```
 
-`/healthz` asks bindizr with the adapter's own token, so a token that was
+`/healthz` asks Bindizr with the adapter's own token, so a token that was
 rotated away or never granted a zone turns the sidecar unready instead of
 leaving it green while every sync fails.
 
-**4. Annotate a resource** and the record appears in bindizr:
+## 4. Annotate a resource
+
+The record appears in Bindizr:
 
 ```yaml
 metadata:
@@ -101,8 +107,8 @@ metadata:
 - **Record types**: A, AAAA, CNAME, and TXT; anything else is rejected with a
   clear error, never silently dropped. Ownership TXT records
   (`--registry=txt`) are stored and returned verbatim.
-- **Atomic and idempotent**: one ExternalDNS sync is one bindizr transaction —
-  all zones apply together or not at all, and retried requests are no-ops.
+- **Atomic and idempotent**: one ExternalDNS sync applies as a whole — every
+  zone in it or none — and retried requests are no-ops.
 - **SOA serials**: only zones with an actual change advance their serial, once
   per sync, with IXFR history for secondaries.
 - **TTL**: records without a TTL use the zone's default TTL.
@@ -116,13 +122,13 @@ metadata:
 | `--bindizr-url` | `BINDIZR_URL` | required |
 | `--token` | `BINDIZR_API_TOKEN` | none |
 | `--token-file` | `BINDIZR_API_TOKEN_FILE` | none (takes precedence over `--token`) |
-| `--ca-file` | `BINDIZR_CA_FILE` | none (added to the system roots; needed for a private or self-signed bindizr certificate) |
+| `--ca-file` | `BINDIZR_CA_FILE` | none (added to the system roots; needed for a private or self-signed Bindizr certificate) |
 | `--listen-addr` | `BINDIZR_EXTERNAL_DNS_LISTEN_ADDR` | `127.0.0.1:8888` |
 | `--health-listen-addr` | `BINDIZR_EXTERNAL_DNS_HEALTH_ADDR` | `0.0.0.0:8080` |
 | `--timeout-secs` | `BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS` | `8` (keep under external-dns's 10s webhook write timeout) |
 | `--log-level` | `BINDIZR_EXTERNAL_DNS_LOG_LEVEL` | `info` |
 
-The health listener serves `GET /healthz` (bindizr answers and accepts this
+The health listener serves `GET /healthz` (Bindizr answers and accepts this
 token) and `GET /metrics` (`bindizr_external_dns_requests_total`,
 `bindizr_external_dns_request_duration_seconds`).
 
@@ -130,7 +136,7 @@ token) and `GET /metrics` (`bindizr_external_dns_requests_total`,
 
 If the adapter cannot live in the external-dns pod, run it as its own
 Deployment with `--listen-addr 0.0.0.0:8888` and point
-`--webhook-provider-url` at its Service. The adapter→bindizr hop stays
+`--webhook-provider-url` at its Service. The adapter→Bindizr hop stays
 authenticated, but external-dns→adapter is then plain HTTP: keep the Service
 `ClusterIP`, never expose it through an Ingress, and restrict access to the
 external-dns pods with a NetworkPolicy. The sidecar layout is the
