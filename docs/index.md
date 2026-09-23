@@ -17,7 +17,7 @@ Open-source control plane for authoritative DNS
 
 -   :material-rocket-launch: **[Deploy it](deployment/index.md)**
 
-    Helm, Docker Compose, or a package install on a VM, walked through to a
+    Kubernetes, Docker Compose, or a package install on a VM, walked through to a
     zone that answers.
 
 -   :material-tune: **[Configure it](configuration.md)**

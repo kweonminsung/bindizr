@@ -15,17 +15,19 @@ external-dns ──127.0.0.1:8888──▶ bindizr-external-dns ──Bearer tok
 
 Validated against external-dns **v0.21.0**.
 
-## Setup
+## 1. Enable the provider API
 
-**1. Enable the provider API** on the Bindizr server:
+On the Bindizr server:
 
 ```toml
 [api]
 external_dns_enabled = true
 ```
 
-**2. Create a token and grant it the zones** external-dns should manage. The
-zones must already exist — ExternalDNS never creates or deletes zones:
+## 2. Create a token and grant it the zones
+
+Grant the zones external-dns should manage. They must already exist —
+ExternalDNS never creates or deletes zones:
 
 ```bash
 $ bindizr token create external-dns
@@ -46,8 +48,10 @@ type list covering what your sources produce, TXT included, or ownership
 records (`--registry=txt`) fail. A read-only grant is left out of the filter
 entirely.
 
-**3. Add the adapter** as a second container in the external-dns Deployment.
-The default webhook URL (`http://localhost:8888`) already points at it:
+## 3. Add the adapter
+
+It runs as a second container in the external-dns Deployment; the default
+webhook URL (`http://localhost:8888`) already points at it:
 
 ```yaml
 apiVersion: apps/v1
@@ -88,7 +92,9 @@ spec:
 rotated away or never granted a zone turns the sidecar unready instead of
 leaving it green while every sync fails.
 
-**4. Annotate a resource** and the record appears in Bindizr:
+## 4. Annotate a resource
+
+The record appears in Bindizr:
 
 ```yaml
 metadata:

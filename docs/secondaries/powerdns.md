@@ -3,7 +3,29 @@
 Catalog zones need **PowerDNS Authoritative 4.7 or newer**; Bindizr's
 interoperability run covers 4.9.
 
-## Configure the catalog zone
+## 1. Register the secondary in Bindizr
+
+Bindizr sends NOTIFY to, and accepts unsigned transfers from, only the
+entries of `dns.secondary_addrs`; a PowerDNS missing from it gets every
+transfer refused. The packaged default, `127.0.0.1:53`, covers a PowerDNS on
+the same host. One elsewhere is added by address or hostname — see
+[Configuration](../configuration.md#secondaries) — and the list reloads
+without a restart:
+
+```toml title="/etc/bindizr/bindizr.conf.toml"
+[dns]
+secondary_addrs = "10.0.0.14:53"
+```
+
+```bash
+$ sudo bindizr config reload
+```
+
+PowerDNS signs only the catalog transfer (see
+[below](#tsig-does-not-reach-member-zones)), so the list is what authorizes
+its member transfers.
+
+## 2. Configure the catalog zone
 
 A consumer zone is an ordinary secondary zone whose kind says it carries a
 catalog, so it is created with `pdnsutil` rather than written into a file.
@@ -23,7 +45,7 @@ $ sudo systemctl restart pdns
 PowerDNS creates each member zone with the catalog's primary, so nothing
 further is needed for the zones themselves.
 
-## Check a zone it learned
+## 3. Check a zone it learned
 
 ```bash
 $ sudo pdnsutil list-member-zones catalog.bindizr

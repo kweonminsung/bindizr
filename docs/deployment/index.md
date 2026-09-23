@@ -1,14 +1,14 @@
 # Deployment Options
 
-Bindizr can be deployed with Helm, Docker Compose or Swarm, or a manual
-package-based setup. Every walkthrough ends the same way: Bindizr running
+Bindizr can be deployed on Kubernetes, with Docker Compose or Swarm, or as a
+package on a host. Every walkthrough ends the same way: Bindizr running
 next to a name server that answers for it, and a zone you created answering
 a `dig`.
 
 | Method | Use it when | Databases as shipped |
 | --- | --- | --- |
-| [Helm](helm.md) | Running on Kubernetes, with BIND secondaries as pods | MySQL, PostgreSQL |
-| [Docker Compose](docker-compose.md#one-host-docker-compose) | Trying the whole stack on one Docker host | PostgreSQL |
+| [Kubernetes](kubernetes.md) | Running on a cluster, through the Helm chart, with BIND secondaries as pods | MySQL, PostgreSQL |
+| [Docker Compose](docker-compose.md) | Trying the whole stack on one Docker host | PostgreSQL |
 | [Docker Swarm](docker-compose.md#docker-swarm) | Running a containerized stack across a Swarm | PostgreSQL |
 | [Manual Installation](manual.md) | Running on a VM or bare-metal host from a `.deb` / `.rpm` | SQLite, MySQL, PostgreSQL |
 

@@ -3,7 +3,7 @@
 Catalog zones in the RFC 9432 schema Bindizr serves need **BIND 9.18 or
 newer**; Bindizr's interoperability run covers 9.20.
 
-## Register the secondary in Bindizr
+## 1. Register the secondary in Bindizr
 
 Bindizr sends NOTIFY to, and accepts unsigned transfers from, only the
 entries of `dns.secondary_addrs`; a BIND missing from it logs
@@ -24,7 +24,7 @@ $ sudo bindizr config reload
 A [signed transfer](#sign-the-transfers) is authorized by its key, but NOTIFY
 still goes only to the list, so a keyed secondary is listed all the same.
 
-## Configure the catalog zone
+## 2. Configure the catalog zone
 
 `catalog-zones` tells BIND to interpret the zone, and `default-primaries` is
 where the member zones it names are transferred from. It belongs **inside
@@ -108,7 +108,7 @@ the two in separate files, Red Hat in one:
     valid inside it. Appending a new `options { ... }` to the file makes
     `named-checkconf` fail and BIND refuse to start.
 
-## Check a zone it learned
+## 3. Check a zone it learned
 
 A package install generates an `rndc` key, so `rndc` answers:
 

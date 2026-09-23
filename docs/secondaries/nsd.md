@@ -3,7 +3,28 @@
 Catalog zones need **NSD 4.9 or newer**; Bindizr's interoperability run covers
 4.12.
 
-## Configure the catalog zone
+## 1. Register the secondary in Bindizr
+
+Bindizr sends NOTIFY to, and accepts unsigned transfers from, only the
+entries of `dns.secondary_addrs`; an NSD missing from it gets every
+transfer refused. The packaged default, `127.0.0.1:53`, covers an NSD on
+the same host. One elsewhere is added by address or hostname — see
+[Configuration](../configuration.md#secondaries) — and the list reloads
+without a restart:
+
+```toml title="/etc/bindizr/bindizr.conf.toml"
+[dns]
+secondary_addrs = "10.0.0.14:53"
+```
+
+```bash
+$ sudo bindizr config reload
+```
+
+A [signed transfer](#sign-the-transfers) is authorized by its key, but NOTIFY
+still goes only to the list, so a keyed secondary is listed all the same.
+
+## 2. Configure the catalog zone
 
 `catalog: consumer` marks the zone, and `catalog-member-pattern` names the
 pattern every member zone is created with — so the pattern, not the catalog
@@ -36,7 +57,7 @@ $ sudo nsd-checkconf /etc/nsd/nsd.conf
 $ sudo systemctl restart nsd
 ```
 
-## Check a zone it learned
+## 3. Check a zone it learned
 
 `zonestatus` reports the catalog member id the zone was provisioned under:
 

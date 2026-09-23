@@ -8,7 +8,7 @@ most and points to the pages that cover the rest.
 Every command except `start` and `config check` needs the daemon running
 and has full control over it, so it runs as the daemon's user: `sudo bindizr
 ...` for a package install, or a shell inside the container for Compose and
-Helm. There is no remote mode.
+Kubernetes. There is no remote mode.
 
 ## Command map
 

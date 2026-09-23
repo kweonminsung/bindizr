@@ -3,7 +3,28 @@
 Catalog zones need **Knot DNS 3.1 or newer**; Bindizr's interoperability run
 covers 3.4.
 
-## Configure the catalog zone
+## 1. Register the secondary in Bindizr
+
+Bindizr sends NOTIFY to, and accepts unsigned transfers from, only the
+entries of `dns.secondary_addrs`; a Knot missing from it gets every
+transfer refused. The packaged default, `127.0.0.1:53`, covers a Knot on
+the same host. One elsewhere is added by address or hostname — see
+[Configuration](../configuration.md#secondaries) — and the list reloads
+without a restart:
+
+```toml title="/etc/bindizr/bindizr.conf.toml"
+[dns]
+secondary_addrs = "10.0.0.14:53"
+```
+
+```bash
+$ sudo bindizr config reload
+```
+
+A [signed transfer](#sign-the-transfers) is authorized by its key, but NOTIFY
+still goes only to the list, so a keyed secondary is listed all the same.
+
+## 2. Configure the catalog zone
 
 `catalog-role: interpret` makes Knot follow the catalog, and
 `catalog-template` names the template every member zone is created from — so
@@ -41,7 +62,7 @@ $ sudo knotc -c /etc/knot/knot.conf conf-check
 $ sudo systemctl restart knot
 ```
 
-## Check a zone it learned
+## 3. Check a zone it learned
 
 `zone-status` names the catalog the zone came from, which tells a
 catalog-provisioned zone from one configured by hand:

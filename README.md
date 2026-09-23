@@ -108,9 +108,9 @@ $ sudo bindizr doctor
 ```
 
 The CLI runs as the user the daemon runs as: `sudo` for a package install,
-`docker exec` / `kubectl exec` into the container for Compose and Helm.
+`docker exec` / `kubectl exec` into the container for Compose and Kubernetes.
 
-API authentication is on by default for Helm and package installs — the Compose
+API authentication is on by default for Kubernetes and package installs — the Compose
 stack ships with it off. Create a token before calling the HTTP API:
 
 ```bash

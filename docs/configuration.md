@@ -2,7 +2,7 @@
 
 Bindizr reads configuration from `/etc/bindizr/bindizr.conf.toml`, and every
 option can also be set with an environment variable. Container deployments use
-the environment form; the Docker and Helm files in this repository set the same
+the environment form; the Compose files and the Helm chart in this repository set the same
 options that way.
 
 The file path can be overridden with `-c <FILE>` on `start`, `doctor`, and

@@ -1,9 +1,9 @@
-# Helm
+# Kubernetes
 
-The chart installs Bindizr together with the BIND servers that answer for
-it, and can bring a PostgreSQL or MySQL of its own for a first look. This page
-walks from `helm install` to a zone that answers a query, then covers the
-settings a real cluster needs.
+Bindizr runs on Kubernetes through its Helm chart, which installs it together
+with the BIND servers that answer for it and can bring a PostgreSQL or MySQL
+of its own for a first look. This page walks from `helm install` to a zone
+that answers a query, then covers the settings a real cluster needs.
 
 ## What the chart deploys
 
