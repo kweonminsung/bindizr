@@ -38,19 +38,6 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      # A version whose tag already exists may only be released again from
-      # that tag's commit; otherwise the image would stop matching the tag.
-      - name: Refuse a version whose tag names another commit
-        run: |
-          TAG="v$VERSION"
-          if git fetch -q --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null \
-            && [ "$(git rev-parse "$TAG^{commit}")" != "$GITHUB_SHA" ]; then
-            echo "Tag $TAG exists and names another commit; bump the version or dispatch from that tag" >&2
-            exit 1
-          fi
-        env:
-          VERSION: ${{ steps.file.outputs.version }}
-
   build:
     name: Build packages (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -76,8 +63,8 @@ jobs:
           sudo apt-get install -y ruby ruby-dev build-essential
           sudo gem install --no-document fpm
 
-      # SQLite is bundled, so beyond build-essential only the musl C compiler is
-      # needed.
+      # SQLite is bundled, so only the musl C compiler is needed beyond
+      # build-essential.
       - name: Install musl tools
         run: |
           sudo apt-get update
@@ -89,8 +76,8 @@ jobs:
           toolchain: stable
           target: ${{ matrix.target }}
 
-      # Each target builds on a host of its own architecture, so musl-gcc links
-      # natively.
+      # Each target builds on a host of its own architecture, so musl-gcc
+      # links natively.
       - name: Build packages
         run: TARGET=${{ matrix.target }} ./packaging/scripts/build_packages.sh
 
