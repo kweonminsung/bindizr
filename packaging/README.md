@@ -88,7 +88,8 @@ $ TARGET=aarch64-unknown-linux-musl ./packaging/scripts/build_packages.sh
 `build_image.sh` builds the image for amd64 and arm64 as one manifest and
 pushes it. The argument is the tag (default: the Cargo version); `IMAGE`
 overrides the repository. The release workflows push the same image when a
-tag is released, so this is for a push by hand.
+tag is released, and the Publish Image workflow pushes it under a tag you
+enter, so this is for a push from your own machine.
 
 ```bash
 $ ./packaging/scripts/build_image.sh

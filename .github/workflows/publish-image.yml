@@ -1,0 +1,127 @@
+name: Publish Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to push, such as 0.1.0-rc.1"
+        required: true
+      latest:
+        description: "Also point latest at this image"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Validate the tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+
+    steps:
+      # The image is built from the ref this run was dispatched on and named
+      # by the tag entered, which must be one Docker accepts: up to 128 of
+      # [A-Za-z0-9_.-], not starting with '.' or '-'.
+      - name: Validate the tag
+        id: tag
+        run: |
+          if [[ ! "$TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Malformed image tag '$TAG'" >&2
+            exit 1
+          fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ inputs.tag }}
+
+  image:
+    name: Build image (${{ matrix.arch }})
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Each half builds natively on a runner of its own architecture and is
+      # pushed by digest; the manifest job names the tags.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=docker.io/kweonminsung/bindizr,push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - name: Upload digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+
+  manifest:
+    name: Push image manifest
+    needs: [version, image]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # latest moves only when asked, since a push by hand may republish an
+      # older version.
+      - name: Create the multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          refs=()
+          for digest in *; do refs+=("kweonminsung/bindizr@sha256:$digest"); done
+          tags=(-t "kweonminsung/bindizr:$VERSION")
+          if [ "$LATEST" = "true" ]; then tags+=(-t "kweonminsung/bindizr:latest"); fi
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          docker buildx imagetools inspect "kweonminsung/bindizr:$VERSION"
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          LATEST: ${{ inputs.latest }}
