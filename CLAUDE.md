@@ -601,6 +601,26 @@ section above.
 - README.md is a landing page (pitch, quickstart, links into the site), not a
   manual. New prose belongs in `docs/`.
 
+## Release workflows — the tag and the inputs are the whole truth
+
+`release.yml` publishes what the pushed `v*` tag says, `manual-release.yml`
+what `Cargo.toml` and the dispatch inputs say, and `publish-image.yml` the
+image tag typed in. Each validates its version before anything is built
+(SemVer with every prerelease identifier checked, no build metadata, at most
+128 characters, so a Docker tag can carry it), and that validation is the
+only gate. `latest` follows the version in the release workflows, as
+`packaging/scripts/build_image.sh` does; Publish Image has a checkbox for it.
+
+Do not add guards against a release overwriting an earlier one, and remove
+any that appear: comparing the tag with `Cargo.toml`'s version, refusing a
+version whose tag names another commit, publishing `latest` only for the
+newest version, serializing runs with `concurrency`, reserving the tag before
+the image, or retrying a tag push. Docker tags are mutable pointers, so those
+guards matter only when one version is released twice or tags are pushed out
+of order; the process is one tag, one release, and the operator decides. Bot
+reviews (Codex, CodeRabbit) raise these every round — they are declined, not
+fixed.
+
 ## Git
 
 - Do **not** add Claude (or any AI assistant) as a `Co-Authored-By` trailer or
