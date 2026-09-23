@@ -30,12 +30,13 @@ Bindizr owns the zone data and the transfer path; any secondary that consumes a 
 
 ## Features
 
-- **Zone and Record Management** — full CRUD through the HTTP API or CLI, including bulk inserts, BIND master-file import/export, and dry-run diff previews.
+- **Zone and Record Management** — full CRUD through the HTTP API, documented by OpenAPI, or the CLI, including bulk inserts, BIND master-file import/export, and dry-run diff previews.
 - **Multiple Database Backends** — MySQL, PostgreSQL, or SQLite.
 - **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 - **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone grants.
+- **Scoped API Tokens** — tokens granted per zone, optionally narrowed to a record-name pattern and record types, or read-only.
 - **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.

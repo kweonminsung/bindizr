@@ -16,6 +16,7 @@ bindizr-external-dns --bindizr-url http://bindizr:8000 --token-file /run/secrets
 
 ## Documentation
 
+- Documentation site: <https://kweonminsung.github.io/bindizr/>
 - Repository: <https://github.com/kweonminsung/bindizr>
 - API documentation: <https://docs.rs/bindizr-external-dns>
 - License: Apache-2.0

@@ -1,24 +1,26 @@
 # Bindizr
 
-`bindizr` is a Rust-based DNS control plane for BIND9, Knot DNS, NSD, and PowerDNS.
-It provides an HTTP API, a CLI, database-backed storage, and DNS zone transfer support for
-the secondary DNS servers, which discover zones through a catalog zone.
+Open-source control plane for authoritative DNS.
+
+`bindizr` manages zones and records through an HTTP API or CLI, stores them in
+MySQL, PostgreSQL, or SQLite, and propagates changes to BIND9, Knot DNS, NSD, or
+PowerDNS secondaries over AXFR/IXFR. The secondaries discover zones through a
+DNS Catalog Zone (RFC 9432), so a zone created here needs no configuration
+there.
 
 ## Features
 
-- Manage DNS zones and records through an HTTP API or CLI.
-- Store state in MySQL, PostgreSQL, or SQLite.
-- Serve AXFR and IXFR zone transfers to secondary DNS servers.
-- Publish DNS Catalog Zones (RFC 9432) for automatic secondary configuration.
-- Send DNS NOTIFY messages after zone changes.
-- Support RFC 2136 dynamic updates with TSIG keys and per-zone grants.
-- Sign zones with DNSSEC: key lifecycle, NSEC and NSEC3 denial, scheduled
-  re-signing, key rollover, and a parent-DS check before going insecure.
-- Scope API tokens to individual zones, optionally by record-name pattern and type.
-- Keep a version per SOA serial: list, diff, and roll a zone back.
-- Import and export BIND master-file text, and bulk-insert records.
-- Act as an ExternalDNS webhook provider for Kubernetes.
-- Expose Prometheus metrics and an OpenAPI document.
+- **Zone and Record Management** — full CRUD through the HTTP API, documented by OpenAPI, or the CLI, including bulk inserts, BIND master-file import/export, and dry-run diff previews.
+- **Multiple Database Backends** — MySQL, PostgreSQL, or SQLite.
+- **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
+- **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
+- **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
+- **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone grants.
+- **Scoped API Tokens** — tokens granted per zone, optionally narrowed to a record-name pattern and record types, or read-only.
+- **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
+- **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
+- **Zone Versions** — a version per serial, with diffs between serials and rollback.
+- **Observability** — health probe, Prometheus metrics at `/metrics`, text or JSON logs, and `bindizr status` / `bindizr doctor` diagnostics.
 
 ## Installation
 
@@ -126,6 +128,8 @@ This workspace is split into several crates:
 
 ## Documentation
 
+- Documentation site: <https://kweonminsung.github.io/bindizr/>
+- HTTP API reference: <https://kweonminsung.github.io/bindizr/api/>
 - Repository: <https://github.com/kweonminsung/bindizr>
 - API documentation: <https://docs.rs/bindizr>
 - License: Apache-2.0
