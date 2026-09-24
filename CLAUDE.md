@@ -287,6 +287,16 @@ equality selector the name must carry as `_by_state`.
 - Adjacent layers never reuse one name for different semantics (e.g. a raw
   row delete in the facade vs. a delete-plus-journal-log in the service).
 
+### Diagnostics — `status`, `check`, `doctor`
+
+Three words for asking how things are, told apart by side effect and scope.
+`status` reads and probes without acting (`zone status`, a `GET`). `check`
+acts to find out — it asks a third party or sends a real message
+(`dnssec check-ds` asks the parent, `secondary check` sends a NOTIFY) and is
+a `POST`. `doctor` runs every check across the installation. A bare `check`
+covers the whole object; `check-<part>` one aspect of it, so a narrow check
+never takes the bare name.
+
 ### Free-function helpers
 
 The `get_*`/`find_*`/`list_*`/`count_*` verbs above are reserved for data

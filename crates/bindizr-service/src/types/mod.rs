@@ -45,7 +45,8 @@ pub use record::{
     RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
 };
 pub use secondary::{
-    CreateSecondaryRequest, GetSecondaryResponse, SecondaryResponse, UpdateSecondaryRequest,
+    CreateSecondaryRequest, GetSecondaryResponse, NotifyCheckResponse, SecondaryCheckResponse,
+    SecondaryResponse, UpdateSecondaryRequest,
 };
 pub use token::{CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenResponse};
 pub use token_grant::{CreateTokenGrantRequest, GetTokenGrantResponse, TokenGrantResponse};

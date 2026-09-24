@@ -277,22 +277,58 @@ pub struct ExportZoneFileResponse {
     pub zone_file: String,
 }
 
-/// Sync state of one enabled secondary for a zone.
+/// What one secondary answered when probed for a zone's SOA, classified
+/// against the serial Bindizr serves.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct SecondaryStatusResponse {
     #[schema(example = "10.0.1.10:53")]
     pub address: String,
-    /// `in_sync` | `lagging` | `ahead` | `unreachable`
+    /// `in_sync` | `lagging` | `ahead` | `unreachable`, or `reachable` when
+    /// the secondary answered but Bindizr's own serial was not known.
     #[schema(example = "in_sync")]
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 42)]
-    pub visible_serial: Option<i64>,
+    pub visible_serial: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
 impl SecondaryStatusResponse {
+    /// Classify a probed SOA serial against the serial Bindizr serves; a
+    /// probe error reads as `unreachable`, an answer with nothing to compare
+    /// it to as `reachable`.
+    pub fn from_probe(
+        address: String,
+        expected_serial: Option<u32>,
+        result: Result<u32, String>,
+    ) -> Self {
+        match result {
+            Ok(visible) => {
+                let status = match expected_serial {
+                    Some(expected) => match visible.cmp(&expected) {
+                        std::cmp::Ordering::Equal => "in_sync",
+                        std::cmp::Ordering::Less => "lagging",
+                        std::cmp::Ordering::Greater => "ahead",
+                    },
+                    None => "reachable",
+                };
+                SecondaryStatusResponse {
+                    address,
+                    status: status.to_string(),
+                    visible_serial: Some(visible),
+                    error: None,
+                }
+            }
+            Err(error) => SecondaryStatusResponse {
+                address,
+                status: "unreachable".to_string(),
+                visible_serial: None,
+                error: Some(error),
+            },
+        }
+    }
+
     /// Whether the probed secondary serial matches this status's zone serial.
     pub fn is_in_sync(&self) -> bool {
         self.status == "in_sync"
@@ -311,46 +347,27 @@ pub struct ZoneStatusResponse {
     #[schema(example = "example.com")]
     pub zone: String,
     #[schema(example = 42)]
-    pub serial: i32,
+    pub serial: u32,
     pub secondaries: Vec<SecondaryStatusResponse>,
 }
 
 impl ZoneStatusResponse {
-    /// Classify each secondary's probed SOA serial against the zone's serial;
-    /// a probe error reads as `unreachable`.
+    /// Classify each secondary's probed SOA serial against the zone's.
     pub(crate) fn from_probes(
-        zone: &Zone,
+        zone: &str,
+        serial: u32,
         probes: impl IntoIterator<Item = (String, Result<u32, String>)>,
     ) -> Self {
         let secondaries = probes
             .into_iter()
-            .map(|(address, result)| match result {
-                Ok(visible) => {
-                    let visible = i64::from(visible);
-                    let status = match visible.cmp(&i64::from(zone.serial)) {
-                        std::cmp::Ordering::Equal => "in_sync",
-                        std::cmp::Ordering::Less => "lagging",
-                        std::cmp::Ordering::Greater => "ahead",
-                    };
-                    SecondaryStatusResponse {
-                        address,
-                        status: status.to_string(),
-                        visible_serial: Some(visible),
-                        error: None,
-                    }
-                }
-                Err(error) => SecondaryStatusResponse {
-                    address,
-                    status: "unreachable".to_string(),
-                    visible_serial: None,
-                    error: Some(error),
-                },
+            .map(|(address, result)| {
+                SecondaryStatusResponse::from_probe(address, Some(serial), result)
             })
             .collect();
 
         ZoneStatusResponse {
-            zone: zone.name.to_string(),
-            serial: zone.serial,
+            zone: zone.to_string(),
+            serial,
             secondaries,
         }
     }

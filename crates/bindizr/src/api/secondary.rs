@@ -8,7 +8,8 @@ use bindizr_service::{
     secondary::SecondaryService,
     types::{
         CreateSecondaryRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetSecondaryResponse,
-        MessageResponse, PageFilter, PaginatedResponse, SecondaryResponse, UpdateSecondaryRequest,
+        MessageResponse, PageFilter, PaginatedResponse, SecondaryCheckResponse, SecondaryResponse,
+        UpdateSecondaryRequest,
     },
 };
 use serde::Deserialize;
@@ -30,6 +31,7 @@ impl SecondaryApi {
             .route("/secondaries/{name}", routing::get(get_secondary))
             .route("/secondaries/{name}", routing::put(update_secondary))
             .route("/secondaries/{name}", routing::delete(delete_secondary))
+            .route("/secondaries/{name}/check", routing::post(check_secondary))
     }
 }
 
@@ -180,4 +182,30 @@ pub(crate) async fn delete_secondary(
         message: "Secondary deleted successfully".to_string(),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+/// Check a secondary.
+#[utoipa::path(
+        post,
+        path = "/secondaries/{name}/check",
+        tag = "Secondary",
+        summary = "Check a secondary",
+        description = "Resolves the secondary's address, asks it for the catalog zone's SOA serial and compares that with the serial Bindizr serves, and sends it a NOTIFY for the catalog zone. A disabled secondary is checked all the same. The NOTIFY is a real one, so the secondary may transfer the catalog as a result.",
+        params(
+            ("name" = String, Path, description = "The name of the secondary.")
+        ),
+        responses(
+            (status = 200, description = "What the secondary answered", body = SecondaryCheckResponse),
+            (status = 401, description = "Unauthorized", body = ErrorResponse),
+            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 404, description = "Secondary not found", body = ErrorResponse),
+            (status = 500, description = "Internal server error, including Bindizr's own DNS listener not answering", body = ErrorResponse)
+        )
+)]
+pub(crate) async fn check_secondary(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<SecondaryNameParam>,
+) -> Result<Response, ApiError> {
+    let check = SecondaryService::check(&caller, &params.name).await?;
+    Ok((StatusCode::OK, Json(check)).into_response())
 }

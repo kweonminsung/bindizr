@@ -11,7 +11,7 @@ use bindizr_core::{
     },
 };
 
-use crate::secondary::SecondaryService;
+use crate::{model::secondary::Secondary, secondary::SecondaryService};
 
 /// Result of probing one secondary: the serial its SOA answer carries, or
 /// the reason the probe failed.
@@ -20,9 +20,8 @@ pub struct ProbeReport {
     pub result: Result<u32, String>,
 }
 
-/// Query every enabled secondary for the zone's SOA serial, in parallel. One
-/// probe per secondary; a hostname is tried at each resolved address until
-/// one answers. No enabled secondary yields an empty list.
+/// Query every enabled secondary for the zone's SOA serial, in parallel.
+/// No enabled secondary yields an empty list.
 pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<ProbeReport>, String> {
     let secondaries = SecondaryService::list_enabled()
         .await
@@ -30,43 +29,52 @@ pub async fn probe_secondaries(zone_name: &str) -> Result<Vec<ProbeReport>, Stri
     if secondaries.is_empty() {
         return Ok(Vec::new());
     }
-    let timeout = Duration::from_secs(config::bindizr_config().dns.notify.timeout_secs);
 
-    let qname =
-        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
-
-    let mut probes = Vec::new();
     let mut tasks = Vec::new();
     for secondary in secondaries {
-        let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
-            Ok(addrs) => addrs,
-            Err(e) => {
-                probes.push(ProbeReport {
-                    address: secondary.address,
-                    result: Err(format!("failed to resolve: {}", e)),
-                });
-                continue;
-            }
-        };
-
-        let qname = qname.clone();
+        let zone_name = zone_name.to_string();
         tasks.push((
-            secondary.address,
-            tokio::spawn(async move { probe_entry(&qname, addrs, timeout).await }),
+            secondary.address.clone(),
+            tokio::spawn(async move { probe_secondary(&zone_name, &secondary).await }),
         ));
     }
 
-    for (entry, task) in tasks {
+    let mut probes = Vec::new();
+    for (address, task) in tasks {
         match task.await {
-            Ok((address, result)) => probes.push(ProbeReport { address, result }),
+            Ok(Ok(probe)) => probes.push(probe),
+            Ok(Err(e)) => return Err(e),
             Err(e) => probes.push(ProbeReport {
-                address: entry,
+                address,
                 result: Err(format!("probe task failed: {}", e)),
             }),
         }
     }
 
     Ok(probes)
+}
+
+/// Query one secondary for the zone's SOA serial: its hostname is tried at
+/// each resolved address until one answers.
+pub async fn probe_secondary(
+    zone_name: &str,
+    secondary: &Secondary,
+) -> Result<ProbeReport, String> {
+    let timeout = Duration::from_secs(config::bindizr_config().dns.notify.timeout_secs);
+    let qname =
+        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
+
+    let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            return Ok(ProbeReport {
+                address: secondary.address.clone(),
+                result: Err(format!("failed to resolve: {}", e)),
+            });
+        }
+    };
+    let (address, result) = probe_entry(&qname, addrs, timeout).await;
+    Ok(ProbeReport { address, result })
 }
 
 /// Query one explicit server for the zone's SOA serial (e.g. bindizr's own

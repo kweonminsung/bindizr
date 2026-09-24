@@ -1,19 +1,17 @@
 use std::{net::SocketAddr, time::Duration};
 
-use bindizr_core::config;
+use bindizr_core::{config, dns::address::loopback_if_unspecified};
 use bindizr_service::{
     authorization::Caller,
     dns_client::{notify, probe},
     error::ServiceError,
+    types::{NotifyCheckResponse, SecondaryStatusResponse},
     zone::ZoneService,
 };
 
-use crate::{
-    net::loopback_if_unspecified,
-    socket::{
-        server::to_response_data,
-        types::{DaemonDoctorResponse, DaemonResponse, DoctorCheckResult, DoctorProbeResult},
-    },
+use crate::socket::{
+    server::to_response_data,
+    types::{DaemonDoctorResponse, DaemonResponse, DoctorCheckResult},
 };
 
 /// A hung database must become a failed check, not a hung doctor.
@@ -77,17 +75,8 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         .await
         .map_err(ServiceError::internal)?
         .into_iter()
-        .map(|probe| match probe.result {
-            Ok(serial) => DoctorProbeResult {
-                address: probe.address,
-                serial: Some(serial),
-                error: None,
-            },
-            Err(error) => DoctorProbeResult {
-                address: probe.address,
-                serial: None,
-                error: Some(error),
-            },
+        .map(|probe| {
+            SecondaryStatusResponse::from_probe(probe.address, catalog_serial, probe.result)
         })
         .collect();
 
@@ -96,9 +85,9 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         .await
         .map_err(ServiceError::internal)?
         .into_iter()
-        .map(|notify| DoctorProbeResult {
+        .map(|notify| NotifyCheckResponse {
             address: notify.address,
-            serial: None,
+            accepted: notify.result.is_ok(),
             error: notify.result.err(),
         })
         .collect();

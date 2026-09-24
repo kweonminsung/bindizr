@@ -1,5 +1,7 @@
 //! A stand-in secondary that receives NOTIFY, records how each request was
-//! signed, and answers as RFC 1996 asks, signed when the request was.
+//! signed, and answers as RFC 1996 asks, signed when the request was. It
+//! also answers any SOA query at [`SERVED_SERIAL`], so a probe finds it
+//! reachable and behind.
 
 use std::{
     net::{SocketAddr, UdpSocket},
@@ -8,12 +10,18 @@ use std::{
 };
 
 use domain::{
-    base::{Message, MessageBuilder, Rtype, ToName, iana::Rcode},
-    rdata::tsig::Time48,
+    base::{
+        Message, MessageBuilder, Name, Rtype, Serial, ToName, Ttl,
+        iana::{Class, Opcode, Rcode},
+    },
+    rdata::{Soa, tsig::Time48},
     tsig::{Key, ServerTransaction},
 };
 
 use crate::common::dns::nsupdate::SigningKey;
+
+/// The serial the fake answers every SOA query with.
+pub(crate) const SERVED_SERIAL: u32 = 1;
 
 /// One NOTIFY as the fake secondary saw it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,7 +64,38 @@ impl FakeSecondary {
                 let Ok(question) = request.sole_question() else {
                     continue;
                 };
-                let zone = question.qname().to_name::<Vec<u8>>().to_string();
+                let qname = question.qname().to_name::<Vec<u8>>();
+                let zone = qname.to_string();
+
+                // A probe: answer the SOA with the fixed serial.
+                if request.header().opcode() == Opcode::QUERY {
+                    let mut answer = MessageBuilder::new_vec()
+                        .start_answer(&request, Rcode::NOERROR)
+                        .expect("start the answer");
+                    answer.header_mut().set_aa(true);
+                    if question.qtype() == Rtype::SOA {
+                        let mname = Name::<Vec<u8>>::root_vec();
+                        answer
+                            .push((
+                                &qname,
+                                Class::IN,
+                                Ttl::from_secs(60),
+                                Soa::new(
+                                    mname.clone(),
+                                    mname,
+                                    Serial(SERVED_SERIAL),
+                                    Ttl::from_secs(60),
+                                    Ttl::from_secs(60),
+                                    Ttl::from_secs(60),
+                                    Ttl::from_secs(60),
+                                ),
+                            ))
+                            .expect("push the SOA");
+                    }
+                    let _ = socket.send_to(&answer.finish(), peer);
+                    continue;
+                }
+
                 let signed = request
                     .additional()
                     .map(|section| {

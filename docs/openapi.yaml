@@ -1281,6 +1281,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /secondaries/{name}/check:
+    post:
+      tags:
+      - Secondary
+      summary: Check a secondary
+      description: Resolves the secondary's address, asks it for the catalog zone's SOA serial and compares that with the serial Bindizr serves, and sends it a NOTIFY for the catalog zone. A disabled secondary is checked all the same. The NOTIFY is a real one, so the secondary may transfer the catalog as a result.
+      operationId: check_secondary
+      parameters:
+      - name: name
+        in: path
+        description: The name of the secondary.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: What the secondary answered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondaryCheckResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Secondary not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error, including Bindizr's own DNS listener not answering
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /tokens:
     get:
       tags:
@@ -3755,9 +3800,7 @@ components:
           type:
           - string
           - 'null'
-          description: |-
-            TSIG key to sign NOTIFY to this server with; omitted sends it
-            unsigned. The server names the same key in its NOTIFY policy.
+          description: TSIG key to sign NOTIFY to this server with; omitted sends it unsigned.
           example: notify-key
       additionalProperties: false
     CreateTokenGrantRequest:
@@ -4939,6 +4982,23 @@ components:
         message:
           type: string
           example: Deleted successfully
+    NotifyCheckResponse:
+      type: object
+      description: One NOTIFY sent to a resolved address during a check.
+      required:
+      - address
+      - accepted
+      properties:
+        accepted:
+          type: boolean
+          example: true
+        address:
+          type: string
+          example: 10.0.0.14:53
+        error:
+          type:
+          - string
+          - 'null'
     PaginatedResponse_GetDnssecPolicyResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -5680,6 +5740,58 @@ components:
             omitted for CSK zones.
           example: zsk
       additionalProperties: false
+    SecondaryCheckResponse:
+      type: object
+      description: |-
+        What a secondary answered when checked: where its address resolves, the
+        catalog zone serial it serves against Bindizr's, and whether it accepted
+        a NOTIFY.
+      required:
+      - secondary
+      - addresses
+      - catalog_zone
+      - catalog
+      - notifies
+      properties:
+        addresses:
+          type: array
+          items:
+            type: string
+          description: Socket addresses the registered `host[:port]` resolves to now.
+          example:
+          - 10.0.0.14:53
+        catalog:
+          $ref: '#/components/schemas/SecondaryStatusResponse'
+          description: The secondary's catalog probe, classified against `catalog_serial`.
+        catalog_serial:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            The serial Bindizr's own listener serves the catalog zone at; absent
+            with `listener_error`, and `catalog` is then `reachable` at best.
+          example: 42
+          minimum: 0
+        catalog_zone:
+          type: string
+          description: The catalog zone the secondary was asked for.
+          example: catalog.bindizr
+        listener_error:
+          type:
+          - string
+          - 'null'
+        notifies:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotifyCheckResponse'
+          description: The NOTIFY sent for the catalog zone, one per resolved address.
+        resolve_error:
+          type:
+          - string
+          - 'null'
+        secondary:
+          $ref: '#/components/schemas/GetSecondaryResponse'
     SecondaryResponse:
       type: object
       description: A secondary wrapped in a response envelope.
@@ -5690,7 +5802,9 @@ components:
           $ref: '#/components/schemas/GetSecondaryResponse'
     SecondaryStatusResponse:
       type: object
-      description: Sync state of one enabled secondary for a zone.
+      description: |-
+        What one secondary answered when probed for a zone's SOA, classified
+        against the serial Bindizr serves.
       required:
       - address
       - status
@@ -5704,14 +5818,17 @@ components:
           - 'null'
         status:
           type: string
-          description: '`in_sync` | `lagging` | `ahead` | `unreachable`'
+          description: |-
+            `in_sync` | `lagging` | `ahead` | `unreachable`, or `reachable` when
+            the secondary answered but Bindizr's own serial was not known.
           example: in_sync
         visible_serial:
           type:
           - integer
           - 'null'
-          format: int64
+          format: int32
           example: 42
+          minimum: 0
     TokenGrantResponse:
       type: object
       description: A single token grant wrapped in a response envelope.
@@ -6028,6 +6145,7 @@ components:
           type: integer
           format: int32
           example: 42
+          minimum: 0
         zone:
           type: string
           example: example.com

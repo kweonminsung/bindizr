@@ -22,6 +22,9 @@ $ bindizr secondary get ns2
 $ bindizr secondary update ns2 --address 10.0.0.15
 $ bindizr secondary update ns2 --enabled false
 
+# Ask one what it serves and whether it takes a NOTIFY
+$ bindizr secondary check ns2
+
 # Forget it
 $ bindizr secondary delete ns2
 ```
@@ -75,5 +78,36 @@ secondary is moved off it.
 unsigned transfer, no probe. It is the switch for a server under maintenance,
 or one being replaced whose address should stay on record.
 
-Secondaries are also manageable over the HTTP API (`/secondaries`) — see the
+## Checking a secondary
+
+Each section above is something that can go wrong on its own: a name that
+stopped resolving, a serial the server never pulled, a key it does not
+accept. `bindizr secondary check <name>` asks one server about all of them,
+the questions `doctor` asks every enabled one, and prints one line per
+answer:
+
+```text
+$ bindizr secondary check ns2
+Secondary ns2: ns2.example.net:53 (enabled, NOTIFY signed with notify-key)
+Resolves to: 10.0.0.14:53
+Catalog zone catalog.bindizr: in sync at serial 42
+NOTIFY to 10.0.0.14:53: accepted
+```
+
+The first line is what is registered, the second what the address resolves
+to right now, which is where a pod that moved shows up. The catalog line
+compares the serial the secondary serves with the one Bindizr serves,
+reported as `in sync`, `lagging`, `ahead`, or `unreachable` exactly as
+`zone status` does per zone; when Bindizr's own listener did not answer,
+the report says so on a line of its own and the secondary's serial stands
+alone as `reachable`. The NOTIFY is a real one for the catalog zone, signed
+with the secondary's key when it has one, so a key the server does not
+accept shows up here. A disabled secondary can be checked too, which is how
+to see whether it is ready before enabling it again.
+
+The command exits non-zero when any line fails, so a script can branch on
+it; `-o json` carries the same fields.
+
+Secondaries are also manageable over the HTTP API (`/secondaries`, with
+`POST /secondaries/{name}/check` for the check) — see the
 [API Reference](https://kweonminsung.github.io/bindizr/api/).

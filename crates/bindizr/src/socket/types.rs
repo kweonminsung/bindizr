@@ -1,7 +1,8 @@
 use bindizr_service::types::{
     CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest,
-    ImportZoneRequest, PageFilter, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
-    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
+    ImportZoneRequest, NotifyCheckResponse, PageFilter, RolloverDnssecRequest,
+    SecondaryStatusResponse, UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest,
+    UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,7 @@ pub(crate) enum DaemonCommandKind {
     GetSecondary,
     UpdateSecondary,
     DeleteSecondary,
+    CheckSecondary,
     CreateTsigKey,
     ListTsigKeys,
     GetTsigKey,
@@ -382,30 +384,22 @@ pub(crate) struct DaemonStatusResponse {
     pub(crate) database_error: Option<String>,
 }
 
-/// Daemon-side installation checks returned by the `Doctor` command.
+/// Daemon-side installation checks returned by the `Doctor` command. The
+/// secondaries are classified against the catalog zone's serial, the way
+/// `zone status` classifies them against a member zone's.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DaemonDoctorResponse {
     pub(crate) database: DoctorCheckResult,
     pub(crate) dns_server: DoctorCheckResult,
-    /// The zone the serials below belong to; `zone status` probes a member
-    /// zone instead.
     pub(crate) catalog_zone: String,
     /// Catalog serial served by bindizr's own DNS listener, when reachable.
     pub(crate) catalog_serial: Option<u32>,
-    pub(crate) secondaries: Vec<DoctorProbeResult>,
-    pub(crate) notifies: Vec<DoctorProbeResult>,
+    pub(crate) secondaries: Vec<SecondaryStatusResponse>,
+    pub(crate) notifies: Vec<NotifyCheckResponse>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DoctorCheckResult {
     pub(crate) ok: bool,
     pub(crate) detail: String,
-}
-
-/// One secondary's SOA probe or NOTIFY outcome; `error` is set on failure.
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct DoctorProbeResult {
-    pub(crate) address: String,
-    pub(crate) serial: Option<u32>,
-    pub(crate) error: Option<String>,
 }

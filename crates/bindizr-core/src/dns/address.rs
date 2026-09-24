@@ -1,7 +1,7 @@
 //! Parsing of `host[:port]` address targets into socket addresses or deferred
 //! host/port pairs.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use super::name::{MAX_DOMAIN_LEN, classify_domain_label};
 
@@ -35,6 +35,15 @@ impl ParsedAddress {
         };
 
         ParsedAddress::HostPort(host_port)
+    }
+}
+
+/// A wildcard listen address is not connectable; probe it via loopback.
+pub fn loopback_if_unspecified(addr: IpAddr) -> IpAddr {
+    match addr {
+        IpAddr::V4(a) if a.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        IpAddr::V6(a) if a.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
+        addr => addr,
     }
 }
 
