@@ -81,3 +81,21 @@ pub(crate) async fn delete_secondary(
         data: to_response_data(MessageResponse { message })?,
     })
 }
+
+/// Check the requested secondary: resolution, catalog serial, and NOTIFY.
+pub(crate) async fn check_secondary(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: SecondaryNameParams = parse_params(data)?;
+    let check = SecondaryService::check(&Caller::Global, &params.name).await?;
+
+    let message = if check.is_healthy() {
+        format!("Secondary '{}' passed the check", params.name)
+    } else {
+        format!("Secondary '{}' failed the check", params.name)
+    };
+    Ok(DaemonResponse {
+        message,
+        data: to_response_data(check)?,
+    })
+}

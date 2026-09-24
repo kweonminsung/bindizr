@@ -2,7 +2,9 @@
 
 `bindizr doctor` is the first stop: each line names one piece of the
 installation, and it runs the database and port checks itself when the daemon
-is down. The tables below pair the messages you will meet with what to do.
+is down. `bindizr secondary check <name>` repeats its secondary lines for one
+server, with the address the name resolves to. The tables below pair the
+messages you will meet with what to do.
 
 ## The daemon
 
@@ -22,8 +24,8 @@ is down. The tables below pair the messages you will meet with what to do.
 
 | Symptom | Where | Fix |
 | --- | --- | --- |
-| A secondary never picks up a new zone | `bindizr zone status`, the secondary's log | A secondary learns zones from `catalog.bindizr`. Check that it reached the catalog serial `bindizr doctor` reports, then its log for the catalog transfer; `bindizr zone notify` resends NOTIFY for every zone. [Secondary Servers](secondaries/index.md) has each server's command for inspecting a zone. |
-| `Secondary unreachable` | doctor, `zone status` | The address it was registered with (`bindizr secondary list`) is wrong, or a firewall sits between Bindizr and the secondary. |
+| A secondary never picks up a new zone | `bindizr zone status`, the secondary's log | A secondary learns zones from `catalog.bindizr`. `bindizr secondary check <name>` tells whether it is registered at all, has reached the catalog serial, and accepts a NOTIFY; past that, its log names why the catalog transfer failed, and `bindizr zone notify` resends NOTIFY for every zone. [Secondary Servers](secondaries/index.md) has each server's command for inspecting a zone. |
+| `Secondary unreachable` | doctor, `zone status` | The address it was registered with is wrong, or a firewall sits between Bindizr and the secondary; `bindizr secondary check <name>` shows what the address resolves to and what the server answered. |
 | `Secondary out of sync` | doctor, `zone status` | The secondary has not pulled the current serial: the catalog zone's for `doctor`, a member zone's for `zone status`, so the two can disagree for the moment a transfer takes. Persisting, BIND's log names the reason it refused or deferred the transfer. |
 | `NOTIFY rejected` | doctor | BIND's `allow-notify` does not admit Bindizr's address (the setup script adds `allow-notify { any; }`), or it requires a key the secondary was not registered with — see [Signed NOTIFY](cli/secondaries.md#signed-notify). |
 | A secondary's transfer is `REFUSED` | BIND's log, `bindizr_xfr_total{result="refused"}` | The secondary is not registered or is disabled (`bindizr secondary list`), its address changed since it was registered (register it by [hostname](cli/secondaries.md#addresses) instead), or it signs with a key Bindizr does not know — see [TSIG Keys](cli/tsig-keys.md#signing-zone-transfers). |

@@ -10,7 +10,7 @@ use bindizr_core::{
     metrics::{NotifyResult, track_notify},
 };
 
-use crate::secondary::SecondaryService;
+use crate::{model::secondary::Secondary, secondary::SecondaryService};
 
 /// Sends DNS NOTIFY to every enabled secondary for one zone. Which
 /// zones to notify is the caller's decision.
@@ -51,16 +51,26 @@ pub struct NotifyReport {
     pub result: Result<(), String>,
 }
 
-/// Send NOTIFY for a zone to every resolved address of every enabled
-/// secondary (the transfer ACL admits each one, so every replica must hear
-/// the change). No enabled secondary yields an empty list.
+/// Send NOTIFY for a zone to every enabled secondary; none yields an empty
+/// list.
 pub async fn send_notify_to_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, String> {
     let secondaries = SecondaryService::list_enabled()
         .await
         .map_err(|e| e.to_string())?;
-    if secondaries.is_empty() {
-        return Ok(Vec::new());
+
+    let mut reports = Vec::new();
+    for secondary in &secondaries {
+        reports.extend(send_notify_to_secondary(zone_name, secondary).await?);
     }
+    Ok(reports)
+}
+
+/// Send NOTIFY for a zone to every resolved address of one secondary, signed
+/// with its NOTIFY key when it has one; one report per address.
+pub async fn send_notify_to_secondary(
+    zone_name: &str,
+    secondary: &Secondary,
+) -> Result<Vec<NotifyReport>, String> {
     let dns_config = &config::bindizr_config().dns;
     let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
     let retries = dns_config.notify.retries;
@@ -68,50 +78,46 @@ pub async fn send_notify_to_secondaries(zone_name: &str) -> Result<Vec<NotifyRep
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
 
-    let mut reports = Vec::new();
-    for secondary in secondaries {
-        let key = match SecondaryService::notify_signing_key(&secondary).await {
-            Ok(key) => key,
-            Err(e) => {
-                track_notify(NotifyResult::Error);
-                reports.push(NotifyReport {
-                    address: secondary.address,
-                    result: Err(e.to_string()),
-                });
-                continue;
-            }
-        };
-        let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
-            Ok(addrs) => addrs,
-            Err(e) => {
-                track_notify(NotifyResult::ResolveError);
-                reports.push(NotifyReport {
-                    address: secondary.address,
-                    result: Err(format!("failed to resolve: {}", e)),
-                });
-                continue;
-            }
-        };
-
-        for addr in addrs {
-            let result =
-                match send_notify_to_server(&qname, addr, timeout, retries, key.as_ref()).await {
-                    Ok(()) => {
-                        log::info!("NOTIFY sent successfully to {}", addr);
-                        track_notify(NotifyResult::Ok);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        log::error!("Failed to send NOTIFY to {}: {}", addr, e);
-                        track_notify(NotifyResult::Error);
-                        Err(e)
-                    }
-                };
-            reports.push(NotifyReport {
-                address: addr.to_string(),
-                result,
-            });
+    let key = match SecondaryService::notify_signing_key(secondary).await {
+        Ok(key) => key,
+        Err(e) => {
+            track_notify(NotifyResult::Error);
+            return Ok(vec![NotifyReport {
+                address: secondary.address.clone(),
+                result: Err(e.to_string()),
+            }]);
         }
+    };
+    let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            track_notify(NotifyResult::ResolveError);
+            return Ok(vec![NotifyReport {
+                address: secondary.address.clone(),
+                result: Err(format!("failed to resolve: {}", e)),
+            }]);
+        }
+    };
+
+    let mut reports = Vec::new();
+    for addr in addrs {
+        let result = match send_notify_to_server(&qname, addr, timeout, retries, key.as_ref()).await
+        {
+            Ok(()) => {
+                log::info!("NOTIFY sent successfully to {}", addr);
+                track_notify(NotifyResult::Ok);
+                Ok(())
+            }
+            Err(e) => {
+                log::error!("Failed to send NOTIFY to {}: {}", addr, e);
+                track_notify(NotifyResult::Error);
+                Err(e)
+            }
+        };
+        reports.push(NotifyReport {
+            address: addr.to_string(),
+            result,
+        });
     }
 
     Ok(reports)

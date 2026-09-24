@@ -69,6 +69,7 @@ async fn handle_client(stream: UnixStream) {
                 DaemonCommandKind::GetSecondary => secondary::get_secondary(&cmd.data).await,
                 DaemonCommandKind::UpdateSecondary => secondary::update_secondary(&cmd.data).await,
                 DaemonCommandKind::DeleteSecondary => secondary::delete_secondary(&cmd.data).await,
+                DaemonCommandKind::CheckSecondary => secondary::check_secondary(&cmd.data).await,
                 DaemonCommandKind::CreateTsigKey => tsig_key::create_tsig_key(&cmd.data).await,
                 DaemonCommandKind::ListTsigKeys => tsig_key::list_tsig_keys(&cmd.data).await,
                 DaemonCommandKind::GetTsigKey => tsig_key::get_tsig_key(&cmd.data).await,

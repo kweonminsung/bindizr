@@ -408,7 +408,7 @@ impl SecondaryStatusRow {
     }
 
     /// Build a table row from a secondary server's status.
-    fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: i32) -> Self {
+    fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: u32) -> Self {
         let detail = match secondary.error.as_deref() {
             Some(error) if secondary.is_unreachable() => {
                 format!("{} ({})", secondary.status, error)
@@ -423,7 +423,7 @@ impl SecondaryStatusRow {
                 .map_or_else(|| "-".to_string(), |serial| serial.to_string()),
             lag: secondary.visible_serial.map_or_else(
                 || "-".to_string(),
-                |serial| (i64::from(zone_serial) - serial).to_string(),
+                |serial| (i64::from(zone_serial) - i64::from(serial)).to_string(),
             ),
         }
     }

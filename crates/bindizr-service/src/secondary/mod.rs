@@ -2,23 +2,30 @@
 //! transfer ACL, and the serial probes, so a server that hears a change is
 //! also the one allowed to pull it.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
-use bindizr_core::dns::{
-    address::{ParsedAddress, is_address_target},
-    name::has_whitespace_or_control,
-    tsig::TsigSigningKey,
+use bindizr_core::{
+    config::bindizr_config,
+    dns::{
+        address::{ParsedAddress, is_address_target, loopback_if_unspecified},
+        name::has_whitespace_or_control,
+        tsig::TsigSigningKey,
+    },
 };
 use chrono::Utc;
 
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
+    dns_client::{notify, probe, resolve_address_entry},
     error::ServiceError,
     model::{secondary::Secondary, tsig_key::TsigKey},
     repository::RepositoryService,
     tsig_key::TsigKeyService,
-    types::{GetSecondaryResponse, PageFilter, PaginatedResponse, UpdateSecondaryRequest},
+    types::{
+        GetSecondaryResponse, NotifyCheckResponse, PageFilter, PaginatedResponse,
+        SecondaryCheckResponse, SecondaryStatusResponse, UpdateSecondaryRequest,
+    },
 };
 
 /// The width of the `secondaries.name` and `secondaries.address` columns.
@@ -183,6 +190,64 @@ impl SecondaryService {
         let secondary =
             RepositoryService::finish_tx(tx, result, "failed to update secondary").await?;
         Self::to_response(secondary).await
+    }
+
+    /// Check one secondary, enabled or not: resolve its address, compare the
+    /// catalog zone serial it serves with the one Bindizr's own listener
+    /// serves, and send it a NOTIFY for the catalog zone.
+    pub async fn check(
+        caller: &Caller,
+        name: &str,
+    ) -> Result<SecondaryCheckResponse, ServiceError> {
+        caller.authorize_global("manage secondaries")?;
+        let secondary = Self::lookup_by_name(name).await?;
+
+        let config = bindizr_config();
+        let catalog_zone = config.dns.catalog_zone_name.clone();
+        let timeout = Duration::from_secs(config.dns.notify.timeout_secs);
+        // The listener's serial is the reference: it reflects the catalog's
+        // current membership, which a stored serial would not.
+        let dns_addr = SocketAddr::new(
+            loopback_if_unspecified(config.dns.listen_addr),
+            config.dns.listen_port,
+        );
+        let (catalog_serial, listener_error) =
+            match probe::probe_server(dns_addr, &catalog_zone, timeout).await {
+                Ok(serial) => (Some(serial), None),
+                Err(e) => (None, Some(format!("{}: {}", dns_addr, e))),
+            };
+
+        let (addresses, resolve_error) =
+            match resolve_address_entry(&secondary.address, timeout).await {
+                Ok(addrs) => (addrs.iter().map(ToString::to_string).collect(), None),
+                Err(e) => (Vec::new(), Some(e)),
+            };
+        let probe = probe::probe_secondary(&catalog_zone, &secondary)
+            .await
+            .map_err(ServiceError::internal)?;
+        let catalog =
+            SecondaryStatusResponse::from_probe(probe.address, catalog_serial, probe.result);
+        let notifies = notify::send_notify_to_secondary(&catalog_zone, &secondary)
+            .await
+            .map_err(ServiceError::internal)?
+            .into_iter()
+            .map(|report| NotifyCheckResponse {
+                address: report.address,
+                accepted: report.result.is_ok(),
+                error: report.result.err(),
+            })
+            .collect();
+
+        Ok(SecondaryCheckResponse {
+            secondary: Self::to_response(secondary).await?,
+            addresses,
+            resolve_error,
+            catalog_zone,
+            catalog_serial,
+            listener_error,
+            catalog,
+            notifies,
+        })
     }
 
     /// Delete a secondary by name.

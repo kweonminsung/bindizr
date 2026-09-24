@@ -4,7 +4,7 @@
 use std::{net::SocketAddr, time::Duration};
 
 use axum::http::StatusCode;
-use bindizr_core::config::BindizrConfig;
+use bindizr_core::{config::BindizrConfig, dns::address::loopback_if_unspecified};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -13,7 +13,6 @@ use tokio::{
 use super::Report;
 use crate::{
     cli::output::parse_response,
-    net::loopback_if_unspecified,
     socket::{
         client,
         types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse},
@@ -172,23 +171,27 @@ pub(crate) async fn check_services(report: &mut Report) {
     // These serials are the catalog zone's, unlike `zone status`, so say so.
     let catalog_zone = &doctor.catalog_zone;
     for secondary in &doctor.secondaries {
-        match (secondary.serial, doctor.catalog_serial) {
-            (Some(serial), Some(expected)) if serial == expected => report.ok(format!(
+        let serial = secondary.visible_serial.unwrap_or_default();
+        match secondary.status.as_str() {
+            "in_sync" => report.ok(format!(
                 "Secondary in sync: {} (catalog zone {} at serial {})",
                 secondary.address, catalog_zone, serial
             )),
-            (Some(serial), Some(expected)) => report.fail(format!(
-                "Secondary out of sync: {} (catalog zone {} at serial {}; bindizr serves {})",
-                secondary.address, catalog_zone, serial, expected
-            )),
-            (Some(serial), None) => report.ok(format!(
+            "reachable" => report.ok(format!(
                 "Secondary reachable: {} (catalog zone {} at serial {})",
                 secondary.address, catalog_zone, serial
             )),
-            _ => report.fail(format!(
+            "unreachable" => report.fail(format!(
                 "Secondary unreachable: {} ({})",
                 secondary.address,
                 secondary.error.as_deref().unwrap_or("unknown error")
+            )),
+            _ => report.fail(format!(
+                "Secondary out of sync: {} (catalog zone {} at serial {}; bindizr serves {})",
+                secondary.address,
+                catalog_zone,
+                serial,
+                doctor.catalog_serial.unwrap_or_default()
             )),
         }
     }

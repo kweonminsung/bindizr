@@ -73,7 +73,9 @@ XFR TCP query: zone="example.com", qtype=Rtype::AXFR, from=10.0.0.14, signed=fal
 ## Checking that it worked
 
 `bindizr zone status <zone>` reports the serial each secondary serves next to
-Bindizr's own, and `bindizr doctor` probes every enabled secondary for
-the catalog zone. Both work regardless of which
-implementation answers. Each server page also gives that server's own command
-for inspecting a zone it learned from the catalog.
+Bindizr's own, `bindizr doctor` probes every enabled secondary for the
+catalog zone, and `bindizr secondary check <name>` asks one server the same
+and sends it a NOTIFY — see
+[Checking a secondary](../cli/secondaries.md#checking-a-secondary). All three
+work regardless of which implementation answers. Each server page also gives
+that server's own command for inspecting a zone it learned from the catalog.

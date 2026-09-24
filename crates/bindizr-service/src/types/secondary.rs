@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::model::secondary::Secondary;
+use crate::{model::secondary::Secondary, types::SecondaryStatusResponse};
 
 /// Request body for registering a secondary.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
@@ -76,4 +76,52 @@ impl GetSecondaryResponse {
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct SecondaryResponse {
     pub secondary: GetSecondaryResponse,
+}
+
+/// One NOTIFY sent to a resolved address during a check.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct NotifyCheckResponse {
+    #[schema(example = "10.0.0.14:53")]
+    pub address: String,
+    #[schema(example = true)]
+    pub accepted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// What a secondary answered when checked: where its address resolves, the
+/// catalog zone serial it serves against Bindizr's, and whether it accepted
+/// a NOTIFY.
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
+pub struct SecondaryCheckResponse {
+    pub secondary: GetSecondaryResponse,
+    /// Socket addresses the registered `host[:port]` resolves to now.
+    #[schema(example = json!(["10.0.0.14:53"]))]
+    pub addresses: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolve_error: Option<String>,
+    /// The catalog zone the secondary was asked for.
+    #[schema(example = "catalog.bindizr")]
+    pub catalog_zone: String,
+    /// The serial Bindizr's own listener serves the catalog zone at; absent
+    /// with `listener_error`, and `catalog` is then `reachable` at best.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 42)]
+    pub catalog_serial: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listener_error: Option<String>,
+    /// The secondary's catalog probe, classified against `catalog_serial`.
+    pub catalog: SecondaryStatusResponse,
+    /// The NOTIFY sent for the catalog zone, one per resolved address.
+    pub notifies: Vec<NotifyCheckResponse>,
+}
+
+impl SecondaryCheckResponse {
+    /// Whether every part of the check passed: resolved, in sync, and every
+    /// NOTIFY accepted.
+    pub fn is_healthy(&self) -> bool {
+        self.resolve_error.is_none()
+            && self.catalog.is_in_sync()
+            && self.notifies.iter().all(|notify| notify.accepted)
+    }
 }

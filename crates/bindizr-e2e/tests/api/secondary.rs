@@ -2,9 +2,9 @@ use reqwest::{Method, StatusCode};
 use serde_json::json;
 
 use crate::common::{
-    TestApp,
+    TestApp, assert_cli_failure_contains,
     dns::{
-        notify::{FakeSecondary, ReceivedNotify},
+        notify::{FakeSecondary, ReceivedNotify, SERVED_SERIAL},
         nsupdate::create_tsig_key,
     },
 };
@@ -242,4 +242,47 @@ async fn notify_is_signed_for_a_secondary_with_a_notify_key() {
         .send_request(Method::DELETE, "/tsig-keys/notify-key", None)
         .await;
     assert_eq!(status, StatusCode::OK);
+}
+
+/// Verify that a check reports where the address resolves, the catalog
+/// serial against Bindizr's, and the NOTIFY outcome, and that the CLI exits
+/// non-zero for a secondary that fails it.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn secondary_check_reports_resolution_catalog_and_notify() {
+    let app = TestApp::start_local().await;
+    // With no member zone the catalog serial is 1, the serial the fake serves.
+    let receiver = FakeSecondary::start(None);
+    app.create_secondary("fake", &receiver.addr()).await;
+    // Nothing listens on port 1, so this one resolves but never answers.
+    app.create_secondary("dead", "127.0.0.1:1").await;
+
+    let (status, body) = app
+        .send_request(Method::POST, "/secondaries/fake/check", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["addresses"], json!([receiver.addr()]));
+    assert_eq!(body["catalog_zone"], "catalog.bindizr");
+    assert_eq!(body["catalog"]["status"], "in_sync");
+    assert_eq!(body["catalog"]["visible_serial"], SERVED_SERIAL);
+    assert_eq!(body["catalog_serial"], SERVED_SERIAL);
+    assert_eq!(body["notifies"][0]["accepted"], true);
+    assert_eq!(receiver.received().len(), 1);
+
+    let (status, body) = app
+        .send_request(Method::POST, "/secondaries/dead/check", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["addresses"], json!(["127.0.0.1:1"]));
+    assert_eq!(body["catalog"]["status"], "unreachable");
+    assert_eq!(body["notifies"][0]["accepted"], false);
+
+    let checked = app.run_cli_success(&["secondary", "check", "fake"]).await;
+    assert!(
+        checked.contains("in sync at serial 1") && checked.contains("accepted"),
+        "{checked}"
+    );
+    let args = ["secondary", "check", "dead"];
+    let failed = app.run_cli(&args).await;
+    assert_cli_failure_contains(&args, &failed, "Secondary 'dead' failed the check");
 }
