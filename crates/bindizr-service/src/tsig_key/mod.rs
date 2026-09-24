@@ -5,7 +5,7 @@ use rand::RngExt;
 
 use crate::{
     authorization::Caller,
-    error::ServiceError,
+    error::{ErrorCode, ServiceError},
     model::tsig_key::{TsigAlgorithm, TsigKey},
     repository::RepositoryService,
     types::{GetTsigKeyResponse, PageFilter, PaginatedResponse},
@@ -100,7 +100,8 @@ impl TsigKeyService {
         RepositoryService::get_tsig_key_by_name(&name).await
     }
 
-    /// Delete a TSIG key by name; refused while it still holds grants.
+    /// Delete a TSIG key by name; refused while it still holds grants or
+    /// signs a secondary's NOTIFY.
     pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
         caller.authorize_global("manage TSIG keys and grants")?;
 
@@ -109,6 +110,19 @@ impl TsigKeyService {
         let grant_count = RepositoryService::count_tsig_grants_by_key_id(key.id).await?;
         if grant_count > 0 {
             return Err(ServiceError::tsig_key_in_use(&key.name, grant_count));
+        }
+        let secondary_count =
+            RepositoryService::count_secondaries_by_notify_tsig_key_id(key.id).await?;
+        if secondary_count > 0 {
+            return Err(ServiceError::new(
+                ErrorCode::TsigKeyInUse,
+                format!(
+                    "TSIG key '{}' still signs NOTIFY for {} secondar{}",
+                    key.name,
+                    secondary_count,
+                    if secondary_count == 1 { "y" } else { "ies" }
+                ),
+            ));
         }
 
         RepositoryService::delete_tsig_key(key.id).await

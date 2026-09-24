@@ -4,7 +4,8 @@ use bindizr_core::{
     config,
     dns::{
         message::{Name, Opcode, Rtype},
-        query::validate_notify_response,
+        query::{question_builder, validate_notify_response},
+        tsig::{TsigSigningKey, sign_request, verify_response},
     },
     metrics::{NotifyResult, track_notify},
 };
@@ -69,6 +70,17 @@ pub async fn send_notify_to_secondaries(zone_name: &str) -> Result<Vec<NotifyRep
 
     let mut reports = Vec::new();
     for secondary in secondaries {
+        let key = match SecondaryService::notify_signing_key(&secondary).await {
+            Ok(key) => key,
+            Err(e) => {
+                track_notify(NotifyResult::Error);
+                reports.push(NotifyReport {
+                    address: secondary.address,
+                    result: Err(e.to_string()),
+                });
+                continue;
+            }
+        };
         let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
             Ok(addrs) => addrs,
             Err(e) => {
@@ -82,18 +94,19 @@ pub async fn send_notify_to_secondaries(zone_name: &str) -> Result<Vec<NotifyRep
         };
 
         for addr in addrs {
-            let result = match send_notify_to_server(&qname, addr, timeout, retries).await {
-                Ok(()) => {
-                    log::info!("NOTIFY sent successfully to {}", addr);
-                    track_notify(NotifyResult::Ok);
-                    Ok(())
-                }
-                Err(e) => {
-                    log::error!("Failed to send NOTIFY to {}: {}", addr, e);
-                    track_notify(NotifyResult::Error);
-                    Err(e)
-                }
-            };
+            let result =
+                match send_notify_to_server(&qname, addr, timeout, retries, key.as_ref()).await {
+                    Ok(()) => {
+                        log::info!("NOTIFY sent successfully to {}", addr);
+                        track_notify(NotifyResult::Ok);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        log::error!("Failed to send NOTIFY to {}: {}", addr, e);
+                        track_notify(NotifyResult::Error);
+                        Err(e)
+                    }
+                };
             reports.push(NotifyReport {
                 address: addr.to_string(),
                 result,
@@ -104,18 +117,20 @@ pub async fn send_notify_to_secondaries(zone_name: &str) -> Result<Vec<NotifyRep
     Ok(reports)
 }
 
-/// Sends a NOTIFY to one server, retrying up to the configured limit.
+/// Sends a NOTIFY to one server, retrying up to the configured limit; with
+/// `key`, each attempt is signed and its answer checked.
 async fn send_notify_to_server(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
     retries: u32,
+    key: Option<&TsigSigningKey>,
 ) -> Result<(), String> {
     let attempts = retries.saturating_add(1);
     let mut last_error = None;
 
     for attempt in 1..=attempts {
-        match send_notify_to_server_once(qname, server_addr, timeout).await {
+        match send_notify_to_server_once(qname, server_addr, timeout, key).await {
             Ok(()) => return Ok(()),
             Err(e) => {
                 if attempt < attempts {
@@ -135,24 +150,34 @@ async fn send_notify_to_server(
     Err(last_error.unwrap_or_else(|| format!("NOTIFY to {} was not attempted", server_addr)))
 }
 
-/// Send one NOTIFY attempt and validate the server's response.
+/// Send one NOTIFY attempt and validate the server's response, its
+/// signature before its RCODE, so a rejected key is reported as such.
 async fn send_notify_to_server_once(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
+    key: Option<&TsigSigningKey>,
 ) -> Result<(), String> {
-    let (query_id, notify_message) =
-        bindizr_core::dns::query::build_question(Opcode::NOTIFY, true, false, qname, Rtype::SOA);
+    let (query_id, mut builder) = question_builder(Opcode::NOTIFY, true, false, qname, Rtype::SOA);
+    let signer = match key {
+        Some(key) => Some(sign_request(&mut builder, key.clone())?),
+        None => None,
+    };
+    let notify_message = builder.finish();
 
     let (received, response) =
         super::exchange_over_udp(server_addr, timeout, &notify_message, "NOTIFY").await?;
 
     log::info!(
-        "NOTIFY message sent to {} ({} bytes)",
+        "NOTIFY message sent to {} ({} bytes, signed={})",
         server_addr,
-        notify_message.len()
+        notify_message.len(),
+        signer.is_some()
     );
 
+    if let Some(signer) = &signer {
+        verify_response(signer, &response[..received])?;
+    }
     validate_notify_response(query_id, qname, &response[..received])?;
 
     Ok(())

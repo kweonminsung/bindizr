@@ -11,6 +11,7 @@ pub(crate) use parent::{FakeParent, ServedDs};
 use serde_json::{Value, json};
 pub(crate) use transfer::{TransferOutcome, axfr};
 
+pub(crate) mod notify;
 pub(crate) mod nsupdate;
 mod tests;
 

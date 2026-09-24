@@ -981,6 +981,16 @@ impl RepositoryService {
             })
     }
 
+    /// Count the secondaries whose NOTIFY a TSIG key signs.
+    pub(crate) async fn count_secondaries_by_notify_tsig_key_id(
+        tsig_key_id: i32,
+    ) -> Result<u64, ServiceError> {
+        get_secondary_repository()
+            .count_by_notify_tsig_key_id(tsig_key_id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to count secondaries: {}", e)))
+    }
+
     /// Delete a secondary by ID.
     pub(crate) async fn delete_secondary(id: i32) -> Result<(), ServiceError> {
         get_secondary_repository()
@@ -1003,6 +1013,14 @@ impl RepositoryService {
         })
     }
 
+    /// Find a TSIG key by ID.
+    pub(crate) async fn get_tsig_key(id: i32) -> Result<Option<TsigKey>, ServiceError> {
+        get_tsig_key_repository()
+            .get(id)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load TSIG key: {}", e)))
+    }
+
     /// Find a TSIG key by name.
     pub(crate) async fn get_tsig_key_by_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
         get_tsig_key_repository()
@@ -1022,12 +1040,12 @@ impl RepositoryService {
     /// Delete a TSIG key by ID.
     pub(crate) async fn delete_tsig_key(id: i32) -> Result<(), ServiceError> {
         get_tsig_key_repository().delete(id).await.map_err(|e| {
-            // A grant created between the service-level count and this delete
-            // trips the FK; surface it as the in-use conflict.
+            // A grant or secondary that took the key between the service-level
+            // counts and this delete trips the FK: the same in-use conflict.
             if e.is_foreign_key_violation() {
                 ServiceError::new(
                     ErrorCode::TsigKeyInUse,
-                    "TSIG key is still referenced by zone TSIG grants",
+                    "TSIG key is still referenced by zone TSIG grants or secondaries",
                 )
             } else {
                 ServiceError::internal(format!("failed to delete TSIG key: {}", e))

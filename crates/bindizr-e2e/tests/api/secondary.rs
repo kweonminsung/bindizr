@@ -1,7 +1,13 @@
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::TestApp;
+use crate::common::{
+    TestApp,
+    dns::{
+        notify::{FakeSecondary, ReceivedNotify},
+        nsupdate::create_tsig_key,
+    },
+};
 
 /// Verify secondary registration, retrieval, update, and deletion.
 #[tokio::test]
@@ -137,4 +143,103 @@ async fn secondary_rejects_a_bad_name_or_address() {
         );
         assert_eq!(body["code"], "INVALID_INPUT");
     }
+}
+
+/// Verify that NOTIFY to a secondary registered with a NOTIFY key is signed
+/// with it, that the signed answer is accepted, and that a server holding
+/// another key fails the NOTIFY rather than passing it.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn notify_is_signed_for_a_secondary_with_a_notify_key() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    // `domain` renders a name without its root dot.
+    let expected_zone = zone_name.to_string();
+
+    let key = create_tsig_key(&app, "notify-key", false).await;
+    let signed_receiver = FakeSecondary::start(Some(&key));
+    let plain_receiver = FakeSecondary::start(None);
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/secondaries",
+            Some(json!({ "name": "signed", "address": signed_receiver.addr(), "notify_key": key.name })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["secondary"]["notify_key"], key.name);
+    let plain = app.create_secondary("plain", &plain_receiver.addr()).await;
+    assert_eq!(plain["secondary"]["notify_key"], json!(null));
+
+    // NOTIFY is sent before the request is answered (no batching window).
+    let (status, body) = app
+        .send_request(Method::POST, &format!("/zones/{zone_name}/notify"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        signed_receiver.received(),
+        vec![ReceivedNotify {
+            zone: expected_zone.clone(),
+            signed: true,
+            verified: true,
+        }]
+    );
+    assert_eq!(
+        plain_receiver.received(),
+        vec![ReceivedNotify {
+            zone: expected_zone.clone(),
+            signed: false,
+            verified: false,
+        }]
+    );
+
+    // The key is in use while a secondary signs with it.
+    let (status, body) = app
+        .send_request(Method::DELETE, "/tsig-keys/notify-key", None)
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "TSIG_KEY_IN_USE");
+
+    // A server that holds another key answers with the TSIG error, which
+    // the NOTIFY reports instead of an acknowledgement.
+    let other = create_tsig_key(&app, "other-key", false).await;
+    let wrong_receiver = FakeSecondary::start(Some(&other));
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            "/secondaries/signed",
+            Some(json!({ "address": wrong_receiver.addr() })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = app
+        .send_request(Method::POST, &format!("/zones/{zone_name}/notify"), None)
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    assert!(body["error"].to_string().contains("TSIG"), "{body}");
+    assert_eq!(
+        wrong_receiver.received(),
+        vec![ReceivedNotify {
+            zone: expected_zone,
+            signed: true,
+            verified: false,
+        }]
+    );
+
+    // An empty key name sends NOTIFY unsigned again and frees the key.
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            "/secondaries/signed",
+            Some(json!({ "notify_key": "" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["secondary"]["notify_key"], json!(null));
+    let (status, _) = app
+        .send_request(Method::DELETE, "/tsig-keys/notify-key", None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
 }

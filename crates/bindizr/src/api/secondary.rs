@@ -68,7 +68,7 @@ pub(crate) async fn list_secondaries(
         path = "/secondaries",
         tag = "Secondary",
         summary = "Register a secondary",
-        description = "Registers a secondary by name and `host[:port]` address (port 53 when left out). It receives NOTIFY from the next change on and may pull zones unsigned from that address; a hostname is resolved when used. A signed transfer is authorized by its key instead, but NOTIFY still goes only to the registered secondaries.",
+        description = "Registers a secondary by name and `host[:port]` address (port 53 when left out). It receives NOTIFY from the next change on and may pull zones unsigned from that address; a hostname is resolved when used. A signed transfer is authorized by its key instead, but NOTIFY still goes only to the registered secondaries. With `notify_key`, every NOTIFY to it is signed with that TSIG key and the answer's signature checked.",
         request_body = CreateSecondaryRequest,
         responses(
             (status = 201, description = "Secondary registered successfully", body = SecondaryResponse),
@@ -84,10 +84,14 @@ pub(crate) async fn create_secondary(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
-    let secondary = SecondaryService::create(&caller, &body.name, &body.address).await?;
-    let response = SecondaryResponse {
-        secondary: GetSecondaryResponse::from_secondary(&secondary),
-    };
+    let secondary = SecondaryService::create(
+        &caller,
+        &body.name,
+        &body.address,
+        body.notify_key.as_deref(),
+    )
+    .await?;
+    let response = SecondaryResponse { secondary };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -113,9 +117,7 @@ pub(crate) async fn get_secondary(
     Path(params): Path<SecondaryNameParam>,
 ) -> Result<Response, ApiError> {
     let secondary = SecondaryService::get(&caller, &params.name).await?;
-    let response = SecondaryResponse {
-        secondary: GetSecondaryResponse::from_secondary(&secondary),
-    };
+    let response = SecondaryResponse { secondary };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -125,7 +127,7 @@ pub(crate) async fn get_secondary(
         path = "/secondaries/{name}",
         tag = "Secondary",
         summary = "Update a secondary",
-        description = "Changes the address, or enables or disables the secondary; an omitted field keeps its value. A disabled secondary receives no NOTIFY, may not transfer unsigned, and is not probed, but stays registered.",
+        description = "Changes the address, the NOTIFY key (empty sends NOTIFY unsigned again), or enables or disables the secondary; an omitted field keeps its value. A disabled secondary receives no NOTIFY, may not transfer unsigned, and is not probed, but stays registered.",
         params(
             ("name" = String, Path, description = "The name of the secondary.")
         ),
@@ -147,9 +149,7 @@ pub(crate) async fn update_secondary(
     JsonBody(body): JsonBody<UpdateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
     let secondary = SecondaryService::update(&caller, &params.name, body).await?;
-    let response = SecondaryResponse {
-        secondary: GetSecondaryResponse::from_secondary(&secondary),
-    };
+    let response = SecondaryResponse { secondary };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

@@ -123,8 +123,11 @@ The catalog zone takes the key too: it is the transfer every member is
 provisioned from, so leaving it on `NOKEY` signs everything except the one
 that has to arrive first.
 
-`allow-notify` stays `NOKEY`: Bindizr sends NOTIFY unsigned, so requiring the
-key there would reject it.
+`allow-notify` stays `NOKEY` unless the secondary is registered with
+`--notify-key`, which signs every NOTIFY to it — see
+[Signed NOTIFY](../cli/secondaries.md#signed-notify); then name the key there
+instead. Bindizr sends NOTIFY unsigned otherwise, so requiring a key it was
+not given would reject it.
 
 See [TSIG Keys](../cli/tsig-keys.md) for creating the key and granting it the
 zones it may transfer.

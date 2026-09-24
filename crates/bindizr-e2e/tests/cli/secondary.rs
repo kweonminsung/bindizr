@@ -58,6 +58,30 @@ async fn secondary_lifecycle_via_cli() {
         "{fetched}"
     );
 
+    // A NOTIFY key is named on the row and cleared with an empty name.
+    let key_name = format!("{}-notify", app.namespace());
+    app.run_cli_success(&["tsig-key", "create", &key_name])
+        .await;
+    let keyed = app
+        .run_cli_success(&["secondary", "update", &name, "--notify-key", &key_name])
+        .await;
+    assert!(keyed.contains(&key_name), "{keyed}");
+    let cleared = app
+        .run_cli_success(&[
+            "secondary",
+            "update",
+            &name,
+            "--notify-key",
+            "",
+            "--output",
+            "json",
+        ])
+        .await;
+    let cleared: Value = serde_json::from_str(&cleared).expect("CLI did not return valid JSON");
+    assert_eq!(cleared["secondary"]["notify_key"], Value::Null);
+    app.run_cli_success(&["tsig-key", "delete", &key_name])
+        .await;
+
     let args = ["secondary", "update", &name];
     let nothing = app.run_cli(&args).await;
     assert_cli_failure_contains(&args, &nothing, "nothing to update");

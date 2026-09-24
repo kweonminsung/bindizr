@@ -1,6 +1,7 @@
 //! TSIG authentication (RFC 8945), backed by `domain::tsig`: verifying a
 //! signed request and signing what answers it. One request-one response for
-//! nsupdate and SOA; a sequence for the envelopes of a zone transfer.
+//! nsupdate and SOA; a sequence for the envelopes of a zone transfer; and
+//! the client side of it for the NOTIFY bindizr sends.
 
 use std::{str::FromStr, sync::Arc};
 
@@ -9,9 +10,13 @@ use domain::{
     base::{
         Message, MessageBuilder, Rtype, ToName,
         iana::{Rcode, TsigRcode},
+        message_builder::AdditionalBuilder,
     },
     rdata::tsig::{Time48, Tsig},
-    tsig::{Algorithm, Key, KeyName, KeyStore, ServerError, ServerSequence, ServerTransaction},
+    tsig::{
+        Algorithm, ClientTransaction, Key, KeyName, KeyStore, ServerError, ServerSequence,
+        ServerTransaction,
+    },
 };
 
 use crate::{
@@ -36,6 +41,32 @@ pub type ResponseSigner = ServerTransaction<Arc<Key>>;
 /// Context for signing the envelopes of one transfer, which share a running
 /// MAC chain (RFC 8945, Section 5.3.1).
 pub type TransferSigner = ServerSequence<Arc<Key>>;
+
+/// A stored key in the form `domain` signs and verifies with.
+pub type TsigSigningKey = Arc<Key>;
+
+/// Context for checking the one answer to a request this side signed.
+pub type RequestSigner = ClientTransaction<Arc<Key>>;
+
+/// Sign a request bindizr is about to send (RFC 8945, Section 5.1) and
+/// return the context that checks its answer.
+pub fn sign_request(
+    builder: &mut AdditionalBuilder<Vec<u8>>,
+    key: TsigSigningKey,
+) -> Result<RequestSigner, String> {
+    ClientTransaction::request(key, builder, Time48::now())
+        .map_err(|e| format!("failed to sign the request: {}", e))
+}
+
+/// Check the answer to a signed request against the key that signed it
+/// (RFC 8945, Section 5.4.2).
+pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), String> {
+    let mut message = Message::from_octets(response.to_vec())
+        .map_err(|e| format!("invalid DNS message: {}", e))?;
+    signer
+        .answer(&mut message, Time48::now())
+        .map_err(|e| format!("TSIG validation of the answer failed: {}", e))
+}
 
 /// The largest TSIG record a response can carry, so an intake cap can reserve
 /// room for one it has not seen yet: the longest key name, `hmac-sha512.`, its
