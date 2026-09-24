@@ -255,6 +255,8 @@ pub(crate) struct SecondaryRow {
     pub(crate) address: String,
     #[tabled(rename = "ENABLED")]
     pub(crate) enabled: String,
+    #[tabled(rename = "NOTIFY-KEY")]
+    pub(crate) notify_key: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
@@ -267,6 +269,7 @@ impl From<&GetSecondaryResponse> for SecondaryRow {
             name: secondary.name.clone(),
             address: secondary.address.clone(),
             enabled: display_yes_no(secondary.enabled),
+            notify_key: display_option_text(&secondary.notify_key),
             created_at: display_time(secondary.created_at),
         }
     }

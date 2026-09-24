@@ -28,13 +28,14 @@ impl SecondaryRepository for MySqlSecondaryRepository {
         let now = Utc::now();
         let result = sqlx::query(
             r#"
-            INSERT INTO secondaries (name, address, enabled, created_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO secondaries (name, address, enabled, notify_tsig_key_id, created_at)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(&secondary.name)
         .bind(&secondary.address)
         .bind(secondary.enabled)
+        .bind(secondary.notify_tsig_key_id)
         .bind(now)
         .execute(&mut *conn)
         .await?;
@@ -49,7 +50,7 @@ impl SecondaryRepository for MySqlSecondaryRepository {
         let mut conn = self.pool.acquire().await?;
 
         let secondary = sqlx::query_as::<_, Secondary>(
-            "SELECT id, name, address, enabled, created_at FROM secondaries WHERE name = ?",
+            "SELECT id, name, address, enabled, notify_tsig_key_id, created_at FROM secondaries WHERE name = ?",
         )
         .bind(name)
         .fetch_optional(&mut *conn)
@@ -68,7 +69,7 @@ impl SecondaryRepository for MySqlSecondaryRepository {
         let mysql_tx = tx.as_mysql()?;
 
         let secondary = sqlx::query_as::<_, Secondary>(AssertSqlSafe(format!(
-            "SELECT id, name, address, enabled, created_at FROM secondaries WHERE name = ?{}",
+            "SELECT id, name, address, enabled, notify_tsig_key_id, created_at FROM secondaries WHERE name = ?{}",
             lock_level.clause()
         )))
         .bind(name)
@@ -83,7 +84,7 @@ impl SecondaryRepository for MySqlSecondaryRepository {
         let mut conn = self.pool.acquire().await?;
 
         let secondary = sqlx::query_as::<_, Secondary>(
-            "SELECT id, name, address, enabled, created_at FROM secondaries WHERE address = ?",
+            "SELECT id, name, address, enabled, notify_tsig_key_id, created_at FROM secondaries WHERE address = ?",
         )
         .bind(address)
         .fetch_optional(&mut *conn)
@@ -97,7 +98,7 @@ impl SecondaryRepository for MySqlSecondaryRepository {
         let mut conn = self.pool.acquire().await?;
 
         let secondaries = sqlx::query_as::<_, Secondary>(
-            "SELECT id, name, address, enabled, created_at FROM secondaries ORDER BY name",
+            "SELECT id, name, address, enabled, notify_tsig_key_id, created_at FROM secondaries ORDER BY name",
         )
         .fetch_all(&mut *conn)
         .await?;
@@ -113,14 +114,32 @@ impl SecondaryRepository for MySqlSecondaryRepository {
     ) -> Result<Secondary, DatabaseError> {
         let mysql_tx = tx.as_mysql()?;
 
-        sqlx::query("UPDATE secondaries SET address = ?, enabled = ? WHERE id = ?")
-            .bind(&secondary.address)
-            .bind(secondary.enabled)
-            .bind(secondary.id)
-            .execute(&mut **mysql_tx)
-            .await?;
+        sqlx::query(
+            "UPDATE secondaries SET address = ?, enabled = ?, notify_tsig_key_id = ? WHERE id = ?",
+        )
+        .bind(&secondary.address)
+        .bind(secondary.enabled)
+        .bind(secondary.notify_tsig_key_id)
+        .bind(secondary.id)
+        .execute(&mut **mysql_tx)
+        .await?;
 
         Ok(secondary)
+    }
+
+    /// Secondaries whose NOTIFY the key signs: the in-use check before a key
+    /// delete.
+    async fn count_by_notify_tsig_key_id(&self, tsig_key_id: i32) -> Result<u64, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM secondaries WHERE notify_tsig_key_id = ?",
+        )
+        .bind(tsig_key_id)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        Ok(count as u64)
     }
 
     /// Delete a secondary by ID.

@@ -120,15 +120,6 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS secondaries (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            name VARCHAR(255) COLLATE utf8mb4_bin UNIQUE NOT NULL,
-            address VARCHAR(255) COLLATE utf8mb4_bin UNIQUE NOT NULL,
-            enabled BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at DATETIME NOT NULL
-        );
-        "#,
-        r#"
         CREATE TABLE IF NOT EXISTS dnssec_withdrawals (
             zone_id INT PRIMARY KEY,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
@@ -142,6 +133,18 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             secret VARCHAR(255) NOT NULL,
             is_global BOOLEAN NOT NULL DEFAULT FALSE,
             created_at DATETIME NOT NULL
+        );
+        "#,
+        r#"
+        CREATE TABLE IF NOT EXISTS secondaries (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255) COLLATE utf8mb4_bin UNIQUE NOT NULL,
+            address VARCHAR(255) COLLATE utf8mb4_bin UNIQUE NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            notify_tsig_key_id INT NULL,
+            created_at DATETIME NOT NULL,
+            FOREIGN KEY (notify_tsig_key_id) REFERENCES tsig_keys(id),
+            INDEX idx_secondaries_notify_key (notify_tsig_key_id)
         );
         "#,
         r#"

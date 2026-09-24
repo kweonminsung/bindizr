@@ -259,6 +259,10 @@ pub trait SecondaryRepository: Send + Sync {
         secondary: Secondary,
     ) -> Result<Secondary, DatabaseError>;
 
+    /// Secondaries whose NOTIFY the key signs: the in-use check before a key
+    /// delete.
+    async fn count_by_notify_tsig_key_id(&self, tsig_key_id: i32) -> Result<u64, DatabaseError>;
+
     /// Delete a secondary by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
 }
@@ -267,6 +271,9 @@ pub trait SecondaryRepository: Send + Sync {
 pub trait TsigKeyRepository: Send + Sync {
     /// Insert a TSIG key.
     async fn create(&self, key: TsigKey) -> Result<TsigKey, DatabaseError>;
+
+    /// Find a TSIG key by ID.
+    async fn get(&self, id: i32) -> Result<Option<TsigKey>, DatabaseError>;
 
     /// Find a TSIG key by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError>;

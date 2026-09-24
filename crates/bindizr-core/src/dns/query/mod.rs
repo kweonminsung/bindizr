@@ -6,6 +6,7 @@ use domain::{
     base::{
         Message, MessageBuilder, Name, ToName,
         iana::{Class, Opcode, Rcode, Rtype},
+        message_builder::AdditionalBuilder,
         rdata::ComposeRecordData,
     },
     rdata::{Ds, Soa},
@@ -24,6 +25,19 @@ pub fn build_question(
     qname: &Name<Vec<u8>>,
     rtype: Rtype,
 ) -> (u16, Vec<u8>) {
+    let (query_id, builder) = question_builder(opcode, aa, rd, qname, rtype);
+    (query_id, builder.finish())
+}
+
+/// The message of [`build_question`] still open at its additional section,
+/// for a caller that signs it before finishing.
+pub fn question_builder(
+    opcode: Opcode,
+    aa: bool,
+    rd: bool,
+    qname: &Name<Vec<u8>>,
+    rtype: Rtype,
+) -> (u16, AdditionalBuilder<Vec<u8>>) {
     let query_id = rand::random::<u16>();
 
     let mut builder = MessageBuilder::new_vec();
@@ -38,25 +52,13 @@ pub fn build_question(
         .push((qname, rtype))
         .expect("composing into a Vec cannot run out of space");
 
-    (query_id, question.finish())
+    (query_id, question.additional())
 }
 
 /// [`build_question`] for a standard query carrying an EDNS0 OPT record
 /// (RFC 6891) that advertises [`EDNS_UDP_PAYLOAD_SIZE`].
 pub fn build_edns_question(rd: bool, qname: &Name<Vec<u8>>, rtype: Rtype) -> (u16, Vec<u8>) {
-    let query_id = rand::random::<u16>();
-
-    let mut builder = MessageBuilder::new_vec();
-    let header = builder.header_mut();
-    header.set_id(query_id);
-    header.set_opcode(Opcode::QUERY);
-    header.set_rd(rd);
-
-    let mut question = builder.question();
-    question
-        .push((qname, rtype))
-        .expect("composing into a Vec cannot run out of space");
-    let mut additional = question.additional();
+    let (query_id, mut additional) = question_builder(Opcode::QUERY, false, rd, qname, rtype);
     additional
         .opt(|opt| {
             opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);

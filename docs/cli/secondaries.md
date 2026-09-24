@@ -50,6 +50,25 @@ key instead — see [TSIG Keys](tsig-keys.md#signing-zone-transfers) — but
 NOTIFY still goes only to the registered secondaries, so a keyed secondary is
 registered all the same.
 
+## Signed NOTIFY
+
+NOTIFY goes out unsigned unless the secondary is registered with a key:
+
+```bash
+$ bindizr secondary create ns2 --address 10.0.0.14 --notify-key notify-key
+$ bindizr secondary update ns2 --notify-key notify-key
+$ bindizr secondary update ns2 --notify-key ""        # unsigned again
+```
+
+Every NOTIFY to that server is then signed with the key and the signature on
+its answer checked, so a server that accepts NOTIFY only under a key can be
+fed: `allow-notify { key notify-key; }` in BIND, `allow-notify: 10.0.0.5
+notify-key` in NSD, a `notify` ACL with the key in Knot. The key is a TSIG
+key like any other — see [TSIG Keys](tsig-keys.md) — and needs no grant,
+since a NOTIFY carries no zone data; the same key may also sign the
+transfers. A key a secondary signs with cannot be deleted until the
+secondary is moved off it.
+
 ## Disabled secondaries
 
 `--enabled false` keeps the row and stops everything else: no NOTIFY, no

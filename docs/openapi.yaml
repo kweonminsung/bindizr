@@ -1074,7 +1074,7 @@ paths:
       tags:
       - Secondary
       summary: Register a secondary
-      description: Registers a secondary by name and `host[:port]` address (port 53 when left out). It receives NOTIFY from the next change on and may pull zones unsigned from that address; a hostname is resolved when used. A signed transfer is authorized by its key instead, but NOTIFY still goes only to the registered secondaries.
+      description: Registers a secondary by name and `host[:port]` address (port 53 when left out). It receives NOTIFY from the next change on and may pull zones unsigned from that address; a hostname is resolved when used. A signed transfer is authorized by its key instead, but NOTIFY still goes only to the registered secondaries. With `notify_key`, every NOTIFY to it is signed with that TSIG key and the answer's signature checked.
       operationId: create_secondary
       requestBody:
         content:
@@ -1173,7 +1173,7 @@ paths:
       tags:
       - Secondary
       summary: Update a secondary
-      description: Changes the address, or enables or disables the secondary; an omitted field keeps its value. A disabled secondary receives no NOTIFY, may not transfer unsigned, and is not probed, but stays registered.
+      description: Changes the address, the NOTIFY key (empty sends NOTIFY unsigned again), or enables or disables the secondary; an omitted field keeps its value. A disabled secondary receives no NOTIFY, may not transfer unsigned, and is not probed, but stays registered.
       operationId: update_secondary
       parameters:
       - name: name
@@ -3745,17 +3745,20 @@ components:
       properties:
         address:
           type: string
-          description: |-
-            `host[:port]`, port 53 when left out. A hostname is resolved when
-            used, so a name that follows the server keeps working when its
-            address changes.
+          description: '`host[:port]`, port 53 when left out; a hostname is resolved when used.'
           example: ns2.example.net:53
         name:
           type: string
-          description: |-
-            The operator's handle for the server; a plain identifier, since it
-            travels in URL paths.
+          description: A plain identifier, since it travels in URL paths.
           example: ns2
+        notify_key:
+          type:
+          - string
+          - 'null'
+          description: |-
+            TSIG key to sign NOTIFY to this server with; omitted sends it
+            unsigned. The server names the same key in its NOTIFY policy.
+          example: notify-key
       additionalProperties: false
     CreateTokenGrantRequest:
       type: object
@@ -4601,6 +4604,12 @@ components:
         name:
           type: string
           example: ns2
+        notify_key:
+          type:
+          - string
+          - 'null'
+          description: The TSIG key NOTIFY to this server is signed with, if any.
+          example: notify-key
     GetTokenGrantResponse:
       type: object
       description: API representation of a token grant.
@@ -5082,6 +5091,12 @@ components:
               name:
                 type: string
                 example: ns2
+              notify_key:
+                type:
+                - string
+                - 'null'
+                description: The TSIG key NOTIFY to this server is signed with, if any.
+                example: notify-key
         pagination:
           $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetTokenGrantResponse:
@@ -5839,9 +5854,15 @@ components:
           - boolean
           - 'null'
           description: |-
-            `false` stops NOTIFY, unsigned transfers, and probes for the server
-            without forgetting it.
+            `false` stops NOTIFY, unsigned transfers, and probes without
+            forgetting the server.
           example: true
+        notify_key:
+          type:
+          - string
+          - 'null'
+          description: TSIG key to sign NOTIFY with; empty sends it unsigned again.
+          example: notify-key
       additionalProperties: false
     UpdateZoneRequest:
       type: object

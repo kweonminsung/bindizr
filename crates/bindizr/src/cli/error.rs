@@ -119,7 +119,7 @@ impl CliError {
                 Some("Run 'bindizr dnssec-policy list' to see available policies.")
             }
             ErrorCode::TsigKeyInUse => Some(
-                "Run 'bindizr tsig-key grants <NAME>' and revoke each one before deleting the key.",
+                "Revoke its grants ('bindizr tsig-key grants <NAME>') and move any secondary off it ('bindizr secondary update --notify-key') before deleting the key.",
             ),
             ErrorCode::DnssecPolicyInUse => Some(
                 "Move those zones onto another policy with 'bindizr dnssec set --policy', or disable DNSSEC on them.",

@@ -11,5 +11,7 @@ pub struct Secondary {
     pub address: String,
     /// Disabled: no NOTIFY, no unsigned transfer, no probe; still registered.
     pub enabled: bool,
+    /// TSIG key outbound NOTIFY is signed with; `None` sends it unsigned.
+    pub notify_tsig_key_id: Option<i32>,
     pub created_at: DateTime<Utc>,
 }

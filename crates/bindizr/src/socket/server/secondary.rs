@@ -2,10 +2,7 @@ use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
     secondary::SecondaryService,
-    types::{
-        CreateSecondaryRequest, GetSecondaryResponse, MessageResponse, PageFilter,
-        SecondaryResponse,
-    },
+    types::{CreateSecondaryRequest, MessageResponse, PageFilter, SecondaryResponse},
 };
 
 use crate::socket::{
@@ -18,14 +15,17 @@ pub(crate) async fn create_secondary(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateSecondaryRequest = parse_params(data)?;
-    let secondary =
-        SecondaryService::create(&Caller::Global, &request.name, &request.address).await?;
+    let secondary = SecondaryService::create(
+        &Caller::Global,
+        &request.name,
+        &request.address,
+        request.notify_key.as_deref(),
+    )
+    .await?;
 
     Ok(DaemonResponse {
         message: "Secondary registered successfully".to_string(),
-        data: to_response_data(SecondaryResponse {
-            secondary: GetSecondaryResponse::from_secondary(&secondary),
-        })?,
+        data: to_response_data(SecondaryResponse { secondary })?,
     })
 }
 
@@ -51,9 +51,7 @@ pub(crate) async fn get_secondary(
 
     Ok(DaemonResponse {
         message: "Secondary retrieved successfully".to_string(),
-        data: to_response_data(SecondaryResponse {
-            secondary: GetSecondaryResponse::from_secondary(&secondary),
-        })?,
+        data: to_response_data(SecondaryResponse { secondary })?,
     })
 }
 
@@ -66,9 +64,7 @@ pub(crate) async fn update_secondary(
 
     Ok(DaemonResponse {
         message: "Secondary updated successfully".to_string(),
-        data: to_response_data(SecondaryResponse {
-            secondary: GetSecondaryResponse::from_secondary(&secondary),
-        })?,
+        data: to_response_data(SecondaryResponse { secondary })?,
     })
 }
 

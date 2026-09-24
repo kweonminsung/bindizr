@@ -2,7 +2,9 @@
 
 TSIG keys authenticate [dynamic updates](nsupdate.md) and zone transfers. A key
 is a standalone resource; its grants decide which zones, names, and types it
-may change, and which zones it may pull.
+may change, and which zones it may pull. A secondary registered with
+`--notify-key` also has its NOTIFY signed with the key — see
+[Signed NOTIFY](secondaries.md#signed-notify).
 
 ```bash
 # List all TSIG keys (secrets are not shown)

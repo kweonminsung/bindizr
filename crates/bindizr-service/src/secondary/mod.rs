@@ -2,9 +2,12 @@
 //! transfer ACL, and the serial probes, so a server that hears a change is
 //! also the one allowed to pull it.
 
+use std::collections::HashMap;
+
 use bindizr_core::dns::{
     address::{ParsedAddress, is_address_target},
     name::has_whitespace_or_control,
+    tsig::TsigSigningKey,
 };
 use chrono::Utc;
 
@@ -12,8 +15,9 @@ use crate::{
     authorization::Caller,
     database::repository::LockLevel,
     error::ServiceError,
-    model::secondary::Secondary,
+    model::{secondary::Secondary, tsig_key::TsigKey},
     repository::RepositoryService,
+    tsig_key::TsigKeyService,
     types::{GetSecondaryResponse, PageFilter, PaginatedResponse, UpdateSecondaryRequest},
 };
 
@@ -26,16 +30,23 @@ const DEFAULT_DNS_PORT: u16 = 53;
 pub struct SecondaryService;
 
 impl SecondaryService {
-    /// Register a secondary by name and `host[:port]` address.
+    /// Register a secondary by name and `host[:port]` address; with
+    /// `notify_key`, NOTIFY to it is signed with that TSIG key.
     pub async fn create(
         caller: &Caller,
         name: &str,
         address: &str,
-    ) -> Result<Secondary, ServiceError> {
+        notify_key: Option<&str>,
+    ) -> Result<GetSecondaryResponse, ServiceError> {
         caller.authorize_global("manage secondaries")?;
 
         let name = normalize_secondary_name(name)?;
         let address = normalize_secondary_address(address)?;
+        // Unlocked read to learn the FK target; the constraint backstops.
+        let notify_key = match notify_key {
+            Some(key_name) => Some(TsigKeyService::lookup_by_name(key_name).await?),
+            None => None,
+        };
 
         // Friendly pre-checks; the UNIQUE backstops cover the race.
         if RepositoryService::get_secondary_by_name(&name)
@@ -54,14 +65,19 @@ impl SecondaryService {
             )));
         }
 
-        RepositoryService::create_secondary(Secondary {
+        let secondary = RepositoryService::create_secondary(Secondary {
             id: 0,
             name,
             address,
             enabled: true,
+            notify_tsig_key_id: notify_key.as_ref().map(|key| key.id),
             created_at: Utc::now(),
         })
-        .await
+        .await?;
+        Ok(GetSecondaryResponse::from_secondary(
+            &secondary,
+            notify_key.as_ref().map(|key| key.name.as_str()),
+        ))
     }
 
     /// List every secondary, disabled ones included.
@@ -72,10 +88,24 @@ impl SecondaryService {
         caller.authorize_global("manage secondaries")?;
 
         let secondaries = RepositoryService::list_secondaries().await?;
+        // One statement names every key rather than one per secondary.
+        let key_names: HashMap<i32, String> = RepositoryService::list_tsig_keys()
+            .await?
+            .into_iter()
+            .map(|key| (key.id, key.name))
+            .collect();
         PaginatedResponse::from_collection(
             secondaries
                 .iter()
-                .map(GetSecondaryResponse::from_secondary)
+                .map(|secondary| {
+                    GetSecondaryResponse::from_secondary(
+                        secondary,
+                        secondary
+                            .notify_tsig_key_id
+                            .and_then(|id| key_names.get(&id))
+                            .map(String::as_str),
+                    )
+                })
                 .collect(),
             page.limit,
             page.offset,
@@ -83,17 +113,19 @@ impl SecondaryService {
     }
 
     /// Fetch one secondary by name.
-    pub async fn get(caller: &Caller, name: &str) -> Result<Secondary, ServiceError> {
+    pub async fn get(caller: &Caller, name: &str) -> Result<GetSecondaryResponse, ServiceError> {
         caller.authorize_global("manage secondaries")?;
-        Self::lookup_by_name(name).await
+        let secondary = Self::lookup_by_name(name).await?;
+        Self::to_response(secondary).await
     }
 
-    /// Change a secondary's address or enabled flag.
+    /// Change a secondary's address, enabled flag, or NOTIFY key; an empty
+    /// key name sends NOTIFY unsigned again.
     pub async fn update(
         caller: &Caller,
         name: &str,
         request: UpdateSecondaryRequest,
-    ) -> Result<Secondary, ServiceError> {
+    ) -> Result<GetSecondaryResponse, ServiceError> {
         caller.authorize_global("manage secondaries")?;
 
         let name = normalize_secondary_name(name)?;
@@ -102,11 +134,17 @@ impl SecondaryService {
             .as_deref()
             .map(normalize_secondary_address)
             .transpose()?;
-        if address.is_none() && request.enabled.is_none() {
+        if address.is_none() && request.enabled.is_none() && request.notify_key.is_none() {
             return Err(ServiceError::invalid_input(
-                "nothing to update: give an address or enabled",
+                "nothing to update: give an address, enabled, or notify_key",
             ));
         }
+        // Unlocked read to learn the FK target; the constraint backstops.
+        let notify_key: Option<Option<TsigKey>> = match request.notify_key.as_deref() {
+            None => None,
+            Some("") => Some(None),
+            Some(key_name) => Some(Some(TsigKeyService::lookup_by_name(key_name).await?)),
+        };
         // Friendly pre-check; the UNIQUE(address) backstop covers the race.
         if let Some(address) = &address
             && let Some(other) = RepositoryService::get_secondary_by_address(address).await?
@@ -132,13 +170,19 @@ impl SecondaryService {
                 Secondary {
                     address: address.unwrap_or_else(|| secondary.address.clone()),
                     enabled: request.enabled.unwrap_or(secondary.enabled),
+                    notify_tsig_key_id: match &notify_key {
+                        Some(key) => key.as_ref().map(|key| key.id),
+                        None => secondary.notify_tsig_key_id,
+                    },
                     ..secondary
                 },
             )
             .await
         }
         .await;
-        RepositoryService::finish_tx(tx, result, "failed to update secondary").await
+        let secondary =
+            RepositoryService::finish_tx(tx, result, "failed to update secondary").await?;
+        Self::to_response(secondary).await
     }
 
     /// Delete a secondary by name.
@@ -157,6 +201,40 @@ impl SecondaryService {
             .into_iter()
             .filter(|secondary| secondary.enabled)
             .collect())
+    }
+
+    /// The key a secondary's NOTIFY is signed with, ready to sign; `None`
+    /// for one notified unsigned. The FK keeps a referenced key present.
+    pub(crate) async fn notify_signing_key(
+        secondary: &Secondary,
+    ) -> Result<Option<TsigSigningKey>, ServiceError> {
+        match Self::notify_key(secondary).await? {
+            Some(key) => key.to_domain_key().map(Some).map_err(|e| {
+                ServiceError::internal(format!("NOTIFY key '{}' is unusable: {:?}", key.name, e))
+            }),
+            None => Ok(None),
+        }
+    }
+
+    /// The stored key a secondary's NOTIFY is signed with, if any.
+    async fn notify_key(secondary: &Secondary) -> Result<Option<TsigKey>, ServiceError> {
+        match secondary.notify_tsig_key_id {
+            Some(id) => Ok(Some(
+                RepositoryService::get_tsig_key(id)
+                    .await?
+                    .ok_or_else(|| ServiceError::internal(format!("TSIG key {} is missing", id)))?,
+            )),
+            None => Ok(None),
+        }
+    }
+
+    /// The API form of a secondary, naming its NOTIFY key.
+    async fn to_response(secondary: Secondary) -> Result<GetSecondaryResponse, ServiceError> {
+        let key = Self::notify_key(&secondary).await?;
+        Ok(GetSecondaryResponse::from_secondary(
+            &secondary,
+            key.as_ref().map(|key| key.name.as_str()),
+        ))
     }
 
     /// Fetch one secondary by name, unchecked.

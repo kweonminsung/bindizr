@@ -28,6 +28,9 @@ pub(crate) enum SecondaryCommand {
         /// host[:port] (port 53 when left out); a hostname is resolved when used
         #[arg(long, value_name = "HOST[:PORT]")]
         address: String,
+        /// TSIG key to sign NOTIFY to this server with (unsigned when omitted)
+        #[arg(long, value_name = "KEY_NAME")]
+        notify_key: Option<String>,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -66,6 +69,9 @@ pub(crate) enum SecondaryCommand {
         /// forgetting it
         #[arg(long, value_name = "true|false")]
         enabled: Option<bool>,
+        /// TSIG key to sign NOTIFY with; "" sends it unsigned again
+        #[arg(long, value_name = "KEY_NAME")]
+        notify_key: Option<String>,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -88,11 +94,16 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
         SecondaryCommand::Create {
             name,
             address,
+            notify_key,
             output,
         } => {
             let res = client::send_command(
                 DaemonCommandKind::CreateSecondary,
-                CreateSecondaryRequest { name, address },
+                CreateSecondaryRequest {
+                    name,
+                    address,
+                    notify_key,
+                },
             )
             .await?;
 
@@ -136,13 +147,18 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             name,
             address,
             enabled,
+            notify_key,
             output,
         } => {
             let res = client::send_command(
                 DaemonCommandKind::UpdateSecondary,
                 UpdateSecondaryParams {
                     name,
-                    request: UpdateSecondaryRequest { address, enabled },
+                    request: UpdateSecondaryRequest {
+                        address,
+                        enabled,
+                        notify_key,
+                    },
                 },
             )
             .await?;

@@ -16,6 +16,10 @@ pub struct CreateSecondaryRequest {
     /// `host[:port]`, port 53 when left out; a hostname is resolved when used.
     #[schema(example = "ns2.example.net:53")]
     pub address: String,
+    /// TSIG key to sign NOTIFY to this server with; omitted sends it unsigned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "notify-key")]
+    pub notify_key: Option<String>,
 }
 
 /// Request body for changing a secondary; an omitted field keeps its value.
@@ -30,6 +34,10 @@ pub struct UpdateSecondaryRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = true)]
     pub enabled: Option<bool>,
+    /// TSIG key to sign NOTIFY with; empty sends it unsigned again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "notify-key")]
+    pub notify_key: Option<String>,
 }
 
 /// API representation of a secondary.
@@ -43,17 +51,22 @@ pub struct GetSecondaryResponse {
     pub address: String,
     #[schema(example = true)]
     pub enabled: bool,
+    /// The TSIG key NOTIFY to this server is signed with, if any.
+    #[schema(example = "notify-key")]
+    pub notify_key: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
 impl GetSecondaryResponse {
-    /// Build the API representation from a stored secondary.
-    pub fn from_secondary(secondary: &Secondary) -> Self {
+    /// Build the API representation from a stored secondary and its NOTIFY
+    /// key's name.
+    pub fn from_secondary(secondary: &Secondary, notify_key: Option<&str>) -> Self {
         GetSecondaryResponse {
             id: secondary.id,
             name: secondary.name.clone(),
             address: secondary.address.clone(),
             enabled: secondary.enabled,
+            notify_key: notify_key.map(str::to_string),
             created_at: secondary.created_at,
         }
     }
