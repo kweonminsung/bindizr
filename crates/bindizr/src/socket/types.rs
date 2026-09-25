@@ -251,7 +251,7 @@ pub(crate) struct NotifyZoneParams {
 #[serde(deny_unknown_fields)]
 pub(crate) struct RollbackZoneParams {
     pub(crate) name: String,
-    pub(crate) serial: i32,
+    pub(crate) serial: u32,
     #[serde(default)]
     pub(crate) dry_run: bool,
 }
@@ -270,7 +270,7 @@ pub(crate) struct ListZoneVersionsParams {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ZoneVersionParams {
     pub(crate) name: String,
-    pub(crate) serial: i32,
+    pub(crate) serial: u32,
 }
 
 /// Payload for diffing two of a zone's serials; a missing `to_serial` compares
@@ -279,8 +279,8 @@ pub(crate) struct ZoneVersionParams {
 #[serde(deny_unknown_fields)]
 pub(crate) struct DiffZoneVersionsParams {
     pub(crate) name: String,
-    pub(crate) from_serial: i32,
-    pub(crate) to_serial: Option<i32>,
+    pub(crate) from_serial: u32,
+    pub(crate) to_serial: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -357,7 +357,7 @@ pub(crate) struct DaemonStatusResponse {
 pub(crate) struct DaemonDoctorResponse {
     pub(crate) database: DoctorCheckResult,
     pub(crate) dns_server: DoctorCheckResult,
-    pub(crate) catalog_zone: String,
+    pub(crate) catalog_zone_name: String,
     /// Catalog serial served by bindizr's own DNS listener, when reachable.
     pub(crate) catalog_serial: Option<u32>,
     pub(crate) secondaries: Vec<SecondaryStatusResponse>,

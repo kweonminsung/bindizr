@@ -111,7 +111,10 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
                 DaemonCommandKind::ImportDnssecKeys,
                 ImportZoneDnssecKeysParams {
                     zone_name: name,
-                    request: ImportDnssecKeyRequest { keys, policy },
+                    request: ImportDnssecKeyRequest {
+                        keys,
+                        policy_name: policy,
+                    },
                 },
             )
             .await?;

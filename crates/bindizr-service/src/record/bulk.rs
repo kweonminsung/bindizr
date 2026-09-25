@@ -408,7 +408,11 @@ impl RecordService {
         Ok(BulkRecordsResponse {
             applied: !dry_run,
             dry_run,
-            inserted: if dry_run { 0 } else { created_records.len() },
+            added: if dry_run {
+                0
+            } else {
+                created_records.len() as u64
+            },
             records,
             diff,
         })

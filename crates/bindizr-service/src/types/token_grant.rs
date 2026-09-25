@@ -12,7 +12,7 @@ pub struct GetTokenGrantResponse {
     #[schema(example = 1)]
     pub id: i32,
     #[schema(example = "external-dns")]
-    pub api_token: String,
+    pub token_name: String,
     #[schema(example = "example.com")]
     pub zone_name: String,
     #[schema(example = "*.dyn")]
@@ -29,7 +29,7 @@ impl GetTokenGrantResponse {
     pub fn from_grant(grant: &TokenGrantWithNames) -> Self {
         GetTokenGrantResponse {
             id: grant.grant.id,
-            api_token: grant.api_token_name.clone(),
+            token_name: grant.api_token_name.clone(),
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.grant.record_name_pattern.clone(),
             record_types: grant.grant.record_types.clone(),

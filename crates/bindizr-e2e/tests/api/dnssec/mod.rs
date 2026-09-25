@@ -22,7 +22,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     assert_eq!(dnssec["zone_name"], zone_name);
     assert_eq!(dnssec["enabled"], true);
     // Enabling without a policy signs under the seeded `default` policy.
@@ -70,8 +70,8 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["dnssec"]["enabled"], true);
-    assert_eq!(body["dnssec"]["keys"][0]["key_tag"], key_tag);
+    assert_eq!(body["enabled"], true);
+    assert_eq!(body["keys"][0]["key_tag"], key_tag);
 
     let (status, _) = app
         .send_request(
@@ -207,9 +207,10 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["dnssec"]["enabled"], false);
-    assert!(body["dnssec"].get("policy").is_none());
-    assert!(body["dnssec"]["keys"].as_array().unwrap().is_empty());
+    assert_eq!(body["enabled"], false);
+    // Absent values are null, never a missing key.
+    assert!(body["policy"].is_null());
+    assert!(body["keys"].as_array().unwrap().is_empty());
 
     let (status, body) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
@@ -240,11 +241,11 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
+            Some(json!({ "policy_name": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     assert_eq!(dnssec["policy"]["denial"], "nsec3");
     assert_eq!(dnssec["policy"]["split_keys"], true);
 
@@ -282,7 +283,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let keys = body["dnssec"]["keys"].as_array().unwrap();
+    let keys = body["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 3);
     let published = keys
         .iter()
@@ -538,7 +539,7 @@ async fn dnssec_csk_rollover_lifecycle() {
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
     assert_eq!(keys[0]["role"], "csk");
@@ -557,7 +558,7 @@ async fn dnssec_csk_rollover_lifecycle() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 2);
     let published = keys
@@ -614,7 +615,7 @@ async fn dnssec_csk_rollover_lifecycle() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 2);
     let key_by_id = |id: i64| {

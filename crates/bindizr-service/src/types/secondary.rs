@@ -19,7 +19,7 @@ pub struct CreateSecondaryRequest {
     /// TSIG key to sign NOTIFY to this server with; omitted sends it unsigned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "notify-key")]
-    pub notify_key: Option<String>,
+    pub notify_key_name: Option<String>,
 }
 
 /// Request body for changing a secondary; an omitted field keeps its value.
@@ -37,7 +37,7 @@ pub struct UpdateSecondaryRequest {
     /// TSIG key to sign NOTIFY with; empty sends it unsigned again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "notify-key")]
-    pub notify_key: Option<String>,
+    pub notify_key_name: Option<String>,
 }
 
 /// API representation of a secondary.
@@ -53,20 +53,20 @@ pub struct GetSecondaryResponse {
     pub enabled: bool,
     /// The TSIG key NOTIFY to this server is signed with, if any.
     #[schema(example = "notify-key")]
-    pub notify_key: Option<String>,
+    pub notify_key_name: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
 impl GetSecondaryResponse {
     /// Build the API representation from a stored secondary and its NOTIFY
     /// key's name.
-    pub fn from_secondary(secondary: &Secondary, notify_key: Option<&str>) -> Self {
+    pub fn from_secondary(secondary: &Secondary, notify_key_name: Option<&str>) -> Self {
         GetSecondaryResponse {
             id: secondary.id,
             name: secondary.name.clone(),
             address: secondary.address.clone(),
             enabled: secondary.enabled,
-            notify_key: notify_key.map(str::to_string),
+            notify_key_name: notify_key_name.map(str::to_string),
             created_at: secondary.created_at,
         }
     }
@@ -78,14 +78,12 @@ pub struct SecondaryResponse {
     pub secondary: GetSecondaryResponse,
 }
 
-/// One NOTIFY sent to a resolved address during a check.
+/// One NOTIFY sent to a resolved address during a check; `error` is null
+/// when the server accepted it.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct NotifyCheckResponse {
     #[schema(example = "10.0.0.14:53")]
     pub address: String,
-    #[schema(example = true)]
-    pub accepted: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -98,17 +96,14 @@ pub struct SecondaryCheckResponse {
     /// Socket addresses the registered `host[:port]` resolves to now.
     #[schema(example = json!(["10.0.0.14:53"]))]
     pub addresses: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolve_error: Option<String>,
     /// The catalog zone the secondary was asked for.
     #[schema(example = "catalog.bindizr")]
-    pub catalog_zone: String,
+    pub catalog_zone_name: String,
     /// The serial Bindizr's own listener serves the catalog zone at; absent
     /// with `listener_error`, and `catalog` is then `reachable` at best.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 42)]
     pub catalog_serial: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub listener_error: Option<String>,
     /// The secondary's catalog probe, classified against `catalog_serial`.
     pub catalog: SecondaryStatusResponse,
@@ -122,6 +117,6 @@ impl SecondaryCheckResponse {
     pub fn is_healthy(&self) -> bool {
         self.resolve_error.is_none()
             && self.catalog.is_in_sync()
-            && self.notifies.iter().all(|notify| notify.accepted)
+            && self.notifies.iter().all(|notify| notify.error.is_none())
     }
 }

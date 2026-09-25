@@ -119,7 +119,10 @@ impl TryFrom<i32> for DnssecAlgorithm {
 /// What a key signs: a CSK everything, a KSK/ZSK pair splits the apex key
 /// RRsets (whose signer the parent DS must name, RFC 7344, Section 4.1)
 /// from the zone data.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum DnssecKeyRole {
     Csk,
     Ksk,
@@ -183,7 +186,10 @@ impl TryFrom<String> for DnssecKeyRole {
 
 /// Rollover lifecycle position (RFC 7583); a settled zone holds only
 /// `Active` keys.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum DnssecKeyState {
     /// Published ahead of promotion so caches learn it; an algorithm rollover
     /// may already require it to sign (see [`DnssecKey::signs_zone_data`]).

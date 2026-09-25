@@ -7,7 +7,10 @@ use super::dnssec_key::DnssecAlgorithm;
 pub const DEFAULT_DNSSEC_POLICY_NAME: &str = "default";
 
 /// How a signed zone proves nonexistence (denial of existence).
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum DnssecDenial {
     /// Plain NSEC chain over the zone's names.
     Nsec,

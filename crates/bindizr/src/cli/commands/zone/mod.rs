@@ -57,7 +57,7 @@ and the contact is the address a resolver operator writes to.")]
         default_ttl: Option<i32>,
         /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
-        serial: Option<i32>,
+        serial: Option<u32>,
         /// SOA refresh interval (seconds)
         #[arg(long)]
         refresh: Option<i32>,
@@ -104,13 +104,13 @@ and the contact is the address a resolver operator writes to.")]
         max_default_ttl: Option<i32>,
         /// Filter by serial
         #[arg(long)]
-        serial: Option<i32>,
+        serial: Option<u32>,
         /// Filter by minimum serial
         #[arg(long)]
-        min_serial: Option<i32>,
+        min_serial: Option<u32>,
         /// Filter by maximum serial
         #[arg(long)]
-        max_serial: Option<i32>,
+        max_serial: Option<u32>,
         /// Keep zones created at or after this RFC 3339 timestamp
         #[arg(long, value_name = "TIMESTAMP")]
         created_after: Option<chrono::DateTime<chrono::Utc>>,

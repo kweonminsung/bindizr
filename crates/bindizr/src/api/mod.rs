@@ -35,7 +35,12 @@ pub(crate) struct NameParam {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct GrantIdParam {
+pub(crate) struct IdParam {
+    pub(crate) id: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct NameIdParam {
     pub(crate) name: String,
     pub(crate) id: i32,
 }

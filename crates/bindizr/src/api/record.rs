@@ -14,10 +14,9 @@ use bindizr_service::{
         UpdateRecordRequest,
     },
 };
-use serde::Deserialize;
 
 use crate::api::{
-    DryRunQuery, RequestCaller,
+    DryRunQuery, IdParam, RequestCaller,
     error::{ApiError, Path, Query},
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
@@ -29,10 +28,10 @@ impl RecordApi {
     pub(crate) async fn routes() -> Router {
         Router::new()
             .route("/records", routing::get(list_records))
-            .route("/records/{record_id}", routing::get(get_record))
+            .route("/records/{id}", routing::get(get_record))
             .route("/records", routing::post(create_record))
-            .route("/records/{record_id}", routing::put(update_record))
-            .route("/records/{record_id}", routing::delete(delete_record))
+            .route("/records/{id}", routing::put(update_record))
+            .route("/records/{id}", routing::delete(delete_record))
             .route("/records", routing::delete(delete_records_matching))
             .route(
                 "/records/bulk",
@@ -48,24 +47,7 @@ impl RecordApi {
         path = "/records",
         tag = "Record",
         summary = "List all DNS records",
-        params(
-            ("zone_name" = Option<String>, Query, description = "The name of the DNS zone to filter records by."),
-            ("name" = Option<String>, Query, description = "Filter by record name."),
-            ("type" = Option<String>, Query, description = "Filter by record type."),
-            ("value" = Option<String>, Query, description = "Partially filter by record value."),
-            ("ttl" = Option<i32>, Query, description = "Filter by TTL."),
-            ("min_ttl" = Option<i32>, Query, description = "Filter by minimum TTL."),
-            ("max_ttl" = Option<i32>, Query, description = "Filter by maximum TTL."),
-            ("priority" = Option<i32>, Query, description = "Filter by priority."),
-            ("min_priority" = Option<i32>, Query, description = "Filter by minimum priority."),
-            ("max_priority" = Option<i32>, Query, description = "Filter by maximum priority."),
-            ("search" = Option<String>, Query, description = "Partially search records."),
-            ("sort" = Option<String>, Query, description = "Sort by name (the default), type, ttl, priority, or created_at."),
-            ("order" = Option<String>, Query, description = "asc (the default) or desc."),
-            ("signed" = Option<bool>, Query, description = "Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them."),
-            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Records per page; defaults to 50."),
-            ("offset" = Option<u64>, Query, description = "Number of records to skip.")
-        ),
+        params(GetRecordsFilter),
         responses(
             (status = 200, description = "A list of DNS records", body = PaginatedResponse<GetRecordResponse>),
             (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
@@ -85,11 +67,11 @@ pub(crate) async fn list_records(
 /// Get a single DNS record by ID.
 #[utoipa::path(
         get,
-        path = "/records/{record_id}",
+        path = "/records/{id}",
         tag = "Record",
         summary = "Get a specific DNS record",
         params(
-            ("record_id" = i32, Path, description = "The ID of the DNS record to retrieve.")
+            ("id" = i32, Path, description = "The ID of the DNS record to retrieve.")
         ),
         responses(
             (status = 200, description = "Details of the DNS record", body = RecordResponse),
@@ -100,9 +82,9 @@ pub(crate) async fn list_records(
 )]
 pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<RecordIdParam>,
+    Path(params): Path<IdParam>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::get_with_zone(&caller, params.record_id).await?;
+    let raw_record = RecordService::get_with_zone(&caller, params.id).await?;
 
     let response = RecordResponse {
         record: GetRecordResponse::from_record_with_zone(&raw_record),
@@ -146,12 +128,12 @@ pub(crate) async fn create_record(
 /// Update an existing DNS record.
 #[utoipa::path(
         put,
-        path = "/records/{record_id}",
+        path = "/records/{id}",
         tag = "Record",
         summary = "Update a specific DNS record",
         description = "Applies the given fields and keeps the rest. `value` is required when `type` changes, since a stored value is encoded per type.",
         params(
-            ("record_id" = i32, Path, description = "The ID of the DNS record to update.")
+            ("id" = i32, Path, description = "The ID of the DNS record to update.")
         ),
         request_body = UpdateRecordRequest,
         responses(
@@ -167,21 +149,21 @@ pub(crate) async fn create_record(
 )]
 pub(crate) async fn update_record(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<RecordIdParam>,
+    Path(params): Path<IdParam>,
     JsonBody(body): JsonBody<UpdateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    let response = RecordService::update(&caller, params.record_id, &body).await?;
+    let response = RecordService::update(&caller, params.id, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Delete a DNS record.
 #[utoipa::path(
         delete,
-        path = "/records/{record_id}",
+        path = "/records/{id}",
         tag = "Record",
         summary = "Delete a specific DNS record",
         params(
-            ("record_id" = i32, Path, description = "The ID of the DNS record to delete."),
+            ("id" = i32, Path, description = "The ID of the DNS record to delete."),
             ("dry_run" = Option<bool>, Query, description = "Report what would go without removing it.")
         ),
         responses(
@@ -195,10 +177,10 @@ pub(crate) async fn update_record(
 )]
 pub(crate) async fn delete_record(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<RecordIdParam>,
+    Path(params): Path<IdParam>,
     Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    let response = RecordService::delete(&caller, params.record_id, preview.dry_run).await?;
+    let response = RecordService::delete(&caller, params.id, preview.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -261,9 +243,4 @@ pub(crate) async fn create_records_bulk(
         StatusCode::OK
     };
     Ok((status, Json(response)).into_response())
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct RecordIdParam {
-    record_id: i32,
 }

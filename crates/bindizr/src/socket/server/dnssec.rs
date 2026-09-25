@@ -1,8 +1,5 @@
 use bindizr_service::{
-    authorization::Caller,
-    dnssec::DnssecService,
-    error::ServiceError,
-    types::{DnssecStatusResponse, MessageResponse},
+    authorization::Caller, dnssec::DnssecService, error::ServiceError, types::MessageResponse,
 };
 
 use crate::socket::{
@@ -23,14 +20,14 @@ pub(crate) async fn enable_dnssec(
     let status = DnssecService::enable(
         &Caller::Global,
         &params.zone_name,
-        params.request.policy.as_deref(),
+        params.request.policy_name.as_deref(),
         &params.request.parent_ns_addrs,
     )
     .await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC enabled successfully".to_string(),
-        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
+        data: to_response_data(status)?,
     })
 }
 
@@ -59,7 +56,7 @@ pub(crate) async fn get_dnssec_status(
 
     Ok(DaemonResponse {
         message: "DNSSEC status retrieved successfully".to_string(),
-        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
+        data: to_response_data(status)?,
     })
 }
 
@@ -91,7 +88,7 @@ pub(crate) async fn start_dnssec_rollover(
 
     Ok(DaemonResponse {
         message: "Key rollover started successfully".to_string(),
-        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
+        data: to_response_data(status)?,
     })
 }
 
@@ -111,7 +108,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
 
     Ok(DaemonResponse {
         message: "Key rollover advanced successfully".to_string(),
-        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
+        data: to_response_data(status)?,
     })
 }
 
@@ -125,7 +122,7 @@ pub(crate) async fn withdraw_dnssec(
 
     Ok(DaemonResponse {
         message: "DS withdrawal published successfully".to_string(),
-        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
+        data: to_response_data(status)?,
     })
 }
 
@@ -138,14 +135,14 @@ pub(crate) async fn update_dnssec_settings(
     let status = DnssecService::update_settings(
         &Caller::Global,
         &params.zone_name,
-        params.request.policy.as_deref(),
+        params.request.policy_name.as_deref(),
         params.request.parent_ns_addrs.as_deref(),
     )
     .await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC settings changed successfully".to_string(),
-        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
+        data: to_response_data(status)?,
     })
 }
 
@@ -174,7 +171,7 @@ pub(crate) async fn import_dnssec_keys(
 
     Ok(DaemonResponse {
         message: "DNSSEC key imported successfully".to_string(),
-        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
+        data: to_response_data(status)?,
     })
 }
 
@@ -188,7 +185,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
 
     Ok(DaemonResponse {
         message: "DS withdrawal cancelled successfully".to_string(),
-        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
+        data: to_response_data(status)?,
     })
 }
 
@@ -202,6 +199,6 @@ pub(crate) async fn check_dnssec_ds(
 
     Ok(DaemonResponse {
         message: "Parent DS checked successfully".to_string(),
-        data: to_response_data(DnssecStatusResponse { dnssec: status })?,
+        data: to_response_data(status)?,
     })
 }

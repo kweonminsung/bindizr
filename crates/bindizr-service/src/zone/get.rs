@@ -1,3 +1,4 @@
+use bindizr_core::dns::serial_to_i32;
 use bindizr_db::repository::{DnssecRecordFilter, LockLevel, RecordFilter, ZoneFilter};
 
 use super::{ZoneService, validation::normalize_zone_name};
@@ -105,9 +106,21 @@ impl ZoneService {
             default_ttl: filter.default_ttl,
             min_default_ttl: filter.min_default_ttl,
             max_default_ttl: filter.max_default_ttl,
-            serial: filter.serial,
-            min_serial: filter.min_serial,
-            max_serial: filter.max_serial,
+            serial: filter
+                .serial
+                .map(serial_to_i32)
+                .transpose()
+                .map_err(ServiceError::invalid_input)?,
+            min_serial: filter
+                .min_serial
+                .map(serial_to_i32)
+                .transpose()
+                .map_err(ServiceError::invalid_input)?,
+            max_serial: filter
+                .max_serial
+                .map(serial_to_i32)
+                .transpose()
+                .map_err(ServiceError::invalid_input)?,
             created_after: filter.created_after,
             created_before: filter.created_before,
             signed: filter.signed,

@@ -61,7 +61,7 @@ pub struct ImportZoneResponse {
     /// Per-record validation errors. When non-empty nothing is applied.
     pub errors: Vec<String>,
     /// Records passed over under `skip_unsupported`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub skipped_records: Vec<String>,
 }
 
@@ -79,15 +79,15 @@ impl ImportZoneResponse {
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ImportSummary {
     #[schema(example = 12)]
-    pub parsed: usize,
+    pub parsed: u64,
     #[schema(example = 8)]
-    pub added: usize,
+    pub added: u64,
     #[schema(example = 2)]
-    pub deleted: usize,
+    pub deleted: u64,
     #[schema(example = 1)]
-    pub updated: usize,
+    pub updated: u64,
     #[schema(example = 2)]
-    pub unchanged: usize,
+    pub unchanged: u64,
     #[schema(example = 0)]
-    pub skipped: usize,
+    pub skipped: u64,
 }

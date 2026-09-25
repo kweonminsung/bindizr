@@ -14,7 +14,7 @@ use bindizr_service::{
 };
 
 use crate::api::{
-    GrantIdParam, NameParam, RequestCaller,
+    NameIdParam, NameParam, RequestCaller,
     error::{ApiError, Path, Query},
     middleware::body_parser::JsonBody,
 };
@@ -247,7 +247,7 @@ pub(crate) async fn create_tsig_grant(
 )]
 pub(crate) async fn delete_tsig_grant(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<GrantIdParam>,
+    Path(params): Path<NameIdParam>,
 ) -> Result<Response, ApiError> {
     TsigGrantService::revoke(&caller, &params.name, params.id).await?;
     let response = MessageResponse {

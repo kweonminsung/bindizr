@@ -29,7 +29,7 @@ async fn global_token_grant_management_over_http() {
     assert_eq!(status, StatusCode::CREATED);
     let grant_id = body["token_grant"]["id"].as_i64().unwrap();
     assert_eq!(body["token_grant"]["record_types"], "A,AAAA");
-    assert_eq!(body["token_grant"]["api_token"], json!(scoped_name));
+    assert_eq!(body["token_grant"]["token_name"], json!(scoped_name));
     assert_eq!(body["token_grant"]["zone_name"], json!(zone_name));
 
     // The grant is visible from both ends: the token's list and the zone's.
@@ -47,7 +47,7 @@ async fn global_token_grant_management_over_http() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["items"][0]["api_token"], json!(scoped_name));
+    assert_eq!(body["items"][0]["token_name"], json!(scoped_name));
 
     // A global token already covers every zone, so it cannot be granted one.
     let (status, _) = app
@@ -120,7 +120,7 @@ async fn tokens_self_grants_lists_the_bearers_own_grants() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let grants = body["items"].as_array().unwrap();
     assert_eq!(grants.len(), 1, "{body}");
-    assert_eq!(grants[0]["api_token"], json!(scoped_name));
+    assert_eq!(grants[0]["token_name"], json!(scoped_name));
     assert_eq!(grants[0]["zone_name"], json!(granted_zone));
     assert_eq!(grants[0]["record_name_pattern"], "*.dyn");
     assert_eq!(grants[0]["record_types"], "A,AAAA");

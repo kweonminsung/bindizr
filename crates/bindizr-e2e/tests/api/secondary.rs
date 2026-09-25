@@ -165,13 +165,13 @@ async fn notify_is_signed_for_a_secondary_with_a_notify_key() {
         .send_request(
             Method::POST,
             "/secondaries",
-            Some(json!({ "name": "signed", "address": signed_receiver.addr(), "notify_key": key.name })),
+            Some(json!({ "name": "signed", "address": signed_receiver.addr(), "notify_key_name": key.name })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    assert_eq!(body["secondary"]["notify_key"], key.name);
+    assert_eq!(body["secondary"]["notify_key_name"], key.name);
     let plain = app.create_secondary("plain", &plain_receiver.addr()).await;
-    assert_eq!(plain["secondary"]["notify_key"], json!(null));
+    assert_eq!(plain["secondary"]["notify_key_name"], json!(null));
 
     // NOTIFY is sent before the request is answered (no batching window).
     let (status, body) = app
@@ -233,11 +233,11 @@ async fn notify_is_signed_for_a_secondary_with_a_notify_key() {
         .send_request(
             Method::PUT,
             "/secondaries/signed",
-            Some(json!({ "notify_key": "" })),
+            Some(json!({ "notify_key_name": "" })),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["secondary"]["notify_key"], json!(null));
+    assert_eq!(body["secondary"]["notify_key_name"], json!(null));
     let (status, _) = app
         .send_request(Method::DELETE, "/tsig-keys/notify-key", None)
         .await;
@@ -262,11 +262,11 @@ async fn secondary_check_reports_resolution_catalog_and_notify() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["addresses"], json!([receiver.addr()]));
-    assert_eq!(body["catalog_zone"], "catalog.bindizr");
+    assert_eq!(body["catalog_zone_name"], "catalog.bindizr");
     assert_eq!(body["catalog"]["status"], "in_sync");
     assert_eq!(body["catalog"]["visible_serial"], SERVED_SERIAL);
     assert_eq!(body["catalog_serial"], SERVED_SERIAL);
-    assert_eq!(body["notifies"][0]["accepted"], true);
+    assert!(body["notifies"][0]["error"].is_null(), "{body}");
     assert_eq!(receiver.received().len(), 1);
 
     let (status, body) = app
@@ -275,7 +275,7 @@ async fn secondary_check_reports_resolution_catalog_and_notify() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["addresses"], json!(["127.0.0.1:1"]));
     assert_eq!(body["catalog"]["status"], "unreachable");
-    assert_eq!(body["notifies"][0]["accepted"], false);
+    assert!(!body["notifies"][0]["error"].is_null(), "{body}");
 
     let checked = app.run_cli_success(&["secondary", "check", "fake"]).await;
     assert!(

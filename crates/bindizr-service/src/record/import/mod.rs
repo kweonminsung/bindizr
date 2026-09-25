@@ -350,14 +350,14 @@ impl RecordService {
             timings.validate_ms = elapsed_ms(t);
 
             let summary = ImportSummary {
-                parsed: parsed_count,
+                parsed: parsed_count as u64,
                 // Additions also carry the re-inserted TTL-reconciled records,
                 // which are reported under `updated` instead.
-                added: plan.adds.len() - plan.updated,
-                deleted: plan.dels.len(),
-                updated: plan.updated,
-                unchanged: plan.unchanged,
-                skipped,
+                added: (plan.adds.len() - plan.updated) as u64,
+                deleted: plan.dels.len() as u64,
+                updated: plan.updated as u64,
+                unchanged: plan.unchanged as u64,
+                skipped: skipped as u64,
             };
 
             // Only a valid dry run needs a diff; failed validation must not preview

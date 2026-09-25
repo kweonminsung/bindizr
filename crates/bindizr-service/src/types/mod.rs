@@ -23,7 +23,7 @@ mod zone;
 pub use common::{ErrorResponse, HealthResponse, MessageResponse};
 pub use dnssec::{
     DnssecDelegationInfo, DnssecDelegationKeyInfo, DnssecDsInfo, DnssecKeyInfo, DnssecKeyMaterial,
-    DnssecStatusResponse, EnableDnssecRequest, ExportDnssecKeysResponse, GetDnssecStatusResponse,
+    DnssecStatusResponse, DsState, EnableDnssecRequest, ExportDnssecKeysResponse,
     ImportDnssecKeyPair, ImportDnssecKeyRequest, RolloverDnssecRequest,
     UpdateDnssecSettingsRequest,
 };
@@ -57,12 +57,12 @@ pub use tsig::{
     TsigKeyResponse,
 };
 pub use version::{
-    RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,
+    RecordChange, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,
     RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse, VersionRecordResponse,
     ZoneVersionResponse,
 };
 pub use zone::{
     CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-    SecondaryStatusResponse, UpdateZoneRequest, ZoneResponse, ZoneStatusResponse,
+    SecondaryStatus, SecondaryStatusResponse, UpdateZoneRequest, ZoneResponse, ZoneStatusResponse,
     ZoneWriteResponse, build_notify_message,
 };

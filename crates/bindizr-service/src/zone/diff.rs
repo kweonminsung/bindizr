@@ -8,7 +8,10 @@ use crate::{
         record::{RecordData, RecordSetKey},
         zone::Zone,
     },
-    types::{RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, build_display_value},
+    types::{
+        RecordChange, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue,
+        build_display_value,
+    },
 };
 
 /// What makes two records of one record set the same: canonical rdata and TTL.
@@ -88,7 +91,7 @@ pub(crate) fn build_record_diff(
     keys.sort();
 
     let mut entries = Vec::new();
-    let (mut added, mut removed, mut changed) = (0usize, 0usize, 0usize);
+    let (mut added, mut removed, mut changed) = (0u64, 0u64, 0u64);
 
     for key in keys {
         // Both maps are drained here, so each RRset can be moved into its entry.
@@ -99,7 +102,7 @@ pub(crate) fn build_record_diff(
             (None, Some(after)) => {
                 added += 1;
                 entries.push(RecordDiffEntry {
-                    change: "added".to_string(),
+                    change: RecordChange::Added,
                     name,
                     record_type,
                     from: Vec::new(),
@@ -109,7 +112,7 @@ pub(crate) fn build_record_diff(
             (Some(before), None) => {
                 removed += 1;
                 entries.push(RecordDiffEntry {
-                    change: "removed".to_string(),
+                    change: RecordChange::Removed,
                     name,
                     record_type,
                     from: record_set_values(before),
@@ -120,7 +123,7 @@ pub(crate) fn build_record_diff(
                 if record_set_identities(&before) != record_set_identities(&after) {
                     changed += 1;
                     entries.push(RecordDiffEntry {
-                        change: "changed".to_string(),
+                        change: RecordChange::Changed,
                         name,
                         record_type,
                         from: record_set_values(before),

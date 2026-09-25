@@ -236,7 +236,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 EnableZoneDnssecParams {
                     zone_name: name,
                     request: EnableDnssecRequest {
-                        policy,
+                        policy_name: policy,
                         parent_ns_addrs,
                     },
                 },
@@ -260,7 +260,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
                 UpdateZoneDnssecSettingsParams {
                     zone_name: name,
                     request: UpdateDnssecSettingsRequest {
-                        policy,
+                        policy_name: policy,
                         parent_ns_addrs,
                     },
                 },
@@ -355,7 +355,7 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
         return print_payload(data, output);
     }
 
-    let status = parse_response::<DnssecStatusResponse>(data)?.dnssec;
+    let status = parse_response::<DnssecStatusResponse>(data)?;
     let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
         outln!(
             "Zone {} (serial {}): DNSSEC disabled",
@@ -369,7 +369,7 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
         "Zone {} (serial {}): DNSSEC enabled, {} denial",
         status.zone_name,
         status.serial,
-        policy.denial.to_uppercase()
+        policy.denial.to_string().to_uppercase()
     );
     if status.withdrawing {
         outln!(

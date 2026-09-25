@@ -5,7 +5,7 @@ use crate::{
 
 /// Each key's `(tag, state)` from `dnssec status`, sorted so two runs compare.
 async fn read_key_states(app: &TestApp, zone_name: &str) -> Vec<(u64, String)> {
-    let mut states: Vec<(u64, String)> = read_dnssec_status(app, zone_name).await["dnssec"]["keys"]
+    let mut states: Vec<(u64, String)> = read_dnssec_status(app, zone_name).await["keys"]
         .as_array()
         .expect("status lists the keys")
         .iter()
