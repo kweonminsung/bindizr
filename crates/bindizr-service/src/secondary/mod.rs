@@ -19,6 +19,7 @@ use crate::{
     database::repository::LockLevel,
     dns_client::{notify, probe, resolve_address_entry},
     error::ServiceError,
+    identifier::normalize_identifier,
     model::{secondary::Secondary, tsig_key::TsigKey},
     repository::RepositoryService,
     tsig_key::TsigKeyService,
@@ -305,28 +306,7 @@ impl SecondaryService {
 /// Lowercased so one name means one secondary on every backend; a plain
 /// identifier, since it travels in URL paths.
 pub(crate) fn normalize_secondary_name(value: &str) -> Result<String, ServiceError> {
-    let name = value.trim().to_lowercase();
-
-    if name.is_empty() {
-        return Err(ServiceError::invalid_input(
-            "secondary name must not be empty",
-        ));
-    }
-    if name.len() > MAX_SECONDARY_FIELD_LEN {
-        return Err(ServiceError::invalid_input(format!(
-            "secondary name must be {} characters or fewer",
-            MAX_SECONDARY_FIELD_LEN
-        )));
-    }
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-    {
-        return Err(ServiceError::invalid_input(
-            "secondary name may contain only letters, digits, '-', '_', and '.'",
-        ));
-    }
-    Ok(name)
+    normalize_identifier(value, "secondary name", MAX_SECONDARY_FIELD_LEN)
 }
 
 /// A `host[:port]` entry in its stored form, the port spelled out and a

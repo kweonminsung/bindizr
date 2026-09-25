@@ -3,6 +3,7 @@
 use bindizr_core::dns::record::to_quoted_charstr;
 use bindizr_service::types::{
     RecordChange, RecordDiff, RecordDiffEntry, RecordDiffValue, RecordValueRequest,
+    VersionDiffResponse,
 };
 
 use crate::cli::output::color;
@@ -32,7 +33,7 @@ fn rdata(diff_value: &RecordDiffValue, record_type: &str) -> String {
 
 /// Render the `+`/`-`/`~` lines for a diff's entries (no summary footer). A
 /// changed entry stacks its removed records above its added ones.
-pub(crate) fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
+fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
     let mut out = String::new();
     for entry in entries {
         let sign = match entry.change {
@@ -90,6 +91,23 @@ pub(crate) fn render_change_preview(diff: &RecordDiff) -> String {
         color::green(&format!("+{}", summary.added)),
         color::red(&format!("-{}", summary.removed)),
         color::yellow(&format!("~{}", summary.changed))
+    ));
+    out
+}
+
+/// Render a version diff: the `+`/`-`/`~` lines plus SOA-serial and count footers.
+pub(crate) fn render_version_diff(response: &VersionDiffResponse) -> String {
+    let mut out = render_diff_lines(&response.diff.entries);
+    let summary = &response.diff.summary;
+
+    out.push('\n');
+    out.push_str(&format!(
+        "SOA serial: {} -> {}\n",
+        response.from_serial, response.to_serial
+    ));
+    out.push_str(&format!(
+        "By name and type: +{} -{} ~{}\n",
+        summary.added, summary.removed, summary.changed
     ));
     out
 }

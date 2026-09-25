@@ -9,6 +9,7 @@ pub mod dynamic_update;
 pub mod error;
 pub mod external_dns;
 pub(crate) mod grant_pattern;
+pub(crate) mod identifier;
 pub mod notify;
 pub mod record;
 mod repository;
@@ -17,6 +18,7 @@ pub(crate) mod serial;
 pub(crate) mod timing;
 pub mod token;
 pub mod tsig_key;
+pub(crate) mod ttl;
 pub mod types;
 pub mod zone;
 

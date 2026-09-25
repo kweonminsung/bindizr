@@ -4,7 +4,7 @@ use bindizr_db::repository::LockLevel;
 use super::{
     RecordService,
     validation::{
-        normalize_record_owner_name, parse_record_type, validate_record_ttl,
+        normalize_record_owner_name, parse_record_type,
         validate_record_update_constraints_normalized,
     },
 };
@@ -18,6 +18,7 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
+    ttl::validate_record_ttl,
     types::{GetRecordResponse, RecordDiff, RecordWriteResponse, UpdateRecordRequest},
     zone::{ZoneService, diff::build_record_diff, validation::normalize_zone_name},
 };

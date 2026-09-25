@@ -1,6 +1,8 @@
 //! Table rows for CLI output, each built from the typed daemon response so
 //! the column set is all this module decides.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use bindizr_service::types::{
     CreatedTokenResponse, DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse,
     GetSecondaryResponse, GetTokenGrantResponse, GetTokenResponse, GetTsigGrantResponse,
@@ -52,7 +54,7 @@ fn to_value_text(value: &RecordValueRequest) -> String {
 }
 
 /// A record value as one listing cell.
-fn display_value(value: &RecordValueRequest) -> String {
+fn display_record_value(value: &RecordValueRequest) -> String {
     truncate_cell(&to_value_text(value))
 }
 
@@ -141,7 +143,7 @@ impl From<&GetRecordResponse> for RecordRow {
     /// not widen the column.
     fn from(record: &GetRecordResponse) -> Self {
         RecordRow {
-            value: display_value(&record.value),
+            value: display_record_value(&record.value),
             ..Self::whole(record)
         }
     }
@@ -341,7 +343,7 @@ impl From<&VersionRecordResponse> for VersionRecordRow {
         VersionRecordRow {
             name: record.name.clone(),
             record_type: record.record_type.clone(),
-            value: display_value(&record.value),
+            value: display_record_value(&record.value),
             ttl: record.ttl,
             priority: record.priority,
         }
@@ -631,5 +633,31 @@ impl From<&GetTsigGrantResponse> for TsigGrantRow {
             .to_string(),
             created_at: display_time(grant.created_at),
         }
+    }
+}
+
+/// The time since `started_at_ms` in days, hours, minutes, and seconds. The
+/// start time is stamped once every front end is up, so an unset one means the
+/// daemon is still starting.
+pub(crate) fn display_uptime(started_at_ms: u64) -> String {
+    if started_at_ms == 0 {
+        return "starting".to_string();
+    }
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let secs = now_ms.saturating_sub(started_at_ms) / 1000;
+    let (days, hours, minutes, seconds) = (
+        secs / 86_400,
+        secs % 86_400 / 3_600,
+        secs % 3_600 / 60,
+        secs % 60,
+    );
+    match (days, hours, minutes) {
+        (0, 0, 0) => format!("{}s", seconds),
+        (0, 0, _) => format!("{}m {}s", minutes, seconds),
+        (0, _, _) => format!("{}h {}m", hours, minutes),
+        _ => format!("{}d {}h", days, hours),
     }
 }

@@ -15,6 +15,7 @@ use crate::{
     record::RecordService,
     repository::RepositoryService,
     serial::generate_serial,
+    timing::elapsed_ms,
     types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse},
     zone::ZoneService,
 };
@@ -155,7 +156,7 @@ impl ExternalDnsService {
             added,
             deleted,
             changed_zones.is_empty(),
-            started.elapsed().as_secs_f64() * 1000.0,
+            elapsed_ms(started),
         );
 
         Ok(ExternalDnsChangesResponse {

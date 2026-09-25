@@ -8,7 +8,6 @@ use super::{
     RecordService,
     validation::{
         normalize_record_owner_name, parse_record_type, validate_record_add_constraints_normalized,
-        validate_record_ttl,
     },
 };
 use crate::{
@@ -23,6 +22,7 @@ use crate::{
     repository::RepositoryService,
     serial::generate_serial,
     timing::elapsed_ms,
+    ttl::validate_record_ttl,
     types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
     zone::{ZoneService, diff::build_record_diff},
 };
@@ -49,7 +49,7 @@ pub(crate) struct PreparedRecord {
 }
 
 /// Parse the record type and encode the value into its record-row form.
-pub(crate) fn parse_record(
+pub(crate) fn parse_record_request(
     name: &str,
     record_type: &str,
     value: &RecordValueRequest,
@@ -193,7 +193,7 @@ impl RecordService {
         let prepared = items
             .iter()
             .map(|item| {
-                parse_record(
+                parse_record_request(
                     &item.name,
                     &item.record_type,
                     &item.value,

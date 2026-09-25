@@ -2,8 +2,7 @@
 
 use bindizr_core::{out, outln};
 use bindizr_service::types::{
-    PaginatedResponse, RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse,
-    ZoneVersionResponse,
+    PaginatedResponse, RollbackZoneResponse, VersionDetailResponse, ZoneVersionResponse,
 };
 use clap::Subcommand;
 
@@ -11,8 +10,8 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            OutputFormat, RollbackSummaryRow, VersionRecordRow, VersionRow, parse_response,
-            print_payload, print_response, print_table, render_diff_lines,
+            OutputFormat, RollbackSummaryRow, VersionRecordRow, VersionRow, parse_payload,
+            print_payload, print_response, print_table, render_version_diff,
         },
     },
     socket::{
@@ -157,7 +156,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
 
             match output {
                 OutputFormat::Table => {
-                    let detail: VersionDetailResponse = parse_response(&data)?;
+                    let detail: VersionDetailResponse = parse_payload(&data)?;
                     print_table(vec![VersionRow::from(&detail.version)]);
                     print_table(detail.records.iter().map(VersionRecordRow::from).collect());
                 }
@@ -183,7 +182,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
 
             match output {
                 OutputFormat::Table => {
-                    out!("{}", render_version_diff(&parse_response(&data)?));
+                    out!("{}", render_version_diff(&parse_payload(&data)?));
                 }
                 _ => print_payload(&data, output)?,
             }
@@ -206,7 +205,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
 
             match output {
                 OutputFormat::Table => {
-                    let rollback: RollbackZoneResponse = parse_response(&response.data)?;
+                    let rollback: RollbackZoneResponse = parse_payload(&response.data)?;
                     outln!("{}", response.message);
                     print_table(vec![RollbackSummaryRow::from(&rollback)]);
                 }
@@ -216,21 +215,4 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
     }
 
     Ok(())
-}
-
-/// Render a version diff: the `+`/`-`/`~` lines plus SOA-serial and count footers.
-fn render_version_diff(response: &VersionDiffResponse) -> String {
-    let mut out = render_diff_lines(&response.diff.entries);
-    let summary = &response.diff.summary;
-
-    out.push('\n');
-    out.push_str(&format!(
-        "SOA serial: {} -> {}\n",
-        response.from_serial, response.to_serial
-    ));
-    out.push_str(&format!(
-        "By name and type: +{} -{} ~{}\n",
-        summary.added, summary.removed, summary.changed
-    ));
-    out
 }

@@ -9,7 +9,7 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            OutputFormat, TsigGrantRow, TsigKeyRow, parse_response, print_payload, print_response,
+            OutputFormat, TsigGrantRow, TsigKeyRow, parse_payload, print_payload, print_response,
         },
     },
     socket::{
@@ -175,7 +175,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
 
             log::debug!("TSIG key creation result: {:?}", res);
 
-            let created: TsigKeyResponse = parse_response(&res.data)?;
+            let created: TsigKeyResponse = parse_payload(&res.data)?;
             // stderr, so `--output json` stays parseable.
             if created.tsig_key.global {
                 errln!("Warning: this key can update every zone without any grant.");
@@ -218,7 +218,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
         TsigKeyCommand::Export { name } => {
             let res =
                 client::send_command(DaemonCommandKind::GetTsigKey, NameParams { name }).await?;
-            let key: TsigKeyResponse = parse_response(&res.data).map_err(CliError::from)?;
+            let key: TsigKeyResponse = parse_payload(&res.data).map_err(CliError::from)?;
             print_bind_key(&key);
         }
         TsigKeyCommand::Delete { name, output } => {

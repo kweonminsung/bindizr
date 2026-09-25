@@ -13,7 +13,7 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            DnssecKeyRow, DnssecPolicyRow, OutputFormat, parse_response, print_payload, print_table,
+            DnssecKeyRow, DnssecPolicyRow, OutputFormat, parse_payload, print_payload, print_table,
         },
     },
     socket::{
@@ -355,7 +355,7 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
         return print_payload(data, output);
     }
 
-    let status = parse_response::<DnssecStatusResponse>(data)?;
+    let status = parse_payload::<DnssecStatusResponse>(data)?;
     let Some(policy) = status.policy.as_ref().filter(|_| status.enabled) else {
         outln!(
             "Zone {} (serial {}): DNSSEC disabled",

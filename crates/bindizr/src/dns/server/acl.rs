@@ -9,8 +9,9 @@ use std::{
 };
 
 use bindizr_core::dns::address::ParsedAddress;
-use bindizr_service::{error::ServiceError, secondary::SecondaryService};
-use tokio::{net::lookup_host, time::timeout};
+use bindizr_service::{
+    dns_client::resolve_address_entry, error::ServiceError, secondary::SecondaryService,
+};
 
 /// How long a resolved hostname is reused; an address changes rarely.
 const RESOLVED_TTL: Duration = Duration::from_secs(60);
@@ -100,29 +101,19 @@ pub(crate) async fn is_client_allowed(client_ip: IpAddr) -> Result<bool, Service
     Ok(acl.allows(client_ip).await)
 }
 
-/// Resolve an ACL hostname to its permitted IP addresses.
+/// Resolve an ACL hostname to its permitted IP addresses. The resolver logs
+/// a failure itself; here it only shortens how long the empty answer is kept.
 async fn resolve_acl_host(host_port: &str) -> Vec<IpAddr> {
     if let Some(addrs) = cached_addrs(host_port) {
         return addrs;
     }
 
-    let (addrs, ttl) = match timeout(RESOLVE_TIMEOUT, lookup_host(host_port)).await {
-        Ok(Ok(addrs)) => (
-            addrs.map(|addr| addr.ip()).collect::<Vec<_>>(),
+    let (addrs, ttl) = match resolve_address_entry(host_port, RESOLVE_TIMEOUT).await {
+        Ok(addrs) => (
+            addrs.into_iter().map(|addr| addr.ip()).collect::<Vec<_>>(),
             RESOLVED_TTL,
         ),
-        Ok(Err(e)) => {
-            log::warn!("Failed to resolve DNS ACL host '{}': {}", host_port, e);
-            (Vec::new(), RESOLVE_FAILURE_TTL)
-        }
-        Err(_) => {
-            log::warn!(
-                "Timed out resolving DNS ACL host '{}' after {:?}",
-                host_port,
-                RESOLVE_TIMEOUT
-            );
-            (Vec::new(), RESOLVE_FAILURE_TTL)
-        }
+        Err(_) => (Vec::new(), RESOLVE_FAILURE_TTL),
     };
 
     locked_cache().insert(

@@ -6,12 +6,14 @@ use bindizr_core::{
     },
 };
 
-use crate::{error::ServiceError, types::CreateZoneRequest};
+use crate::{
+    error::ServiceError,
+    ttl::{normalize_soa_interval, validate_default_ttl},
+    types::CreateZoneRequest,
+};
 
 const MAX_EMAIL_LEN: usize = 254;
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
-const MIN_TTL: i32 = 60;
-const MAX_TTL: i32 = 604_800;
 
 pub(crate) struct NormalizedCreateZoneRequest {
     pub(crate) name: ZoneName,
@@ -52,7 +54,7 @@ pub(crate) fn normalize_create_zone_request(
     reject_catalog_zone_name(&zone_name)?;
     let mname = normalize_domain_name(&request.mname, "mname")?.to_string();
     let rname = normalize_email(&request.rname)?;
-    let ttl = validate_ttl(
+    let ttl = validate_default_ttl(
         request
             .default_ttl
             .unwrap_or(bindizr_config().dns.zone_defaults.ttl),
@@ -206,25 +208,6 @@ fn is_valid_email_local_char(c: char) -> bool {
         )
 }
 
-/// Validate that a TTL fits the supported range.
-fn validate_ttl(ttl: i32) -> Result<i32, ServiceError> {
-    if ttl < MIN_TTL {
-        return Err(ServiceError::invalid_zone_field(format!(
-            "ttl must be at least {} seconds",
-            MIN_TTL
-        )));
-    }
-
-    if ttl > MAX_TTL {
-        return Err(ServiceError::invalid_zone_field(format!(
-            "ttl must be at most {} seconds",
-            MAX_TTL
-        )));
-    }
-
-    Ok(ttl)
-}
-
 /// Resolved SOA timing fields. Used both as the fallback source (zone defaults on
 /// create, the existing zone's values on update) and as the validated output.
 #[derive(Clone, Copy)]
@@ -251,20 +234,4 @@ pub(crate) fn normalize_soa_timers(
             "minimum_ttl",
         )?,
     })
-}
-
-/// Resolve an omitted SOA interval to its fallback and validate the result.
-fn normalize_soa_interval(
-    value: Option<i32>,
-    fallback: i32,
-    field: &str,
-) -> Result<i32, ServiceError> {
-    let resolved = value.unwrap_or(fallback);
-    if resolved <= 0 {
-        return Err(ServiceError::invalid_zone_field(format!(
-            "{} must be a positive number of seconds",
-            field
-        )));
-    }
-    Ok(resolved)
 }
