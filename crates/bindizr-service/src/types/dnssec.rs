@@ -14,10 +14,10 @@ pub struct EnableDnssecRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "default")]
     pub policy: Option<String>,
-    /// The parent zone's nameservers (comma-separated `host[:port]`), asked
-    /// for the zone's DS by every later check.
-    #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
-    pub parent_ns_addrs: String,
+    /// The parent zone's nameservers as `host[:port]` entries, asked for the
+    /// zone's DS by every later check.
+    #[schema(example = json!(["a.gtld-servers.net", "b.gtld-servers.net"]))]
+    pub parent_ns_addrs: Vec<String>,
 }
 
 /// Request body for changing a zone's signing settings; an omitted field
@@ -31,11 +31,11 @@ pub struct UpdateDnssecSettingsRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "strict")]
     pub policy: Option<String>,
-    /// The parent zone's nameservers (comma-separated `host[:port]`); must
-    /// name at least one server.
+    /// The parent zone's nameservers as `host[:port]` entries; must name at
+    /// least one server.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
-    pub parent_ns_addrs: Option<String>,
+    #[schema(example = json!(["a.gtld-servers.net", "b.gtld-servers.net"]))]
+    pub parent_ns_addrs: Option<Vec<String>>,
 }
 
 /// One of the zone's SEP keys against the parent's DS records.
@@ -164,8 +164,8 @@ pub struct GetDnssecStatusResponse {
     pub withdrawing: bool,
     /// Configured parent nameservers; may also be set while the zone is unsigned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
-    pub parent_ns_addrs: Option<String>,
+    #[schema(example = json!(["a.gtld-servers.net", "b.gtld-servers.net"]))]
+    pub parent_ns_addrs: Option<Vec<String>>,
     /// The parent's answer about the zone's DS; present only when this
     /// status comes from a parent check.
     #[serde(default, skip_serializing_if = "Option::is_none")]

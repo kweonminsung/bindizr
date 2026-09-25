@@ -345,30 +345,8 @@ impl SecondaryStatusResponse {
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ZoneStatusResponse {
     #[schema(example = "example.com")]
-    pub zone: String,
+    pub zone_name: String,
     #[schema(example = 42)]
     pub serial: u32,
     pub secondaries: Vec<SecondaryStatusResponse>,
-}
-
-impl ZoneStatusResponse {
-    /// Classify each secondary's probed SOA serial against the zone's.
-    pub(crate) fn from_probes(
-        zone: &str,
-        serial: u32,
-        probes: impl IntoIterator<Item = (String, Result<u32, String>)>,
-    ) -> Self {
-        let secondaries = probes
-            .into_iter()
-            .map(|(address, result)| {
-                SecondaryStatusResponse::from_probe(address, Some(serial), result)
-            })
-            .collect();
-
-        ZoneStatusResponse {
-            zone: zone.to_string(),
-            serial,
-            secondaries,
-        }
-    }
 }

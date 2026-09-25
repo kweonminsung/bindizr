@@ -12,10 +12,9 @@ use bindizr_service::{
         UpdateDnssecPolicyRequest,
     },
 };
-use serde::Deserialize;
 
 use crate::api::{
-    RequestCaller,
+    NameParam, RequestCaller,
     error::{ApiError, Path, Query},
     middleware::body_parser::JsonBody,
 };
@@ -38,11 +37,6 @@ impl DnssecPolicyApi {
                 routing::delete(delete_dnssec_policy),
             )
     }
-}
-
-#[derive(Deserialize)]
-pub(crate) struct DnssecPolicyNameParam {
-    name: String,
 }
 
 /// List all DNSSEC policies.
@@ -117,7 +111,7 @@ pub(crate) async fn create_dnssec_policy(
 )]
 pub(crate) async fn get_dnssec_policy(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<DnssecPolicyNameParam>,
+    Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     let policy = DnssecPolicyService::get(&caller, &params.name).await?;
     let response = DnssecPolicyResponse {
@@ -149,7 +143,7 @@ pub(crate) async fn get_dnssec_policy(
 )]
 pub(crate) async fn update_dnssec_policy(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<DnssecPolicyNameParam>,
+    Path(params): Path<NameParam>,
     JsonBody(body): JsonBody<UpdateDnssecPolicyRequest>,
 ) -> Result<Response, ApiError> {
     let policy = DnssecPolicyService::update(&caller, &params.name, body).await?;
@@ -181,7 +175,7 @@ pub(crate) async fn update_dnssec_policy(
 )]
 pub(crate) async fn delete_dnssec_policy(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<DnssecPolicyNameParam>,
+    Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     DnssecPolicyService::delete(&caller, &params.name).await?;
     let response = MessageResponse {

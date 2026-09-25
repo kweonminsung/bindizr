@@ -19,14 +19,14 @@ impl ZoneService {
         let zone = Self::get_by_name(caller, zone_name).await?;
 
         let serial = serial_to_u32(zone.serial).map_err(ServiceError::internal)?;
-        let probes = probe::probe_secondaries(zone.name.as_str())
+        let secondaries = probe::probe_secondaries(zone.name.as_str(), Some(serial))
             .await
             .map_err(ServiceError::internal)?;
 
-        Ok(ZoneStatusResponse::from_probes(
-            zone.name.as_str(),
+        Ok(ZoneStatusResponse {
+            zone_name: zone.name.to_string(),
             serial,
-            probes.into_iter().map(|p| (p.address, p.result)),
-        ))
+            secondaries,
+        })
     }
 }

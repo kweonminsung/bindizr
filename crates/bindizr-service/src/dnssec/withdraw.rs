@@ -18,9 +18,8 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to withdraw the parent DS").await?;
         let result = async {
-            let (zone, policy, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+            let signed = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, signed.zone.id)
                 .await?
                 .is_some()
             {
@@ -28,20 +27,21 @@ impl DnssecService {
                     "the DS withdrawal is already published",
                 ));
             }
-            RepositoryService::create_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
+            RepositoryService::create_dnssec_withdrawal_tx(&mut tx, signed.zone.id).await?;
 
-            let new_serial = Self::resign_zone_tx(
+            let new_serial =
+                Self::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
+                    .await?
+                    .unwrap_or(signed.zone.serial);
+
+            build_status_tx(
                 &mut tx,
-                &zone,
-                &policy,
-                &keys,
-                false,
-                &caller.change_subject(),
+                &signed.zone,
+                Some(&signed.policy),
+                &signed.keys,
+                new_serial,
             )
-            .await?
-            .unwrap_or(zone.serial);
-
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
+            .await
         }
         .await;
         let response =
@@ -62,28 +62,28 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to cancel the DS withdrawal").await?;
         let result = async {
-            let (zone, policy, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, zone.id)
+            let signed = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            if RepositoryService::get_dnssec_withdrawal_tx(&mut tx, signed.zone.id)
                 .await?
                 .is_none()
             {
                 return Err(ServiceError::invalid_input("no DS withdrawal is published"));
             }
-            RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
+            RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, signed.zone.id).await?;
 
-            let new_serial = Self::resign_zone_tx(
+            let new_serial =
+                Self::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
+                    .await?
+                    .unwrap_or(signed.zone.serial);
+
+            build_status_tx(
                 &mut tx,
-                &zone,
-                &policy,
-                &keys,
-                false,
-                &caller.change_subject(),
+                &signed.zone,
+                Some(&signed.policy),
+                &signed.keys,
+                new_serial,
             )
-            .await?
-            .unwrap_or(zone.serial);
-
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
+            .await
         }
         .await;
         let response =

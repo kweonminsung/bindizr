@@ -20,7 +20,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use axum::{extract::FromRequestParts, http::request::Parts};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
-use bindizr_core::{config, model::api_token::ApiToken};
+use bindizr_core::{config, config::TlsFiles, model::api_token::ApiToken};
 use bindizr_service::{authorization::Caller, error::ServiceError};
 use error::ApiError;
 use router::ApiRouter;
@@ -30,7 +30,7 @@ use tokio::{net::TcpListener, task::JoinHandle};
 use crate::{cli::error::CliError, shutdown::Shutdown};
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ZoneNameParam {
+pub(crate) struct NameParam {
     pub(crate) name: String,
 }
 
@@ -112,7 +112,11 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, Cl
         .await
         .map_err(|e| format!("Failed to bind the HTTP API to {}: {}", addr, e))?;
 
-    let Some((cert_file, key_file)) = bindizr_config.api.tls_files() else {
+    let Some(TlsFiles {
+        cert_file,
+        key_file,
+    }) = bindizr_config.api.tls_files()
+    else {
         log::info!("HTTP API server listening on http://{}", addr);
         let stop = shutdown.waiter();
         return Ok(tokio::spawn(async move {

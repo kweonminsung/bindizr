@@ -11,7 +11,7 @@ use bindizr_service::{
 use serde::Deserialize;
 
 use crate::api::{
-    RequestCaller, ZoneNameParam,
+    NameParam, RequestCaller,
     error::{ApiError, Path, Query},
 };
 
@@ -81,7 +81,7 @@ pub(crate) async fn notify_all_zones(
 )]
 pub(crate) async fn notify_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParam>,
     Query(query): Query<NotifyQuery>,
 ) -> Result<Response, ApiError> {
     let bump_serial = query.bump_serial.unwrap_or(false);

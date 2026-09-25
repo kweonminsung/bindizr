@@ -106,9 +106,9 @@ async fn run_scheduler_pass() {
                 let (mut journal_rows, mut version_rows) = (0u64, 0u64);
                 for zone in zones {
                     match prune_zone_history_by_zone_id(zone.id, cutoff).await {
-                        Ok((journal, versions)) => {
-                            journal_rows += journal;
-                            version_rows += versions;
+                        Ok(pruned) => {
+                            journal_rows += pruned.journal_rows;
+                            version_rows += pruned.version_rows;
                         }
                         Err(e) => {
                             failed = true;

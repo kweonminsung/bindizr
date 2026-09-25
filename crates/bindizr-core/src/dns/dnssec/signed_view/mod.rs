@@ -29,7 +29,7 @@ use crate::{
     model::{
         dnssec_key::DnssecKey,
         dnssec_policy::DnssecDenial,
-        dnssec_record::{DnssecRecord, DnssecRecordType},
+        dnssec_record::{DnssecRecord, DnssecRecordKey, DnssecRecordType},
         record::Record,
         zone::Zone,
     },
@@ -265,27 +265,17 @@ impl SignedViewDiff {
 
     /// Compare derived record identities to find additions and removals.
     fn from_planes(prev: &[DnssecRecord], new_rows: Vec<DnssecRecord>) -> SignedViewDiff {
-        let identity = |record: &DnssecRecord| {
-            (
-                record.name.to_stored(),
-                record.record_type,
-                record.ttl,
-                record.rdata.clone(),
-            )
-        };
-
-        let mut remaining: BTreeMap<(String, DnssecRecordType, i32, Rdata), Vec<DnssecRecord>> =
-            BTreeMap::new();
+        let mut remaining: BTreeMap<DnssecRecordKey, Vec<DnssecRecord>> = BTreeMap::new();
         for record in prev {
             remaining
-                .entry(identity(record))
+                .entry(record.match_key())
                 .or_default()
                 .push(record.clone());
         }
 
         let mut added = Vec::new();
         for record in new_rows {
-            match remaining.get_mut(&identity(&record)) {
+            match remaining.get_mut(&record.match_key()) {
                 Some(rows) if !rows.is_empty() => {
                     rows.pop();
                 }

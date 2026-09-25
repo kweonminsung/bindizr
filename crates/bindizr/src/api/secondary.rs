@@ -12,10 +12,9 @@ use bindizr_service::{
         UpdateSecondaryRequest,
     },
 };
-use serde::Deserialize;
 
 use crate::api::{
-    RequestCaller,
+    NameParam, RequestCaller,
     error::{ApiError, Path, Query},
     middleware::body_parser::JsonBody,
 };
@@ -33,11 +32,6 @@ impl SecondaryApi {
             .route("/secondaries/{name}", routing::delete(delete_secondary))
             .route("/secondaries/{name}/check", routing::post(check_secondary))
     }
-}
-
-#[derive(Deserialize)]
-pub(crate) struct SecondaryNameParam {
-    name: String,
 }
 
 /// List all secondaries.
@@ -116,7 +110,7 @@ pub(crate) async fn create_secondary(
 )]
 pub(crate) async fn get_secondary(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<SecondaryNameParam>,
+    Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     let secondary = SecondaryService::get(&caller, &params.name).await?;
     let response = SecondaryResponse { secondary };
@@ -147,7 +141,7 @@ pub(crate) async fn get_secondary(
 )]
 pub(crate) async fn update_secondary(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<SecondaryNameParam>,
+    Path(params): Path<NameParam>,
     JsonBody(body): JsonBody<UpdateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
     let secondary = SecondaryService::update(&caller, &params.name, body).await?;
@@ -175,7 +169,7 @@ pub(crate) async fn update_secondary(
 )]
 pub(crate) async fn delete_secondary(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<SecondaryNameParam>,
+    Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     SecondaryService::delete(&caller, &params.name).await?;
     let response = MessageResponse {
@@ -204,7 +198,7 @@ pub(crate) async fn delete_secondary(
 )]
 pub(crate) async fn check_secondary(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<SecondaryNameParam>,
+    Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     let check = SecondaryService::check(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(check)).into_response())

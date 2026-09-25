@@ -11,8 +11,8 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        CreateTokenGrantParams, DaemonResponse, DeleteTokenGrantParams,
-        DeleteTokenGrantsByTokenAndZoneParams, ListGrantsParams, TokenNameParams,
+        CreateTokenGrantParams, DaemonResponse, DeleteTokenGrantsByTokenAndZoneParams, IdParams,
+        ListGrantsParams, NameParams,
     },
 };
 
@@ -53,7 +53,7 @@ pub(crate) async fn list_tokens(data: &serde_json::Value) -> Result<DaemonRespon
 
 /// Delete the requested token.
 pub(crate) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: TokenNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     TokenService::delete(&Caller::Global, &params.name).await?;
 
@@ -123,7 +123,7 @@ pub(crate) async fn list_zone_token_grants(
 pub(crate) async fn delete_token_grant(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: DeleteTokenGrantParams = parse_params(data)?;
+    let params: IdParams = parse_params(data)?;
 
     TokenGrantService::revoke_by_id(&Caller::Global, params.id).await?;
 

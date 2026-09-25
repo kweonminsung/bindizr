@@ -18,7 +18,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -60,7 +60,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -240,7 +240,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "policy": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -327,7 +327,7 @@ async fn dnssec_enable_requires_a_global_token() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -359,7 +359,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -464,7 +464,7 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
@@ -534,7 +534,7 @@ async fn dnssec_csk_rollover_lifecycle() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);

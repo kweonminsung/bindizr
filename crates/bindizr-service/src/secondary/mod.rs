@@ -23,8 +23,8 @@ use crate::{
     repository::RepositoryService,
     tsig_key::TsigKeyService,
     types::{
-        GetSecondaryResponse, NotifyCheckResponse, PageFilter, PaginatedResponse,
-        SecondaryCheckResponse, SecondaryStatusResponse, UpdateSecondaryRequest,
+        GetSecondaryResponse, PageFilter, PaginatedResponse, SecondaryCheckResponse,
+        UpdateSecondaryRequest,
     },
 };
 
@@ -222,21 +222,12 @@ impl SecondaryService {
                 Ok(addrs) => (addrs.iter().map(ToString::to_string).collect(), None),
                 Err(e) => (Vec::new(), Some(e)),
             };
-        let probe = probe::probe_secondary(&catalog_zone, &secondary)
+        let catalog = probe::probe_secondary(&catalog_zone, &secondary, catalog_serial)
             .await
             .map_err(ServiceError::internal)?;
-        let catalog =
-            SecondaryStatusResponse::from_probe(probe.address, catalog_serial, probe.result);
         let notifies = notify::send_notify_to_secondary(&catalog_zone, &secondary)
             .await
-            .map_err(ServiceError::internal)?
-            .into_iter()
-            .map(|report| NotifyCheckResponse {
-                address: report.address,
-                accepted: report.result.is_ok(),
-                error: report.result.err(),
-            })
-            .collect();
+            .map_err(ServiceError::internal)?;
 
         Ok(SecondaryCheckResponse {
             secondary: Self::to_response(secondary).await?,

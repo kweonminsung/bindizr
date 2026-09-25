@@ -181,7 +181,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
 
 /// Verify that `add` enforces one TTL per RRSET.
 #[test]
-fn add_enforces_one_ttl_per_rrset() {
+fn add_enforces_one_ttl_per_record_set() {
     let existing_a = test_record(1, "www", RecordType::A, "192.0.2.10", None);
 
     let differing_ttl = validate_add(
@@ -206,7 +206,7 @@ fn add_enforces_one_ttl_per_rrset() {
 
     // A different type at the same owner name is a different RRset.
     let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();
-    let other_rrset = validate_add(
+    let other_record_set = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
         &RecordType::TXT,
@@ -214,7 +214,7 @@ fn add_enforces_one_ttl_per_rrset() {
         600,
         None,
     );
-    assert!(other_rrset.is_ok());
+    assert!(other_record_set.is_ok());
 }
 
 /// Build a record fixture with the requested fields.

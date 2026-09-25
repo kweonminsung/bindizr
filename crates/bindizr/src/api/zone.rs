@@ -18,7 +18,7 @@ use bindizr_service::{
 use serde::Deserialize;
 
 use crate::api::{
-    DryRunQuery, RequestCaller, ZoneNameParam,
+    DryRunQuery, NameParam, RequestCaller,
     error::{ApiError, Path, Query},
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
@@ -75,7 +75,7 @@ impl ZoneApi {
 )]
 pub(crate) async fn get_zone_status(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     let status = ZoneService::get_status(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
@@ -107,7 +107,7 @@ pub(crate) struct ExportZoneQuery {
 )]
 pub(crate) async fn export_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParam>,
     Query(query): Query<ExportZoneQuery>,
 ) -> Result<Response, ApiError> {
     let zone_file =
@@ -142,7 +142,7 @@ pub(crate) async fn export_zone(
 )]
 pub(crate) async fn list_zone_versions(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParam>,
     Query(query): Query<VersionListQuery>,
 ) -> Result<Response, ApiError> {
     let response = ZoneService::list_versions(
@@ -257,7 +257,7 @@ pub(crate) struct VersionDiffQuery {
 )]
 pub(crate) async fn diff_zone_versions(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParam>,
     Query(query): Query<VersionDiffQuery>,
 ) -> Result<Response, ApiError> {
     let diff = ZoneService::diff_versions(&caller, &params.name, query.from, query.to).await?;
@@ -326,7 +326,7 @@ pub(crate) async fn list_zones(
 )]
 pub(crate) async fn get_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     let zone = ZoneService::get_by_name(&caller, &params.name).await?;
     Ok((
@@ -394,7 +394,7 @@ pub(crate) async fn create_zone(
 )]
 pub(crate) async fn update_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParam>,
     JsonBody(body): JsonBody<UpdateZoneRequest>,
 ) -> Result<Response, ApiError> {
     let response = ZoneService::update(&caller, &params.name, &body).await?;
@@ -422,7 +422,7 @@ pub(crate) async fn update_zone(
 )]
 pub(crate) async fn delete_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParam>,
     Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
     let response = ZoneService::delete(&caller, &params.name, preview.dry_run).await?;
@@ -454,7 +454,7 @@ pub(crate) async fn delete_zone(
 )]
 pub(crate) async fn import_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParam>,
     JsonBody(body): JsonBody<ImportZoneRequest>,
 ) -> Result<Response, ApiError> {
     let response = RecordService::import_zone(&caller, &params.name, &body).await?;

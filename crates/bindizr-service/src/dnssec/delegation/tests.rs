@@ -55,7 +55,7 @@ fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRr {
 }
 
 /// Build a record-group fixture from the supplied values.
-fn rrset(records: Vec<DsRr>) -> Option<DsRrset> {
+fn record_set(records: Vec<DsRr>) -> Option<DsRrset> {
     Some(DsRrset { records, ttl: 3600 })
 }
 
@@ -76,11 +76,14 @@ fn info(key: &DnssecKey, answers: Vec<Option<DsRrset>>) -> DnssecDelegationInfo 
 #[test]
 fn promotion_waits_until_every_server_serves_the_ds() {
     let key = csk();
-    let served = info(&key, vec![rrset(vec![ds_of(&key, 2)]), rrset(vec![])]);
+    let served = info(
+        &key,
+        vec![record_set(vec![ds_of(&key, 2)]), record_set(vec![])],
+    );
 
     assert!(!served.keys[0].ds_published);
     assert!(
-        info(&key, vec![rrset(vec![ds_of(&key, 2)]); 2]).keys[0].ds_published,
+        info(&key, vec![record_set(vec![ds_of(&key, 2)]); 2]).keys[0].ds_published,
         "every server serving it should publish"
     );
 }
@@ -91,7 +94,7 @@ fn one_server_still_serving_a_ds_is_enough_to_block_a_disable() {
     // `disable` refuses on ds_key_tags, so the union is what it reads: dropping
     // signatures under a DS any resolver can still reach makes the zone bogus.
     let key = csk();
-    let seen = info(&key, vec![None, rrset(vec![ds_of(&key, 2)])]);
+    let seen = info(&key, vec![None, record_set(vec![ds_of(&key, 2)])]);
 
     assert_eq!(seen.ds_key_tags, [key.key_tag as u16]);
     assert_eq!(seen.ds_state, "published");
@@ -118,7 +121,7 @@ fn a_ds_for_another_key_does_not_publish_this_one() {
     let mut foreign = ds_of(&other, 2);
     foreign.key_tag = key.key_tag as u16;
 
-    let seen = info(&key, vec![rrset(vec![foreign]); 2]);
+    let seen = info(&key, vec![record_set(vec![foreign]); 2]);
 
     assert!(!seen.keys[0].ds_published);
     assert_eq!(seen.ds_key_tags, [key.key_tag as u16]);
@@ -136,7 +139,7 @@ fn a_digest_bindizr_cannot_compute_leaves_the_match_undecided() {
         rdata: vec![0; 32],
     };
 
-    let seen = info(&key, vec![rrset(vec![gost]); 2]);
+    let seen = info(&key, vec![record_set(vec![gost]); 2]);
 
     assert!(seen.keys[0].ds_digest_unsupported);
     assert!(!seen.keys[0].ds_published);
@@ -153,7 +156,10 @@ fn one_server_answering_in_a_computable_digest_does_not_mask_another() {
         rdata: vec![0; 32],
     };
 
-    let seen = info(&key, vec![rrset(vec![ds_of(&key, 2)]), rrset(vec![gost])]);
+    let seen = info(
+        &key,
+        vec![record_set(vec![ds_of(&key, 2)]), record_set(vec![gost])],
+    );
 
     assert!(seen.keys[0].ds_digest_unsupported);
     assert!(!seen.keys[0].ds_published);

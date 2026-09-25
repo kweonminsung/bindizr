@@ -14,7 +14,7 @@ use crate::{
     },
     socket::{
         client,
-        types::{DaemonCommandKind, ImportZoneDnssecKeysParams, ZoneNameParams},
+        types::{DaemonCommandKind, ImportZoneDnssecKeysParams, NameParams},
     },
 };
 
@@ -76,7 +76,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
     match subcommand {
         DnssecKeysCommand::Export { name } => {
             let response =
-                client::send_command(DaemonCommandKind::ExportDnssecKeys, ZoneNameParams { name })
+                client::send_command(DaemonCommandKind::ExportDnssecKeys, NameParams { name })
                     .await?;
             let exported: ExportDnssecKeysResponse =
                 parse_response(&response.data).map_err(CliError::from)?;

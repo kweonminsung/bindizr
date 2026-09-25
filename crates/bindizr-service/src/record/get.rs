@@ -16,20 +16,24 @@ use crate::{
     zone::{ZoneService, validation::normalize_zone_name},
 };
 
-/// Resolve a record_type filter to its plane — at most one side is `Some`: a
-/// user type, or a derived DNSSEC type when the signed view is requested.
-fn parse_type_filter(
-    value: Option<&str>,
-    signed: bool,
-) -> Result<(Option<RecordType>, Option<DnssecRecordType>), ServiceError> {
+/// Which plane a `type` filter names: a user record type, or a derived
+/// DNSSEC type when the signed view is requested.
+enum TypeFilter {
+    Any,
+    User(RecordType),
+    Derived(DnssecRecordType),
+}
+
+/// Resolve a `type` filter to its plane.
+fn parse_type_filter(value: Option<&str>, signed: bool) -> Result<TypeFilter, ServiceError> {
     let Some(value) = value else {
-        return Ok((None, None));
+        return Ok(TypeFilter::Any);
     };
     match value.parse::<RecordType>() {
-        Ok(record_type) => Ok((Some(record_type), None)),
+        Ok(record_type) => Ok(TypeFilter::User(record_type)),
         Err(err) => {
             if signed && let Ok(record_type) = value.to_uppercase().parse::<DnssecRecordType>() {
-                return Ok((None, Some(record_type)));
+                return Ok(TypeFilter::Derived(record_type));
             }
             Err(ServiceError::invalid_input(err))
         }
@@ -71,7 +75,7 @@ impl RecordService {
         }
 
         let name = build_record_name_filter(filter.name, zone_name.as_ref());
-        let (user_type, derived_type) = parse_type_filter(filter.record_type.as_deref(), signed)?;
+        let type_filter = parse_type_filter(filter.record_type.as_deref(), signed)?;
 
         // A derived row's rdata is wire bytes, so no `LIKE` reaches it; asking
         // for both would answer a narrower question than the one put.
@@ -81,11 +85,11 @@ impl RecordService {
             ));
         }
 
-        let user_plane = derived_type.is_none();
+        let user_plane = !matches!(type_filter, TypeFilter::Derived(_));
         // A derived row carries no priority, so a priority filter answers
         // "none of them" — which is what leaving the plane out returns.
         let derived_plane = signed
-            && user_type.is_none()
+            && !matches!(type_filter, TypeFilter::User(_))
             && filter.priority.is_none()
             && filter.min_priority.is_none()
             && filter.max_priority.is_none();
@@ -94,7 +98,10 @@ impl RecordService {
         let record_filter = RecordFilter {
             zone_name: zone_name.clone(),
             name: name.clone(),
-            record_type: user_type,
+            record_type: match &type_filter {
+                TypeFilter::User(record_type) => Some(record_type.clone()),
+                _ => None,
+            },
             value: filter.value,
             ttl: filter.ttl,
             min_ttl: filter.min_ttl,
@@ -112,7 +119,10 @@ impl RecordService {
         let derived_filter = DnssecRecordFilter {
             zone_name,
             name,
-            record_type: derived_type.map(|record_type| record_type.wire_type() as i32),
+            record_type: match type_filter {
+                TypeFilter::Derived(record_type) => Some(record_type.wire_type() as i32),
+                _ => None,
+            },
             ttl: filter.ttl,
             min_ttl: filter.min_ttl,
             max_ttl: filter.max_ttl,

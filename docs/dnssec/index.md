@@ -29,7 +29,7 @@ or over HTTP:
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:3000/zones/example.com/dnssec \
   -H "Content-Type: application/json" \
-  -d '{"policy": "strict", "parent_ns_addrs": "ns1.parent.example"}'
+  -d '{"policy": "strict", "parent_ns_addrs": ["ns1.parent.example"]}'
 ```
 
 `--parent-ns-addrs` is required, and names the servers every later DS check
@@ -102,8 +102,9 @@ changed with:
 bindizr dnssec set example.com --parent-ns-addrs ns1.parent.example:5353
 ```
 
-The same field is `parent_ns_addrs` in the enable body and in
-`PUT /zones/{name}/dnssec`, and it must always name at least one server.
+The same field is `parent_ns_addrs`, a list of `host[:port]` entries, in the
+enable body and in `PUT /zones/{name}/dnssec`, and it must always name at
+least one server.
 `dnssec status` shows it beside the DS TTL the parent answers with, which is
 read rather than configured: it is how long caches may keep serving a DS
 after its removal, and it paces a rollover's retirement.

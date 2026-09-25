@@ -29,12 +29,82 @@ pub struct Record {
     pub zone_id: i32,
 }
 
+/// What makes two records the same record to DNS: owner, type, and rdata,
+/// compared canonically. TTL and the row id are left out: a TTL change is the
+/// same record, and a rebuilt record has no row.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RecordKey {
+    name: OwnerName,
+    record_type: RecordType,
+    /// Canonical comparison form of the value, priority included for MX and SRV.
+    rdata: String,
+}
+
 impl Record {
     /// Whether this row holds `value` as its rdata (with `priority`, for MX
     /// and SRV), compared canonically under the row's own type.
     pub fn has_rdata(&self, value: &str, priority: Option<i32>) -> bool {
         self.record_type
             .values_equal(&self.value, self.priority, value, priority)
+    }
+
+    /// This record's identity for set matching, shared with [`RecordData`].
+    pub fn match_key(&self) -> RecordKey {
+        RecordKey {
+            name: self.name.clone(),
+            record_type: self.record_type.clone(),
+            rdata: self
+                .record_type
+                .canonical_value(&self.value, self.priority)
+                .into_owned(),
+        }
+    }
+}
+
+/// The record set a record belongs to: its owner name and type, as text, the
+/// way a diff entry and an ExternalDNS record are named.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RecordSetKey {
+    pub name: String,
+    pub record_type: String,
+}
+
+/// A record without its row identity: what a [`Record`] carries besides its
+/// id, zone, and creation time. The form of a record rebuilt from the journal
+/// and of the sets a diff compares, neither of which has a row.
+#[derive(Debug, Clone)]
+pub struct RecordData {
+    pub name: OwnerName,
+    pub record_type: RecordType,
+    pub value: String,
+    pub ttl: i32,
+    pub priority: Option<i32>,
+}
+
+impl From<Record> for RecordData {
+    /// Drop a stored record's row identity.
+    fn from(record: Record) -> Self {
+        RecordData {
+            name: record.name,
+            record_type: record.record_type,
+            value: record.value,
+            ttl: record.ttl,
+            priority: record.priority,
+        }
+    }
+}
+
+impl RecordData {
+    /// This record's identity for set matching, shared with [`Record`].
+    pub fn match_key(&self) -> RecordKey {
+        RecordKey {
+            name: self.name.clone(),
+            record_type: self.record_type.clone(),
+            rdata: self
+                .record_type
+                .canonical_value(&self.value, self.priority)
+                .into_owned(),
+        }
     }
 }
 
@@ -87,7 +157,7 @@ impl RecordWithZone {
 }
 
 /// The record types bindizr stores.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum RecordType {
     A,
     AAAA,

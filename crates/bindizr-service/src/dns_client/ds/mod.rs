@@ -113,7 +113,7 @@ async fn query_ds_at(
             .await
             .and_then(|response| extract_ds_rrset(query_id, qname, &response));
         match result {
-            Ok(rrset) => return Ok(rrset),
+            Ok(record_set) => return Ok(record_set),
             Err(e) => last_error = Some(e),
         }
     }

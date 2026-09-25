@@ -9,8 +9,8 @@ use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
         DaemonResponse, DisableZoneDnssecParams, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
-        ImportZoneDnssecKeysParams, RolloverZoneDnssecParams, UpdateZoneDnssecSettingsParams,
-        ZoneNameParams,
+        ImportZoneDnssecKeysParams, NameParams, RolloverZoneDnssecParams,
+        UpdateZoneDnssecSettingsParams,
     },
 };
 
@@ -53,7 +53,7 @@ pub(crate) async fn disable_dnssec(
 pub(crate) async fn get_dnssec_status(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let status = DnssecService::get_status(&Caller::Global, &params.name).await?;
 
@@ -65,7 +65,7 @@ pub(crate) async fn get_dnssec_status(
 
 /// Re-sign the requested zone.
 pub(crate) async fn sign_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     DnssecService::sign(&Caller::Global, &params.name).await?;
 
@@ -119,7 +119,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
 pub(crate) async fn withdraw_dnssec(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let status = DnssecService::withdraw(&Caller::Global, &params.name).await?;
 
@@ -153,7 +153,7 @@ pub(crate) async fn update_dnssec_settings(
 pub(crate) async fn export_dnssec_keys(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let response = DnssecService::export_keys(&Caller::Global, &params.name).await?;
 
@@ -182,7 +182,7 @@ pub(crate) async fn import_dnssec_keys(
 pub(crate) async fn cancel_dnssec_withdrawal(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let status = DnssecService::cancel_withdrawal(&Caller::Global, &params.name).await?;
 
@@ -196,7 +196,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
 pub(crate) async fn check_dnssec_ds(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let status = DnssecService::check_ds(&Caller::Global, &params.name).await?;
 

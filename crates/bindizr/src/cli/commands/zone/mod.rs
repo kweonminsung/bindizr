@@ -26,8 +26,7 @@ use crate::{
         client,
         types::{
             DaemonCommandKind, DeleteZoneParams, ExportZoneFileParams, ImportZoneParams,
-            ListGrantsParams, NotifyAllZonesParams, NotifyZoneParams, UpdateZoneParams,
-            ZoneNameParams,
+            ListGrantsParams, NameParams, NotifyAllZonesParams, NotifyZoneParams, UpdateZoneParams,
         },
     },
 };
@@ -491,7 +490,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             )?;
         }
         ZoneCommand::Get { name, output } => {
-            let data = client::send_command(DaemonCommandKind::GetZone, ZoneNameParams { name })
+            let data = client::send_command(DaemonCommandKind::GetZone, NameParams { name })
                 .await?
                 .data;
 
@@ -630,15 +629,14 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         ZoneCommand::Version { subcommand } => version::handle_command(subcommand).await?,
         ZoneCommand::Status { name, output } => {
             let response =
-                client::send_command(DaemonCommandKind::GetZoneStatus, ZoneNameParams { name })
-                    .await?;
+                client::send_command(DaemonCommandKind::GetZoneStatus, NameParams { name }).await?;
 
             if output != OutputFormat::Table {
                 print_payload(&response.data, output)?;
                 return Ok(());
             }
             let status: ZoneStatusResponse = parse_response(&response.data)?;
-            outln!("Zone {} (serial {})", status.zone, status.serial);
+            outln!("Zone {} (serial {})", status.zone_name, status.serial);
             if status.secondaries.is_empty() {
                 outln!("No enabled secondaries.");
                 return Ok(());

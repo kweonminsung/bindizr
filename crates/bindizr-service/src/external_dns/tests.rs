@@ -2,7 +2,9 @@ use bindizr_core::dns::name::{OwnerName, ZoneName};
 use chrono::Utc;
 
 use super::{
-    change_set::{ZoneOps, adjust_rrset, group_ops_by_zone, parse_changes_request, parse_rrset_op},
+    change_set::{
+        ZoneOps, adjust_record_set, group_ops_by_zone, parse_changes_request, parse_record_set_op,
+    },
     policy::{authoritative_zone, normalize_lookup_name},
 };
 use crate::{
@@ -52,7 +54,12 @@ fn test_record(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i
 }
 
 /// Build a record-group fixture from the supplied values.
-fn rrset(name: &str, record_type: &str, ttl: Option<i32>, values: &[&str]) -> ExternalDnsRecord {
+fn record_set(
+    name: &str,
+    record_type: &str,
+    ttl: Option<i32>,
+    values: &[&str],
+) -> ExternalDnsRecord {
     ExternalDnsRecord {
         name: name.to_string(),
         record_type: record_type.to_string(),
@@ -115,20 +122,21 @@ fn normalize_lookup_name_lowercases_and_strips_trailing_dot() {
     assert!(normalize_lookup_name("bad name.example.com").is_err());
 }
 
-/// Verify that `parse_rrset_op` rejects unsupported types.
+/// Verify that `parse_record_set_op` rejects unsupported types.
 #[test]
-fn parse_rrset_op_rejects_unsupported_types() {
+fn parse_record_set_op_rejects_unsupported_types() {
     for record_type in ["NS", "MX", "SRV", "SOA", "PTR"] {
-        let err = parse_rrset_op(&rrset("a.example.com", record_type, None, &["x"])).unwrap_err();
+        let err = parse_record_set_op(&record_set("a.example.com", record_type, None, &["x"]))
+            .unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
     }
-    assert!(parse_rrset_op(&rrset("a.example.com", "BOGUS", None, &["x"])).is_err());
+    assert!(parse_record_set_op(&record_set("a.example.com", "BOGUS", None, &["x"])).is_err());
 }
 
-/// Verify that `parse_rrset_op` rejects multi value CNAME and empty values.
+/// Verify that `parse_record_set_op` rejects multi value CNAME and empty values.
 #[test]
-fn parse_rrset_op_rejects_multi_value_cname_and_empty_values() {
-    let err = parse_rrset_op(&rrset(
+fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
+    let err = parse_record_set_op(&record_set(
         "a.example.com",
         "CNAME",
         None,
@@ -137,32 +145,34 @@ fn parse_rrset_op_rejects_multi_value_cname_and_empty_values() {
     .unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidRecordValue);
 
-    let err = parse_rrset_op(&rrset("a.example.com", "A", None, &[])).unwrap_err();
+    let err = parse_record_set_op(&record_set("a.example.com", "A", None, &[])).unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidInput);
 }
 
-/// Verify that `parse_rrset_op` normalizes TTL.
+/// Verify that `parse_record_set_op` normalizes TTL.
 #[test]
-fn parse_rrset_op_normalizes_ttl() {
+fn parse_record_set_op_normalizes_ttl() {
     assert_eq!(
-        parse_rrset_op(&rrset("a.example.com", "A", Some(0), &["192.0.2.1"]))
+        parse_record_set_op(&record_set("a.example.com", "A", Some(0), &["192.0.2.1"]))
             .unwrap()
             .ttl,
         None
     );
     assert_eq!(
-        parse_rrset_op(&rrset("a.example.com", "A", Some(300), &["192.0.2.1"]))
+        parse_record_set_op(&record_set("a.example.com", "A", Some(300), &["192.0.2.1"]))
             .unwrap()
             .ttl,
         Some(300)
     );
-    assert!(parse_rrset_op(&rrset("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err());
+    assert!(
+        parse_record_set_op(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err()
+    );
 }
 
-/// Verify that `parse_rrset_op` deduplicates equivalent ipv6 spellings.
+/// Verify that `parse_record_set_op` deduplicates equivalent ipv6 spellings.
 #[test]
-fn parse_rrset_op_deduplicates_equivalent_ipv6_spellings() {
-    let op = parse_rrset_op(&rrset(
+fn parse_record_set_op_deduplicates_equivalent_ipv6_spellings() {
+    let op = parse_record_set_op(&record_set(
         "a.example.com",
         "AAAA",
         None,
@@ -175,8 +185,8 @@ fn parse_rrset_op_deduplicates_equivalent_ipv6_spellings() {
 
 /// Verify that parse RRSET op parses quoted TXT values.
 #[test]
-fn parse_rrset_op_parses_quoted_txt_values() {
-    let op = parse_rrset_op(&rrset(
+fn parse_record_set_op_parses_quoted_txt_values() {
+    let op = parse_record_set_op(&record_set(
         "a.example.com",
         "TXT",
         None,
@@ -189,13 +199,21 @@ fn parse_rrset_op_parses_quoted_txt_values() {
         op.values[0],
         "\"heritage=external-dns,external-dns/owner=default\""
     );
-    assert!(parse_rrset_op(&rrset("a.example.com", "TXT", None, &["\"unterminated"])).is_err());
+    assert!(
+        parse_record_set_op(&record_set(
+            "a.example.com",
+            "TXT",
+            None,
+            &["\"unterminated"]
+        ))
+        .is_err()
+    );
 }
 
-/// Verify that `adjust_rrset` canonicalizes type and values.
+/// Verify that `adjust_record_set` canonicalizes type and values.
 #[test]
-fn adjust_rrset_canonicalizes_type_and_values() {
-    let adjusted = adjust_rrset(&rrset(
+fn adjust_record_set_canonicalizes_type_and_values() {
+    let adjusted = adjust_record_set(&record_set(
         "v6.example.com",
         "aaaa",
         None,
@@ -206,7 +224,7 @@ fn adjust_rrset_canonicalizes_type_and_values() {
     assert_eq!(adjusted.record_type, "AAAA");
     assert_eq!(adjusted.values, vec!["2001:db8::1", "2001:db8::2"]);
 
-    let adjusted = adjust_rrset(&rrset(
+    let adjusted = adjust_record_set(&record_set(
         "c.example.com",
         "CNAME",
         Some(300),
@@ -217,37 +235,47 @@ fn adjust_rrset_canonicalizes_type_and_values() {
     assert_eq!(adjusted.ttl, Some(300));
 }
 
-/// Verify that `adjust_rrset` returns TXT values in presentation form.
+/// Verify that `adjust_record_set` returns TXT values in presentation form.
 #[test]
-fn adjust_rrset_returns_txt_values_in_presentation_form() {
-    let adjusted = adjust_rrset(&rrset("t.example.com", "TXT", Some(0), &["v=spf1 -all"])).unwrap();
+fn adjust_record_set_returns_txt_values_in_presentation_form() {
+    let adjusted = adjust_record_set(&record_set(
+        "t.example.com",
+        "TXT",
+        Some(0),
+        &["v=spf1 -all"],
+    ))
+    .unwrap();
     assert_eq!(adjusted.values, vec!["\"v=spf1 -all\""]);
     // ExternalDNS sends TTL 0 for "not configured".
     assert_eq!(adjusted.ttl, None);
 
     // Already-canonical ownership records pass through byte-identical.
     let canonical = "\"heritage=external-dns,external-dns/owner=default\"";
-    let adjusted = adjust_rrset(&rrset("t.example.com", "TXT", None, &[canonical])).unwrap();
+    let adjusted =
+        adjust_record_set(&record_set("t.example.com", "TXT", None, &[canonical])).unwrap();
     assert_eq!(adjusted.values, vec![canonical]);
 
-    let adjusted = adjust_rrset(&rrset("t.example.com", "TXT", None, &["   "])).unwrap();
+    let adjusted = adjust_record_set(&record_set("t.example.com", "TXT", None, &["   "])).unwrap();
     assert_eq!(adjusted.values, vec![r#""   ""#]);
 }
 
-/// Verify that `adjust_rrset` passes unparseable values through.
+/// Verify that `adjust_record_set` passes unparseable values through.
 #[test]
-fn adjust_rrset_passes_unparseable_values_through() {
-    let adjusted = adjust_rrset(&rrset("bad.example.com", "A", None, &["not-an-ip"])).unwrap();
+fn adjust_record_set_passes_unparseable_values_through() {
+    let adjusted =
+        adjust_record_set(&record_set("bad.example.com", "A", None, &["not-an-ip"])).unwrap();
     assert_eq!(adjusted.values, vec!["not-an-ip"]);
 }
 
-/// Verify that `adjust_rrset` rejects unsupported shapes.
+/// Verify that `adjust_record_set` rejects unsupported shapes.
 #[test]
-fn adjust_rrset_rejects_unsupported_shapes() {
-    assert!(adjust_rrset(&rrset("a.example.com", "MX", None, &["x"])).is_err());
-    assert!(adjust_rrset(&rrset("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err());
-    assert!(adjust_rrset(&rrset("a.example.com", "A", None, &[])).is_err());
-    assert!(adjust_rrset(&rrset("a.example.com", "CNAME", None, &["a.", "b."])).is_err());
+fn adjust_record_set_rejects_unsupported_shapes() {
+    assert!(adjust_record_set(&record_set("a.example.com", "MX", None, &["x"])).is_err());
+    assert!(
+        adjust_record_set(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err()
+    );
+    assert!(adjust_record_set(&record_set("a.example.com", "A", None, &[])).is_err());
+    assert!(adjust_record_set(&record_set("a.example.com", "CNAME", None, &["a.", "b."])).is_err());
 }
 
 /// Verify that group ops resolves subzone without parent fallback.
@@ -258,7 +286,12 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
         test_zone(2, "internal.example.com"),
     ];
     let request = ExternalDnsChangesRequest {
-        creates: vec![rrset("api.internal.example.com", "A", None, &["192.0.2.1"])],
+        creates: vec![record_set(
+            "api.internal.example.com",
+            "A",
+            None,
+            &["192.0.2.1"],
+        )],
         updates: vec![],
         deletes: vec![],
     };
@@ -278,7 +311,7 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
 fn group_ops_rejects_names_without_authoritative_zone() {
     let zones = vec![test_zone(1, "example.com")];
     let request = ExternalDnsChangesRequest {
-        creates: vec![rrset("app.other.org", "A", None, &["192.0.2.1"])],
+        creates: vec![record_set("app.other.org", "A", None, &["192.0.2.1"])],
         updates: vec![],
         deletes: vec![],
     };
@@ -310,7 +343,12 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
         .into(),
     };
     let request = ExternalDnsChangesRequest {
-        creates: vec![rrset("api.internal.example.com", "A", None, &["192.0.2.1"])],
+        creates: vec![record_set(
+            "api.internal.example.com",
+            "A",
+            None,
+            &["192.0.2.1"],
+        )],
         updates: vec![],
         deletes: vec![],
     };
@@ -337,7 +375,7 @@ fn zone_ops(request: &ExternalDnsChangesRequest, zone: &Zone) -> ZoneOps {
 fn change_set_creates_new_records_with_zone_default_ttl() {
     let zone = test_zone(1, "example.com");
     let request = ExternalDnsChangesRequest {
-        creates: vec![rrset("app.example.com", "A", None, &["192.0.2.1"])],
+        creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
         updates: vec![],
         deletes: vec![],
     };
@@ -358,7 +396,7 @@ fn change_set_skips_creates_that_already_exist() {
     let zone = test_zone(1, "example.com");
     let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 3600)];
     let request = ExternalDnsChangesRequest {
-        creates: vec![rrset("app.example.com", "A", None, &["192.0.2.1"])],
+        creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
         updates: vec![],
         deletes: vec![],
     };
@@ -378,7 +416,7 @@ fn change_set_skips_creates_whose_row_differs_only_in_ttl() {
     let zone = test_zone(1, "example.com");
     let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 300)];
     let request = ExternalDnsChangesRequest {
-        creates: vec![rrset("app.example.com", "A", None, &["192.0.2.1"])],
+        creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
         updates: vec![],
         deletes: vec![],
     };
@@ -401,8 +439,8 @@ fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
     let request = ExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![ExternalDnsRecordUpdate {
-            old: rrset("app.example.com", "A", Some(300), &["192.0.2.1"]),
-            new: rrset("app.example.com", "A", Some(900), &["192.0.2.1"]),
+            old: record_set("app.example.com", "A", Some(300), &["192.0.2.1"]),
+            new: record_set("app.example.com", "A", Some(900), &["192.0.2.1"]),
         }],
         deletes: vec![],
     };
@@ -424,7 +462,7 @@ fn change_set_skips_deletes_of_absent_records() {
     let request = ExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![],
-        deletes: vec![rrset("gone.example.com", "A", None, &["192.0.2.9"])],
+        deletes: vec![record_set("gone.example.com", "A", None, &["192.0.2.9"])],
     };
 
     let change_set = zone_ops(&request, &zone)
@@ -446,8 +484,8 @@ fn change_set_cancels_unchanged_updates_even_with_reordered_targets() {
     let request = ExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![ExternalDnsRecordUpdate {
-            old: rrset("app.example.com", "A", None, &["192.0.2.1", "192.0.2.2"]),
-            new: rrset("app.example.com", "A", None, &["192.0.2.2", "192.0.2.1"]),
+            old: record_set("app.example.com", "A", None, &["192.0.2.1", "192.0.2.2"]),
+            new: record_set("app.example.com", "A", None, &["192.0.2.2", "192.0.2.1"]),
         }],
         deletes: vec![],
     };
@@ -471,8 +509,8 @@ fn change_set_replaces_rows_when_update_changes_targets() {
     let request = ExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![ExternalDnsRecordUpdate {
-            old: rrset("app.example.com", "A", None, &["192.0.2.1", "192.0.2.2"]),
-            new: rrset("app.example.com", "A", None, &["192.0.2.1", "192.0.2.3"]),
+            old: record_set("app.example.com", "A", None, &["192.0.2.1", "192.0.2.2"]),
+            new: record_set("app.example.com", "A", None, &["192.0.2.1", "192.0.2.3"]),
         }],
         deletes: vec![],
     };
@@ -491,7 +529,7 @@ fn change_set_replaces_rows_when_update_changes_targets() {
 
 /// Verify that change set replaces whole RRSET when TTL changes.
 #[test]
-fn change_set_replaces_whole_rrset_when_ttl_changes() {
+fn change_set_replaces_whole_record_set_when_ttl_changes() {
     let zone = test_zone(1, "example.com");
     let existing = vec![
         test_record(10, "app", RecordType::A, "192.0.2.1", 3600),
@@ -500,13 +538,13 @@ fn change_set_replaces_whole_rrset_when_ttl_changes() {
     let request = ExternalDnsChangesRequest {
         creates: vec![],
         updates: vec![ExternalDnsRecordUpdate {
-            old: rrset(
+            old: record_set(
                 "app.example.com",
                 "A",
                 Some(3600),
                 &["192.0.2.1", "192.0.2.2"],
             ),
-            new: rrset(
+            new: record_set(
                 "app.example.com",
                 "A",
                 Some(300),
@@ -531,7 +569,7 @@ fn change_set_enforces_cname_exclusivity() {
     let zone = test_zone(1, "example.com");
     let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 3600)];
     let request = ExternalDnsChangesRequest {
-        creates: vec![rrset(
+        creates: vec![record_set(
             "app.example.com",
             "CNAME",
             None,
@@ -553,14 +591,14 @@ fn change_set_allows_cname_when_conflicting_row_is_deleted_in_same_request() {
     let zone = test_zone(1, "example.com");
     let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 3600)];
     let request = ExternalDnsChangesRequest {
-        creates: vec![rrset(
+        creates: vec![record_set(
             "app.example.com",
             "CNAME",
             None,
             &["cdn.example.net"],
         )],
         updates: vec![],
-        deletes: vec![rrset("app.example.com", "A", None, &["192.0.2.1"])],
+        deletes: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
     };
 
     let change_set = zone_ops(&request, &zone)

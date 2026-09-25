@@ -152,7 +152,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": format!("{}-missing", app.namespace()) , "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "policy": format!("{}-missing", app.namespace()) , "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -163,7 +163,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "policy": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -211,7 +211,7 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -290,7 +290,7 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": nsec_policy, "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "policy": nsec_policy, "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");

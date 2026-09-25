@@ -28,7 +28,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
     let zone_records =
         RepositoryService::list_records_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
-    let mut rrsets: Vec<WantedRrset<'_>> = Vec::new();
+    let mut record_sets: Vec<WantedRecordSet<'_>> = Vec::new();
     for prerequisite in prerequisites {
         match prerequisite {
             Prerequisite::NameInUse { name } => {
@@ -51,7 +51,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
             }
             Prerequisite::RrsetInUse { name, record_type } => {
                 let owner = parse_owner_in_zone(name, &zone.name)?;
-                if !has_rrset(&owner, record_type, &zone_records) {
+                if !has_record_set(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::NxRrset(format!(
                         "no {} records at {}",
                         record_type, owner
@@ -60,7 +60,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
             }
             Prerequisite::RrsetNotInUse { name, record_type } => {
                 let owner = parse_owner_in_zone(name, &zone.name)?;
-                if has_rrset(&owner, record_type, &zone_records) {
+                if has_record_set(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::YxRrset(format!(
                         "{} records at {} exist",
                         record_type, owner
@@ -74,29 +74,28 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 priority,
             } => {
                 let owner = parse_owner_in_zone(name, &zone.name)?;
-                match rrsets
-                    .iter_mut()
-                    .find(|rrset| rrset.owner == owner && rrset.record_type == *record_type)
-                {
-                    Some(rrset) => rrset.rrs.push((value.as_str(), *priority)),
-                    None => rrsets.push(WantedRrset {
+                match record_sets.iter_mut().find(|record_set| {
+                    record_set.owner == owner && record_set.record_type == *record_type
+                }) {
+                    Some(record_set) => record_set.records.push((value.as_str(), *priority)),
+                    None => record_sets.push(WantedRecordSet {
                         owner,
                         record_type: record_type.clone(),
-                        rrs: vec![(value.as_str(), *priority)],
+                        records: vec![(value.as_str(), *priority)],
                     }),
                 }
             }
         }
     }
 
-    for wanted in rrsets {
+    for wanted in record_sets {
         let stored: Vec<&Record> = zone_records
             .iter()
             .filter(|record| {
                 record.name == wanted.owner && record.record_type == wanted.record_type
             })
             .collect();
-        if !is_same_rrset(&stored, &wanted.rrs) {
+        if !is_same_record_set(&stored, &wanted.records) {
             return Err(DynamicUpdateError::NxRrset(format!(
                 "{} records at {} are not the ones the prerequisite names",
                 wanted.record_type, wanted.owner
@@ -108,24 +107,24 @@ pub(crate) async fn evaluate_prerequisites_tx(
 }
 
 /// The RRs a prerequisite names at one owner and type, as value and priority.
-struct WantedRrset<'a> {
+struct WantedRecordSet<'a> {
     owner: OwnerName,
     record_type: RecordType,
-    rrs: Vec<(&'a str, Option<i32>)>,
+    records: Vec<(&'a str, Option<i32>)>,
 }
 
 /// Whether the stored records of one name and type are exactly the RRs a
 /// prerequisite names; compared both ways, so order and repeats do not matter.
-fn is_same_rrset(stored: &[&Record], wanted: &[(&str, Option<i32>)]) -> bool {
+fn is_same_record_set(stored: &[&Record], wanted: &[(&str, Option<i32>)]) -> bool {
     let matches = |record: &Record, (value, priority): &(&str, Option<i32>)| {
         record.has_rdata(value, *priority)
     };
     wanted
         .iter()
-        .all(|rr| stored.iter().any(|record| matches(record, rr)))
+        .all(|expected| stored.iter().any(|record| matches(record, expected)))
         && stored
             .iter()
-            .all(|record| wanted.iter().any(|rr| matches(record, rr)))
+            .all(|record| wanted.iter().any(|expected| matches(record, expected)))
 }
 
 /// Check whether an owner exists, counting the apex as present because the zone owns its SOA
@@ -135,7 +134,7 @@ fn has_owner(owner: &OwnerName, records: &[Record]) -> bool {
 }
 
 /// Check whether the zone contains records with the requested owner and type.
-fn has_rrset(owner: &OwnerName, record_type: &RecordType, records: &[Record]) -> bool {
+fn has_record_set(owner: &OwnerName, record_type: &RecordType, records: &[Record]) -> bool {
     records
         .iter()
         .any(|record| record.name == *owner && record.record_type == *record_type)
@@ -163,13 +162,13 @@ mod tests {
 
     /// Verify that a prerequisite must name the whole RRset.
     #[test]
-    fn a_prerequisite_must_name_the_whole_rrset() {
+    fn a_prerequisite_must_name_the_whole_record_set() {
         let stored = [a_record("192.0.2.1"), a_record("192.0.2.2")];
         let stored: Vec<&Record> = stored.iter().collect();
 
         // RFC 2136, Section 3.2.3: a subset or a superset is not the RRset.
-        assert!(!is_same_rrset(&stored, &[("192.0.2.1", None)]));
-        assert!(!is_same_rrset(
+        assert!(!is_same_record_set(&stored, &[("192.0.2.1", None)]));
+        assert!(!is_same_record_set(
             &stored,
             &[
                 ("192.0.2.1", None),
@@ -178,7 +177,7 @@ mod tests {
             ]
         ));
         // Order and repeats in the request carry no meaning.
-        assert!(is_same_rrset(
+        assert!(is_same_record_set(
             &stored,
             &[
                 ("192.0.2.2", None),
@@ -186,6 +185,6 @@ mod tests {
                 ("192.0.2.2", None)
             ]
         ));
-        assert!(!is_same_rrset(&[], &[("192.0.2.1", None)]));
+        assert!(!is_same_record_set(&[], &[("192.0.2.1", None)]));
     }
 }

@@ -12,7 +12,7 @@ use crate::{
     },
     socket::{
         client,
-        types::{DaemonCommandKind, DnssecPolicyNameParams, UpdateDnssecPolicyParams},
+        types::{DaemonCommandKind, NameParams, UpdateDnssecPolicyParams},
     },
 };
 
@@ -166,11 +166,8 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             )?;
         }
         DnssecPolicyCommand::Get { name, output } => {
-            let res = client::send_command(
-                DaemonCommandKind::GetDnssecPolicy,
-                DnssecPolicyNameParams { name },
-            )
-            .await?;
+            let res = client::send_command(DaemonCommandKind::GetDnssecPolicy, NameParams { name })
+                .await?;
 
             log::debug!("DNSSEC policy get result: {:?}", res);
 
@@ -201,11 +198,9 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             print_policy(&res.data, output)?;
         }
         DnssecPolicyCommand::Delete { name, output } => {
-            let res = client::send_command(
-                DaemonCommandKind::DeleteDnssecPolicy,
-                DnssecPolicyNameParams { name },
-            )
-            .await?;
+            let res =
+                client::send_command(DaemonCommandKind::DeleteDnssecPolicy, NameParams { name })
+                    .await?;
 
             log::debug!("DNSSEC policy deletion result: {:?}", res);
 

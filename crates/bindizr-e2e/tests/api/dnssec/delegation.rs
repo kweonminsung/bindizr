@@ -45,7 +45,7 @@ async fn dnssec_ds_seen_checks_the_parent_even_when_the_holddown_is_skipped() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent.addr()})),
+            Some(json!({ "parent_ns_addrs": [parent.addr()]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -155,11 +155,11 @@ async fn dnssec_disable_waits_for_the_parent_to_drop_the_ds() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent.addr()})),
+            Some(json!({ "parent_ns_addrs": [parent.addr()]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["dnssec"]["parent_ns_addrs"], parent.addr());
+    assert_eq!(body["dnssec"]["parent_ns_addrs"], json!([parent.addr()]));
     assert!(body["dnssec"]["delegation"].is_null(), "{body}");
     let key_tag = body["dnssec"]["keys"][0]["key_tag"].as_u64().unwrap() as u16;
     parent.set_ds(vec![ServedDs::from_status(&body["dnssec"], key_tag, 3600)]);
@@ -245,7 +245,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": closed_parent_addr()})),
+            Some(json!({ "parent_ns_addrs": [closed_parent_addr()]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -273,18 +273,19 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
         .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": format!(" {} ,", parent.addr()) })),
+            // Entries are trimmed and empty ones dropped.
+            Some(json!({ "parent_ns_addrs": [format!(" {} ", parent.addr()), ""] })),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["dnssec"]["parent_ns_addrs"], parent.addr());
+    assert_eq!(body["dnssec"]["parent_ns_addrs"], json!([parent.addr()]));
 
     // An empty list would leave no server to ask.
     let (status, body) = app
         .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "" })),
+            Some(json!({ "parent_ns_addrs": [] })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -294,7 +295,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
         .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent.addr()})),
+            Some(json!({ "parent_ns_addrs": [parent.addr()]})),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -321,7 +322,7 @@ async fn dnssec_disable_is_refused_until_the_parent_can_be_asked() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": closed_parent_addr()})),
+            Some(json!({ "parent_ns_addrs": [closed_parent_addr()]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -358,7 +359,7 @@ async fn dnssec_ds_seen_requires_the_exact_ds_on_every_parent_server() {
     assert_eq!(status, StatusCode::CREATED);
     let zone_name = zone_name.as_str();
 
-    let parent_ns_addrs = format!("{},{}", first_parent.addr(), second_parent.addr());
+    let parent_ns_addrs = [first_parent.addr(), second_parent.addr()];
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -473,7 +474,7 @@ async fn dnssec_ds_seen_accepts_the_sha1_ds_a_parent_computed_itself() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent.addr()})),
+            Some(json!({ "parent_ns_addrs": [parent.addr()]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -564,7 +565,7 @@ async fn dnssec_ds_seen_separates_an_unverifiable_digest_type_from_a_missing_ds(
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": parent.addr()})),
+            Some(json!({ "parent_ns_addrs": [parent.addr()]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -644,7 +645,7 @@ async fn dnssec_check_ds_reports_an_unverifiable_digest_at_any_one_parent_server
     assert_eq!(status, StatusCode::CREATED);
     let zone_name = zone_name.as_str();
 
-    let parent_ns_addrs = format!("{},{}", first_parent.addr(), second_parent.addr());
+    let parent_ns_addrs = [first_parent.addr(), second_parent.addr()];
     let (status, body) = app
         .send_request(
             Method::POST,

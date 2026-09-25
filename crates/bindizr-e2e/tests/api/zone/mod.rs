@@ -206,10 +206,8 @@ async fn zone_auto_serial_starts_at_one_and_update_rejects_explicit_serial() {
     );
 }
 
-/// Verify that version responses and record updates use the apex presentation name.
-///
-/// Both must translate the empty stored owner: versions render it as `@`, and updates accept
-/// `@` or the zone name.
+/// Verify that version responses and record updates translate the apex's empty stored
+/// owner: versions render it as the zone's absolute name, updates accept `@` or the zone name.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn apex_rows_render_and_update_through_their_presentation_name() {
@@ -231,7 +229,11 @@ async fn apex_rows_render_and_update_through_their_presentation_name() {
         .iter()
         .map(|record| record["name"].as_str().unwrap_or_default())
         .collect();
-    assert_eq!(names, ["@"], "apex row did not render as the apex");
+    assert_eq!(
+        names,
+        [format!("{zone_name}.")],
+        "apex row did not render as the zone's absolute name"
+    );
 
     let records = app.list_records(zone_name).await;
     let ns = records
@@ -766,7 +768,7 @@ async fn zone_status_reports_secondaries() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/status"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["zone"], zone_name);
+    assert_eq!(body["zone_name"], zone_name);
     assert_eq!(
         body["serial"].as_i64().unwrap(),
         zone["serial"].as_i64().unwrap()

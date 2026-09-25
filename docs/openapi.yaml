@@ -1628,7 +1628,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateTokenGrantRequest'
+              $ref: '#/components/schemas/CreateGrantRequest'
         required: true
       responses:
         '201':
@@ -2004,7 +2004,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateTsigGrantRequest'
+              $ref: '#/components/schemas/CreateGrantRequest'
         required: true
       responses:
         '201':
@@ -2524,7 +2524,7 @@ paths:
       tags:
       - DNSSEC
       summary: Change a zone's DNSSEC settings
-      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy''s (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys are removed after promotion and cache drain (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
+      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy''s (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys are removed after promotion and cache drain (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
       operationId: update_dnssec_settings
       parameters:
       - name: name
@@ -3740,6 +3740,40 @@ components:
           example: 90
           minimum: 0
       additionalProperties: false
+    CreateGrantRequest:
+      type: object
+      description: |-
+        Request body for granting a credential record rights in a zone: an API
+        token's HTTP writes, or a TSIG key's updates and transfers.
+      required:
+      - zone_name
+      properties:
+        can_write:
+          type: boolean
+          description: |-
+            Whether the grant carries write rights. A read-only grant still makes
+            the zone visible to a token, narrowed the same way, and over a whole
+            zone still lets a key transfer it. Defaults to true.
+          example: true
+        record_name_pattern:
+          type:
+          - string
+          - 'null'
+          description: |-
+            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
+            Defaults to `*`.
+          example: '*.dyn'
+        record_types:
+          type:
+          - string
+          - 'null'
+          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
+          example: A,AAAA,TXT
+        zone_name:
+          type: string
+          description: Name of an existing zone.
+          example: example.com
+      additionalProperties: false
     CreateRecordRequest:
       type: object
       description: Request body for creating a record in a named zone.
@@ -3803,37 +3837,6 @@ components:
           description: TSIG key to sign NOTIFY to this server with; omitted sends it unsigned.
           example: notify-key
       additionalProperties: false
-    CreateTokenGrantRequest:
-      type: object
-      description: Request body for granting an API token record rights in a zone.
-      required:
-      - zone_name
-      properties:
-        can_write:
-          type: boolean
-          description: |-
-            Whether the grant carries write rights. A read-only grant still makes
-            the zone visible, narrowed the same way. Defaults to true.
-          example: true
-        record_name_pattern:
-          type:
-          - string
-          - 'null'
-          description: |-
-            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
-            Defaults to `*`.
-          example: '*.dyn'
-        record_types:
-          type:
-          - string
-          - 'null'
-          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
-          example: A,AAAA,TXT
-        zone_name:
-          type: string
-          description: Name of an existing zone.
-          example: example.com
-      additionalProperties: false
     CreateTokenRequest:
       type: object
       description: Request body for creating an API token.
@@ -3863,37 +3866,6 @@ components:
           type: string
           description: 'Letters, digits, `.`, `_`, and `-`: one URL path segment.'
           example: external-dns
-      additionalProperties: false
-    CreateTsigGrantRequest:
-      type: object
-      description: Request body for granting a TSIG key update and transfer rights in a zone.
-      required:
-      - zone_name
-      properties:
-        can_write:
-          type: boolean
-          description: |-
-            Whether the grant carries nsupdate rights. A read-only grant over the
-            whole zone still transfers it. Defaults to true.
-          example: true
-        record_name_pattern:
-          type:
-          - string
-          - 'null'
-          description: |-
-            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
-            Defaults to `*`.
-          example: '*.dyn'
-        record_types:
-          type:
-          - string
-          - 'null'
-          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
-          example: A,AAAA,TXT
-        zone_name:
-          type: string
-          description: Name of an existing zone.
-          example: example.com
       additionalProperties: false
     CreateTsigKeyRequest:
       type: object
@@ -4269,11 +4241,15 @@ components:
       - parent_ns_addrs
       properties:
         parent_ns_addrs:
-          type: string
+          type: array
+          items:
+            type: string
           description: |-
-            The parent zone's nameservers (comma-separated `host[:port]`), asked
-            for the zone's DS by every later check.
-          example: a.gtld-servers.net,b.gtld-servers.net
+            The parent zone's nameservers as `host[:port]` entries, asked for the
+            zone's DS by every later check.
+          example:
+          - a.gtld-servers.net
+          - b.gtld-servers.net
         policy:
           type:
           - string
@@ -4548,10 +4524,14 @@ components:
           description: When the re-signer next has work; absent for an unsigned zone.
         parent_ns_addrs:
           type:
-          - string
+          - array
           - 'null'
+          items:
+            type: string
           description: Configured parent nameservers; may also be set while the zone is unsigned.
-          example: a.gtld-servers.net,b.gtld-servers.net
+          example:
+          - a.gtld-servers.net
+          - b.gtld-servers.net
         policy:
           oneOf:
           - $ref: '#/components/schemas/GetDnssecPolicyResponse'
@@ -4578,7 +4558,10 @@ components:
           example: example.com
     GetRecordResponse:
       type: object
-      description: API representation of a record.
+      description: |-
+        API representation of a record. `name` is the owner's absolute name with
+        its trailing dot, as name-valued rdata is rendered; `zone_name` is the
+        zone's bare name, the spelling `/zones/{name}` takes.
       required:
       - name
       - type
@@ -4598,7 +4581,7 @@ components:
           example: 1
         name:
           type: string
-          example: sub
+          example: www.example.com.
         priority:
           type:
           - integer
@@ -5071,7 +5054,10 @@ components:
           type: array
           items:
             type: object
-            description: API representation of a record.
+            description: |-
+              API representation of a record. `name` is the owner's absolute name with
+              its trailing dot, as name-valued rdata is rendered; `zone_name` is the
+              zone's bare name, the spelling `/zones/{name}` takes.
             required:
             - name
             - type
@@ -5091,7 +5077,7 @@ components:
                 example: 1
               name:
                 type: string
-                example: sub
+                example: www.example.com.
               priority:
                 type:
                 - integer
@@ -5901,12 +5887,16 @@ components:
       properties:
         parent_ns_addrs:
           type:
-          - string
+          - array
           - 'null'
+          items:
+            type: string
           description: |-
-            The parent zone's nameservers (comma-separated `host[:port]`); must
-            name at least one server.
-          example: a.gtld-servers.net,b.gtld-servers.net
+            The parent zone's nameservers as `host[:port]` entries; must name at
+            least one server.
+          example:
+          - a.gtld-servers.net
+          - b.gtld-servers.net
         policy:
           type:
           - string
@@ -6091,8 +6081,8 @@ components:
     VersionRecordResponse:
       type: object
       description: |-
-        A record reconstructed from the zone's journal; unlike stored
-        records it has no database id.
+        A record reconstructed from the zone's journal, named as the record
+        listing names it; unlike stored records it has no database id.
       required:
       - name
       - type
@@ -6101,7 +6091,7 @@ components:
       properties:
         name:
           type: string
-          example: www
+          example: www.example.com.
         priority:
           type:
           - integer
@@ -6133,7 +6123,7 @@ components:
         A zone's serial and the sync state of every enabled secondary, probed
         live via SOA queries.
       required:
-      - zone
+      - zone_name
       - serial
       - secondaries
       properties:
@@ -6146,7 +6136,7 @@ components:
           format: int32
           example: 42
           minimum: 0
-        zone:
+        zone_name:
           type: string
           example: example.com
     ZoneVersionResponse:

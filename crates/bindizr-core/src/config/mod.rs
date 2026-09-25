@@ -590,13 +590,19 @@ impl DatabaseConfig {
     }
 }
 
+/// The certificate and key files the API serves HTTPS with.
+pub struct TlsFiles<'a> {
+    pub cert_file: &'a str,
+    pub key_file: &'a str,
+}
+
 impl ApiConfig {
     /// The certificate and key to serve HTTPS with, or `None` for plain HTTP.
-    pub fn tls_files(&self) -> Option<(&str, &str)> {
-        Some((
-            self.tls_cert_file.as_deref()?,
-            self.tls_key_file.as_deref()?,
-        ))
+    pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
+        Some(TlsFiles {
+            cert_file: self.tls_cert_file.as_deref()?,
+            key_file: self.tls_key_file.as_deref()?,
+        })
     }
 
     /// Validate the API configuration fields.

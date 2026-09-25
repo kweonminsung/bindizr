@@ -22,7 +22,7 @@ use crate::{
 /// row-encoded, but the owner is still an absolute lookup name with no zone
 /// resolved yet.
 #[derive(Debug)]
-pub(crate) struct RrsetOp {
+pub(crate) struct RecordSetOp {
     pub(crate) name: String,
     pub(crate) record_type: RecordType,
     /// Adds only; `None` resolves to the zone TTL at apply time.
@@ -31,14 +31,14 @@ pub(crate) struct RrsetOp {
 }
 
 pub(crate) struct PendingOp {
-    pub(crate) op: RrsetOp,
+    pub(crate) op: RecordSetOp,
     pub(crate) is_delete: bool,
 }
 
 /// The same operation once grouping has decided which zone owns it, so the
 /// owner is relative to that zone.
 #[derive(Debug)]
-pub(crate) struct ZoneRrsetOp {
+pub(crate) struct ZoneRecordSetOp {
     pub(crate) name: OwnerName,
     pub(crate) record_type: RecordType,
     pub(crate) ttl: Option<i32>,
@@ -48,8 +48,8 @@ pub(crate) struct ZoneRrsetOp {
 /// Adds and deletes of one request that resolved to the same zone.
 #[derive(Debug, Default)]
 pub(crate) struct ZoneOps {
-    pub(crate) adds: Vec<ZoneRrsetOp>,
-    pub(crate) dels: Vec<ZoneRrsetOp>,
+    pub(crate) adds: Vec<ZoneRecordSetOp>,
+    pub(crate) dels: Vec<ZoneRecordSetOp>,
 }
 
 /// The record rows one zone's operations resolve to.
@@ -83,7 +83,7 @@ fn normalize_ttl(ttl: Option<i32>) -> Result<Option<i32>, ServiceError> {
 }
 
 /// Require nonempty values and exactly one value for a CNAME group.
-fn validate_rrset_shape(
+fn validate_record_set_shape(
     record: &ExternalDnsRecord,
     record_type: &RecordType,
 ) -> Result<(), ServiceError> {
@@ -103,11 +103,11 @@ fn validate_rrset_shape(
 }
 
 /// Convert an external-dns record group into a validated change operation.
-pub(crate) fn parse_rrset_op(record: &ExternalDnsRecord) -> Result<RrsetOp, ServiceError> {
+pub(crate) fn parse_record_set_op(record: &ExternalDnsRecord) -> Result<RecordSetOp, ServiceError> {
     let record_type = parse_supported_record_type(&record.record_type)?;
     let name = normalize_lookup_name(&record.name)?;
     let ttl = normalize_ttl(record.ttl)?;
-    validate_rrset_shape(record, &record_type)?;
+    validate_record_set_shape(record, &record_type)?;
 
     // Deduplicate values that normalize identically (e.g. IPv6 spellings).
     let mut values: Vec<String> = Vec::with_capacity(record.values.len());
@@ -123,7 +123,7 @@ pub(crate) fn parse_rrset_op(record: &ExternalDnsRecord) -> Result<RrsetOp, Serv
         }
     }
 
-    Ok(RrsetOp {
+    Ok(RecordSetOp {
         name,
         record_type,
         ttl,
@@ -134,10 +134,12 @@ pub(crate) fn parse_rrset_op(record: &ExternalDnsRecord) -> Result<RrsetOp, Serv
 /// One record in the canonical form `apply_changes` would store and
 /// `list_records` return. Unparseable values pass through so apply reports
 /// its ordinary error; the name is echoed as sent.
-pub(crate) fn adjust_rrset(record: &ExternalDnsRecord) -> Result<ExternalDnsRecord, ServiceError> {
+pub(crate) fn adjust_record_set(
+    record: &ExternalDnsRecord,
+) -> Result<ExternalDnsRecord, ServiceError> {
     let record_type = parse_supported_record_type(&record.record_type)?;
     let ttl = normalize_ttl(record.ttl)?;
-    validate_rrset_shape(record, &record_type)?;
+    validate_record_set_shape(record, &record_type)?;
 
     let mut values: Vec<String> = Vec::with_capacity(record.values.len());
     for value in &record.values {
@@ -165,25 +167,25 @@ pub(crate) fn parse_changes_request(
     request: &ExternalDnsChangesRequest,
 ) -> Result<Vec<PendingOp>, ServiceError> {
     let mut ops = Vec::new();
-    for rrset in &request.deletes {
+    for record_set in &request.deletes {
         ops.push(PendingOp {
-            op: parse_rrset_op(rrset)?,
+            op: parse_record_set_op(record_set)?,
             is_delete: true,
         });
     }
     for update in &request.updates {
         ops.push(PendingOp {
-            op: parse_rrset_op(&update.old)?,
+            op: parse_record_set_op(&update.old)?,
             is_delete: true,
         });
         ops.push(PendingOp {
-            op: parse_rrset_op(&update.new)?,
+            op: parse_record_set_op(&update.new)?,
             is_delete: false,
         });
     }
-    for rrset in &request.creates {
+    for record_set in &request.creates {
         ops.push(PendingOp {
-            op: parse_rrset_op(rrset)?,
+            op: parse_record_set_op(record_set)?,
             is_delete: false,
         });
     }
@@ -210,7 +212,7 @@ pub(crate) fn group_ops_by_zone(
                 )
             })?;
 
-        let op = ZoneRrsetOp {
+        let op = ZoneRecordSetOp {
             name: OwnerName::parse_absolute_in_zone(&pending.op.name, &zone.name)
                 .expect("authoritative_zone matched the name inside this zone"),
             record_type: pending.op.record_type,

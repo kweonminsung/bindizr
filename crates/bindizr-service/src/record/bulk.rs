@@ -17,14 +17,14 @@ use crate::{
     dnssec::DnssecService,
     error::ServiceError,
     model::{
-        record::{Record, RecordType},
+        record::{Record, RecordData, RecordType},
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::RepositoryService,
     serial::generate_serial,
     timing::elapsed_ms,
     types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
-    zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
+    zone::{ZoneService, diff::build_record_diff},
 };
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
@@ -335,12 +335,10 @@ impl RecordService {
 
                 // `after` = existing plus the inserts, so an insert into an
                 // existing RRset reads as `changed`, not a bare `added`.
-                let before: Vec<ReconstructedRecord> = before_records
-                    .into_iter()
-                    .map(ReconstructedRecord::from)
-                    .collect();
+                let before: Vec<RecordData> =
+                    before_records.into_iter().map(RecordData::from).collect();
                 let mut after = before.clone();
-                after.extend(to_insert.iter().cloned().map(ReconstructedRecord::from));
+                after.extend(to_insert.iter().cloned().map(RecordData::from));
                 let diff = build_record_diff(&zone, &before, &after);
                 return Ok((to_insert, zone.name, diff));
             }

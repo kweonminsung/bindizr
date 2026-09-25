@@ -11,14 +11,11 @@ use crate::{
     authorization::{Caller, RecordWrite},
     dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
-    model::record::Record,
+    model::record::{Record, RecordData},
     repository::RepositoryService,
     serial::generate_serial,
     types::{DeleteRecordsFilter, DeleteRecordsResponse, GetRecordResponse},
-    zone::{
-        ZoneService, diff::build_record_diff, history::ReconstructedRecord,
-        validation::normalize_zone_name,
-    },
+    zone::{ZoneService, diff::build_record_diff, validation::normalize_zone_name},
 };
 
 impl RecordService {
@@ -105,16 +102,16 @@ impl RecordService {
                 LockLevel::Exclusive,
             )
             .await?;
-            let before: Vec<ReconstructedRecord> = records_at_name
+            let before: Vec<RecordData> = records_at_name
                 .iter()
                 .cloned()
-                .map(ReconstructedRecord::from)
+                .map(RecordData::from)
                 .collect();
-            let after: Vec<ReconstructedRecord> = records_at_name
+            let after: Vec<RecordData> = records_at_name
                 .iter()
                 .filter(|record| record.id != existing_record.id)
                 .cloned()
-                .map(ReconstructedRecord::from)
+                .map(RecordData::from)
                 .collect();
 
             let response = DeleteRecordsResponse {
@@ -247,17 +244,17 @@ impl RecordService {
 
             // Build the preview from the validated rows; dry runs and empty matches
             // return it before any records or serials are written.
-            let before: Vec<ReconstructedRecord> = records_at_name
+            let before: Vec<RecordData> = records_at_name
                 .iter()
                 .cloned()
-                .map(ReconstructedRecord::from)
+                .map(RecordData::from)
                 .collect();
             let removed: HashSet<i32> = matched.iter().map(|record| record.id).collect();
-            let after: Vec<ReconstructedRecord> = records_at_name
+            let after: Vec<RecordData> = records_at_name
                 .iter()
                 .filter(|record| !removed.contains(&record.id))
                 .cloned()
-                .map(ReconstructedRecord::from)
+                .map(RecordData::from)
                 .collect();
 
             let response = DeleteRecordsResponse {

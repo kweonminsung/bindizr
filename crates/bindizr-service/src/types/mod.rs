@@ -9,6 +9,7 @@ mod common;
 mod dnssec;
 mod dnssec_policy;
 mod external_dns;
+mod grant;
 mod import;
 mod pagination;
 mod record;
@@ -35,6 +36,7 @@ pub use external_dns::{
     ExternalDnsChangesResponse, ExternalDnsDomainsResponse, ExternalDnsRecord,
     ExternalDnsRecordUpdate, ExternalDnsRecordsResponse,
 };
+pub use grant::CreateGrantRequest;
 pub use import::{ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse};
 pub use pagination::{DEFAULT_PAGE_LIMIT, PageFilter, PaginatedResponse, Pagination};
 pub(crate) use pagination::{normalize_page_limit, parse_setting};
@@ -49,10 +51,10 @@ pub use secondary::{
     SecondaryResponse, UpdateSecondaryRequest,
 };
 pub use token::{CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenResponse};
-pub use token_grant::{CreateTokenGrantRequest, GetTokenGrantResponse, TokenGrantResponse};
+pub use token_grant::{GetTokenGrantResponse, TokenGrantResponse};
 pub use tsig::{
-    CreateTsigGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
-    TsigGrantResponse, TsigKeyResponse,
+    CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse, TsigGrantResponse,
+    TsigKeyResponse,
 };
 pub use version::{
     RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,

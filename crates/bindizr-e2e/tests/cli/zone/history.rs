@@ -87,7 +87,7 @@ async fn zone_versions_and_rollback_flow() {
         .filter(|record| record["type"] == "A")
         .map(|record| record["name"].as_str().unwrap())
         .collect();
-    assert_eq!(a_records, ["www"]);
+    assert_eq!(a_records, [format!("www.{zone_name}.")]);
 
     // Serial 1 -> 2 added the www A record; 2 -> 3 added extra.
     let diff = app

@@ -5,7 +5,6 @@ use bindizr_service::{
     authorization::Caller,
     dns_client::{notify, probe},
     error::ServiceError,
-    types::{NotifyCheckResponse, SecondaryStatusResponse},
     zone::ZoneService,
 };
 
@@ -71,26 +70,14 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         };
 
     // Capture secondary serials before the NOTIFY check can trigger a refresh.
-    let secondaries = probe::probe_secondaries(&config.dns.catalog_zone_name)
+    let secondaries = probe::probe_secondaries(&config.dns.catalog_zone_name, catalog_serial)
         .await
-        .map_err(ServiceError::internal)?
-        .into_iter()
-        .map(|probe| {
-            SecondaryStatusResponse::from_probe(probe.address, catalog_serial, probe.result)
-        })
-        .collect();
+        .map_err(ServiceError::internal)?;
 
     // Actively test NOTIFY delivery; this can prompt secondaries to transfer the catalog.
     let notifies = notify::send_notify_to_secondaries(&config.dns.catalog_zone_name)
         .await
-        .map_err(ServiceError::internal)?
-        .into_iter()
-        .map(|notify| NotifyCheckResponse {
-            address: notify.address,
-            accepted: notify.result.is_ok(),
-            error: notify.result.err(),
-        })
-        .collect();
+        .map_err(ServiceError::internal)?;
 
     let response = DaemonDoctorResponse {
         database,
