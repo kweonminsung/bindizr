@@ -103,14 +103,14 @@ pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u
 /// data.
 fn extract_response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Vec<u8>) {
     let msg = Message::from_octets(response).unwrap();
-    let tsig_rr = msg
+    let tsig_record = msg
         .additional()
         .unwrap()
         .limit_to::<Tsig<_, _>>()
         .last()
         .unwrap()
         .unwrap();
-    let data = tsig_rr.data();
+    let data = tsig_record.data();
 
     (
         msg.header().rcode(),
@@ -249,8 +249,8 @@ fn the_reserved_tsig_size_covers_the_largest_key_a_request_can_name() {
 
     let composed = usize::from(key.compose_len());
     assert!(
-        composed <= MAX_TSIG_RR,
-        "a {composed}-byte TSIG record does not fit the {MAX_TSIG_RR} bytes reserved for one"
+        composed <= MAX_TSIG_RECORD,
+        "a {composed}-byte TSIG record does not fit the {MAX_TSIG_RECORD} bytes reserved for one"
     );
 }
 

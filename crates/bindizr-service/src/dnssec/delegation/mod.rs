@@ -1,6 +1,6 @@
 //! The parent side of a signed zone: asking its nameservers for the DS.
 
-use bindizr_core::dns::{dnssec::DS_DIGEST_TYPES, query::DsRrset};
+use bindizr_core::dns::{dnssec::DS_DIGEST_TYPES, query::DsRecordSet};
 use chrono::Utc;
 
 use super::{DnssecService, status::build_status_tx};
@@ -71,7 +71,7 @@ fn build_delegation_info(
     keys: &[DnssecKey],
     parent: ParentDs,
 ) -> Result<DnssecDelegationInfo, ServiceError> {
-    let served: Vec<&DsRrset> = parent.answers.iter().flatten().collect();
+    let served: Vec<&DsRecordSet> = parent.answers.iter().flatten().collect();
     let mut ds_key_tags: Vec<u16> = served
         .iter()
         .flat_map(|record_set| record_set.key_tags())

@@ -43,14 +43,14 @@ fn build_response_signs_with_request_mac_chain() {
 
     let msg = Message::from_octets(&response[..]).unwrap();
     assert_eq!(msg.header().rcode(), Rcode::NOERROR);
-    let tsig_rr = msg
+    let tsig_record = msg
         .additional()
         .unwrap()
         .limit_to::<Tsig<_, _>>()
         .last()
         .unwrap()
         .unwrap();
-    let data = tsig_rr.data();
+    let data = tsig_record.data();
     assert_eq!(data.error(), TsigRcode::NOERROR);
     assert_eq!(data.fudge(), 300);
 

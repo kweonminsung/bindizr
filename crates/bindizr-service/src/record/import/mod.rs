@@ -183,28 +183,28 @@ impl RecordService {
             // Normalize parsed RRs and drop duplicates within the file,
             // indexed by owner name so the dedup check scans only same-name entries.
             let t = Instant::now();
-            let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.rrs.len());
+            let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.records.len());
             let mut desired_by_name: HashMap<OwnerName, Vec<usize>> =
-                HashMap::with_capacity(parsed.rrs.len());
-            for rr in parsed.rrs {
-                let requested = match rr.value {
+                HashMap::with_capacity(parsed.records.len());
+            for record in parsed.records {
+                let requested = match record.value {
                     ZoneFileValue::Rdata(rdata) => RecordValueRequest::String(rdata),
                     ZoneFileValue::CharacterStrings(segments) => {
                         RecordValueRequest::Segments(segments)
                     }
                 };
-                let value = match requested.to_encoded_value(&rr.record_type, rr.priority) {
+                let value = match requested.to_encoded_value(&record.record_type, record.priority) {
                     Ok(value) => value,
                     Err(e) => {
-                        errors.push(format!("{}: {}", rr.owner_fqdn, e));
+                        errors.push(format!("{}: {}", record.owner_fqdn, e));
                         continue;
                     }
                 };
-                let stored_name = match normalize_record_owner_name(&rr.owner_fqdn, &zone.name)
+                let stored_name = match normalize_record_owner_name(&record.owner_fqdn, &zone.name)
                 {
                     Ok(stored_name) => stored_name,
                     Err(e) => {
-                        errors.push(format!("{}: {}", rr.owner_fqdn, e.message));
+                        errors.push(format!("{}: {}", record.owner_fqdn, e.message));
                         continue;
                     }
                 };
@@ -212,24 +212,24 @@ impl RecordService {
                 let name_key = stored_name.clone();
                 let duplicate_in_file = desired_by_name.get(&name_key).and_then(|idxs| {
                     idxs.iter().copied().find(|&i| {
-                        desired[i].prepared.record_type == rr.record_type
-                            && rr.record_type.values_equal(
+                        desired[i].prepared.record_type == record.record_type
+                            && record.record_type.values_equal(
                                 &desired[i].prepared.value,
                                 desired[i].prepared.priority,
                                 &value,
-                                rr.priority,
+                                record.priority,
                             )
                     })
                 });
                 if let Some(kept) = duplicate_in_file {
                     let kept_ttl = desired[kept].prepared.ttl.unwrap_or(zone.default_ttl);
-                    let this_ttl = rr.ttl;
+                    let this_ttl = record.ttl;
                     // The same RR at two TTLs is a mixed-TTL RRset (RFC 2181,
                     // Section 5.2); deduplication must not swallow the conflict.
                     if kept_ttl != this_ttl {
                         errors.push(format!(
                             "{}: {} records with conflicting TTLs {} and {}; records sharing a name and type share one TTL",
-                            rr.owner_fqdn, rr.record_type, kept_ttl, this_ttl
+                            record.owner_fqdn, record.record_type, kept_ttl, this_ttl
                         ));
                     } else {
                         skipped += 1;
@@ -243,11 +243,11 @@ impl RecordService {
                     .push(desired.len());
                 desired.push(DesiredRecord {
                     prepared: PreparedRecord {
-                        owner_name: rr.owner_fqdn,
-                        priority: rr.record_type.stored_priority(rr.priority),
-                        record_type: rr.record_type,
+                        owner_name: record.owner_fqdn,
+                        priority: record.record_type.stored_priority(record.priority),
+                        record_type: record.record_type,
                         value,
-                        ttl: Some(rr.ttl),
+                        ttl: Some(record.ttl),
                     },
                     stored_name,
                 });

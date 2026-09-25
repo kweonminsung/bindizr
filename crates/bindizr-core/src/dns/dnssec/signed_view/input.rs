@@ -19,7 +19,7 @@ use domain::{
     rdata::ZoneRecordData,
 };
 
-use super::{SignRr, SignedViewParams, Signer, WireName, to_rdata};
+use super::{SignRecord, SignedViewParams, Signer, WireName, to_rdata};
 use crate::{dns::record::EncodedRdata, model::dnssec_policy::DnssecDenial};
 
 impl SignedViewParams<'_> {
@@ -29,9 +29,9 @@ impl SignedViewParams<'_> {
         &self,
         apex: &WireName,
         signers: &[Signer<'_>],
-    ) -> Result<Vec<SignRr>, String> {
+    ) -> Result<Vec<SignRecord>, String> {
         let zone = self.zone;
-        let mut input: Vec<SignRr> = Vec::new();
+        let mut input: Vec<SignRecord> = Vec::new();
 
         // Synthesize the apex records owned by zone metadata and signing keys.
         let soa_bytes = zone.soa_rdata(self.new_serial as u32)?;
@@ -117,15 +117,15 @@ impl SignedViewParams<'_> {
 
         // An RRset shares one TTL (RFC 2181, Section 5.2); normalize stragglers to
         // the set's minimum so RRset construction and Original TTL are well-defined.
-        let mut rrset_ttls: BTreeMap<(Vec<u8>, u16), Ttl> = BTreeMap::new();
-        for rr in &input {
-            let key = (rr.owner().as_slice().to_vec(), rr.rtype().to_int());
-            let entry = rrset_ttls.entry(key).or_insert_with(|| rr.ttl());
-            *entry = (*entry).min(rr.ttl());
+        let mut record_set_ttls: BTreeMap<(Vec<u8>, u16), Ttl> = BTreeMap::new();
+        for record in &input {
+            let key = (record.owner().as_slice().to_vec(), record.rtype().to_int());
+            let entry = record_set_ttls.entry(key).or_insert_with(|| record.ttl());
+            *entry = (*entry).min(record.ttl());
         }
-        for rr in &mut input {
-            let key = (rr.owner().as_slice().to_vec(), rr.rtype().to_int());
-            rr.set_ttl(rrset_ttls[&key]);
+        for record in &mut input {
+            let key = (record.owner().as_slice().to_vec(), record.rtype().to_int());
+            record.set_ttl(record_set_ttls[&key]);
         }
 
         // Canonical order keeps each RRset contiguous for the signing pass.
@@ -152,23 +152,23 @@ fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, String> {
 /// the NSEC3 chain plus its NSEC3PARAM. The chain is cheap to rebuild whole,
 /// and doing so removes incremental chain-repair edge cases entirely
 /// (RFC 9077 TTLs and zone cuts included).
-pub(crate) fn denial_rrs(
+pub(crate) fn denial_records(
     apex: &WireName,
-    input: &[SignRr],
+    input: &[SignRecord],
     denial: DnssecDenial,
-) -> Result<Vec<SignRr>, String> {
+) -> Result<Vec<SignRecord>, String> {
     /// Wrap a denial record's data in the signing record type.
-    fn into_sign_rr<D>(
-        rr: WireRecord<WireName, D>,
+    fn into_sign_record<D>(
+        record: WireRecord<WireName, D>,
         wrap: impl FnOnce(D) -> ZoneRecordData<Vec<u8>, WireName>,
-    ) -> SignRr {
-        let class = rr.class();
-        let ttl = rr.ttl();
-        let (owner, data) = rr.into_owner_and_data();
+    ) -> SignRecord {
+        let class = record.class();
+        let ttl = record.ttl();
+        let (owner, data) = record.into_owner_and_data();
         WireRecord::new(owner, class, ttl, wrap(data))
     }
 
-    let mut rrs = Vec::new();
+    let mut records = Vec::new();
     if denial == DnssecDenial::Nsec3 {
         // GenerateNsec3Config::default() is the RFC 9276 profile: SHA-1, zero
         // iterations, no salt, no opt-out.
@@ -180,9 +180,9 @@ pub(crate) fn denial_rrs(
         .map_err(|e| format!("NSEC3 generation failed: {}", e))?;
 
         for nsec3 in nsec3s {
-            rrs.push(into_sign_rr(nsec3, ZoneRecordData::Nsec3));
+            records.push(into_sign_record(nsec3, ZoneRecordData::Nsec3));
         }
-        rrs.push(into_sign_rr(nsec3param, ZoneRecordData::Nsec3param));
+        records.push(into_sign_record(nsec3param, ZoneRecordData::Nsec3param));
     } else {
         let nsecs = generate_nsecs(
             apex,
@@ -191,8 +191,8 @@ pub(crate) fn denial_rrs(
         )
         .map_err(|e| format!("NSEC generation failed: {}", e))?;
         for nsec in nsecs {
-            rrs.push(into_sign_rr(nsec, ZoneRecordData::Nsec));
+            records.push(into_sign_record(nsec, ZoneRecordData::Nsec));
         }
     }
-    Ok(rrs)
+    Ok(records)
 }

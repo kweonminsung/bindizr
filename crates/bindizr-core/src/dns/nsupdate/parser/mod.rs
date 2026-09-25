@@ -25,18 +25,18 @@ const DNS_HEADER_LEN: usize = 12;
 #[derive(Debug, Clone)]
 pub struct UpdateRequest {
     pub zone_name: String,
-    pub prerequisites: Vec<UpdateRr>,
-    pub updates: Vec<UpdateRr>,
-    pub tsig: Option<TsigRr>,
+    pub prerequisites: Vec<UpdateRecord>,
+    pub updates: Vec<UpdateRecord>,
+    pub tsig: Option<TsigRecord>,
 }
 
 /// One RR from the prerequisite or update section. `rdata_start` locates the
 /// rdata in the original message so compressed names inside it can be decoded
 /// lazily by the update flow.
 #[derive(Debug, Clone)]
-pub struct UpdateRr {
+pub struct UpdateRecord {
     pub name: String,
-    pub rr_type: Rtype,
+    pub record_type: Rtype,
     pub class: Class,
     pub ttl: u32,
     pub rdata: Vec<u8>,
@@ -49,7 +49,7 @@ pub struct UpdateRr {
 /// rejects structurally invalid TSIG RRs with FORMERR (RFC 8945, Section 5.2) before
 /// that happens.
 #[derive(Debug, Clone)]
-pub struct TsigRr {
+pub struct TsigRecord {
     pub name: String,
     pub fudge: u16,
 }
@@ -61,7 +61,7 @@ pub enum ParseError {
     InvalidHeader,
     InvalidZoneSection,
     InvalidName,
-    InvalidRr,
+    InvalidRecord,
     InvalidTsig,
 }
 
@@ -74,7 +74,7 @@ impl fmt::Display for ParseError {
             ParseError::InvalidHeader => write!(f, "Invalid DNS UPDATE header"),
             ParseError::InvalidZoneSection => write!(f, "Invalid DNS UPDATE zone section"),
             ParseError::InvalidName => write!(f, "Invalid compressed domain name"),
-            ParseError::InvalidRr => write!(f, "Invalid record in UPDATE section"),
+            ParseError::InvalidRecord => write!(f, "Invalid record in UPDATE section"),
             ParseError::InvalidTsig => write!(f, "Invalid TSIG record"),
         }
     }
@@ -117,12 +117,12 @@ impl UpdateRequest {
         // for changes; these are not ordinary response sections.
         let mut prerequisites = Vec::with_capacity(counts.ancount() as usize);
         for _ in 0..counts.ancount() {
-            prerequisites.push(parse_rr(&mut parser, data)?);
+            prerequisites.push(parse_record(&mut parser, data)?);
         }
 
         let mut updates = Vec::with_capacity(counts.nscount() as usize);
         for _ in 0..counts.nscount() {
-            updates.push(parse_rr(&mut parser, data)?);
+            updates.push(parse_record(&mut parser, data)?);
         }
 
         let tsig = parse_additional_section(&mut parser, counts.arcount() as usize)?;
@@ -141,21 +141,35 @@ impl UpdateRequest {
 }
 
 /// Read one update record from the DNS wire message.
-fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRr, ParseError> {
+fn parse_record(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRecord, ParseError> {
     let name = ParsedName::parse(parser).map_err(|_| ParseError::InvalidName)?;
     let name = to_presentation_name(&name)?;
 
-    let rr_type = Rtype::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?);
-    let class = Class::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?);
-    let ttl = parser.parse_u32_be().map_err(|_| ParseError::InvalidRr)?;
-    let rdlen = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)? as usize;
+    let record_type = Rtype::from_int(
+        parser
+            .parse_u16_be()
+            .map_err(|_| ParseError::InvalidRecord)?,
+    );
+    let class = Class::from_int(
+        parser
+            .parse_u16_be()
+            .map_err(|_| ParseError::InvalidRecord)?,
+    );
+    let ttl = parser
+        .parse_u32_be()
+        .map_err(|_| ParseError::InvalidRecord)?;
+    let rdlen = parser
+        .parse_u16_be()
+        .map_err(|_| ParseError::InvalidRecord)? as usize;
 
     let rdata_start = parser.pos();
-    parser.advance(rdlen).map_err(|_| ParseError::InvalidRr)?;
+    parser
+        .advance(rdlen)
+        .map_err(|_| ParseError::InvalidRecord)?;
 
-    Ok(UpdateRr {
+    Ok(UpdateRecord {
         name,
-        rr_type,
+        record_type,
         class,
         ttl,
         rdata: data[rdata_start..rdata_start + rdlen].to_vec(),
@@ -167,24 +181,36 @@ fn parse_rr(parser: &mut Parser<'_, [u8]>, data: &[u8]) -> Result<UpdateRr, Pars
 fn parse_additional_section(
     parser: &mut Parser<'_, [u8]>,
     count: usize,
-) -> Result<Option<TsigRr>, ParseError> {
+) -> Result<Option<TsigRecord>, ParseError> {
     let mut tsig = None;
 
     for index in 0..count {
         let owner = ParsedName::parse(parser).map_err(|_| ParseError::InvalidName)?;
-        let rr_type = Rtype::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?);
+        let record_type = Rtype::from_int(
+            parser
+                .parse_u16_be()
+                .map_err(|_| ParseError::InvalidRecord)?,
+        );
 
-        if rr_type == Rtype::TSIG {
+        if record_type == Rtype::TSIG {
             if tsig.is_some() || index + 1 != count {
                 return Err(ParseError::InvalidTsig);
             }
 
-            tsig = Some(parse_tsig_rr(parser, &owner)?);
+            tsig = Some(parse_tsig_record(parser, &owner)?);
         } else {
-            parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)?; // CLASS
-            parser.parse_u32_be().map_err(|_| ParseError::InvalidRr)?; // TTL
-            let rdlen = parser.parse_u16_be().map_err(|_| ParseError::InvalidRr)? as usize;
-            parser.advance(rdlen).map_err(|_| ParseError::InvalidRr)?;
+            parser
+                .parse_u16_be()
+                .map_err(|_| ParseError::InvalidRecord)?; // CLASS
+            parser
+                .parse_u32_be()
+                .map_err(|_| ParseError::InvalidRecord)?; // TTL
+            let rdlen = parser
+                .parse_u16_be()
+                .map_err(|_| ParseError::InvalidRecord)? as usize;
+            parser
+                .advance(rdlen)
+                .map_err(|_| ParseError::InvalidRecord)?;
         }
     }
 
@@ -192,10 +218,10 @@ fn parse_additional_section(
 }
 
 /// Parses a TSIG RR from its CLASS field on (owner and TYPE already consumed).
-fn parse_tsig_rr(
+fn parse_tsig_record(
     parser: &mut Parser<'_, [u8]>,
     owner: &ParsedName<&[u8]>,
-) -> Result<TsigRr, ParseError> {
+) -> Result<TsigRecord, ParseError> {
     let class = Class::from_int(parser.parse_u16_be().map_err(|_| ParseError::InvalidTsig)?);
     let ttl = parser.parse_u32_be().map_err(|_| ParseError::InvalidTsig)?;
     let rdlen = parser.parse_u16_be().map_err(|_| ParseError::InvalidTsig)? as usize;
@@ -212,7 +238,7 @@ fn parse_tsig_rr(
         return Err(ParseError::InvalidTsig);
     }
 
-    Ok(TsigRr {
+    Ok(TsigRecord {
         name: to_presentation_name(owner)?,
         fudge: tsig.fudge(),
     })
@@ -239,7 +265,7 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseError> 
     Ok(format!("{}.", labels_to_presentation(&labels)))
 }
 
-impl UpdateRr {
+impl UpdateRecord {
     /// Decode an update record's wire data into its typed value.
     fn parse_rdata<'a, T>(
         &self,
@@ -268,7 +294,7 @@ impl UpdateRr {
         &self,
         message: &[u8],
     ) -> Result<(RecordType, String, Option<i32>), String> {
-        match RecordType::try_from(self.rr_type)? {
+        match RecordType::try_from(self.record_type)? {
             RecordType::A => {
                 let data = self.parse_rdata(message, "A", |parser| A::parse(parser).ok())?;
                 Ok((RecordType::A, data.addr().to_string(), None))

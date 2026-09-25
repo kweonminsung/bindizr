@@ -78,11 +78,11 @@ fn build_ds_response(
 }
 
 /// The record `build_ds_response` serves for `key_tag`, as parsed.
-fn parsed_ds_rr(key_tag: u16) -> DsRr {
+fn parsed_ds_record(key_tag: u16) -> DsRecord {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
-    DsRr {
+    DsRecord {
         key_tag,
         digest_type: 2,
         rdata,
@@ -114,9 +114,9 @@ fn build_transfer_message(id: u16, apex: &Name<Vec<u8>>, question: bool, aa: boo
     answer.finish()
 }
 
-/// Verify that transfer rejects a non in rr.
+/// Verify that a transfer rejects a record of a class other than IN.
 #[test]
-fn transfer_rejects_a_non_in_rr() {
+fn transfer_rejects_a_non_in_record() {
     let name: Name<Vec<u8>> = Name::from_str("example.com").unwrap();
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(7);
@@ -132,7 +132,7 @@ fn transfer_rejects_a_non_in_rr() {
         .unwrap();
     let wire = answer.finish();
 
-    let err = extract_transfer_rrs(7, &name, false, &wire).unwrap_err();
+    let err = extract_transfer_records(7, &name, false, &wire).unwrap_err();
     assert!(err.contains("class"), "{err}");
 }
 
@@ -142,15 +142,17 @@ fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
     let apex = name("example.com");
     let whole = build_transfer_message(7, &apex, true, true);
     assert_eq!(
-        extract_transfer_rrs(7, &apex, true, &whole).unwrap().len(),
+        extract_transfer_records(7, &apex, true, &whole)
+            .unwrap()
+            .len(),
         1
     );
 
     let unasked = build_transfer_message(7, &apex, false, true);
-    assert!(extract_transfer_rrs(7, &apex, true, &unasked).is_err());
+    assert!(extract_transfer_records(7, &apex, true, &unasked).is_err());
     // A later message may leave the question out.
     assert_eq!(
-        extract_transfer_rrs(7, &apex, false, &unasked)
+        extract_transfer_records(7, &apex, false, &unasked)
             .unwrap()
             .len(),
         1
@@ -158,13 +160,13 @@ fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
 
     let cached = build_transfer_message(7, &apex, true, false);
     assert_eq!(
-        extract_transfer_rrs(7, &apex, true, &cached).unwrap_err(),
+        extract_transfer_records(7, &apex, true, &cached).unwrap_err(),
         "response is not authoritative"
     );
 
     let other = build_transfer_message(7, &name("other.com"), true, true);
     assert_eq!(
-        extract_transfer_rrs(7, &apex, false, &other).unwrap_err(),
+        extract_transfer_records(7, &apex, false, &other).unwrap_err(),
         "response answers another question"
     );
 }
@@ -186,9 +188,9 @@ fn build_edns_question_advertises_the_payload_size() {
     assert_eq!(opt.opt().iter::<AllOptData<_, _>>().count(), 0);
 }
 
-/// Verify that `extract_ds_rrset` reads the records and the RRSET TTL.
+/// Verify that `extract_ds_record_set` reads the records and the record set's TTL.
 #[test]
-fn extract_ds_rrset_reads_the_records_and_the_rrset_ttl() {
+fn extract_ds_record_set_reads_the_records_and_the_record_set_ttl() {
     let child = name("example.com");
     // The RRset TTL is the lowest member TTL (RFC 2181, Section 5.2), and
     // key tags come back ordered and without duplicates.
@@ -208,17 +210,17 @@ fn extract_ds_rrset_reads_the_records_and_the_rrset_ttl() {
     );
 
     assert_eq!(
-        extract_ds_rrset(42, &child, &response).unwrap(),
-        Some(DsRrset {
-            records: vec![parsed_ds_rr(2371), parsed_ds_rr(34217)],
+        extract_ds_record_set(42, &child, &response).unwrap(),
+        Some(DsRecordSet {
+            records: vec![parsed_ds_record(2371), parsed_ds_record(34217)],
             ttl: 3600,
         })
     );
 }
 
-/// Verify that `extract_ds_rrset` reads nodata as no DS.
+/// Verify that `extract_ds_record_set` reads nodata as no DS.
 #[test]
-fn extract_ds_rrset_reads_nodata_as_no_ds() {
+fn extract_ds_record_set_reads_nodata_as_no_ds() {
     let child = name("example.com");
     let response = build_ds_response(
         42,
@@ -230,12 +232,12 @@ fn extract_ds_rrset_reads_nodata_as_no_ds() {
         &[],
         Some("com"),
     );
-    assert_eq!(extract_ds_rrset(42, &child, &response).unwrap(), None);
+    assert_eq!(extract_ds_record_set(42, &child, &response).unwrap(), None);
 }
 
-/// Verify that `extract_ds_rrset` reads nxdomain as no DS.
+/// Verify that `extract_ds_record_set` reads nxdomain as no DS.
 #[test]
-fn extract_ds_rrset_reads_nxdomain_as_no_ds() {
+fn extract_ds_record_set_reads_nxdomain_as_no_ds() {
     let child = name("example.com");
     let response = build_ds_response(
         42,
@@ -247,12 +249,12 @@ fn extract_ds_rrset_reads_nxdomain_as_no_ds() {
         &[],
         Some("com"),
     );
-    assert_eq!(extract_ds_rrset(42, &child, &response).unwrap(), None);
+    assert_eq!(extract_ds_record_set(42, &child, &response).unwrap(), None);
 }
 
-/// Verify that `extract_ds_rrset` rejects a negative answer without a parent SOA.
+/// Verify that `extract_ds_record_set` rejects a negative answer without a parent SOA.
 #[test]
-fn extract_ds_rrset_rejects_a_negative_answer_without_a_parent_soa() {
+fn extract_ds_record_set_rejects_a_negative_answer_without_a_parent_soa() {
     let child = name("example.com");
     // The child's own server answers NODATA for its DS, with its own SOA.
     for authority_soa in [None, Some("example.com"), Some("other.com")] {
@@ -267,18 +269,18 @@ fn extract_ds_rrset_rejects_a_negative_answer_without_a_parent_soa() {
             authority_soa,
         );
         assert_eq!(
-            extract_ds_rrset(42, &child, &response).unwrap_err(),
+            extract_ds_record_set(42, &child, &response).unwrap_err(),
             "negative answer carries no SOA of a parent zone",
             "{authority_soa:?}"
         );
     }
     let response = build_ds_response(42, true, true, false, Rcode::NXDOMAIN, &child, &[], None);
-    assert!(extract_ds_rrset(42, &child, &response).is_err());
+    assert!(extract_ds_record_set(42, &child, &response).is_err());
 }
 
-/// Verify that `extract_ds_rrset` rejects an answer to another question.
+/// Verify that `extract_ds_record_set` rejects an answer to another question.
 #[test]
-fn extract_ds_rrset_rejects_an_answer_to_another_question() {
+fn extract_ds_record_set_rejects_an_answer_to_another_question() {
     let child = name("example.com");
     let response = build_ds_response(
         42,
@@ -291,14 +293,14 @@ fn extract_ds_rrset_rejects_an_answer_to_another_question() {
         Some("com"),
     );
     assert_eq!(
-        extract_ds_rrset(42, &child, &response).unwrap_err(),
+        extract_ds_record_set(42, &child, &response).unwrap_err(),
         "response answers another question"
     );
 }
 
-/// Verify that `extract_ds_rrset` ignores records for another owner.
+/// Verify that `extract_ds_record_set` ignores records for another owner.
 #[test]
-fn extract_ds_rrset_ignores_records_for_another_owner() {
+fn extract_ds_record_set_ignores_records_for_another_owner() {
     let child = name("example.com");
     let response = build_ds_response(
         42,
@@ -310,12 +312,12 @@ fn extract_ds_rrset_ignores_records_for_another_owner() {
         &[("other.com", 3600, 1)],
         Some("com"),
     );
-    assert_eq!(extract_ds_rrset(42, &child, &response).unwrap(), None);
+    assert_eq!(extract_ds_record_set(42, &child, &response).unwrap(), None);
 }
 
-/// Verify that `extract_ds_rrset` rejects a non authoritative answer.
+/// Verify that `extract_ds_record_set` rejects a non authoritative answer.
 #[test]
-fn extract_ds_rrset_rejects_a_non_authoritative_answer() {
+fn extract_ds_record_set_rejects_a_non_authoritative_answer() {
     let child = name("example.com");
     let response = build_ds_response(
         42,
@@ -328,14 +330,14 @@ fn extract_ds_rrset_rejects_a_non_authoritative_answer() {
         None,
     );
     assert_eq!(
-        extract_ds_rrset(42, &child, &response).unwrap_err(),
+        extract_ds_record_set(42, &child, &response).unwrap_err(),
         "response is not authoritative"
     );
 }
 
-/// Verify that `extract_ds_rrset` rejects a truncated answer.
+/// Verify that `extract_ds_record_set` rejects a truncated answer.
 #[test]
-fn extract_ds_rrset_rejects_a_truncated_answer() {
+fn extract_ds_record_set_rejects_a_truncated_answer() {
     let child = name("example.com");
     let response = build_ds_response(
         42,
@@ -348,14 +350,14 @@ fn extract_ds_rrset_rejects_a_truncated_answer() {
         Some("com"),
     );
     assert_eq!(
-        extract_ds_rrset(42, &child, &response).unwrap_err(),
+        extract_ds_record_set(42, &child, &response).unwrap_err(),
         "truncated response"
     );
 }
 
-/// Verify that `extract_ds_rrset` rejects an error rcode.
+/// Verify that `extract_ds_record_set` rejects an error rcode.
 #[test]
-fn extract_ds_rrset_rejects_an_error_rcode() {
+fn extract_ds_record_set_rejects_an_error_rcode() {
     let child = name("example.com");
     let response = build_ds_response(
         42,
@@ -368,14 +370,14 @@ fn extract_ds_rrset_rejects_an_error_rcode() {
         Some("com"),
     );
     assert_eq!(
-        extract_ds_rrset(42, &child, &response).unwrap_err(),
+        extract_ds_record_set(42, &child, &response).unwrap_err(),
         "RCODE 5"
     );
 }
 
-/// Verify that `extract_ds_rrset` rejects id mismatch.
+/// Verify that `extract_ds_record_set` rejects id mismatch.
 #[test]
-fn extract_ds_rrset_rejects_id_mismatch() {
+fn extract_ds_record_set_rejects_id_mismatch() {
     let child = name("example.com");
     let response = build_ds_response(
         42,
@@ -388,7 +390,7 @@ fn extract_ds_rrset_rejects_id_mismatch() {
         Some("com"),
     );
     assert!(
-        extract_ds_rrset(7, &child, &response)
+        extract_ds_record_set(7, &child, &response)
             .unwrap_err()
             .contains("ID mismatch")
     );

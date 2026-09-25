@@ -1,5 +1,5 @@
 use bindizr_core::{
-    dns::{dnssec::generate_key, name::ZoneName, query::DsRr},
+    dns::{dnssec::generate_key, name::ZoneName, query::DsRecord},
     model::dnssec_key::{DnssecAlgorithm, DnssecKeyRole},
 };
 
@@ -41,9 +41,9 @@ fn csk() -> DnssecKey {
 }
 
 /// The DS the parent would serve for `key`, in the digest type given.
-fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRr {
+fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRecord {
     let apex = zone().name.to_wire_name().unwrap();
-    DsRr {
+    DsRecord {
         key_tag: key.key_tag as u16,
         digest_type,
         rdata: key
@@ -55,12 +55,12 @@ fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRr {
 }
 
 /// Build a record-group fixture from the supplied values.
-fn record_set(records: Vec<DsRr>) -> Option<DsRrset> {
-    Some(DsRrset { records, ttl: 3600 })
+fn record_set(records: Vec<DsRecord>) -> Option<DsRecordSet> {
+    Some(DsRecordSet { records, ttl: 3600 })
 }
 
 /// Build a parent DS probe result from the supplied server answers.
-fn parent(answers: Vec<Option<DsRrset>>) -> ParentDs {
+fn parent(answers: Vec<Option<DsRecordSet>>) -> ParentDs {
     ParentDs {
         ns_addrs: vec!["192.0.2.1".to_string(), "192.0.2.2".to_string()],
         answers,
@@ -68,7 +68,7 @@ fn parent(answers: Vec<Option<DsRrset>>) -> ParentDs {
 }
 
 /// Compute delegation information for a key and simulated parent answers.
-fn info(key: &DnssecKey, answers: Vec<Option<DsRrset>>) -> DnssecDelegationInfo {
+fn info(key: &DnssecKey, answers: Vec<Option<DsRecordSet>>) -> DnssecDelegationInfo {
     build_delegation_info(&zone(), std::slice::from_ref(key), parent(answers)).unwrap()
 }
 
@@ -133,7 +133,7 @@ fn a_digest_bindizr_cannot_compute_leaves_the_match_undecided() {
     // RFC 8624, Section 3.3 retires GOST (3), so a parent serving only that
     // is not the same as a parent serving no DS at all.
     let key = csk();
-    let gost = DsRr {
+    let gost = DsRecord {
         key_tag: key.key_tag as u16,
         digest_type: 3,
         rdata: vec![0; 32],
@@ -150,7 +150,7 @@ fn a_digest_bindizr_cannot_compute_leaves_the_match_undecided() {
 fn one_server_answering_in_a_computable_digest_does_not_mask_another() {
     // A parent mid-rollout between digest types is undecided, not a match.
     let key = csk();
-    let gost = DsRr {
+    let gost = DsRecord {
         key_tag: key.key_tag as u16,
         digest_type: 3,
         rdata: vec![0; 32],
@@ -170,11 +170,11 @@ fn one_server_answering_in_a_computable_digest_does_not_mask_another() {
 fn the_ttl_reported_is_the_longest_any_server_serves() {
     let key = csk();
     let answers = vec![
-        Some(DsRrset {
+        Some(DsRecordSet {
             records: vec![ds_of(&key, 2)],
             ttl: 300,
         }),
-        Some(DsRrset {
+        Some(DsRecordSet {
             records: vec![ds_of(&key, 2)],
             ttl: 86400,
         }),

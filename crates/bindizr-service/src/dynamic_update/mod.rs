@@ -62,18 +62,18 @@ pub enum Prerequisite {
     /// CLASS NONE, TYPE ANY: the owner name must not exist.
     NameNotInUse { name: String },
     /// CLASS ANY: the RRset must exist.
-    RrsetInUse {
+    RecordSetInUse {
         name: String,
         record_type: RecordType,
     },
     /// CLASS NONE: the RRset must not exist.
-    RrsetNotInUse {
+    RecordSetNotInUse {
         name: String,
         record_type: RecordType,
     },
     /// CLASS IN: with the others of its name and type, the RRset must equal
     /// the zone's (RFC 2136, Section 3.2.3).
-    RrInUse {
+    RecordInUse {
         name: String,
         record_type: RecordType,
         /// TXT arrives row-encoded; every other type in presentation form.
@@ -85,7 +85,7 @@ pub enum Prerequisite {
 /// One update to apply (RFC 2136, Section 2.5). Owner names are absolute.
 pub enum UpdateOp {
     /// CLASS IN: add the RR.
-    AddRr {
+    AddRecord {
         name: String,
         record_type: RecordType,
         /// TXT arrives row-encoded; every other type in presentation form.
@@ -95,12 +95,12 @@ pub enum UpdateOp {
     },
     /// CLASS ANY: delete an RRset, or every RRset at the owner name when
     /// `record_type` is `None` (wire TYPE ANY).
-    DeleteRrset {
+    DeleteRecordSet {
         name: String,
         record_type: Option<RecordType>,
     },
     /// CLASS NONE: delete the RRs carrying exactly this rdata.
-    DeleteRr {
+    DeleteRecord {
         name: String,
         record_type: RecordType,
         value: String,
@@ -112,19 +112,18 @@ impl UpdateOp {
     /// Return the owner name targeted by this update operation.
     fn name(&self) -> &str {
         match self {
-            UpdateOp::AddRr { name, .. }
-            | UpdateOp::DeleteRrset { name, .. }
-            | UpdateOp::DeleteRr { name, .. } => name,
+            UpdateOp::AddRecord { name, .. }
+            | UpdateOp::DeleteRecordSet { name, .. }
+            | UpdateOp::DeleteRecord { name, .. } => name,
         }
     }
 
     /// The type this update touches; `None` for a whole-name delete.
     fn record_type(&self) -> Option<&RecordType> {
         match self {
-            UpdateOp::AddRr { record_type, .. } | UpdateOp::DeleteRr { record_type, .. } => {
-                Some(record_type)
-            }
-            UpdateOp::DeleteRrset { record_type, .. } => record_type.as_ref(),
+            UpdateOp::AddRecord { record_type, .. }
+            | UpdateOp::DeleteRecord { record_type, .. } => Some(record_type),
+            UpdateOp::DeleteRecordSet { record_type, .. } => record_type.as_ref(),
         }
     }
 }
@@ -258,9 +257,9 @@ async fn authorize_key_tx(
     for prerequisite in prerequisites {
         let (name, record_type) = match prerequisite {
             Prerequisite::NameInUse { name } | Prerequisite::NameNotInUse { name } => (name, None),
-            Prerequisite::RrsetInUse { name, record_type }
-            | Prerequisite::RrsetNotInUse { name, record_type }
-            | Prerequisite::RrInUse {
+            Prerequisite::RecordSetInUse { name, record_type }
+            | Prerequisite::RecordSetNotInUse { name, record_type }
+            | Prerequisite::RecordInUse {
                 name, record_type, ..
             } => (name, Some(record_type)),
         };
@@ -300,7 +299,7 @@ async fn apply_op_tx(
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
     match op {
-        UpdateOp::AddRr {
+        UpdateOp::AddRecord {
             name,
             record_type,
             value,
@@ -359,10 +358,10 @@ async fn apply_op_tx(
 
             Ok(true)
         }
-        UpdateOp::DeleteRrset { name, record_type } => {
+        UpdateOp::DeleteRecordSet { name, record_type } => {
             delete_matching_tx(tx, zone, name, record_type.as_ref(), None, None, new_serial).await
         }
-        UpdateOp::DeleteRr {
+        UpdateOp::DeleteRecord {
             name,
             record_type,
             value,

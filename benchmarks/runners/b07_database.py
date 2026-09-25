@@ -71,10 +71,10 @@ async def _bench_backend(adapter, cfg, zone, label, pairing) -> dict:
         return await adapter.get_record(zone, handles[seq % len(handles)])
 
     # Measure create and read separately, each with its own unrecorded warmup.
-    cr = await loadgen.run_closed_loop(create_step, conc, dur, warm)
-    rr = await loadgen.run_closed_loop(read_step, conc, dur, warm)
+    create_run = await loadgen.run_closed_loop(create_step, conc, dur, warm)
+    read_run = await loadgen.run_closed_loop(read_step, conc, dur, warm)
     res = sampler.stop()
-    cs, rs = cr.summary(), rr.summary()
+    cs, rs = create_run.summary(), read_run.summary()
     bindizr_mem, db_mem = _mem_split(res)
     return {
         "system": pairing,
@@ -83,7 +83,9 @@ async def _bench_backend(adapter, cfg, zone, label, pairing) -> dict:
         "read_tps": rs["tps"],
         "create_p95_ms": cs["p95_ms"],
         "read_p95_ms": rs["p95_ms"],
-        "error_rate": round((cr.errors + rr.errors) / max(cr.total + rr.total, 1), 5),
+        "error_rate": round(
+            (create_run.errors + read_run.errors) / max(create_run.total + read_run.total, 1), 5
+        ),
         "peak_mem_mb": res.get("peak_mem_mb", 0),
         "bindizr_peak_mem_mb": bindizr_mem,
         "db_peak_mem_mb": db_mem,
