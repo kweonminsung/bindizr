@@ -137,7 +137,7 @@ async fn a_transfer_only_grant_pulls_the_zone_without_changing_it() {
         app.dns_port(),
         zone_name,
         &[],
-        &[crate::common::dns::nsupdate::UpdateRr::AddA {
+        &[crate::common::dns::nsupdate::UpdateRecord::AddA {
             name: format!("www.{zone_name}."),
             ttl: 300,
             addr: "192.0.2.80".to_string(),

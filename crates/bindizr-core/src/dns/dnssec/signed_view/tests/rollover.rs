@@ -42,7 +42,7 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
 
 /// Verify that published key cosigns key RRsets but not zone data.
 #[test]
-fn published_key_cosigns_key_rrsets_but_not_zone_data() {
+fn published_key_cosigns_key_record_sets_but_not_zone_data() {
     let zone = test_zone();
     let keys = [
         test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active),
@@ -141,7 +141,7 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
 
 /// Verify that split keys partition key RRsets from zone data.
 #[test]
-fn split_keys_partition_key_rrsets_from_zone_data() {
+fn split_keys_partition_key_record_sets_from_zone_data() {
     let zone = test_zone();
     let keys = [
         test_key(&zone, 1, DnssecKeyRole::Ksk, DnssecKeyState::Active),

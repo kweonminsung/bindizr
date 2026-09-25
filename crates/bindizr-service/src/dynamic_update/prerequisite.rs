@@ -49,7 +49,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                     )));
                 }
             }
-            Prerequisite::RrsetInUse { name, record_type } => {
+            Prerequisite::RecordSetInUse { name, record_type } => {
                 let owner = parse_owner_in_zone(name, &zone.name)?;
                 if !has_record_set(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::NxRrset(format!(
@@ -58,7 +58,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                     )));
                 }
             }
-            Prerequisite::RrsetNotInUse { name, record_type } => {
+            Prerequisite::RecordSetNotInUse { name, record_type } => {
                 let owner = parse_owner_in_zone(name, &zone.name)?;
                 if has_record_set(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::YxRrset(format!(
@@ -67,7 +67,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                     )));
                 }
             }
-            Prerequisite::RrInUse {
+            Prerequisite::RecordInUse {
                 name,
                 record_type,
                 value,

@@ -219,7 +219,7 @@ impl DnssecService {
         for key in keys {
             let signed_ttl = if key.signs_zone_data(keys) {
                 data_ttl
-            } else if key.signs_key_rrsets() {
+            } else if key.signs_key_record_sets() {
                 zone.default_ttl
             } else {
                 continue;

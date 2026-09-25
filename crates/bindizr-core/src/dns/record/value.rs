@@ -3,7 +3,7 @@
 use crate::dns::{
     DNS_TCP_MAX_SIZE,
     name::{MAX_DOMAIN_LEN, decode_name_labels, has_whitespace_or_control},
-    tsig::MAX_TSIG_RR,
+    tsig::MAX_TSIG_RECORD,
 };
 
 /// Priority an MX or SRV row takes when its priority column is NULL; served
@@ -15,7 +15,7 @@ pub(crate) const DEFAULT_PRIORITY: u16 = 10;
 /// transfer appends. A record cannot be split across messages, so an accepted
 /// one must fit an envelope whether or not the secondary asked with a key.
 pub(crate) const MAX_RECORD_RDATA: usize =
-    DNS_TCP_MAX_SIZE - 12 - (MAX_DOMAIN_LEN + 2 + 4) - (MAX_DOMAIN_LEN + 2 + 10) - MAX_TSIG_RR;
+    DNS_TCP_MAX_SIZE - 12 - (MAX_DOMAIN_LEN + 2 + 4) - (MAX_DOMAIN_LEN + 2 + 10) - MAX_TSIG_RECORD;
 
 /// Parse an optional unsigned 16-bit record field.
 pub(crate) fn parse_optional_u16_record_field(

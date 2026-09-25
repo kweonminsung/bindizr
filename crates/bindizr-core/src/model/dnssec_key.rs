@@ -289,7 +289,7 @@ impl DnssecKey {
 
     /// Whether the key co-signs the apex key RRsets. Every SEP key does, in
     /// every state: a validator may arrive via whichever parent DS names it.
-    pub fn signs_key_rrsets(&self) -> bool {
+    pub fn signs_key_record_sets(&self) -> bool {
         self.role.is_sep()
     }
 

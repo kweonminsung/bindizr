@@ -283,7 +283,7 @@ fn signature_inside_refresh_window_is_resigned() {
 
 /// Verify that force resigns every RRSET.
 #[test]
-fn force_resigns_every_rrset() {
+fn force_resigns_every_record_set() {
     let zone = test_zone();
     let keys = [test_key(
         &zone,

@@ -318,7 +318,7 @@ Every other helper starts with one of these verbs:
   value, fallible; an infallible reading is `to_` (`to_record_value_request`
   over the `--value` arguments). `encode_<thing>` / `decode_<thing>` — a
   typed value to and from its wire bytes (`encode_name`). `extract_<thing>`
-  — one part out of an already-parsed message (`extract_ds_rrset`).
+  — one part out of an already-parsed message (`extract_ds_record_set`).
   `render_<thing>` — a typed value as multi-line human text
   (`render_diff_lines`); `display_<thing>` — one table cell;
   `<thing>_label` — a metric label value.
@@ -352,7 +352,7 @@ methods read as a sentence about their receiver (`key.wants_parent_ds()`);
 
 Noun names belong to pure derivations named by what they return, where a
 verb would add nothing the return type does not say (`elapsed_ms`,
-`rrset_digest`, `promotable_sep_key_ids`, `like_pattern`) — anything with
+`record_set_digest`, `promotable_sep_key_ids`, `like_pattern`) — anything with
 I/O or a side effect keeps its verb — and to constructors, which are named
 by what they build: the kind alone where the module builds one kind of
 thing (`unauthorized(message) -> Response` in the auth middleware,
@@ -365,7 +365,7 @@ one module builds several (`upstream_error_response`,
 One concept keeps one name across crates. Do not add a wrapper that only
 reorders or renames the arguments of the function it calls — call it directly.
 
-### Vocabulary — record, RR, RRset
+### Vocabulary — record, record set
 
 User-facing text says **record** and nothing else: docs, OpenAPI annotations
 and the payload docs in `bindizr_service::types`, CLI help and output, error
@@ -374,26 +374,26 @@ out ("records sharing a name and type share one TTL"); a zone snapshot is
 "the zone's records at serial N". Never "RRset", "RR", "resource record", or
 "record set" there.
 
-**RR** (one wire resource record) and **RRset** (RFC 2181, Section 5: the
-records of one owner name and type) stay internal, and in identifiers only
-in core's wire, DNSSEC, and nsupdate layers, where the distinction from a
-stored `Record` row is load-bearing. Service identifiers say `record_set` /
-`RecordSet` (`RecordSetKey`, `group_record_sets`) and `record`; RR and RRset
-remain in comments describing the wire protocol.
-
-Protocol tokens keep their own spelling: nsupdate RCODEs (`NXRRSET`,
-`YXRRSET`, the `YxRrset` variants, lowercase log and metric labels),
-ExternalDNS protocol words (endpoint, targets, recordTTL), and RFC quotations.
-Core's `dns/` holds wire items only, so no `*Record` type belongs there.
-Check with:
+Identifiers say **record** for one record and **record set** for the records
+of one owner name and type, whatever layer they sit in: a wire item in core
+is `TransferRecord`, `SignRecord`, or `UpdateRecord` (module and prefix
+carry the wire/row distinction, not the word), a set-matching key is
+`RecordKey` or `RecordSetKey`, a helper is `extract_ds_record_set`. The
+stored row stays `model::record::Record`. **RR** and **RRset** (RFC 2181,
+Section 5) survive only in comments describing the wire protocol and in
+protocol tokens, which keep their own spelling: the nsupdate RCODEs
+(`NXRRSET`, `YXRRSET`, the `NxRrset`/`YxRrset` variants, lowercase log and
+metric labels), `RRSIG` and its `Rrsig` types, the `domain` crate's own
+`Rrset` and `sign_rrset`, ExternalDNS protocol words (endpoint, targets,
+recordTTL), and RFC quotations. Check with:
 
 ```sh
 grep -rnE "RRsets?\b|record set|resource record|\bRRs?\b" \
   docs README.md crates/bindizr/src/api crates/bindizr/src/cli \
   crates/bindizr-service/src/types
 grep -rnE '"[^"]*(RRset|resource record|record set)[^"]*"' crates/*/src
-grep -rnE '"[^"]*\b(rr|rrs)\b[^"]*"' crates/*/src
-grep -rnE "\b(struct|type|enum) [A-Za-z]*Record\b" crates/bindizr-core/src/dns
+grep -rnoE "\b[A-Za-z0-9_]*[Rr]r(set|s)?\b" crates --include='*.rs' \
+  | grep -vE "Rrsig|rrsig|err$|stderr|Err$|formerr|Rrset$|NxRrset|YxRrset|sign_rrset|[yn]xrrset"
 ```
 
 ## Code style
@@ -512,8 +512,8 @@ fields private behind constructors.
 ### Helper extraction — split at the second caller
 
 Do not pre-split a function for a caller that has not arrived: extract the
-shared helper when the second caller appears (`validate_rrset_shape` left
-`parse_rrset_op` only when `adjust_rrset` needed it too). A single-caller
+shared helper when the second caller appears (`validate_record_set_shape` left
+`parse_record_set_op` only when `adjust_record_set` needed it too). A single-caller
 helper is justified by its contract, never by call count: the name plus a
 narrow signature must let the caller be read without opening the body
 (`normalize_ttl`). A name that merely labels a section of its one caller, or

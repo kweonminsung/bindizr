@@ -71,7 +71,7 @@ pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), St
 /// The largest TSIG record a response can carry, so an intake cap can reserve
 /// room for one it has not seen yet: the longest key name, `hmac-sha512.`, its
 /// 64-byte MAC, and the 6 bytes BADTIME adds (RFC 8945, Section 4.2).
-pub(crate) const MAX_TSIG_RR: usize =
+pub(crate) const MAX_TSIG_RECORD: usize =
     (MAX_DOMAIN_LEN + 2) + (2 + 2 + 4 + 2) + (13 + 6 + 2 + 2 + 64 + 2 + 2 + 2 + 6);
 
 /// Bytes a signed message must leave for its TSIG record.
@@ -231,7 +231,7 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
 /// Build a NOTAUTH response carrying an unsigned TSIG error RR that
 /// echoes the request TSIG with an empty MAC (RFC 8945, Section 5.3.2).
 fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8>> {
-    let tsig_rr = msg
+    let tsig_record = msg
         .additional()
         .ok()?
         .limit_to::<Tsig<_, _>>()
@@ -244,13 +244,13 @@ fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8
     let mut builder = builder.additional();
     builder
         .push((
-            tsig_rr.owner(),
-            tsig_rr.class(),
-            tsig_rr.ttl(),
+            tsig_record.owner(),
+            tsig_record.class(),
+            tsig_record.ttl(),
             Tsig::new(
-                tsig_rr.data().algorithm(),
-                tsig_rr.data().time_signed(),
-                tsig_rr.data().fudge(),
+                tsig_record.data().algorithm(),
+                tsig_record.data().time_signed(),
+                tsig_record.data().fudge(),
                 b"",
                 msg.header().id(),
                 error,

@@ -1117,7 +1117,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
     assert_eq!(status, StatusCode::CREATED);
 
     // A different type at the same owner name is a separate RRset.
-    let other_rrset = json!({
+    let other_record_set = json!({
         "name": "www",
         "type": "TXT",
         "value": "hello",
@@ -1125,7 +1125,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
         "zone_name": zone["name"]
     });
     let (status, _) = app
-        .send_request(Method::POST, "/records", Some(other_rrset))
+        .send_request(Method::POST, "/records", Some(other_record_set))
         .await;
     assert_eq!(status, StatusCode::CREATED);
 }

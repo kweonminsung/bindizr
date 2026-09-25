@@ -26,7 +26,7 @@ pub struct DnssecRecord {
     pub expires_at: Option<DateTime<Utc>>,
     /// RRSIG rows: digest of the signed RRset content, allowing a still-valid
     /// signature to be reused when the RRset has not changed.
-    pub rrset_digest: Option<String>,
+    pub record_set_digest: Option<String>,
 }
 
 /// What makes two derived records the same: owner, type, TTL, and rdata,

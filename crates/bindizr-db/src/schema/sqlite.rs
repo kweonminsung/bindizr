@@ -224,7 +224,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             ttl INTEGER NOT NULL,
             rdata BLOB NOT NULL,
             expires_at DATETIME,
-            rrset_digest TEXT,
+            record_set_digest TEXT,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,

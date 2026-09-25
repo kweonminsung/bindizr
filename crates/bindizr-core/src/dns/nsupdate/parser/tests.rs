@@ -1,4 +1,4 @@
-use super::{ParseError, UpdateRequest, UpdateRr};
+use super::{ParseError, UpdateRecord, UpdateRequest};
 use crate::{
     dns::message::{Class, Rtype},
     model::record::RecordType,
@@ -27,7 +27,7 @@ fn set_arcount(message: &mut [u8], arcount: u16) {
 }
 
 /// Append an EDNS OPT record to the test message.
-fn append_opt_rr(message: &mut Vec<u8>) {
+fn append_opt_record(message: &mut Vec<u8>) {
     message.extend_from_slice(&[
         0x00, // Root owner name
         0x00, 0x29, // TYPE OPT
@@ -38,12 +38,12 @@ fn append_opt_rr(message: &mut Vec<u8>) {
 }
 
 /// Append a TSIG fixture with the default key name.
-fn append_tsig_rr(message: &mut Vec<u8>) {
-    append_tsig_rr_with_owner(message, &[0x03, b'k', b'e', b'y', 0x00]);
+fn append_tsig_record(message: &mut Vec<u8>) {
+    append_tsig_record_with_owner(message, &[0x03, b'k', b'e', b'y', 0x00]);
 }
 
 /// Append a TSIG fixture with the supplied owner name.
-fn append_tsig_rr_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
+fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
     let mut rdata = Vec::new();
     rdata.extend_from_slice(&[
         0x0b, b'h', b'm', b'a', b'c', b'-', b's', b'h', b'a', b'2', b'5', b'6', 0x00, 0x00, 0x00,
@@ -86,7 +86,7 @@ fn parse_update_request_accepts_soa_zone_type() {
 fn parse_update_request_accepts_opt_additional_without_tsig() {
     let mut message = minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
-    append_opt_rr(&mut message);
+    append_opt_record(&mut message);
 
     let request = UpdateRequest::parse(&message).unwrap();
     assert!(request.tsig.is_none());
@@ -97,8 +97,8 @@ fn parse_update_request_accepts_opt_additional_without_tsig() {
 fn parse_update_request_accepts_opt_before_tsig() {
     let mut message = minimal_update_with_ztype(6);
     set_arcount(&mut message, 2);
-    append_opt_rr(&mut message);
-    append_tsig_rr(&mut message);
+    append_opt_record(&mut message);
+    append_tsig_record(&mut message);
 
     let request = UpdateRequest::parse(&message).unwrap();
     let tsig = request.tsig.unwrap();
@@ -112,7 +112,7 @@ fn parse_update_request_accepts_opt_before_tsig() {
 fn parse_update_request_escapes_a_dot_inside_a_tsig_owner_label() {
     let mut message = minimal_update_with_ztype(6);
     set_arcount(&mut message, 1);
-    append_tsig_rr_with_owner(
+    append_tsig_record_with_owner(
         &mut message,
         &[
             0x0c, b'K', b'e', b'y', b'.', b'W', b'i', b't', b'h', b'.', b'D', b'o', b't', 0x00,
@@ -146,13 +146,13 @@ fn parse_update_request_escapes_a_dot_inside_a_zone_label() {
     assert_eq!(request.zone_name, r"evil\046example.com.");
 }
 
-/// Verify that `UpdateRequest::parse` rejects TSIG before other additional rrs.
+/// Verify that `UpdateRequest::parse` rejects TSIG before other additional records.
 #[test]
-fn parse_update_request_rejects_tsig_before_other_additional_rrs() {
+fn parse_update_request_rejects_tsig_before_other_additional_records() {
     let mut message = minimal_update_with_ztype(6);
     set_arcount(&mut message, 2);
-    append_tsig_rr(&mut message);
-    append_opt_rr(&mut message);
+    append_tsig_record(&mut message);
+    append_opt_record(&mut message);
 
     let err = UpdateRequest::parse(&message).unwrap_err();
     assert!(matches!(err, ParseError::InvalidTsig));
@@ -161,17 +161,17 @@ fn parse_update_request_rejects_tsig_before_other_additional_rrs() {
 /// Verify that `to_record_value` preserves TXT character string boundaries.
 #[test]
 fn to_record_value_preserves_txt_character_string_boundaries() {
-    let first = UpdateRr {
+    let first = UpdateRecord {
         name: "txt.example.com.".to_string(),
-        rr_type: Rtype::TXT,
+        record_type: Rtype::TXT,
         class: Class::IN,
         ttl: 300,
         rdata: vec![2, b'a', b'b', 1, b'c'],
         rdata_start: 0,
     };
-    let second = UpdateRr {
+    let second = UpdateRecord {
         name: "txt.example.com.".to_string(),
-        rr_type: Rtype::TXT,
+        record_type: Rtype::TXT,
         class: Class::IN,
         ttl: 300,
         rdata: vec![1, b'a', 2, b'b', b'c'],
@@ -195,16 +195,16 @@ fn to_record_value_follows_compression_pointer_in_name_rdata() {
     let pointer = [0xC0, 5]; // Points at the "example.com." bytes above
     message.extend_from_slice(&pointer);
 
-    let rr = UpdateRr {
+    let record = UpdateRecord {
         name: "www.example.com.".to_string(),
-        rr_type: Rtype::CNAME,
+        record_type: Rtype::CNAME,
         class: Class::IN,
         ttl: 300,
         rdata: pointer.to_vec(),
         rdata_start,
     };
 
-    let (record_type, value, priority) = rr.to_record_value(&message).unwrap();
+    let (record_type, value, priority) = record.to_record_value(&message).unwrap();
     assert_eq!(record_type, RecordType::CNAME);
     assert_eq!(value, "example.com.");
     assert_eq!(priority, None);
@@ -222,8 +222,8 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
     ];
 
     for message in [&forward[..], &self_referential[..]] {
-        let rr = update_rr(Rtype::CNAME, Class::IN, 300, message[..2].to_vec());
-        let err = rr.to_record_value(message).unwrap_err();
+        let record = update_record(Rtype::CNAME, Class::IN, 300, message[..2].to_vec());
+        let err = record.to_record_value(message).unwrap_err();
         assert!(!err.is_empty());
     }
 }
@@ -232,8 +232,8 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
 #[test]
 fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
     let message = [1, b'a', 0, 0];
-    let rr = update_rr(Rtype::CNAME, Class::IN, 300, message.to_vec());
-    let err = rr.to_record_value(&message).unwrap_err();
+    let record = update_record(Rtype::CNAME, Class::IN, 300, message.to_vec());
+    let err = record.to_record_value(&message).unwrap_err();
     assert!(!err.is_empty());
 }
 
@@ -241,16 +241,16 @@ fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
 /// Section 3.3.14.
 #[test]
 fn to_record_value_rejects_empty_txt_rdata() {
-    let rr = update_rr(Rtype::TXT, Class::IN, 300, Vec::new());
-    let err = rr.to_record_value(&[]).unwrap_err();
+    let record = update_record(Rtype::TXT, Class::IN, 300, Vec::new());
+    let err = record.to_record_value(&[]).unwrap_err();
     assert!(!err.is_empty());
 }
 
 /// Verify that `to_record_value` rejects non UTF8 TXT character strings.
 #[test]
 fn to_record_value_rejects_non_utf8_txt_character_strings() {
-    let rr = update_rr(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
-    let err = rr.to_record_value(&rr.rdata).unwrap_err();
+    let record = update_record(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
+    let err = record.to_record_value(&record.rdata).unwrap_err();
     assert!(!err.is_empty());
 }
 
@@ -262,9 +262,9 @@ fn to_record_value_splits_srv_priority_into_its_own_column() {
     rdata.extend_from_slice(&[
         3, b's', b'i', b'p', 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,
     ]);
-    let rr = update_rr(Rtype::SRV, Class::IN, 300, rdata.clone());
+    let record = update_record(Rtype::SRV, Class::IN, 300, rdata.clone());
 
-    let (record_type, value, priority) = rr.to_record_value(&rdata).unwrap();
+    let (record_type, value, priority) = record.to_record_value(&rdata).unwrap();
 
     assert_eq!(record_type, RecordType::SRV);
     // The wire encoder reads back this 3-field form with the priority column.
@@ -273,10 +273,10 @@ fn to_record_value_splits_srv_priority_into_its_own_column() {
 }
 
 /// Build a dynamic update record with the requested wire fields.
-fn update_rr(rr_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRr {
-    UpdateRr {
+fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
+    UpdateRecord {
         name: "www.example.com.".to_string(),
-        rr_type,
+        record_type,
         class,
         ttl,
         rdata,

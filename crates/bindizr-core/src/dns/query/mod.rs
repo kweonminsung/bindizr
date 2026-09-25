@@ -136,7 +136,7 @@ fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, Stri
 
 /// One answer RR from a zone-transfer response, in presentation form.
 #[derive(Debug)]
-pub struct TransferRr {
+pub struct TransferRecord {
     /// Owner name as an absolute presentation name (trailing dot).
     pub name: String,
     pub rtype: Rtype,
@@ -149,12 +149,12 @@ pub struct TransferRr {
 /// caller assembles the stream (SOA-delimited per RFC 5936, Section 2.2).
 /// The `first` message must echo the question and be authoritative; later
 /// ones may omit the question (RFC 5936, Sections 2.2.1 and 2.2.2).
-pub fn extract_transfer_rrs(
+pub fn extract_transfer_records(
     query_id: u16,
     qname: &Name<Vec<u8>>,
     first: bool,
     response: &[u8],
-) -> Result<Vec<TransferRr>, String> {
+) -> Result<Vec<TransferRecord>, String> {
     use domain::rdata::AllRecordData;
 
     let message = if first {
@@ -175,21 +175,21 @@ pub fn extract_transfer_rrs(
     let answer = message
         .answer()
         .map_err(|e| format!("malformed answer section: {}", e))?;
-    let mut rrs = Vec::new();
-    for rr in answer.limit_to::<AllRecordData<_, _>>() {
-        let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
+    let mut records = Vec::new();
+    for record in answer.limit_to::<AllRecordData<_, _>>() {
+        let record = record.map_err(|e| format!("malformed answer record: {}", e))?;
         // A zone transfer is single-class; rendering would rewrite any other
         // class as IN.
-        if rr.class() != Class::IN {
+        if record.class() != Class::IN {
             return Err(format!(
                 "transfer carries a class {} record for {}",
-                rr.class(),
-                rr.owner()
+                record.class(),
+                record.owner()
             ));
         }
         // Every embedded rdata name renders absolute except the SRV
         // target; left bare, re-parsing would requalify it.
-        let rdata = match rr.data() {
+        let rdata = match record.data() {
             AllRecordData::Srv(srv) => {
                 let target = srv.target().to_string();
                 let target = if target == "." {
@@ -207,16 +207,16 @@ pub fn extract_transfer_rrs(
             }
             data => data.to_string(),
         };
-        rrs.push(TransferRr {
+        records.push(TransferRecord {
             // Display omits the root dot; the absolute form keeps the
             // import parser from re-qualifying the name.
-            name: format!("{}.", rr.owner()),
-            rtype: rr.rtype(),
-            ttl: rr.ttl().as_secs(),
+            name: format!("{}.", record.owner()),
+            rtype: record.rtype(),
+            ttl: record.ttl().as_secs(),
             rdata,
         });
     }
-    Ok(rrs)
+    Ok(records)
 }
 
 /// Check that a NOTIFY was acknowledged by the server we asked.
@@ -262,23 +262,23 @@ pub fn extract_soa_serial(
         .map_err(|e| format!("malformed answer section: {}", e))?;
     answer
         .limit_to::<Soa<_>>()
-        .filter_map(|rr| rr.ok())
-        .find(|rr| rr.owner().name_eq(qname))
-        .map(|rr| rr.data().serial().into_int())
+        .filter_map(|record| record.ok())
+        .find(|record| record.owner().name_eq(qname))
+        .map(|record| record.data().serial().into_int())
         .ok_or_else(|| "no SOA record in answer".to_string())
 }
 
 /// The DS RRset a parent-zone server holds for a child.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DsRrset {
+pub struct DsRecordSet {
     /// The DS records at the child's name, ordered by key tag then RDATA and
     /// deduplicated.
-    pub records: Vec<DsRr>,
+    pub records: Vec<DsRecord>,
     /// The RRset's TTL: how long a cache may keep serving these DS records.
     pub ttl: u32,
 }
 
-impl DsRrset {
+impl DsRecordSet {
     /// Key tags of the keys the records name, ascending and deduplicated.
     pub fn key_tags(&self) -> Vec<u16> {
         let mut key_tags: Vec<u16> = self.records.iter().map(|record| record.key_tag).collect();
@@ -289,7 +289,7 @@ impl DsRrset {
 
 /// One DS record of a parent's answer.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct DsRr {
+pub struct DsRecord {
     pub key_tag: u16,
     pub digest_type: u8,
     /// The RDATA of RFC 4034, Section 5.1; matched whole, since keys can
@@ -300,11 +300,11 @@ pub struct DsRr {
 /// Read a parent server's answer to a DS question: `Some` with the RRset,
 /// `None` for an authoritative NODATA or NXDOMAIN. A non-authoritative
 /// answer is refused: a cache may lag the parent.
-pub fn extract_ds_rrset(
+pub fn extract_ds_record_set(
     query_id: u16,
     qname: &Name<Vec<u8>>,
     response: &[u8],
-) -> Result<Option<DsRrset>, String> {
+) -> Result<Option<DsRecordSet>, String> {
     let message = parse_authoritative_answer(query_id, qname, Rtype::DS, response)?;
     match message.header().rcode() {
         Rcode::NOERROR => {}
@@ -317,29 +317,30 @@ pub fn extract_ds_rrset(
         .map_err(|e| format!("malformed answer section: {}", e))?;
     let mut records = Vec::new();
     let mut ttl: Option<u32> = None;
-    for rr in answer.limit_to::<Ds<_>>() {
-        let rr = rr.map_err(|e| format!("malformed answer record: {}", e))?;
+    for record in answer.limit_to::<Ds<_>>() {
+        let record = record.map_err(|e| format!("malformed answer record: {}", e))?;
         // Only DS records at the child's own name are its delegation.
-        if !rr.owner().name_eq(qname) {
+        if !record.owner().name_eq(qname) {
             continue;
         }
         let mut rdata = Vec::new();
-        rr.data()
+        record
+            .data()
             .compose_rdata(&mut rdata)
             .expect("composing into a Vec cannot run out of space");
-        records.push(DsRr {
-            key_tag: rr.data().key_tag(),
-            digest_type: rr.data().digest_type().to_int(),
+        records.push(DsRecord {
+            key_tag: record.data().key_tag(),
+            digest_type: record.data().digest_type().to_int(),
             rdata,
         });
-        ttl = Some(ttl.map_or(rr.ttl().as_secs(), |t| t.min(rr.ttl().as_secs())));
+        ttl = Some(ttl.map_or(record.ttl().as_secs(), |t| t.min(record.ttl().as_secs())));
     }
     let Some(ttl) = ttl else {
         return validate_parent_soa(&message, qname).map(|_| None);
     };
     records.sort();
     records.dedup();
-    Ok(Some(DsRrset { records, ttl }))
+    Ok(Some(DsRecordSet { records, ttl }))
 }
 
 /// Require a strict ancestor's SOA in the authority section to substantiate a negative DS
@@ -350,9 +351,9 @@ fn validate_parent_soa(message: &Message<&[u8]>, qname: &Name<Vec<u8>>) -> Resul
     let authority = message
         .authority()
         .map_err(|e| format!("malformed authority section: {}", e))?;
-    for rr in authority.limit_to::<Soa<_>>() {
-        let rr = rr.map_err(|e| format!("malformed authority record: {}", e))?;
-        if qname.ends_with(rr.owner()) && !qname.name_eq(rr.owner()) {
+    for record in authority.limit_to::<Soa<_>>() {
+        let record = record.map_err(|e| format!("malformed authority record: {}", e))?;
+        if qname.ends_with(record.owner()) && !qname.name_eq(record.owner()) {
             return Ok(());
         }
     }

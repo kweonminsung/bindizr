@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use bindizr_core::dns::{name::ZoneName, query::DsRr};
+use bindizr_core::dns::{name::ZoneName, query::DsRecord};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, UdpSocket},
@@ -71,35 +71,35 @@ fn build_response(
     buf.extend_from_slice(&(authority.len() as u16).to_be_bytes());
     buf.extend_from_slice(&0u16.to_be_bytes());
     buf.extend_from_slice(&query[12..question_end]);
-    for rr in answers.iter().chain(authority) {
-        buf.extend_from_slice(rr);
+    for record in answers.iter().chain(authority) {
+        buf.extend_from_slice(record);
     }
     buf
 }
 
 /// The SOA of the queried name's parent zone, as a negative answer's
 /// authority section carries it.
-fn parent_soa_rr(query: &[u8]) -> Vec<u8> {
+fn parent_soa_record(query: &[u8]) -> Vec<u8> {
     let (qname, _) = decode_question(query);
     let parent = qname.split_once('.').map_or("", |(_, rest)| rest);
-    let mut rr = Vec::new();
-    encode_name(parent, &mut rr);
-    rr.extend_from_slice(&RTYPE_SOA.to_be_bytes());
-    rr.extend_from_slice(&1u16.to_be_bytes());
-    rr.extend_from_slice(&3600u32.to_be_bytes());
+    let mut record = Vec::new();
+    encode_name(parent, &mut record);
+    record.extend_from_slice(&RTYPE_SOA.to_be_bytes());
+    record.extend_from_slice(&1u16.to_be_bytes());
+    record.extend_from_slice(&3600u32.to_be_bytes());
     let mut rdata = Vec::new();
     encode_name("ns.parent.example", &mut rdata);
     encode_name("hostmaster.parent.example", &mut rdata);
     for field in [1u32, 3600, 600, 86400, 300] {
         rdata.extend_from_slice(&field.to_be_bytes());
     }
-    rr.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
-    rr.extend_from_slice(&rdata);
-    rr
+    record.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+    record.extend_from_slice(&rdata);
+    record
 }
 
 /// One answer RR owned by the question name (a pointer to offset 12).
-fn build_rr(rtype: u16, ttl: u32, rdata: &[u8]) -> Vec<u8> {
+fn build_record(rtype: u16, ttl: u32, rdata: &[u8]) -> Vec<u8> {
     let mut buf = vec![0xC0, 0x0C];
     buf.extend_from_slice(&rtype.to_be_bytes());
     buf.extend_from_slice(&1u16.to_be_bytes());
@@ -110,19 +110,19 @@ fn build_rr(rtype: u16, ttl: u32, rdata: &[u8]) -> Vec<u8> {
 }
 
 /// Encode a DS record fixture with the requested key tag and TTL.
-fn ds_rr(key_tag: u16, ttl: u32) -> Vec<u8> {
+fn ds_record(key_tag: u16, ttl: u32) -> Vec<u8> {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
-    build_rr(RTYPE_DS, ttl, &rdata)
+    build_record(RTYPE_DS, ttl, &rdata)
 }
 
-/// The record `ds_rr` serves for `key_tag`, as the probe parses it.
-fn parsed_ds_rr(key_tag: u16) -> DsRr {
+/// The record `ds_record` serves for `key_tag`, as the probe parses it.
+fn parsed_ds_record(key_tag: u16) -> DsRecord {
     let mut rdata = key_tag.to_be_bytes().to_vec();
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
-    DsRr {
+    DsRecord {
         key_tag,
         digest_type: 2,
         rdata,
@@ -131,7 +131,7 @@ fn parsed_ds_rr(key_tag: u16) -> DsRr {
 
 /// The whole answer to `query`, as TCP always carries it.
 fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
-    let authority = [parent_soa_rr(query)];
+    let authority = [parent_soa_record(query)];
     match answer {
         Answer::Silence => None,
         Answer::Nxdomain => Some(build_response(
@@ -144,7 +144,7 @@ fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
         Answer::Ds { aa, records } => {
             let answers: Vec<Vec<u8>> = records
                 .iter()
-                .map(|(key_tag, ttl)| ds_rr(*key_tag, *ttl))
+                .map(|(key_tag, ttl)| ds_record(*key_tag, *ttl))
                 .collect();
             Some(build_response(
                 query,
@@ -157,7 +157,7 @@ fn build_full_response(query: &[u8], answer: &Answer) -> Option<Vec<u8>> {
         Answer::DsTruncatedOverUdp { records } => {
             let answers: Vec<Vec<u8>> = records
                 .iter()
-                .map(|(key_tag, ttl)| ds_rr(*key_tag, *ttl))
+                .map(|(key_tag, ttl)| ds_record(*key_tag, *ttl))
                 .collect();
             Some(build_response(query, FLAG_AA, 0, &answers, &authority))
         }
@@ -247,12 +247,12 @@ async fn query_ds_reports_each_server_apart() {
     assert_eq!(
         answers,
         vec![
-            Some(DsRrset {
-                records: vec![parsed_ds_rr(34217)],
+            Some(DsRecordSet {
+                records: vec![parsed_ds_record(34217)],
                 ttl: 3600,
             }),
-            Some(DsRrset {
-                records: vec![parsed_ds_rr(2371), parsed_ds_rr(34217)],
+            Some(DsRecordSet {
+                records: vec![parsed_ds_record(2371), parsed_ds_record(34217)],
                 ttl: 3600,
             }),
         ]
@@ -272,8 +272,8 @@ async fn query_ds_retries_a_truncated_answer_over_tcp() {
         .unwrap();
     assert_eq!(
         answers,
-        vec![Some(DsRrset {
-            records: vec![parsed_ds_rr(34217)],
+        vec![Some(DsRecordSet {
+            records: vec![parsed_ds_record(34217)],
             ttl: 3600,
         })]
     );
@@ -314,7 +314,7 @@ async fn query_ds_reports_absence_per_server() {
     assert_eq!(
         answers
             .iter()
-            .map(|a| a.as_ref().map(DsRrset::key_tags))
+            .map(|a| a.as_ref().map(DsRecordSet::key_tags))
             .collect::<Vec<_>>(),
         vec![None, Some(vec![1])]
     );
@@ -370,7 +370,7 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
     assert_eq!(
         answers
             .iter()
-            .map(|a| a.as_ref().map(DsRrset::key_tags))
+            .map(|a| a.as_ref().map(DsRecordSet::key_tags))
             .collect::<Vec<_>>(),
         vec![Some(vec![7])]
     );

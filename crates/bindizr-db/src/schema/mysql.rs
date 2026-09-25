@@ -205,7 +205,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             ttl INT NOT NULL,
             rdata BLOB NOT NULL,
             expires_at DATETIME,
-            rrset_digest VARCHAR(64),
+            record_set_digest VARCHAR(64),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
             INDEX idx_dnssec_records_zone (zone_id),
             INDEX idx_dnssec_records_expires (expires_at, zone_id)
