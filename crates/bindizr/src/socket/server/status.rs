@@ -1,33 +1,23 @@
-use std::{
-    net::SocketAddr,
-    process,
-    sync::OnceLock,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{net::SocketAddr, process, sync::OnceLock};
 
-use bindizr_core::config;
+use bindizr_core::{config, time::unix_time_ms};
 use bindizr_service::{
     error::ServiceError, secondary::SecondaryService, types::MessageResponse, zone::ZoneService,
 };
 
-use crate::socket::{
-    server::to_response_data,
-    types::{DaemonResponse, DaemonStatusResponse},
+use crate::{
+    daemon::DB_PROBE_TIMEOUT,
+    socket::{
+        server::to_response_data,
+        types::{DaemonResponse, DaemonStatusResponse},
+    },
 };
 
 static STARTED_AT_MS: OnceLock<u64> = OnceLock::new();
 
-/// A silent database must not keep status from answering.
-const DB_COUNT_TIMEOUT: Duration = Duration::from_secs(3);
-
 /// Mark the daemon start time; restart detection compares it across execs.
 pub(crate) fn mark_start_time() {
-    let _ = STARTED_AT_MS.set(
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0),
-    );
+    let _ = STARTED_AT_MS.set(unix_time_ms());
 }
 
 /// Return the daemon's current status as JSON.
@@ -39,7 +29,7 @@ pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
         Ok::<_, ServiceError>((zones, secondaries))
     };
     let (zones, secondaries, database_error) =
-        match tokio::time::timeout(DB_COUNT_TIMEOUT, counts).await {
+        match tokio::time::timeout(DB_PROBE_TIMEOUT, counts).await {
             Ok(Ok((zones, secondaries))) => (Some(zones), Some(secondaries), None),
             Ok(Err(e)) => (None, None, Some(e.to_string())),
             Err(_) => (
@@ -47,7 +37,7 @@ pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
                 None,
                 Some(format!(
                     "timed out after {} seconds",
-                    DB_COUNT_TIMEOUT.as_secs()
+                    DB_PROBE_TIMEOUT.as_secs()
                 )),
             ),
         };

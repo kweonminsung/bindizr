@@ -1,7 +1,7 @@
 //! Applying an ExternalDNS change set atomically and idempotently; the change
 //! set itself is computed in `change_set`.
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::{dns::name::OwnerName, time::elapsed_ms};
 use bindizr_db::repository::LockLevel;
 
 use super::{
@@ -15,7 +15,6 @@ use crate::{
     record::RecordService,
     repository::RepositoryService,
     serial::generate_serial,
-    timing::elapsed_ms,
     types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse},
     zone::ZoneService,
 };

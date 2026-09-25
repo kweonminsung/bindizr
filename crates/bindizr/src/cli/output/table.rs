@@ -1,8 +1,7 @@
 //! Table rows for CLI output, each built from the typed daemon response so
 //! the column set is all this module decides.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
+use bindizr_core::time::unix_time_ms;
 use bindizr_service::types::{
     CreatedTokenResponse, DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse,
     GetSecondaryResponse, GetTokenGrantResponse, GetTokenResponse, GetTsigGrantResponse,
@@ -643,11 +642,7 @@ pub(crate) fn display_uptime(started_at_ms: u64) -> String {
     if started_at_ms == 0 {
         return "starting".to_string();
     }
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let secs = now_ms.saturating_sub(started_at_ms) / 1000;
+    let secs = unix_time_ms().saturating_sub(started_at_ms) / 1000;
     let (days, hours, minutes, seconds) = (
         secs / 86_400,
         secs % 86_400 / 3_600,

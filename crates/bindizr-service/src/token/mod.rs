@@ -5,14 +5,11 @@ use sha2::{Digest, Sha256};
 use super::{error::ServiceError, repository::RepositoryService};
 use crate::{
     authorization::Caller,
-    identifier::normalize_identifier,
     model::api_token::ApiToken,
+    text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
     types::{GetTokenResponse, PageFilter, PaginatedResponse},
 };
 
-const MAX_TOKEN_NAME_LEN: usize = 255;
-/// `api_tokens.description` is VARCHAR(255) on MySQL and PostgreSQL.
-const MAX_TOKEN_DESCRIPTION_LEN: usize = 255;
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
 const MAX_EXPIRES_IN_DAYS: i64 = 36_500;
 
@@ -38,7 +35,7 @@ impl TokenService {
         caller.authorize_global("manage API tokens")?;
 
         let name = normalize_token_name(name)?;
-        validate_token_description(description)?;
+        let description = normalize_description(description, ServiceError::invalid_input)?;
         let expires_at = normalize_expires_at(expires_in_days)?;
 
         // Friendly pre-check; the UNIQUE(name) backstop covers the race.
@@ -61,7 +58,7 @@ impl TokenService {
             id: 0,
             name,
             token: token_hash,
-            description: description.map(|d| d.to_string()),
+            description,
             is_global,
             expires_at,
             created_at: Utc::now(),
@@ -116,7 +113,7 @@ impl TokenService {
 /// Lowercased so one name means one token on every backend (MySQL compares
 /// case-insensitively), and kept to one URL path segment for `/tokens/{name}`.
 pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
-    let name = normalize_identifier(name, "token name", MAX_TOKEN_NAME_LEN)?;
+    let name = normalize_identifier(name, "token name", MAX_COLUMN_TEXT_LEN)?;
     // Dot segments get normalized away; `self` is the lookup route.
     if name == "." || name == ".." || name == "self" {
         return Err(ServiceError::invalid_input(format!(
@@ -124,25 +121,6 @@ pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
         )));
     }
     Ok(name)
-}
-
-/// VARCHAR(255) counts characters, not bytes, and PostgreSQL text cannot hold
-/// NUL; both must be 400s rather than a backend-dependent insert failure.
-fn validate_token_description(description: Option<&str>) -> Result<(), ServiceError> {
-    let Some(description) = description else {
-        return Ok(());
-    };
-    if description.chars().count() > MAX_TOKEN_DESCRIPTION_LEN {
-        return Err(ServiceError::invalid_input(
-            "description must be 255 characters or fewer",
-        ));
-    }
-    if description.contains('\0') {
-        return Err(ServiceError::invalid_input(
-            "description must not contain NUL characters",
-        ));
-    }
-    Ok(())
 }
 
 /// When a token created now expires; `None` never does.

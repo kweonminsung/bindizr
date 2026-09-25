@@ -8,12 +8,12 @@ use crate::{
     authorization::Caller,
     database::repository::LockLevel,
     error::ServiceError,
-    identifier::normalize_identifier,
     model::{
         dnssec_key::DnssecAlgorithm,
         dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
     },
     repository::RepositoryService,
+    text::normalize_identifier,
     types::{
         CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageFilter, PaginatedResponse,
         UpdateDnssecPolicyRequest,

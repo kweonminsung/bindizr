@@ -290,6 +290,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "clap_mangen",
+ "hex",
  "log",
  "serde",
  "serde_json",

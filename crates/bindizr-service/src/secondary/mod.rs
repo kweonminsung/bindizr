@@ -19,18 +19,15 @@ use crate::{
     database::repository::LockLevel,
     dns_client::{notify, probe, resolve_address_entry},
     error::ServiceError,
-    identifier::normalize_identifier,
     model::{secondary::Secondary, tsig_key::TsigKey},
     repository::RepositoryService,
+    text::{MAX_COLUMN_TEXT_LEN, normalize_identifier},
     tsig_key::TsigKeyService,
     types::{
         GetSecondaryResponse, PageFilter, PaginatedResponse, SecondaryCheckResponse,
         UpdateSecondaryRequest,
     },
 };
-
-/// The width of the `secondaries.name` and `secondaries.address` columns.
-const MAX_SECONDARY_FIELD_LEN: usize = 255;
 
 /// The port a `host` entry without one is registered with.
 const DEFAULT_DNS_PORT: u16 = 53;
@@ -306,7 +303,7 @@ impl SecondaryService {
 /// Lowercased so one name means one secondary on every backend; a plain
 /// identifier, since it travels in URL paths.
 pub(crate) fn normalize_secondary_name(value: &str) -> Result<String, ServiceError> {
-    normalize_identifier(value, "secondary name", MAX_SECONDARY_FIELD_LEN)
+    normalize_identifier(value, "secondary name", MAX_COLUMN_TEXT_LEN)
 }
 
 /// A `host[:port]` entry in its stored form, the port spelled out and a
@@ -329,10 +326,10 @@ pub(crate) fn normalize_secondary_address(value: &str) -> Result<String, Service
         ParsedAddress::SocketAddr(addr) => addr.to_string(),
         ParsedAddress::HostPort(host_port) => host_port.to_ascii_lowercase(),
     };
-    if address.len() > MAX_SECONDARY_FIELD_LEN {
+    if address.len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
             "secondary address must be {} characters or fewer",
-            MAX_SECONDARY_FIELD_LEN
+            MAX_COLUMN_TEXT_LEN
         )));
     }
     Ok(address)
