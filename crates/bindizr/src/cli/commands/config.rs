@@ -175,8 +175,6 @@ fn print_config(config: &BindizrConfig) {
     outln!();
 
     print_section("dns.notify");
-    print_value("after_update", config.dns.notify.after_update);
-    print_value("on_startup", config.dns.notify.on_startup);
     print_value("batch_ms", config.dns.notify.batch_ms);
     print_value("retries", config.dns.notify.retries);
     print_value("timeout_secs", config.dns.notify.timeout_secs);

@@ -80,7 +80,7 @@ fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
 #[test]
 fn from_toml_accepts_valid_config() {
     let parsed = parse_config(&TestConfigToml {
-        dns_extra: "nsupdate_tsig_required = false\n\n[dns.notify]\nafter_update = false\non_startup = true\nretries = 4\ntimeout_secs = 9",
+        dns_extra: "nsupdate_tsig_required = false\n\n[dns.notify]\nretries = 4\ntimeout_secs = 9",
         ..Default::default()
     })
     .unwrap();
@@ -92,8 +92,6 @@ fn from_toml_accepts_valid_config() {
         DatabaseType::Sqlite
     ));
     assert_eq!(parsed.api.listen_port, 3000);
-    assert!(!parsed.dns.notify.after_update);
-    assert!(parsed.dns.notify.on_startup);
     assert_eq!(parsed.dns.notify.retries, 4);
     assert_eq!(parsed.dns.notify.timeout_secs, 9);
     assert!(!parsed.dns.nsupdate_tsig_required);
@@ -106,8 +104,6 @@ fn from_toml_defaults_missing_optional_fields() {
 
     assert!(parsed.api.metrics_enabled);
     assert!(!parsed.api.external_dns_enabled);
-    assert!(parsed.dns.notify.after_update);
-    assert!(!parsed.dns.notify.on_startup);
     // 0 keeps NOTIFY ahead of the write's answer; only a window queues it.
     assert_eq!(parsed.dns.notify.batch_ms, 0);
     assert_eq!(parsed.dns.notify.retries, 3);
@@ -213,8 +209,6 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DNS_LISTEN_PORT" => Some("5353".to_string()),
             "BINDIZR_DNS_CATALOG_ZONE_NAME" => Some("catalog.staging".to_string()),
             "BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED" => Some("false".to_string()),
-            "BINDIZR_DNS_NOTIFY_AFTER_UPDATE" => Some("false".to_string()),
-            "BINDIZR_DNS_NOTIFY_ON_STARTUP" => Some("true".to_string()),
             "BINDIZR_DNS_NOTIFY_BATCH_MS" => Some("50".to_string()),
             "BINDIZR_DNS_NOTIFY_RETRIES" => Some("7".to_string()),
             "BINDIZR_DNS_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
@@ -245,8 +239,6 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.dns.listen_port, 5353);
     assert_eq!(overridden.dns.catalog_zone_name, "catalog.staging");
     assert!(!overridden.dns.nsupdate_tsig_required);
-    assert!(!overridden.dns.notify.after_update);
-    assert!(overridden.dns.notify.on_startup);
     assert_eq!(overridden.dns.notify.batch_ms, 50);
     assert_eq!(overridden.dns.notify.retries, 7);
     assert_eq!(overridden.dns.notify.timeout_secs, 11);

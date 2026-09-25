@@ -4,9 +4,7 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
-use super::{
-    DnssecService, notify_zone, parent_ns_addrs::normalize_parent_ns_addrs, status::build_status_tx,
-};
+use super::{DnssecService, parent_ns_addrs::normalize_parent_ns_addrs, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -142,7 +140,7 @@ impl DnssecService {
         log::info!("event=dnssec_enable zone={}", response.zone_name);
 
         // Secondaries can fetch the signed view only after the transaction commits.
-        notify_zone(&response.zone_name).await;
+        crate::notify::notify_after_update(&response.zone_name).await;
         Ok(response)
     }
 
@@ -249,7 +247,7 @@ impl DnssecService {
         log::info!("event=dnssec_update_settings zone={}", response.zone_name);
         // Only a policy move changes zone data; parent nameservers are not served.
         if policy_name.is_some() {
-            notify_zone(&response.zone_name).await;
+            crate::notify::notify_after_update(&response.zone_name).await;
         }
         Ok(response)
     }
@@ -323,7 +321,7 @@ impl DnssecService {
             log::warn!("event=dnssec_disable_ds_check_skipped zone={}", zone_name);
         }
         log::info!("event=dnssec_disable zone={}", zone_name);
-        notify_zone(&zone_name).await;
+        crate::notify::notify_after_update(&zone_name).await;
         Ok(())
     }
 
@@ -342,7 +340,7 @@ impl DnssecService {
         let zone_name = RepositoryService::finish_tx(tx, result, "failed to sign zone").await?;
 
         log::info!("event=dnssec_sign zone={}", zone_name);
-        notify_zone(&zone_name).await;
+        crate::notify::notify_after_update(&zone_name).await;
         Ok(())
     }
 }

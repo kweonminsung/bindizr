@@ -161,9 +161,8 @@ impl RecordService {
         // Announce only a committed deletion, never a preview.
         if response.applied
             && let Some(zone_name) = response.records.first().map(|record| &record.zone_name)
-            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {
-            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+            crate::notify::notify_after_update(zone_name).await;
         }
 
         Ok(response)
@@ -297,11 +296,8 @@ impl RecordService {
 
         // Announce only a committed deletion, never a preview or an empty
         // match — which applies, but writes nothing and leaves the serial.
-        if response.applied
-            && response.deleted > 0
-            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
-        {
-            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+        if response.applied && response.deleted > 0 {
+            crate::notify::notify_after_update(zone_name.as_str()).await;
         }
 
         Ok(response)

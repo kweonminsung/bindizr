@@ -71,8 +71,6 @@ nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false adm
 # scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
 
 [dns.notify]                  # NOTIFY to the secondaries
-after_update = true           # Notify after zone changes
-on_startup = false            # Notify for every zone at startup
 # batch_ms = 0                # Window to batch a zone's NOTIFYs, sent after the write is answered (0 = before)
 # retries = 3                 # Retries after the first attempt
 # timeout_secs = 3            # Seconds to wait for each NOTIFY
@@ -129,8 +127,6 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate_tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
-| `BINDIZR_DNS_NOTIFY_AFTER_UPDATE` | `dns.notify.after_update` | |
-| `BINDIZR_DNS_NOTIFY_ON_STARTUP` | `dns.notify.on_startup` | |
 | `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](#batching-notify) |
 | `BINDIZR_DNS_NOTIFY_RETRIES` | `dns.notify.retries` | |
 | `BINDIZR_DNS_NOTIFY_TIMEOUT_SECS` | `dns.notify.timeout_secs` | |

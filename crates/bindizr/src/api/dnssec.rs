@@ -13,10 +13,13 @@ use bindizr_service::{
 };
 use serde::Deserialize;
 
-use crate::api::{
-    NameParam, RequestCaller,
-    error::{ApiError, Path, Query},
-    middleware::body_parser::JsonBody,
+use crate::{
+    api::{
+        RequestCaller,
+        error::{ApiError, Path, Query},
+        middleware::body_parser::JsonBody,
+    },
+    params::NameParams,
 };
 
 pub(crate) struct DnssecApi;
@@ -69,7 +72,7 @@ impl DnssecApi {
 )]
 pub(crate) async fn get_dnssec_status(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::get_status(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
@@ -99,7 +102,7 @@ pub(crate) async fn get_dnssec_status(
 )]
 pub(crate) async fn enable_dnssec(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<EnableDnssecRequest>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::enable(
@@ -140,7 +143,7 @@ pub(crate) struct DisableDnssecQuery {
 )]
 pub(crate) async fn disable_dnssec(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
     Query(query): Query<DisableDnssecQuery>,
 ) -> Result<Response, ApiError> {
     DnssecService::disable(&caller, &params.name, query.skip_ds_check.unwrap_or(false)).await?;
@@ -171,7 +174,7 @@ pub(crate) async fn disable_dnssec(
 )]
 pub(crate) async fn sign_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     DnssecService::sign(&caller, &params.name).await?;
     let response = MessageResponse {
@@ -204,7 +207,7 @@ pub(crate) async fn sign_zone(
 )]
 pub(crate) async fn start_dnssec_rollover(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<RolloverDnssecRequest>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::start_rollover(&caller, &params.name, body.role.as_deref()).await?;
@@ -242,7 +245,7 @@ pub(crate) struct DsSeenQuery {
 )]
 pub(crate) async fn ds_seen_dnssec_rollover(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
     Query(query): Query<DsSeenQuery>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::advance_rollover(
@@ -277,7 +280,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
 )]
 pub(crate) async fn withdraw_dnssec(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::withdraw(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
@@ -305,7 +308,7 @@ pub(crate) async fn withdraw_dnssec(
 )]
 pub(crate) async fn cancel_dnssec_withdrawal(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::cancel_withdrawal(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
@@ -332,7 +335,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
 )]
 pub(crate) async fn check_dnssec_ds(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::check_ds(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
@@ -362,7 +365,7 @@ pub(crate) async fn check_dnssec_ds(
 )]
 pub(crate) async fn update_dnssec_settings(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateDnssecSettingsRequest>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::update_settings(

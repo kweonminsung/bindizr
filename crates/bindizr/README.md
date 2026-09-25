@@ -65,8 +65,6 @@ nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false adm
 # scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
 
 [dns.notify]                  # NOTIFY to the secondaries
-after_update = true           # Notify after zone changes
-on_startup = false            # Notify for every zone at startup
 # batch_ms = 0                # Window to batch a zone's NOTIFYs, sent after the write is answered (0 = before)
 # retries = 3                 # Retries after the first attempt
 # timeout_secs = 3            # Seconds to wait for each NOTIFY

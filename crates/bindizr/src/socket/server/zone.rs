@@ -8,12 +8,15 @@ use bindizr_service::{
     zone::ZoneService,
 };
 
-use crate::socket::{
-    server::{parse_params, to_response_data},
-    types::{
-        DaemonResponse, DeleteZoneParams, DiffZoneVersionsParams, ExportZoneFileParams,
-        ImportZoneParams, ListZoneVersionsParams, NameParams, RollbackZoneParams, UpdateZoneParams,
-        ZoneVersionParams,
+use crate::{
+    params::NameParams,
+    socket::{
+        server::{parse_params, to_response_data},
+        types::{
+            DaemonResponse, DeleteZoneParams, DiffZoneVersionsParams, ExportZoneFileParams,
+            ImportZoneParams, ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams,
+            ZoneVersionParams,
+        },
     },
 };
 

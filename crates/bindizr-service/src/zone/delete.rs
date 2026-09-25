@@ -62,15 +62,8 @@ impl ZoneService {
 
         // Send catalog NOTIFY so secondaries drop the removed zone
         let config = bindizr_config();
-        if response.applied
-            && let Err(e) =
-                crate::notify::send_notify_after_update(Some(&config.dns.catalog_zone_name)).await
-        {
-            log::warn!(
-                "Failed to send NOTIFY for {}: {}",
-                config.dns.catalog_zone_name,
-                e
-            );
+        if response.applied {
+            crate::notify::notify_after_update(&config.dns.catalog_zone_name).await;
         }
 
         Ok(response)

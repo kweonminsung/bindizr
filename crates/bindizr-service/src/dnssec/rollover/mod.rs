@@ -5,7 +5,7 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::{Duration, Utc};
 
-use super::{DnssecService, notify_zone, status::build_status_tx};
+use super::{DnssecService, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -106,7 +106,7 @@ impl DnssecService {
         log::info!("event=dnssec_rollover_start zone={}", response.zone_name);
 
         // Announce the pre-published key after the signed view commits.
-        notify_zone(&response.zone_name).await;
+        crate::notify::notify_after_update(&response.zone_name).await;
         Ok(response)
     }
 
@@ -224,7 +224,7 @@ impl DnssecService {
             );
         }
         log::info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
-        notify_zone(&response.zone_name).await;
+        crate::notify::notify_after_update(&response.zone_name).await;
         Ok(response)
     }
 

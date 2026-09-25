@@ -10,9 +10,10 @@ use crate::{
         error::CliError,
         output::{OutputFormat, SecondaryRow, parse_payload, print_payload, print_response},
     },
+    params::NameParams,
     socket::{
         client,
-        types::{DaemonCommandKind, NameParams, UpdateSecondaryParams},
+        types::{DaemonCommandKind, UpdateSecondaryParams},
     },
 };
 

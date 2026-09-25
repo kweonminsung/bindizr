@@ -13,10 +13,13 @@ use bindizr_service::{
     },
 };
 
-use crate::api::{
-    NameParam, RequestCaller,
-    error::{ApiError, Path, Query},
-    middleware::body_parser::JsonBody,
+use crate::{
+    api::{
+        RequestCaller,
+        error::{ApiError, Path, Query},
+        middleware::body_parser::JsonBody,
+    },
+    params::NameParams,
 };
 
 pub(crate) struct DnssecPolicyApi;
@@ -111,7 +114,7 @@ pub(crate) async fn create_dnssec_policy(
 )]
 pub(crate) async fn get_dnssec_policy(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let policy = DnssecPolicyService::get(&caller, &params.name).await?;
     let response = DnssecPolicyResponse {
@@ -143,7 +146,7 @@ pub(crate) async fn get_dnssec_policy(
 )]
 pub(crate) async fn update_dnssec_policy(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateDnssecPolicyRequest>,
 ) -> Result<Response, ApiError> {
     let policy = DnssecPolicyService::update(&caller, &params.name, body).await?;
@@ -175,7 +178,7 @@ pub(crate) async fn update_dnssec_policy(
 )]
 pub(crate) async fn delete_dnssec_policy(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     DnssecPolicyService::delete(&caller, &params.name).await?;
     let response = MessageResponse {

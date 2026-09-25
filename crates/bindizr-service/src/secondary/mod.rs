@@ -7,7 +7,7 @@ use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use bindizr_core::{
     config::bindizr_config,
     dns::{
-        address::{ParsedAddress, is_address_target, loopback_if_unspecified},
+        address::{DEFAULT_DNS_PORT, ParsedAddress, is_address_target, loopback_if_unspecified},
         name::has_whitespace_or_control,
         tsig::TsigSigningKey,
     },
@@ -28,9 +28,6 @@ use crate::{
         UpdateSecondaryRequest,
     },
 };
-
-/// The port a `host` entry without one is registered with.
-const DEFAULT_DNS_PORT: u16 = 53;
 
 pub struct SecondaryService;
 

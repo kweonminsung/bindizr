@@ -8,10 +8,11 @@ use bindizr_service::{
     },
 };
 
-use crate::socket::{
-    server::{parse_params, to_response_data},
-    types::{
-        DaemonResponse, DeleteRecordParams, IdParams, UpdateRecordByNameParams, UpdateRecordParams,
+use crate::{
+    params::IdParams,
+    socket::{
+        server::{parse_params, to_response_data},
+        types::{DaemonResponse, DeleteRecordParams, UpdateRecordByNameParams, UpdateRecordParams},
     },
 };
 

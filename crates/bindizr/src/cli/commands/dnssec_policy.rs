@@ -10,9 +10,10 @@ use crate::{
         error::CliError,
         output::{DnssecPolicyRow, OutputFormat, print_payload, print_response},
     },
+    params::NameParams,
     socket::{
         client,
-        types::{DaemonCommandKind, NameParams, UpdateDnssecPolicyParams},
+        types::{DaemonCommandKind, UpdateDnssecPolicyParams},
     },
 };
 

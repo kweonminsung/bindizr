@@ -194,9 +194,9 @@ impl DnssecService {
             denial: policy.denial,
             now,
             inception: now - Duration::seconds(SIGNATURE_INCEPTION_OFFSET_SECS),
-            expiration: now + Duration::days(i64::from(policy.signature_validity_days)),
+            expiration: now + Duration::seconds(policy.signature_validity_secs()),
             expiration_jitter_secs: policy.expiration_jitter_secs(),
-            refresh_secs: i64::from(policy.signature_refresh_days) * 86_400,
+            refresh_secs: policy.signature_refresh_secs(),
             force,
             withdraw_parent_ds,
         }
@@ -267,13 +267,6 @@ impl DnssecService {
         RepositoryService::delete_dnssec_records_tx(tx, &removed_ids).await?;
         RepositoryService::create_dnssec_records_tx(tx, &diff.added).await?;
         Ok(true)
-    }
-}
-
-/// Schedule NOTIFY after a DNSSEC change to a zone.
-async fn notify_zone(zone_name: &str) {
-    if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name)).await {
-        log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
     }
 }
 

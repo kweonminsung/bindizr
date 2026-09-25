@@ -82,13 +82,6 @@ impl BindizrConfig {
             self.dns.scheduler_interval_secs =
                 parse_env_value("BINDIZR_DNS_SCHEDULER_INTERVAL_SECS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_AFTER_UPDATE") {
-            self.dns.notify.after_update =
-                parse_env_value("BINDIZR_DNS_NOTIFY_AFTER_UPDATE", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_ON_STARTUP") {
-            self.dns.notify.on_startup = parse_env_value("BINDIZR_DNS_NOTIFY_ON_STARTUP", &value)?;
-        }
         if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_BATCH_MS") {
             self.dns.notify.batch_ms = parse_env_value("BINDIZR_DNS_NOTIFY_BATCH_MS", &value)?;
         }

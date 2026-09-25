@@ -12,9 +12,10 @@ use crate::{
         error::CliError,
         output::{OutputFormat, parse_payload},
     },
+    params::NameParams,
     socket::{
         client,
-        types::{DaemonCommandKind, ImportZoneDnssecKeysParams, NameParams},
+        types::{DaemonCommandKind, ImportZoneDnssecKeysParams},
     },
 };
 

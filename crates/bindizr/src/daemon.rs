@@ -96,16 +96,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
 
     service::dnssec::initialize_scheduler();
 
-    // DNS must be listening before startup NOTIFY can prompt secondary transfers.
     let shutdown = Shutdown::new();
     let (dns_tcp_task, dns_udp_task) = dns::initialize(&shutdown).await?;
-
-    if config::bindizr_config().dns.notify.on_startup {
-        match service::notify::send_notify(None).await {
-            Ok(()) => log::info!("Startup DNS NOTIFY completed."),
-            Err(e) => log::error!("Startup DNS NOTIFY failed: {}", e),
-        }
-    }
 
     let mut control_rx = socket::server::control::initialize();
     let socket_task = socket::server::serve(socket_listener, &shutdown)?;

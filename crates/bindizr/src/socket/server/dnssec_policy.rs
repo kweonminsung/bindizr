@@ -8,9 +8,12 @@ use bindizr_service::{
     },
 };
 
-use crate::socket::{
-    server::{parse_params, to_response_data},
-    types::{DaemonResponse, NameParams, UpdateDnssecPolicyParams},
+use crate::{
+    params::NameParams,
+    socket::{
+        server::{parse_params, to_response_data},
+        types::{DaemonResponse, UpdateDnssecPolicyParams},
+    },
 };
 
 /// Create DNSSEC policy from the control request.
