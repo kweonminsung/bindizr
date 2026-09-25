@@ -8,13 +8,13 @@ use bindizr_service::{
     zone::ZoneService,
 };
 
-use crate::socket::{
-    server::to_response_data,
-    types::{DaemonDoctorResponse, DaemonResponse, DoctorCheckResult},
+use crate::{
+    daemon::DB_PROBE_TIMEOUT,
+    socket::{
+        server::to_response_data,
+        types::{DaemonDoctorResponse, DaemonResponse, DoctorCheckResult},
+    },
 };
-
-/// A hung database must become a failed check, not a hung doctor.
-const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The daemon-side installation checks. The catalog zone is the one probed
 /// because it exists before any user zone, so serial comparison always works.
@@ -23,7 +23,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
 
     // Count zones without materializing them; large tables must fit the deadline.
     let zones_probe = ZoneService::count(&Caller::Global);
-    let database = match tokio::time::timeout(DB_CHECK_TIMEOUT, zones_probe).await {
+    let database = match tokio::time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
         Ok(Ok(total)) => DoctorCheckResult {
             ok: true,
             detail: format!("{} ({} zones)", config.database.database_type, total),
@@ -36,7 +36,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
             ok: false,
             detail: format!(
                 "database check timed out after {} seconds",
-                DB_CHECK_TIMEOUT.as_secs()
+                DB_PROBE_TIMEOUT.as_secs()
             ),
         },
     };

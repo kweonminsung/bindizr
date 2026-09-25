@@ -1,16 +1,16 @@
 //! Process-wide Prometheus registry shared by the HTTP API and DNS layers.
 
-use std::{
-    sync::OnceLock,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::sync::OnceLock;
 
 use prometheus::{
     Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
     Registry, TextEncoder, core::Collector,
 };
 
-use crate::dns::message::{Rcode, Rtype};
+use crate::{
+    dns::message::{Rcode, Rtype},
+    time::unix_time_ms,
+};
 
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
@@ -78,12 +78,7 @@ impl Metrics {
             "Unix time the process started.",
         )
         .expect("valid metric definition");
-        started_at_seconds.set(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|elapsed| elapsed.as_secs_f64())
-                .unwrap_or(0.0),
-        );
+        started_at_seconds.set(unix_time_ms() as f64 / 1000.0);
         register(&registry, &started_at_seconds);
 
         let database_up = IntGauge::new(

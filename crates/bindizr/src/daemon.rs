@@ -18,6 +18,10 @@ use crate::{api, cli::error::CliError, dns, shutdown::Shutdown, socket};
 /// exits anyway.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long a front end waits for the database before answering without it;
+/// a wedged database must not hang a probe, a scrape, `status`, or `doctor`.
+pub(crate) const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Re-exec path captured at startup: after a package upgrade /proc/self/exe
 /// reads as a "(deleted)" path, while this path points at the replacement.
 static DAEMON_EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
