@@ -8,10 +8,7 @@ use std::collections::{HashMap, HashSet};
 use bindizr_core::dns::{name::OwnerName, record::SoaMailbox};
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
-pub(crate) use reconstruction::ReconstructedRecord;
-use reconstruction::{
-    MatchKey, list_records_at_serial_tx, reconstruct_records_at_serial_tx, to_match_key,
-};
+use reconstruction::{list_records_at_serial_tx, reconstruct_records_at_serial_tx};
 
 use super::{
     ZoneService, diff::build_record_diff, update::soa_replacement_changes,
@@ -22,7 +19,10 @@ use crate::{
     authorization::Caller,
     dnssec::DnssecService,
     error::ServiceError,
-    model::{record::Record, zone::Zone},
+    model::{
+        record::{Record, RecordData, RecordKey},
+        zone::Zone,
+    },
     record::{
         RecordService, validate_record_add_constraints_normalized, validate_record_name_in_zone,
     },
@@ -114,17 +114,17 @@ impl ZoneService {
 
             let records = list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?;
 
-            Ok::<_, ServiceError>((version, records))
+            Ok::<_, ServiceError>((zone, version, records))
         }
         .await;
 
-        let (version, records) =
+        let (zone, version, records) =
             RepositoryService::finish_tx(tx, result, "Failed to load version").await?;
         Ok(VersionDetailResponse {
             version: ZoneVersionResponse::from_version(&version)?,
             records: records
-                .into_iter()
-                .map(VersionRecordResponse::from)
+                .iter()
+                .map(|record| VersionRecordResponse::from_record_and_zone_name(record, &zone.name))
                 .collect(),
         })
     }
@@ -237,7 +237,7 @@ impl ZoneService {
                     .await?;
 
             // Diff current vs target, import-Replace style.
-            let mut target_by_key: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
+            let mut target_by_key: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
             for target in target_records {
                 target_by_key
                     .entry(target.match_key())
@@ -247,10 +247,10 @@ impl ZoneService {
 
             let mut dels: Vec<Record> = Vec::new();
             let mut unchanged = 0usize;
-            let mut to_add: Vec<ReconstructedRecord> = Vec::new();
+            let mut to_add: Vec<RecordData> = Vec::new();
 
             for record in &current_records {
-                let key = to_match_key(record);
+                let key = record.match_key();
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
                         // A TTL change is a DEL + ADD pair, which RFC 2181,

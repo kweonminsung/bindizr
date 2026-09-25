@@ -1,8 +1,8 @@
 use bindizr_service::types::{
-    CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest,
-    ImportZoneRequest, NotifyCheckResponse, PageFilter, RolloverDnssecRequest,
-    SecondaryStatusResponse, UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest,
-    UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
+    CreateGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest, ImportZoneRequest,
+    NotifyCheckResponse, PageFilter, RolloverDnssecRequest, SecondaryStatusResponse,
+    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
+    UpdateSecondaryRequest, UpdateZoneRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -98,15 +98,17 @@ pub(crate) struct DaemonResponse {
 // a renamed field breaks at compile time. A payload that is exactly a service
 // request type is sent as that type.
 
+/// The name of the zone, secondary, token, key, or policy a command addresses.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ZoneNameParams {
+pub(crate) struct NameParams {
     pub(crate) name: String,
 }
 
+/// The id of the record or grant a command addresses.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct RecordIdParams {
+pub(crate) struct IdParams {
     pub(crate) id: i32,
 }
 
@@ -132,12 +134,6 @@ pub(crate) struct DeleteRecordParams {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SecondaryNameParams {
-    pub(crate) name: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct UpdateSecondaryParams {
     pub(crate) name: String,
     #[serde(flatten)]
@@ -146,28 +142,10 @@ pub(crate) struct UpdateSecondaryParams {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct TsigKeyNameParams {
-    pub(crate) name: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DnssecPolicyNameParams {
-    pub(crate) name: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct UpdateDnssecPolicyParams {
     pub(crate) name: String,
     #[serde(flatten)]
     pub(crate) request: UpdateDnssecPolicyRequest,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct TokenNameParams {
-    pub(crate) name: String,
 }
 
 /// Payload for listing the grants of one named subject: a TSIG key, an API
@@ -185,13 +163,7 @@ pub(crate) struct ListGrantsParams {
 pub(crate) struct CreateTsigGrantParams {
     pub(crate) key_name: String,
     #[serde(flatten)]
-    pub(crate) request: CreateTsigGrantRequest,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DeleteTsigGrantParams {
-    pub(crate) id: i32,
+    pub(crate) request: CreateGrantRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -199,13 +171,7 @@ pub(crate) struct DeleteTsigGrantParams {
 pub(crate) struct CreateTokenGrantParams {
     pub(crate) token_name: String,
     #[serde(flatten)]
-    pub(crate) request: CreateTokenGrantRequest,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DeleteTokenGrantParams {
-    pub(crate) id: i32,
+    pub(crate) request: CreateGrantRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

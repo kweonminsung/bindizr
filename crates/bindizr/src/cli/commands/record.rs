@@ -17,7 +17,7 @@ use crate::{
     socket::{
         client,
         types::{
-            DaemonCommandKind, DeleteRecordParams, RecordIdParams, UpdateRecordByNameParams,
+            DaemonCommandKind, DeleteRecordParams, IdParams, UpdateRecordByNameParams,
             UpdateRecordParams,
         },
     },
@@ -455,7 +455,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             output,
             ..
         } => {
-            let data = client::send_command(DaemonCommandKind::GetRecord, RecordIdParams { id })
+            let data = client::send_command(DaemonCommandKind::GetRecord, IdParams { id })
                 .await?
                 .data;
 

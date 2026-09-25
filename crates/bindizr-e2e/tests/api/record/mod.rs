@@ -141,7 +141,7 @@ async fn record_normalize_zone_name() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["record"]["name"], format!("api.{zone_name}."));
-    assert_eq!(body["record"]["zone_name"], format!("{zone_name}."));
+    assert_eq!(body["record"]["zone_name"], zone_name);
 }
 
 /// Verify that record delete matching moves the zone by one serial.

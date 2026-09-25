@@ -12,7 +12,7 @@ use crate::{
     },
     socket::{
         client,
-        types::{DaemonCommandKind, SecondaryNameParams, UpdateSecondaryParams},
+        types::{DaemonCommandKind, NameParams, UpdateSecondaryParams},
     },
 };
 
@@ -143,11 +143,8 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             )?;
         }
         SecondaryCommand::Get { name, output } => {
-            let res = client::send_command(
-                DaemonCommandKind::GetSecondary,
-                SecondaryNameParams { name },
-            )
-            .await?;
+            let res =
+                client::send_command(DaemonCommandKind::GetSecondary, NameParams { name }).await?;
 
             log::debug!("Secondary get result: {:?}", res);
 
@@ -180,7 +177,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
         SecondaryCommand::Check { name, output } => {
             let res = client::send_command(
                 DaemonCommandKind::CheckSecondary,
-                SecondaryNameParams { name: name.clone() },
+                NameParams { name: name.clone() },
             )
             .await?;
 
@@ -200,11 +197,8 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             }
         }
         SecondaryCommand::Delete { name, output } => {
-            let res = client::send_command(
-                DaemonCommandKind::DeleteSecondary,
-                SecondaryNameParams { name },
-            )
-            .await?;
+            let res = client::send_command(DaemonCommandKind::DeleteSecondary, NameParams { name })
+                .await?;
 
             log::debug!("Secondary deletion result: {:?}", res);
 

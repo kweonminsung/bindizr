@@ -29,6 +29,29 @@ pub struct DnssecRecord {
     pub rrset_digest: Option<String>,
 }
 
+/// What makes two derived records the same: owner, type, TTL, and rdata,
+/// every byte of which a signature covers. The row id and the RRSIG
+/// metadata, which change on re-signing, are left out.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DnssecRecordKey {
+    name: OwnerName,
+    record_type: DnssecRecordType,
+    ttl: i32,
+    rdata: Rdata,
+}
+
+impl DnssecRecord {
+    /// This record's identity for set matching.
+    pub fn match_key(&self) -> DnssecRecordKey {
+        DnssecRecordKey {
+            name: self.name.clone(),
+            record_type: self.record_type,
+            ttl: self.ttl,
+            rdata: self.rdata.clone(),
+        }
+    }
+}
+
 /// A derived record joined with its zone name, as the signed records listing
 /// returns it.
 #[derive(Debug, Clone, FromRow)]

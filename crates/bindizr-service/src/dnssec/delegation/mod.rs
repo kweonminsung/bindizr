@@ -8,6 +8,7 @@ use crate::{
     authorization::Caller,
     database::repository::LockLevel,
     dns_client::ds::{ParentDs, probe_parent_ds},
+    dnssec::SignedZone,
     error::ServiceError,
     model::{
         dnssec_key::{DnssecKey, DnssecKeyState},
@@ -28,31 +29,36 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_read_tx("failed to check the parent DS").await?;
         let result = async {
-            let (zone, policy, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-            let status = build_status_tx(&mut tx, &zone, Some(&policy), &keys, zone.serial).await?;
-            Ok((zone, keys, status))
+            let signed = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+            let status = build_status_tx(
+                &mut tx,
+                &signed.zone,
+                Some(&signed.policy),
+                &signed.keys,
+                signed.zone.serial,
+            )
+            .await?;
+            Ok((signed, status))
         }
         .await;
-        let (zone, keys, mut status) =
+        let (signed, mut status) =
             RepositoryService::finish_tx(tx, result, "failed to check the parent DS").await?;
         // Read-only, so the wait stays outside the transaction; the keys are
         // the ones the status describes.
-        status.delegation = Some(Self::probe_delegation(&zone, &keys).await?);
+        status.delegation = Some(Self::probe_delegation(&signed).await?);
         Ok(status)
     }
 
     /// The parent's answer about the zone's DS, matched against the zone's
     /// SEP keys, or the unverified error a refusal reports.
     pub(crate) async fn probe_delegation(
-        zone: &Zone,
-        keys: &[DnssecKey],
+        signed: &SignedZone,
     ) -> Result<DnssecDelegationInfo, ServiceError> {
-        let parent = probe_parent_ds(zone)
+        let parent = probe_parent_ds(&signed.zone)
             .await
-            .map_err(|e| ServiceError::dnssec_ds_unverified(zone.name.as_str(), e))?;
+            .map_err(|e| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), e))?;
 
-        build_delegation_info(zone, keys, parent)
+        build_delegation_info(&signed.zone, &signed.keys, parent)
     }
 }
 
@@ -66,7 +72,10 @@ fn build_delegation_info(
     parent: ParentDs,
 ) -> Result<DnssecDelegationInfo, ServiceError> {
     let served: Vec<&DsRrset> = parent.answers.iter().flatten().collect();
-    let mut ds_key_tags: Vec<u16> = served.iter().flat_map(|rrset| rrset.key_tags()).collect();
+    let mut ds_key_tags: Vec<u16> = served
+        .iter()
+        .flat_map(|record_set| record_set.key_tags())
+        .collect();
     ds_key_tags.sort_unstable();
     ds_key_tags.dedup();
 
@@ -82,7 +91,7 @@ fn build_delegation_info(
         // a laggard cannot promote a key early.
         let mut digest_types: Vec<u8> = served
             .iter()
-            .flat_map(|rrset| rrset.records.iter())
+            .flat_map(|record_set| record_set.records.iter())
             .filter(|record| record.key_tag == key.key_tag as u16)
             .map(|record| record.digest_type)
             .filter(|digest_type| DS_DIGEST_TYPES.contains(digest_type))
@@ -93,8 +102,8 @@ fn build_delegation_info(
         // A digest bindizr cannot compute leaves the match undecided, not
         // absent. Per server, so one computable answer cannot mask another.
         let ds_digest_unsupported = parent.answers.iter().any(|answer| {
-            answer.as_ref().is_some_and(|rrset| {
-                let mut for_key = rrset
+            answer.as_ref().is_some_and(|record_set| {
+                let mut for_key = record_set
                     .records
                     .iter()
                     .filter(|record| record.key_tag == key.key_tag as u16)
@@ -115,8 +124,8 @@ fn build_delegation_info(
 
         let ds_published = !parent.answers.is_empty()
             && parent.answers.iter().all(|answer| {
-                answer.as_ref().is_some_and(|rrset| {
-                    rrset
+                answer.as_ref().is_some_and(|record_set| {
+                    record_set
                         .records
                         .iter()
                         .any(|record| forms.contains(&record.rdata))
@@ -144,7 +153,7 @@ fn build_delegation_info(
         .to_string(),
         keys: delegation_keys,
         ds_key_tags,
-        ds_ttl: served.iter().map(|rrset| rrset.ttl).max(),
+        ds_ttl: served.iter().map(|record_set| record_set.ttl).max(),
         checked_at: Utc::now(),
     })
 }

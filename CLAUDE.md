@@ -375,9 +375,11 @@ out ("records sharing a name and type share one TTL"); a zone snapshot is
 "record set" there.
 
 **RR** (one wire resource record) and **RRset** (RFC 2181, Section 5: the
-records of one owner name and type) stay internal. Identifiers and code
-comments in core's wire, DNSSEC, and nsupdate layers and in service internals
-keep them, because that is where the distinction is load-bearing.
+records of one owner name and type) stay internal, and in identifiers only
+in core's wire, DNSSEC, and nsupdate layers, where the distinction from a
+stored `Record` row is load-bearing. Service identifiers say `record_set` /
+`RecordSet` (`RecordSetKey`, `group_record_sets`) and `record`; RR and RRset
+remain in comments describing the wire protocol.
 
 Protocol tokens keep their own spelling: nsupdate RCODEs (`NXRRSET`,
 `YXRRSET`, the `YxRrset` variants, lowercase log and metric labels),

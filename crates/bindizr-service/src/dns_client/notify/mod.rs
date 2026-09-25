@@ -10,7 +10,7 @@ use bindizr_core::{
     metrics::{NotifyResult, track_notify},
 };
 
-use crate::{model::secondary::Secondary, secondary::SecondaryService};
+use crate::{model::secondary::Secondary, secondary::SecondaryService, types::NotifyCheckResponse};
 
 /// Sends DNS NOTIFY to every enabled secondary for one zone. Which
 /// zones to notify is the caller's decision.
@@ -27,9 +27,8 @@ pub(crate) async fn send_zone_notify(zone_name: &str) -> Result<(), String> {
         .iter()
         .filter_map(|report| {
             report
-                .result
+                .error
                 .as_ref()
-                .err()
                 .map(|e| format!("{}: {}", report.address, e))
         })
         .collect();
@@ -45,15 +44,11 @@ pub(crate) async fn send_zone_notify(zone_name: &str) -> Result<(), String> {
     }
 }
 
-/// One secondary's NOTIFY outcome.
-pub struct NotifyReport {
-    pub address: String,
-    pub result: Result<(), String>,
-}
-
-/// Send NOTIFY for a zone to every enabled secondary; none yields an empty
-/// list.
-pub async fn send_notify_to_secondaries(zone_name: &str) -> Result<Vec<NotifyReport>, String> {
+/// Send NOTIFY for a zone to every enabled secondary, one outcome per
+/// address; none yields an empty list.
+pub async fn send_notify_to_secondaries(
+    zone_name: &str,
+) -> Result<Vec<NotifyCheckResponse>, String> {
     let secondaries = SecondaryService::list_enabled()
         .await
         .map_err(|e| e.to_string())?;
@@ -66,11 +61,11 @@ pub async fn send_notify_to_secondaries(zone_name: &str) -> Result<Vec<NotifyRep
 }
 
 /// Send NOTIFY for a zone to every resolved address of one secondary, signed
-/// with its NOTIFY key when it has one; one report per address.
+/// with its NOTIFY key when it has one; one outcome per address.
 pub async fn send_notify_to_secondary(
     zone_name: &str,
     secondary: &Secondary,
-) -> Result<Vec<NotifyReport>, String> {
+) -> Result<Vec<NotifyCheckResponse>, String> {
     let dns_config = &config::bindizr_config().dns;
     let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
     let retries = dns_config.notify.retries;
@@ -82,9 +77,10 @@ pub async fn send_notify_to_secondary(
         Ok(key) => key,
         Err(e) => {
             track_notify(NotifyResult::Error);
-            return Ok(vec![NotifyReport {
+            return Ok(vec![NotifyCheckResponse {
                 address: secondary.address.clone(),
-                result: Err(e.to_string()),
+                accepted: false,
+                error: Some(e.to_string()),
             }]);
         }
     };
@@ -92,9 +88,10 @@ pub async fn send_notify_to_secondary(
         Ok(addrs) => addrs,
         Err(e) => {
             track_notify(NotifyResult::ResolveError);
-            return Ok(vec![NotifyReport {
+            return Ok(vec![NotifyCheckResponse {
                 address: secondary.address.clone(),
-                result: Err(format!("failed to resolve: {}", e)),
+                accepted: false,
+                error: Some(format!("failed to resolve: {}", e)),
             }]);
         }
     };
@@ -114,9 +111,10 @@ pub async fn send_notify_to_secondary(
                 Err(e)
             }
         };
-        reports.push(NotifyReport {
+        reports.push(NotifyCheckResponse {
             address: addr.to_string(),
-            result,
+            accepted: result.is_ok(),
+            error: result.err(),
         });
     }
 

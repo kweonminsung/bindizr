@@ -7,7 +7,7 @@ use bindizr_service::{
 
 use crate::socket::{
     server::{parse_params, to_response_data},
-    types::{DaemonResponse, SecondaryNameParams, UpdateSecondaryParams},
+    types::{DaemonResponse, NameParams, UpdateSecondaryParams},
 };
 
 /// Register a secondary from the control request.
@@ -46,7 +46,7 @@ pub(crate) async fn list_secondaries(
 pub(crate) async fn get_secondary(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: SecondaryNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
     let secondary = SecondaryService::get(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
@@ -72,7 +72,7 @@ pub(crate) async fn update_secondary(
 pub(crate) async fn delete_secondary(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: SecondaryNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
     SecondaryService::delete(&Caller::Global, &params.name).await?;
 
     let message = format!("Secondary '{}' deleted successfully", params.name);
@@ -86,7 +86,7 @@ pub(crate) async fn delete_secondary(
 pub(crate) async fn check_secondary(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: SecondaryNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
     let check = SecondaryService::check(&Caller::Global, &params.name).await?;
 
     let message = if check.is_healthy() {

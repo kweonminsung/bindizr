@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 
-use super::DnssecService;
+use super::{DnssecService, parent_ns_addrs::parent_ns_addr_entries};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -136,7 +136,7 @@ pub(crate) async fn build_status_tx(
         next_resign_at,
         serial,
         withdrawing,
-        parent_ns_addrs: zone.parent_ns_addrs.clone(),
+        parent_ns_addrs: zone.parent_ns_addrs.as_deref().map(parent_ns_addr_entries),
         delegation: None,
     })
 }

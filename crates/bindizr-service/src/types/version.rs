@@ -1,13 +1,14 @@
 //! Zone version, diff, and rollback payloads.
 
-use bindizr_core::dns::record::SoaMailbox;
+use bindizr_core::dns::{name::ZoneName, record::SoaMailbox};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::record::{RecordValueRequest, build_display_value};
 use crate::{
-    error::ServiceError, model::zone_version::ZoneVersion, zone::history::ReconstructedRecord,
+    error::ServiceError,
+    model::{record::RecordData, zone_version::ZoneVersion},
 };
 
 /// One entry of a zone's serial history, with SOA metadata in API form
@@ -66,11 +67,11 @@ impl ZoneVersionResponse {
     }
 }
 
-/// A record reconstructed from the zone's journal; unlike stored
-/// records it has no database id.
+/// A record reconstructed from the zone's journal, named as the record
+/// listing names it; unlike stored records it has no database id.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct VersionRecordResponse {
-    #[schema(example = "www")]
+    #[schema(example = "www.example.com.")]
     pub name: String,
     #[serde(rename = "type")]
     #[schema(example = "A")]
@@ -82,11 +83,12 @@ pub struct VersionRecordResponse {
     pub priority: Option<i32>,
 }
 
-impl From<ReconstructedRecord> for VersionRecordResponse {
-    /// Build a version-record response from a reconstructed record.
-    fn from(record: ReconstructedRecord) -> Self {
+impl VersionRecordResponse {
+    /// Build a version-record response from a record's data, its owner
+    /// rendered absolute within `zone_name`.
+    pub(crate) fn from_record_and_zone_name(record: &RecordData, zone_name: &ZoneName) -> Self {
         VersionRecordResponse {
-            name: record.name.to_string(),
+            name: record.name.to_fqdn(zone_name),
             record_type: record.record_type.to_string(),
             // Decode TXT out of its stored form, as the record endpoints do.
             value: build_display_value(&record.value, &record.record_type),

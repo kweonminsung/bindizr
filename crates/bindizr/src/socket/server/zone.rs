@@ -12,14 +12,14 @@ use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
         DaemonResponse, DeleteZoneParams, DiffZoneVersionsParams, ExportZoneFileParams,
-        ImportZoneParams, ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams,
-        ZoneNameParams, ZoneVersionParams,
+        ImportZoneParams, ListZoneVersionsParams, NameParams, RollbackZoneParams, UpdateZoneParams,
+        ZoneVersionParams,
     },
 };
 
 /// Return the requested zone.
 pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
     Ok(DaemonResponse {
@@ -201,7 +201,7 @@ pub(crate) async fn rollback_zone(
 pub(crate) async fn get_zone_status(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let response = ZoneService::get_status(&Caller::Global, &params.name).await?;
 

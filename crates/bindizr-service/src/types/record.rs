@@ -240,7 +240,9 @@ pub struct GetRecordsFilter {
     pub offset: Option<u64>,
 }
 
-/// API representation of a record.
+/// API representation of a record. `name` is the owner's absolute name with
+/// its trailing dot, as name-valued rdata is rendered; `zone_name` is the
+/// zone's bare name, the spelling `/zones/{name}` takes.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct GetRecordResponse {
     /// Absent on the derived DNSSEC rows of a signed listing, which are not
@@ -248,7 +250,7 @@ pub struct GetRecordResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 1)]
     pub id: Option<i32>,
-    #[schema(example = "sub")]
+    #[schema(example = "www.example.com.")]
     pub name: String,
     #[serde(rename = "type")]
     #[schema(example = "A")]
@@ -276,7 +278,7 @@ impl GetRecordResponse {
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
-            zone_name: zone_name.to_fqdn(),
+            zone_name: zone_name.to_string(),
         }
     }
 

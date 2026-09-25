@@ -30,7 +30,7 @@ fn nothing_given_takes_every_record_at_the_name() {
 
 /// Verify that a type narrows to one RRSET.
 #[test]
-fn a_type_narrows_to_one_rrset() {
+fn a_type_narrows_to_one_record_set() {
     let a = record(RecordType::A, "192.0.2.1", None);
 
     assert!(matches_record(&a, Some(&RecordType::A), None, None));

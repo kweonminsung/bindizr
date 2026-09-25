@@ -7,15 +7,14 @@ use axum::{
 use bindizr_service::{
     token::{TokenService, grant::TokenGrantService},
     types::{
-        CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, DEFAULT_PAGE_LIMIT,
+        CreateGrantRequest, CreateTokenRequest, CreatedTokenResponse, DEFAULT_PAGE_LIMIT,
         ErrorResponse, GetTokenGrantResponse, GetTokenResponse, MessageResponse, PageFilter,
         PaginatedResponse, TokenGrantResponse, TokenResponse,
     },
 };
-use serde::Deserialize;
 
 use crate::api::{
-    AuthenticatedToken, GrantIdParam, RequestCaller, ZoneNameParam,
+    AuthenticatedToken, GrantIdParam, NameParam, RequestCaller,
     error::{ApiError, Path, Query},
     middleware::body_parser::JsonBody,
 };
@@ -42,11 +41,6 @@ impl TokenApi {
                 routing::get(list_zone_token_grants),
             )
     }
-}
-
-#[derive(Deserialize)]
-pub(crate) struct TokenNameParam {
-    name: String,
 }
 
 /// List all API tokens (secrets omitted).
@@ -175,7 +169,7 @@ pub(crate) async fn list_self_token_grants(
 )]
 pub(crate) async fn delete_token(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<TokenNameParam>,
+    Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     TokenService::delete(&caller, &params.name).await?;
     let response = MessageResponse {
@@ -205,7 +199,7 @@ pub(crate) async fn delete_token(
 )]
 pub(crate) async fn list_token_grants(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<TokenNameParam>,
+    Path(params): Path<NameParam>,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
@@ -223,7 +217,7 @@ pub(crate) async fn list_token_grants(
         params(
             ("name" = String, Path, description = "The name of the API token.")
         ),
-        request_body = CreateTokenGrantRequest,
+        request_body = CreateGrantRequest,
         responses(
             (status = 201, description = "Token grant created", body = TokenGrantResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
@@ -236,8 +230,8 @@ pub(crate) async fn list_token_grants(
 )]
 pub(crate) async fn create_token_grant(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<TokenNameParam>,
-    JsonBody(body): JsonBody<CreateTokenGrantRequest>,
+    Path(params): Path<NameParam>,
+    JsonBody(body): JsonBody<CreateGrantRequest>,
 ) -> Result<Response, ApiError> {
     let grant = TokenGrantService::grant(
         &caller,
@@ -304,7 +298,7 @@ pub(crate) async fn delete_token_grant(
 )]
 pub(crate) async fn list_zone_token_grants(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParam>,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));

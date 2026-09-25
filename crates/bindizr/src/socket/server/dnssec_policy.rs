@@ -10,7 +10,7 @@ use bindizr_service::{
 
 use crate::socket::{
     server::{parse_params, to_response_data},
-    types::{DaemonResponse, DnssecPolicyNameParams, UpdateDnssecPolicyParams},
+    types::{DaemonResponse, NameParams, UpdateDnssecPolicyParams},
 };
 
 /// Create DNSSEC policy from the control request.
@@ -47,7 +47,7 @@ pub(crate) async fn list_dnssec_policies(
 pub(crate) async fn get_dnssec_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: DnssecPolicyNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let policy = DnssecPolicyService::get(&Caller::Global, &params.name).await?;
 
@@ -79,7 +79,7 @@ pub(crate) async fn update_dnssec_policy(
 pub(crate) async fn delete_dnssec_policy(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: DnssecPolicyNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     DnssecPolicyService::delete(&Caller::Global, &params.name).await?;
 

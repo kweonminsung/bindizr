@@ -1,4 +1,7 @@
-use bindizr_core::{dns::name::ZoneName, model::dnssec_record::DnssecRecordType};
+use bindizr_core::{
+    dns::name::{OwnerName, ZoneName},
+    model::{dnssec_record::DnssecRecordType, record::RecordType},
+};
 use chrono::Utc;
 
 use super::*;
@@ -50,7 +53,7 @@ fn user(record_type: RecordType) -> JournalRecordType {
 }
 
 /// Collect reconstructed record values for comparison.
-fn values(records: &[ReconstructedRecord]) -> Vec<&str> {
+fn values(records: &[RecordData]) -> Vec<&str> {
     records.iter().map(|r| r.value.as_str()).collect()
 }
 

@@ -11,14 +11,13 @@ use bindizr_service::{
 use crate::socket::{
     server::{parse_params, to_response_data},
     types::{
-        DaemonResponse, DeleteRecordParams, RecordIdParams, UpdateRecordByNameParams,
-        UpdateRecordParams,
+        DaemonResponse, DeleteRecordParams, IdParams, UpdateRecordByNameParams, UpdateRecordParams,
     },
 };
 
 /// Return the requested record.
 pub(crate) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: RecordIdParams = parse_params(data)?;
+    let params: IdParams = parse_params(data)?;
 
     let record = RecordService::get_with_zone(&Caller::Global, params.id).await?;
     Ok(DaemonResponse {

@@ -81,7 +81,7 @@ async fn zone_versions_list_and_get() {
         .filter(|record| record["type"] == "A")
         .map(|record| record["name"].as_str().unwrap())
         .collect();
-    assert_eq!(a_records, ["www"]);
+    assert_eq!(a_records, [format!("www.{zone_name}.")]);
 
     let (status, body) = app
         .send_request(
