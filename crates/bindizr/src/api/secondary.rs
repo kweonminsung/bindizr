@@ -64,7 +64,7 @@ pub(crate) async fn list_secondaries(
         path = "/secondaries",
         tag = "Secondary",
         summary = "Register a secondary",
-        description = "Registers a secondary by name and `host[:port]` address (port 53 when left out). It receives NOTIFY from the next change on and may pull zones unsigned from that address; a hostname is resolved when used. A signed transfer is authorized by its key instead, but NOTIFY still goes only to the registered secondaries. With `notify_key`, every NOTIFY to it is signed with that TSIG key and the answer's signature checked.",
+        description = "Registers a secondary by name and `host[:port]` address (port 53 when left out). It receives NOTIFY from the next change on and may pull zones unsigned from that address; a hostname is resolved when used. A signed transfer is authorized by its key instead, but NOTIFY still goes only to the registered secondaries. With `notify_key_name`, every NOTIFY to it is signed with that TSIG key and the answer's signature checked.",
         request_body = CreateSecondaryRequest,
         responses(
             (status = 201, description = "Secondary registered successfully", body = SecondaryResponse),
@@ -84,7 +84,7 @@ pub(crate) async fn create_secondary(
         &caller,
         &body.name,
         &body.address,
-        body.notify_key.as_deref(),
+        body.notify_key_name.as_deref(),
     )
     .await?;
     let response = SecondaryResponse { secondary };

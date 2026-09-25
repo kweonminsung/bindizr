@@ -18,8 +18,7 @@ use crate::{
     },
     repository::RepositoryService,
     types::{
-        DnssecKeyMaterial, ExportDnssecKeysResponse, GetDnssecStatusResponse,
-        ImportDnssecKeyRequest,
+        DnssecKeyMaterial, DnssecStatusResponse, ExportDnssecKeysResponse, ImportDnssecKeyRequest,
     },
     zone::ZoneService,
 };
@@ -43,9 +42,9 @@ impl DnssecService {
                 keys: keys
                     .iter()
                     .map(|key| DnssecKeyMaterial {
-                        role: key.role.to_string(),
+                        role: key.role,
                         algorithm: key.algorithm.to_int(),
-                        key_tag: key.key_tag,
+                        key_tag: key.key_tag as u16,
                         dnskey_record: format!(
                             "{}. IN DNSKEY {} 3 {} {}",
                             zone.name.as_str(),
@@ -70,14 +69,14 @@ impl DnssecService {
         caller: &Caller,
         zone_name: &str,
         request: ImportDnssecKeyRequest,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
         if request.keys.is_empty() {
             return Err(ServiceError::invalid_input("no key pair to import"));
         }
         let policy_name = normalize_policy_name(
             request
-                .policy
+                .policy_name
                 .as_deref()
                 .unwrap_or(DEFAULT_DNSSEC_POLICY_NAME),
         )?;

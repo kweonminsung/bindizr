@@ -21,7 +21,7 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::GetDnssecStatusResponse,
+    types::DnssecStatusResponse,
     zone::ZoneService,
 };
 
@@ -58,7 +58,7 @@ impl DnssecService {
         zone_name: &str,
         policy: Option<&str>,
         parent_ns_addrs: &[String],
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
         let policy_name = normalize_policy_name(policy.unwrap_or(DEFAULT_DNSSEC_POLICY_NAME))?;
         let parent_ns_addrs = normalize_parent_ns_addrs(parent_ns_addrs)?;
@@ -154,7 +154,7 @@ impl DnssecService {
         zone_name: &str,
         policy: Option<&str>,
         parent_ns_addrs: Option<&[String]>,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
         if policy.is_none() && parent_ns_addrs.is_none() {
             return Err(ServiceError::invalid_input(

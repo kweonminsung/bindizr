@@ -24,7 +24,7 @@ async fn record_bulk_insert() {
         .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["inserted"], 4);
+    assert_eq!(body["added"], 4);
     assert_eq!(body["records"].as_array().unwrap().len(), 4);
 
     let (status, body) = app
@@ -57,7 +57,7 @@ async fn record_bulk_insert_accepts_ds_ahead_of_its_delegation_ns() {
         .send_request(Method::POST, "/records/bulk", Some(bulk_request))
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    assert_eq!(body["inserted"], 2);
+    assert_eq!(body["added"], 2);
     assert_eq!(body["records"][0]["type"], "DS");
     assert_eq!(body["records"][1]["type"], "NS");
 }
@@ -161,7 +161,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["applied"], false);
     assert_eq!(body["dry_run"], true);
-    assert_eq!(body["inserted"], 0);
+    assert_eq!(body["added"], 0);
     assert_eq!(body["records"].as_array().unwrap().len(), 2);
 
     let (status, body) = app
@@ -188,7 +188,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["applied"], true);
     assert_eq!(body["dry_run"], false);
-    assert_eq!(body["inserted"], 2);
+    assert_eq!(body["added"], 2);
 
     let (status, body) = app
         .send_request(

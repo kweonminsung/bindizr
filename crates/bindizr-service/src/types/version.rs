@@ -1,6 +1,6 @@
 //! Zone version, diff, and rollback payloads.
 
-use bindizr_core::dns::{name::ZoneName, record::SoaMailbox};
+use bindizr_core::dns::{name::ZoneName, record::SoaMailbox, serial_to_u32};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -8,7 +8,10 @@ use utoipa::ToSchema;
 use super::record::{RecordValueRequest, build_display_value};
 use crate::{
     error::ServiceError,
-    model::{record::RecordData, zone_version::ZoneVersion},
+    model::{
+        record::RecordData,
+        zone_version::{ChangeSource, ZoneVersion},
+    },
 };
 
 /// One entry of a zone's serial history, with SOA metadata in API form
@@ -16,7 +19,7 @@ use crate::{
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ZoneVersionResponse {
     #[schema(example = 7)]
-    pub serial: i32,
+    pub serial: u32,
     #[schema(example = "ns1.example.com")]
     pub mname: String,
     #[schema(example = "admin@example.com")]
@@ -34,8 +37,7 @@ pub struct ZoneVersionResponse {
     /// Which plane asked for this version: `token`, `nsupdate`, `system`
     /// (the DNSSEC scheduler), or `local` (the daemon socket, or
     /// any request while authentication is disabled).
-    #[schema(example = "token")]
-    pub change_source: String,
+    pub change_source: ChangeSource,
     /// The API token or TSIG key the change was made under, absent where no
     /// credential stood behind it.
     #[schema(example = "admin")]
@@ -52,7 +54,7 @@ impl ZoneVersionResponse {
                 ServiceError::internal(format!("Failed to decode version rname: {}", e))
             })?;
         Ok(ZoneVersionResponse {
-            serial: version.serial,
+            serial: serial_to_u32(version.serial).map_err(ServiceError::internal)?,
             mname: version.mname.clone(),
             rname,
             default_ttl: version.default_ttl,
@@ -60,7 +62,7 @@ impl ZoneVersionResponse {
             retry: version.retry,
             expire: version.expire,
             minimum_ttl: version.minimum_ttl,
-            change_source: version.change_source.to_string(),
+            change_source: version.change_source,
             changed_by: version.changed_by.clone(),
             created_at: version.created_at,
         })
@@ -116,13 +118,20 @@ pub struct RecordDiffValue {
     pub priority: Option<i32>,
 }
 
+/// Which way the records of one name and type differ between two serials.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RecordChange {
+    Added,
+    Removed,
+    Changed,
+}
+
 /// The records of one name and type that differ, with those present on
 /// each side. `from` is empty for `added`, `to` for `removed`.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordDiffEntry {
-    /// `added`, `removed`, or `changed`.
-    #[schema(example = "changed")]
-    pub change: String,
+    pub change: RecordChange,
     #[schema(example = "www.example.com.")]
     pub name: String,
     #[serde(rename = "type")]
@@ -136,11 +145,11 @@ pub struct RecordDiffEntry {
 #[derive(Default, Serialize, Deserialize, Debug, ToSchema)]
 pub struct RecordDiffSummary {
     #[schema(example = 1)]
-    pub added: usize,
+    pub added: u64,
     #[schema(example = 1)]
-    pub removed: usize,
+    pub removed: u64,
     #[schema(example = 1)]
-    pub changed: usize,
+    pub changed: u64,
 }
 
 /// Record differences grouped by name and type. Version comparisons always
@@ -155,9 +164,9 @@ pub struct RecordDiff {
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct VersionDiffResponse {
     #[schema(example = 41)]
-    pub from_serial: i32,
+    pub from_serial: u32,
     #[schema(example = 42)]
-    pub to_serial: i32,
+    pub to_serial: u32,
     pub diff: RecordDiff,
 }
 
@@ -166,11 +175,11 @@ pub struct VersionDiffResponse {
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct RollbackSummary {
     #[schema(example = 2)]
-    pub records_added: usize,
+    pub added: u64,
     #[schema(example = 3)]
-    pub records_deleted: usize,
+    pub deleted: u64,
     #[schema(example = 5)]
-    pub records_unchanged: usize,
+    pub unchanged: u64,
     #[schema(example = true)]
     pub soa_changed: bool,
 }
@@ -184,8 +193,8 @@ pub struct RollbackZoneResponse {
     #[schema(example = false)]
     pub dry_run: bool,
     #[schema(example = 7)]
-    pub target_serial: i32,
+    pub target_serial: u32,
     #[schema(example = 13)]
-    pub new_serial: i32,
+    pub new_serial: u32,
     pub summary: RollbackSummary,
 }

@@ -66,7 +66,7 @@ Examples:
         #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Version serial to inspect
-        serial: i32,
+        serial: u32,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -83,9 +83,9 @@ Omit the second serial to compare that version against the zone as it stands.")]
         #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// The serial to diff from
-        from_serial: i32,
+        from_serial: u32,
         /// The serial to diff to (omit to compare against the current serial)
-        to_serial: Option<i32>,
+        to_serial: Option<u32>,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -103,7 +103,7 @@ ordinary change rather than seeing the serial go backwards.")]
         #[arg(value_name = "ZONE_NAME")]
         name: String,
         /// Target version serial (the zone serial still advances)
-        serial: i32,
+        serial: u32,
         /// Compute and report the rollback without applying any change
         #[arg(long)]
         dry_run: bool,

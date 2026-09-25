@@ -297,7 +297,7 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
+            Some(json!({ "policy_name": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);

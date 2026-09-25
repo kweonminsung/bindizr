@@ -79,7 +79,6 @@ pub async fn send_notify_to_secondary(
             track_notify(NotifyResult::Error);
             return Ok(vec![NotifyCheckResponse {
                 address: secondary.address.clone(),
-                accepted: false,
                 error: Some(e.to_string()),
             }]);
         }
@@ -90,7 +89,6 @@ pub async fn send_notify_to_secondary(
             track_notify(NotifyResult::ResolveError);
             return Ok(vec![NotifyCheckResponse {
                 address: secondary.address.clone(),
-                accepted: false,
                 error: Some(format!("failed to resolve: {}", e)),
             }]);
         }
@@ -113,7 +111,6 @@ pub async fn send_notify_to_secondary(
         };
         reports.push(NotifyCheckResponse {
             address: addr.to_string(),
-            accepted: result.is_ok(),
             error: result.err(),
         });
     }

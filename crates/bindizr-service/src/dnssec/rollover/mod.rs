@@ -17,7 +17,7 @@ use crate::{
         zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
-    types::{DnssecDelegationKeyInfo, GetDnssecStatusResponse},
+    types::{DnssecDelegationKeyInfo, DnssecStatusResponse},
 };
 
 impl DnssecService {
@@ -27,7 +27,7 @@ impl DnssecService {
         caller: &Caller,
         zone_name: &str,
         role: Option<&str>,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_tx("failed to start key rollover").await?;
@@ -146,7 +146,7 @@ impl DnssecService {
         zone_name: &str,
         skip_ds_check: bool,
         skip_holddown: bool,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;

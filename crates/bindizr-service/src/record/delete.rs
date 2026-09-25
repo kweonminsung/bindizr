@@ -260,7 +260,7 @@ impl RecordService {
             let response = DeleteRecordsResponse {
                 applied: !filter.dry_run,
                 dry_run: filter.dry_run,
-                deleted: matched.len(),
+                deleted: matched.len() as u64,
                 records: matched
                     .iter()
                     .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone.name))

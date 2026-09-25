@@ -78,7 +78,7 @@ async fn secondary_lifecycle_via_cli() {
         ])
         .await;
     let cleared: Value = serde_json::from_str(&cleared).expect("CLI did not return valid JSON");
-    assert_eq!(cleared["secondary"]["notify_key"], Value::Null);
+    assert_eq!(cleared["secondary"]["notify_key_name"], Value::Null);
     app.run_cli_success(&["tsig-key", "delete", &key_name])
         .await;
 

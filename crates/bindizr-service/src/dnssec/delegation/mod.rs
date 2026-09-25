@@ -15,7 +15,7 @@ use crate::{
         zone::Zone,
     },
     repository::RepositoryService,
-    types::{DnssecDelegationInfo, DnssecDelegationKeyInfo, GetDnssecStatusResponse},
+    types::{DnssecDelegationInfo, DnssecDelegationKeyInfo, DnssecStatusResponse, DsState},
 };
 
 impl DnssecService {
@@ -24,7 +24,7 @@ impl DnssecService {
     pub async fn check_ds(
         caller: &Caller,
         zone_name: &str,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_read_tx("failed to check the parent DS").await?;
@@ -135,8 +135,8 @@ fn build_delegation_info(
         delegation_keys.push(DnssecDelegationKeyInfo {
             id: key.id,
             key_tag: key.key_tag as u16,
-            role: key.role.to_string(),
-            state: key.state.to_string(),
+            role: key.role,
+            state: key.state,
             ds_published,
             ds_digest_unsupported,
             eligible_at: (key.state == DnssecKeyState::Published).then_some(key.eligible_at),
@@ -146,11 +146,10 @@ fn build_delegation_info(
     Ok(DnssecDelegationInfo {
         parent_ns_addrs: parent.ns_addrs,
         ds_state: if served.is_empty() {
-            "hidden"
+            DsState::Hidden
         } else {
-            "published"
-        }
-        .to_string(),
+            DsState::Published
+        },
         keys: delegation_keys,
         ds_key_tags,
         ds_ttl: served.iter().map(|record_set| record_set.ttl).max(),

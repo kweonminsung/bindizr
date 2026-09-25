@@ -82,7 +82,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
     let response = DaemonDoctorResponse {
         database,
         dns_server,
-        catalog_zone: config.dns.catalog_zone_name.clone(),
+        catalog_zone_name: config.dns.catalog_zone_name.clone(),
         catalog_serial,
         secondaries,
         notifies,

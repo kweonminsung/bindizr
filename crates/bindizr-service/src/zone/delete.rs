@@ -39,8 +39,8 @@ impl ZoneService {
                 applied: !dry_run,
                 dry_run,
                 zone: GetZoneResponse::from_zone(&zone),
-                records,
-                versions,
+                records_deleted: records,
+                versions_deleted: versions,
             };
             if dry_run {
                 return Ok(response);

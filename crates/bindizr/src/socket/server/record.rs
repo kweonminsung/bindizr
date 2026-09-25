@@ -120,7 +120,7 @@ pub(crate) async fn create_records_bulk(
             response.records.len()
         )
     } else {
-        format!("Inserted {} record(s)", response.inserted)
+        format!("Added {} record(s)", response.added)
     };
 
     Ok(DaemonResponse {

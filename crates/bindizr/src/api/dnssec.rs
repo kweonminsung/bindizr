@@ -72,8 +72,7 @@ pub(crate) async fn get_dnssec_status(
     Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::get_status(&caller, &params.name).await?;
-    let response = DnssecStatusResponse { dnssec: status };
-    Ok((StatusCode::OK, Json(response)).into_response())
+    Ok((StatusCode::OK, Json(status)).into_response())
 }
 
 /// Enable DNSSEC for a zone: generate its signing keys and sign the zone.
@@ -82,7 +81,7 @@ pub(crate) async fn get_dnssec_status(
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Enable DNSSEC for a zone",
-        description = "Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC3 denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone's nameservers that every later DS check asks.",
+        description = "Generates the zone's signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC3 denial — when `policy_name` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone's nameservers that every later DS check asks.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -106,12 +105,11 @@ pub(crate) async fn enable_dnssec(
     let status = DnssecService::enable(
         &caller,
         &params.name,
-        body.policy.as_deref(),
+        body.policy_name.as_deref(),
         &body.parent_ns_addrs,
     )
     .await?;
-    let response = DnssecStatusResponse { dnssec: status };
-    Ok((StatusCode::CREATED, Json(response)).into_response())
+    Ok((StatusCode::CREATED, Json(status)).into_response())
 }
 
 #[derive(Deserialize)]
@@ -210,8 +208,7 @@ pub(crate) async fn start_dnssec_rollover(
     JsonBody(body): JsonBody<RolloverDnssecRequest>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::start_rollover(&caller, &params.name, body.role.as_deref()).await?;
-    let response = DnssecStatusResponse { dnssec: status };
-    Ok((StatusCode::OK, Json(response)).into_response())
+    Ok((StatusCode::OK, Json(status)).into_response())
 }
 
 #[derive(Deserialize)]
@@ -255,8 +252,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
         query.skip_holddown.unwrap_or(false),
     )
     .await?;
-    let response = DnssecStatusResponse { dnssec: status };
-    Ok((StatusCode::OK, Json(response)).into_response())
+    Ok((StatusCode::OK, Json(status)).into_response())
 }
 
 /// Publish the RFC 8078 delete CDS/CDNSKEY pair.
@@ -284,8 +280,7 @@ pub(crate) async fn withdraw_dnssec(
     Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::withdraw(&caller, &params.name).await?;
-    let response = DnssecStatusResponse { dnssec: status };
-    Ok((StatusCode::OK, Json(response)).into_response())
+    Ok((StatusCode::OK, Json(status)).into_response())
 }
 
 /// Cancel a published DS withdrawal.
@@ -313,8 +308,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
     Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::cancel_withdrawal(&caller, &params.name).await?;
-    let response = DnssecStatusResponse { dnssec: status };
-    Ok((StatusCode::OK, Json(response)).into_response())
+    Ok((StatusCode::OK, Json(status)).into_response())
 }
 
 /// Ask the parent zone whether it serves the zone's DS.
@@ -341,8 +335,7 @@ pub(crate) async fn check_dnssec_ds(
     Path(params): Path<NameParam>,
 ) -> Result<Response, ApiError> {
     let status = DnssecService::check_ds(&caller, &params.name).await?;
-    let response = DnssecStatusResponse { dnssec: status };
-    Ok((StatusCode::OK, Json(response)).into_response())
+    Ok((StatusCode::OK, Json(status)).into_response())
 }
 
 /// Change a zone's DNSSEC settings.
@@ -351,7 +344,7 @@ pub(crate) async fn check_dnssec_ds(
         path = "/zones/{name}/dnssec",
         tag = "DNSSEC",
         summary = "Change a zone's DNSSEC settings",
-        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy's (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys are removed after promotion and cache drain (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.",
+        description = "Applies the given fields in one transaction; an omitted field keeps its value. `policy_name` moves a signed zone to another policy: the key layout must match the current policy's (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys are removed after promotion and cache drain (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone's nameservers asked for the zone's DS, as `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -375,10 +368,9 @@ pub(crate) async fn update_dnssec_settings(
     let status = DnssecService::update_settings(
         &caller,
         &params.name,
-        body.policy.as_deref(),
+        body.policy_name.as_deref(),
         body.parent_ns_addrs.as_deref(),
     )
     .await?;
-    let response = DnssecStatusResponse { dnssec: status };
-    Ok((StatusCode::OK, Json(response)).into_response())
+    Ok((StatusCode::OK, Json(status)).into_response())
 }

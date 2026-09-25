@@ -32,7 +32,7 @@ async fn tsig_grant_lifecycle_and_delete_guard() {
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["tsig_grant"]["tsig_key"], "grant-key");
+    assert_eq!(body["tsig_grant"]["tsig_key_name"], "grant-key");
     assert_eq!(body["tsig_grant"]["zone_name"], json!(zone_name));
     assert_eq!(body["tsig_grant"]["record_name_pattern"], "*.dyn");
     assert_eq!(body["tsig_grant"]["record_types"], "A,AAAA");

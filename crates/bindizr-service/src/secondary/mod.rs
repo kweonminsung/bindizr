@@ -141,13 +141,13 @@ impl SecondaryService {
             .as_deref()
             .map(normalize_secondary_address)
             .transpose()?;
-        if address.is_none() && request.enabled.is_none() && request.notify_key.is_none() {
+        if address.is_none() && request.enabled.is_none() && request.notify_key_name.is_none() {
             return Err(ServiceError::invalid_input(
-                "nothing to update: give an address, enabled, or notify_key",
+                "nothing to update: give an address, enabled, or notify_key_name",
             ));
         }
         // Unlocked read to learn the FK target; the constraint backstops.
-        let notify_key: Option<Option<TsigKey>> = match request.notify_key.as_deref() {
+        let notify_key: Option<Option<TsigKey>> = match request.notify_key_name.as_deref() {
             None => None,
             Some("") => Some(None),
             Some(key_name) => Some(Some(TsigKeyService::lookup_by_name(key_name).await?)),
@@ -233,7 +233,7 @@ impl SecondaryService {
             secondary: Self::to_response(secondary).await?,
             addresses,
             resolve_error,
-            catalog_zone,
+            catalog_zone_name: catalog_zone,
             catalog_serial,
             listener_error,
             catalog,

@@ -180,9 +180,7 @@ pub(crate) async fn rollback_zone(
     let message = if response.dry_run {
         format!(
             "Dry run: rollback to serial {} would add {} and delete {} record(s); nothing applied",
-            response.target_serial,
-            response.summary.records_added,
-            response.summary.records_deleted
+            response.target_serial, response.summary.added, response.summary.deleted
         )
     } else {
         format!(
@@ -236,7 +234,7 @@ pub(crate) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonRespon
         message: if response.dry_run {
             format!(
                 "Zone '{}' would be deleted with {} record(s) and {} version(s)",
-                params.name, response.records, response.versions
+                params.name, response.records_deleted, response.versions_deleted
             )
         } else {
             format!("Zone '{}' deleted successfully", params.name)

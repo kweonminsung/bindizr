@@ -4,7 +4,7 @@
 use super::{DnssecService, notify_zone, status::build_status_tx};
 use crate::{
     authorization::Caller, database::repository::LockLevel, error::ServiceError,
-    repository::RepositoryService, types::GetDnssecStatusResponse,
+    repository::RepositoryService, types::DnssecStatusResponse,
 };
 
 impl DnssecService {
@@ -13,7 +13,7 @@ impl DnssecService {
     pub async fn withdraw(
         caller: &Caller,
         zone_name: &str,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_tx("failed to withdraw the parent DS").await?;
@@ -57,7 +57,7 @@ impl DnssecService {
     pub async fn cancel_withdrawal(
         caller: &Caller,
         zone_name: &str,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_tx("failed to cancel the DS withdrawal").await?;

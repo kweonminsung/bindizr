@@ -4,6 +4,7 @@ use bindizr_core::{
 };
 
 use super::*;
+use crate::types::DsState;
 
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {
@@ -97,7 +98,7 @@ fn one_server_still_serving_a_ds_is_enough_to_block_a_disable() {
     let seen = info(&key, vec![None, record_set(vec![ds_of(&key, 2)])]);
 
     assert_eq!(seen.ds_key_tags, [key.key_tag as u16]);
-    assert_eq!(seen.ds_state, "published");
+    assert_eq!(seen.ds_state, DsState::Published);
 }
 
 /// Verify that a parent serving nothing anywhere hides the delegation.
@@ -107,7 +108,7 @@ fn a_parent_serving_nothing_anywhere_hides_the_delegation() {
     let hidden = info(&key, vec![None, None]);
 
     assert!(hidden.ds_key_tags.is_empty());
-    assert_eq!(hidden.ds_state, "hidden");
+    assert_eq!(hidden.ds_state, DsState::Hidden);
     assert!(!hidden.keys[0].ds_published);
     assert!(!hidden.keys[0].ds_digest_unsupported);
 }

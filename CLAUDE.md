@@ -80,6 +80,16 @@ cargo +nightly fmt                                         # format (needs night
   contract of the HTTP API, the daemon socket, and the CLI alike; response
   types the CLI reads back derive `Deserialize` too. Front ends convert to
   their own presentation (CLI table rows), never re-derive the payload.
+  One vocabulary across payloads: a field that names another entity is
+  `<entity>_name` (`zone_name`, `token_name`, `notify_key_name`,
+  `policy_name`), a serial is `u32`, a key tag `u16`, a count `u64` named
+  `added`/`deleted`/`unchanged` (a diff says `removed`), a fixed set of
+  values is an enum with a schema (`SecondaryStatus`, `RecordChange`,
+  `DnssecKeyState`), and a response's `Option` is emitted as `null`, never
+  skipped, so clients read one shape. One entity travels in an envelope
+  keyed by its name (`{"zone": …}`); a report (status, check, diff, import,
+  rollback, the DNSSEC status) travels bare. A listing's query parameters
+  come from its filter struct (`IntoParams`), never a hand-written list.
 
 ### Transactions and locking
 

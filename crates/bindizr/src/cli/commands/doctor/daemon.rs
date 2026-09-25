@@ -5,6 +5,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use axum::http::StatusCode;
 use bindizr_core::{config::BindizrConfig, dns::address::loopback_if_unspecified};
+use bindizr_service::types::SecondaryStatus;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -169,19 +170,19 @@ pub(crate) async fn check_services(report: &mut Report) {
     }
 
     // These serials are the catalog zone's, unlike `zone status`, so say so.
-    let catalog_zone = &doctor.catalog_zone;
+    let catalog_zone = &doctor.catalog_zone_name;
     for secondary in &doctor.secondaries {
         let serial = secondary.visible_serial.unwrap_or_default();
-        match secondary.status.as_str() {
-            "in_sync" => report.ok(format!(
+        match secondary.status {
+            SecondaryStatus::InSync => report.ok(format!(
                 "Secondary in sync: {} (catalog zone {} at serial {})",
                 secondary.address, catalog_zone, serial
             )),
-            "reachable" => report.ok(format!(
+            SecondaryStatus::Reachable => report.ok(format!(
                 "Secondary reachable: {} (catalog zone {} at serial {})",
                 secondary.address, catalog_zone, serial
             )),
-            "unreachable" => report.fail(format!(
+            SecondaryStatus::Unreachable => report.fail(format!(
                 "Secondary unreachable: {} ({})",
                 secondary.address,
                 secondary.error.as_deref().unwrap_or("unknown error")

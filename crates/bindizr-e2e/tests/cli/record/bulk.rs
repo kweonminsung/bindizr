@@ -79,13 +79,13 @@ async fn record_bulk_insert_from_stdin() {
     let inserted = app
         .run_cli_success_with_input(&["record", "bulk-create", &zone_name, "-"], &records)
         .await;
-    assert!(inserted.contains("Inserted 2 record(s)"));
+    assert!(inserted.contains("Added 2 record(s)"));
 
     let yaml_records = "- name: ftp\n  type: A\n  value: 192.0.2.22\n  ttl: 300\n";
     let inserted_yaml = app
         .run_cli_success_with_input(&["record", "bulk-create", &zone_name, "-"], yaml_records)
         .await;
-    assert!(inserted_yaml.contains("Inserted 1 record(s)"));
+    assert!(inserted_yaml.contains("Added 1 record(s)"));
 
     let listed = app
         .run_cli_success(&[

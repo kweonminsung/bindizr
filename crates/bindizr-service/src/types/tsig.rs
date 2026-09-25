@@ -59,7 +59,7 @@ pub struct GetTsigGrantResponse {
     #[schema(example = 1)]
     pub id: i32,
     #[schema(example = "update-key")]
-    pub tsig_key: String,
+    pub tsig_key_name: String,
     #[schema(example = "example.com")]
     pub zone_name: String,
     #[schema(example = "*.dyn")]
@@ -76,7 +76,7 @@ impl GetTsigGrantResponse {
     pub fn from_grant(grant: &TsigGrantWithNames) -> Self {
         GetTsigGrantResponse {
             id: grant.grant.id,
-            tsig_key: grant.tsig_key_name.clone(),
+            tsig_key_name: grant.tsig_key_name.clone(),
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.grant.record_name_pattern.clone(),
             record_types: grant.grant.record_types.clone(),

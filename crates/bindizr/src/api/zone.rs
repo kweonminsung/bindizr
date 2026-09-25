@@ -165,7 +165,7 @@ pub(crate) async fn list_zone_versions(
         description = "Returns the version's SOA fields together with the zone's records at that serial, reconstructed from the journal.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("serial" = i32, Path, description = "The version serial to inspect.")
+            ("serial" = u32, Path, description = "The version serial to inspect.")
         ),
         responses(
             (status = 200, description = "The version and its reconstructed records", body = VersionDetailResponse),
@@ -191,7 +191,7 @@ pub(crate) async fn get_zone_version(
         description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With `dry_run=true` the rollback is computed and reported without applying any change.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to roll back."),
-            ("serial" = i32, Path, description = "The version serial to roll back to."),
+            ("serial" = u32, Path, description = "The version serial to roll back to."),
             ("dry_run" = Option<bool>, Query, description = "Compute and report the rollback without applying it.")
         ),
         responses(
@@ -226,14 +226,14 @@ pub(crate) struct VersionListQuery {
 #[derive(Debug, Deserialize)]
 pub(crate) struct ZoneVersionParam {
     name: String,
-    serial: i32,
+    serial: u32,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct VersionDiffQuery {
-    from: i32,
-    to: Option<i32>,
+    from: u32,
+    to: Option<u32>,
 }
 
 /// Diff the records at two of a zone's serials.
@@ -245,8 +245,8 @@ pub(crate) struct VersionDiffQuery {
         description = "Reports the records added, removed, and changed between `from` and `to`, grouped by name and type. Omitting `to` compares against the current serial. Each serial must be the current one or an existing version.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("from" = i32, Query, description = "The serial to diff from."),
-            ("to" = Option<i32>, Query, description = "The serial to diff to; defaults to the current serial.")
+            ("from" = u32, Query, description = "The serial to diff from."),
+            ("to" = Option<u32>, Query, description = "The serial to diff to; defaults to the current serial.")
         ),
         responses(
             (status = 200, description = "The record differences between the two serials", body = VersionDiffResponse),
@@ -270,27 +270,7 @@ pub(crate) async fn diff_zone_versions(
         path = "/zones",
         tag = "Zone",
         summary = "List all DNS zones",
-        params(
-            ("name" = Option<String>, Query, description = "Filter by zone name."),
-            ("id" = Option<i32>, Query, description = "Filter by zone ID."),
-            ("mname" = Option<String>, Query, description = "Filter by mname."),
-            ("rname" = Option<String>, Query, description = "Filter by rname."),
-            ("default_ttl" = Option<i32>, Query, description = "Filter by default TTL."),
-            ("min_default_ttl" = Option<i32>, Query, description = "Filter by minimum default TTL."),
-            ("max_default_ttl" = Option<i32>, Query, description = "Filter by maximum default TTL."),
-            ("serial" = Option<i32>, Query, description = "Filter by serial."),
-            ("min_serial" = Option<i32>, Query, description = "Filter by minimum serial."),
-            ("max_serial" = Option<i32>, Query, description = "Filter by maximum serial."),
-            ("created_after" = Option<String>, Query, description = "Keep zones created at or after this RFC 3339 timestamp."),
-            ("created_before" = Option<String>, Query, description = "Keep zones created at or before this RFC 3339 timestamp."),
-            ("signed" = Option<bool>, Query, description = "true keeps the zones signing under a DNSSEC policy, false the rest."),
-            ("enabled" = Option<bool>, Query, description = "true keeps the zones the DNS plane serves, false the disabled ones."),
-            ("search" = Option<String>, Query, description = "Partially search zones."),
-            ("sort" = Option<String>, Query, description = "Sort by name (the default), serial, default_ttl, or created_at."),
-            ("order" = Option<String>, Query, description = "asc (the default) or desc."),
-            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Zones per page; defaults to 50."),
-            ("offset" = Option<u64>, Query, description = "Number of zones to skip.")
-        ),
+        params(GetZonesFilter),
         responses(
             (status = 200, description = "A list of DNS zones", body = PaginatedResponse<GetZoneResponse>),
             (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),

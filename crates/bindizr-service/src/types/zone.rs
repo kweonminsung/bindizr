@@ -6,7 +6,7 @@ use bindizr_core::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{error::ServiceError, model::zone::Zone, serial::validate_initial_serial};
 
@@ -25,7 +25,7 @@ pub struct GetZoneResponse {
     #[schema(example = 3600)]
     pub default_ttl: i32,
     #[schema(example = 42)]
-    pub serial: i32,
+    pub serial: u32,
     #[schema(example = 7200)]
     pub refresh: i32,
     #[schema(example = 3600)]
@@ -50,7 +50,7 @@ impl GetZoneResponse {
             mname: zone.mname.clone(),
             rname: zone.rname.clone(),
             default_ttl: zone.default_ttl,
-            serial: zone.serial,
+            serial: zone.serial.max(0) as u32,
             refresh: zone.refresh,
             retry: zone.retry,
             expire: zone.expire,
@@ -77,7 +77,7 @@ pub struct CreateZoneRequest {
     pub default_ttl: Option<i32>,
     /// Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
     #[schema(example = 42)]
-    pub serial: Option<i32>,
+    pub serial: Option<u32>,
     #[schema(example = 7200)]
     pub refresh: Option<i32>,
     #[schema(example = 3600)]
@@ -116,9 +116,9 @@ impl CreateZoneRequest {
             default_ttl: None,
             // The file's serial only if a zone may start from it, so an
             // unusable one generates a fresh serial instead of failing.
-            serial: i32::try_from(soa.serial)
-                .ok()
-                .and_then(|serial| validate_initial_serial(serial).ok()),
+            serial: validate_initial_serial(soa.serial)
+                .is_ok()
+                .then_some(soa.serial),
             refresh: Some(soa.refresh),
             retry: Some(soa.retry),
             expire: Some(soa.expire),
@@ -129,30 +129,43 @@ impl CreateZoneRequest {
 }
 
 /// Query filters and pagination for listing zones.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct GetZonesFilter {
+    /// Filter by zone name.
     #[schema(example = "example.com")]
     pub name: Option<String>,
+    /// Filter by zone ID.
     #[schema(example = 1)]
     pub id: Option<i32>,
+    /// Filter by mname.
     #[schema(example = "ns1.example.com")]
     pub mname: Option<String>,
+    /// Filter by rname.
     #[schema(example = "admin@example.com")]
     pub rname: Option<String>,
+    /// Filter by default TTL.
     #[schema(example = 3600)]
     pub default_ttl: Option<i32>,
+    /// Filter by minimum default TTL.
     #[schema(example = 300)]
     pub min_default_ttl: Option<i32>,
+    /// Filter by maximum default TTL.
     #[schema(example = 86400)]
     pub max_default_ttl: Option<i32>,
+    /// Filter by serial.
     #[schema(example = 42)]
-    pub serial: Option<i32>,
+    pub serial: Option<u32>,
+    /// Filter by minimum serial.
     #[schema(example = 1)]
-    pub min_serial: Option<i32>,
+    pub min_serial: Option<u32>,
+    /// Filter by maximum serial.
     #[schema(example = 99)]
-    pub max_serial: Option<i32>,
+    pub max_serial: Option<u32>,
+    /// Keep zones created at or after this RFC 3339 timestamp.
     pub created_after: Option<DateTime<Utc>>,
+    /// Keep zones created at or before this RFC 3339 timestamp.
     pub created_before: Option<DateTime<Utc>>,
     /// `true` keeps the zones signing under a DNSSEC policy, `false` the rest.
     #[schema(example = true)]
@@ -160,6 +173,7 @@ pub struct GetZonesFilter {
     /// `true` keeps the zones the DNS plane serves, `false` the disabled ones.
     #[schema(example = true)]
     pub enabled: Option<bool>,
+    /// Partially search zones.
     #[schema(example = "example")]
     pub search: Option<String>,
     /// `name` (the default), `serial`, `default_ttl`, or `created_at`.
@@ -168,9 +182,12 @@ pub struct GetZonesFilter {
     /// `asc` (the default) or `desc`.
     #[schema(example = "asc")]
     pub order: Option<String>,
-    /// Defaults to 50 when omitted; 1000 is the largest page accepted.
+    /// Zones per page; defaults to 50 when omitted, 1000 is the largest page
+    /// accepted.
     #[schema(example = 50)]
+    #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
+    /// Number of zones to skip.
     #[schema(example = 0)]
     pub offset: Option<u64>,
 }
@@ -208,7 +225,7 @@ pub struct UpdateZoneRequest {
     pub minimum_ttl: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 42)]
-    pub serial: Option<i32>,
+    pub serial: Option<u32>,
     /// `false` stops the DNS plane serving the zone without deleting it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = true)]
@@ -245,10 +262,10 @@ pub struct DeleteZoneResponse {
     pub zone: GetZoneResponse,
     /// Records the zone holds, all of which go with it.
     #[schema(example = 1240)]
-    pub records: u64,
+    pub records_deleted: u64,
     /// Saved versions, so the rollback history goes too.
     #[schema(example = 12)]
-    pub versions: u64,
+    pub versions_deleted: u64,
 }
 
 /// A single zone wrapped in a response envelope. A dry run answers with the
@@ -277,20 +294,47 @@ pub struct ExportZoneFileResponse {
     pub zone_file: String,
 }
 
+/// How the serial a secondary serves compares with the one Bindizr serves.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SecondaryStatus {
+    InSync,
+    Lagging,
+    Ahead,
+    /// The secondary answered, but Bindizr's own serial was not known.
+    Reachable,
+    Unreachable,
+}
+
+impl SecondaryStatus {
+    /// The status as the API spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SecondaryStatus::InSync => "in_sync",
+            SecondaryStatus::Lagging => "lagging",
+            SecondaryStatus::Ahead => "ahead",
+            SecondaryStatus::Reachable => "reachable",
+            SecondaryStatus::Unreachable => "unreachable",
+        }
+    }
+}
+
+impl std::fmt::Display for SecondaryStatus {
+    /// Write the status as the API spells it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// What one secondary answered when probed for a zone's SOA, classified
 /// against the serial Bindizr serves.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct SecondaryStatusResponse {
     #[schema(example = "10.0.1.10:53")]
     pub address: String,
-    /// `in_sync` | `lagging` | `ahead` | `unreachable`, or `reachable` when
-    /// the secondary answered but Bindizr's own serial was not known.
-    #[schema(example = "in_sync")]
-    pub status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: SecondaryStatus,
     #[schema(example = 42)]
     pub visible_serial: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -307,22 +351,22 @@ impl SecondaryStatusResponse {
             Ok(visible) => {
                 let status = match expected_serial {
                     Some(expected) => match visible.cmp(&expected) {
-                        std::cmp::Ordering::Equal => "in_sync",
-                        std::cmp::Ordering::Less => "lagging",
-                        std::cmp::Ordering::Greater => "ahead",
+                        std::cmp::Ordering::Equal => SecondaryStatus::InSync,
+                        std::cmp::Ordering::Less => SecondaryStatus::Lagging,
+                        std::cmp::Ordering::Greater => SecondaryStatus::Ahead,
                     },
-                    None => "reachable",
+                    None => SecondaryStatus::Reachable,
                 };
                 SecondaryStatusResponse {
                     address,
-                    status: status.to_string(),
+                    status,
                     visible_serial: Some(visible),
                     error: None,
                 }
             }
             Err(error) => SecondaryStatusResponse {
                 address,
-                status: "unreachable".to_string(),
+                status: SecondaryStatus::Unreachable,
                 visible_serial: None,
                 error: Some(error),
             },
@@ -331,12 +375,12 @@ impl SecondaryStatusResponse {
 
     /// Whether the probed secondary serial matches this status's zone serial.
     pub fn is_in_sync(&self) -> bool {
-        self.status == "in_sync"
+        self.status == SecondaryStatus::InSync
     }
 
     /// Check whether the secondary probe failed to obtain a serial.
     pub fn is_unreachable(&self) -> bool {
-        self.status == "unreachable"
+        self.status == SecondaryStatus::Unreachable
     }
 }
 

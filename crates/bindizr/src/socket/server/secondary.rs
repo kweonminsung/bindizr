@@ -19,7 +19,7 @@ pub(crate) async fn create_secondary(
         &Caller::Global,
         &request.name,
         &request.address,
-        request.notify_key.as_deref(),
+        request.notify_key_name.as_deref(),
     )
     .await?;
 

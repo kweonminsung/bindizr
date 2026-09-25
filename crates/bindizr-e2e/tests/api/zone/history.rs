@@ -331,7 +331,7 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["summary"]["records_added"], 2, "{body}");
+    assert_eq!(body["summary"]["added"], 2, "{body}");
 
     for record_type in ["NS", "DS"] {
         let (_, listing) = app

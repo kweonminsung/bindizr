@@ -81,7 +81,7 @@ pub(crate) struct ZoneRow {
     #[tabled(rename = "DEFAULT-TTL")]
     pub(crate) default_ttl: i32,
     #[tabled(rename = "SERIAL")]
-    pub(crate) serial: i32,
+    pub(crate) serial: u32,
     #[tabled(rename = "REFRESH")]
     pub(crate) refresh: i32,
     #[tabled(rename = "RETRY")]
@@ -178,7 +178,7 @@ pub(crate) struct DnssecKeyRow {
     #[tabled(rename = "ALGORITHM")]
     pub(crate) algorithm: String,
     #[tabled(rename = "KEY-TAG")]
-    pub(crate) key_tag: i32,
+    pub(crate) key_tag: u16,
     #[tabled(rename = "DNSKEY")]
     pub(crate) dnskey: String,
     #[tabled(rename = "CREATED-AT")]
@@ -190,8 +190,8 @@ impl From<&DnssecKeyInfo> for DnssecKeyRow {
     fn from(key: &DnssecKeyInfo) -> Self {
         DnssecKeyRow {
             id: key.id,
-            role: key.role.clone(),
-            state: key.state.clone(),
+            role: key.role.to_string(),
+            state: key.state.to_string(),
             state_changed_at: display_time(key.state_changed_at),
             eligible_at: display_option_time(&key.eligible_at),
             algorithm: key.algorithm.clone(),
@@ -231,7 +231,7 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
             id: policy.id,
             name: policy.name.clone(),
             algorithm: policy.algorithm.clone(),
-            denial: policy.denial.to_uppercase(),
+            denial: policy.denial.to_string().to_uppercase(),
             keys: if policy.split_keys { "KSK/ZSK" } else { "CSK" }.to_string(),
             validity: format!("{}d", policy.signature_validity_days),
             refresh: format!("{}d", policy.signature_refresh_days),
@@ -256,7 +256,7 @@ pub(crate) struct SecondaryRow {
     #[tabled(rename = "ENABLED")]
     pub(crate) enabled: String,
     #[tabled(rename = "NOTIFY-KEY")]
-    pub(crate) notify_key: String,
+    pub(crate) notify_key_name: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
@@ -269,7 +269,7 @@ impl From<&GetSecondaryResponse> for SecondaryRow {
             name: secondary.name.clone(),
             address: secondary.address.clone(),
             enabled: display_yes_no(secondary.enabled),
-            notify_key: display_option_text(&secondary.notify_key),
+            notify_key_name: display_option_text(&secondary.notify_key_name),
             created_at: display_time(secondary.created_at),
         }
     }
@@ -278,7 +278,7 @@ impl From<&GetSecondaryResponse> for SecondaryRow {
 #[derive(Debug, Tabled)]
 pub(crate) struct VersionRow {
     #[tabled(rename = "SERIAL")]
-    pub(crate) serial: i32,
+    pub(crate) serial: u32,
     #[tabled(rename = "MNAME")]
     pub(crate) mname: String,
     #[tabled(rename = "RNAME")]
@@ -313,7 +313,7 @@ impl From<&ZoneVersionResponse> for VersionRow {
             retry: version.retry,
             expire: version.expire,
             minimum_ttl: version.minimum_ttl,
-            change_source: version.change_source.clone(),
+            change_source: version.change_source.to_string(),
             changed_by: display_option_text(&version.changed_by),
             created_at: display_time(version.created_at),
         }
@@ -351,19 +351,19 @@ impl From<&VersionRecordResponse> for VersionRecordRow {
 #[derive(Debug, Tabled)]
 pub(crate) struct RollbackSummaryRow {
     #[tabled(rename = "TARGET-SERIAL")]
-    pub(crate) target_serial: i32,
+    pub(crate) target_serial: u32,
     #[tabled(rename = "NEW-SERIAL")]
-    pub(crate) new_serial: i32,
+    pub(crate) new_serial: u32,
     #[tabled(rename = "APPLIED")]
     pub(crate) applied: bool,
     #[tabled(rename = "DRY-RUN")]
     pub(crate) dry_run: bool,
     #[tabled(rename = "ADDED")]
-    pub(crate) records_added: usize,
+    pub(crate) added: u64,
     #[tabled(rename = "DELETED")]
-    pub(crate) records_deleted: usize,
+    pub(crate) deleted: u64,
     #[tabled(rename = "UNCHANGED")]
-    pub(crate) records_unchanged: usize,
+    pub(crate) unchanged: u64,
     #[tabled(rename = "SOA-CHANGED")]
     pub(crate) soa_changed: bool,
 }
@@ -376,9 +376,9 @@ impl From<&RollbackZoneResponse> for RollbackSummaryRow {
             new_serial: response.new_serial,
             applied: response.applied,
             dry_run: response.dry_run,
-            records_added: response.summary.records_added,
-            records_deleted: response.summary.records_deleted,
-            records_unchanged: response.summary.records_unchanged,
+            added: response.summary.added,
+            deleted: response.summary.deleted,
+            unchanged: response.summary.unchanged,
             soa_changed: response.summary.soa_changed,
         }
     }
@@ -413,7 +413,7 @@ impl SecondaryStatusRow {
             Some(error) if secondary.is_unreachable() => {
                 format!("{} ({})", secondary.status, error)
             }
-            _ => secondary.status.clone(),
+            _ => secondary.status.to_string(),
         };
         SecondaryStatusRow {
             address: secondary.address.clone(),
@@ -437,17 +437,17 @@ pub(crate) struct ImportSummaryRow {
     #[tabled(rename = "DRY-RUN")]
     pub(crate) dry_run: bool,
     #[tabled(rename = "PARSED")]
-    pub(crate) parsed: usize,
+    pub(crate) parsed: u64,
     #[tabled(rename = "ADDED")]
-    pub(crate) added: usize,
+    pub(crate) added: u64,
     #[tabled(rename = "DELETED")]
-    pub(crate) deleted: usize,
+    pub(crate) deleted: u64,
     #[tabled(rename = "UPDATED")]
-    pub(crate) updated: usize,
+    pub(crate) updated: u64,
     #[tabled(rename = "UNCHANGED")]
-    pub(crate) unchanged: usize,
+    pub(crate) unchanged: u64,
     #[tabled(rename = "SKIPPED")]
-    pub(crate) skipped: usize,
+    pub(crate) skipped: u64,
 }
 
 impl From<&ImportZoneResponse> for ImportSummaryRow {
@@ -563,7 +563,7 @@ pub(crate) struct TokenGrantRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
     #[tabled(rename = "TOKEN")]
-    pub(crate) api_token: String,
+    pub(crate) token_name: String,
     #[tabled(rename = "ZONE")]
     pub(crate) zone_name: String,
     #[tabled(rename = "NAME-PATTERN")]
@@ -581,7 +581,7 @@ impl From<&GetTokenGrantResponse> for TokenGrantRow {
     fn from(grant: &GetTokenGrantResponse) -> Self {
         TokenGrantRow {
             id: grant.id,
-            api_token: grant.api_token.clone(),
+            token_name: grant.token_name.clone(),
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.record_name_pattern.clone(),
             record_types: grant.record_types.clone(),
@@ -601,7 +601,7 @@ pub(crate) struct TsigGrantRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
     #[tabled(rename = "TSIG-KEY")]
-    pub(crate) tsig_key: String,
+    pub(crate) tsig_key_name: String,
     #[tabled(rename = "ZONE")]
     pub(crate) zone_name: String,
     #[tabled(rename = "NAME-PATTERN")]
@@ -619,7 +619,7 @@ impl From<&GetTsigGrantResponse> for TsigGrantRow {
     fn from(grant: &GetTsigGrantResponse) -> Self {
         TsigGrantRow {
             id: grant.id,
-            tsig_key: grant.tsig_key.clone(),
+            tsig_key_name: grant.tsig_key_name.clone(),
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.record_name_pattern.clone(),
             record_types: grant.record_types.clone(),

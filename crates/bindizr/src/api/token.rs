@@ -14,7 +14,7 @@ use bindizr_service::{
 };
 
 use crate::api::{
-    AuthenticatedToken, GrantIdParam, NameParam, RequestCaller,
+    AuthenticatedToken, NameIdParam, NameParam, RequestCaller,
     error::{ApiError, Path, Query},
     middleware::body_parser::JsonBody,
 };
@@ -268,7 +268,7 @@ pub(crate) async fn create_token_grant(
 )]
 pub(crate) async fn delete_token_grant(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<GrantIdParam>,
+    Path(params): Path<NameIdParam>,
 ) -> Result<Response, ApiError> {
     TokenGrantService::revoke(&caller, &params.name, params.id).await?;
     let response = MessageResponse {

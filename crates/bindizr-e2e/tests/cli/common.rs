@@ -30,7 +30,7 @@ pub(crate) async fn read_dnssec_status(app: &TestApp, zone_name: &str) -> serde_
 
 /// Read the active signing key tag for a test zone.
 pub(crate) async fn read_signing_key_tag(app: &TestApp, zone_name: &str) -> u64 {
-    read_dnssec_status(app, zone_name).await["dnssec"]["keys"][0]["key_tag"]
+    read_dnssec_status(app, zone_name).await["keys"][0]["key_tag"]
         .as_u64()
         .expect("status lists the signing key")
 }

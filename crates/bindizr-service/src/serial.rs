@@ -8,6 +8,8 @@
 //! `i32::MAX` because IXFR encodes serials as `u32` and rejects negatives, so
 //! wrapping is not an option.
 
+use bindizr_core::dns::serial_to_i32;
+
 use crate::error::ServiceError;
 
 /// Mutations a zone seeded with an explicit serial is guaranteed to have left.
@@ -31,8 +33,9 @@ pub(crate) fn generate_serial(current_serial: Option<i32>) -> Result<i32, Servic
     }
 }
 
-/// Validate a client-supplied starting serial, returning it unchanged.
-pub(crate) fn validate_initial_serial(serial: i32) -> Result<i32, ServiceError> {
+/// Validate a client-supplied starting serial, returning it in stored form.
+pub(crate) fn validate_initial_serial(serial: u32) -> Result<i32, ServiceError> {
+    let serial = serial_to_i32(serial).map_err(ServiceError::invalid_zone_field)?;
     if serial < 1 {
         return Err(ServiceError::invalid_zone_field(format!(
             "serial {} must be a positive integer",
@@ -91,29 +94,34 @@ mod tests {
         assert_eq!(validate_initial_serial(2026072501).unwrap(), 2026072501);
         assert_eq!(validate_initial_serial(1753401600).unwrap(), 1753401600);
         assert_eq!(
-            validate_initial_serial(MAX_INITIAL_SERIAL).unwrap(),
+            validate_initial_serial(MAX_INITIAL_SERIAL as u32).unwrap(),
             MAX_INITIAL_SERIAL
         );
     }
 
-    /// Verify rejection of nonpositive serials.
+    /// Verify rejection of a zero serial.
     #[test]
-    fn rejects_non_positive_serials() {
+    fn rejects_a_zero_serial() {
         assert!(validate_initial_serial(0).is_err());
-        assert!(validate_initial_serial(-1).is_err());
+    }
+
+    /// Verify that a serial past the stored range is refused as input.
+    #[test]
+    fn rejects_a_serial_beyond_the_stored_range() {
+        assert!(validate_initial_serial(u32::MAX).is_err());
     }
 
     /// Verify rejection of serials that cannot advance.
     #[test]
     fn rejects_serials_without_room_to_advance() {
-        assert!(validate_initial_serial(MAX_INITIAL_SERIAL + 1).is_err());
-        assert!(validate_initial_serial(i32::MAX).is_err());
+        assert!(validate_initial_serial((MAX_INITIAL_SERIAL + 1) as u32).is_err());
+        assert!(validate_initial_serial(i32::MAX as u32).is_err());
     }
 
     /// Verify that accepted serials leave the counter advancing.
     #[test]
     fn accepted_serials_leave_the_counter_advancing() {
-        let seeded = validate_initial_serial(MAX_INITIAL_SERIAL).unwrap();
+        let seeded = validate_initial_serial(MAX_INITIAL_SERIAL as u32).unwrap();
         assert_eq!(
             generate_serial(Some(seeded)).unwrap(),
             MAX_INITIAL_SERIAL + 1

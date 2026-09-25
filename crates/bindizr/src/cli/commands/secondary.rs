@@ -1,7 +1,7 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
     CreateSecondaryRequest, GetSecondaryResponse, PageFilter, PaginatedResponse,
-    SecondaryCheckResponse, SecondaryResponse, UpdateSecondaryRequest,
+    SecondaryCheckResponse, SecondaryResponse, SecondaryStatus, UpdateSecondaryRequest,
 };
 use clap::Subcommand;
 
@@ -112,7 +112,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                 CreateSecondaryRequest {
                     name,
                     address,
-                    notify_key,
+                    notify_key_name: notify_key,
                 },
             )
             .await?;
@@ -164,7 +164,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
                     request: UpdateSecondaryRequest {
                         address,
                         enabled,
-                        notify_key,
+                        notify_key_name: notify_key,
                     },
                 },
             )
@@ -225,7 +225,7 @@ fn print_check(check: &SecondaryCheckResponse) {
         } else {
             "disabled"
         },
-        match &secondary.notify_key {
+        match &secondary.notify_key_name {
             Some(key) => format!(", NOTIFY signed with {}", key),
             None => String::new(),
         }
@@ -238,27 +238,27 @@ fn print_check(check: &SecondaryCheckResponse) {
         outln!("Bindizr's own listener did not answer: {}", error);
     }
     let catalog = &check.catalog;
-    match (catalog.visible_serial, catalog.status.as_str()) {
-        (Some(serial), "in_sync") => outln!(
+    match (catalog.visible_serial, catalog.status) {
+        (Some(serial), SecondaryStatus::InSync) => outln!(
             "Catalog zone {}: in sync at serial {}",
-            check.catalog_zone,
+            check.catalog_zone_name,
             serial
         ),
-        (Some(serial), "reachable") => outln!(
+        (Some(serial), SecondaryStatus::Reachable) => outln!(
             "Catalog zone {}: reachable at serial {}",
-            check.catalog_zone,
+            check.catalog_zone_name,
             serial
         ),
         (Some(serial), status) => outln!(
             "Catalog zone {}: {} at serial {} (bindizr serves {})",
-            check.catalog_zone,
+            check.catalog_zone_name,
             status,
             serial,
             check.catalog_serial.unwrap_or_default()
         ),
         (None, _) => outln!(
             "Catalog zone {}: unreachable ({})",
-            check.catalog_zone,
+            check.catalog_zone_name,
             catalog.error.as_deref().unwrap_or("unknown error")
         ),
     }
