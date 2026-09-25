@@ -16,12 +16,12 @@ use crate::{
             DnssecKeyRow, DnssecPolicyRow, OutputFormat, parse_payload, print_payload, print_table,
         },
     },
+    params::NameParams,
     socket::{
         client,
         types::{
             DaemonCommandKind, DisableZoneDnssecParams, DsSeenZoneDnssecParams,
-            EnableZoneDnssecParams, NameParams, RolloverZoneDnssecParams,
-            UpdateZoneDnssecSettingsParams,
+            EnableZoneDnssecParams, RolloverZoneDnssecParams, UpdateZoneDnssecSettingsParams,
         },
     },
 };

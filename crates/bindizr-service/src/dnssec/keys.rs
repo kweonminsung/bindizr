@@ -4,7 +4,7 @@
 use bindizr_core::dns::dnssec::import_key;
 use chrono::Utc;
 
-use super::{DnssecService, notify_zone, status::build_status_tx};
+use super::{DnssecService, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -185,7 +185,7 @@ impl DnssecService {
         log::info!("event=dnssec_import_keys zone={}", response.zone_name);
 
         // Announce the imported keys only after their signed records are committed.
-        notify_zone(&response.zone_name).await;
+        crate::notify::notify_after_update(&response.zone_name).await;
         Ok(response)
     }
 }

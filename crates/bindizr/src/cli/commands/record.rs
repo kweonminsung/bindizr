@@ -14,11 +14,11 @@ use crate::{
             render_change_preview,
         },
     },
+    params::IdParams,
     socket::{
         client,
         types::{
-            DaemonCommandKind, DeleteRecordParams, IdParams, UpdateRecordByNameParams,
-            UpdateRecordParams,
+            DaemonCommandKind, DeleteRecordParams, UpdateRecordByNameParams, UpdateRecordParams,
         },
     },
 };

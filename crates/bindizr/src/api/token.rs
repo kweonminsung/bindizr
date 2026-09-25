@@ -13,10 +13,13 @@ use bindizr_service::{
     },
 };
 
-use crate::api::{
-    AuthenticatedToken, NameIdParam, NameParam, RequestCaller,
-    error::{ApiError, Path, Query},
-    middleware::body_parser::JsonBody,
+use crate::{
+    api::{
+        AuthenticatedToken, RequestCaller,
+        error::{ApiError, Path, Query},
+        middleware::body_parser::JsonBody,
+    },
+    params::{NameIdParams, NameParams},
 };
 
 pub(crate) struct TokenApi;
@@ -169,7 +172,7 @@ pub(crate) async fn list_self_token_grants(
 )]
 pub(crate) async fn delete_token(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     TokenService::delete(&caller, &params.name).await?;
     let response = MessageResponse {
@@ -199,7 +202,7 @@ pub(crate) async fn delete_token(
 )]
 pub(crate) async fn list_token_grants(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
@@ -230,7 +233,7 @@ pub(crate) async fn list_token_grants(
 )]
 pub(crate) async fn create_token_grant(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<CreateGrantRequest>,
 ) -> Result<Response, ApiError> {
     let grant = TokenGrantService::grant(
@@ -268,7 +271,7 @@ pub(crate) async fn create_token_grant(
 )]
 pub(crate) async fn delete_token_grant(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameIdParam>,
+    Path(params): Path<NameIdParams>,
 ) -> Result<Response, ApiError> {
     TokenGrantService::revoke(&caller, &params.name, params.id).await?;
     let response = MessageResponse {
@@ -298,7 +301,7 @@ pub(crate) async fn delete_token_grant(
 )]
 pub(crate) async fn list_zone_token_grants(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));

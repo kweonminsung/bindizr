@@ -258,29 +258,14 @@ impl ZoneService {
         );
 
         // Announce the zone's new serial after its data and version have committed.
-        if !dry_run
-            && let Err(e) =
-                crate::notify::send_notify_after_update(Some(updated_zone.name.as_str())).await
-        {
-            log::warn!(
-                "Failed to send NOTIFY for zone {}: {}",
-                updated_zone.name,
-                e
-            );
+        if !dry_run {
+            crate::notify::notify_after_update(updated_zone.name.as_str()).await;
         }
 
         // Renaming or toggling a zone also changes the catalog seen by secondaries.
         let config = bindizr_config();
-        if !dry_run
-            && catalog_changed
-            && let Err(e) =
-                crate::notify::send_notify_after_update(Some(&config.dns.catalog_zone_name)).await
-        {
-            log::warn!(
-                "Failed to send NOTIFY for {}: {}",
-                config.dns.catalog_zone_name,
-                e
-            );
+        if !dry_run && catalog_changed {
+            crate::notify::notify_after_update(&config.dns.catalog_zone_name).await;
         }
 
         Ok(updated_zone)

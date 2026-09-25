@@ -461,21 +461,12 @@ impl RecordService {
         // The catalog goes first: a secondary that has not seen the new member
         // there cannot act on the zone's own NOTIFY below.
         let config = bindizr_config();
-        if created
-            && let Err(e) =
-                crate::notify::send_notify_after_update(Some(&config.dns.catalog_zone_name)).await
-        {
-            log::warn!(
-                "Failed to send NOTIFY for {}: {}",
-                config.dns.catalog_zone_name,
-                e
-            );
+        if created {
+            crate::notify::notify_after_update(&config.dns.catalog_zone_name).await;
         }
         // Notify after commit only when the import changed the served zone.
-        if changed
-            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
-        {
-            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+        if changed {
+            crate::notify::notify_after_update(zone_name.as_str()).await;
         }
         let notify_ms = elapsed_ms(t);
 

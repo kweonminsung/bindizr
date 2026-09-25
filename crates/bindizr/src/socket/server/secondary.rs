@@ -5,9 +5,12 @@ use bindizr_service::{
     types::{CreateSecondaryRequest, MessageResponse, PageFilter, SecondaryResponse},
 };
 
-use crate::socket::{
-    server::{parse_params, to_response_data},
-    types::{DaemonResponse, NameParams, UpdateSecondaryParams},
+use crate::{
+    params::NameParams,
+    socket::{
+        server::{parse_params, to_response_data},
+        types::{DaemonResponse, UpdateSecondaryParams},
+    },
 };
 
 /// Register a secondary from the control request.

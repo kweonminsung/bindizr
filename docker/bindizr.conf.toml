@@ -29,8 +29,6 @@ scheduler_interval_secs = 3600
 
 
 [dns.notify]
-after_update = true
-on_startup = false
 batch_ms = 0
 retries = 3
 timeout_secs = 3

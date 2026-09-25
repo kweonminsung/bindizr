@@ -377,10 +377,8 @@ impl RecordService {
         );
 
         let t = Instant::now();
-        if !dry_run
-            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
-        {
-            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+        if !dry_run {
+            crate::notify::notify_after_update(zone_name.as_str()).await;
         }
         let notify_ms = elapsed_ms(t);
 

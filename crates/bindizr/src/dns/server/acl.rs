@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bindizr_core::dns::address::ParsedAddress;
+use bindizr_core::dns::address::{DEFAULT_DNS_PORT, ParsedAddress};
 use bindizr_service::{
     dns_client::resolve_address_entry, error::ServiceError, secondary::SecondaryService,
 };
@@ -53,10 +53,12 @@ impl SecondaryAcl {
     fn from_addresses<'a>(addresses: impl IntoIterator<Item = &'a str>) -> Self {
         let entries = addresses
             .into_iter()
-            .map(|address| match ParsedAddress::parse(address, 53) {
-                ParsedAddress::SocketAddr(addr) => SecondaryAclEntry::Ip(addr.ip()),
-                ParsedAddress::HostPort(host_port) => SecondaryAclEntry::HostPort(host_port),
-            })
+            .map(
+                |address| match ParsedAddress::parse(address, DEFAULT_DNS_PORT) {
+                    ParsedAddress::SocketAddr(addr) => SecondaryAclEntry::Ip(addr.ip()),
+                    ParsedAddress::HostPort(host_port) => SecondaryAclEntry::HostPort(host_port),
+                },
+            )
             .collect();
         Self { entries }
     }

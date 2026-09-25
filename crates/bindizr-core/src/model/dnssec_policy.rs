@@ -6,6 +6,9 @@ use super::dnssec_key::DnssecAlgorithm;
 /// Name of the policy seeded at startup, used when `enable` names none.
 pub const DEFAULT_DNSSEC_POLICY_NAME: &str = "default";
 
+/// Seconds in a day, the unit the policy's day fields are stored in.
+const SECS_PER_DAY: i64 = 86_400;
+
 /// How a signed zone proves nonexistence (denial of existence).
 #[derive(
     Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
@@ -101,9 +104,16 @@ impl DnssecPolicy {
     /// Half the room the policy leaves, which keeps even the earliest
     /// signature outside its own refresh window.
     pub fn expiration_jitter_secs(&self) -> i64 {
-        let validity = i64::from(self.signature_validity_days) * 86_400;
-        let refresh = i64::from(self.signature_refresh_days) * 86_400;
+        (self.signature_validity_secs() - self.signature_refresh_secs()).max(0) / 2
+    }
 
-        (validity - refresh).max(0) / 2
+    /// How long a signature stays valid, in seconds.
+    pub fn signature_validity_secs(&self) -> i64 {
+        i64::from(self.signature_validity_days) * SECS_PER_DAY
+    }
+
+    /// How long before it expires a signature is renewed, in seconds.
+    pub fn signature_refresh_secs(&self) -> i64 {
+        i64::from(self.signature_refresh_days) * SECS_PER_DAY
     }
 }

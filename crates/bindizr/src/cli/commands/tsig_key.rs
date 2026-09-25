@@ -12,11 +12,12 @@ use crate::{
             OutputFormat, TsigGrantRow, TsigKeyRow, parse_payload, print_payload, print_response,
         },
     },
+    params::{IdParams, NameParams},
     socket::{
         client,
         types::{
-            CreateTsigGrantParams, DaemonCommandKind, DeleteTsigGrantsByKeyAndZoneParams, IdParams,
-            ListGrantsParams, NameParams,
+            CreateTsigGrantParams, DaemonCommandKind, DeleteTsigGrantsByKeyAndZoneParams,
+            ListGrantsParams,
         },
     },
 };

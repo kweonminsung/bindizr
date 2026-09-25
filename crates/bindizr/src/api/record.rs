@@ -15,10 +15,14 @@ use bindizr_service::{
     },
 };
 
-use crate::api::{
-    DryRunQuery, IdParam, RequestCaller,
-    error::{ApiError, Path, Query},
-    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
+use crate::{
+    api::{
+        RequestCaller,
+        error::{ApiError, Path, Query},
+        middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
+        query::DryRunQuery,
+    },
+    params::IdParams,
 };
 
 pub(crate) struct RecordApi;
@@ -82,7 +86,7 @@ pub(crate) async fn list_records(
 )]
 pub(crate) async fn get_record(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<IdParam>,
+    Path(params): Path<IdParams>,
 ) -> Result<Response, ApiError> {
     let raw_record = RecordService::get_with_zone(&caller, params.id).await?;
 
@@ -149,7 +153,7 @@ pub(crate) async fn create_record(
 )]
 pub(crate) async fn update_record(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<IdParam>,
+    Path(params): Path<IdParams>,
     JsonBody(body): JsonBody<UpdateRecordRequest>,
 ) -> Result<Response, ApiError> {
     let response = RecordService::update(&caller, params.id, &body).await?;
@@ -177,7 +181,7 @@ pub(crate) async fn update_record(
 )]
 pub(crate) async fn delete_record(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<IdParam>,
+    Path(params): Path<IdParams>,
     Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
     let response = RecordService::delete(&caller, params.id, preview.dry_run).await?;

@@ -9,7 +9,11 @@ pub mod probe;
 
 use std::{net::SocketAddr, time::Duration};
 
-use bindizr_core::dns::{address::ParsedAddress, message::encode_tcp_message, query::is_truncated};
+use bindizr_core::dns::{
+    address::{DEFAULT_DNS_PORT, ParsedAddress},
+    message::encode_tcp_message,
+    query::is_truncated,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, UdpSocket, lookup_host},
@@ -143,7 +147,7 @@ pub async fn resolve_address_entry(
     entry: &str,
     resolve_timeout: Duration,
 ) -> Result<Vec<SocketAddr>, String> {
-    match ParsedAddress::parse(entry, 53) {
+    match ParsedAddress::parse(entry, DEFAULT_DNS_PORT) {
         ParsedAddress::SocketAddr(addr) => Ok(vec![addr]),
         ParsedAddress::HostPort(host_port) => {
             match tokio::time::timeout(resolve_timeout, lookup_host(&host_port)).await {

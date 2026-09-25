@@ -5,6 +5,9 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use super::name::{MAX_DOMAIN_LEN, classify_domain_label};
 
+/// The port a `host` without one is taken to serve DNS on.
+pub const DEFAULT_DNS_PORT: u16 = 53;
+
 /// An address target: a socket address, or a host and port to resolve later.
 pub enum ParsedAddress {
     SocketAddr(SocketAddr),

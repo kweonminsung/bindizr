@@ -8,11 +8,14 @@ use bindizr_service::{
     },
 };
 
-use crate::socket::{
-    server::{parse_params, to_response_data},
-    types::{
-        CreateTokenGrantParams, DaemonResponse, DeleteTokenGrantsByTokenAndZoneParams, IdParams,
-        ListGrantsParams, NameParams,
+use crate::{
+    params::{IdParams, NameParams},
+    socket::{
+        server::{parse_params, to_response_data},
+        types::{
+            CreateTokenGrantParams, DaemonResponse, DeleteTokenGrantsByTokenAndZoneParams,
+            ListGrantsParams,
+        },
     },
 };
 

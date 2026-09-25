@@ -5,7 +5,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 use bindizr_core::dns::{
     message::{Name, Opcode, Rtype, encode_tcp_message},
-    name::decode_name_labels,
+    name::{decode_name_labels, to_fqdn},
     query::{TransferRecord, build_question, extract_transfer_records},
 };
 use tokio::io::AsyncWriteExt;
@@ -67,7 +67,7 @@ async fn transfer_from(
         .await
         .map_err(|e| format!("send failed: {}", e))?;
 
-    let expected_owner = format!("{}.", qname);
+    let expected_owner = to_fqdn(&qname.to_string());
     let expected_labels = owner_labels(&expected_owner)?;
     let mut records: Vec<TransferRecord> = Vec::new();
     let mut total_bytes = 0usize;

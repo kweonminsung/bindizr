@@ -10,11 +10,12 @@ use crate::{
         error::CliError,
         output::{OutputFormat, TokenGrantRow, TokenRow, print_payload, print_response},
     },
+    params::{IdParams, NameParams},
     socket::{
         client,
         types::{
             CreateTokenGrantParams, DaemonCommandKind, DeleteTokenGrantsByTokenAndZoneParams,
-            IdParams, ListGrantsParams, NameParams,
+            ListGrantsParams,
         },
     },
 };

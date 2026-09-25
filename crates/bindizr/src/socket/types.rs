@@ -98,20 +98,6 @@ pub(crate) struct DaemonResponse {
 // a renamed field breaks at compile time. A payload that is exactly a service
 // request type is sent as that type.
 
-/// The name of the zone, secondary, token, key, or policy a command addresses.
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct NameParams {
-    pub(crate) name: String,
-}
-
-/// The id of the record or grant a command addresses.
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct IdParams {
-    pub(crate) id: i32,
-}
-
 /// Parameters for deleting a zone by name.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -266,6 +252,7 @@ pub(crate) struct ListZoneVersionsParams {
     pub(crate) include_signer_serials: bool,
 }
 
+/// One of a zone's versions, by name and serial.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ZoneVersionParams {

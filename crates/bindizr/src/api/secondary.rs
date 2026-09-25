@@ -13,10 +13,13 @@ use bindizr_service::{
     },
 };
 
-use crate::api::{
-    NameParam, RequestCaller,
-    error::{ApiError, Path, Query},
-    middleware::body_parser::JsonBody,
+use crate::{
+    api::{
+        RequestCaller,
+        error::{ApiError, Path, Query},
+        middleware::body_parser::JsonBody,
+    },
+    params::NameParams,
 };
 
 pub(crate) struct SecondaryApi;
@@ -110,7 +113,7 @@ pub(crate) async fn create_secondary(
 )]
 pub(crate) async fn get_secondary(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let secondary = SecondaryService::get(&caller, &params.name).await?;
     let response = SecondaryResponse { secondary };
@@ -141,7 +144,7 @@ pub(crate) async fn get_secondary(
 )]
 pub(crate) async fn update_secondary(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
     let secondary = SecondaryService::update(&caller, &params.name, body).await?;
@@ -169,7 +172,7 @@ pub(crate) async fn update_secondary(
 )]
 pub(crate) async fn delete_secondary(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     SecondaryService::delete(&caller, &params.name).await?;
     let response = MessageResponse {
@@ -198,7 +201,7 @@ pub(crate) async fn delete_secondary(
 )]
 pub(crate) async fn check_secondary(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<NameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let check = SecondaryService::check(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(check)).into_response())

@@ -2,12 +2,15 @@ use bindizr_service::{
     authorization::Caller, dnssec::DnssecService, error::ServiceError, types::MessageResponse,
 };
 
-use crate::socket::{
-    server::{parse_params, to_response_data},
-    types::{
-        DaemonResponse, DisableZoneDnssecParams, DsSeenZoneDnssecParams, EnableZoneDnssecParams,
-        ImportZoneDnssecKeysParams, NameParams, RolloverZoneDnssecParams,
-        UpdateZoneDnssecSettingsParams,
+use crate::{
+    params::NameParams,
+    socket::{
+        server::{parse_params, to_response_data},
+        types::{
+            DaemonResponse, DisableZoneDnssecParams, DsSeenZoneDnssecParams,
+            EnableZoneDnssecParams, ImportZoneDnssecKeysParams, RolloverZoneDnssecParams,
+            UpdateZoneDnssecSettingsParams,
+        },
     },
 };
 

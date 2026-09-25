@@ -190,10 +190,6 @@ pub struct DnsConfig {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NotifyConfig {
-    #[serde(default = "default_notify_after_update")]
-    pub after_update: bool,
-    #[serde(default)]
-    pub on_startup: bool,
     /// Window (ms) that collects one zone's changes into one NOTIFY, sent
     /// from a queue after the write is answered. `0` sends a NOTIFY for
     /// every change before the write is answered.
@@ -209,8 +205,6 @@ impl Default for NotifyConfig {
     /// Build the default NOTIFY settings.
     fn default() -> Self {
         Self {
-            after_update: default_notify_after_update(),
-            on_startup: false,
             batch_ms: 0,
             retries: default_notify_retries(),
             timeout_secs: default_notify_timeout_secs(),
@@ -308,11 +302,6 @@ fn default_zone_history_retention_days() -> u32 {
 /// day-scale windows a pass enforces.
 fn default_scheduler_interval_secs() -> u64 {
     3_600
-}
-
-/// Return the default notify after update setting.
-fn default_notify_after_update() -> bool {
-    true
 }
 
 /// Return the default transfer cache enabled setting.

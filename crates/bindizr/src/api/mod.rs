@@ -9,6 +9,7 @@ mod metrics;
 mod middleware;
 mod notify;
 mod openapi;
+mod query;
 mod record;
 mod router;
 mod secondary;
@@ -24,35 +25,9 @@ use bindizr_core::{config, config::TlsFiles, model::api_token::ApiToken};
 use bindizr_service::{authorization::Caller, error::ServiceError};
 use error::ApiError;
 use router::ApiRouter;
-use serde::Deserialize;
 use tokio::{net::TcpListener, task::JoinHandle};
 
 use crate::{cli::error::CliError, shutdown::Shutdown};
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct NameParam {
-    pub(crate) name: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct IdParam {
-    pub(crate) id: i32,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct NameIdParam {
-    pub(crate) name: String,
-    pub(crate) id: i32,
-}
-
-/// The preview switch every endpoint that offers one reads, so they all spell
-/// it the same way and an absent one is the same as `false`.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DryRunQuery {
-    #[serde(default)]
-    pub(crate) dry_run: bool,
-}
 
 /// The caller attached by the auth middleware, or by the router's
 /// `Caller::Global` layer when authentication is disabled. A request without

@@ -22,11 +22,12 @@ use crate::{
             render_change_preview,
         },
     },
+    params::NameParams,
     socket::{
         client,
         types::{
             DaemonCommandKind, DeleteZoneParams, ExportZoneFileParams, ImportZoneParams,
-            ListGrantsParams, NameParams, NotifyAllZonesParams, NotifyZoneParams, UpdateZoneParams,
+            ListGrantsParams, NotifyAllZonesParams, NotifyZoneParams, UpdateZoneParams,
         },
     },
 };

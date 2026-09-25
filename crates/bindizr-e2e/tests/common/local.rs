@@ -150,8 +150,6 @@ nsupdate_tsig_required = {nsupdate_tsig_required}
 
 
 [dns.notify]
-after_update = false
-on_startup = false
 retries = 0
 timeout_secs = 1
 

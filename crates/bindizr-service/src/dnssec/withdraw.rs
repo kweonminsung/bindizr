@@ -1,7 +1,7 @@
 //! The RFC 8078 DS withdrawal: publishing the delete CDS/CDNSKEY pair that
 //! asks a CDS-consuming parent to drop the zone's DS, and taking it back.
 
-use super::{DnssecService, notify_zone, status::build_status_tx};
+use super::{DnssecService, status::build_status_tx};
 use crate::{
     authorization::Caller, database::repository::LockLevel, error::ServiceError,
     repository::RepositoryService, types::DnssecStatusResponse,
@@ -48,7 +48,7 @@ impl DnssecService {
             RepositoryService::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
 
         log::info!("event=dnssec_withdraw zone={}", response.zone_name);
-        notify_zone(&response.zone_name).await;
+        crate::notify::notify_after_update(&response.zone_name).await;
         Ok(response)
     }
 
@@ -90,7 +90,7 @@ impl DnssecService {
             RepositoryService::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
 
         log::info!("event=dnssec_withdraw_cancel zone={}", response.zone_name);
-        notify_zone(&response.zone_name).await;
+        crate::notify::notify_after_update(&response.zone_name).await;
         Ok(response)
     }
 }

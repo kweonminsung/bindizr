@@ -143,9 +143,7 @@ impl ExternalDnsService {
 
         // Every affected zone must commit before any secondary is asked to transfer.
         for zone_name in &changed_zones {
-            if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name)).await {
-                log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
-            }
+            crate::notify::notify_after_update(zone_name).await;
         }
 
         log::info!(
