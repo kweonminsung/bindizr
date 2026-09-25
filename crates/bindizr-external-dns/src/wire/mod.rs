@@ -96,12 +96,6 @@ pub(crate) struct BindizrRecordUpdate {
     new: BindizrRecord,
 }
 
-/// The endpoint's record type, if bindizr's ExternalDNS API manages it.
-fn parse_supported_record_type(record_type: &str) -> Option<RecordType> {
-    let parsed = record_type.parse::<RecordType>().ok()?;
-    parsed.is_external_dns_supported().then_some(parsed)
-}
-
 impl Endpoint {
     /// An endpoint for one bindizr record; the server already sorts values.
     pub(crate) fn from_bindizr_record(record: BindizrRecord) -> Self {
@@ -122,7 +116,7 @@ impl Endpoint {
             return Err("dnsName must not be empty".to_string());
         }
 
-        let Some(record_type) = parse_supported_record_type(&self.record_type) else {
+        let Some(record_type) = RecordType::parse_external_dns_supported(&self.record_type) else {
             return Err(format!(
                 "record type '{}' is not supported (supported: {})",
                 self.record_type,

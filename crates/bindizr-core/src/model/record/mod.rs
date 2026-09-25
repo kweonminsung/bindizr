@@ -509,6 +509,13 @@ impl RecordType {
     pub fn is_external_dns_supported(&self) -> bool {
         EXTERNAL_DNS_RECORD_TYPES.contains(self)
     }
+
+    /// Parse a type name the ExternalDNS provider manages; `None` for an
+    /// unknown or unsupported one.
+    pub fn parse_external_dns_supported(value: &str) -> Option<Self> {
+        let parsed = value.parse::<RecordType>().ok()?;
+        parsed.is_external_dns_supported().then_some(parsed)
+    }
 }
 
 /// TXT text for the display column: control characters as `\DDD`, since a

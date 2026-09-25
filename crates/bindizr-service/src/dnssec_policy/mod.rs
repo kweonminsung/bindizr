@@ -8,6 +8,7 @@ use crate::{
     authorization::Caller,
     database::repository::LockLevel,
     error::ServiceError,
+    identifier::normalize_identifier,
     model::{
         dnssec_key::DnssecAlgorithm,
         dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
@@ -195,28 +196,7 @@ impl DnssecPolicyService {
 /// Lowercased so one name means one policy on every backend (MySQL compares
 /// case-insensitively); a plain identifier, since it travels in URL paths.
 pub(crate) fn normalize_policy_name(value: &str) -> Result<String, ServiceError> {
-    let name = value.trim().to_lowercase();
-
-    if name.is_empty() {
-        return Err(ServiceError::invalid_input(
-            "DNSSEC policy name must not be empty",
-        ));
-    }
-    if name.len() > MAX_POLICY_NAME_LEN {
-        return Err(ServiceError::invalid_input(format!(
-            "DNSSEC policy name must be {} characters or fewer",
-            MAX_POLICY_NAME_LEN
-        )));
-    }
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-    {
-        return Err(ServiceError::invalid_input(
-            "DNSSEC policy name may contain only letters, digits, '-', '_', and '.'",
-        ));
-    }
-    Ok(name)
+    normalize_identifier(value, "DNSSEC policy name", MAX_POLICY_NAME_LEN)
 }
 
 /// Validate signature validity, refresh, and key lifetime settings.

@@ -13,7 +13,7 @@ use tokio::{
 
 use super::Report;
 use crate::{
-    cli::output::parse_response,
+    cli::output::parse_payload,
     socket::{
         client,
         types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse},
@@ -26,7 +26,7 @@ const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) async fn check_running(report: &mut Report) -> bool {
     let status = client::send_control_command(DaemonCommandKind::Status)
         .await
-        .and_then(|response| Ok(parse_response::<DaemonStatusResponse>(&response.data)?));
+        .and_then(|response| Ok(parse_payload::<DaemonStatusResponse>(&response.data)?));
     match status {
         Ok(status) => {
             let pid = status

@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use super::{error::ServiceError, repository::RepositoryService};
 use crate::{
     authorization::Caller,
+    identifier::normalize_identifier,
     model::api_token::ApiToken,
     types::{GetTokenResponse, PageFilter, PaginatedResponse},
 };
@@ -115,31 +116,13 @@ impl TokenService {
 /// Lowercased so one name means one token on every backend (MySQL compares
 /// case-insensitively), and kept to one URL path segment for `/tokens/{name}`.
 pub(crate) fn normalize_token_name(name: &str) -> Result<String, ServiceError> {
-    let name = name.trim().to_lowercase();
-
-    if name.is_empty() {
-        return Err(ServiceError::invalid_input("token name must not be empty"));
-    }
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-    {
-        return Err(ServiceError::invalid_input(
-            "token name may contain only letters, digits, '.', '_', and '-'",
-        ));
-    }
+    let name = normalize_identifier(name, "token name", MAX_TOKEN_NAME_LEN)?;
     // Dot segments get normalized away; `self` is the lookup route.
     if name == "." || name == ".." || name == "self" {
         return Err(ServiceError::invalid_input(format!(
             "token name must not be '{name}'"
         )));
     }
-    if name.len() > MAX_TOKEN_NAME_LEN {
-        return Err(ServiceError::invalid_input(
-            "token name must be 255 bytes or fewer",
-        ));
-    }
-
     Ok(name)
 }
 

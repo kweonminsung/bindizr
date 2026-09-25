@@ -4,7 +4,7 @@ use chrono::Utc;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, parse_record},
+    bulk::{PreparedRecord, parse_record_request},
     validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
 };
 use crate::{
@@ -31,7 +31,7 @@ impl RecordService {
             value: record_value,
             priority,
             ..
-        } = parse_record(
+        } = parse_record_request(
             &create_record_request.name,
             &create_record_request.record_type,
             &create_record_request.value,

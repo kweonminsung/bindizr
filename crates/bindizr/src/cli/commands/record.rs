@@ -10,7 +10,7 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            OutputFormat, RecordRow, parse_response, print_payload, print_response, print_table,
+            OutputFormat, RecordRow, parse_payload, print_payload, print_response, print_table,
             render_change_preview,
         },
     },
@@ -438,7 +438,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 
             match output {
                 OutputFormat::Table => {
-                    let bulk: BulkRecordsResponse = parse_response(&response.data)?;
+                    let bulk: BulkRecordsResponse = parse_payload(&response.data)?;
                     outln!("{}", response.message);
                     if dry_run {
                         out!("{}", render_change_preview(&bulk.diff));

@@ -13,7 +13,7 @@ use serde::Serialize;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, color, parse_response, print_payload},
+        output::{OutputFormat, color, parse_payload, print_payload},
     },
     socket::{client, types::DaemonCommandKind},
 };
@@ -112,7 +112,7 @@ pub(crate) async fn handle_command(
     if daemon::check_running(&mut report).await {
         let daemon_config = client::send_control_command(DaemonCommandKind::Config)
             .await
-            .and_then(|response| Ok(parse_response::<BindizrConfig>(&response.data)?));
+            .and_then(|response| Ok(parse_payload::<BindizrConfig>(&response.data)?));
         match daemon_config {
             Ok(config) => daemon::check_api(&config, &mut report).await,
             Err(e) => report.fail(format!("Daemon config not readable: {}", e.message)),

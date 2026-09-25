@@ -263,7 +263,7 @@ async fn authorize_key_tx(
                 name, record_type, ..
             } => (name, Some(record_type)),
         };
-        let owner = parse_owner_in_zone(name, &zone.name)?;
+        let owner = parse_update_owner(name, &zone.name)?;
         if !authorize_prerequisite(&grants, &owner, record_type) {
             return Err(DynamicUpdateError::Refused(format!(
                 "TSIG key '{}' is not authorized to read '{}' ({}) in zone '{}'",
@@ -276,7 +276,7 @@ async fn authorize_key_tx(
     }
 
     for op in updates {
-        let owner = parse_owner_in_zone(op.name(), &zone.name)?;
+        let owner = parse_update_owner(op.name(), &zone.name)?;
         if !authorize_update(&grants, &owner, op.record_type()) {
             return Err(DynamicUpdateError::Refused(format!(
                 "TSIG key '{}' is not authorized to update '{}' ({}) in zone '{}'",
@@ -306,7 +306,7 @@ async fn apply_op_tx(
             ttl,
             priority,
         } => {
-            let owner = parse_owner_in_zone(name, &zone.name)?;
+            let owner = parse_update_owner(name, &zone.name)?;
 
             // Row-encode so nsupdate stores the same spelling as the other write
             // paths; TXT arrives already encoded from the wire rdata.
@@ -392,7 +392,7 @@ async fn delete_matching_tx(
     priority: Option<i32>,
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
-    let owner = parse_owner_in_zone(name, &zone.name)?;
+    let owner = parse_update_owner(name, &zone.name)?;
     // Only records at the owner name can match, so lock just those.
     let owner_records =
         RepositoryService::list_records_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive)
@@ -415,7 +415,7 @@ async fn delete_matching_tx(
 
 /// The owner of an update RR. The wire carries owners absolutely, so a name
 /// outside the zone is NOTZONE rather than something to qualify.
-fn parse_owner_in_zone(name: &str, zone_name: &ZoneName) -> Result<OwnerName, DynamicUpdateError> {
+fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, DynamicUpdateError> {
     if name.trim_end_matches('.').is_empty() {
         return Err(DynamicUpdateError::NotZone(
             "root owner is not supported".to_string(),

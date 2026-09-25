@@ -18,7 +18,7 @@ use crate::{
         error::CliError,
         output::{
             ImportSummaryRow, OutputFormat, SecondaryStatusRow, TokenGrantRow, TsigGrantRow,
-            ZoneRow, parse_response, print_payload, print_response, print_table,
+            ZoneRow, parse_payload, print_payload, print_response, print_table,
             render_change_preview,
         },
     },
@@ -496,7 +496,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
 
             match output {
                 OutputFormat::Table => {
-                    let response: ZoneResponse = parse_response(&data)?;
+                    let response: ZoneResponse = parse_payload(&data)?;
                     print_table(vec![ZoneRow::from(&response.zone)]);
                 }
                 _ => print_payload(&data, output)?,
@@ -567,7 +567,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             )
             .await?
             .data;
-            let export: ExportZoneFileResponse = parse_response(&data)?;
+            let export: ExportZoneFileResponse = parse_payload(&data)?;
             out!("{}", export.zone_file);
         }
         ZoneCommand::Import {
@@ -597,7 +597,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             )
             .await?;
 
-            let import: ImportZoneResponse = parse_response(&response.data)?;
+            let import: ImportZoneResponse = parse_payload(&response.data)?;
             match output {
                 OutputFormat::Table => {
                     outln!("{}", response.message);
@@ -635,7 +635,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 print_payload(&response.data, output)?;
                 return Ok(());
             }
-            let status: ZoneStatusResponse = parse_response(&response.data)?;
+            let status: ZoneStatusResponse = parse_payload(&response.data)?;
             outln!("Zone {} (serial {})", status.zone_name, status.serial);
             if status.secondaries.is_empty() {
                 outln!("No enabled secondaries.");

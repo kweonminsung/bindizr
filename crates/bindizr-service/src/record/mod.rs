@@ -9,7 +9,7 @@ mod validation;
 
 use bindizr_core::dns::dnssec::rdata_presentation;
 pub(crate) use matching::matches_record;
-pub(crate) use validation::{AddOutcome, validate_record_name_in_zone, validate_record_ttl};
+pub(crate) use validation::{AddOutcome, validate_record_name_in_zone};
 
 use crate::{
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},
@@ -48,4 +48,4 @@ impl ListedRecord {
     }
 }
 
-pub(crate) use validation::{parse_record_type, validate_record_add_constraints_normalized};
+pub(crate) use validation::validate_record_add_constraints_normalized;

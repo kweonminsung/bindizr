@@ -8,7 +8,7 @@ use clap::Subcommand;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, SecondaryRow, parse_response, print_payload, print_response},
+        output::{OutputFormat, SecondaryRow, parse_payload, print_payload, print_response},
     },
     socket::{
         client,
@@ -183,7 +183,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
 
             log::debug!("Secondary check result: {:?}", res);
 
-            let check: SecondaryCheckResponse = parse_response(&res.data)?;
+            let check: SecondaryCheckResponse = parse_payload(&res.data)?;
             match output {
                 OutputFormat::Table => print_check(&check),
                 _ => print_payload(&res.data, output)?,

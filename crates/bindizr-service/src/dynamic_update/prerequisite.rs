@@ -5,7 +5,7 @@
 use bindizr_core::dns::name::OwnerName;
 use bindizr_db::repository::LockLevel;
 
-use super::{DynamicUpdateError, Prerequisite, parse_owner_in_zone};
+use super::{DynamicUpdateError, Prerequisite, parse_update_owner};
 use crate::{
     RepositoryTx,
     model::{
@@ -32,7 +32,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
     for prerequisite in prerequisites {
         match prerequisite {
             Prerequisite::NameInUse { name } => {
-                let owner = parse_owner_in_zone(name, &zone.name)?;
+                let owner = parse_update_owner(name, &zone.name)?;
                 if !has_owner(&owner, &zone_records) {
                     return Err(DynamicUpdateError::NxDomain(format!(
                         "owner '{}' does not exist",
@@ -41,7 +41,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 }
             }
             Prerequisite::NameNotInUse { name } => {
-                let owner = parse_owner_in_zone(name, &zone.name)?;
+                let owner = parse_update_owner(name, &zone.name)?;
                 if has_owner(&owner, &zone_records) {
                     return Err(DynamicUpdateError::YxDomain(format!(
                         "owner '{}' exists",
@@ -50,7 +50,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 }
             }
             Prerequisite::RecordSetInUse { name, record_type } => {
-                let owner = parse_owner_in_zone(name, &zone.name)?;
+                let owner = parse_update_owner(name, &zone.name)?;
                 if !has_record_set(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::NxRrset(format!(
                         "no {} records at {}",
@@ -59,7 +59,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 }
             }
             Prerequisite::RecordSetNotInUse { name, record_type } => {
-                let owner = parse_owner_in_zone(name, &zone.name)?;
+                let owner = parse_update_owner(name, &zone.name)?;
                 if has_record_set(&owner, record_type, &zone_records) {
                     return Err(DynamicUpdateError::YxRrset(format!(
                         "{} records at {} exist",
@@ -73,7 +73,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                 value,
                 priority,
             } => {
-                let owner = parse_owner_in_zone(name, &zone.name)?;
+                let owner = parse_update_owner(name, &zone.name)?;
                 match record_sets.iter_mut().find(|record_set| {
                     record_set.owner == owner && record_set.record_type == *record_type
                 }) {

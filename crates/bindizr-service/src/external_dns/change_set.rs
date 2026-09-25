@@ -14,7 +14,8 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    record::{parse_record_type, validate_record_add_constraints_normalized, validate_record_ttl},
+    record::validate_record_add_constraints_normalized,
+    ttl::validate_record_ttl,
     types::{ExternalDnsChangesRequest, ExternalDnsRecord},
 };
 
@@ -59,16 +60,14 @@ pub(crate) struct ZoneChangeSet {
     pub(crate) creates: Vec<Record>,
 }
 
-/// Parse a record type supported by the external-dns adapter.
+/// Parse a record type the ExternalDNS API manages.
 fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceError> {
-    let parsed = parse_record_type(record_type)?;
-    if !parsed.is_external_dns_supported() {
-        return Err(ServiceError::invalid_input(format!(
+    RecordType::parse_external_dns_supported(record_type).ok_or_else(|| {
+        ServiceError::invalid_input(format!(
             "record type '{}' is not supported by the ExternalDNS API",
-            parsed
-        )));
-    }
-    Ok(parsed)
+            record_type
+        ))
+    })
 }
 
 /// ExternalDNS sends TTL 0 for "not configured"; both resolve to the zone TTL.

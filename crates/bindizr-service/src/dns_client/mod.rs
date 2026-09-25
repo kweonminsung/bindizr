@@ -139,7 +139,7 @@ pub(crate) async fn resolve_address_entries(
 /// Resolve one `host[:port]` entry (port 53 default) into every address it
 /// names. `resolve_timeout` bounds the lookup so a stalled system resolver
 /// fails the entry instead of hanging the caller.
-pub(crate) async fn resolve_address_entry(
+pub async fn resolve_address_entry(
     entry: &str,
     resolve_timeout: Duration,
 ) -> Result<Vec<SocketAddr>, String> {

@@ -5,7 +5,7 @@ use bindizr_core::outln;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, parse_response, print_payload},
+        output::{OutputFormat, parse_payload, print_payload},
     },
     socket::{
         client,
@@ -20,7 +20,7 @@ const RESTART_DEADLINE: Duration = Duration::from_secs(40);
 /// Handle the `restart` subcommand: re-exec the daemon in place and wait for
 /// the replacement to answer.
 pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError> {
-    let before: DaemonStatusResponse = parse_response(
+    let before: DaemonStatusResponse = parse_payload(
         &client::send_control_command(DaemonCommandKind::Status)
             .await?
             .data,
@@ -38,7 +38,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
         let Ok(response) = client::send_control_command(DaemonCommandKind::Status).await else {
             return None;
         };
-        parse_response::<DaemonStatusResponse>(&response.data)
+        parse_payload::<DaemonStatusResponse>(&response.data)
             .ok()
             .filter(|status| status.started_at_ms != before.started_at_ms)
     })

@@ -5,7 +5,7 @@ use clap::Subcommand;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, color, parse_response, print_payload},
+        output::{OutputFormat, color, parse_payload, print_payload},
     },
     socket::{client, types::DaemonCommandKind},
 };
@@ -97,7 +97,7 @@ async fn print_config_list(output: OutputFormat) -> Result<(), CliError> {
     let response = client::send_control_command(DaemonCommandKind::Config).await?;
 
     match output {
-        OutputFormat::Table => print_config(&parse_response(&response.data)?),
+        OutputFormat::Table => print_config(&parse_payload(&response.data)?),
         _ => print_payload(&response.data, output)?,
     }
     Ok(())

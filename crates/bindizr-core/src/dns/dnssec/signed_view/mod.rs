@@ -130,7 +130,7 @@ impl SignedViewParams<'_> {
             new_rows.push(DnssecRecord {
                 id: 0,
                 zone_id: zone.id,
-                name: parse_owner_in_zone(record.owner(), &zone.name)?,
+                name: parse_derived_owner(record.owner(), &zone.name)?,
                 record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
                 ttl: record.ttl().as_secs() as i32,
@@ -188,7 +188,7 @@ impl SignedViewParams<'_> {
 
         let refresh_cutoff = self.now + chrono::Duration::seconds(self.refresh_secs);
         for record_set in &signable {
-            let owner = parse_owner_in_zone(record_set[0].owner(), &zone.name)?;
+            let owner = parse_derived_owner(record_set[0].owner(), &zone.name)?;
             let covered = record_set[0].rtype().to_int() as i32;
             // The apex key RRsets must be signed by keys the parent DS names
             // (RFC 7344, Section 4.1 for CDS/CDNSKEY); everything else by the
@@ -338,7 +338,7 @@ fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8
 }
 
 /// Convert a derived absolute owner to a name relative to its zone.
-fn parse_owner_in_zone(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, String> {
+fn parse_derived_owner(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, String> {
     OwnerName::parse_absolute_in_zone(&owner.to_string(), zone_name).map_err(|e| {
         format!(
             "derived owner '{}' is not inside zone '{}': {}",
