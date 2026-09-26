@@ -3,11 +3,9 @@ mod create;
 mod delete;
 mod get;
 mod import;
-mod matching;
 mod update;
 mod validation;
 
-pub(crate) use matching::matches_record;
 pub(crate) use validation::{AddOutcome, validate_record_name_in_zone};
 
 use crate::{

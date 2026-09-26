@@ -533,6 +533,42 @@ A Codacy complexity finding is never a reason to split a function: a bot
 review cannot justify a helper, so leave the function whole unless the user
 asks for the split.
 
+### Methods and free functions — what a type owns
+
+A type owns a method when the answer comes from that one value: its fields,
+its arguments, and the wire or protocol rule the type embodies — nothing
+read from config, the repository, or another domain value of equal
+standing, and no I/O. Such a method is a derivation
+(`rdata.to_presentation(record_type)`), a predicate about the receiver
+(`record.matches(type, value, priority)`, `key.wants_parent_ds()`), or a
+rendering (`Display`); when it can fail it says so with `String` or
+`Option`, never `ServiceError`. It lives beside the type, so a core type's
+method uses only core.
+
+Everything else is a function of the flow that needs it: a rule phrased
+against a layer's error type (`normalize_*`, `validate_*`), an assembly of
+several values (`build_record_diff(zone, …)`), anything with I/O or a
+transaction, and a step whose failures are one command's messages
+(`promotable_sep_key_ids` reports the `ds-seen` errors). A payload type in
+`bindizr_service::types` carries only what its wire form defines
+(`RecordValueRequest::to_text`, `to_encoded_value`), never a service rule.
+A receiver that would be a slice, an `Option`, or a foreign type (the
+`domain` crate's aliases, `DateTime`) rules a method out. `Caller`'s
+`authorize_*` methods are the gate of *Who decides what*, not a value's
+property, and keep their `ServiceError`.
+
+### Structs — a named shape that travels
+
+A struct exists for a shape that travels with a name: a value that is
+stored, passed on, compared, or keys a map another function reads
+(`RecordSetKey`), and every payload. A pair the caller takes apart on
+arrival stays a tuple (`let (token, secret) = TokenService::create(…)`),
+and values that travel together only inside one function stay locals. A
+wrapper that only renames another struct's fields is not a struct — use the
+original. One shape has one struct: two with the same fields merge, but two
+with different fields are never generalized into one dynamic shape (a stage
+list standing in for two timing structs).
+
 ### Struct literals stay at the use site
 
 A struct literal is never the body a helper is extracted for. A function that
