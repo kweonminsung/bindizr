@@ -1,42 +1,54 @@
-//! RRset-level diffing of two serials' records: what an import, a bulk apply, or a
+//! Record-set-level diffing of two serials' records: what an import, a bulk apply, or a
 //! rollback would add, remove, or change.
 
 use std::collections::BTreeMap;
 
 use crate::{
-    model::zone::Zone,
-    types::{RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, build_display_value},
-    zone::history::ReconstructedRecord,
+    model::{
+        record::{RecordData, RecordSetKey},
+        zone::Zone,
+    },
+    types::{
+        RecordChange, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue,
+        build_display_value,
+    },
 };
 
-/// One record within an RRset: its identity (for change detection) and
+/// What makes two records of one record set the same: canonical rdata and TTL.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct MemberIdentity {
+    rdata: String,
+    ttl: i32,
+}
+
+/// One record within a record set: its identity (for change detection) and
 /// its display-form value (for the response).
 #[derive(Clone)]
-struct RrsetRecord {
-    identity: (String, i32),
+struct RecordSetMember {
+    identity: MemberIdentity,
     value: RecordDiffValue,
 }
 
-/// Group records into RRsets keyed by (display owner name, record type). Two
-/// records are the same iff their canonical value+priority and TTL match.
-fn group_rrsets(
+/// Group records into record sets. Two records are the same iff their canonical
+/// value+priority and TTL match.
+fn group_record_sets(
     zone: &Zone,
-    records: &[ReconstructedRecord],
-) -> BTreeMap<(String, String), Vec<RrsetRecord>> {
-    let mut rrsets: BTreeMap<(String, String), Vec<RrsetRecord>> = BTreeMap::new();
+    records: &[RecordData],
+) -> BTreeMap<RecordSetKey, Vec<RecordSetMember>> {
+    let mut record_sets: BTreeMap<RecordSetKey, Vec<RecordSetMember>> = BTreeMap::new();
     for record in records {
-        let key = (
-            record.name.to_fqdn(&zone.name),
-            record.record_type.to_string(),
-        );
-        rrsets.entry(key).or_default().push(RrsetRecord {
-            identity: (
-                record
+        let key = RecordSetKey {
+            name: record.name.to_fqdn(&zone.name),
+            record_type: record.record_type.to_string(),
+        };
+        record_sets.entry(key).or_default().push(RecordSetMember {
+            identity: MemberIdentity {
+                rdata: record
                     .record_type
                     .canonical_value(&record.value, record.priority)
                     .into_owned(),
-                record.ttl,
-            ),
+                ttl: record.ttl,
+            },
             value: RecordDiffValue {
                 value: build_display_value(&record.value, &record.record_type),
                 ttl: record.ttl,
@@ -44,78 +56,78 @@ fn group_rrsets(
             },
         });
     }
-    rrsets
+    record_sets
 }
 
 /// Collect sorted, borrowed record identities for comparison without copying their contents.
-fn rrset_identities(rrset: &[RrsetRecord]) -> Vec<&(String, i32)> {
-    let mut ids: Vec<_> = rrset.iter().map(|r| &r.identity).collect();
+fn record_set_identities(record_set: &[RecordSetMember]) -> Vec<&MemberIdentity> {
+    let mut ids: Vec<_> = record_set.iter().map(|r| &r.identity).collect();
     ids.sort();
     ids
 }
 
 /// Collect the record values belonging to an owner and type.
-fn rrset_values(rrset: Vec<RrsetRecord>) -> Vec<RecordDiffValue> {
-    rrset.into_iter().map(|r| r.value).collect()
+fn record_set_values(record_set: Vec<RecordSetMember>) -> Vec<RecordDiffValue> {
+    record_set.into_iter().map(|r| r.value).collect()
 }
 
-/// Diff two serials' records at the RRset level. TTL is part of a record's identity,
+/// Diff two serials' records at the record set level. TTL is part of a record's identity,
 /// so a TTL-only change shows as `changed`.
 pub(crate) fn build_record_diff(
     zone: &Zone,
-    before: &[ReconstructedRecord],
-    after: &[ReconstructedRecord],
+    before: &[RecordData],
+    after: &[RecordData],
 ) -> RecordDiff {
-    let mut before_rrsets = group_rrsets(zone, before);
-    let mut after_rrsets = group_rrsets(zone, after);
+    let mut before_record_sets = group_record_sets(zone, before);
+    let mut after_record_sets = group_record_sets(zone, after);
 
-    let mut keys: Vec<(String, String)> = before_rrsets.keys().cloned().collect();
+    let mut keys: Vec<RecordSetKey> = before_record_sets.keys().cloned().collect();
     keys.extend(
-        after_rrsets
+        after_record_sets
             .keys()
-            .filter(|k| !before_rrsets.contains_key(*k))
+            .filter(|k| !before_record_sets.contains_key(*k))
             .cloned(),
     );
     keys.sort();
 
     let mut entries = Vec::new();
-    let (mut added, mut removed, mut changed) = (0usize, 0usize, 0usize);
+    let (mut added, mut removed, mut changed) = (0u64, 0u64, 0u64);
 
     for key in keys {
-        // Both maps are drained here, so each RRset can be moved into its entry.
-        let before = before_rrsets.remove(&key);
-        let after = after_rrsets.remove(&key);
-        let (name, record_type) = key;
+        // Both maps are drained here, so each record set can be moved into its entry.
+        let before = before_record_sets.remove(&key);
+        let after = after_record_sets.remove(&key);
+        let RecordSetKey { name, record_type } = key;
         match (before, after) {
             (None, Some(after)) => {
                 added += 1;
                 entries.push(RecordDiffEntry {
-                    change: "added".to_string(),
+                    change: RecordChange::Added,
                     name,
                     record_type,
                     from: Vec::new(),
-                    to: rrset_values(after),
+                    to: record_set_values(after),
                 });
             }
             (Some(before), None) => {
                 removed += 1;
                 entries.push(RecordDiffEntry {
-                    change: "removed".to_string(),
+                    change: RecordChange::Removed,
                     name,
                     record_type,
-                    from: rrset_values(before),
+                    from: record_set_values(before),
                     to: Vec::new(),
                 });
             }
             (Some(before), Some(after)) => {
-                if rrset_identities(&before) != rrset_identities(&after) {
+                if record_set_identities(&before) != record_set_identities(&after) {
                     changed += 1;
                     entries.push(RecordDiffEntry {
-                        change: "changed".to_string(),
+                        change: RecordChange::Changed,
                         name,
                         record_type,
-                        from: rrset_values(before),
-                        to: rrset_values(after),
+                        from: record_set_values(before),
+                        to: record_set_values(after),
                     });
                 }
             }

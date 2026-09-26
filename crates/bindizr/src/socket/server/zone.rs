@@ -8,18 +8,21 @@ use bindizr_service::{
     zone::ZoneService,
 };
 
-use crate::socket::{
-    server::{parse_params, to_response_data},
-    types::{
-        DaemonResponse, DeleteZoneParams, DiffZoneVersionsParams, ExportZoneFileParams,
-        ImportZoneParams, ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams,
-        ZoneNameParams, ZoneVersionParams,
+use crate::{
+    params::NameParams,
+    socket::{
+        server::{parse_params, to_response_data},
+        types::{
+            DaemonResponse, DeleteZoneParams, DiffZoneVersionsParams, ExportZoneFileParams,
+            ImportZoneParams, ListZoneVersionsParams, RollbackZoneParams, UpdateZoneParams,
+            ZoneVersionParams,
+        },
     },
 };
 
 /// Return the requested zone.
 pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
     Ok(DaemonResponse {
@@ -180,9 +183,7 @@ pub(crate) async fn rollback_zone(
     let message = if response.dry_run {
         format!(
             "Dry run: rollback to serial {} would add {} and delete {} record(s); nothing applied",
-            response.target_serial,
-            response.summary.records_added,
-            response.summary.records_deleted
+            response.target_serial, response.summary.added, response.summary.deleted
         )
     } else {
         format!(
@@ -201,7 +202,7 @@ pub(crate) async fn rollback_zone(
 pub(crate) async fn get_zone_status(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: ZoneNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let response = ZoneService::get_status(&Caller::Global, &params.name).await?;
 
@@ -211,7 +212,7 @@ pub(crate) async fn get_zone_status(
         .filter(|s| s.is_in_sync())
         .count();
     let message = if response.secondaries.is_empty() {
-        "No secondaries configured".to_string()
+        "No enabled secondaries".to_string()
     } else {
         format!(
             "{} of {} secondaries in sync with serial {}",
@@ -236,7 +237,7 @@ pub(crate) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonRespon
         message: if response.dry_run {
             format!(
                 "Zone '{}' would be deleted with {} record(s) and {} version(s)",
-                params.name, response.records, response.versions
+                params.name, response.records_deleted, response.versions_deleted
             )
         } else {
             format!("Zone '{}' deleted successfully", params.name)

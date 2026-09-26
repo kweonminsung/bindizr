@@ -10,15 +10,15 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            OutputFormat, RecordRow, parse_response, print_payload, print_response, print_table,
+            OutputFormat, RecordRow, parse_payload, print_payload, print_response, print_table,
             render_change_preview,
         },
     },
+    params::IdParams,
     socket::{
         client,
         types::{
-            DaemonCommandKind, DeleteRecordParams, RecordIdParams, UpdateRecordByNameParams,
-            UpdateRecordParams,
+            DaemonCommandKind, DeleteRecordParams, UpdateRecordByNameParams, UpdateRecordParams,
         },
     },
 };
@@ -438,7 +438,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 
             match output {
                 OutputFormat::Table => {
-                    let bulk: BulkRecordsResponse = parse_response(&response.data)?;
+                    let bulk: BulkRecordsResponse = parse_payload(&response.data)?;
                     outln!("{}", response.message);
                     if dry_run {
                         out!("{}", render_change_preview(&bulk.diff));
@@ -455,7 +455,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             output,
             ..
         } => {
-            let data = client::send_command(DaemonCommandKind::GetRecord, RecordIdParams { id })
+            let data = client::send_command(DaemonCommandKind::GetRecord, IdParams { id })
                 .await?
                 .data;
 

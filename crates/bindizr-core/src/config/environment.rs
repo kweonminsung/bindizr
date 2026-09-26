@@ -65,9 +65,6 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_DNS_LISTEN_PORT") {
             self.dns.listen_port = parse_env_value("BINDIZR_DNS_LISTEN_PORT", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_SECONDARY_ADDRS") {
-            self.dns.secondary_addrs = value;
-        }
         if let Some(value) = get_env("BINDIZR_DNS_CATALOG_ZONE_NAME") {
             self.dns.catalog_zone_name = value;
         }
@@ -85,13 +82,6 @@ impl BindizrConfig {
             self.dns.scheduler_interval_secs =
                 parse_env_value("BINDIZR_DNS_SCHEDULER_INTERVAL_SECS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_AFTER_UPDATE") {
-            self.dns.notify.after_update =
-                parse_env_value("BINDIZR_DNS_NOTIFY_AFTER_UPDATE", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_ON_STARTUP") {
-            self.dns.notify.on_startup = parse_env_value("BINDIZR_DNS_NOTIFY_ON_STARTUP", &value)?;
-        }
         if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_BATCH_MS") {
             self.dns.notify.batch_ms = parse_env_value("BINDIZR_DNS_NOTIFY_BATCH_MS", &value)?;
         }
@@ -101,10 +91,6 @@ impl BindizrConfig {
         if let Some(value) = get_env("BINDIZR_DNS_NOTIFY_TIMEOUT_SECS") {
             self.dns.notify.timeout_secs =
                 parse_env_value("BINDIZR_DNS_NOTIFY_TIMEOUT_SECS", &value)?;
-        }
-        if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_CACHE_ENABLED") {
-            self.dns.transfer_cache.enabled =
-                parse_env_value("BINDIZR_DNS_TRANSFER_CACHE_ENABLED", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS") {
             self.dns.transfer_cache.max_records =

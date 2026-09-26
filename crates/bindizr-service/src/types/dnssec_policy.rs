@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::model::dnssec_policy::DnssecPolicy;
+use crate::model::dnssec_policy::{DnssecDenial, DnssecPolicy};
 
 /// Request body for creating a DNSSEC policy. The key layout, algorithm,
 /// and denial mode are fixed once created. Omitted fields use the built-in
@@ -65,9 +65,7 @@ pub struct GetDnssecPolicyResponse {
     pub name: String,
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: String,
-    /// `nsec` or `nsec3`.
-    #[schema(example = "nsec3")]
-    pub denial: String,
+    pub denial: DnssecDenial,
     #[schema(example = false)]
     pub split_keys: bool,
     #[schema(example = 14)]
@@ -87,7 +85,7 @@ impl GetDnssecPolicyResponse {
             id: policy.id,
             name: policy.name.clone(),
             algorithm: policy.algorithm.to_string(),
-            denial: policy.denial.to_string(),
+            denial: policy.denial,
             split_keys: policy.split_keys,
             signature_validity_days: policy.signature_validity_days.max(0) as u32,
             signature_refresh_days: policy.signature_refresh_days.max(0) as u32,

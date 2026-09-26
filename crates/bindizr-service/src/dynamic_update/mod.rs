@@ -21,7 +21,7 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    record::{AddOutcome, RecordService, matches_record},
+    record::{AddOutcome, RecordService},
     repository::RepositoryService,
     serial::generate_serial,
     tsig_key::grant::{authorize_prerequisite, authorize_update},
@@ -61,19 +61,19 @@ pub enum Prerequisite {
     NameInUse { name: String },
     /// CLASS NONE, TYPE ANY: the owner name must not exist.
     NameNotInUse { name: String },
-    /// CLASS ANY: the RRset must exist.
-    RrsetInUse {
+    /// CLASS ANY: the record set must exist.
+    RecordSetInUse {
         name: String,
         record_type: RecordType,
     },
-    /// CLASS NONE: the RRset must not exist.
-    RrsetNotInUse {
+    /// CLASS NONE: the record set must not exist.
+    RecordSetNotInUse {
         name: String,
         record_type: RecordType,
     },
-    /// CLASS IN: with the others of its name and type, the RRset must equal
+    /// CLASS IN: with the others of its name and type, the record set must equal
     /// the zone's (RFC 2136, Section 3.2.3).
-    RrInUse {
+    RecordInUse {
         name: String,
         record_type: RecordType,
         /// TXT arrives row-encoded; every other type in presentation form.
@@ -84,8 +84,8 @@ pub enum Prerequisite {
 
 /// One update to apply (RFC 2136, Section 2.5). Owner names are absolute.
 pub enum UpdateOp {
-    /// CLASS IN: add the RR.
-    AddRr {
+    /// CLASS IN: add the record.
+    AddRecord {
         name: String,
         record_type: RecordType,
         /// TXT arrives row-encoded; every other type in presentation form.
@@ -93,14 +93,14 @@ pub enum UpdateOp {
         ttl: i32,
         priority: Option<i32>,
     },
-    /// CLASS ANY: delete an RRset, or every RRset at the owner name when
+    /// CLASS ANY: delete a record set, or every record set at the owner name when
     /// `record_type` is `None` (wire TYPE ANY).
-    DeleteRrset {
+    DeleteRecordSet {
         name: String,
         record_type: Option<RecordType>,
     },
-    /// CLASS NONE: delete the RRs carrying exactly this rdata.
-    DeleteRr {
+    /// CLASS NONE: delete the records carrying exactly this rdata.
+    DeleteRecord {
         name: String,
         record_type: RecordType,
         value: String,
@@ -112,19 +112,18 @@ impl UpdateOp {
     /// Return the owner name targeted by this update operation.
     fn name(&self) -> &str {
         match self {
-            UpdateOp::AddRr { name, .. }
-            | UpdateOp::DeleteRrset { name, .. }
-            | UpdateOp::DeleteRr { name, .. } => name,
+            UpdateOp::AddRecord { name, .. }
+            | UpdateOp::DeleteRecordSet { name, .. }
+            | UpdateOp::DeleteRecord { name, .. } => name,
         }
     }
 
     /// The type this update touches; `None` for a whole-name delete.
     fn record_type(&self) -> Option<&RecordType> {
         match self {
-            UpdateOp::AddRr { record_type, .. } | UpdateOp::DeleteRr { record_type, .. } => {
-                Some(record_type)
-            }
-            UpdateOp::DeleteRrset { record_type, .. } => record_type.as_ref(),
+            UpdateOp::AddRecord { record_type, .. }
+            | UpdateOp::DeleteRecord { record_type, .. } => Some(record_type),
+            UpdateOp::DeleteRecordSet { record_type, .. } => record_type.as_ref(),
         }
     }
 }
@@ -209,10 +208,7 @@ impl DynamicUpdateService {
 
             // Queue through the service like every other mutation path, so
             // `dns.notify.batch_ms` governs RFC 2136 writes too.
-            if let Err(e) = crate::notify::send_notify_after_update(Some(zone.name.as_str())).await
-            {
-                log::error!("NSUPDATE notify failed for zone {}: {}", zone.name, e);
-            }
+            crate::notify::notify_after_update(zone.name.as_str()).await;
         }
 
         Ok(changed)
@@ -220,7 +216,7 @@ impl DynamicUpdateService {
 }
 
 /// Authorize an authenticated request: global keys may do anything, other
-/// keys need a grant reaching every prerequisite and every update RR. `key`
+/// keys need a grant reaching every prerequisite and every update record. `key`
 /// is `None` for an accepted unsigned request, which skips authorization
 /// entirely.
 async fn authorize_key_tx(
@@ -258,13 +254,13 @@ async fn authorize_key_tx(
     for prerequisite in prerequisites {
         let (name, record_type) = match prerequisite {
             Prerequisite::NameInUse { name } | Prerequisite::NameNotInUse { name } => (name, None),
-            Prerequisite::RrsetInUse { name, record_type }
-            | Prerequisite::RrsetNotInUse { name, record_type }
-            | Prerequisite::RrInUse {
+            Prerequisite::RecordSetInUse { name, record_type }
+            | Prerequisite::RecordSetNotInUse { name, record_type }
+            | Prerequisite::RecordInUse {
                 name, record_type, ..
             } => (name, Some(record_type)),
         };
-        let owner = parse_owner_in_zone(name, &zone.name)?;
+        let owner = parse_update_owner(name, &zone.name)?;
         if !authorize_prerequisite(&grants, &owner, record_type) {
             return Err(DynamicUpdateError::Refused(format!(
                 "TSIG key '{}' is not authorized to read '{}' ({}) in zone '{}'",
@@ -277,7 +273,7 @@ async fn authorize_key_tx(
     }
 
     for op in updates {
-        let owner = parse_owner_in_zone(op.name(), &zone.name)?;
+        let owner = parse_update_owner(op.name(), &zone.name)?;
         if !authorize_update(&grants, &owner, op.record_type()) {
             return Err(DynamicUpdateError::Refused(format!(
                 "TSIG key '{}' is not authorized to update '{}' ({}) in zone '{}'",
@@ -300,14 +296,14 @@ async fn apply_op_tx(
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
     match op {
-        UpdateOp::AddRr {
+        UpdateOp::AddRecord {
             name,
             record_type,
             value,
             ttl,
             priority,
         } => {
-            let owner = parse_owner_in_zone(name, &zone.name)?;
+            let owner = parse_update_owner(name, &zone.name)?;
 
             // Row-encode so nsupdate stores the same spelling as the other write
             // paths; TXT arrives already encoded from the wire rdata.
@@ -335,7 +331,7 @@ async fn apply_op_tx(
             .await?;
 
             // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op. The
-            // TTL-replace clause is not implemented; RRset TTLs change via the API.
+            // TTL-replace clause is not implemented; record set TTLs change via the API.
             if matches!(outcome, AddOutcome::Duplicate) {
                 return Ok(false);
             }
@@ -359,10 +355,10 @@ async fn apply_op_tx(
 
             Ok(true)
         }
-        UpdateOp::DeleteRrset { name, record_type } => {
+        UpdateOp::DeleteRecordSet { name, record_type } => {
             delete_matching_tx(tx, zone, name, record_type.as_ref(), None, None, new_serial).await
         }
-        UpdateOp::DeleteRr {
+        UpdateOp::DeleteRecord {
             name,
             record_type,
             value,
@@ -393,7 +389,7 @@ async fn delete_matching_tx(
     priority: Option<i32>,
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
-    let owner = parse_owner_in_zone(name, &zone.name)?;
+    let owner = parse_update_owner(name, &zone.name)?;
     // Only records at the owner name can match, so lock just those.
     let owner_records =
         RepositoryService::list_records_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive)
@@ -401,7 +397,7 @@ async fn delete_matching_tx(
 
     let matched: Vec<Record> = owner_records
         .iter()
-        .filter(|record| matches_record(record, record_type, value, priority))
+        .filter(|record| record.matches(record_type, value, priority))
         .cloned()
         .collect();
 
@@ -414,9 +410,9 @@ async fn delete_matching_tx(
     Ok(true)
 }
 
-/// The owner of an update RR. The wire carries owners absolutely, so a name
+/// The owner of an update record. The wire carries owners absolutely, so a name
 /// outside the zone is NOTZONE rather than something to qualify.
-fn parse_owner_in_zone(name: &str, zone_name: &ZoneName) -> Result<OwnerName, DynamicUpdateError> {
+fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, DynamicUpdateError> {
     if name.trim_end_matches('.').is_empty() {
         return Err(DynamicUpdateError::NotZone(
             "root owner is not supported".to_string(),

@@ -18,15 +18,38 @@ pub struct DnssecRecord {
     pub name: OwnerName,
     #[sqlx(try_from = "i32")]
     pub record_type: DnssecRecordType,
-    /// RRSIG rows: the covered RR type; NULL otherwise.
+    /// RRSIG rows: the covered record type; NULL otherwise.
     pub covered_record_type: Option<i32>,
     pub ttl: i32,
     pub rdata: Rdata,
     /// RRSIG rows: signature expiration, driving the re-signing schedule.
     pub expires_at: Option<DateTime<Utc>>,
-    /// RRSIG rows: digest of the signed RRset content, allowing a still-valid
-    /// signature to be reused when the RRset has not changed.
-    pub rrset_digest: Option<String>,
+    /// RRSIG rows: digest of the signed record set content, allowing a still-valid
+    /// signature to be reused when the record set has not changed.
+    pub record_set_digest: Option<String>,
+}
+
+/// What makes two derived records the same: owner, type, TTL, and rdata,
+/// every byte of which a signature covers. The row id and the RRSIG
+/// metadata, which change on re-signing, are left out.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DnssecRecordKey {
+    name: OwnerName,
+    record_type: DnssecRecordType,
+    ttl: i32,
+    rdata: Rdata,
+}
+
+impl DnssecRecord {
+    /// This record's identity for set matching.
+    pub fn match_key(&self) -> DnssecRecordKey {
+        DnssecRecordKey {
+            name: self.name.clone(),
+            record_type: self.record_type,
+            ttl: self.ttl,
+            rdata: self.rdata.clone(),
+        }
+    }
 }
 
 /// A derived record joined with its zone name, as the signed records listing
@@ -44,7 +67,7 @@ pub struct DnssecRecordWithZone {
     pub zone_name: ZoneName,
 }
 
-/// The record types the signer derives; rows store the wire RR type number
+/// The record types the signer derives; rows store the wire record type number
 /// (RFC 4034).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DnssecRecordType {

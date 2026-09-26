@@ -1,5 +1,5 @@
 //! ExternalDNS provider integration: authoritative zone matching and atomic
-//! RRset change application behind the `/external-dns` HTTP API (consumed by
+//! record set change application behind the `/external-dns` HTTP API (consumed by
 //! the bindizr-external-dns adapter). Which zones a caller may see and change
 //! is decided by its token's grants, like every other endpoint.
 
@@ -17,6 +17,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     grant_pattern::pattern_domain,
+    model::record::RecordSetKey,
     repository::RepositoryService,
     types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecord},
 };
@@ -40,7 +41,7 @@ impl ExternalDnsService {
         let records = request
             .records
             .iter()
-            .map(change_set::adjust_rrset)
+            .map(change_set::adjust_record_set)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(ExternalDnsAdjustResponse { records })
     }
@@ -85,9 +86,9 @@ impl ExternalDnsService {
     /// ExternalDNS-supported record types: one per name and type, with absolute
     /// owner names and sorted presentation-form values.
     pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecord>, ServiceError> {
-        // TTL is part of the key: one zone's rows of a name and type share it,
-        // but an overlapping parent and child zone may not.
-        let mut grouped: BTreeMap<(String, String, i32), Vec<String>> = BTreeMap::new();
+        // One zone's rows of a name and type share a TTL, but an overlapping
+        // parent and child zone may not, so each record set splits by TTL.
+        let mut grouped: BTreeMap<RecordSetKey, BTreeMap<i32, Vec<String>>> = BTreeMap::new();
         let mut offset = 0u64;
 
         loop {
@@ -112,7 +113,12 @@ impl ExternalDnsService {
                     .record_type
                     .presentation_rdata(&record.value, record.priority);
                 grouped
-                    .entry((name, record.record_type.to_string(), record.ttl))
+                    .entry(RecordSetKey {
+                        name,
+                        record_type: record.record_type.to_string(),
+                    })
+                    .or_default()
+                    .entry(record.ttl)
                     .or_default()
                     .push(value);
             }
@@ -126,14 +132,16 @@ impl ExternalDnsService {
         // Sorted values so an unchanged state never reads as a diff.
         Ok(grouped
             .into_iter()
-            .map(|((name, record_type, ttl), mut values)| {
-                values.sort();
-                ExternalDnsRecord {
-                    name,
-                    record_type,
-                    ttl: Some(ttl),
-                    values,
-                }
+            .flat_map(|(key, by_ttl)| {
+                by_ttl.into_iter().map(move |(ttl, mut values)| {
+                    values.sort();
+                    ExternalDnsRecord {
+                        name: key.name.clone(),
+                        record_type: key.record_type.clone(),
+                        ttl: Some(ttl),
+                        values,
+                    }
+                })
             })
             .collect())
     }

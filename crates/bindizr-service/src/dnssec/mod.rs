@@ -43,6 +43,14 @@ const SIGNATURE_INCEPTION_OFFSET_SECS: i64 = 3600;
 /// Enables, disables, rolls, and reports DNSSEC signing for zones.
 pub struct DnssecService;
 
+/// A signed zone as its operations load it: the row, the policy it signs
+/// under, and its keys.
+pub(crate) struct SignedZone {
+    pub(crate) zone: Zone,
+    pub(crate) policy: DnssecPolicy,
+    pub(crate) keys: Vec<DnssecKey>,
+}
+
 impl DnssecService {
     /// Recompute the zone's signed view inside the caller's mutation
     /// transaction, journaling the delta under `new_serial`. No-op for an
@@ -67,17 +75,24 @@ impl DnssecService {
     /// when nothing needed replacing.
     async fn resign_zone_tx(
         tx: &mut RepositoryTx<'_>,
-        zone: &Zone,
-        policy: &DnssecPolicy,
-        keys: &[DnssecKey],
+        signed: &SignedZone,
         force: bool,
         subject: &ChangeSubject,
     ) -> Result<Option<i32>, ServiceError> {
-        let new_serial = crate::serial::generate_serial(Some(zone.serial))?;
-        if !Self::apply_signed_view_tx(tx, zone, policy, new_serial, keys, force).await? {
+        let new_serial = crate::serial::generate_serial(Some(signed.zone.serial))?;
+        if !Self::apply_signed_view_tx(
+            tx,
+            &signed.zone,
+            &signed.policy,
+            new_serial,
+            &signed.keys,
+            force,
+        )
+        .await?
+        {
             return Ok(None);
         }
-        ZoneService::advance_serial_tx(tx, zone, new_serial, subject).await?;
+        ZoneService::advance_serial_tx(tx, &signed.zone, new_serial, subject).await?;
         Ok(Some(new_serial))
     }
 
@@ -122,14 +137,14 @@ impl DnssecService {
         tx: &mut RepositoryTx<'_>,
         zone_name: &str,
         lock_level: LockLevel,
-    ) -> Result<(Zone, DnssecPolicy, Vec<DnssecKey>), ServiceError> {
+    ) -> Result<SignedZone, ServiceError> {
         let zone = ZoneService::get_by_name_tx(tx, zone_name, lock_level).await?;
         let keys = RepositoryService::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
         if keys.is_empty() {
             return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
         }
         let policy = Self::get_zone_policy_tx(tx, &zone).await?;
-        Ok((zone, policy, keys))
+        Ok(SignedZone { zone, policy, keys })
     }
 
     /// The scheduler's form of [`Self::get_signed_zone_tx`]: `None` when the
@@ -138,7 +153,7 @@ impl DnssecService {
         tx: &mut RepositoryTx<'_>,
         zone_id: i32,
         lock_level: LockLevel,
-    ) -> Result<Option<(Zone, DnssecPolicy, Vec<DnssecKey>)>, ServiceError> {
+    ) -> Result<Option<SignedZone>, ServiceError> {
         let Some(zone) = RepositoryService::get_zone_tx(tx, zone_id, lock_level).await? else {
             return Ok(None);
         };
@@ -147,7 +162,7 @@ impl DnssecService {
             return Ok(None);
         }
         let policy = Self::get_zone_policy_tx(tx, &zone).await?;
-        Ok(Some((zone, policy, keys)))
+        Ok(Some(SignedZone { zone, policy, keys }))
     }
 
     /// Apply the signed DNSSEC view and journal its changes under the held zone lock.
@@ -179,9 +194,9 @@ impl DnssecService {
             denial: policy.denial,
             now,
             inception: now - Duration::seconds(SIGNATURE_INCEPTION_OFFSET_SECS),
-            expiration: now + Duration::days(i64::from(policy.signature_validity_days)),
+            expiration: now + Duration::seconds(policy.signature_validity_secs()),
             expiration_jitter_secs: policy.expiration_jitter_secs(),
-            refresh_secs: i64::from(policy.signature_refresh_days) * 86_400,
+            refresh_secs: policy.signature_refresh_secs(),
             force,
             withdraw_parent_ds,
         }
@@ -204,7 +219,7 @@ impl DnssecService {
         for key in keys {
             let signed_ttl = if key.signs_zone_data(keys) {
                 data_ttl
-            } else if key.signs_key_rrsets() {
+            } else if key.signs_key_record_sets() {
                 zone.default_ttl
             } else {
                 continue;
@@ -252,13 +267,6 @@ impl DnssecService {
         RepositoryService::delete_dnssec_records_tx(tx, &removed_ids).await?;
         RepositoryService::create_dnssec_records_tx(tx, &diff.added).await?;
         Ok(true)
-    }
-}
-
-/// Schedule NOTIFY after a DNSSEC change to a zone.
-async fn notify_zone(zone_name: &str) {
-    if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name)).await {
-        log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
     }
 }
 

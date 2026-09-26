@@ -22,7 +22,6 @@ url = ""
 [dns]
 listen_addr = "0.0.0.0"
 listen_port = 53
-secondary_addrs = ""
 catalog_zone_name = "catalog.bindizr"
 nsupdate_tsig_required = true  # false accepts updates from anyone (testing only)
 zone_history_retention_days = 365
@@ -30,14 +29,11 @@ scheduler_interval_secs = 3600
 
 
 [dns.notify]
-after_update = true
-on_startup = false
 batch_ms = 0
 retries = 3
 timeout_secs = 3
 
 [dns.transfer_cache]
-enabled = true
 max_records = 500000
 
 [dns.zone_defaults]             # Applied when a zone-creation request omits the field

@@ -71,11 +71,7 @@ fn catalog_digest(member_zones: &[String]) -> String {
         hasher.update(b"\n");
     }
 
-    hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{:02x}", byte))
-        .collect()
+    hex::encode(hasher.finalize())
 }
 
 /// Send a catalog zone transfer using the requested question type.

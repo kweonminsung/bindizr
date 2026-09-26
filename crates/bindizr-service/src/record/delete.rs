@@ -4,21 +4,18 @@ use bindizr_core::dns::name::OwnerName;
 use bindizr_db::repository::LockLevel;
 
 use super::{
-    RecordService, matches_record,
+    RecordService,
     validation::{normalize_record_owner_name, parse_record_type},
 };
 use crate::{
     authorization::{Caller, RecordWrite},
     dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
-    model::record::Record,
+    model::record::{Record, RecordData},
     repository::RepositoryService,
     serial::generate_serial,
     types::{DeleteRecordsFilter, DeleteRecordsResponse, GetRecordResponse},
-    zone::{
-        ZoneService, diff::build_record_diff, history::ReconstructedRecord,
-        validation::normalize_zone_name,
-    },
+    zone::{ZoneService, diff::build_record_diff, validation::normalize_zone_name},
 };
 
 impl RecordService {
@@ -105,16 +102,16 @@ impl RecordService {
                 LockLevel::Exclusive,
             )
             .await?;
-            let before: Vec<ReconstructedRecord> = records_at_name
+            let before: Vec<RecordData> = records_at_name
                 .iter()
                 .cloned()
-                .map(ReconstructedRecord::from)
+                .map(RecordData::from)
                 .collect();
-            let after: Vec<ReconstructedRecord> = records_at_name
+            let after: Vec<RecordData> = records_at_name
                 .iter()
                 .filter(|record| record.id != existing_record.id)
                 .cloned()
-                .map(ReconstructedRecord::from)
+                .map(RecordData::from)
                 .collect();
 
             let response = DeleteRecordsResponse {
@@ -164,9 +161,8 @@ impl RecordService {
         // Announce only a committed deletion, never a preview.
         if response.applied
             && let Some(zone_name) = response.records.first().map(|record| &record.zone_name)
-            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
         {
-            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+            crate::notify::notify_after_update(zone_name).await;
         }
 
         Ok(response)
@@ -235,8 +231,7 @@ impl RecordService {
             let matched: Vec<Record> = records_at_name
                 .iter()
                 .filter(|record| {
-                    matches_record(
-                        record,
+                    record.matches(
                         record_type.as_ref(),
                         match_value.as_deref(),
                         filter.priority,
@@ -247,23 +242,23 @@ impl RecordService {
 
             // Build the preview from the validated rows; dry runs and empty matches
             // return it before any records or serials are written.
-            let before: Vec<ReconstructedRecord> = records_at_name
+            let before: Vec<RecordData> = records_at_name
                 .iter()
                 .cloned()
-                .map(ReconstructedRecord::from)
+                .map(RecordData::from)
                 .collect();
             let removed: HashSet<i32> = matched.iter().map(|record| record.id).collect();
-            let after: Vec<ReconstructedRecord> = records_at_name
+            let after: Vec<RecordData> = records_at_name
                 .iter()
                 .filter(|record| !removed.contains(&record.id))
                 .cloned()
-                .map(ReconstructedRecord::from)
+                .map(RecordData::from)
                 .collect();
 
             let response = DeleteRecordsResponse {
                 applied: !filter.dry_run,
                 dry_run: filter.dry_run,
-                deleted: matched.len(),
+                deleted: matched.len() as u64,
                 records: matched
                     .iter()
                     .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone.name))
@@ -300,11 +295,8 @@ impl RecordService {
 
         // Announce only a committed deletion, never a preview or an empty
         // match — which applies, but writes nothing and leaves the serial.
-        if response.applied
-            && response.deleted > 0
-            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
-        {
-            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+        if response.applied && response.deleted > 0 {
+            crate::notify::notify_after_update(zone_name.as_str()).await;
         }
 
         Ok(response)

@@ -5,10 +5,11 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::{Duration, Utc};
 
-use super::{DnssecService, notify_zone, status::build_status_tx};
+use super::{DnssecService, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
+    dnssec::SignedZone,
     error::ServiceError,
     model::{
         dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
@@ -16,7 +17,7 @@ use crate::{
         zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
-    types::{DnssecDelegationKeyInfo, GetDnssecStatusResponse},
+    types::{DnssecDelegationKeyInfo, DnssecStatusResponse},
 };
 
 impl DnssecService {
@@ -26,17 +27,21 @@ impl DnssecService {
         caller: &Caller,
         zone_name: &str,
         role: Option<&str>,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_tx("failed to start key rollover").await?;
         let result = async {
             // Select a role only after ruling out an existing rollover under the zone lock.
-            let (zone, policy, keys) =
+            let mut signed =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            if keys.iter().any(|key| key.state != DnssecKeyState::Active) {
+            if signed
+                .keys
+                .iter()
+                .any(|key| key.state != DnssecKeyState::Active)
+            {
                 return Err(ServiceError::dnssec_rollover_in_progress(
-                    zone.name.as_str(),
+                    signed.zone.name.as_str(),
                 ));
             }
 
@@ -45,16 +50,16 @@ impl DnssecService {
                     let parsed = name
                         .parse::<DnssecKeyRole>()
                         .map_err(ServiceError::invalid_input)?;
-                    if !keys.iter().any(|key| key.role == parsed) {
+                    if !signed.keys.iter().any(|key| key.role == parsed) {
                         return Err(ServiceError::invalid_input(format!(
                             "zone '{}' has no {} key to roll",
-                            zone.name, parsed
+                            signed.zone.name, parsed
                         )));
                     }
                     parsed
                 }
                 None => {
-                    if keys.iter().all(|key| key.role == DnssecKeyRole::Csk) {
+                    if signed.keys.iter().all(|key| key.role == DnssecKeyRole::Csk) {
                         DnssecKeyRole::Csk
                     } else {
                         return Err(ServiceError::invalid_input(
@@ -66,28 +71,33 @@ impl DnssecService {
 
             // Publish the replacement alongside the active keys; promotion waits
             // for the role's hold-down and, for a SEP key, the parent DS check.
-            let mut keys = keys;
-            let template = keys
+            let template = signed
+                .keys
                 .iter()
                 .find(|key| key.role == target_role)
                 .expect("validated above that the role exists");
-            let new_key =
-                Self::publish_replacement_key_tx(&mut tx, &zone, template, template.algorithm)
-                    .await?;
-            keys.push(new_key);
-
-            let new_serial = Self::resign_zone_tx(
+            let new_key = Self::publish_replacement_key_tx(
                 &mut tx,
-                &zone,
-                &policy,
-                &keys,
-                false,
-                &caller.change_subject(),
+                &signed.zone,
+                template,
+                template.algorithm,
             )
-            .await?
-            .unwrap_or(zone.serial);
+            .await?;
+            signed.keys.push(new_key);
 
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
+            let new_serial =
+                Self::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
+                    .await?
+                    .unwrap_or(signed.zone.serial);
+
+            build_status_tx(
+                &mut tx,
+                &signed.zone,
+                Some(&signed.policy),
+                &signed.keys,
+                new_serial,
+            )
+            .await
         }
         .await;
         let response =
@@ -96,7 +106,7 @@ impl DnssecService {
         log::info!("event=dnssec_rollover_start zone={}", response.zone_name);
 
         // Announce the pre-published key after the signed view commits.
-        notify_zone(&response.zone_name).await;
+        crate::notify::notify_after_update(&response.zone_name).await;
         Ok(response)
     }
 
@@ -136,19 +146,19 @@ impl DnssecService {
         zone_name: &str,
         skip_ds_check: bool,
         skip_holddown: bool,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
 
         let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
         let result = async {
-            let (zone, policy, keys) =
+            let mut signed =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            let awaiting = promotable_sep_key_ids(&zone, &keys, skip_holddown)?;
+            let awaiting = promotable_sep_key_ids(&signed, skip_holddown)?;
             // The answer that confirms the DS also says how long resolvers
             // cache it — the wait the key it replaces must outlive.
             let mut parent_ds_ttl = None;
             if !skip_ds_check {
-                let delegation = Self::probe_delegation(&zone, &keys).await?;
+                let delegation = Self::probe_delegation(&signed).await?;
                 parent_ds_ttl = delegation.ds_ttl;
                 let unconfirmed: Vec<&DnssecDelegationKeyInfo> = delegation
                     .keys
@@ -162,34 +172,40 @@ impl DnssecService {
                     .collect();
                 if !unsupported.is_empty() {
                     return Err(ServiceError::dnssec_ds_digest_unsupported(
-                        zone.name.as_str(),
+                        signed.zone.name.as_str(),
                         &unsupported,
                     ));
                 }
                 let missing: Vec<u16> = unconfirmed.iter().map(|key| key.key_tag).collect();
                 if !missing.is_empty() {
                     return Err(ServiceError::dnssec_ds_not_published(
-                        zone.name.as_str(),
+                        signed.zone.name.as_str(),
                         &missing,
                     ));
                 }
             }
-            let keys =
-                Self::promote_published_keys_tx(&mut tx, &zone, keys, &awaiting, parent_ds_ttl)
-                    .await?;
-
-            let new_serial = DnssecService::resign_zone_tx(
+            signed.keys = Self::promote_published_keys_tx(
                 &mut tx,
-                &zone,
-                &policy,
-                &keys,
-                false,
-                &caller.change_subject(),
+                &signed.zone,
+                signed.keys,
+                &awaiting,
+                parent_ds_ttl,
             )
-            .await?
-            .unwrap_or(zone.serial);
+            .await?;
 
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
+            let new_serial =
+                DnssecService::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
+                    .await?
+                    .unwrap_or(signed.zone.serial);
+
+            build_status_tx(
+                &mut tx,
+                &signed.zone,
+                Some(&signed.policy),
+                &signed.keys,
+                new_serial,
+            )
+            .await
         }
         .await;
         let response =
@@ -208,7 +224,7 @@ impl DnssecService {
             );
         }
         log::info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
-        notify_zone(&response.zone_name).await;
+        crate::notify::notify_after_update(&response.zone_name).await;
         Ok(response)
     }
 
@@ -303,20 +319,21 @@ impl DnssecService {
 /// `skip_holddown`) a wait runs. `ds-seen` reports those errors; the
 /// scheduler reads them as nothing to do.
 pub(crate) fn promotable_sep_key_ids(
-    zone: &Zone,
-    keys: &[DnssecKey],
+    signed: &SignedZone,
     skip_holddown: bool,
 ) -> Result<Vec<i32>, ServiceError> {
-    if !keys
+    if !signed
+        .keys
         .iter()
         .any(|key| key.state == DnssecKeyState::Published)
     {
         return Err(ServiceError::dnssec_no_rollover_in_progress(
-            zone.name.as_str(),
+            signed.zone.name.as_str(),
         ));
     }
     // ZSKs have no parent DS to confirm; their own step promotes them.
-    let ds_published: Vec<i32> = keys
+    let ds_published: Vec<i32> = signed
+        .keys
         .iter()
         .filter(|key| key.awaits_parent_ds())
         .map(|key| key.id)
@@ -330,7 +347,8 @@ pub(crate) fn promotable_sep_key_ids(
 
     // The deadline stamped at publication is authoritative: a later TTL
     // change cannot shorten it (status reports it).
-    let promotable_at = keys
+    let promotable_at = signed
+        .keys
         .iter()
         .filter(|key| ds_published.contains(&key.id))
         .map(|key| key.eligible_at)

@@ -6,23 +6,19 @@ covers 3.4.
 ## 1. Register the secondary in Bindizr
 
 Bindizr sends NOTIFY to, and accepts unsigned transfers from, only the
-entries of `dns.secondary_addrs`; a Knot missing from it gets every
-transfer refused. The packaged default, `127.0.0.1:53`, covers a Knot on
-the same host. One elsewhere is added by address or hostname — see
-[Configuration](../configuration.md#secondaries) — and the list reloads
-without a restart:
-
-```toml title="/etc/bindizr/bindizr.conf.toml"
-[dns]
-secondary_addrs = "10.0.0.14:53"
-```
+secondaries registered with it; a Knot missing from them gets every
+transfer refused. Register it by address or hostname — see
+[Secondaries](../cli/secondaries.md) — and it is fed from the next change
+on, with no restart:
 
 ```bash
-$ sudo bindizr config reload
+# A Knot on this host; elsewhere, its address or hostname
+$ sudo bindizr secondary create knot --address 127.0.0.1
 ```
 
 A [signed transfer](#sign-the-transfers) is authorized by its key, but NOTIFY
-still goes only to the list, so a keyed secondary is listed all the same.
+still goes only to the registered secondaries, so a keyed secondary is
+registered all the same.
 
 ## 2. Configure the catalog zone
 

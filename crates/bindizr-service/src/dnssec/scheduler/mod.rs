@@ -16,7 +16,6 @@ use self::steps::{
     promote_sep_keys_by_zone_id, promote_zsks_by_zone_id, prune_retired_keys_by_zone_id,
     prune_zone_history_by_zone_id, resign_zone_by_zone_id, start_zsk_rollover_by_zone_id,
 };
-use super::notify_zone;
 use crate::{
     model::dnssec_key::{DnssecKeyRole, DnssecKeyState},
     repository::RepositoryService,
@@ -106,9 +105,9 @@ async fn run_scheduler_pass() {
                 let (mut journal_rows, mut version_rows) = (0u64, 0u64);
                 for zone in zones {
                     match prune_zone_history_by_zone_id(zone.id, cutoff).await {
-                        Ok((journal, versions)) => {
-                            journal_rows += journal;
-                            version_rows += versions;
+                        Ok(pruned) => {
+                            journal_rows += pruned.journal_rows;
+                            version_rows += pruned.version_rows;
                         }
                         Err(e) => {
                             failed = true;
@@ -143,7 +142,7 @@ async fn run_scheduler_pass() {
                 match resign_zone_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Re-signed zone {} ahead of signature expiry", zone_name);
-                        notify_zone(&zone_name).await;
+                        crate::notify::notify_after_update(&zone_name).await;
                     }
                     Ok(None) => {}
                     Err(e) => {
@@ -173,7 +172,7 @@ async fn run_scheduler_pass() {
                 match start_zsk_rollover_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Started scheduled ZSK rollover for zone {}", zone_name);
-                        notify_zone(&zone_name).await;
+                        crate::notify::notify_after_update(&zone_name).await;
                     }
                     Ok(None) => {}
                     Err(e) => {
@@ -212,7 +211,7 @@ async fn run_scheduler_pass() {
                 match promote_zsks_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Promoted pre-published ZSK for zone {}", zone_name);
-                        notify_zone(&zone_name).await;
+                        crate::notify::notify_after_update(&zone_name).await;
                     }
                     Ok(None) => {}
                     Err(e) => {
@@ -238,7 +237,7 @@ async fn run_scheduler_pass() {
                             "Promoted pre-published SEP key for zone {}: the parent serves its DS",
                             zone_name
                         );
-                        notify_zone(&zone_name).await;
+                        crate::notify::notify_after_update(&zone_name).await;
                     }
                     Ok(None) => {}
                     Err(e) => {
@@ -269,7 +268,7 @@ async fn run_scheduler_pass() {
                 match prune_retired_keys_by_zone_id(zone_id).await {
                     Ok(Some(zone_name)) => {
                         log::info!("Removed retired DNSSEC key(s) for zone {}", zone_name);
-                        notify_zone(&zone_name).await;
+                        crate::notify::notify_after_update(&zone_name).await;
                     }
                     Ok(None) => {}
                     Err(e) => {

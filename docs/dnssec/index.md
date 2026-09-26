@@ -29,7 +29,7 @@ or over HTTP:
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:3000/zones/example.com/dnssec \
   -H "Content-Type: application/json" \
-  -d '{"policy": "strict", "parent_ns_addrs": "ns1.parent.example"}'
+  -d '{"policy_name": "strict", "parent_ns_addrs": ["ns1.parent.example"]}'
 ```
 
 `--parent-ns-addrs` is required, and names the servers every later DS check
@@ -49,7 +49,7 @@ A signed zone moves to another policy with:
 bindizr dnssec set example.com --policy strict
 ```
 
-Also `policy` in `PUT /zones/{name}/dnssec`. The target must share the zone's
+Also `policy_name` in `PUT /zones/{name}/dnssec`. The target must share the zone's
 key layout — that has no safe in-place transition, so to change it disable
 DNSSEC and re-enable under the new policy, going insecure in between. A
 different denial mode is replaced in place under one serial: every algorithm
@@ -102,8 +102,9 @@ changed with:
 bindizr dnssec set example.com --parent-ns-addrs ns1.parent.example:5353
 ```
 
-The same field is `parent_ns_addrs` in the enable body and in
-`PUT /zones/{name}/dnssec`, and it must always name at least one server.
+The same field is `parent_ns_addrs`, a list of `host[:port]` entries, in the
+enable body and in `PUT /zones/{name}/dnssec`, and it must always name at
+least one server.
 `dnssec status` shows it beside the DS TTL the parent answers with, which is
 read rather than configured: it is how long caches may keep serving a DS
 after its removal, and it paces a rollover's retirement.

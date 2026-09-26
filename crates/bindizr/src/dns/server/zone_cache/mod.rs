@@ -62,13 +62,13 @@ fn tick() -> u64 {
 }
 
 /// The transfer content of the zone `zone_name` names, as far as `key`
-/// may read it, from cache when enabled and fresh. The zone and the grant are
+/// may read it, from cache when one is configured and fresh. The zone and the grant are
 /// decided on one locked row; a hit serves the content of that row's serial.
 pub(crate) async fn authorize_transfer_content_by_name(
     zone_name: &str,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
-    if !config::bindizr_config().dns.transfer_cache.enabled {
+    if max_records() == 0 {
         return fetch_transfer_content(zone_name, key).await;
     }
 

@@ -43,6 +43,20 @@ impl TsigKeyRepository for PostgresTsigKeyRepository {
         Ok(key)
     }
 
+    /// Find a TSIG key by ID.
+    async fn get(&self, id: i32) -> Result<Option<TsigKey>, DatabaseError> {
+        let mut conn = self.pool.acquire().await?;
+
+        let key = sqlx::query_as::<_, TsigKey>(
+            "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        Ok(key)
+    }
+
     /// Find a TSIG key by name.
     async fn get_by_name(&self, name: &str) -> Result<Option<TsigKey>, DatabaseError> {
         let mut conn = self.pool.acquire().await?;

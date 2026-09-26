@@ -1,6 +1,9 @@
 use std::{collections::HashMap, time::Instant};
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::{
+    dns::name::{OwnerName, ZoneName},
+    time::elapsed_ms,
+};
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
@@ -8,7 +11,6 @@ use super::{
     RecordService,
     validation::{
         normalize_record_owner_name, parse_record_type, validate_record_add_constraints_normalized,
-        validate_record_ttl,
     },
 };
 use crate::{
@@ -17,14 +19,14 @@ use crate::{
     dnssec::DnssecService,
     error::ServiceError,
     model::{
-        record::{Record, RecordType},
+        record::{Record, RecordData, RecordType},
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     repository::RepositoryService,
     serial::generate_serial,
-    timing::elapsed_ms,
+    ttl::validate_record_ttl,
     types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
-    zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
+    zone::{ZoneService, diff::build_record_diff},
 };
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
@@ -49,7 +51,7 @@ pub(crate) struct PreparedRecord {
 }
 
 /// Parse the record type and encode the value into its record-row form.
-pub(crate) fn parse_record(
+pub(crate) fn parse_record_request(
     name: &str,
     record_type: &str,
     value: &RecordValueRequest,
@@ -193,7 +195,7 @@ impl RecordService {
         let prepared = items
             .iter()
             .map(|item| {
-                parse_record(
+                parse_record_request(
                     &item.name,
                     &item.record_type,
                     &item.value,
@@ -334,13 +336,11 @@ impl RecordService {
                 }
 
                 // `after` = existing plus the inserts, so an insert into an
-                // existing RRset reads as `changed`, not a bare `added`.
-                let before: Vec<ReconstructedRecord> = before_records
-                    .into_iter()
-                    .map(ReconstructedRecord::from)
-                    .collect();
+                // existing record set reads as `changed`, not a bare `added`.
+                let before: Vec<RecordData> =
+                    before_records.into_iter().map(RecordData::from).collect();
                 let mut after = before.clone();
-                after.extend(to_insert.iter().cloned().map(ReconstructedRecord::from));
+                after.extend(to_insert.iter().cloned().map(RecordData::from));
                 let diff = build_record_diff(&zone, &before, &after);
                 return Ok((to_insert, zone.name, diff));
             }
@@ -377,10 +377,8 @@ impl RecordService {
         );
 
         let t = Instant::now();
-        if !dry_run
-            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
-        {
-            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+        if !dry_run {
+            crate::notify::notify_after_update(zone_name.as_str()).await;
         }
         let notify_ms = elapsed_ms(t);
 
@@ -410,7 +408,11 @@ impl RecordService {
         Ok(BulkRecordsResponse {
             applied: !dry_run,
             dry_run,
-            inserted: if dry_run { 0 } else { created_records.len() },
+            added: if dry_run {
+                0
+            } else {
+                created_records.len() as u64
+            },
             records,
             diff,
         })

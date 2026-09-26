@@ -6,23 +6,19 @@ Catalog zones need **NSD 4.9 or newer**; Bindizr's interoperability run covers
 ## 1. Register the secondary in Bindizr
 
 Bindizr sends NOTIFY to, and accepts unsigned transfers from, only the
-entries of `dns.secondary_addrs`; an NSD missing from it gets every
-transfer refused. The packaged default, `127.0.0.1:53`, covers an NSD on
-the same host. One elsewhere is added by address or hostname — see
-[Configuration](../configuration.md#secondaries) — and the list reloads
-without a restart:
-
-```toml title="/etc/bindizr/bindizr.conf.toml"
-[dns]
-secondary_addrs = "10.0.0.14:53"
-```
+secondaries registered with it; an NSD missing from them gets every
+transfer refused. Register it by address or hostname — see
+[Secondaries](../cli/secondaries.md) — and it is fed from the next change
+on, with no restart:
 
 ```bash
-$ sudo bindizr config reload
+# A NSD on this host; elsewhere, its address or hostname
+$ sudo bindizr secondary create nsd --address 127.0.0.1
 ```
 
 A [signed transfer](#sign-the-transfers) is authorized by its key, but NOTIFY
-still goes only to the list, so a keyed secondary is listed all the same.
+still goes only to the registered secondaries, so a keyed secondary is
+registered all the same.
 
 ## 2. Configure the catalog zone
 
@@ -127,8 +123,11 @@ The catalog zone takes the key too: it is the transfer every member is
 provisioned from, so leaving it on `NOKEY` signs everything except the one
 that has to arrive first.
 
-`allow-notify` stays `NOKEY`: Bindizr sends NOTIFY unsigned, so requiring the
-key there would reject it.
+`allow-notify` stays `NOKEY` unless the secondary is registered with
+`--notify-key`, which signs every NOTIFY to it — see
+[Signed NOTIFY](../cli/secondaries.md#signed-notify); then name the key there
+instead. Bindizr sends NOTIFY unsigned otherwise, so requiring a key it was
+not given would reject it.
 
 See [TSIG Keys](../cli/tsig-keys.md) for creating the key and granting it the
 zones it may transfer.

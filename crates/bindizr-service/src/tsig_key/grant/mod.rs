@@ -12,7 +12,7 @@ use crate::{
     RepositoryTx,
     authorization::Caller,
     error::ServiceError,
-    grant_pattern::{MATCH_ANY, matches_name, matches_types, normalize_pattern, normalize_types},
+    grant_pattern::{normalize_pattern, normalize_types},
     model::{
         record::RecordType,
         tsig_grant::{TsigGrant, TsigGrantWithNames},
@@ -217,7 +217,7 @@ pub(crate) fn authorize_update(
 ) -> bool {
     grants
         .iter()
-        .any(|grant| grant.can_write && matches_grant(grant, relative_name, record_type))
+        .any(|grant| grant.can_write && grant.matches(relative_name, record_type))
 }
 
 /// Whether any grant reaches the records a prerequisite names: a read, so a
@@ -229,26 +229,13 @@ pub(crate) fn authorize_prerequisite(
 ) -> bool {
     grants
         .iter()
-        .any(|grant| matches_grant(grant, relative_name, record_type))
-}
-
-/// Whether one grant's name pattern and type list cover `record_type` at the
-/// relative owner name.
-fn matches_grant(
-    grant: &TsigGrant,
-    relative_name: &OwnerName,
-    record_type: Option<&RecordType>,
-) -> bool {
-    matches_name(&grant.record_name_pattern, relative_name)
-        && matches_types(&grant.record_types, record_type)
+        .any(|grant| grant.matches(relative_name, record_type))
 }
 
 /// Whether any grant covers the zone whole. A transfer hands the zone over
 /// whole, so a grant narrowed to part of it authorizes none.
 fn covers_whole_zone(grants: &[TsigGrant]) -> bool {
-    grants
-        .iter()
-        .any(|grant| grant.record_name_pattern == MATCH_ANY && grant.record_types == MATCH_ANY)
+    grants.iter().any(TsigGrant::is_unrestricted)
 }
 
 #[cfg(test)]

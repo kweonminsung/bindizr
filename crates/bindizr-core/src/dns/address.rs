@@ -1,9 +1,12 @@
 //! Parsing of `host[:port]` address targets into socket addresses or deferred
 //! host/port pairs.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use super::name::{MAX_DOMAIN_LEN, classify_domain_label};
+
+/// The port a `host` without one is taken to serve DNS on.
+pub const DEFAULT_DNS_PORT: u16 = 53;
 
 /// An address target: a socket address, or a host and port to resolve later.
 pub enum ParsedAddress {
@@ -33,8 +36,22 @@ impl ParsedAddress {
         } else {
             format!("{}:{}", value, default_port)
         };
+        // A trailing root dot names the same host, so one server has one spelling.
+        let host_port = match host_port.rsplit_once(':') {
+            Some((host, port)) => format!("{}:{}", host.strip_suffix('.').unwrap_or(host), port),
+            None => host_port,
+        };
 
         ParsedAddress::HostPort(host_port)
+    }
+}
+
+/// A wildcard listen address is not connectable; probe it via loopback.
+pub fn loopback_if_unspecified(addr: IpAddr) -> IpAddr {
+    match addr {
+        IpAddr::V4(a) if a.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        IpAddr::V6(a) if a.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
+        addr => addr,
     }
 }
 
@@ -127,6 +144,19 @@ mod tests {
         );
         assert_eq!(
             target_to_string(ParsedAddress::parse("ns2.example.com:5353", 53)),
+            "HostPort(ns2.example.com:5353)"
+        );
+    }
+
+    /// Verify that `ParsedAddress::parse` drops a hostname's trailing root dot.
+    #[test]
+    fn parse_drops_a_hostnames_trailing_root_dot() {
+        assert_eq!(
+            target_to_string(ParsedAddress::parse("ns2.example.com.", 53)),
+            "HostPort(ns2.example.com:53)"
+        );
+        assert_eq!(
+            target_to_string(ParsedAddress::parse("ns2.example.com.:5353", 53)),
             "HostPort(ns2.example.com:5353)"
         );
     }

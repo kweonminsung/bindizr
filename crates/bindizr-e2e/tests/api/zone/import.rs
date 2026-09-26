@@ -1,7 +1,7 @@
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
-use crate::common::{TestApp, TestAppOptions};
+use crate::common::TestApp;
 
 /// Populate a zone with records before testing an import.
 async fn seed_records(app: &TestApp, zone_name: &str, records: Value) {
@@ -146,7 +146,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     let zone_name = zone["name"].as_str().unwrap();
 
     // The three ways upsert must differ from replace, which would drop all of
-    // these: a multi-record RRset, another type on that owner, another owner.
+    // these: a multi-record set, another type on that owner, another owner.
     seed_records(
         &app,
         zone_name,
@@ -159,7 +159,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     )
     .await;
 
-    // Only the `www` A RRset appears in the file, so only it is replaced.
+    // Only the `www` A record set appears in the file, so only it is replaced.
     let content = "www IN A 192.0.2.3\n";
     let (status, body) = app
         .send_request(
@@ -300,11 +300,8 @@ async fn zone_import_zone_file_reconciles_ttl() {
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_import_from_server_over_http() {
     // The transfer ACL must admit the test's own loopback AXFR.
-    let app = TestApp::start_with_options(TestAppOptions {
-        secondary_addrs: "127.0.0.1".to_string(),
-        ..Default::default()
-    })
-    .await;
+    let app = TestApp::start_local().await;
+    app.create_secondary("loopback", "127.0.0.1").await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
     let (status, _) = app

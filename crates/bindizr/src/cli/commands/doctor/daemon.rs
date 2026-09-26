@@ -4,7 +4,8 @@
 use std::{net::SocketAddr, time::Duration};
 
 use axum::http::StatusCode;
-use bindizr_core::config::BindizrConfig;
+use bindizr_core::{config::BindizrConfig, dns::address::loopback_if_unspecified};
+use bindizr_service::types::SecondaryStatus;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -12,11 +13,10 @@ use tokio::{
 
 use super::Report;
 use crate::{
-    cli::output::parse_response,
-    net::loopback_if_unspecified,
+    cli::output::parse_payload,
     socket::{
         client,
-        types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse},
+        types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse, DoctorCheckStatus},
     },
 };
 
@@ -26,7 +26,7 @@ const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) async fn check_running(report: &mut Report) -> bool {
     let status = client::send_control_command(DaemonCommandKind::Status)
         .await
-        .and_then(|response| Ok(parse_response::<DaemonStatusResponse>(&response.data)?));
+        .and_then(|response| Ok(parse_payload::<DaemonStatusResponse>(&response.data)?));
     match status {
         Ok(status) => {
             let pid = status
@@ -143,52 +143,43 @@ pub(crate) async fn check_services(report: &mut Report) {
         }
     };
 
-    if doctor.database.ok {
-        report.ok(format!("Database connected: {}", doctor.database.detail));
-    } else {
-        report.fail(format!(
-            "Database not reachable: {}",
-            doctor.database.detail
-        ));
-    }
+    let database_failed = doctor.database.status == DoctorCheckStatus::Fail;
+    report.push(doctor.database);
+    report.push(doctor.dns_server);
 
-    if doctor.dns_server.ok {
-        report.ok(format!(
-            "DNS server reachable: {}",
-            doctor.dns_server.detail
-        ));
-    } else {
-        report.fail(format!(
-            "DNS server not reachable: {}",
-            doctor.dns_server.detail
-        ));
+    if database_failed {
+        report.skip("Secondary checks skipped: the database did not answer");
+        return;
     }
-
     if doctor.secondaries.is_empty() {
-        report.skip("No secondaries configured");
+        report.skip("No enabled secondaries");
         return;
     }
 
     // These serials are the catalog zone's, unlike `zone status`, so say so.
-    let catalog_zone = &doctor.catalog_zone;
+    let catalog_zone = &doctor.catalog_zone_name;
     for secondary in &doctor.secondaries {
-        match (secondary.serial, doctor.catalog_serial) {
-            (Some(serial), Some(expected)) if serial == expected => report.ok(format!(
+        let serial = secondary.visible_serial.unwrap_or_default();
+        match secondary.status {
+            SecondaryStatus::InSync => report.ok(format!(
                 "Secondary in sync: {} (catalog zone {} at serial {})",
                 secondary.address, catalog_zone, serial
             )),
-            (Some(serial), Some(expected)) => report.fail(format!(
-                "Secondary out of sync: {} (catalog zone {} at serial {}; bindizr serves {})",
-                secondary.address, catalog_zone, serial, expected
-            )),
-            (Some(serial), None) => report.ok(format!(
+            SecondaryStatus::Reachable => report.ok(format!(
                 "Secondary reachable: {} (catalog zone {} at serial {})",
                 secondary.address, catalog_zone, serial
             )),
-            _ => report.fail(format!(
+            SecondaryStatus::Unreachable => report.fail(format!(
                 "Secondary unreachable: {} ({})",
                 secondary.address,
                 secondary.error.as_deref().unwrap_or("unknown error")
+            )),
+            _ => report.fail(format!(
+                "Secondary out of sync: {} (catalog zone {} at serial {}; bindizr serves {})",
+                secondary.address,
+                catalog_zone,
+                serial,
+                doctor.catalog_serial.unwrap_or_default()
             )),
         }
     }

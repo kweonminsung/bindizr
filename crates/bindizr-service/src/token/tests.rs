@@ -1,6 +1,4 @@
-use super::{
-    MAX_EXPIRES_IN_DAYS, normalize_expires_at, normalize_token_name, validate_token_description,
-};
+use super::{MAX_EXPIRES_IN_DAYS, normalize_expires_at, normalize_token_name};
 use crate::error::ErrorCode;
 
 /// Verify that `normalize_token_name` trims and folds case.
@@ -67,17 +65,4 @@ fn to_expires_at_rejects_values_beyond_the_cap() {
 
     assert_eq!(just_over.code, ErrorCode::InvalidInput);
     assert_eq!(overflow.code, ErrorCode::InvalidInput);
-}
-
-/// Verify that `validate_token_description` counts characters and rejects nul.
-#[test]
-fn validate_token_description_counts_characters_and_rejects_nul() {
-    validate_token_description(None).unwrap();
-    validate_token_description(Some(&"é".repeat(255))).unwrap();
-
-    let too_long = validate_token_description(Some(&"é".repeat(256))).unwrap_err();
-    let nul = validate_token_description(Some("a\0b")).unwrap_err();
-
-    assert_eq!(too_long.code, ErrorCode::InvalidInput);
-    assert_eq!(nul.code, ErrorCode::InvalidInput);
 }

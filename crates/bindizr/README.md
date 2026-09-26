@@ -60,22 +60,17 @@ url = "postgresql://user:password@hostname:port/database"
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
-secondary_addrs = "127.0.0.1:53"  # Comma-separated; they receive NOTIFY and are the only clients
-                              # allowed to pull zones. The default is a secondary on this host.
 nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false admits anyone
 # zone_history_retention_days = 365 # Days of history kept for rollback and secondary catch-up (0 = forever)
 # scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
 
 [dns.notify]                  # NOTIFY to the secondaries
-after_update = true           # Notify after zone changes
-on_startup = false            # Notify for every zone at startup
 # batch_ms = 0                # Window to batch a zone's NOTIFYs, sent after the write is answered (0 = before)
 # retries = 3                 # Retries after the first attempt
 # timeout_secs = 3            # Seconds to wait for each NOTIFY
 
 [dns.transfer_cache]          # Zone records cached per serial, so repeated transfers skip the database
-# enabled = true
-# max_records = 500000        # Records the cache holds; a larger zone is served uncached
+# max_records = 500000        # Records the cache holds; a larger zone is served uncached (0 = no cache)
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)

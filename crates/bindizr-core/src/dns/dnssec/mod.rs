@@ -10,7 +10,7 @@ mod signed_view;
 use domain::base::{Name, iana::Rtype};
 pub use key::generate_key;
 pub use key_file::import_key;
-pub use rdata::{DS_DIGEST_TYPES, rdata_presentation};
+pub use rdata::DS_DIGEST_TYPES;
 pub use signed_view::{SignedViewDiff, SignedViewParams};
 
 use crate::{

@@ -17,10 +17,14 @@ use bindizr_service::{
 };
 use serde::Deserialize;
 
-use crate::api::{
-    DryRunQuery, RequestCaller, ZoneNameParam,
-    error::{ApiError, Path, Query},
-    middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
+use crate::{
+    api::{
+        RequestCaller,
+        error::{ApiError, Path, Query},
+        middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
+        query::DryRunQuery,
+    },
+    params::NameParams,
 };
 
 pub(crate) struct ZoneApi;
@@ -56,13 +60,13 @@ impl ZoneApi {
     }
 }
 
-/// Report the sync state of every configured secondary for a zone.
+/// Report the sync state of every enabled secondary for a zone.
 #[utoipa::path(
         get,
         path = "/zones/{name}/status",
         tag = "Zone",
         summary = "Check how far each secondary has caught up with a zone",
-        description = "Queries every configured secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no secondaries configured the list is empty.",
+        description = "Queries every enabled secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no enabled secondaries the list is empty.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),
@@ -75,7 +79,7 @@ impl ZoneApi {
 )]
 pub(crate) async fn get_zone_status(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let status = ZoneService::get_status(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
@@ -107,7 +111,7 @@ pub(crate) struct ExportZoneQuery {
 )]
 pub(crate) async fn export_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParams>,
     Query(query): Query<ExportZoneQuery>,
 ) -> Result<Response, ApiError> {
     let zone_file =
@@ -142,7 +146,7 @@ pub(crate) async fn export_zone(
 )]
 pub(crate) async fn list_zone_versions(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParams>,
     Query(query): Query<VersionListQuery>,
 ) -> Result<Response, ApiError> {
     let response = ZoneService::list_versions(
@@ -165,7 +169,7 @@ pub(crate) async fn list_zone_versions(
         description = "Returns the version's SOA fields together with the zone's records at that serial, reconstructed from the journal.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("serial" = i32, Path, description = "The version serial to inspect.")
+            ("serial" = u32, Path, description = "The version serial to inspect.")
         ),
         responses(
             (status = 200, description = "The version and its reconstructed records", body = VersionDetailResponse),
@@ -176,7 +180,7 @@ pub(crate) async fn list_zone_versions(
 )]
 pub(crate) async fn get_zone_version(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneVersionParam>,
+    Path(params): Path<ZoneVersionParams>,
 ) -> Result<Response, ApiError> {
     let response = ZoneService::get_version(&caller, &params.name, params.serial).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
@@ -191,7 +195,7 @@ pub(crate) async fn get_zone_version(
         description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With `dry_run=true` the rollback is computed and reported without applying any change.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to roll back."),
-            ("serial" = i32, Path, description = "The version serial to roll back to."),
+            ("serial" = u32, Path, description = "The version serial to roll back to."),
             ("dry_run" = Option<bool>, Query, description = "Compute and report the rollback without applying it.")
         ),
         responses(
@@ -206,7 +210,7 @@ pub(crate) async fn get_zone_version(
 )]
 pub(crate) async fn rollback_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneVersionParam>,
+    Path(params): Path<ZoneVersionParams>,
     Query(query): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
     let response =
@@ -223,17 +227,18 @@ pub(crate) struct VersionListQuery {
     offset: Option<u64>,
 }
 
+/// One of a zone's versions, by name and serial.
 #[derive(Debug, Deserialize)]
-pub(crate) struct ZoneVersionParam {
+pub(crate) struct ZoneVersionParams {
     name: String,
-    serial: i32,
+    serial: u32,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct VersionDiffQuery {
-    from: i32,
-    to: Option<i32>,
+    from: u32,
+    to: Option<u32>,
 }
 
 /// Diff the records at two of a zone's serials.
@@ -245,8 +250,8 @@ pub(crate) struct VersionDiffQuery {
         description = "Reports the records added, removed, and changed between `from` and `to`, grouped by name and type. Omitting `to` compares against the current serial. Each serial must be the current one or an existing version.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone."),
-            ("from" = i32, Query, description = "The serial to diff from."),
-            ("to" = Option<i32>, Query, description = "The serial to diff to; defaults to the current serial.")
+            ("from" = u32, Query, description = "The serial to diff from."),
+            ("to" = Option<u32>, Query, description = "The serial to diff to; defaults to the current serial.")
         ),
         responses(
             (status = 200, description = "The record differences between the two serials", body = VersionDiffResponse),
@@ -257,7 +262,7 @@ pub(crate) struct VersionDiffQuery {
 )]
 pub(crate) async fn diff_zone_versions(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParams>,
     Query(query): Query<VersionDiffQuery>,
 ) -> Result<Response, ApiError> {
     let diff = ZoneService::diff_versions(&caller, &params.name, query.from, query.to).await?;
@@ -270,27 +275,7 @@ pub(crate) async fn diff_zone_versions(
         path = "/zones",
         tag = "Zone",
         summary = "List all DNS zones",
-        params(
-            ("name" = Option<String>, Query, description = "Filter by zone name."),
-            ("id" = Option<i32>, Query, description = "Filter by zone ID."),
-            ("mname" = Option<String>, Query, description = "Filter by mname."),
-            ("rname" = Option<String>, Query, description = "Filter by rname."),
-            ("default_ttl" = Option<i32>, Query, description = "Filter by default TTL."),
-            ("min_default_ttl" = Option<i32>, Query, description = "Filter by minimum default TTL."),
-            ("max_default_ttl" = Option<i32>, Query, description = "Filter by maximum default TTL."),
-            ("serial" = Option<i32>, Query, description = "Filter by serial."),
-            ("min_serial" = Option<i32>, Query, description = "Filter by minimum serial."),
-            ("max_serial" = Option<i32>, Query, description = "Filter by maximum serial."),
-            ("created_after" = Option<String>, Query, description = "Keep zones created at or after this RFC 3339 timestamp."),
-            ("created_before" = Option<String>, Query, description = "Keep zones created at or before this RFC 3339 timestamp."),
-            ("signed" = Option<bool>, Query, description = "true keeps the zones signing under a DNSSEC policy, false the rest."),
-            ("enabled" = Option<bool>, Query, description = "true keeps the zones the DNS plane serves, false the disabled ones."),
-            ("search" = Option<String>, Query, description = "Partially search zones."),
-            ("sort" = Option<String>, Query, description = "Sort by name (the default), serial, default_ttl, or created_at."),
-            ("order" = Option<String>, Query, description = "asc (the default) or desc."),
-            ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Zones per page; defaults to 50."),
-            ("offset" = Option<u64>, Query, description = "Number of zones to skip.")
-        ),
+        params(GetZonesFilter),
         responses(
             (status = 200, description = "A list of DNS zones", body = PaginatedResponse<GetZoneResponse>),
             (status = 400, description = "Bad request, invalid pagination", body = ErrorResponse),
@@ -326,7 +311,7 @@ pub(crate) async fn list_zones(
 )]
 pub(crate) async fn get_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
     let zone = ZoneService::get_by_name(&caller, &params.name).await?;
     Ok((
@@ -394,7 +379,7 @@ pub(crate) async fn create_zone(
 )]
 pub(crate) async fn update_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateZoneRequest>,
 ) -> Result<Response, ApiError> {
     let response = ZoneService::update(&caller, &params.name, &body).await?;
@@ -422,7 +407,7 @@ pub(crate) async fn update_zone(
 )]
 pub(crate) async fn delete_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParams>,
     Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
     let response = ZoneService::delete(&caller, &params.name, preview.dry_run).await?;
@@ -454,7 +439,7 @@ pub(crate) async fn delete_zone(
 )]
 pub(crate) async fn import_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<ImportZoneRequest>,
 ) -> Result<Response, ApiError> {
     let response = RecordService::import_zone(&caller, &params.name, &body).await?;

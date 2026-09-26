@@ -1,42 +1,46 @@
 //! Client-side rendering of a `RecordDiff` as a zone-file `+`/`-`/`~` patch:
 //! the API sends structured records, and rdata assembly lives here.
 use bindizr_core::dns::record::to_quoted_charstr;
-use bindizr_service::types::{RecordDiff, RecordDiffEntry, RecordDiffValue, RecordValueRequest};
+use bindizr_service::types::{
+    RecordChange, RecordDiff, RecordDiffEntry, RecordDiffValue, RecordValueRequest,
+    VersionDiffResponse,
+};
 
 use crate::cli::output::color;
 
 /// Render one record's value as zone-file rdata: MX/SRV carry the priority
 /// inline, TXT is quoted per character-string, other types use the value as-is.
 fn rdata(diff_value: &RecordDiffValue, record_type: &str) -> String {
-    let segments: &[String] = match &diff_value.value {
-        RecordValueRequest::String(value) => std::slice::from_ref(value),
-        RecordValueRequest::Segments(segments) => segments,
-    };
-
     match record_type {
-        "TXT" => segments
-            .iter()
-            .map(|segment| to_quoted_charstr(segment.as_bytes()))
-            .collect::<Vec<_>>()
-            .join(" "),
+        "TXT" => {
+            let segments: &[String] = match &diff_value.value {
+                RecordValueRequest::String(value) => std::slice::from_ref(value),
+                RecordValueRequest::Segments(segments) => segments,
+            };
+            segments
+                .iter()
+                .map(|segment| to_quoted_charstr(segment.as_bytes()))
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
         "MX" | "SRV" => format!(
             "{} {}",
             diff_value.priority.unwrap_or(10),
-            segments.concat()
+            diff_value.value.to_text()
         ),
-        _ => segments.concat(),
+        _ => diff_value.value.to_text(),
     }
 }
 
 /// Render the `+`/`-`/`~` lines for a diff's entries (no summary footer). A
 /// changed entry stacks its removed records above its added ones.
-pub(crate) fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
+fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
     let mut out = String::new();
     for entry in entries {
-        let sign = match entry.change.as_str() {
-            "added" => '+',
-            "removed" => '-',
-            _ => '~',
+        let sign = match entry.change {
+            RecordChange::Added => '+',
+            RecordChange::Removed => '-',
+            RecordChange::Changed => '~',
         };
         let rtype = entry.record_type.as_str();
 
@@ -88,6 +92,23 @@ pub(crate) fn render_change_preview(diff: &RecordDiff) -> String {
         color::green(&format!("+{}", summary.added)),
         color::red(&format!("-{}", summary.removed)),
         color::yellow(&format!("~{}", summary.changed))
+    ));
+    out
+}
+
+/// Render a version diff: the `+`/`-`/`~` lines plus SOA-serial and count footers.
+pub(crate) fn render_version_diff(response: &VersionDiffResponse) -> String {
+    let mut out = render_diff_lines(&response.diff.entries);
+    let summary = &response.diff.summary;
+
+    out.push('\n');
+    out.push_str(&format!(
+        "SOA serial: {} -> {}\n",
+        response.from_serial, response.to_serial
+    ));
+    out.push_str(&format!(
+        "By name and type: +{} -{} ~{}\n",
+        summary.added, summary.removed, summary.changed
     ));
     out
 }

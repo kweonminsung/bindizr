@@ -62,14 +62,21 @@ fn parse_bind_key_time(private_key: &str, field: &str) -> Result<Option<DateTime
         .map_err(|_| format!("invalid {} time '{}' in the private key file", field, value))
 }
 
-/// Place an imported key in its rollover from BIND's timing metadata: the
-/// state it is in, when it entered it, and when it may move on. A file
+/// Where an imported key stands in its rollover: the state it is in, when it
+/// entered it, and when it may move on.
+struct DnssecKeyPhase {
+    state: DnssecKeyState,
+    state_changed_at: DateTime<Utc>,
+    eligible_at: DateTime<Utc>,
+}
+
+/// Place an imported key in its rollover from BIND's timing metadata. A file
 /// carrying no timing is a settled active key.
 fn bind_key_phase(
     private_key: &str,
     default_ttl: i32,
     now: DateTime<Utc>,
-) -> Result<(DnssecKeyState, DateTime<Utc>, DateTime<Utc>), String> {
+) -> Result<DnssecKeyPhase, String> {
     let time = |field| parse_bind_key_time(private_key, field);
     let (publish, activate, inactive, delete) = (
         time("Publish")?,
@@ -85,34 +92,42 @@ fn bind_key_phase(
             delete.format("%Y-%m-%dT%H:%M:%SZ")
         ));
     }
-    // The DNSKEY RRset's own TTL bounds how long a resolver can hold an answer
+    // The DNSKEY record set's own TTL bounds how long a resolver can hold an answer
     // that lacks this key, or holds it; a recorded schedule is exact and wins.
     let ttl_wait = Duration::seconds(i64::from(default_ttl));
     if let Some(inactive) = passed(inactive) {
-        // Its signatures outlive it in caches for the TTL of the RRsets it
+        // Its signatures outlive it in caches for the TTL of the record sets it
         // signed, which a zone signed elsewhere never told bindizr.
-        return Ok((
-            DnssecKeyState::Retired,
-            inactive,
-            delete.unwrap_or(now + ttl_wait),
-        ));
+        return Ok(DnssecKeyPhase {
+            state: DnssecKeyState::Retired,
+            state_changed_at: inactive,
+            eligible_at: delete.unwrap_or(now + ttl_wait),
+        });
     }
     if let Some(activate) = passed(activate) {
-        return Ok((DnssecKeyState::Active, activate, activate));
+        return Ok(DnssecKeyPhase {
+            state: DnssecKeyState::Active,
+            state_changed_at: activate,
+            eligible_at: activate,
+        });
     }
     if let Some(publish) = passed(publish) {
-        return Ok((
-            DnssecKeyState::Published,
-            publish,
-            activate.unwrap_or(now + ttl_wait),
-        ));
+        return Ok(DnssecKeyPhase {
+            state: DnssecKeyState::Published,
+            state_changed_at: publish,
+            eligible_at: activate.unwrap_or(now + ttl_wait),
+        });
     }
     match publish.or(activate) {
         Some(at) => Err(format!(
             "this key is not published until {}, so BIND does not serve it yet",
             at.format("%Y-%m-%dT%H:%M:%SZ")
         )),
-        None => Ok((DnssecKeyState::Active, now, now)),
+        None => Ok(DnssecKeyPhase {
+            state: DnssecKeyState::Active,
+            state_changed_at: now,
+            eligible_at: now,
+        }),
     }
 }
 
@@ -191,8 +206,11 @@ pub fn import_key(
         .map_err(|e| format!("private key does not match the DNSKEY: {}", e))?;
 
     // Preserve the rollover phase encoded by the private file's timing fields.
-    let (state, state_changed_at, eligible_at) =
-        bind_key_phase(private_key, zone.default_ttl, now)?;
+    let DnssecKeyPhase {
+        state,
+        state_changed_at,
+        eligible_at,
+    } = bind_key_phase(private_key, zone.default_ttl, now)?;
 
     Ok(DnssecKey {
         id: 0,

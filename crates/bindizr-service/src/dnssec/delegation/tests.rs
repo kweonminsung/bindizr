@@ -1,9 +1,10 @@
 use bindizr_core::{
-    dns::{dnssec::generate_key, name::ZoneName, query::DsRr},
+    dns::{dnssec::generate_key, name::ZoneName, query::DsRecord},
     model::dnssec_key::{DnssecAlgorithm, DnssecKeyRole},
 };
 
 use super::*;
+use crate::types::DsState;
 
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {
@@ -41,9 +42,9 @@ fn csk() -> DnssecKey {
 }
 
 /// The DS the parent would serve for `key`, in the digest type given.
-fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRr {
+fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRecord {
     let apex = zone().name.to_wire_name().unwrap();
-    DsRr {
+    DsRecord {
         key_tag: key.key_tag as u16,
         digest_type,
         rdata: key
@@ -55,12 +56,12 @@ fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRr {
 }
 
 /// Build a record-group fixture from the supplied values.
-fn rrset(records: Vec<DsRr>) -> Option<DsRrset> {
-    Some(DsRrset { records, ttl: 3600 })
+fn record_set(records: Vec<DsRecord>) -> Option<DsRecordSet> {
+    Some(DsRecordSet { records, ttl: 3600 })
 }
 
 /// Build a parent DS probe result from the supplied server answers.
-fn parent(answers: Vec<Option<DsRrset>>) -> ParentDs {
+fn parent(answers: Vec<Option<DsRecordSet>>) -> ParentDs {
     ParentDs {
         ns_addrs: vec!["192.0.2.1".to_string(), "192.0.2.2".to_string()],
         answers,
@@ -68,7 +69,7 @@ fn parent(answers: Vec<Option<DsRrset>>) -> ParentDs {
 }
 
 /// Compute delegation information for a key and simulated parent answers.
-fn info(key: &DnssecKey, answers: Vec<Option<DsRrset>>) -> DnssecDelegationInfo {
+fn info(key: &DnssecKey, answers: Vec<Option<DsRecordSet>>) -> DnssecDelegationInfo {
     build_delegation_info(&zone(), std::slice::from_ref(key), parent(answers)).unwrap()
 }
 
@@ -76,11 +77,14 @@ fn info(key: &DnssecKey, answers: Vec<Option<DsRrset>>) -> DnssecDelegationInfo 
 #[test]
 fn promotion_waits_until_every_server_serves_the_ds() {
     let key = csk();
-    let served = info(&key, vec![rrset(vec![ds_of(&key, 2)]), rrset(vec![])]);
+    let served = info(
+        &key,
+        vec![record_set(vec![ds_of(&key, 2)]), record_set(vec![])],
+    );
 
     assert!(!served.keys[0].ds_published);
     assert!(
-        info(&key, vec![rrset(vec![ds_of(&key, 2)]); 2]).keys[0].ds_published,
+        info(&key, vec![record_set(vec![ds_of(&key, 2)]); 2]).keys[0].ds_published,
         "every server serving it should publish"
     );
 }
@@ -91,10 +95,10 @@ fn one_server_still_serving_a_ds_is_enough_to_block_a_disable() {
     // `disable` refuses on ds_key_tags, so the union is what it reads: dropping
     // signatures under a DS any resolver can still reach makes the zone bogus.
     let key = csk();
-    let seen = info(&key, vec![None, rrset(vec![ds_of(&key, 2)])]);
+    let seen = info(&key, vec![None, record_set(vec![ds_of(&key, 2)])]);
 
     assert_eq!(seen.ds_key_tags, [key.key_tag as u16]);
-    assert_eq!(seen.ds_state, "published");
+    assert_eq!(seen.ds_state, DsState::Published);
 }
 
 /// Verify that a parent serving nothing anywhere hides the delegation.
@@ -104,7 +108,7 @@ fn a_parent_serving_nothing_anywhere_hides_the_delegation() {
     let hidden = info(&key, vec![None, None]);
 
     assert!(hidden.ds_key_tags.is_empty());
-    assert_eq!(hidden.ds_state, "hidden");
+    assert_eq!(hidden.ds_state, DsState::Hidden);
     assert!(!hidden.keys[0].ds_published);
     assert!(!hidden.keys[0].ds_digest_unsupported);
 }
@@ -118,7 +122,7 @@ fn a_ds_for_another_key_does_not_publish_this_one() {
     let mut foreign = ds_of(&other, 2);
     foreign.key_tag = key.key_tag as u16;
 
-    let seen = info(&key, vec![rrset(vec![foreign]); 2]);
+    let seen = info(&key, vec![record_set(vec![foreign]); 2]);
 
     assert!(!seen.keys[0].ds_published);
     assert_eq!(seen.ds_key_tags, [key.key_tag as u16]);
@@ -130,13 +134,13 @@ fn a_digest_bindizr_cannot_compute_leaves_the_match_undecided() {
     // RFC 8624, Section 3.3 retires GOST (3), so a parent serving only that
     // is not the same as a parent serving no DS at all.
     let key = csk();
-    let gost = DsRr {
+    let gost = DsRecord {
         key_tag: key.key_tag as u16,
         digest_type: 3,
         rdata: vec![0; 32],
     };
 
-    let seen = info(&key, vec![rrset(vec![gost]); 2]);
+    let seen = info(&key, vec![record_set(vec![gost]); 2]);
 
     assert!(seen.keys[0].ds_digest_unsupported);
     assert!(!seen.keys[0].ds_published);
@@ -147,13 +151,16 @@ fn a_digest_bindizr_cannot_compute_leaves_the_match_undecided() {
 fn one_server_answering_in_a_computable_digest_does_not_mask_another() {
     // A parent mid-rollout between digest types is undecided, not a match.
     let key = csk();
-    let gost = DsRr {
+    let gost = DsRecord {
         key_tag: key.key_tag as u16,
         digest_type: 3,
         rdata: vec![0; 32],
     };
 
-    let seen = info(&key, vec![rrset(vec![ds_of(&key, 2)]), rrset(vec![gost])]);
+    let seen = info(
+        &key,
+        vec![record_set(vec![ds_of(&key, 2)]), record_set(vec![gost])],
+    );
 
     assert!(seen.keys[0].ds_digest_unsupported);
     assert!(!seen.keys[0].ds_published);
@@ -164,11 +171,11 @@ fn one_server_answering_in_a_computable_digest_does_not_mask_another() {
 fn the_ttl_reported_is_the_longest_any_server_serves() {
     let key = csk();
     let answers = vec![
-        Some(DsRrset {
+        Some(DsRecordSet {
             records: vec![ds_of(&key, 2)],
             ttl: 300,
         }),
-        Some(DsRrset {
+        Some(DsRecordSet {
             records: vec![ds_of(&key, 2)],
             ttl: 86400,
         }),

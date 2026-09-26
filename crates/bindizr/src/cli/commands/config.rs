@@ -5,7 +5,7 @@ use clap::Subcommand;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, color, parse_response, print_payload},
+        output::{OutputFormat, color, parse_payload, print_payload},
     },
     socket::{client, types::DaemonCommandKind},
 };
@@ -42,7 +42,7 @@ running configuration always describes the running process.")]
     },
     /// Show a single configuration value by dotted key (e.g. api.listen_port)
     Get {
-        /// Dotted configuration key, e.g. dns.secondary_addrs
+        /// Dotted configuration key, e.g. dns.listen_port
         key: String,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
@@ -97,7 +97,7 @@ async fn print_config_list(output: OutputFormat) -> Result<(), CliError> {
     let response = client::send_control_command(DaemonCommandKind::Config).await?;
 
     match output {
-        OutputFormat::Table => print_config(&parse_response(&response.data)?),
+        OutputFormat::Table => print_config(&parse_payload(&response.data)?),
         _ => print_payload(&response.data, output)?,
     }
     Ok(())
@@ -163,7 +163,6 @@ fn print_config(config: &BindizrConfig) {
     print_section("dns");
     print_value("listen_addr", config.dns.listen_addr);
     print_value("listen_port", config.dns.listen_port);
-    print_value("secondary_addrs", &config.dns.secondary_addrs);
     print_value(
         "zone_history_retention_days",
         config.dns.zone_history_retention_days,
@@ -176,15 +175,12 @@ fn print_config(config: &BindizrConfig) {
     outln!();
 
     print_section("dns.notify");
-    print_value("after_update", config.dns.notify.after_update);
-    print_value("on_startup", config.dns.notify.on_startup);
     print_value("batch_ms", config.dns.notify.batch_ms);
     print_value("retries", config.dns.notify.retries);
     print_value("timeout_secs", config.dns.notify.timeout_secs);
     outln!();
 
     print_section("dns.transfer_cache");
-    print_value("enabled", config.dns.transfer_cache.enabled);
     print_value("max_records", config.dns.transfer_cache.max_records);
     outln!();
 

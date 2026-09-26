@@ -13,72 +13,69 @@ use serde::Serialize;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, color, parse_response, print_payload},
+        output::{OutputFormat, color, parse_payload, print_payload},
     },
-    socket::{client, types::DaemonCommandKind},
+    socket::{
+        client,
+        types::{DaemonCommandKind, DoctorCheck, DoctorCheckStatus},
+    },
 };
-
-/// One check's outcome.
-#[derive(Serialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-enum CheckStatus {
-    Ok,
-    Fail,
-    Skip,
-}
-
-/// One check in the reported document.
-#[derive(Serialize)]
-struct Check {
-    status: CheckStatus,
-    message: String,
-}
 
 /// The whole run, as `--output json` reports it.
 #[derive(Serialize)]
 struct DoctorReport {
     healthy: bool,
     failures: usize,
-    checks: Vec<Check>,
+    checks: Vec<DoctorCheck>,
 }
 
 /// Collects check outcomes for the exit code, printing each as it lands
 /// unless the caller asked for one document.
 pub(crate) struct Report {
     format: OutputFormat,
-    checks: Vec<Check>,
+    checks: Vec<DoctorCheck>,
     failures: usize,
 }
 
 impl Report {
     /// Record a successful diagnostic check.
     pub(crate) fn ok(&mut self, message: impl fmt::Display) {
-        self.push(CheckStatus::Ok, message);
+        self.push(DoctorCheck {
+            status: DoctorCheckStatus::Ok,
+            message: message.to_string(),
+        });
     }
 
-    /// Record a failed diagnostic check and increment the failure count.
+    /// Record a failed diagnostic check.
     pub(crate) fn fail(&mut self, message: impl fmt::Display) {
-        self.failures += 1;
-        self.push(CheckStatus::Fail, message);
+        self.push(DoctorCheck {
+            status: DoctorCheckStatus::Fail,
+            message: message.to_string(),
+        });
     }
 
     /// Record a skipped diagnostic check.
     pub(crate) fn skip(&mut self, message: impl fmt::Display) {
-        self.push(CheckStatus::Skip, message);
+        self.push(DoctorCheck {
+            status: DoctorCheckStatus::Skip,
+            message: message.to_string(),
+        });
     }
 
-    /// Store one check, printing it now in table form.
-    fn push(&mut self, status: CheckStatus, message: impl fmt::Display) {
-        let message = message.to_string();
-        if self.format == OutputFormat::Table {
-            let label = match status {
-                CheckStatus::Ok => color::green("OK"),
-                CheckStatus::Fail => color::red("FAIL"),
-                CheckStatus::Skip => color::yellow("SKIP"),
-            };
-            outln!("[{}] {}", label, message);
+    /// Store one check, counting a failure and printing it now in table form.
+    pub(crate) fn push(&mut self, check: DoctorCheck) {
+        if check.status == DoctorCheckStatus::Fail {
+            self.failures += 1;
         }
-        self.checks.push(Check { status, message });
+        if self.format == OutputFormat::Table {
+            let label = match check.status {
+                DoctorCheckStatus::Ok => color::green("OK"),
+                DoctorCheckStatus::Fail => color::red("FAIL"),
+                DoctorCheckStatus::Skip => color::yellow("SKIP"),
+            };
+            outln!("[{}] {}", label, check.message);
+        }
+        self.checks.push(check);
     }
 }
 
@@ -112,7 +109,7 @@ pub(crate) async fn handle_command(
     if daemon::check_running(&mut report).await {
         let daemon_config = client::send_control_command(DaemonCommandKind::Config)
             .await
-            .and_then(|response| Ok(parse_response::<BindizrConfig>(&response.data)?));
+            .and_then(|response| Ok(parse_payload::<BindizrConfig>(&response.data)?));
         match daemon_config {
             Ok(config) => daemon::check_api(&config, &mut report).await,
             Err(e) => report.fail(format!("Daemon config not readable: {}", e.message)),

@@ -39,8 +39,8 @@ impl ZoneService {
                 applied: !dry_run,
                 dry_run,
                 zone: GetZoneResponse::from_zone(&zone),
-                records,
-                versions,
+                records_deleted: records,
+                versions_deleted: versions,
             };
             if dry_run {
                 return Ok(response);
@@ -62,15 +62,8 @@ impl ZoneService {
 
         // Send catalog NOTIFY so secondaries drop the removed zone
         let config = bindizr_config();
-        if response.applied
-            && let Err(e) =
-                crate::notify::send_notify_after_update(Some(&config.dns.catalog_zone_name)).await
-        {
-            log::warn!(
-                "Failed to send NOTIFY for {}: {}",
-                config.dns.catalog_zone_name,
-                e
-            );
+        if response.applied {
+            crate::notify::notify_after_update(&config.dns.catalog_zone_name).await;
         }
 
         Ok(response)

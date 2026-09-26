@@ -51,8 +51,6 @@ pub(crate) struct TestAppOptions {
     /// `false` accepts unsigned nsupdate requests.
     pub(crate) nsupdate_tsig_required: bool,
     pub(crate) openapi_enabled: bool,
-    /// Also the zone-transfer ACL; NOTIFY stays off in tests.
-    pub(crate) secondary_addrs: String,
     /// Serve the API over HTTPS with a certificate generated for this run.
     pub(crate) tls: bool,
 }
@@ -66,7 +64,6 @@ impl Default for TestAppOptions {
             external_dns_enabled: false,
             nsupdate_tsig_required: true,
             openapi_enabled: false,
-            secondary_addrs: String::new(),
             tls: false,
         }
     }
@@ -275,6 +272,20 @@ impl TestApp {
         body["zone"]["serial"]
             .as_i64()
             .expect("zone carries a serial")
+    }
+
+    /// Register a secondary; the transfer ACL admits it and NOTIFY reaches it
+    /// from the next change on.
+    pub(crate) async fn create_secondary(&self, name: &str, address: &str) -> Value {
+        let (status, body) = self
+            .send_http(
+                Method::POST,
+                "/secondaries",
+                Some(json!({ "name": name, "address": address })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        body
     }
 
     /// Create a default zone in this test's namespace.

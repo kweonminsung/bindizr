@@ -1,8 +1,8 @@
 //! The signed view: the derived DNSSEC plane a zone's records imply, computed
 //! whole and diffed against the stored plane. Signatures are reused while
-//! their RRset, signer set, and validity are unchanged, so the diff — the
+//! their record set, signer set, and validity are unchanged, so the diff — the
 //! IXFR delta — carries only real changes; a rollover state transition
-//! re-signs exactly the affected RRsets through the same digests.
+//! re-signs exactly the affected record sets through the same digests.
 
 mod input;
 #[cfg(test)]
@@ -17,7 +17,7 @@ use domain::{
     dnssec::sign::{keys::signingkey::SigningKey, records::Rrset, signatures::rrsigs::sign_rrset},
     rdata::{ZoneRecordData, dnssec::Timestamp},
 };
-use input::denial_rrs;
+use input::denial_records;
 use sha2::{Digest, Sha256};
 
 use super::WireName;
@@ -29,13 +29,13 @@ use crate::{
     model::{
         dnssec_key::DnssecKey,
         dnssec_policy::DnssecDenial,
-        dnssec_record::{DnssecRecord, DnssecRecordType},
+        dnssec_record::{DnssecRecord, DnssecRecordKey, DnssecRecordType},
         record::Record,
         zone::Zone,
     },
 };
 
-type SignRr = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
+type SignRecord = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
 
 pub struct SignedViewParams<'a> {
     pub zone: &'a Zone,
@@ -47,7 +47,7 @@ pub struct SignedViewParams<'a> {
     pub denial: DnssecDenial,
     pub now: DateTime<Utc>,
     pub inception: DateTime<Utc>,
-    /// The latest expiration a new signature takes; each RRset lands up to
+    /// The latest expiration a new signature takes; each record set lands up to
     /// `expiration_jitter_secs` earlier.
     pub expiration: DateTime<Utc>,
     pub expiration_jitter_secs: i64,
@@ -56,15 +56,15 @@ pub struct SignedViewParams<'a> {
     /// Ignore stored signatures entirely (manual re-sign).
     pub force: bool,
     /// Publish the RFC 8078 delete CDS/CDNSKEY pair instead of per-key ones,
-    /// asking the parent to drop the zone's DS RRset.
+    /// asking the parent to drop the zone's DS record set.
     pub withdraw_parent_ds: bool,
 }
 
 impl SignedViewParams<'_> {
-    /// The RRset's slot in the jitter window, taken from its identity rather
+    /// The record set's slot in the jitter window, taken from its identity rather
     /// than drawn at random: [`Self::compute`] stays a function of its
-    /// inputs, and an RRset keeps its slot across re-signings.
-    fn rrset_expiration(&self, owner: &WireName, covered: i32) -> DateTime<Utc> {
+    /// inputs, and a record set keeps its slot across re-signings.
+    fn record_set_expiration(&self, owner: &WireName, covered: i32) -> DateTime<Utc> {
         if self.expiration_jitter_secs <= 0 {
             return self.expiration;
         }
@@ -93,7 +93,7 @@ impl SignedViewParams<'_> {
             .collect::<Result<Vec<_>, _>>()?;
         let key_signers: Vec<&Signer<'_>> = signers
             .iter()
-            .filter(|s| s.key.signs_key_rrsets())
+            .filter(|s| s.key.signs_key_record_sets())
             .collect();
         let data_signers: Vec<&Signer<'_>> = signers
             .iter()
@@ -109,71 +109,71 @@ impl SignedViewParams<'_> {
         let input = self.signing_input(&apex, &signers)?;
 
         let mut new_rows: Vec<DnssecRecord> = Vec::new();
-        let denial_rrs = denial_rrs(&apex, &input, self.denial)?;
+        let denial_records = denial_records(&apex, &input, self.denial)?;
 
-        // Rows for everything the signer owns: the apex key RRsets from `input`
+        // Rows for everything the signer owns: the apex key record sets from `input`
         // and the denial chain. User records and the SOA stay in their own planes.
-        for rr in input.iter().filter(|rr| is_key_rtype(rr.rtype())) {
+        for record in input.iter().filter(|record| is_key_rtype(record.rtype())) {
             new_rows.push(DnssecRecord {
                 id: 0,
                 zone_id: zone.id,
                 name: OwnerName::apex(),
-                record_type: DnssecRecordType::try_from(rr.rtype())?,
+                record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
-                ttl: rr.ttl().as_secs() as i32,
-                rdata: to_rdata(rr.data()),
+                ttl: record.ttl().as_secs() as i32,
+                rdata: to_rdata(record.data()),
                 expires_at: None,
-                rrset_digest: None,
+                record_set_digest: None,
             });
         }
-        for rr in &denial_rrs {
+        for record in &denial_records {
             new_rows.push(DnssecRecord {
                 id: 0,
                 zone_id: zone.id,
-                name: parse_owner_in_zone(rr.owner(), &zone.name)?,
-                record_type: DnssecRecordType::try_from(rr.rtype())?,
+                name: parse_derived_owner(record.owner(), &zone.name)?,
+                record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
-                ttl: rr.ttl().as_secs() as i32,
-                rdata: to_rdata(rr.data()),
+                ttl: record.ttl().as_secs() as i32,
+                rdata: to_rdata(record.data()),
                 expires_at: None,
-                rrset_digest: None,
+                record_set_digest: None,
             });
         }
 
-        // RRsets to sign: every authoritative RRset. At a delegation the parent
-        // signs only the DS RRset; the NS beside it and glue at or below the cut
+        // Record sets to sign: every authoritative record set. At a delegation the parent
+        // signs only the DS record set; the NS beside it and glue at or below the cut
         // are served but not signed (RFC 4035, Section 2.2).
         let delegations: BTreeSet<Vec<u8>> = input
             .iter()
-            .filter(|rr| rr.rtype() == Rtype::NS && *rr.owner() != apex)
-            .map(|rr| rr.owner().as_slice().to_vec())
+            .filter(|record| record.rtype() == Rtype::NS && *record.owner() != apex)
+            .map(|record| record.owner().as_slice().to_vec())
             .collect();
 
-        let mut signable: Vec<Vec<&SignRr>> = Vec::new();
-        let mut current: Vec<&SignRr> = Vec::new();
-        for rr in &input {
+        let mut signable: Vec<Vec<&SignRecord>> = Vec::new();
+        let mut current: Vec<&SignRecord> = Vec::new();
+        for record in &input {
             if let Some(last) = current.last()
-                && (last.owner() != rr.owner() || last.rtype() != rr.rtype())
+                && (last.owner() != record.owner() || last.rtype() != record.rtype())
             {
                 signable.push(std::mem::take(&mut current));
             }
-            current.push(rr);
+            current.push(record);
         }
         if !current.is_empty() {
             signable.push(current);
         }
-        signable.retain(|rrset| {
-            let owner = rrset[0].owner();
+        signable.retain(|record_set| {
+            let owner = record_set[0].owner();
             if delegations.contains(owner.as_slice()) {
-                return rrset[0].rtype() == Rtype::DS;
+                return record_set[0].rtype() == Rtype::DS;
             }
             !is_below_cut(owner, &apex, &delegations)
         });
-        for rr in &denial_rrs {
-            signable.push(vec![rr]);
+        for record in &denial_records {
+            signable.push(vec![record]);
         }
 
-        // Index stored signatures by owner and covered type for RRset reuse.
+        // Index stored signatures by owner and covered type for record set reuse.
         let mut prev_rrsigs: BTreeMap<(String, i32), Vec<&DnssecRecord>> = BTreeMap::new();
         for row in self.prev {
             if row.record_type == DnssecRecordType::Rrsig
@@ -187,19 +187,19 @@ impl SignedViewParams<'_> {
         }
 
         let refresh_cutoff = self.now + chrono::Duration::seconds(self.refresh_secs);
-        for rrset in &signable {
-            let owner = parse_owner_in_zone(rrset[0].owner(), &zone.name)?;
-            let covered = rrset[0].rtype().to_int() as i32;
-            // The apex key RRsets must be signed by keys the parent DS names
+        for record_set in &signable {
+            let owner = parse_derived_owner(record_set[0].owner(), &zone.name)?;
+            let covered = record_set[0].rtype().to_int() as i32;
+            // The apex key record sets must be signed by keys the parent DS names
             // (RFC 7344, Section 4.1 for CDS/CDNSKEY); everything else by the
             // active zone-data keys.
-            let rrset_signers: &[&Signer<'_>] =
-                if *rrset[0].owner() == apex && is_key_rtype(rrset[0].rtype()) {
+            let record_set_signers: &[&Signer<'_>] =
+                if *record_set[0].owner() == apex && is_key_rtype(record_set[0].rtype()) {
                     &key_signers
                 } else {
                     &data_signers
                 };
-            let digest = rrset_digest(rrset_signers, rrset);
+            let digest = record_set_digest(record_set_signers, record_set);
 
             // Reuse only a complete, unchanged set of signatures that outlives
             // the refresh window; a forced pass regenerates every signature.
@@ -209,9 +209,9 @@ impl SignedViewParams<'_> {
                 prev_rrsigs
                     .get(&(owner.to_stored(), covered))
                     .filter(|rows| {
-                        rows.len() == rrset_signers.len()
+                        rows.len() == record_set_signers.len()
                             && rows.iter().all(|row| {
-                                row.rrset_digest.as_deref() == Some(digest.as_str())
+                                row.record_set_digest.as_deref() == Some(digest.as_str())
                                     && row
                                         .expires_at
                                         .is_some_and(|expires| expires > refresh_cutoff)
@@ -226,9 +226,9 @@ impl SignedViewParams<'_> {
                     }
                 }
                 None => {
-                    let expiration = self.rrset_expiration(rrset[0].owner(), covered);
-                    for signer in rrset_signers {
-                        let rrsig = signer.sign_rrset(rrset, self.inception, expiration)?;
+                    let expiration = self.record_set_expiration(record_set[0].owner(), covered);
+                    for signer in record_set_signers {
+                        let rrsig = signer.sign_rrset(record_set, self.inception, expiration)?;
                         new_rows.push(DnssecRecord {
                             id: 0,
                             zone_id: zone.id,
@@ -238,7 +238,7 @@ impl SignedViewParams<'_> {
                             ttl: rrsig.ttl().as_secs() as i32,
                             rdata: to_rdata(rrsig.data()),
                             expires_at: Some(expiration),
-                            rrset_digest: Some(digest.clone()),
+                            record_set_digest: Some(digest.clone()),
                         });
                     }
                 }
@@ -265,27 +265,17 @@ impl SignedViewDiff {
 
     /// Compare derived record identities to find additions and removals.
     fn from_planes(prev: &[DnssecRecord], new_rows: Vec<DnssecRecord>) -> SignedViewDiff {
-        let identity = |record: &DnssecRecord| {
-            (
-                record.name.to_stored(),
-                record.record_type,
-                record.ttl,
-                record.rdata.clone(),
-            )
-        };
-
-        let mut remaining: BTreeMap<(String, DnssecRecordType, i32, Rdata), Vec<DnssecRecord>> =
-            BTreeMap::new();
+        let mut remaining: BTreeMap<DnssecRecordKey, Vec<DnssecRecord>> = BTreeMap::new();
         for record in prev {
             remaining
-                .entry(identity(record))
+                .entry(record.match_key())
                 .or_default()
                 .push(record.clone());
         }
 
         let mut added = Vec::new();
         for record in new_rows {
-            match remaining.get_mut(&identity(&record)) {
+            match remaining.get_mut(&record.match_key()) {
                 Some(rows) if !rows.is_empty() => {
                     rows.pop();
                 }
@@ -305,13 +295,16 @@ fn is_key_rtype(rtype: Rtype) -> bool {
 
 /// Content identity for signature reuse; any component changing must force
 /// a fresh signature.
-fn rrset_digest(signers: &[&Signer<'_>], rrset: &[&SignRr]) -> String {
+fn record_set_digest(signers: &[&Signer<'_>], record_set: &[&SignRecord]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(rrset[0].owner().as_slice());
-    hasher.update(rrset[0].rtype().to_int().to_be_bytes());
-    hasher.update(rrset[0].ttl().as_secs().to_be_bytes());
+    hasher.update(record_set[0].owner().as_slice());
+    hasher.update(record_set[0].rtype().to_int().to_be_bytes());
+    hasher.update(record_set[0].ttl().as_secs().to_be_bytes());
 
-    let mut rdatas: Vec<Rdata> = rrset.iter().map(|rr| to_rdata(rr.data())).collect();
+    let mut rdatas: Vec<Rdata> = record_set
+        .iter()
+        .map(|record| to_rdata(record.data()))
+        .collect();
     rdatas.sort();
     for rdata in rdatas {
         hasher.update((rdata.as_bytes().len() as u32).to_be_bytes());
@@ -345,7 +338,7 @@ fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8
 }
 
 /// Convert a derived absolute owner to a name relative to its zone.
-fn parse_owner_in_zone(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, String> {
+fn parse_derived_owner(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, String> {
     OwnerName::parse_absolute_in_zone(&owner.to_string(), zone_name).map_err(|e| {
         format!(
             "derived owner '{}' is not inside zone '{}': {}",
@@ -380,18 +373,18 @@ impl<'a> Signer<'a> {
         })
     }
 
-    /// Sign one RRset for the supplied validity interval.
+    /// Sign one record set for the supplied validity interval.
     fn sign_rrset(
         &self,
-        rrset: &[&SignRr],
+        record_set: &[&SignRecord],
         inception: DateTime<Utc>,
         expiration: DateTime<Utc>,
     ) -> Result<WireRecord<WireName, domain::rdata::Rrsig<Vec<u8>, WireName>>, String> {
-        let rrset = Rrset::new_from_refs(rrset)
+        let record_set = Rrset::new_from_refs(record_set)
             .map_err(|e| format!("mismatched records for one name and type: {}", e))?;
         sign_rrset(
             &self.signing_key,
-            &rrset,
+            &record_set,
             Timestamp::from(inception.timestamp() as u32),
             Timestamp::from(expiration.timestamp() as u32),
         )

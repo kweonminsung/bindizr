@@ -31,12 +31,8 @@ async fn zone_dnssec_parent_ds_check_via_cli() {
         "{enabled}"
     );
     let status = read_dnssec_status(&app, &zone_name).await;
-    let key_tag = status["dnssec"]["keys"][0]["key_tag"].as_u64().unwrap() as u16;
-    parent.set_ds(vec![ServedDs::from_status(
-        &status["dnssec"],
-        key_tag,
-        3600,
-    )]);
+    let key_tag = status["keys"][0]["key_tag"].as_u64().unwrap() as u16;
+    parent.set_ds(vec![ServedDs::from_status(&status, key_tag, 3600)]);
 
     // A served DS keeps disable blocked and must appear in the CLI's parent check.
     let disable_args = ["dnssec", "disable", &zone_name];

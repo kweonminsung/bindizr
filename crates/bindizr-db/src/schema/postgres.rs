@@ -143,6 +143,20 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS secondaries (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            address VARCHAR(255) UNIQUE NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            notify_tsig_key_id INTEGER NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            FOREIGN KEY (notify_tsig_key_id) REFERENCES tsig_keys(id)
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_secondaries_notify_key ON secondaries(notify_tsig_key_id);
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS tsig_grants (
             id SERIAL PRIMARY KEY,
             zone_id INTEGER NOT NULL,
@@ -210,7 +224,7 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             ttl INTEGER NOT NULL,
             rdata BYTEA NOT NULL,
             expires_at TIMESTAMPTZ,
-            rrset_digest VARCHAR(64),
+            record_set_digest VARCHAR(64),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,

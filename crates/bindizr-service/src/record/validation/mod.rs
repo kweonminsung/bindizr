@@ -17,15 +17,6 @@ use crate::{
     repository::{RepositoryService, RepositoryTx},
 };
 
-/// Reject a negative record TTL (RFC 2181, Section 8); the zone's default
-/// stands in for an omitted one.
-pub(crate) fn validate_record_ttl(ttl: i32) -> Result<(), ServiceError> {
-    if ttl < 0 {
-        return Err(ServiceError::invalid_input("TTL must not be negative"));
-    }
-    Ok(())
-}
-
 /// Parse a supported record type from request text.
 pub(crate) fn parse_record_type(value: &str) -> Result<RecordType, ServiceError> {
     value
@@ -144,7 +135,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         ));
     }
 
-    // RFC 2181, Section 5.2: one TTL per RRset.
+    // RFC 2181, Section 5.2: one TTL per record set.
     if let Some(conflicting) = records_at_name
         .iter()
         .find(|r| r.record_type == *record_type && r.ttl != ttl)

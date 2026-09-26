@@ -5,13 +5,10 @@ mod reconstruction;
 
 use std::collections::{HashMap, HashSet};
 
-use bindizr_core::dns::{name::OwnerName, record::SoaMailbox};
+use bindizr_core::dns::{name::OwnerName, record::SoaMailbox, serial_to_i32, serial_to_u32};
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
-pub(crate) use reconstruction::ReconstructedRecord;
-use reconstruction::{
-    MatchKey, list_records_at_serial_tx, reconstruct_records_at_serial_tx, to_match_key,
-};
+use reconstruction::{list_records_at_serial_tx, reconstruct_records_at_serial_tx};
 
 use super::{
     ZoneService, diff::build_record_diff, update::soa_replacement_changes,
@@ -22,7 +19,10 @@ use crate::{
     authorization::Caller,
     dnssec::DnssecService,
     error::ServiceError,
-    model::{record::Record, zone::Zone},
+    model::{
+        record::{Record, RecordData, RecordKey},
+        zone::Zone,
+    },
     record::{
         RecordService, validate_record_add_constraints_normalized, validate_record_name_in_zone,
     },
@@ -94,8 +94,9 @@ impl ZoneService {
     pub async fn get_version(
         caller: &Caller,
         zone_name: &str,
-        serial: i32,
+        serial: u32,
     ) -> Result<VersionDetailResponse, ServiceError> {
+        let serial = serial_to_i32(serial).map_err(ServiceError::invalid_input)?;
         let mut tx = RepositoryService::begin_read_tx("Failed to load version").await?;
 
         let result = async {
@@ -114,17 +115,17 @@ impl ZoneService {
 
             let records = list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?;
 
-            Ok::<_, ServiceError>((version, records))
+            Ok::<_, ServiceError>((zone, version, records))
         }
         .await;
 
-        let (version, records) =
+        let (zone, version, records) =
             RepositoryService::finish_tx(tx, result, "Failed to load version").await?;
         Ok(VersionDetailResponse {
             version: ZoneVersionResponse::from_version(&version)?,
             records: records
-                .into_iter()
-                .map(VersionRecordResponse::from)
+                .iter()
+                .map(|record| VersionRecordResponse::from_record_and_zone_name(record, &zone.name))
                 .collect(),
         })
     }
@@ -137,9 +138,14 @@ impl ZoneService {
     pub async fn diff_versions(
         caller: &Caller,
         zone_name: &str,
-        from_serial: i32,
-        to_serial: Option<i32>,
+        from_serial: u32,
+        to_serial: Option<u32>,
     ) -> Result<VersionDiffResponse, ServiceError> {
+        let from = serial_to_i32(from_serial).map_err(ServiceError::invalid_input)?;
+        let to = to_serial
+            .map(serial_to_i32)
+            .transpose()
+            .map_err(ServiceError::invalid_input)?;
         let mut tx = RepositoryService::begin_read_tx("Failed to diff versions").await?;
 
         let result = async {
@@ -147,19 +153,18 @@ impl ZoneService {
                 ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
                     .await?;
             caller.authorize_zone_unrestricted(&zone)?;
-            let to_serial = to_serial.unwrap_or(zone.serial);
+            let to = to.unwrap_or(zone.serial);
 
-            Self::validate_serial_diffable_tx(&mut tx, &zone, from_serial).await?;
-            Self::validate_serial_diffable_tx(&mut tx, &zone, to_serial).await?;
+            Self::validate_serial_diffable_tx(&mut tx, &zone, from).await?;
+            Self::validate_serial_diffable_tx(&mut tx, &zone, to).await?;
 
             let from_records =
-                list_records_at_serial_tx(&mut tx, zone.id, from_serial, zone.serial).await?;
-            let to_records =
-                list_records_at_serial_tx(&mut tx, zone.id, to_serial, zone.serial).await?;
+                list_records_at_serial_tx(&mut tx, zone.id, from, zone.serial).await?;
+            let to_records = list_records_at_serial_tx(&mut tx, zone.id, to, zone.serial).await?;
 
             Ok::<_, ServiceError>(VersionDiffResponse {
                 from_serial,
-                to_serial,
+                to_serial: serial_to_u32(to).map_err(ServiceError::internal)?,
                 diff: build_record_diff(&zone, &from_records, &to_records),
             })
         }
@@ -175,10 +180,11 @@ impl ZoneService {
     pub async fn rollback(
         caller: &Caller,
         zone_name: &str,
-        target_serial: i32,
+        target_serial: u32,
         dry_run: bool,
     ) -> Result<RollbackZoneResponse, ServiceError> {
         caller.authorize_global("roll back zones")?;
+        let target = serial_to_i32(target_serial).map_err(ServiceError::invalid_input)?;
 
         let lookup_name = normalize_zone_name(zone_name)?;
         let mut tx = RepositoryService::begin_tx("Failed to roll back zone").await?;
@@ -188,22 +194,23 @@ impl ZoneService {
                 ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Exclusive)
                     .await?;
 
-            if target_serial < 1 || target_serial >= zone.serial {
+            if target < 1 || target >= zone.serial {
                 return Err(ServiceError::invalid_input(format!(
                     "target serial {} must be less than the current serial {}",
-                    target_serial, zone.serial
+                    target, zone.serial
                 )));
             }
             let version = RepositoryService::get_zone_version_by_serial_tx(
                 &mut tx,
                 zone.id,
-                target_serial,
+                target,
                 LockLevel::None,
             )
             .await?
-            .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target_serial))?;
+            .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
 
             let new_serial = generate_serial(Some(zone.serial))?;
+            let new_serial_wire = serial_to_u32(new_serial).map_err(ServiceError::internal)?;
             // SOA metadata comes back from the version; identity and creation
             // time are not part of one and stay.
             let rname = SoaMailbox::from_encoded(&version.rname)
@@ -233,11 +240,10 @@ impl ZoneService {
             let current_records =
                 RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
             let target_records =
-                reconstruct_records_at_serial_tx(&mut tx, zone.id, target_serial, zone.serial)
-                    .await?;
+                reconstruct_records_at_serial_tx(&mut tx, zone.id, target, zone.serial).await?;
 
             // Diff current vs target, import-Replace style.
-            let mut target_by_key: HashMap<MatchKey, Vec<ReconstructedRecord>> = HashMap::new();
+            let mut target_by_key: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
             for target in target_records {
                 target_by_key
                     .entry(target.match_key())
@@ -247,10 +253,10 @@ impl ZoneService {
 
             let mut dels: Vec<Record> = Vec::new();
             let mut unchanged = 0usize;
-            let mut to_add: Vec<ReconstructedRecord> = Vec::new();
+            let mut to_add: Vec<RecordData> = Vec::new();
 
             for record in &current_records {
-                let key = to_match_key(record);
+                let key = record.match_key();
                 match target_by_key.get_mut(&key).and_then(Vec::pop) {
                     Some(target) => {
                         // A TTL change is a DEL + ADD pair, which RFC 2181,
@@ -311,9 +317,9 @@ impl ZoneService {
             }
 
             let summary = RollbackSummary {
-                records_added: to_insert.len(),
-                records_deleted: dels.len(),
-                records_unchanged: unchanged,
+                added: to_insert.len() as u64,
+                deleted: dels.len() as u64,
+                unchanged: unchanged as u64,
                 soa_changed,
             };
 
@@ -324,7 +330,7 @@ impl ZoneService {
                         applied: false,
                         dry_run: true,
                         target_serial,
-                        new_serial,
+                        new_serial: new_serial_wire,
                         summary,
                     },
                     zone.name.clone(),
@@ -358,7 +364,7 @@ impl ZoneService {
                     applied: true,
                     dry_run: false,
                     target_serial,
-                    new_serial,
+                    new_serial: new_serial_wire,
                     summary,
                 },
                 zone.name.clone(),
@@ -377,13 +383,10 @@ impl ZoneService {
                 zone_name,
                 response.target_serial,
                 response.new_serial,
-                response.summary.records_added,
-                response.summary.records_deleted
+                response.summary.added,
+                response.summary.deleted
             );
-            if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
-            {
-                log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
-            }
+            crate::notify::notify_after_update(zone_name.as_str()).await;
         }
 
         Ok(response)

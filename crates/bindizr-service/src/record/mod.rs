@@ -3,13 +3,10 @@ mod create;
 mod delete;
 mod get;
 mod import;
-mod matching;
 mod update;
 mod validation;
 
-use bindizr_core::dns::dnssec::rdata_presentation;
-pub(crate) use matching::matches_record;
-pub(crate) use validation::{AddOutcome, validate_record_name_in_zone, validate_record_ttl};
+pub(crate) use validation::{AddOutcome, validate_record_name_in_zone};
 
 use crate::{
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},
@@ -38,7 +35,7 @@ impl ListedRecord {
                 id: None,
                 name: row.name.to_fqdn(&row.zone_name),
                 record_type: row.record_type.to_string(),
-                value: RecordValueRequest::String(rdata_presentation(row.record_type, &row.rdata)),
+                value: RecordValueRequest::String(row.rdata.to_presentation(row.record_type)),
                 ttl: row.ttl,
                 priority: None,
                 zone_id: row.zone_id,
@@ -48,4 +45,4 @@ impl ListedRecord {
     }
 }
 
-pub(crate) use validation::{parse_record_type, validate_record_add_constraints_normalized};
+pub(crate) use validation::validate_record_add_constraints_normalized;

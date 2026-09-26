@@ -60,11 +60,11 @@ impl IntoOwner for Result<Vec<u8>, ParseNameError> {
     }
 }
 
-/// An RR already composed into wire bytes, pushed back through `domain`'s
+/// A record already composed into wire bytes, pushed back through `domain`'s
 /// builder so a message can carry a section it did not compose.
-struct ComposedRr<'a>(&'a [u8]);
+struct ComposedRecord<'a>(&'a [u8]);
 
-impl ComposeRecord for ComposedRr<'_> {
+impl ComposeRecord for ComposedRecord<'_> {
     /// Append the precomposed record bytes to the message.
     fn compose_record<Target: Composer + ?Sized>(
         &self,
@@ -126,12 +126,13 @@ impl DnsMessageBuilder {
         Ok(())
     }
 
-    /// Composes one class-IN answer RR into its own buffer so it can be
+    /// Composes one class-IN answer record into its own buffer so it can be
     /// popped/reflushed by the chunked TCP writer.
     fn add_answer<N: ToName, D: ComposeRecordData>(&mut self, owner: N, ttl: u32, data: D) {
-        let rr = domain::base::Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
+        let record = domain::base::Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
         let mut answer = Vec::new();
-        rr.compose_record(&mut answer)
+        record
+            .compose_record(&mut answer)
             .expect("composing into a Vec cannot run out of space");
         self.push_answer(answer);
     }
@@ -241,7 +242,7 @@ impl DnsMessageBuilder {
         let mut answer = question.answer();
         for composed in &self.answers {
             answer
-                .push(ComposedRr(composed))
+                .push(ComposedRecord(composed))
                 .map_err(|e| format!("Failed to compose an answer: {}", e))?;
         }
 

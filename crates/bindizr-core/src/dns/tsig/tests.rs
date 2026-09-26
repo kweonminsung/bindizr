@@ -63,7 +63,7 @@ pub(crate) fn hmac_sign(algorithm: TsigAlgorithm, data: &[u8]) -> Vec<u8> {
 }
 
 /// A minimal UPDATE request signed with `update-key`: the MAC covers the
-/// message without the TSIG RR plus the TSIG variables (RFC 8945, Sections 4.3.2 and 4.3.3).
+/// message without the TSIG record plus the TSIG variables (RFC 8945, Sections 4.3.2 and 4.3.3).
 pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u8> {
     let base = minimal_update_with_ztype(6);
     let key_name = encode_name("update-key");
@@ -103,14 +103,14 @@ pub(crate) fn signed_update(algorithm: TsigAlgorithm, time_signed: u64) -> Vec<u
 /// data.
 fn extract_response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Vec<u8>) {
     let msg = Message::from_octets(response).unwrap();
-    let tsig_rr = msg
+    let tsig_record = msg
         .additional()
         .unwrap()
         .limit_to::<Tsig<_, _>>()
         .last()
         .unwrap()
         .unwrap();
-    let data = tsig_rr.data();
+    let data = tsig_record.data();
 
     (
         msg.header().rcode(),
@@ -249,8 +249,8 @@ fn the_reserved_tsig_size_covers_the_largest_key_a_request_can_name() {
 
     let composed = usize::from(key.compose_len());
     assert!(
-        composed <= MAX_TSIG_RR,
-        "a {composed}-byte TSIG record does not fit the {MAX_TSIG_RR} bytes reserved for one"
+        composed <= MAX_TSIG_RECORD,
+        "a {composed}-byte TSIG record does not fit the {MAX_TSIG_RECORD} bytes reserved for one"
     );
 }
 

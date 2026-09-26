@@ -34,19 +34,19 @@ Create a zone in Bindizr and it appears in the catalog; the secondary picks it
 up on the NOTIFY that follows, with no configuration of its own. Delete the
 zone and it goes away the same way.
 
-Bindizr's side is two settings, and the first is the one a new setup
+Bindizr's side is two things, and the first is the one a new setup
 forgets: a secondary Bindizr does not know gets no NOTIFY and has its
-transfers refused. See [Configuration](../configuration.md#secondaries):
+transfers refused.
 
-| Setting | What it does |
+| | What it does |
 | --- | --- |
-| `dns.secondary_addrs` | Who receives NOTIFY, and the only clients allowed to pull a zone unsigned: `host[:port]` entries, a hostname resolved when used |
-| `dns.catalog_zone_name` | The catalog zone's name. A secondary holds one zone per name, so two Bindizr instances feeding one secondary need two names |
+| `bindizr secondary create` | Registers who receives NOTIFY and may pull a zone unsigned: a name and a `host[:port]`, a hostname resolved when used — see [Secondaries](../cli/secondaries.md) |
+| `dns.catalog_zone_name` | The catalog zone's name, in [Configuration](../configuration.md). A secondary holds one zone per name, so two Bindizr instances feeding one secondary need two names |
 
 ## Signing the transfers
 
-The address list authorizes a secondary by where it connects from, which is
-all a loopback pair needs. Where the secondary is elsewhere, give it a TSIG
+The registered address authorizes a secondary by where it connects from,
+which is all a loopback pair needs. Where the secondary is elsewhere, give it a TSIG
 key: create one with
 [`bindizr tsig-key create <name> --global`](../cli/tsig-keys.md), then name it
 on the secondary's primary reference. Bindizr answers under that key and each
@@ -73,7 +73,9 @@ XFR TCP query: zone="example.com", qtype=Rtype::AXFR, from=10.0.0.14, signed=fal
 ## Checking that it worked
 
 `bindizr zone status <zone>` reports the serial each secondary serves next to
-Bindizr's own, and `bindizr doctor` probes every address in
-`dns.secondary_addrs` for the catalog zone. Both work regardless of which
-implementation answers. Each server page also gives that server's own command
-for inspecting a zone it learned from the catalog.
+Bindizr's own, `bindizr doctor` probes every enabled secondary for the
+catalog zone, and `bindizr secondary check <name>` asks one server the same
+and sends it a NOTIFY — see
+[Checking a secondary](../cli/secondaries.md#checking-a-secondary). All three
+work regardless of which implementation answers. Each server page also gives
+that server's own command for inspecting a zone it learned from the catalog.

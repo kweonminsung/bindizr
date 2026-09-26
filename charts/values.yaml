@@ -43,14 +43,14 @@ bindizr:
     # pruning. Every replica runs the whole pass; 0 stands one down, but at
     # least one must keep it.
     schedulerIntervalSecs: 3600
-    # Secondaries outside the chart, host[:port] each, appended to the BIND
-    # pods in dns.secondary_addrs.
-    extraSecondaryAddrs: []
+    # Secondaries outside the chart, registered beside the BIND pods when a
+    # bindizr pod starts; each needs a name and a host[:port] address.
+    extraSecondaries: []
+    # - name: ns2
+    #   address: ns2.example.net:53
     # NOTIFY to the secondaries.
     notify:
       # Notify after zone changes, and for every zone at startup.
-      afterUpdate: true
-      onStartup: false
       # Window (ms) to batch a zone's NOTIFYs, sent after the write is
       # answered; 0 sends before answering.
       batchMs: 0
@@ -58,8 +58,7 @@ bindizr:
       timeoutSecs: 3
     # Zone records cached per serial, so repeated transfers skip the database.
     transferCache:
-      enabled: true
-      # Records the cache holds; a larger zone is served uncached.
+      # Records the cache holds; a larger zone is served uncached, 0 caches nothing.
       maxRecords: 500000
     service:
       port: 53

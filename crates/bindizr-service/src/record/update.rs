@@ -4,7 +4,7 @@ use bindizr_db::repository::LockLevel;
 use super::{
     RecordService,
     validation::{
-        normalize_record_owner_name, parse_record_type, validate_record_ttl,
+        normalize_record_owner_name, parse_record_type,
         validate_record_update_constraints_normalized,
     },
 };
@@ -13,16 +13,14 @@ use crate::{
     dnssec::DnssecService,
     error::{ErrorCode, ServiceError},
     model::{
-        record::{Record, RecordType},
+        record::{Record, RecordData, RecordType},
         zone::Zone,
     },
     repository::RepositoryService,
     serial::generate_serial,
+    ttl::validate_record_ttl,
     types::{GetRecordResponse, RecordDiff, RecordWriteResponse, UpdateRecordRequest},
-    zone::{
-        ZoneService, diff::build_record_diff, history::ReconstructedRecord,
-        validation::normalize_zone_name,
-    },
+    zone::{ZoneService, diff::build_record_diff, validation::normalize_zone_name},
 };
 
 /// How an update names the one record it changes.
@@ -325,19 +323,13 @@ impl RecordService {
                     .await?,
                 );
             }
-            let before: Vec<ReconstructedRecord> = framed
-                .iter()
-                .cloned()
-                .map(ReconstructedRecord::from)
-                .collect();
-            let after: Vec<ReconstructedRecord> = framed
+            let before: Vec<RecordData> = framed.iter().cloned().map(RecordData::from).collect();
+            let after: Vec<RecordData> = framed
                 .iter()
                 .filter(|record| record.id != existing_record.id)
                 .cloned()
-                .map(ReconstructedRecord::from)
-                .chain(std::iter::once(ReconstructedRecord::from(
-                    candidate.clone(),
-                )))
+                .map(RecordData::from)
+                .chain(std::iter::once(RecordData::from(candidate.clone())))
                 .collect();
             let diff = build_record_diff(&zone, &before, &after);
 
@@ -381,10 +373,8 @@ impl RecordService {
         );
 
         // Request secondary transfers only after the replacement is committed.
-        if !dry_run
-            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
-        {
-            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+        if !dry_run {
+            crate::notify::notify_after_update(zone_name.as_str()).await;
         }
 
         Ok(RecordWriteResponse {

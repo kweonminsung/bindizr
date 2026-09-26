@@ -11,7 +11,10 @@ use super::{
     CaaRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, SrvRecordValue,
     SshfpRecordValue, TlsaRecordValue, TxtRecordValue,
 };
-use crate::{dns::name::encode_name, model::record::RecordType};
+use crate::{
+    dns::name::encode_name,
+    model::{dnssec_record::DnssecRecordType, record::RecordType},
+};
 
 /// Wire-format RDATA bytes, capped at the RDLENGTH u16 limit
 /// (RFC 1035, Section 3.2.1) by construction.
@@ -19,6 +22,27 @@ use crate::{dns::name::encode_name, model::record::RecordType};
 pub struct Rdata(Vec<u8>);
 
 impl Rdata {
+    /// The presentation form of a derived row's RDATA of `record_type`, as
+    /// `dig` prints it; the base64 row form when it does not parse.
+    pub fn to_presentation(&self, record_type: DnssecRecordType) -> String {
+        use domain::{
+            base::{iana::Rtype, name::ParsedName, rdata::ParseRecordData},
+            dep::octseq::parse::Parser,
+            rdata::AllRecordData,
+        };
+
+        let mut parser = Parser::from_ref(self.as_bytes());
+        AllRecordData::<_, ParsedName<_>>::parse_rdata(
+            Rtype::from_int(record_type.wire_type()),
+            &mut parser,
+        )
+        .ok()
+        .flatten()
+        .filter(|_| parser.remaining() == 0)
+        .map(|data| data.to_string())
+        .unwrap_or_else(|| self.to_base64())
+    }
+
     /// Wrap wire-format record data after checking its length limit.
     pub fn new(bytes: Vec<u8>) -> Result<Self, String> {
         if bytes.len() > u16::MAX as usize {
@@ -90,7 +114,7 @@ where
     }
 }
 
-/// A stored record's wire RR type number and RDATA bytes.
+/// A stored record's wire record type number and RDATA bytes.
 pub(crate) struct EncodedRdata {
     pub(crate) record_type: u16,
     pub(crate) rdata: Rdata,
@@ -98,7 +122,7 @@ pub(crate) struct EncodedRdata {
 
 impl EncodedRdata {
     /// Wire RDATA for stored record columns (records and journal rows share
-    /// this shape). TXT stays one opaque byte mapping: canonical RRset order
+    /// this shape). TXT stays one opaque byte mapping: canonical record set order
     /// is a byte comparison over the rdata.
     pub(crate) fn from_columns(
         record_type: &RecordType,

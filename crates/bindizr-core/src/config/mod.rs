@@ -12,8 +12,6 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::dns::address::is_address_target;
-
 const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 /// Swappable so `reload` can replace it; readers take a snapshot, so a
@@ -161,7 +159,6 @@ pub struct PostgresqlConfig {
 pub struct DnsConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
-    pub secondary_addrs: String,
     /// Name of the virtual RFC 9432 catalog zone this instance serves. A
     /// secondary holds one zone per name, so two primaries feeding the same
     /// secondary need two names.
@@ -193,10 +190,6 @@ pub struct DnsConfig {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NotifyConfig {
-    #[serde(default = "default_notify_after_update")]
-    pub after_update: bool,
-    #[serde(default)]
-    pub on_startup: bool,
     /// Window (ms) that collects one zone's changes into one NOTIFY, sent
     /// from a queue after the write is answered. `0` sends a NOTIFY for
     /// every change before the write is answered.
@@ -212,8 +205,6 @@ impl Default for NotifyConfig {
     /// Build the default NOTIFY settings.
     fn default() -> Self {
         Self {
-            after_update: default_notify_after_update(),
-            on_startup: false,
             batch_ms: 0,
             retries: default_notify_retries(),
             timeout_secs: default_notify_timeout_secs(),
@@ -226,10 +217,8 @@ impl Default for NotifyConfig {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransferCacheConfig {
-    #[serde(default = "default_transfer_cache_enabled")]
-    pub enabled: bool,
     /// Records the cache may hold before evicting the least recently used
-    /// zone. A zone larger than this is served uncached.
+    /// zone. A zone larger than this is served uncached; `0` caches nothing.
     #[serde(default = "default_transfer_cache_max_records")]
     pub max_records: u64,
 }
@@ -238,7 +227,6 @@ impl Default for TransferCacheConfig {
     /// Build the default transfer cache settings.
     fn default() -> Self {
         Self {
-            enabled: default_transfer_cache_enabled(),
             max_records: default_transfer_cache_max_records(),
         }
     }
@@ -311,16 +299,6 @@ fn default_zone_history_retention_days() -> u32 {
 /// day-scale windows a pass enforces.
 fn default_scheduler_interval_secs() -> u64 {
     3_600
-}
-
-/// Return the default notify after update setting.
-fn default_notify_after_update() -> bool {
-    true
-}
-
-/// Return the default transfer cache enabled setting.
-fn default_transfer_cache_enabled() -> bool {
-    true
 }
 
 /// Return the default transfer cache max records setting.
@@ -593,13 +571,19 @@ impl DatabaseConfig {
     }
 }
 
+/// The certificate and key files the API serves HTTPS with.
+pub struct TlsFiles<'a> {
+    pub cert_file: &'a str,
+    pub key_file: &'a str,
+}
+
 impl ApiConfig {
     /// The certificate and key to serve HTTPS with, or `None` for plain HTTP.
-    pub fn tls_files(&self) -> Option<(&str, &str)> {
-        Some((
-            self.tls_cert_file.as_deref()?,
-            self.tls_key_file.as_deref()?,
-        ))
+    pub fn tls_files(&self) -> Option<TlsFiles<'_>> {
+        Some(TlsFiles {
+            cert_file: self.tls_cert_file.as_deref()?,
+            key_file: self.tls_key_file.as_deref()?,
+        })
     }
 
     /// Validate the API configuration fields.
@@ -638,34 +622,6 @@ impl DnsConfig {
         match crate::dns::name::ZoneName::parse(&self.catalog_zone_name) {
             Ok(name) => self.catalog_zone_name = name.to_string(),
             Err(e) => return Err(format!("dns.catalog_zone_name is not a zone name: {}", e)),
-        }
-        // Zero would admit no zone at all, which enabled = false already says.
-        if self.transfer_cache.enabled && self.transfer_cache.max_records == 0 {
-            return Err(
-                "dns.transfer_cache.max_records must not be 0; set dns.transfer_cache.enabled = false to disable the cache"
-                    .to_string(),
-            );
-        }
-
-        let raw = &self.secondary_addrs;
-        if raw.trim().is_empty() {
-            return Ok(());
-        }
-        // Separators only (e.g. ",") would otherwise read as "no secondaries".
-        if raw.split(',').all(|entry| entry.trim().is_empty()) {
-            return Err(
-                "dns.secondary_addrs contains no addresses; use \"\" when there are no secondaries"
-                    .to_string(),
-            );
-        }
-        for entry in raw.split(',').map(str::trim).filter(|e| !e.is_empty()) {
-            // An unparseable entry silently notifies nobody and admits nobody.
-            if !is_address_target(entry) {
-                return Err(format!(
-                    "dns.secondary_addrs entry '{}' is not a host[:port] address",
-                    entry
-                ));
-            }
         }
         Ok(())
     }
