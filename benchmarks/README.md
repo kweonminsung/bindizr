@@ -107,7 +107,8 @@ standalone run, so its pairing is reported without a comparison.
   Override with `BENCH_CPU_LIMIT` / `BENCH_MEM_LIMIT`. The load generator runs on
   the host (unlimited), as is standard — the *server* is what's constrained.
 - **notify_after_update split.** Bindizr's write path can either (a) just persist
-  to the DB, or (b) additionally push NOTIFY+XFR to secondaries synchronously.
+  to the DB — the adapter registers no secondary, so a write notifies nobody —
+  or (b) additionally push NOTIFY+XFR to the registered secondary synchronously.
   Management-plane benchmarks (B1 CRUD, B2 bulk, B7 database) run with
   `notify_after_update=false` to isolate raw write throughput; propagation /
   AXFR / IXFR / query / resource benchmarks run with it **on** because they

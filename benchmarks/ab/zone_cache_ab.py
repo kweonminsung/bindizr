@@ -3,8 +3,8 @@
 
 The suite's Benchmark 4 pulls AXFR from the BIND9 *secondary*, so it never
 exercises Bindizr's own XFR server. Here we AXFR straight at Bindizr from inside
-the bind9 container — the only client its secondary ACL admits — so the cache is
-actually on the path.
+the bind9 container, signed with a global TSIG key: a registered secondary
+would transfer the zone on the import's NOTIFY, before the first measurement.
 
 At a fixed serial the first AXFR is a cache miss (reads the DB) and every
 subsequent one should hit. We report cold (1st) vs warm (rest) transfer times
@@ -30,10 +30,21 @@ AXFRS = 8
 QUERY_TIME = re.compile(r";; Query time: (\d+) msec")
 
 
-def axfr_from_bind9(cid: str) -> tuple[float | None, int]:
+async def create_transfer_key(adapter) -> str:
+    """Create a global TSIG key and return it in dig's `-y` form."""
+    body = {"name": "bench-axfr", "global": True}
+    async with adapter.session.post(adapter.base + "/tsig-keys", json=body) as r:
+        if r.status != 201:
+            raise RuntimeError(f"creating the transfer key failed: {r.status} {await r.text()}")
+        created = await r.json()
+    key = created["tsig_key"]
+    return f"{key['algorithm']}:{key['name']}:{created['secret']}"
+
+
+def axfr_from_bind9(cid: str, transfer_key: str) -> tuple[float | None, int]:
     """Run dig AXFR inside the bind9 container; return (query_ms, record_lines)."""
     p = subprocess.run(
-        ["docker", "exec", cid, "dig", "@bindizr", "-p", "53",
+        ["docker", "exec", cid, "dig", "@bindizr", "-p", "53", "-y", transfer_key,
          ZONE.rstrip("."), "AXFR", "+tcp", "+time=60"],
         capture_output=True, text=True, timeout=120,
     )
@@ -55,6 +66,7 @@ async def run_variant(transfer_cache: bool) -> dict:
     try:
         print(f"[transfer_cache={label}] setup...", flush=True)
         await adapter.setup()
+        transfer_key = await create_transfer_key(adapter)
         await adapter.create_zone(ZONE)
         print(f"[transfer_cache={label}] importing {RECORDS} records...", flush=True)
         await adapter.bulk_import(ZONE, generate(RECORDS, 1337, ZONE))
@@ -68,7 +80,7 @@ async def run_variant(transfer_cache: bool) -> dict:
         samples: list[float] = []
         counts: list[int] = []
         for i in range(AXFRS):
-            ms, n = axfr_from_bind9(bind9_cid)
+            ms, n = axfr_from_bind9(bind9_cid, transfer_key)
             if ms is None:
                 raise RuntimeError(f"AXFR failed / refused (got {n} record lines)")
             samples.append(ms)

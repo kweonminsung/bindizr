@@ -18,12 +18,12 @@ services:
       BINDIZR_API_AUTHENTICATION_REQUIRED: "false"
       BINDIZR_DNS_LISTEN_ADDR: "0.0.0.0"
       BINDIZR_DNS_LISTEN_PORT: "53"
-      BINDIZR_DNS_NOTIFY_AFTER_UPDATE: ${BINDIZR_NOTIFY_AFTER_UPDATE:-true}
       # 0 = NOTIFY inline on the write path; a window (ms) answers the write at
       # commit and coalesces NOTIFYs per zone over that window from a queue.
       BINDIZR_DNS_NOTIFY_BATCH_MS: ${BINDIZR_NOTIFY_BATCH_MS:-0}
-      # Cache both stored record planes by serial so repeated AXFRs skip the DB read.
-      BINDIZR_DNS_TRANSFER_CACHE_ENABLED: ${BINDIZR_TRANSFER_CACHE:-true}
+      # Cache both stored record planes by serial so repeated AXFRs skip the DB
+      # read; 0 caches nothing.
+      BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS: ${BINDIZR_TRANSFER_CACHE_MAX_RECORDS:-500000}
       BINDIZR_DNS_NOTIFY_RETRIES: "3"
       BINDIZR_DNS_NOTIFY_TIMEOUT_SECS: "3"
       # debug surfaces the per-stage timing lines (event=*_timing) from bulk/import.

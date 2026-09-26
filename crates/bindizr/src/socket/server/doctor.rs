@@ -72,15 +72,21 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
             ),
         };
 
-    // Capture secondary serials before the NOTIFY check can trigger a refresh.
-    let secondaries = probe::probe_secondaries(&config.dns.catalog_zone_name, catalog_serial)
-        .await
-        .map_err(ServiceError::internal)?;
-
-    // Actively test NOTIFY delivery; this can prompt secondaries to transfer the catalog.
-    let notifies = notify::send_notify_to_secondaries(&config.dns.catalog_zone_name)
-        .await
-        .map_err(ServiceError::internal)?;
+    // The secondaries are rows: a database that did not answer is not asked
+    // for them again.
+    let (secondaries, notifies) = if database.status == DoctorCheckStatus::Fail {
+        (Vec::new(), Vec::new())
+    } else {
+        // Capture secondary serials before the NOTIFY check can trigger a refresh.
+        let secondaries = probe::probe_secondaries(&config.dns.catalog_zone_name, catalog_serial)
+            .await
+            .map_err(ServiceError::internal)?;
+        // Actively test NOTIFY delivery; this can prompt secondaries to transfer the catalog.
+        let notifies = notify::send_notify_to_secondaries(&config.dns.catalog_zone_name)
+            .await
+            .map_err(ServiceError::internal)?;
+        (secondaries, notifies)
+    };
 
     let response = DaemonDoctorResponse {
         database,
