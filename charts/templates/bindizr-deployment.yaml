@@ -63,7 +63,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           # Register the secondaries over the daemon's socket once it answers;
-          # one already registered is left alone.
+          # one already registered takes the chart's address.
           lifecycle:
             postStart:
               exec:
@@ -75,7 +75,7 @@ spec:
                       name="${entry%%=*}"
                       address="${entry#*=}"
                       attempt=0
-                      until bindizr secondary get "$name" >/dev/null 2>&1 \
+                      until bindizr secondary update "$name" --address "$address" >/dev/null 2>&1 \
                         || bindizr secondary create "$name" --address "$address" >/dev/null 2>&1; do
                         attempt=$((attempt + 1))
                         if [ "$attempt" -ge 120 ]; then

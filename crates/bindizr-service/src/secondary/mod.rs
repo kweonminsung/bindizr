@@ -304,7 +304,8 @@ pub(crate) fn normalize_secondary_name(value: &str) -> Result<String, ServiceErr
 }
 
 /// A `host[:port]` entry in its stored form, the port spelled out and a
-/// hostname lowercased, so one server has one row under UNIQUE(address).
+/// hostname lowercased without its root dot, so one server has one row under
+/// UNIQUE(address).
 pub(crate) fn normalize_secondary_address(value: &str) -> Result<String, ServiceError> {
     let address = value.trim();
 
@@ -360,6 +361,10 @@ mod tests {
     fn normalize_secondary_address_spells_the_port_out_and_lowercases_a_hostname() {
         assert_eq!(
             normalize_secondary_address(" NS2.Example.net ").unwrap(),
+            "ns2.example.net:53"
+        );
+        assert_eq!(
+            normalize_secondary_address("ns2.example.net.").unwrap(),
             "ns2.example.net:53"
         );
         assert_eq!(
