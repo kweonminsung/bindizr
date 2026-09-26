@@ -1,5 +1,5 @@
 //! Writing the delta out: the SOA-delimited framing of RFC 1995, Section 4
-//! and one journal row rendered as one wire RR.
+//! and one journal row rendered as one wire record.
 
 use std::collections::HashMap;
 

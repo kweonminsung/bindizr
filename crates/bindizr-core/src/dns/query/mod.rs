@@ -13,7 +13,7 @@ use domain::{
 };
 
 /// EDNS0 payload size advertised where the answer may outgrow 512 bytes (a
-/// TLD's NS RRset): the DNS flag day 2020 value.
+/// TLD's NS record set): the DNS flag day 2020 value.
 pub const EDNS_UDP_PAYLOAD_SIZE: u16 = 1232;
 
 /// Build a single-question DNS message with a random id, returning
@@ -134,7 +134,7 @@ fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, Stri
     Ok(message)
 }
 
-/// One answer RR from a zone-transfer response, in presentation form.
+/// One answer record from a zone-transfer response, in presentation form.
 #[derive(Debug)]
 pub struct TransferRecord {
     /// Owner name as an absolute presentation name (trailing dot).
@@ -145,7 +145,7 @@ pub struct TransferRecord {
     pub rdata: String,
 }
 
-/// Validate one AXFR response message and collect every answer RR; the
+/// Validate one AXFR response message and collect every answer record; the
 /// caller assembles the stream (SOA-delimited per RFC 5936, Section 2.2).
 /// The `first` message must echo the question and be authoritative; later
 /// ones may omit the question (RFC 5936, Sections 2.2.1 and 2.2.2).
@@ -268,13 +268,13 @@ pub fn extract_soa_serial(
         .ok_or_else(|| "no SOA record in answer".to_string())
 }
 
-/// The DS RRset a parent-zone server holds for a child.
+/// The DS record set a parent-zone server holds for a child.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DsRecordSet {
     /// The DS records at the child's name, ordered by key tag then RDATA and
     /// deduplicated.
     pub records: Vec<DsRecord>,
-    /// The RRset's TTL: how long a cache may keep serving these DS records.
+    /// The record set's TTL: how long a cache may keep serving these DS records.
     pub ttl: u32,
 }
 
@@ -297,7 +297,7 @@ pub struct DsRecord {
     pub rdata: Vec<u8>,
 }
 
-/// Read a parent server's answer to a DS question: `Some` with the RRset,
+/// Read a parent server's answer to a DS question: `Some` with the record set,
 /// `None` for an authoritative NODATA or NXDOMAIN. A non-authoritative
 /// answer is refused: a cache may lag the parent.
 pub fn extract_ds_record_set(

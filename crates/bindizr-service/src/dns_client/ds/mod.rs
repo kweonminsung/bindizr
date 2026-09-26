@@ -1,5 +1,5 @@
 //! Asking a zone's parent whether it still delegates trust to the zone: the
-//! DS RRset the zone's `parent_ns_addrs` serve for the child.
+//! DS record set the zone's `parent_ns_addrs` serve for the child.
 
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
@@ -19,13 +19,13 @@ pub(crate) struct ParentDs {
     /// The nameservers asked, as `host[:port]` entries from the zone's
     /// `parent_ns_addrs`.
     pub(crate) ns_addrs: Vec<String>,
-    /// Each server's answer in `ns_addrs` order: its DS RRset, or `None` when
+    /// Each server's answer in `ns_addrs` order: its DS record set, or `None` when
     /// it serves none. Kept apart because dropping trust is unsafe while any
     /// server still serves a DS, and promoting a key until every server does.
     pub(crate) answers: Vec<Option<DsRecordSet>>,
 }
 
-/// Ask every parent server for the zone's DS RRset. `Err` when the zone
+/// Ask every parent server for the zone's DS record set. `Err` when the zone
 /// names no parent or any server fails to answer: silence never reads as
 /// absence.
 pub(crate) async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
@@ -63,7 +63,7 @@ async fn resolve_parent_ns_addrs(
     Ok(servers)
 }
 
-/// Ask every server for the zone's DS RRset in parallel, reporting each
+/// Ask every server for the zone's DS record set in parallel, reporting each
 /// answer in `servers` order; a server none of whose addresses answers
 /// fails the probe.
 async fn query_ds(

@@ -19,7 +19,7 @@ use crate::{
     types::{ExternalDnsChangesRequest, ExternalDnsRecord},
 };
 
-/// One desired RRset operation as the request spells it: values are
+/// One desired record set operation as the request spells it: values are
 /// row-encoded, but the owner is still an absolute lookup name with no zone
 /// resolved yet.
 #[derive(Debug)]
@@ -296,7 +296,7 @@ impl ZoneOps {
         }
 
         // Validate each insert against the post-delete state plus earlier inserts,
-        // so CNAME exclusivity and RRset TTL rules see the state they will land in.
+        // so CNAME exclusivity and record set TTL rules see the state they will land in.
         for (index, create) in creates.iter().enumerate() {
             let mut records_at_name: Vec<Record> = existing
                 .iter()

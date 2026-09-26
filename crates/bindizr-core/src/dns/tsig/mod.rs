@@ -228,7 +228,7 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
     }
 }
 
-/// Build a NOTAUTH response carrying an unsigned TSIG error RR that
+/// Build a NOTAUTH response carrying an unsigned TSIG error record that
 /// echoes the request TSIG with an empty MAC (RFC 8945, Section 5.3.2).
 fn build_unsigned_error(msg: &Message<&[u8]>, error: TsigRcode) -> Option<Vec<u8>> {
     let tsig_record = msg

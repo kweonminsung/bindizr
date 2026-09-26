@@ -114,7 +114,7 @@ where
     }
 }
 
-/// A stored record's wire RR type number and RDATA bytes.
+/// A stored record's wire record type number and RDATA bytes.
 pub(crate) struct EncodedRdata {
     pub(crate) record_type: u16,
     pub(crate) rdata: Rdata,
@@ -122,7 +122,7 @@ pub(crate) struct EncodedRdata {
 
 impl EncodedRdata {
     /// Wire RDATA for stored record columns (records and journal rows share
-    /// this shape). TXT stays one opaque byte mapping: canonical RRset order
+    /// this shape). TXT stays one opaque byte mapping: canonical record set order
     /// is a byte comparison over the rdata.
     pub(crate) fn from_columns(
         record_type: &RecordType,

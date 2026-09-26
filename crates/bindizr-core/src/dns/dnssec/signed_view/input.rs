@@ -23,7 +23,7 @@ use super::{SignRecord, SignedViewParams, Signer, WireName, to_rdata};
 use crate::{dns::record::EncodedRdata, model::dnssec_policy::DnssecDenial};
 
 impl SignedViewParams<'_> {
-    /// User records, the synthesized SOA, and the apex key RRsets in canonical
+    /// User records, the synthesized SOA, and the apex key record sets in canonical
     /// order — the exact content the chain and the signatures must cover.
     pub(crate) fn signing_input(
         &self,
@@ -79,7 +79,7 @@ impl SignedViewParams<'_> {
         }
 
         // RFC 8078, Section 4: the 0-algorithm pair asks the parent to delete
-        // the DS RRset entirely.
+        // the DS record set entirely.
         if self.withdraw_parent_ds && !signers.is_empty() {
             let cds = UnknownRecordData::from_octets(Rtype::CDS, vec![0, 0, 0, 0, 0])
                 .map_err(|e| format!("invalid CDS rdata: {}", e))?;
@@ -115,8 +115,8 @@ impl SignedViewParams<'_> {
             ));
         }
 
-        // An RRset shares one TTL (RFC 2181, Section 5.2); normalize stragglers to
-        // the set's minimum so RRset construction and Original TTL are well-defined.
+        // A record set shares one TTL (RFC 2181, Section 5.2); normalize stragglers to
+        // the set's minimum so record set construction and Original TTL are well-defined.
         let mut record_set_ttls: BTreeMap<(Vec<u8>, u16), Ttl> = BTreeMap::new();
         for record in &input {
             let key = (record.owner().as_slice().to_vec(), record.rtype().to_int());
@@ -128,7 +128,7 @@ impl SignedViewParams<'_> {
             record.set_ttl(record_set_ttls[&key]);
         }
 
-        // Canonical order keeps each RRset contiguous for the signing pass.
+        // Canonical order keeps each record set contiguous for the signing pass.
         input.sort_by(|a, b| {
             use domain::base::cmp::CanonicalOrd;
             a.canonical_cmp(b)

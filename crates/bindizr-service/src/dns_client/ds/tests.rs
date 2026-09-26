@@ -98,7 +98,7 @@ fn parent_soa_record(query: &[u8]) -> Vec<u8> {
     record
 }
 
-/// One answer RR owned by the question name (a pointer to offset 12).
+/// One answer record owned by the question name (a pointer to offset 12).
 fn build_record(rtype: u16, ttl: u32, rdata: &[u8]) -> Vec<u8> {
     let mut buf = vec![0xC0, 0x0C];
     buf.extend_from_slice(&rtype.to_be_bytes());

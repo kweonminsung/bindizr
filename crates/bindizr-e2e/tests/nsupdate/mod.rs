@@ -209,7 +209,7 @@ async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
         addr: "192.0.2.99".to_string(),
     }];
 
-    // RFC 2136, Section 3.2.3: the prerequisite RRset must equal the zone's,
+    // RFC 2136, Section 3.2.3: the prerequisite record set must equal the zone's,
     // so naming one of its two values is NXRRSET and applies nothing.
     let rcode = send_update(
         port,
@@ -224,7 +224,7 @@ async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
     assert_eq!(rcode, Rcode::NXRRSET);
     assert_eq!(app.list_records(&zone_name).await.len(), before);
 
-    // Both values, in either order, are the whole RRset.
+    // Both values, in either order, are the whole record set.
     let rcode = send_update(
         port,
         &zone_name,

@@ -14,7 +14,7 @@ use crate::{
     model::record::RecordType,
 };
 
-/// An RR's value as the zone file spells it.
+/// A record's value as the zone file spells it.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ZoneFileValue {
     /// Presentation-form rdata, for every type but TXT.
@@ -23,7 +23,7 @@ pub enum ZoneFileValue {
     CharacterStrings(Vec<String>),
 }
 
-/// One RR from a BIND zone file.
+/// One record from a BIND zone file.
 pub struct ZoneFileRecord {
     /// Absolute owner name (e.g. `www.example.com.`).
     pub owner_fqdn: String,

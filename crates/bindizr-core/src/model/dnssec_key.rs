@@ -117,7 +117,7 @@ impl TryFrom<i32> for DnssecAlgorithm {
 }
 
 /// What a key signs: a CSK everything, a KSK/ZSK pair splits the apex key
-/// RRsets (whose signer the parent DS must name, RFC 7344, Section 4.1)
+/// record sets (whose signer the parent DS must name, RFC 7344, Section 4.1)
 /// from the zone data.
 #[derive(
     Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
@@ -269,7 +269,7 @@ pub struct DnssecKey {
     /// transition that started the wait — a later TTL change
     /// cannot shorten it.
     pub eligible_at: DateTime<Utc>,
-    /// Largest TTL among the RRsets this key has signed, so retirement knows
+    /// Largest TTL among the record sets this key has signed, so retirement knows
     /// how long resolvers can keep validating with it.
     pub max_signed_ttl: i32,
     pub created_at: DateTime<Utc>,
@@ -293,7 +293,7 @@ impl DnssecKey {
         })
     }
 
-    /// Whether the key co-signs the apex key RRsets. Every SEP key does, in
+    /// Whether the key co-signs the apex key record sets. Every SEP key does, in
     /// every state: a validator may arrive via whichever parent DS names it.
     pub fn signs_key_record_sets(&self) -> bool {
         self.role.is_sep()
@@ -313,8 +313,8 @@ impl DnssecKey {
 
     /// The wait before a retired key may be removed: the retire interval of
     /// RFC 7583, Section 3.3.4. The key outlives the signatures it made,
-    /// cached for their RRset's TTL, and — for a key a DS names — the parent's
-    /// DS RRset, cached for the TTL the confirming probe saw.
+    /// cached for their record set's TTL, and — for a key a DS names — the parent's
+    /// DS record set, cached for the TTL the confirming probe saw.
     pub fn retirement_interval_secs(&self, parent_ds_ttl: Option<u32>) -> i64 {
         let signatures = i64::from(self.max_signed_ttl);
         if !self.role.is_sep() {

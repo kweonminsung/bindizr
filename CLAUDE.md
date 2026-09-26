@@ -390,8 +390,7 @@ is `TransferRecord`, `SignRecord`, or `UpdateRecord` (module and prefix
 carry the wire/row distinction, not the word), a set-matching key is
 `RecordKey` or `RecordSetKey`, a helper is `extract_ds_record_set`. The
 stored row stays `model::record::Record`. **RR** and **RRset** (RFC 2181,
-Section 5) survive only in comments describing the wire protocol and in
-protocol tokens, which keep their own spelling: the nsupdate RCODEs
+Section 5) survive only in protocol tokens, which keep their own spelling: the nsupdate RCODEs
 (`NXRRSET`, `YXRRSET`, the `NxRrset`/`YxRrset` variants, lowercase log and
 metric labels), `RRSIG` and its `Rrsig` types, the `domain` crate's own
 `Rrset` and `sign_rrset`, ExternalDNS protocol words (endpoint, targets,

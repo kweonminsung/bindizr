@@ -4,6 +4,7 @@ pub mod api_token;
 pub mod dnssec_key;
 pub mod dnssec_policy;
 pub mod dnssec_record;
+pub mod grant_pattern;
 pub mod record;
 pub mod secondary;
 pub mod token_grant;

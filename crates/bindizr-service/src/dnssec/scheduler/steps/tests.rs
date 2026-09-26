@@ -95,7 +95,7 @@ fn a_retired_key_stays_while_its_replacement_is_only_published() {
 #[test]
 fn a_ksk_alone_cannot_keep_its_algorithm_alive() {
     // Only a CSK or ZSK signs zone data; an active KSK covers the DNSKEY
-    // RRset alone, so the retired ZSK's signatures have no successor.
+    // record set alone, so the retired ZSK's signatures have no successor.
     let now = Utc::now();
     let keys = [
         key(

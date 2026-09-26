@@ -58,12 +58,12 @@ fn build_response_signs_with_request_mac_chain() {
     // ID, error, and other-len (2 bytes each).
     let request_mac = query[query.len() - 6 - 32..query.len() - 6].to_vec();
 
-    // The response without its TSIG RR (ARCOUNT still 0) is exactly the
+    // The response without its TSIG record (ARCOUNT still 0) is exactly the
     // unsigned build of the same request.
     let unsigned = build_response(&query, Rcode::NOERROR, None, 300).unwrap();
 
     // Recompute the response MAC per RFC 8945, Section 4.3.3: request MAC
-    // (length-prefixed), the response without the TSIG RR, then the TSIG
+    // (length-prefixed), the response without the TSIG record, then the TSIG
     // variables.
     let mut digest = Vec::new();
     digest.extend_from_slice(&(request_mac.len() as u16).to_be_bytes());

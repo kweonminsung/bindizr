@@ -30,7 +30,7 @@ pub struct UpdateRequest {
     pub tsig: Option<TsigRecord>,
 }
 
-/// One RR from the prerequisite or update section. `rdata_start` locates the
+/// One record from the prerequisite or update section. `rdata_start` locates the
 /// rdata in the original message so compressed names inside it can be decoded
 /// lazily by the update flow.
 #[derive(Debug, Clone)]
@@ -43,10 +43,10 @@ pub struct UpdateRecord {
     pub rdata_start: usize,
 }
 
-/// The request's TSIG RR, reduced to what the update flow needs: the key
+/// The request's TSIG record, reduced to what the update flow needs: the key
 /// name for the DB lookup and the fudge echoed in the response. Cryptographic
-/// validation re-reads the full RR via `domain::tsig`; parsing here still
-/// rejects structurally invalid TSIG RRs with FORMERR (RFC 8945, Section 5.2) before
+/// validation re-reads the full record via `domain::tsig`; parsing here still
+/// rejects structurally invalid TSIG records with FORMERR (RFC 8945, Section 5.2) before
 /// that happens.
 #[derive(Debug, Clone)]
 pub struct TsigRecord {
@@ -217,7 +217,7 @@ fn parse_additional_section(
     Ok(tsig)
 }
 
-/// Parses a TSIG RR from its CLASS field on (owner and TYPE already consumed).
+/// Parses a TSIG record from its CLASS field on (owner and TYPE already consumed).
 fn parse_tsig_record(
     parser: &mut Parser<'_, [u8]>,
     owner: &ParsedName<&[u8]>,
@@ -280,7 +280,7 @@ impl UpdateRecord {
         parser.advance(self.rdata_start).map_err(|_| refused())?;
         let value = parse(&mut parser).ok_or_else(refused)?;
 
-        // A type parser must consume exactly RDLENGTH, without borrowing the next RR.
+        // A type parser must consume exactly RDLENGTH, without borrowing the next record.
         if parser.pos() != self.rdata_start + self.rdata.len() {
             return Err(refused());
         }
@@ -288,7 +288,7 @@ impl UpdateRecord {
         Ok(value)
     }
 
-    /// Decode this RR into stored columns. `message` must be the original
+    /// Decode this record into stored columns. `message` must be the original
     /// UPDATE message: compressed RDATA names refer to offsets within it.
     pub fn to_record_value(
         &self,

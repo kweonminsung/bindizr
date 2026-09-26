@@ -71,7 +71,7 @@ impl TestApp {
 
         // Use the API's current records as the expected state for all
         // secondaries. Read every page: one short of the whole set would call
-        // a propagated record missing, or a split RRset half-served.
+        // a propagated record missing, or a split record set half-served.
         let mut records = Vec::new();
         let mut offset = 0u64;
         loop {

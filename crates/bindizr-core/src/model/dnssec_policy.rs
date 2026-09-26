@@ -102,7 +102,7 @@ impl DnssecPolicy {
         }
     }
 
-    /// The window the per-RRset expirations spread over, so a pass does not
+    /// The window the per-record-set expirations spread over, so a pass does not
     /// come due for the whole zone at once and push an IXFR the size of it.
     /// Half the room the policy leaves, which keeps even the earliest
     /// signature outside its own refresh window.

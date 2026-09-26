@@ -1,4 +1,4 @@
-//! RRset-level diffing of two serials' records: what an import, a bulk apply, or a
+//! Record-set-level diffing of two serials' records: what an import, a bulk apply, or a
 //! rollback would add, remove, or change.
 
 use std::collections::BTreeMap;
@@ -21,7 +21,7 @@ struct MemberIdentity {
     ttl: i32,
 }
 
-/// One record within an RRset: its identity (for change detection) and
+/// One record within a record set: its identity (for change detection) and
 /// its display-form value (for the response).
 #[derive(Clone)]
 struct RecordSetMember {
@@ -71,7 +71,7 @@ fn record_set_values(record_set: Vec<RecordSetMember>) -> Vec<RecordDiffValue> {
     record_set.into_iter().map(|r| r.value).collect()
 }
 
-/// Diff two serials' records at the RRset level. TTL is part of a record's identity,
+/// Diff two serials' records at the record set level. TTL is part of a record's identity,
 /// so a TTL-only change shows as `changed`.
 pub(crate) fn build_record_diff(
     zone: &Zone,
@@ -94,7 +94,7 @@ pub(crate) fn build_record_diff(
     let (mut added, mut removed, mut changed) = (0u64, 0u64, 0u64);
 
     for key in keys {
-        // Both maps are drained here, so each RRset can be moved into its entry.
+        // Both maps are drained here, so each record set can be moved into its entry.
         let before = before_record_sets.remove(&key);
         let after = after_record_sets.remove(&key);
         let RecordSetKey { name, record_type } = key;

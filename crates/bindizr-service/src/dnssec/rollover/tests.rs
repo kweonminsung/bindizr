@@ -161,7 +161,7 @@ fn a_retiring_key_waits_out_the_signatures_it_made() {
 /// Verify that a retiring sep key also waits out the parents DS.
 #[test]
 fn a_retiring_sep_key_also_waits_out_the_parents_ds() {
-    // Resolvers that cached the parent's DS RRset before the replacement was
+    // Resolvers that cached the parent's DS record set before the replacement was
     // added hold it for its TTL, and it names only the key being removed.
     let mut csk = key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, 0);
     csk.max_signed_ttl = 900;

@@ -180,7 +180,7 @@ impl RecordService {
                 Vec::new()
             };
 
-            // Normalize parsed RRs and drop duplicates within the file,
+            // Normalize parsed records and drop duplicates within the file,
             // indexed by owner name so the dedup check scans only same-name entries.
             let t = Instant::now();
             let mut desired: Vec<DesiredRecord> = Vec::with_capacity(parsed.records.len());
@@ -224,7 +224,7 @@ impl RecordService {
                 if let Some(kept) = duplicate_in_file {
                     let kept_ttl = desired[kept].prepared.ttl.unwrap_or(zone.default_ttl);
                     let this_ttl = record.ttl;
-                    // The same RR at two TTLs is a mixed-TTL RRset (RFC 2181,
+                    // The same record at two TTLs is a mixed-TTL record set (RFC 2181,
                     // Section 5.2); deduplication must not swallow the conflict.
                     if kept_ttl != this_ttl {
                         errors.push(format!(

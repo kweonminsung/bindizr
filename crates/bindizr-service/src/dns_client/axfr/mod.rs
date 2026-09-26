@@ -24,7 +24,7 @@ const MAX_TRANSFER_RECORDS: usize = 200_000;
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Transfer the zone from `server` (`host[:port]`, port 53 default) and
-/// return its RRs, the delimiting SOAs included (RFC 5936, Section 2.2).
+/// return its records, the delimiting SOAs included (RFC 5936, Section 2.2).
 async fn transfer_zone(server: &str, zone_name: &str) -> Result<Vec<TransferRecord>, String> {
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("invalid zone name: {}", e))?;
@@ -118,7 +118,7 @@ fn owner_labels(name: &str) -> Result<Vec<String>, String> {
         .map_err(|e| format!("invalid owner name '{}': {}", name, e))
 }
 
-/// Render transferred RRs as zone-file lines: the zone's SOA once, no
+/// Render transferred records as zone-file lines: the zone's SOA once, no
 /// DNSSEC-derived rows (bindizr signs with its own keys), and every other
 /// type as it arrived, for the parser to accept or report.
 fn render_zone_file(records: &[TransferRecord]) -> String {

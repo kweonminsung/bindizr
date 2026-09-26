@@ -336,7 +336,7 @@ impl RecordService {
                 }
 
                 // `after` = existing plus the inserts, so an insert into an
-                // existing RRset reads as `changed`, not a bare `added`.
+                // existing record set reads as `changed`, not a bare `added`.
                 let before: Vec<RecordData> =
                     before_records.into_iter().map(RecordData::from).collect();
                 let mut after = before.clone();

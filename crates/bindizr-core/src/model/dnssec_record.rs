@@ -18,14 +18,14 @@ pub struct DnssecRecord {
     pub name: OwnerName,
     #[sqlx(try_from = "i32")]
     pub record_type: DnssecRecordType,
-    /// RRSIG rows: the covered RR type; NULL otherwise.
+    /// RRSIG rows: the covered record type; NULL otherwise.
     pub covered_record_type: Option<i32>,
     pub ttl: i32,
     pub rdata: Rdata,
     /// RRSIG rows: signature expiration, driving the re-signing schedule.
     pub expires_at: Option<DateTime<Utc>>,
-    /// RRSIG rows: digest of the signed RRset content, allowing a still-valid
-    /// signature to be reused when the RRset has not changed.
+    /// RRSIG rows: digest of the signed record set content, allowing a still-valid
+    /// signature to be reused when the record set has not changed.
     pub record_set_digest: Option<String>,
 }
 
@@ -67,7 +67,7 @@ pub struct DnssecRecordWithZone {
     pub zone_name: ZoneName,
 }
 
-/// The record types the signer derives; rows store the wire RR type number
+/// The record types the signer derives; rows store the wire record type number
 /// (RFC 4034).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DnssecRecordType {

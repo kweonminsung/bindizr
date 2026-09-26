@@ -421,7 +421,7 @@ fn change_set_skips_creates_whose_row_differs_only_in_ttl() {
         deletes: vec![],
     };
 
-    // No TTL on the RRset, so it resolves to the zone's 3600 — not the row's 300.
+    // No TTL on the record set, so it resolves to the zone's 3600 — not the row's 300.
     let change_set = zone_ops(&request, &zone)
         .compute_change_set(&zone, &existing)
         .unwrap();

@@ -158,7 +158,7 @@ async fn authenticate_request(
     Ok(key)
 }
 
-/// One prerequisite RR, with the wire shapes of RFC 2136, Section 2.4 enforced:
+/// One prerequisite record, with the wire shapes of RFC 2136, Section 2.4 enforced:
 /// TTL is always 0, and only a CLASS IN prerequisite carries rdata.
 fn decode_prerequisite(
     record: &UpdateRecord,

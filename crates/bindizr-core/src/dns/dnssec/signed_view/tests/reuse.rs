@@ -184,7 +184,7 @@ fn record_change_reuses_unaffected_signatures() {
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
     let zzz = OwnerName::parse_in_zone("zzz", &zone.name).unwrap();
 
-    // Untouched RRsets keep their signatures: neither the DNSKEY nor the
+    // Untouched record sets keep their signatures: neither the DNSKEY nor the
     // www A RRSIG appears on either side of the diff.
     assert!(
         rrsigs_covering(

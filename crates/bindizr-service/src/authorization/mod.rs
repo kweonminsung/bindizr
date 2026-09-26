@@ -18,7 +18,6 @@ use chrono::{Duration, Utc};
 use crate::{
     RepositoryTx,
     error::ServiceError,
-    grant_pattern::{MATCH_ANY, matches_name, matches_types},
     model::{
         api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone,
         zone_version::ChangeSource,
@@ -177,11 +176,9 @@ impl Caller {
     ) -> bool {
         match self {
             Caller::Global | Caller::GlobalToken { .. } => true,
-            Caller::Token { grants, .. } => grants.iter().any(|grant| {
-                grant.zone_id == zone_id
-                    && matches_name(&grant.record_name_pattern, name)
-                    && matches_types(&grant.record_types, record_type)
-            }),
+            Caller::Token { grants, .. } => grants
+                .iter()
+                .any(|grant| grant.zone_id == zone_id && grant.matches(name, record_type)),
         }
     }
 
@@ -191,11 +188,9 @@ impl Caller {
     pub(crate) fn authorize_zone_unrestricted(&self, zone: &Zone) -> Result<(), ServiceError> {
         let unrestricted = match self {
             Caller::Global | Caller::GlobalToken { .. } => true,
-            Caller::Token { grants, .. } => grants.iter().any(|grant| {
-                grant.zone_id == zone.id
-                    && grant.record_name_pattern == MATCH_ANY
-                    && grant.record_types == MATCH_ANY
-            }),
+            Caller::Token { grants, .. } => grants
+                .iter()
+                .any(|grant| grant.zone_id == zone.id && grant.is_unrestricted()),
         };
         if unrestricted {
             return Ok(());
@@ -216,11 +211,9 @@ fn authorize_with_grants(
     writes: &[RecordWrite<'_>],
 ) -> Result<(), ServiceError> {
     for write in writes {
-        let granted = grants.iter().any(|grant| {
-            grant.can_write
-                && matches_name(&grant.record_name_pattern, &write.relative_name)
-                && matches_types(&grant.record_types, write.record_type)
-        });
+        let granted = grants
+            .iter()
+            .any(|grant| grant.can_write && grant.matches(&write.relative_name, write.record_type));
         if !granted {
             return Err(ServiceError::forbidden(format!(
                 "API token is not allowed to manage '{}' {} in zone '{}'",

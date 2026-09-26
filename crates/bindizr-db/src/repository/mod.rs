@@ -92,7 +92,7 @@ pub struct DnssecRecordFilter {
     /// Matched as in `RecordFilter`.
     pub zone_name: Option<String>,
     pub name: Option<String>,
-    /// The wire RR type number, the column form.
+    /// The wire record type number, the column form.
     pub record_type: Option<i32>,
     pub ttl: Option<i32>,
     pub min_ttl: Option<i32>,

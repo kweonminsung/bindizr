@@ -61,17 +61,17 @@ pub enum Prerequisite {
     NameInUse { name: String },
     /// CLASS NONE, TYPE ANY: the owner name must not exist.
     NameNotInUse { name: String },
-    /// CLASS ANY: the RRset must exist.
+    /// CLASS ANY: the record set must exist.
     RecordSetInUse {
         name: String,
         record_type: RecordType,
     },
-    /// CLASS NONE: the RRset must not exist.
+    /// CLASS NONE: the record set must not exist.
     RecordSetNotInUse {
         name: String,
         record_type: RecordType,
     },
-    /// CLASS IN: with the others of its name and type, the RRset must equal
+    /// CLASS IN: with the others of its name and type, the record set must equal
     /// the zone's (RFC 2136, Section 3.2.3).
     RecordInUse {
         name: String,
@@ -84,7 +84,7 @@ pub enum Prerequisite {
 
 /// One update to apply (RFC 2136, Section 2.5). Owner names are absolute.
 pub enum UpdateOp {
-    /// CLASS IN: add the RR.
+    /// CLASS IN: add the record.
     AddRecord {
         name: String,
         record_type: RecordType,
@@ -93,13 +93,13 @@ pub enum UpdateOp {
         ttl: i32,
         priority: Option<i32>,
     },
-    /// CLASS ANY: delete an RRset, or every RRset at the owner name when
+    /// CLASS ANY: delete a record set, or every record set at the owner name when
     /// `record_type` is `None` (wire TYPE ANY).
     DeleteRecordSet {
         name: String,
         record_type: Option<RecordType>,
     },
-    /// CLASS NONE: delete the RRs carrying exactly this rdata.
+    /// CLASS NONE: delete the records carrying exactly this rdata.
     DeleteRecord {
         name: String,
         record_type: RecordType,
@@ -216,7 +216,7 @@ impl DynamicUpdateService {
 }
 
 /// Authorize an authenticated request: global keys may do anything, other
-/// keys need a grant reaching every prerequisite and every update RR. `key`
+/// keys need a grant reaching every prerequisite and every update record. `key`
 /// is `None` for an accepted unsigned request, which skips authorization
 /// entirely.
 async fn authorize_key_tx(
@@ -331,7 +331,7 @@ async fn apply_op_tx(
             .await?;
 
             // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op. The
-            // TTL-replace clause is not implemented; RRset TTLs change via the API.
+            // TTL-replace clause is not implemented; record set TTLs change via the API.
             if matches!(outcome, AddOutcome::Duplicate) {
                 return Ok(false);
             }
@@ -410,7 +410,7 @@ async fn delete_matching_tx(
     Ok(true)
 }
 
-/// The owner of an update RR. The wire carries owners absolutely, so a name
+/// The owner of an update record. The wire carries owners absolutely, so a name
 /// outside the zone is NOTZONE rather than something to qualify.
 fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, DynamicUpdateError> {
     if name.trim_end_matches('.').is_empty() {
