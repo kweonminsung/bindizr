@@ -16,7 +16,7 @@ use crate::{
     cli::output::parse_payload,
     socket::{
         client,
-        types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse},
+        types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse, DoctorCheckStatus},
     },
 };
 
@@ -143,9 +143,14 @@ pub(crate) async fn check_services(report: &mut Report) {
         }
     };
 
+    let database_failed = doctor.database.status == DoctorCheckStatus::Fail;
     report.push(doctor.database);
     report.push(doctor.dns_server);
 
+    if database_failed {
+        report.skip("Secondary checks skipped: the database did not answer");
+        return;
+    }
     if doctor.secondaries.is_empty() {
         report.skip("No enabled secondaries");
         return;

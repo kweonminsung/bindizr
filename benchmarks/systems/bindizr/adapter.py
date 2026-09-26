@@ -72,10 +72,11 @@ class BindizrAdapter(DnsAdapter):
         self.base = f"http://localhost:{API_PORT}"
         self.session: aiohttp.ClientSession | None = None
         env = {"BINDIZR_DB_TYPE": db_type,
-               "BINDIZR_NOTIFY_AFTER_UPDATE": "true" if notify_after_update else "false",
                "BINDIZR_NOTIFY_BATCH_MS": str(self.notify_batch_ms),
-               "BINDIZR_TRANSFER_CACHE": "true" if self.transfer_cache else "false",
                "BINDIZR_LOG_LEVEL": self.log_level}
+        # A zero record budget is how the transfer cache is turned off.
+        if not self.transfer_cache:
+            env["BINDIZR_TRANSFER_CACHE_MAX_RECORDS"] = "0"
         # bind9 carries no profile, so the default system starts as it always has.
         profiles = []
         if db_type == "mysql":
@@ -99,7 +100,10 @@ class BindizrAdapter(DnsAdapter):
         self.compose.up("bindizr", self.secondary_service, wait=True)
         self.session = aiohttp.ClientSession()
         await self._wait_api()
-        await self._register_secondary()
+        # A registered secondary receives every NOTIFY, so a write-path run
+        # registers none.
+        if self.notify_after_update:
+            await self._register_secondary()
 
     async def _register_secondary(self) -> None:
         """Register the secondary service so it receives NOTIFY and may transfer."""
