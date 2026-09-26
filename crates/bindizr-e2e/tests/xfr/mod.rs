@@ -303,7 +303,7 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
     assert_eq!(status, StatusCode::CREATED);
 
     // NSEC3PARAM at the apex shows the NSEC3 denial plane transferred; CDS
-    // (RFC 7344) shows the derived key-RRset plane did too.
+    // (RFC 7344) shows the derived key record set plane did too.
     for port in app.dns_secondary_ports() {
         wait_for_any_dns_record(*port, &zone_name, NSEC3PARAM).await;
         wait_for_any_dns_record(*port, &zone_name, CDS).await;

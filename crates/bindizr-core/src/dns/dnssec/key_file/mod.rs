@@ -92,11 +92,11 @@ fn bind_key_phase(
             delete.format("%Y-%m-%dT%H:%M:%SZ")
         ));
     }
-    // The DNSKEY RRset's own TTL bounds how long a resolver can hold an answer
+    // The DNSKEY record set's own TTL bounds how long a resolver can hold an answer
     // that lacks this key, or holds it; a recorded schedule is exact and wins.
     let ttl_wait = Duration::seconds(i64::from(default_ttl));
     if let Some(inactive) = passed(inactive) {
-        // Its signatures outlive it in caches for the TTL of the RRsets it
+        // Its signatures outlive it in caches for the TTL of the record sets it
         // signed, which a zone signed elsewhere never told bindizr.
         return Ok(DnssecKeyPhase {
             state: DnssecKeyState::Retired,

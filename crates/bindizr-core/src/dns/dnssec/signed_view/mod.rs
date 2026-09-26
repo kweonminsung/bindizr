@@ -1,8 +1,8 @@
 //! The signed view: the derived DNSSEC plane a zone's records imply, computed
 //! whole and diffed against the stored plane. Signatures are reused while
-//! their RRset, signer set, and validity are unchanged, so the diff — the
+//! their record set, signer set, and validity are unchanged, so the diff — the
 //! IXFR delta — carries only real changes; a rollover state transition
-//! re-signs exactly the affected RRsets through the same digests.
+//! re-signs exactly the affected record sets through the same digests.
 
 mod input;
 #[cfg(test)]
@@ -47,7 +47,7 @@ pub struct SignedViewParams<'a> {
     pub denial: DnssecDenial,
     pub now: DateTime<Utc>,
     pub inception: DateTime<Utc>,
-    /// The latest expiration a new signature takes; each RRset lands up to
+    /// The latest expiration a new signature takes; each record set lands up to
     /// `expiration_jitter_secs` earlier.
     pub expiration: DateTime<Utc>,
     pub expiration_jitter_secs: i64,
@@ -56,14 +56,14 @@ pub struct SignedViewParams<'a> {
     /// Ignore stored signatures entirely (manual re-sign).
     pub force: bool,
     /// Publish the RFC 8078 delete CDS/CDNSKEY pair instead of per-key ones,
-    /// asking the parent to drop the zone's DS RRset.
+    /// asking the parent to drop the zone's DS record set.
     pub withdraw_parent_ds: bool,
 }
 
 impl SignedViewParams<'_> {
-    /// The RRset's slot in the jitter window, taken from its identity rather
+    /// The record set's slot in the jitter window, taken from its identity rather
     /// than drawn at random: [`Self::compute`] stays a function of its
-    /// inputs, and an RRset keeps its slot across re-signings.
+    /// inputs, and a record set keeps its slot across re-signings.
     fn record_set_expiration(&self, owner: &WireName, covered: i32) -> DateTime<Utc> {
         if self.expiration_jitter_secs <= 0 {
             return self.expiration;
@@ -111,7 +111,7 @@ impl SignedViewParams<'_> {
         let mut new_rows: Vec<DnssecRecord> = Vec::new();
         let denial_records = denial_records(&apex, &input, self.denial)?;
 
-        // Rows for everything the signer owns: the apex key RRsets from `input`
+        // Rows for everything the signer owns: the apex key record sets from `input`
         // and the denial chain. User records and the SOA stay in their own planes.
         for record in input.iter().filter(|record| is_key_rtype(record.rtype())) {
             new_rows.push(DnssecRecord {
@@ -140,8 +140,8 @@ impl SignedViewParams<'_> {
             });
         }
 
-        // RRsets to sign: every authoritative RRset. At a delegation the parent
-        // signs only the DS RRset; the NS beside it and glue at or below the cut
+        // Record sets to sign: every authoritative record set. At a delegation the parent
+        // signs only the DS record set; the NS beside it and glue at or below the cut
         // are served but not signed (RFC 4035, Section 2.2).
         let delegations: BTreeSet<Vec<u8>> = input
             .iter()
@@ -173,7 +173,7 @@ impl SignedViewParams<'_> {
             signable.push(vec![record]);
         }
 
-        // Index stored signatures by owner and covered type for RRset reuse.
+        // Index stored signatures by owner and covered type for record set reuse.
         let mut prev_rrsigs: BTreeMap<(String, i32), Vec<&DnssecRecord>> = BTreeMap::new();
         for row in self.prev {
             if row.record_type == DnssecRecordType::Rrsig
@@ -190,7 +190,7 @@ impl SignedViewParams<'_> {
         for record_set in &signable {
             let owner = parse_derived_owner(record_set[0].owner(), &zone.name)?;
             let covered = record_set[0].rtype().to_int() as i32;
-            // The apex key RRsets must be signed by keys the parent DS names
+            // The apex key record sets must be signed by keys the parent DS names
             // (RFC 7344, Section 4.1 for CDS/CDNSKEY); everything else by the
             // active zone-data keys.
             let record_set_signers: &[&Signer<'_>] =
@@ -373,7 +373,7 @@ impl<'a> Signer<'a> {
         })
     }
 
-    /// Sign one RRset for the supplied validity interval.
+    /// Sign one record set for the supplied validity interval.
     fn sign_rrset(
         &self,
         record_set: &[&SignRecord],

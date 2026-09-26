@@ -2,7 +2,7 @@ use bindizr_core::dns::zonefile::{ParsedZoneFile, ZoneFileValue};
 
 use super::*;
 
-/// Build one transferred RR for the render tests.
+/// Build one transferred record for the render tests.
 fn transfer_record(name: &str, rtype: Rtype, rdata: &str) -> TransferRecord {
     TransferRecord {
         name: name.to_string(),
@@ -53,7 +53,7 @@ fn a_type_the_render_cannot_store_is_left_for_skip_unsupported() {
     );
 }
 
-/// The fetch goes structured RR -> text -> parsed record, so the render and
+/// The fetch goes structured record -> text -> parsed record, so the render and
 /// the parser must agree on RFC 1035, Section 5.1 escaping or a label splits.
 #[test]
 fn a_rendered_transfer_parses_back_into_the_names_it_carried() {

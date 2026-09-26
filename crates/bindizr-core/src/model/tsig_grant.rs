@@ -1,6 +1,14 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
+use crate::{
+    dns::name::OwnerName,
+    model::{
+        grant_pattern::{MATCH_ANY, matches_name, matches_types},
+        record::RecordType,
+    },
+};
+
 /// Grants one TSIG key rights over part of one zone, in the spirit of BIND's
 /// `update-policy` and `allow-transfer`. Global keys bypass grants and hold no
 /// rows here.
@@ -19,6 +27,19 @@ pub struct TsigGrant {
     /// name/type grant, regardless of this flag.
     pub can_write: bool,
     pub created_at: DateTime<Utc>,
+}
+
+impl TsigGrant {
+    /// Whether this grant covers `record_type` at the relative owner name.
+    pub fn matches(&self, name: &OwnerName, record_type: Option<&RecordType>) -> bool {
+        matches_name(&self.record_name_pattern, name)
+            && matches_types(&self.record_types, record_type)
+    }
+
+    /// Whether this grant covers every name and type in its zone.
+    pub fn is_unrestricted(&self) -> bool {
+        self.record_name_pattern == MATCH_ANY && self.record_types == MATCH_ANY
+    }
 }
 
 /// A TSIG grant joined with the names of the key it belongs to and the zone

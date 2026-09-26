@@ -205,7 +205,7 @@ async fn record_delete_matching_moves_the_zone_by_one_serial() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["deleted"], 3, "{body}");
 
-    // Row by row would bump it three times and serve the half-removed RRset.
+    // Row by row would bump it three times and serve the half-removed record set.
     assert_eq!(serial_of(&app).await, before + 1);
 
     let (_, body) = app
@@ -1086,7 +1086,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    // RFC 2181, Section 5.2: one TTL per RRset.
+    // RFC 2181, Section 5.2: one TTL per record set.
     let differing_ttl = json!({
         "name": "www",
         "type": "A",
@@ -1116,7 +1116,7 @@ async fn record_reject_mixed_ttl_for_one_name_and_type() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    // A different type at the same owner name is a separate RRset.
+    // A different type at the same owner name is a separate record set.
     let other_record_set = json!({
         "name": "www",
         "type": "TXT",

@@ -1,5 +1,5 @@
 //! ExternalDNS provider integration: authoritative zone matching and atomic
-//! RRset change application behind the `/external-dns` HTTP API (consumed by
+//! record set change application behind the `/external-dns` HTTP API (consumed by
 //! the bindizr-external-dns adapter). Which zones a caller may see and change
 //! is decided by its token's grants, like every other endpoint.
 

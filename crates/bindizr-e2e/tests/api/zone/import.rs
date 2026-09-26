@@ -146,7 +146,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     let zone_name = zone["name"].as_str().unwrap();
 
     // The three ways upsert must differ from replace, which would drop all of
-    // these: a multi-record RRset, another type on that owner, another owner.
+    // these: a multi-record set, another type on that owner, another owner.
     seed_records(
         &app,
         zone_name,
@@ -159,7 +159,7 @@ async fn zone_import_zone_file_upsert_mode_replaces_records_by_name_and_type_onl
     )
     .await;
 
-    // Only the `www` A RRset appears in the file, so only it is replaced.
+    // Only the `www` A record set appears in the file, so only it is replaced.
     let content = "www IN A 192.0.2.3\n";
     let (status, body) = app
         .send_request(

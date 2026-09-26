@@ -1,6 +1,6 @@
 //! RFC 2136, Section 3.2: every prerequisite is checked against the zone
-//! before any update is applied. Zone-class RRs are grouped by name and type
-//! and must equal the zone's RRset there (Section 3.2.3).
+//! before any update is applied. Zone-class records are grouped by name and type
+//! and must equal the zone's record set there (Section 3.2.3).
 
 use bindizr_core::dns::name::OwnerName;
 use bindizr_db::repository::LockLevel;
@@ -106,14 +106,14 @@ pub(crate) async fn evaluate_prerequisites_tx(
     Ok(())
 }
 
-/// The RRs a prerequisite names at one owner and type, as value and priority.
+/// The records a prerequisite names at one owner and type, as value and priority.
 struct WantedRecordSet<'a> {
     owner: OwnerName,
     record_type: RecordType,
     records: Vec<(&'a str, Option<i32>)>,
 }
 
-/// Whether the stored records of one name and type are exactly the RRs a
+/// Whether the stored records of one name and type are exactly the records a
 /// prerequisite names; compared both ways, so order and repeats do not matter.
 fn is_same_record_set(stored: &[&Record], wanted: &[(&str, Option<i32>)]) -> bool {
     let matches = |record: &Record, (value, priority): &(&str, Option<i32>)| {
@@ -160,13 +160,13 @@ mod tests {
         }
     }
 
-    /// Verify that a prerequisite must name the whole RRset.
+    /// Verify that a prerequisite must name the whole record set.
     #[test]
     fn a_prerequisite_must_name_the_whole_record_set() {
         let stored = [a_record("192.0.2.1"), a_record("192.0.2.2")];
         let stored: Vec<&Record> = stored.iter().collect();
 
-        // RFC 2136, Section 3.2.3: a subset or a superset is not the RRset.
+        // RFC 2136, Section 3.2.3: a subset or a superset is not the record set.
         assert!(!is_same_record_set(&stored, &[("192.0.2.1", None)]));
         assert!(!is_same_record_set(
             &stored,

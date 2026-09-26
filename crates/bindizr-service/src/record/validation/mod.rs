@@ -135,7 +135,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         ));
     }
 
-    // RFC 2181, Section 5.2: one TTL per RRset.
+    // RFC 2181, Section 5.2: one TTL per record set.
     if let Some(conflicting) = records_at_name
         .iter()
         .find(|r| r.record_type == *record_type && r.ttl != ttl)

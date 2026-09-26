@@ -268,7 +268,7 @@ pub(crate) fn parse_dns_response(query_id: u16, response: &[u8]) -> Result<Vec<D
         });
     }
 
-    // A delegation NS RRset comes back as a referral: NOERROR with an empty
+    // A delegation NS record set comes back as a referral: NOERROR with an empty
     // answer section and the NS rows in authority (RFC 1034, Section 4.3.2).
     if answers.is_empty() {
         let authority = message.authority().map_err(|e| e.to_string())?;

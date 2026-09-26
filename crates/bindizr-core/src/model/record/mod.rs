@@ -273,7 +273,7 @@ impl std::str::FromStr for RecordType {
 impl TryFrom<Rtype> for RecordType {
     type Error = String;
 
-    /// The RR types bindizr stores as user records, keyed by wire RR type.
+    /// The record types bindizr stores as user records, keyed by wire record type.
     /// SOA is excluded because it is managed through the zone's own fields.
     fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
         match rtype {
@@ -317,7 +317,7 @@ impl RecordType {
         }
     }
 
-    /// The RR TYPE number this type's records carry on the wire.
+    /// The record TYPE number this type's records carry on the wire.
     pub fn wire_type(&self) -> u16 {
         match self {
             RecordType::A => 1,

@@ -33,7 +33,7 @@ impl SigningKey {
     }
 }
 
-/// One RR of an update section, in the class that gives it its meaning
+/// One record of an update section, in the class that gives it its meaning
 /// (RFC 2136, Section 2.5).
 pub(crate) enum UpdateRecord {
     /// CLASS IN: add this address record.
@@ -42,7 +42,7 @@ pub(crate) enum UpdateRecord {
         ttl: u32,
         addr: String,
     },
-    /// CLASS ANY: delete the RRset.
+    /// CLASS ANY: delete the record set.
     DeleteRecordSet { name: String, rtype: Rtype },
     /// CLASS NONE: delete just this address record.
     DeleteA { name: String, addr: String },
@@ -190,10 +190,10 @@ fn build_update(
     Ok(authority.additional())
 }
 
-/// An RR carrying no rdata, built from an rtype the builder need not know.
+/// A record carrying no rdata, built from an rtype the builder need not know.
 type EmptyRecord = Record<Name<Vec<u8>>, UnknownRecordData<Vec<u8>>>;
 
-/// An RR with empty rdata and TTL 0 — the shape every delete-RRset and
+/// A record with empty rdata and TTL 0 — the shape every delete-record-set and
 /// name-existence entry takes.
 fn empty_record(owner: &str, rtype: Rtype, class: Class) -> Result<EmptyRecord, String> {
     let data = UnknownRecordData::from_octets(rtype, Vec::new()).map_err(|e| e.to_string())?;

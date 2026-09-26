@@ -4249,7 +4249,7 @@ components:
       type: string
       description: |-
         What a key signs: a CSK everything, a KSK/ZSK pair splits the apex key
-        RRsets (whose signer the parent DS must name, RFC 7344, Section 4.1)
+        record sets (whose signer the parent DS must name, RFC 7344, Section 4.1)
         from the zone data.
       enum:
       - csk

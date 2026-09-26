@@ -192,7 +192,7 @@ fn build_edns_question_advertises_the_payload_size() {
 #[test]
 fn extract_ds_record_set_reads_the_records_and_the_record_set_ttl() {
     let child = name("example.com");
-    // The RRset TTL is the lowest member TTL (RFC 2181, Section 5.2), and
+    // The record set TTL is the lowest member TTL (RFC 2181, Section 5.2), and
     // key tags come back ordered and without duplicates.
     let response = build_ds_response(
         42,

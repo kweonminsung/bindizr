@@ -122,7 +122,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         "include_signer_serials=true must include signer-only serials: {all_serials:?}"
     );
 
-    // A DS secures a delegation, so the NS RRset must exist first.
+    // A DS secures a delegation, so the NS record set must exist first.
     let ds_value = "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
     let (status, _) = app
         .send_request(
@@ -581,7 +581,7 @@ async fn dnssec_csk_rollover_lifecycle() {
         ds_records.iter().any(|ds| ds["presentation"] == old_ds),
         "old DS left the set during the rollover: {ds_records:?}"
     );
-    // Pre-publishing changes the DNSKEY RRset secondaries hold, so each
+    // Pre-publishing changes the DNSKEY record set secondaries hold, so each
     // rollover step rides the serial/IXFR mechanics.
     assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 2);
 

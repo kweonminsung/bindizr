@@ -36,7 +36,7 @@ pub(crate) fn signed_error(
 }
 
 /// A refused transfer and the response it owes the client: a TSIG failure
-/// answers with its own error RR, anything else with REFUSED, signed by the
+/// answers with its own error record, anything else with REFUSED, signed by the
 /// key that got that far.
 pub(crate) struct TransferRefusal {
     pub(crate) reason: String,
