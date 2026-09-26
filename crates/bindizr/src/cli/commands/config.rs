@@ -181,7 +181,6 @@ fn print_config(config: &BindizrConfig) {
     outln!();
 
     print_section("dns.transfer_cache");
-    print_value("enabled", config.dns.transfer_cache.enabled);
     print_value("max_records", config.dns.transfer_cache.max_records);
     outln!();
 

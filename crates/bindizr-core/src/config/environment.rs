@@ -92,10 +92,6 @@ impl BindizrConfig {
             self.dns.notify.timeout_secs =
                 parse_env_value("BINDIZR_DNS_NOTIFY_TIMEOUT_SECS", &value)?;
         }
-        if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_CACHE_ENABLED") {
-            self.dns.transfer_cache.enabled =
-                parse_env_value("BINDIZR_DNS_TRANSFER_CACHE_ENABLED", &value)?;
-        }
         if let Some(value) = get_env("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS") {
             self.dns.transfer_cache.max_records =
                 parse_env_value("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS", &value)?;

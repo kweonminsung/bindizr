@@ -217,10 +217,8 @@ impl Default for NotifyConfig {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransferCacheConfig {
-    #[serde(default = "default_transfer_cache_enabled")]
-    pub enabled: bool,
     /// Records the cache may hold before evicting the least recently used
-    /// zone. A zone larger than this is served uncached.
+    /// zone. A zone larger than this is served uncached; `0` caches nothing.
     #[serde(default = "default_transfer_cache_max_records")]
     pub max_records: u64,
 }
@@ -229,7 +227,6 @@ impl Default for TransferCacheConfig {
     /// Build the default transfer cache settings.
     fn default() -> Self {
         Self {
-            enabled: default_transfer_cache_enabled(),
             max_records: default_transfer_cache_max_records(),
         }
     }
@@ -302,11 +299,6 @@ fn default_zone_history_retention_days() -> u32 {
 /// day-scale windows a pass enforces.
 fn default_scheduler_interval_secs() -> u64 {
     3_600
-}
-
-/// Return the default transfer cache enabled setting.
-fn default_transfer_cache_enabled() -> bool {
-    true
 }
 
 /// Return the default transfer cache max records setting.
@@ -630,13 +622,6 @@ impl DnsConfig {
         match crate::dns::name::ZoneName::parse(&self.catalog_zone_name) {
             Ok(name) => self.catalog_zone_name = name.to_string(),
             Err(e) => return Err(format!("dns.catalog_zone_name is not a zone name: {}", e)),
-        }
-        // Zero would admit no zone at all, which enabled = false already says.
-        if self.transfer_cache.enabled && self.transfer_cache.max_records == 0 {
-            return Err(
-                "dns.transfer_cache.max_records must not be 0; set dns.transfer_cache.enabled = false to disable the cache"
-                    .to_string(),
-            );
         }
         Ok(())
     }

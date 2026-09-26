@@ -143,26 +143,8 @@ pub(crate) async fn check_services(report: &mut Report) {
         }
     };
 
-    if doctor.database.ok {
-        report.ok(format!("Database connected: {}", doctor.database.detail));
-    } else {
-        report.fail(format!(
-            "Database not reachable: {}",
-            doctor.database.detail
-        ));
-    }
-
-    if doctor.dns_server.ok {
-        report.ok(format!(
-            "DNS server reachable: {}",
-            doctor.dns_server.detail
-        ));
-    } else {
-        report.fail(format!(
-            "DNS server not reachable: {}",
-            doctor.dns_server.detail
-        ));
-    }
+    report.push(doctor.database);
+    report.push(doctor.dns_server);
 
     if doctor.secondaries.is_empty() {
         report.skip("No enabled secondaries");

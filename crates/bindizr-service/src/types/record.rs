@@ -25,6 +25,15 @@ pub enum RecordValueRequest {
 }
 
 impl RecordValueRequest {
+    /// The value as one string; TXT segments concatenate into the text they
+    /// encode.
+    pub fn to_text(&self) -> String {
+        match self {
+            RecordValueRequest::String(value) => value.clone(),
+            RecordValueRequest::Segments(segments) => segments.concat(),
+        }
+    }
+
     /// Encode the request value into its record-row form. A TXT string is raw
     /// content (never presentation form), so quotes carry no special meaning.
     pub(crate) fn to_encoded_value(

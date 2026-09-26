@@ -22,7 +22,7 @@ pub enum DnssecDenial {
 }
 
 impl DnssecDenial {
-    /// Storage and presentation name.
+    /// Storage name, as the columns and the API spell it.
     pub fn as_str(&self) -> &'static str {
         match self {
             DnssecDenial::Nsec => "nsec",
@@ -32,9 +32,12 @@ impl DnssecDenial {
 }
 
 impl std::fmt::Display for DnssecDenial {
-    /// Write the DNSSEC denial in its display form.
+    /// Write the denial mode in the upper case the DNSSEC documents use.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+        f.write_str(match self {
+            DnssecDenial::Nsec => "NSEC",
+            DnssecDenial::Nsec3 => "NSEC3",
+        })
     }
 }
 

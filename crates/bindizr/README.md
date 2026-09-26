@@ -70,8 +70,7 @@ nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false adm
 # timeout_secs = 3            # Seconds to wait for each NOTIFY
 
 [dns.transfer_cache]          # Zone records cached per serial, so repeated transfers skip the database
-# enabled = true
-# max_records = 500000        # Records the cache holds; a larger zone is served uncached
+# max_records = 500000        # Records the cache holds; a larger zone is served uncached (0 = no cache)
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)

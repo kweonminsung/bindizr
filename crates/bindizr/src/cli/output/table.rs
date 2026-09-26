@@ -43,18 +43,9 @@ fn display_option_time(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
     opt.map_or_else(|| "-".to_string(), display_time)
 }
 
-/// A record value as text; TXT segments concatenate into the string they
-/// encode.
-fn to_value_text(value: &RecordValueRequest) -> String {
-    match value {
-        RecordValueRequest::String(value) => value.clone(),
-        RecordValueRequest::Segments(segments) => segments.concat(),
-    }
-}
-
 /// A record value as one listing cell.
 fn display_record_value(value: &RecordValueRequest) -> String {
-    truncate_cell(&to_value_text(value))
+    truncate_cell(&value.to_text())
 }
 
 /// Shorten an over-long cell, marking that it was cut. Counted in characters,
@@ -155,7 +146,7 @@ impl RecordRow {
             id: record.id,
             name: record.name.clone(),
             record_type: record.record_type.clone(),
-            value: to_value_text(&record.value),
+            value: record.value.to_text(),
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
@@ -232,7 +223,7 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
             id: policy.id,
             name: policy.name.clone(),
             algorithm: policy.algorithm.clone(),
-            denial: policy.denial.to_string().to_uppercase(),
+            denial: policy.denial.to_string(),
             keys: if policy.split_keys { "KSK/ZSK" } else { "CSK" }.to_string(),
             validity: format!("{}d", policy.signature_validity_days),
             refresh: format!("{}d", policy.signature_refresh_days),

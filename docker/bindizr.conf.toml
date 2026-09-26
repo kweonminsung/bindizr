@@ -34,7 +34,6 @@ retries = 3
 timeout_secs = 3
 
 [dns.transfer_cache]
-enabled = true
 max_records = 500000
 
 [dns.zone_defaults]             # Applied when a zone-creation request omits the field

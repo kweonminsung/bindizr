@@ -12,7 +12,7 @@ use crate::{
     daemon::DB_PROBE_TIMEOUT,
     socket::{
         server::to_response_data,
-        types::{DaemonDoctorResponse, DaemonResponse, DoctorCheckResult},
+        types::{DaemonDoctorResponse, DaemonResponse, DoctorCheck, DoctorCheckStatus},
     },
 };
 
@@ -24,18 +24,21 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
     // Count zones without materializing them; large tables must fit the deadline.
     let zones_probe = ZoneService::count(&Caller::Global);
     let database = match tokio::time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
-        Ok(Ok(total)) => DoctorCheckResult {
-            ok: true,
-            detail: format!("{} ({} zones)", config.database.database_type, total),
+        Ok(Ok(total)) => DoctorCheck {
+            status: DoctorCheckStatus::Ok,
+            message: format!(
+                "Database connected: {} ({} zones)",
+                config.database.database_type, total
+            ),
         },
-        Ok(Err(e)) => DoctorCheckResult {
-            ok: false,
-            detail: e.to_string(),
+        Ok(Err(e)) => DoctorCheck {
+            status: DoctorCheckStatus::Fail,
+            message: format!("Database not reachable: {}", e),
         },
-        Err(_) => DoctorCheckResult {
-            ok: false,
-            detail: format!(
-                "database check timed out after {} seconds",
+        Err(_) => DoctorCheck {
+            status: DoctorCheckStatus::Fail,
+            message: format!(
+                "Database not reachable: timed out after {} seconds",
                 DB_PROBE_TIMEOUT.as_secs()
             ),
         },
@@ -51,19 +54,19 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
     let (dns_server, catalog_serial) =
         match probe::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout).await {
             Ok(serial) => (
-                DoctorCheckResult {
-                    ok: true,
-                    detail: format!(
-                        "{} (catalog zone {} at serial {})",
+                DoctorCheck {
+                    status: DoctorCheckStatus::Ok,
+                    message: format!(
+                        "DNS server reachable: {} (catalog zone {} at serial {})",
                         dns_addr, config.dns.catalog_zone_name, serial
                     ),
                 },
                 Some(serial),
             ),
             Err(e) => (
-                DoctorCheckResult {
-                    ok: false,
-                    detail: format!("{}: {}", dns_addr, e),
+                DoctorCheck {
+                    status: DoctorCheckStatus::Fail,
+                    message: format!("DNS server not reachable: {}: {}", dns_addr, e),
                 },
                 None,
             ),

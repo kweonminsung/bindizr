@@ -108,7 +108,6 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.notify.batch_ms, 0);
     assert_eq!(parsed.dns.notify.retries, 3);
     assert_eq!(parsed.dns.notify.timeout_secs, 3);
-    assert!(parsed.dns.transfer_cache.enabled);
     assert_eq!(parsed.dns.transfer_cache.max_records, 500_000);
     assert!(parsed.dns.nsupdate_tsig_required);
     assert_eq!(parsed.dns.catalog_zone_name, "catalog.bindizr");
@@ -129,7 +128,6 @@ fn from_toml_defaults_fields_of_an_empty_sub_table() {
     .unwrap();
 
     assert_eq!(parsed.dns.notify, Default::default());
-    assert!(parsed.dns.transfer_cache.enabled);
     assert_eq!(parsed.dns.transfer_cache.max_records, 10);
 }
 
@@ -212,7 +210,6 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
             "BINDIZR_DNS_NOTIFY_BATCH_MS" => Some("50".to_string()),
             "BINDIZR_DNS_NOTIFY_RETRIES" => Some("7".to_string()),
             "BINDIZR_DNS_NOTIFY_TIMEOUT_SECS" => Some("11".to_string()),
-            "BINDIZR_DNS_TRANSFER_CACHE_ENABLED" => Some("false".to_string()),
             "BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS" => Some("0".to_string()),
             "BINDIZR_DNS_SCHEDULER_INTERVAL_SECS" => Some("0".to_string()),
             "BINDIZR_DNS_ZONE_DEFAULTS_TTL" => Some("600".to_string()),
@@ -242,7 +239,6 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.dns.notify.batch_ms, 50);
     assert_eq!(overridden.dns.notify.retries, 7);
     assert_eq!(overridden.dns.notify.timeout_secs, 11);
-    assert!(!overridden.dns.transfer_cache.enabled);
     assert_eq!(overridden.dns.zone_history_retention_days, 0);
     // 0 is the off switch, not a rejected value.
     assert_eq!(overridden.dns.scheduler_interval_secs, 0);
