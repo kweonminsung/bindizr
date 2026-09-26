@@ -4,7 +4,7 @@ use bindizr_core::dns::name::OwnerName;
 use bindizr_db::repository::LockLevel;
 
 use super::{
-    RecordService, matches_record,
+    RecordService,
     validation::{normalize_record_owner_name, parse_record_type},
 };
 use crate::{
@@ -231,8 +231,7 @@ impl RecordService {
             let matched: Vec<Record> = records_at_name
                 .iter()
                 .filter(|record| {
-                    matches_record(
-                        record,
+                    record.matches(
                         record_type.as_ref(),
                         match_value.as_deref(),
                         filter.priority,

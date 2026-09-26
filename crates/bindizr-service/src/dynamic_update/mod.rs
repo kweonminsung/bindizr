@@ -21,7 +21,7 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    record::{AddOutcome, RecordService, matches_record},
+    record::{AddOutcome, RecordService},
     repository::RepositoryService,
     serial::generate_serial,
     tsig_key::grant::{authorize_prerequisite, authorize_update},
@@ -397,7 +397,7 @@ async fn delete_matching_tx(
 
     let matched: Vec<Record> = owner_records
         .iter()
-        .filter(|record| matches_record(record, record_type, value, priority))
+        .filter(|record| record.matches(record_type, value, priority))
         .cloned()
         .collect();
 

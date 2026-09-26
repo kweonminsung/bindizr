@@ -41,6 +41,30 @@ pub struct RecordKey {
 }
 
 impl Record {
+    /// Whether this stored record falls inside the narrowing RFC 2136,
+    /// Section 2.5.2 spells for a delete: the type, then the rdata, then the
+    /// preference. Values compare canonically and without the priority, which
+    /// MX and SRV keep in their own column and which narrows separately.
+    pub fn matches(
+        &self,
+        record_type: Option<&RecordType>,
+        value: Option<&str>,
+        priority: Option<i32>,
+    ) -> bool {
+        if record_type.is_some_and(|wanted| *wanted != self.record_type) {
+            return false;
+        }
+        if value.is_some_and(|value| {
+            !self
+                .record_type
+                .values_equal(&self.value, None, value, None)
+        }) {
+            return false;
+        }
+
+        priority.is_none_or(|wanted| self.priority == Some(wanted))
+    }
+
     /// Whether this row holds `value` as its rdata (with `priority`, for MX
     /// and SRV), compared canonically under the row's own type.
     pub fn has_rdata(&self, value: &str, priority: Option<i32>) -> bool {
