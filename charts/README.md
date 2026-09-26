@@ -66,7 +66,7 @@ To try the chart in a local kind cluster, see [`examples/kind/`](../examples/kin
 
 - Bindizr and BIND do not call the Kubernetes API, so the chart creates no Role or RoleBinding.
 - `bind9.service.type` is `LoadBalancer`. Where nothing provisions one — kind, bare metal without MetalLB — set it to `NodePort`, with `bind9.service.nodePort` to pin the port.
-- The secondaries live in Bindizr's database: a starting bindizr pod registers the BIND pods by their headless names, plus `bindizr.dns.extraSecondaries` (`name` and `address` each), through `bindizr secondary create`, and one already registered takes the chart's address through `bindizr secondary update`. Every daemon option has a value under `bindizr.*`, rendered into the ConfigMap.
+- The secondaries live in Bindizr's database: a starting bindizr pod registers the BIND pods by their headless names, plus `bindizr.dns.extraSecondaries` (`name` and `address` each), through `bindizr secondary create`, one already registered takes the chart's address through `bindizr secondary update`, and the `bind9-N` rows of replicas scaled away are deleted. Every daemon option has a value under `bindizr.*`, rendered into the ConfigMap.
 - Non-secret daemon settings come from the ConfigMap; the database URL comes from its Secret through `BINDIZR_DATABASE_URL`.
 - SQLite is not supported by this Helm chart.
 - nsupdate TSIG keys and their zone grants are managed at runtime: `POST /tsig-keys` with a token, or `bindizr tsig-key` in the pod. `bindizr.dns.nsupdateTsigRequired` (default `true`) accepts unsigned updates when turned off, which is for testing only.
