@@ -4,10 +4,11 @@
 use bindizr_core::dns::dnssec::import_key;
 use chrono::Utc;
 
-use super::{DnssecService, notify_zone, status::build_status_tx};
+use super::{DnssecService, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
+    dnssec::SignedZone,
     dnssec_policy::normalize_policy_name,
     error::ServiceError,
     model::{
@@ -17,8 +18,7 @@ use crate::{
     },
     repository::RepositoryService,
     types::{
-        DnssecKeyMaterial, ExportDnssecKeysResponse, GetDnssecStatusResponse,
-        ImportDnssecKeyRequest,
+        DnssecKeyMaterial, DnssecStatusResponse, ExportDnssecKeysResponse, ImportDnssecKeyRequest,
     },
     zone::ZoneService,
 };
@@ -35,16 +35,16 @@ impl DnssecService {
         // from the keys.
         let mut tx = RepositoryService::begin_read_tx("failed to export DNSSEC keys").await?;
         let result = async {
-            let (zone, _, keys) =
+            let SignedZone { zone, keys, .. } =
                 Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
             Ok(ExportDnssecKeysResponse {
                 zone_name: zone.name.as_str().to_string(),
                 keys: keys
                     .iter()
                     .map(|key| DnssecKeyMaterial {
-                        role: key.role.to_string(),
+                        role: key.role,
                         algorithm: key.algorithm.to_int(),
-                        key_tag: key.key_tag,
+                        key_tag: key.key_tag as u16,
                         dnskey_record: format!(
                             "{}. IN DNSKEY {} 3 {} {}",
                             zone.name.as_str(),
@@ -69,14 +69,14 @@ impl DnssecService {
         caller: &Caller,
         zone_name: &str,
         request: ImportDnssecKeyRequest,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
         if request.keys.is_empty() {
             return Err(ServiceError::invalid_input("no key pair to import"));
         }
         let policy_name = normalize_policy_name(
             request
-                .policy
+                .policy_name
                 .as_deref()
                 .unwrap_or(DEFAULT_DNSSEC_POLICY_NAME),
         )?;
@@ -151,27 +151,32 @@ impl DnssecService {
             // Store the validated key set and its first signed view together.
             RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id))
                 .await?;
-            let zone = Zone {
-                dnssec_policy_id: Some(policy.id),
-                ..zone
-            };
             let mut stored = Vec::with_capacity(keys.len());
             for key in keys {
                 stored.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
             }
+            let signed = SignedZone {
+                zone: Zone {
+                    dnssec_policy_id: Some(policy.id),
+                    ..zone
+                },
+                policy,
+                keys: stored,
+            };
 
-            let new_serial = Self::resign_zone_tx(
+            let new_serial =
+                Self::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
+                    .await?
+                    .unwrap_or(signed.zone.serial);
+
+            build_status_tx(
                 &mut tx,
-                &zone,
-                &policy,
-                &stored,
-                false,
-                &caller.change_subject(),
+                &signed.zone,
+                Some(&signed.policy),
+                &signed.keys,
+                new_serial,
             )
-            .await?
-            .unwrap_or(zone.serial);
-
-            build_status_tx(&mut tx, &zone, Some(&policy), &stored, new_serial).await
+            .await
         }
         .await;
         let response =
@@ -180,7 +185,7 @@ impl DnssecService {
         log::info!("event=dnssec_import_keys zone={}", response.zone_name);
 
         // Announce the imported keys only after their signed records are committed.
-        notify_zone(&response.zone_name).await;
+        crate::notify::notify_after_update(&response.zone_name).await;
         Ok(response)
     }
 }

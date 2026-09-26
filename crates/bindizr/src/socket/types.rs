@@ -1,7 +1,8 @@
 use bindizr_service::types::{
-    CreateTokenGrantRequest, CreateTsigGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest,
-    ImportZoneRequest, PageFilter, RolloverDnssecRequest, UpdateDnssecPolicyRequest,
-    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateZoneRequest,
+    CreateGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest, ImportZoneRequest,
+    NotifyCheckResponse, PageFilter, RolloverDnssecRequest, SecondaryStatusResponse,
+    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
+    UpdateSecondaryRequest, UpdateZoneRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,12 @@ pub(crate) enum DaemonCommandKind {
     CreateToken,
     ListTokens,
     DeleteToken,
+    CreateSecondary,
+    ListSecondaries,
+    GetSecondary,
+    UpdateSecondary,
+    DeleteSecondary,
+    CheckSecondary,
     CreateTsigKey,
     ListTsigKeys,
     GetTsigKey,
@@ -91,18 +98,6 @@ pub(crate) struct DaemonResponse {
 // a renamed field breaks at compile time. A payload that is exactly a service
 // request type is sent as that type.
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ZoneNameParams {
-    pub(crate) name: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct RecordIdParams {
-    pub(crate) id: i32,
-}
-
 /// Parameters for deleting a zone by name.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -125,14 +120,10 @@ pub(crate) struct DeleteRecordParams {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct TsigKeyNameParams {
+pub(crate) struct UpdateSecondaryParams {
     pub(crate) name: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DnssecPolicyNameParams {
-    pub(crate) name: String,
+    #[serde(flatten)]
+    pub(crate) request: UpdateSecondaryRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -141,12 +132,6 @@ pub(crate) struct UpdateDnssecPolicyParams {
     pub(crate) name: String,
     #[serde(flatten)]
     pub(crate) request: UpdateDnssecPolicyRequest,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct TokenNameParams {
-    pub(crate) name: String,
 }
 
 /// Payload for listing the grants of one named subject: a TSIG key, an API
@@ -164,13 +149,7 @@ pub(crate) struct ListGrantsParams {
 pub(crate) struct CreateTsigGrantParams {
     pub(crate) key_name: String,
     #[serde(flatten)]
-    pub(crate) request: CreateTsigGrantRequest,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DeleteTsigGrantParams {
-    pub(crate) id: i32,
+    pub(crate) request: CreateGrantRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -178,13 +157,7 @@ pub(crate) struct DeleteTsigGrantParams {
 pub(crate) struct CreateTokenGrantParams {
     pub(crate) token_name: String,
     #[serde(flatten)]
-    pub(crate) request: CreateTokenGrantRequest,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DeleteTokenGrantParams {
-    pub(crate) id: i32,
+    pub(crate) request: CreateGrantRequest,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -264,7 +237,7 @@ pub(crate) struct NotifyZoneParams {
 #[serde(deny_unknown_fields)]
 pub(crate) struct RollbackZoneParams {
     pub(crate) name: String,
-    pub(crate) serial: i32,
+    pub(crate) serial: u32,
     #[serde(default)]
     pub(crate) dry_run: bool,
 }
@@ -279,11 +252,12 @@ pub(crate) struct ListZoneVersionsParams {
     pub(crate) include_signer_serials: bool,
 }
 
+/// One of a zone's versions, by name and serial.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ZoneVersionParams {
     pub(crate) name: String,
-    pub(crate) serial: i32,
+    pub(crate) serial: u32,
 }
 
 /// Payload for diffing two of a zone's serials; a missing `to_serial` compares
@@ -292,8 +266,8 @@ pub(crate) struct ZoneVersionParams {
 #[serde(deny_unknown_fields)]
 pub(crate) struct DiffZoneVersionsParams {
     pub(crate) name: String,
-    pub(crate) from_serial: i32,
-    pub(crate) to_serial: Option<i32>,
+    pub(crate) from_serial: u32,
+    pub(crate) to_serial: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -355,38 +329,40 @@ pub(crate) struct DaemonStatusResponse {
     pub(crate) api_authentication: bool,
     pub(crate) dns_addr: String,
     pub(crate) database_type: String,
-    /// Configured secondary addresses.
-    pub(crate) secondaries: usize,
+    /// Enabled secondaries; `None` when the database did not answer.
+    pub(crate) secondaries: Option<usize>,
     /// `None`, with `database_error` set, when the database did not answer;
     /// `status` prints the block and then exits non-zero.
     pub(crate) zones: Option<u64>,
     pub(crate) database_error: Option<String>,
 }
 
-/// Daemon-side installation checks returned by the `Doctor` command.
+/// Daemon-side installation checks returned by the `Doctor` command. The
+/// secondaries are classified against the catalog zone's serial, the way
+/// `zone status` classifies them against a member zone's.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DaemonDoctorResponse {
-    pub(crate) database: DoctorCheckResult,
-    pub(crate) dns_server: DoctorCheckResult,
-    /// The zone the serials below belong to; `zone status` probes a member
-    /// zone instead.
-    pub(crate) catalog_zone: String,
+    pub(crate) database: DoctorCheck,
+    pub(crate) dns_server: DoctorCheck,
+    pub(crate) catalog_zone_name: String,
     /// Catalog serial served by bindizr's own DNS listener, when reachable.
     pub(crate) catalog_serial: Option<u32>,
-    pub(crate) secondaries: Vec<DoctorProbeResult>,
-    pub(crate) notifies: Vec<DoctorProbeResult>,
+    pub(crate) secondaries: Vec<SecondaryStatusResponse>,
+    pub(crate) notifies: Vec<NotifyCheckResponse>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct DoctorCheckResult {
-    pub(crate) ok: bool,
-    pub(crate) detail: String,
+/// One check's outcome.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum DoctorCheckStatus {
+    Ok,
+    Fail,
+    Skip,
 }
 
-/// One secondary's SOA probe or NOTIFY outcome; `error` is set on failure.
+/// One installation check, worded as `doctor` reports it.
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct DoctorProbeResult {
-    pub(crate) address: String,
-    pub(crate) serial: Option<u32>,
-    pub(crate) error: Option<String>,
+pub(crate) struct DoctorCheck {
+    pub(crate) status: DoctorCheckStatus,
+    pub(crate) message: String,
 }

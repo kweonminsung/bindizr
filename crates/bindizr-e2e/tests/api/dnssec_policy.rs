@@ -152,7 +152,7 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": format!("{}-missing", app.namespace()) , "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "policy_name": format!("{}-missing", app.namespace()) , "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -163,11 +163,11 @@ async fn dnssec_policy_in_use_cannot_be_deleted() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "policy_name": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["dnssec"]["policy"]["name"], policy_name);
+    assert_eq!(body["policy"]["name"], policy_name);
 
     let (status, body) = app
         .send_request(
@@ -211,11 +211,11 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    let serial_before = body["dnssec"]["serial"].as_i64().unwrap();
+    let serial_before = body["serial"].as_i64().unwrap();
 
     // A policy differing only in algorithm: the move double-signs the zone
     // through an algorithm rollover (RFC 6840, Section 5.11).
@@ -233,11 +233,11 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
         .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": ed25519_policy })),
+            Some(json!({ "policy_name": ed25519_policy })),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     assert_eq!(dnssec["policy"]["name"], ed25519_policy);
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 2);
@@ -258,14 +258,11 @@ async fn zone_moves_between_policies_and_rolls_algorithm() {
         .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": ed25519_policy })),
+            Some(json!({ "policy_name": ed25519_policy })),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        body["dnssec"]["serial"].as_i64().unwrap(),
-        serial_before + 1
-    );
+    assert_eq!(body["serial"].as_i64().unwrap(), serial_before + 1);
 }
 
 /// Verify that zone moves between denial chains without going insecure.
@@ -290,11 +287,11 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": nsec_policy, "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "policy_name": nsec_policy, "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let mut serial = body["dnssec"]["serial"].as_i64().unwrap();
+    let mut serial = body["serial"].as_i64().unwrap();
 
     let denial_types = async |app: &TestApp| -> Vec<String> {
         let (status, body) = app
@@ -334,12 +331,12 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
         .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": nsec3_policy })),
+            Some(json!({ "policy_name": nsec3_policy })),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["dnssec"]["keys"].as_array().unwrap().len(), 1);
-    assert_eq!(body["dnssec"]["serial"].as_i64().unwrap(), serial + 1);
+    assert_eq!(body["keys"].as_array().unwrap().len(), 1);
+    assert_eq!(body["serial"].as_i64().unwrap(), serial + 1);
     serial += 1;
     assert_eq!(denial_types(&app).await, ["NSEC3", "NSEC3PARAM"]);
 
@@ -348,10 +345,10 @@ async fn zone_moves_between_denial_chains_without_going_insecure() {
         .send_request(
             Method::PUT,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": nsec_policy })),
+            Some(json!({ "policy_name": nsec_policy })),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["dnssec"]["serial"].as_i64().unwrap(), serial + 1);
+    assert_eq!(body["serial"].as_i64().unwrap(), serial + 1);
     assert_eq!(denial_types(&app).await, ["NSEC"]);
 }

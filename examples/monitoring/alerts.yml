@@ -48,7 +48,7 @@ groups:
           severity: warning
         annotations:
           summary: "NOTIFY delivery to a secondary is failing"
-          description: "Check dns.secondary_addrs and BIND's allow-notify; `bindizr doctor` reports both."
+          description: "Check the secondary's address (`bindizr secondary list`) and BIND's allow-notify; `bindizr doctor` reports both."
 
       # The client is outside the ACL, or signs with an unknown key.
       - alert: BindizrTransfersRefused
@@ -57,7 +57,7 @@ groups:
           severity: warning
         annotations:
           summary: "Zone transfers are being refused"
-          description: "A client outside dns.secondary_addrs, or one signing with an unknown TSIG key, is asking for a transfer."
+          description: "A client that is not a registered, enabled secondary, or one signing with an unknown TSIG key, is asking for a transfer."
 
       - alert: BindizrApiErrors
         expr: |

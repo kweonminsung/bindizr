@@ -40,9 +40,9 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
     }
 }
 
-/// Verify that published key cosigns key RRsets but not zone data.
+/// Verify that published key cosigns key record sets but not zone data.
 #[test]
-fn published_key_cosigns_key_rrsets_but_not_zone_data() {
+fn published_key_cosigns_key_record_sets_but_not_zone_data() {
     let zone = test_zone();
     let keys = [
         test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active),
@@ -73,7 +73,7 @@ fn published_key_cosigns_key_rrsets_but_not_zone_data() {
         2
     );
     assert_eq!(records_of_type(&diff.added, DnssecRecordType::Cds).len(), 2);
-    // Both SEP keys sign the DNSKEY RRset — a validator may arrive via either
+    // Both SEP keys sign the DNSKEY record set — a validator may arrive via either
     // DS — but only the active key signs zone data.
     assert_eq!(
         rrsigs_covering(
@@ -114,8 +114,8 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
     });
 
     let apex = OwnerName::apex();
-    // Still in the DNSKEY RRset (cached signatures and a possibly lingering
-    // old DS need it) and still co-signing that RRset...
+    // Still in the DNSKEY record set (cached signatures and a possibly lingering
+    // old DS need it) and still co-signing that record set...
     assert_eq!(
         records_of_type(&diff.added, DnssecRecordType::Dnskey).len(),
         2
@@ -139,9 +139,9 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
     assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
 }
 
-/// Verify that split keys partition key RRsets from zone data.
+/// Verify that split keys partition key record sets from zone data.
 #[test]
-fn split_keys_partition_key_rrsets_from_zone_data() {
+fn split_keys_partition_key_record_sets_from_zone_data() {
     let zone = test_zone();
     let keys = [
         test_key(&zone, 1, DnssecKeyRole::Ksk, DnssecKeyState::Active),
@@ -170,7 +170,7 @@ fn split_keys_partition_key_rrsets_from_zone_data() {
         records_of_type(&diff.added, DnssecRecordType::Dnskey).len(),
         2
     );
-    // Only the KSK is in the parent DS set and signs the key RRsets
+    // Only the KSK is in the parent DS set and signs the key record sets
     // (RFC 7344, Section 4.1); only the ZSK signs zone data.
     assert_eq!(records_of_type(&diff.added, DnssecRecordType::Cds).len(), 1);
     assert_eq!(
@@ -223,7 +223,7 @@ fn algorithm_rollover_double_signs_zone_data_while_published() {
         force: false,
     });
 
-    // RFC 6840, Section 5.11: every algorithm in the DNSKEY RRset must sign
+    // RFC 6840, Section 5.11: every algorithm in the DNSKEY record set must sign
     // all data, so the pre-published new-algorithm key signs immediately.
     let apex = OwnerName::apex();
     assert_eq!(

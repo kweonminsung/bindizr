@@ -33,23 +33,23 @@ impl SigningKey {
     }
 }
 
-/// One RR of an update section, in the class that gives it its meaning
+/// One record of an update section, in the class that gives it its meaning
 /// (RFC 2136, Section 2.5).
-pub(crate) enum UpdateRr {
+pub(crate) enum UpdateRecord {
     /// CLASS IN: add this address record.
     AddA {
         name: String,
         ttl: u32,
         addr: String,
     },
-    /// CLASS ANY: delete the RRset.
-    DeleteRrset { name: String, rtype: Rtype },
+    /// CLASS ANY: delete the record set.
+    DeleteRecordSet { name: String, rtype: Rtype },
     /// CLASS NONE: delete just this address record.
     DeleteA { name: String, addr: String },
 }
 
 /// One prerequisite (RFC 2136, Section 2.4).
-pub(crate) enum PrereqRr {
+pub(crate) enum PrereqRecord {
     /// CLASS ANY, TYPE ANY: the owner name must exist.
     NameInUse { name: String },
     /// CLASS NONE, TYPE ANY: the owner name must not exist.
@@ -63,8 +63,8 @@ pub(crate) enum PrereqRr {
 pub(crate) fn send_update(
     port: u16,
     zone: &str,
-    prerequisites: &[PrereqRr],
-    updates: &[UpdateRr],
+    prerequisites: &[PrereqRecord],
+    updates: &[UpdateRecord],
 ) -> Result<Rcode, String> {
     send(port, zone, prerequisites, updates, None)
 }
@@ -73,8 +73,8 @@ pub(crate) fn send_update(
 pub(crate) fn send_signed_update(
     port: u16,
     zone: &str,
-    prerequisites: &[PrereqRr],
-    updates: &[UpdateRr],
+    prerequisites: &[PrereqRecord],
+    updates: &[UpdateRecord],
     key: &SigningKey,
 ) -> Result<Rcode, String> {
     send(port, zone, prerequisites, updates, Some(key))
@@ -84,8 +84,8 @@ pub(crate) fn send_signed_update(
 fn send(
     port: u16,
     zone: &str,
-    prerequisites: &[PrereqRr],
-    updates: &[UpdateRr],
+    prerequisites: &[PrereqRecord],
+    updates: &[UpdateRecord],
     key: Option<&SigningKey>,
 ) -> Result<Rcode, String> {
     let query_id = (std::process::id() as u16)
@@ -121,8 +121,8 @@ fn send(
 fn build_update(
     query_id: u16,
     zone: &str,
-    prerequisites: &[PrereqRr],
-    updates: &[UpdateRr],
+    prerequisites: &[PrereqRecord],
+    updates: &[UpdateRecord],
 ) -> Result<AdditionalBuilder<Vec<u8>>, String> {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(query_id);
@@ -136,13 +136,13 @@ fn build_update(
     let mut answer = question.answer();
     for prerequisite in prerequisites {
         match prerequisite {
-            PrereqRr::NameInUse { name: owner } => answer
+            PrereqRecord::NameInUse { name: owner } => answer
                 .push(empty_record(owner, Rtype::ANY, Class::ANY)?)
                 .map_err(|e| e.to_string())?,
-            PrereqRr::NameNotInUse { name: owner } => answer
+            PrereqRecord::NameNotInUse { name: owner } => answer
                 .push(empty_record(owner, Rtype::ANY, Class::NONE)?)
                 .map_err(|e| e.to_string())?,
-            PrereqRr::AEquals { name: owner, addr } => {
+            PrereqRecord::AEquals { name: owner, addr } => {
                 let data = A::from_str(addr).map_err(|e| e.to_string())?;
                 answer
                     .push(Record::new(parse_name(owner)?, Class::IN, Ttl::ZERO, data))
@@ -154,7 +154,7 @@ fn build_update(
     let mut authority = answer.authority();
     for update in updates {
         match update {
-            UpdateRr::AddA {
+            UpdateRecord::AddA {
                 name: owner,
                 ttl,
                 addr,
@@ -169,10 +169,10 @@ fn build_update(
                     ))
                     .map_err(|e| e.to_string())?;
             }
-            UpdateRr::DeleteRrset { name: owner, rtype } => authority
+            UpdateRecord::DeleteRecordSet { name: owner, rtype } => authority
                 .push(empty_record(owner, *rtype, Class::ANY)?)
                 .map_err(|e| e.to_string())?,
-            UpdateRr::DeleteA { name: owner, addr } => {
+            UpdateRecord::DeleteA { name: owner, addr } => {
                 let data = A::from_str(addr).map_err(|e| e.to_string())?;
                 authority
                     .push(Record::new(
@@ -190,10 +190,10 @@ fn build_update(
     Ok(authority.additional())
 }
 
-/// An RR carrying no rdata, built from an rtype the builder need not know.
+/// A record carrying no rdata, built from an rtype the builder need not know.
 type EmptyRecord = Record<Name<Vec<u8>>, UnknownRecordData<Vec<u8>>>;
 
-/// An RR with empty rdata and TTL 0 — the shape every delete-RRset and
+/// A record with empty rdata and TTL 0 — the shape every delete-record-set and
 /// name-existence entry takes.
 fn empty_record(owner: &str, rtype: Rtype, class: Class) -> Result<EmptyRecord, String> {
     let data = UnknownRecordData::from_octets(rtype, Vec::new()).map_err(|e| e.to_string())?;

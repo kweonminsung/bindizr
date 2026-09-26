@@ -18,11 +18,11 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     assert_eq!(dnssec["zone_name"], zone_name);
     assert_eq!(dnssec["enabled"], true);
     // Enabling without a policy signs under the seeded `default` policy.
@@ -60,7 +60,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -70,8 +70,8 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["dnssec"]["enabled"], true);
-    assert_eq!(body["dnssec"]["keys"][0]["key_tag"], key_tag);
+    assert_eq!(body["enabled"], true);
+    assert_eq!(body["keys"][0]["key_tag"], key_tag);
 
     let (status, _) = app
         .send_request(
@@ -122,7 +122,7 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         "include_signer_serials=true must include signer-only serials: {all_serials:?}"
     );
 
-    // A DS secures a delegation, so the NS RRset must exist first.
+    // A DS secures a delegation, so the NS record set must exist first.
     let ds_value = "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
     let (status, _) = app
         .send_request(
@@ -207,9 +207,10 @@ async fn dnssec_enable_status_sign_disable_lifecycle() {
         .send_request(Method::GET, &format!("/zones/{zone_name}/dnssec"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["dnssec"]["enabled"], false);
-    assert!(body["dnssec"].get("policy").is_none());
-    assert!(body["dnssec"]["keys"].as_array().unwrap().is_empty());
+    assert_eq!(body["enabled"], false);
+    // Absent values are null, never a missing key.
+    assert!(body["policy"].is_null());
+    assert!(body["keys"].as_array().unwrap().is_empty());
 
     let (status, body) = app
         .send_request(Method::DELETE, &format!("/zones/{zone_name}/dnssec"), None)
@@ -240,11 +241,11 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "policy": policy_name , "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "policy_name": policy_name , "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     assert_eq!(dnssec["policy"]["denial"], "nsec3");
     assert_eq!(dnssec["policy"]["split_keys"], true);
 
@@ -282,7 +283,7 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let keys = body["dnssec"]["keys"].as_array().unwrap();
+    let keys = body["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 3);
     let published = keys
         .iter()
@@ -327,7 +328,7 @@ async fn dnssec_enable_requires_a_global_token() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -359,7 +360,7 @@ async fn records_listing_signed_pages_the_derived_plane() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -464,7 +465,7 @@ async fn a_signed_listing_searches_the_derived_plane_by_name() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9" })),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"] })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
@@ -534,11 +535,11 @@ async fn dnssec_csk_rollover_lifecycle() {
         .send_request(
             Method::POST,
             &format!("/zones/{zone_name}/dnssec"),
-            Some(json!({ "parent_ns_addrs": "127.0.0.1:9"})),
+            Some(json!({ "parent_ns_addrs": ["127.0.0.1:9"]})),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 1);
     assert_eq!(keys[0]["role"], "csk");
@@ -557,7 +558,7 @@ async fn dnssec_csk_rollover_lifecycle() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 2);
     let published = keys
@@ -580,7 +581,7 @@ async fn dnssec_csk_rollover_lifecycle() {
         ds_records.iter().any(|ds| ds["presentation"] == old_ds),
         "old DS left the set during the rollover: {ds_records:?}"
     );
-    // Pre-publishing changes the DNSKEY RRset secondaries hold, so each
+    // Pre-publishing changes the DNSKEY record set secondaries hold, so each
     // rollover step rides the serial/IXFR mechanics.
     assert_eq!(dnssec["serial"].as_i64().unwrap(), serial_before + 2);
 
@@ -614,7 +615,7 @@ async fn dnssec_csk_rollover_lifecycle() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    let dnssec = &body["dnssec"];
+    let dnssec = &body;
     let keys = dnssec["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 2);
     let key_by_id = |id: i64| {

@@ -61,10 +61,10 @@ pub struct ExternalDnsChangesResponse {
     pub changed_zones: Vec<String>,
     /// Counted one per value written, not per name and type.
     #[schema(example = 2)]
-    pub records_added: u32,
+    pub added: u64,
     /// Counted one per value removed, not per name and type.
     #[schema(example = 1)]
-    pub records_deleted: u32,
+    pub deleted: u64,
 }
 
 /// The names the ExternalDNS caller may manage under its grants, each

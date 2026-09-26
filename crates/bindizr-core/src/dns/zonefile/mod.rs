@@ -14,7 +14,7 @@ use crate::{
     model::record::RecordType,
 };
 
-/// An RR's value as the zone file spells it.
+/// A record's value as the zone file spells it.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ZoneFileValue {
     /// Presentation-form rdata, for every type but TXT.
@@ -23,8 +23,8 @@ pub enum ZoneFileValue {
     CharacterStrings(Vec<String>),
 }
 
-/// One RR from a BIND zone file.
-pub struct ZoneFileRr {
+/// One record from a BIND zone file.
+pub struct ZoneFileRecord {
     /// Absolute owner name (e.g. `www.example.com.`).
     pub owner_fqdn: String,
     pub record_type: RecordType,
@@ -47,7 +47,7 @@ pub struct ZoneFileSoa {
 
 /// What a zone file yielded: its usable records, and what it could not use.
 pub struct ParsedZoneFile {
-    pub rrs: Vec<ZoneFileRr>,
+    pub records: Vec<ZoneFileRecord>,
     /// The apex SOA's fields, when the file carried one.
     pub soa: Option<ZoneFileSoa>,
     /// Human-readable problems (parse failure, out-of-range TTL, unsupported
@@ -78,33 +78,33 @@ impl ParsedZoneFile {
         zonefile.set_default_class(Class::IN);
         zonefile.extend_from_slice(buffer.as_bytes());
 
-        let mut rrs = Vec::new();
+        let mut records = Vec::new();
         let mut errors = Vec::new();
         let mut unsupported = Vec::new();
         let mut soa = None;
 
         loop {
             match zonefile.next_entry() {
-                Ok(Some(Entry::Record(rr))) => {
-                    if rr.class() != Class::IN {
+                Ok(Some(Entry::Record(record))) => {
+                    if record.class() != Class::IN {
                         unsupported.push(format!(
                             "unsupported record class '{}' for '{}'",
-                            rr.class(),
-                            rr.owner()
+                            record.class(),
+                            record.owner()
                         ));
                         continue;
                     }
 
-                    let record_type = match rr.rtype() {
+                    let record_type = match record.rtype() {
                         // Not stored as a record; `soa` carries its fields for
                         // a zone created from this file. Only the apex SOA is
                         // this zone's: another owner's would hand it a foreign
                         // serial and timers.
                         Rtype::SOA => {
-                            if to_fqdn_lowercase(&rr.owner().to_string()) != origin_fqdn {
+                            if to_fqdn_lowercase(&record.owner().to_string()) != origin_fqdn {
                                 errors.push(format!(
                                     "SOA for '{}' does not belong to zone '{}'",
-                                    rr.owner(),
+                                    record.owner(),
                                     origin_fqdn
                                 ));
                             } else if soa.is_some() {
@@ -113,7 +113,7 @@ impl ParsedZoneFile {
                                     origin_fqdn
                                 ));
                             } else {
-                                soa = to_zone_file_soa(&rr);
+                                soa = to_zone_file_soa(&record);
                             }
                             continue;
                         }
@@ -123,7 +123,7 @@ impl ParsedZoneFile {
                                 unsupported.push(format!(
                                     "unsupported record type '{}' for '{}'",
                                     other,
-                                    rr.owner()
+                                    record.owner()
                                 ));
                                 continue;
                             }
@@ -132,19 +132,19 @@ impl ParsedZoneFile {
 
                     // Stored as i32; reject TTLs that would wrap negative (like the
                     // JSON and nsupdate paths) instead of silently corrupting them.
-                    let ttl_secs = rr.ttl().as_secs();
+                    let ttl_secs = record.ttl().as_secs();
                     if ttl_secs > i32::MAX as u32 {
                         errors.push(format!(
                             "TTL {} for '{}' exceeds the maximum of {}",
                             ttl_secs,
-                            rr.owner(),
+                            record.owner(),
                             i32::MAX
                         ));
                         continue;
                     }
                     let ttl = ttl_secs as i32;
 
-                    let (value, priority) = match rr.data() {
+                    let (value, priority) = match record.data() {
                         // Rendered from the parsed fields: `domain` appends the
                         // absolute dot to a name it already renders as `.`, so its
                         // form spells a root replacement `..`.
@@ -160,7 +160,7 @@ impl ParsedZoneFile {
                         {
                             Ok(text) => (ZoneFileValue::Rdata(text), None),
                             Err(e) => {
-                                errors.push(format!("NAPTR value for '{}': {}", rr.owner(), e));
+                                errors.push(format!("NAPTR value for '{}': {}", record.owner(), e));
                                 continue;
                             }
                         },
@@ -182,7 +182,7 @@ impl ParsedZoneFile {
                             if non_utf8 {
                                 errors.push(format!(
                                     "TXT value for '{}' is not valid UTF-8",
-                                    rr.owner()
+                                    record.owner()
                                 ));
                                 continue;
                             }
@@ -209,8 +209,8 @@ impl ParsedZoneFile {
                         }
                     };
 
-                    rrs.push(ZoneFileRr {
-                        owner_fqdn: to_fqdn_lowercase(&rr.owner().to_string()),
+                    records.push(ZoneFileRecord {
+                        owner_fqdn: to_fqdn_lowercase(&record.owner().to_string()),
                         record_type,
                         value,
                         ttl,
@@ -233,7 +233,7 @@ impl ParsedZoneFile {
         }
 
         ParsedZoneFile {
-            rrs,
+            records,
             soa,
             errors,
             unsupported,
@@ -243,8 +243,8 @@ impl ParsedZoneFile {
 
 /// Read an SOA record's fields, or `None` when a timer does not fit the i32
 /// columns a zone stores them in.
-fn to_zone_file_soa(rr: &ScannedRecord) -> Option<ZoneFileSoa> {
-    let ZoneRecordData::Soa(soa) = rr.data() else {
+fn to_zone_file_soa(record: &ScannedRecord) -> Option<ZoneFileSoa> {
+    let ZoneRecordData::Soa(soa) = record.data() else {
         return None;
     };
     let secs = |value: Ttl| i32::try_from(value.as_secs()).ok();

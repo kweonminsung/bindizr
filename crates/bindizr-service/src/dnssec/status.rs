@@ -1,9 +1,10 @@
 //! Assembling the status a signed zone reports: its policy, key inventory,
 //! and the DS records the parent needs.
 
+use bindizr_core::dns::serial_to_u32;
 use chrono::{DateTime, Duration, Utc};
 
-use super::DnssecService;
+use super::{DnssecService, parent_ns_addrs::parent_ns_addr_entries};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
@@ -14,7 +15,7 @@ use crate::{
         zone::Zone,
     },
     repository::{RepositoryService, RepositoryTx},
-    types::{DnssecDsInfo, DnssecKeyInfo, GetDnssecPolicyResponse, GetDnssecStatusResponse},
+    types::{DnssecDsInfo, DnssecKeyInfo, DnssecStatusResponse, GetDnssecPolicyResponse},
     zone::ZoneService,
 };
 
@@ -24,7 +25,7 @@ impl DnssecService {
     pub async fn get_status(
         caller: &Caller,
         zone_name: &str,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
 
         // The DS records are derived from the apex name and the keys, so they
@@ -74,7 +75,7 @@ pub(crate) async fn build_status_tx(
     policy: Option<&DnssecPolicy>,
     keys: &[DnssecKey],
     serial: i32,
-) -> Result<GetDnssecStatusResponse, ServiceError> {
+) -> Result<DnssecStatusResponse, ServiceError> {
     let derived = RepositoryService::list_dnssec_records_tx(tx, zone.id, LockLevel::None).await?;
     let earliest_signature_expires_at = derived.iter().filter_map(|row| row.expires_at).min();
 
@@ -106,7 +107,7 @@ pub(crate) async fn build_status_tx(
         .map(|key| build_ds_info(zone, key))
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(GetDnssecStatusResponse {
+    Ok(DnssecStatusResponse {
         zone_name: zone.name.as_str().to_string(),
         enabled: !keys.is_empty(),
         policy: policy.map(GetDnssecPolicyResponse::from_policy),
@@ -114,12 +115,12 @@ pub(crate) async fn build_status_tx(
             .iter()
             .map(|key| DnssecKeyInfo {
                 id: key.id,
-                role: key.role.to_string(),
-                state: key.state.to_string(),
+                role: key.role,
+                state: key.state,
                 state_changed_at: key.state_changed_at,
                 eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
                 algorithm: key.algorithm.to_string(),
-                key_tag: key.key_tag,
+                key_tag: key.key_tag as u16,
                 dnskey: format!(
                     "{} 3 {} {}",
                     key.role.flags(),
@@ -134,9 +135,9 @@ pub(crate) async fn build_status_tx(
         signatures,
         expired_signatures,
         next_resign_at,
-        serial,
+        serial: serial_to_u32(serial).map_err(ServiceError::internal)?,
         withdrawing,
-        parent_ns_addrs: zone.parent_ns_addrs.clone(),
+        parent_ns_addrs: zone.parent_ns_addrs.as_deref().map(parent_ns_addr_entries),
         delegation: None,
     })
 }
@@ -153,7 +154,7 @@ fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceEr
     let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
 
     Ok(DnssecDsInfo {
-        key_tag: key.key_tag,
+        key_tag: key.key_tag as u16,
         algorithm: key.algorithm.to_int() as u8,
         digest_type: key.algorithm.ds_digest_type(),
         digest: digest.clone(),

@@ -14,8 +14,8 @@ use crate::{
     cli::{
         commands::{
             config::ConfigCommand, dnssec::DnssecCommand, dnssec_policy::DnssecPolicyCommand,
-            record::RecordCommand, token::TokenCommand, tsig_key::TsigKeyCommand,
-            zone::ZoneCommand,
+            record::RecordCommand, secondary::SecondaryCommand, token::TokenCommand,
+            tsig_key::TsigKeyCommand, zone::ZoneCommand,
         },
         output::OutputFormat,
     },
@@ -82,6 +82,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: RecordCommand,
     },
+    /// Manage the secondary servers: who receives NOTIFY and may pull zones
+    Secondary {
+        #[command(subcommand)]
+        subcommand: SecondaryCommand,
+    },
     /// Manage API tokens and the zones each may change over HTTP
     Token {
         #[command(subcommand)]
@@ -135,6 +140,7 @@ pub async fn execute() {
         Command::Config { subcommand } => commands::config::handle_command(subcommand).await,
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
         Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
+        Command::Secondary { subcommand } => commands::secondary::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
         Command::DnssecPolicy { subcommand } => {

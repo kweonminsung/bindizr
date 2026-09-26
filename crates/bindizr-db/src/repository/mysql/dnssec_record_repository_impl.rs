@@ -36,7 +36,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         const ROW: &str = "(?, ?, ?, ?, ?, ?, ?, ?)";
         for chunk in records.chunks(CHUNK) {
             let mut sql = String::from(
-                "INSERT INTO dnssec_records (zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, rrset_digest) VALUES ",
+                "INSERT INTO dnssec_records (zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest) VALUES ",
             );
             for i in 0..chunk.len() {
                 if i > 0 {
@@ -55,7 +55,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
                     .bind(r.ttl)
                     .bind(r.rdata.clone())
                     .bind(r.expires_at)
-                    .bind(r.rrset_digest.clone());
+                    .bind(r.record_set_digest.clone());
             }
             query.execute(&mut **mysql_tx).await?;
         }
@@ -74,7 +74,7 @@ impl DnssecRecordRepository for MySqlDnssecRecordRepository {
         let records = sqlx::query_as::<_, DnssecRecord>(AssertSqlSafe(format!(
             "{}{}",
             r#"
-            SELECT id, zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, rrset_digest
+            SELECT id, zone_id, name, record_type, covered_record_type, ttl, rdata, expires_at, record_set_digest
             FROM dnssec_records
             WHERE zone_id = ?
             ORDER BY id

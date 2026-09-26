@@ -1,6 +1,6 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
-    CreateTokenGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
+    CreateGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
     GetTokenResponse, PageFilter, PaginatedResponse, TokenGrantResponse,
 };
 use clap::Subcommand;
@@ -10,11 +10,12 @@ use crate::{
         error::CliError,
         output::{OutputFormat, TokenGrantRow, TokenRow, print_payload, print_response},
     },
+    params::{IdParams, NameParams},
     socket::{
         client,
         types::{
-            CreateTokenGrantParams, DaemonCommandKind, DeleteTokenGrantParams,
-            DeleteTokenGrantsByTokenAndZoneParams, ListGrantsParams, TokenNameParams,
+            CreateTokenGrantParams, DaemonCommandKind, DeleteTokenGrantsByTokenAndZoneParams,
+            ListGrantsParams,
         },
     },
 };
@@ -189,8 +190,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
         }
         TokenCommand::Delete { name, output } => {
             let res =
-                client::send_command(DaemonCommandKind::DeleteToken, TokenNameParams { name })
-                    .await?;
+                client::send_command(DaemonCommandKind::DeleteToken, NameParams { name }).await?;
 
             log::debug!("Token deletion result: {:?}", res);
 
@@ -212,7 +212,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 DaemonCommandKind::CreateTokenGrant,
                 CreateTokenGrantParams {
                     token_name: name,
-                    request: CreateTokenGrantRequest {
+                    request: CreateGrantRequest {
                         zone_name: zone,
                         record_name_pattern: pattern,
                         record_types: types,
@@ -253,11 +253,8 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             output,
             ..
         } => {
-            let res = client::send_command(
-                DaemonCommandKind::DeleteTokenGrant,
-                DeleteTokenGrantParams { id },
-            )
-            .await?;
+            let res =
+                client::send_command(DaemonCommandKind::DeleteTokenGrant, IdParams { id }).await?;
             match output {
                 OutputFormat::Table => outln!("{}", res.message),
                 _ => print_payload(&res.data, output)?,

@@ -8,11 +8,14 @@ use bindizr_service::{
     },
 };
 
-use crate::socket::{
-    server::{parse_params, to_response_data},
-    types::{
-        CreateTsigGrantParams, DaemonResponse, DeleteTsigGrantParams,
-        DeleteTsigGrantsByKeyAndZoneParams, ListGrantsParams, TsigKeyNameParams,
+use crate::{
+    params::{IdParams, NameParams},
+    socket::{
+        server::{parse_params, to_response_data},
+        types::{
+            CreateTsigGrantParams, DaemonResponse, DeleteTsigGrantsByKeyAndZoneParams,
+            ListGrantsParams,
+        },
     },
 };
 
@@ -53,7 +56,7 @@ pub(crate) async fn list_tsig_keys(
 
 /// Get the requested TSIG key.
 pub(crate) async fn get_tsig_key(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
-    let params: TsigKeyNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     let key = TsigKeyService::get(&Caller::Global, &params.name).await?;
 
@@ -67,7 +70,7 @@ pub(crate) async fn get_tsig_key(data: &serde_json::Value) -> Result<DaemonRespo
 pub(crate) async fn delete_tsig_key(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: TsigKeyNameParams = parse_params(data)?;
+    let params: NameParams = parse_params(data)?;
 
     TsigKeyService::delete(&Caller::Global, &params.name).await?;
 
@@ -136,7 +139,7 @@ pub(crate) async fn list_zone_tsig_grants(
 pub(crate) async fn delete_tsig_grant(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
-    let params: DeleteTsigGrantParams = parse_params(data)?;
+    let params: IdParams = parse_params(data)?;
 
     TsigGrantService::revoke_by_id(&Caller::Global, params.id).await?;
 

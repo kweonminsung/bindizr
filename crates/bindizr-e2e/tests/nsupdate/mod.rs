@@ -3,7 +3,7 @@ use serial_test::serial;
 
 use crate::common::{
     TestApp, TestAppOptions,
-    dns::nsupdate::{PrereqRr, UpdateRr, create_tsig_key, send_signed_update, send_update},
+    dns::nsupdate::{PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update, send_update},
 };
 
 /// These drive bindizr's own DNS listener over UDP with unsigned updates, so
@@ -31,7 +31,7 @@ async fn nsupdate_adds_and_deletes_records() {
         port,
         &zone_name,
         &[],
-        &[UpdateRr::AddA {
+        &[UpdateRecord::AddA {
             name: owner.clone(),
             ttl: 300,
             addr: "192.0.2.10".to_string(),
@@ -55,7 +55,7 @@ async fn nsupdate_adds_and_deletes_records() {
         port,
         &zone_name,
         &[],
-        &[UpdateRr::AddA {
+        &[UpdateRecord::AddA {
             name: owner.clone(),
             ttl: 300,
             addr: "192.0.2.10".to_string(),
@@ -69,7 +69,7 @@ async fn nsupdate_adds_and_deletes_records() {
         port,
         &zone_name,
         &[],
-        &[UpdateRr::DeleteA {
+        &[UpdateRecord::DeleteA {
             name: owner.clone(),
             addr: "192.0.2.10".to_string(),
         }],
@@ -101,7 +101,7 @@ async fn nsupdate_deletes_every_record_of_a_name_and_type() {
             port,
             &zone_name,
             &[],
-            &[UpdateRr::AddA {
+            &[UpdateRecord::AddA {
                 name: owner.clone(),
                 ttl: 300,
                 addr: addr.to_string(),
@@ -114,7 +114,7 @@ async fn nsupdate_deletes_every_record_of_a_name_and_type() {
         port,
         &zone_name,
         &[],
-        &[UpdateRr::DeleteRrset {
+        &[UpdateRecord::DeleteRecordSet {
             name: owner.clone(),
             rtype: Rtype::A,
         }],
@@ -147,10 +147,10 @@ async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
     let rcode = send_update(
         port,
         &zone_name,
-        &[PrereqRr::NameInUse {
+        &[PrereqRecord::NameInUse {
             name: owner.clone(),
         }],
-        &[UpdateRr::AddA {
+        &[UpdateRecord::AddA {
             name: owner.clone(),
             ttl: 300,
             addr: "192.0.2.30".to_string(),
@@ -164,10 +164,10 @@ async fn nsupdate_applies_nothing_when_a_prerequisite_fails() {
     let rcode = send_update(
         port,
         &zone_name,
-        &[PrereqRr::NameNotInUse {
+        &[PrereqRecord::NameNotInUse {
             name: owner.clone(),
         }],
-        &[UpdateRr::AddA {
+        &[UpdateRecord::AddA {
             name: owner.clone(),
             ttl: 300,
             addr: "192.0.2.30".to_string(),
@@ -193,7 +193,7 @@ async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
             port,
             &zone_name,
             &[],
-            &[UpdateRr::AddA {
+            &[UpdateRecord::AddA {
                 name: owner.clone(),
                 ttl: 300,
                 addr: addr.to_string(),
@@ -203,18 +203,18 @@ async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
         assert_eq!(rcode, Rcode::NOERROR);
     }
     let before = app.list_records(&zone_name).await.len();
-    let update = [UpdateRr::AddA {
+    let update = [UpdateRecord::AddA {
         name: format!("subset.{zone_name}."),
         ttl: 60,
         addr: "192.0.2.99".to_string(),
     }];
 
-    // RFC 2136, Section 3.2.3: the prerequisite RRset must equal the zone's,
+    // RFC 2136, Section 3.2.3: the prerequisite record set must equal the zone's,
     // so naming one of its two values is NXRRSET and applies nothing.
     let rcode = send_update(
         port,
         &zone_name,
-        &[PrereqRr::AEquals {
+        &[PrereqRecord::AEquals {
             name: owner.clone(),
             addr: "192.0.2.1".to_string(),
         }],
@@ -224,16 +224,16 @@ async fn a_value_prerequisite_needs_every_record_of_the_name_and_type() {
     assert_eq!(rcode, Rcode::NXRRSET);
     assert_eq!(app.list_records(&zone_name).await.len(), before);
 
-    // Both values, in either order, are the whole RRset.
+    // Both values, in either order, are the whole record set.
     let rcode = send_update(
         port,
         &zone_name,
         &[
-            PrereqRr::AEquals {
+            PrereqRecord::AEquals {
                 name: owner.clone(),
                 addr: "192.0.2.2".to_string(),
             },
-            PrereqRr::AEquals {
+            PrereqRecord::AEquals {
                 name: owner.clone(),
                 addr: "192.0.2.1".to_string(),
             },
@@ -257,7 +257,7 @@ async fn nsupdate_refuses_an_owner_outside_the_zone() {
         app.dns_port(),
         &zone_name,
         &[],
-        &[UpdateRr::AddA {
+        &[UpdateRecord::AddA {
             name: "www.elsewhere.example.".to_string(),
             ttl: 300,
             addr: "192.0.2.40".to_string(),
@@ -285,12 +285,12 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
         &zone_name,
         &[],
         &[
-            UpdateRr::AddA {
+            UpdateRecord::AddA {
                 name: owner.clone(),
                 ttl: 300,
                 addr: "192.0.2.50".to_string(),
             },
-            UpdateRr::AddA {
+            UpdateRecord::AddA {
                 name: owner.clone(),
                 ttl: 300,
                 addr: "192.0.2.51".to_string(),
@@ -308,7 +308,7 @@ async fn nsupdate_advances_the_zone_serial_once_per_message() {
         port,
         &zone_name,
         &[],
-        &[UpdateRr::DeleteA {
+        &[UpdateRecord::DeleteA {
             name: owner,
             addr: "198.51.100.1".to_string(),
         }],
@@ -330,7 +330,7 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     let port = app.dns_port();
     let key = create_tsig_key(&app, "nsupdate-policy-key", false).await;
 
-    let add = |owner: String| UpdateRr::AddA {
+    let add = |owner: String| UpdateRecord::AddA {
         name: owner,
         ttl: 300,
         addr: "192.0.2.60".to_string(),
@@ -415,7 +415,7 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
     .await;
 
     // The answer must not depend on whether `secret` exists.
-    let secret = || PrereqRr::NameNotInUse {
+    let secret = || PrereqRecord::NameNotInUse {
         name: format!("secret.{zone_name}."),
     };
     let rcode = send_signed_update(port, &zone_name, &[secret()], &[], &key).expect("send");
@@ -439,13 +439,13 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
 
     // Inside the grant the prerequisite is answered, before and after the add.
     let host = format!("host.dyn.{zone_name}.");
-    let equals = || PrereqRr::AEquals {
+    let equals = || PrereqRecord::AEquals {
         name: host.clone(),
         addr: "192.0.2.60".to_string(),
     };
     let rcode = send_signed_update(port, &zone_name, &[equals()], &[], &key).expect("send");
     assert_eq!(rcode, Rcode::NXRRSET);
-    let add = UpdateRr::AddA {
+    let add = UpdateRecord::AddA {
         name: host.clone(),
         ttl: 300,
         addr: "192.0.2.60".to_string(),
@@ -468,7 +468,7 @@ async fn nsupdate_adds_at_the_zone_apex() {
         app.dns_port(),
         &zone_name,
         &[],
-        &[UpdateRr::AddA {
+        &[UpdateRecord::AddA {
             name: format!("{zone_name}."),
             ttl: 300,
             addr: "192.0.2.60".to_string(),

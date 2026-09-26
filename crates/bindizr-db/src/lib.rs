@@ -362,6 +362,11 @@ pub fn get_dnssec_policy_repository() -> Box<dyn repository::DnssecPolicyReposit
     pool().dnssec_policy_repository()
 }
 
+/// Return the initialized secondary repository.
+pub fn get_secondary_repository() -> Box<dyn repository::SecondaryRepository> {
+    pool().secondary_repository()
+}
+
 /// Return the initialized TSIG key repository.
 pub fn get_tsig_key_repository() -> Box<dyn repository::TsigKeyRepository> {
     pool().tsig_key_repository()

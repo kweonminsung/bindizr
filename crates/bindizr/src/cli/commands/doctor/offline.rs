@@ -13,7 +13,8 @@ use tokio::net::{TcpListener, UdpSocket};
 
 use super::Report;
 
-/// A database that does not answer must become a failed check, not a hang.
+/// A database that does not answer must become a failed check, not a hang;
+/// longer than the daemon's probe budget since this connects from scratch.
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Connect to the configured database from here, with no daemon to ask.

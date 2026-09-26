@@ -1,4 +1,7 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::{
+    dns::name::{OwnerName, ZoneName},
+    model::grant_pattern::matches_name,
+};
 
 use super::*;
 use crate::error::ErrorCode;
@@ -38,26 +41,6 @@ fn normalize_types_parses_and_dedupes() {
     assert_eq!(err.code, ErrorCode::InvalidInput);
 }
 
-/// Verify that pattern matching covers all forms.
-#[test]
-fn pattern_matching_covers_all_forms() {
-    assert!(matches_name("*", &OwnerName::apex()));
-    assert!(matches_name("*", &OwnerName::from_row("anything.at.all")));
-
-    assert!(matches_name("@", &OwnerName::apex()));
-    assert!(!matches_name("@", &OwnerName::from_row("www")));
-
-    assert!(matches_name("www", &OwnerName::from_row("www")));
-    assert!(matches_name("www", &OwnerName::from_row("WWW")));
-    assert!(!matches_name("www", &OwnerName::from_row("sub.www")));
-
-    assert!(matches_name("*.sub", &OwnerName::from_row("sub")));
-    assert!(matches_name("*.sub", &OwnerName::from_row("a.sub")));
-    assert!(matches_name("*.sub", &OwnerName::from_row("a.b.sub")));
-    assert!(!matches_name("*.sub", &OwnerName::from_row("sub.other")));
-    assert!(!matches_name("*.sub", &OwnerName::from_row("xsub")));
-}
-
 /// Verify that `normalize_pattern` canonicalizes escapes and rejects malformed ones.
 #[test]
 fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
@@ -70,14 +53,6 @@ fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
         let err = normalize_pattern(Some(invalid)).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput, "input: {:?}", invalid);
     }
-}
-
-/// Verify that a subtree grant does not reach a label that merely spells it.
-#[test]
-fn a_subtree_grant_does_not_reach_a_label_that_merely_spells_it() {
-    // `a\.sub` is the single label `a.sub`, not a name under `sub`.
-    assert!(!matches_name("*.sub", &OwnerName::from_row(r"a\.sub")));
-    assert!(matches_name("*.sub", &OwnerName::from_row(r"a\.b.sub")));
 }
 
 /// Verify rejection of wildcard grant labels, including escaped spellings.

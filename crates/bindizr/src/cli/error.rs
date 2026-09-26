@@ -109,6 +109,9 @@ impl CliError {
             ErrorCode::VersionNotFound => {
                 Some("Run 'bindizr zone version list <NAME>' to see available serials.")
             }
+            ErrorCode::SecondaryNotFound => {
+                Some("Run 'bindizr secondary list' to see the registered secondaries.")
+            }
             ErrorCode::TsigKeyNotFound => {
                 Some("Run 'bindizr tsig-key list' to see available keys.")
             }
@@ -116,7 +119,7 @@ impl CliError {
                 Some("Run 'bindizr dnssec-policy list' to see available policies.")
             }
             ErrorCode::TsigKeyInUse => Some(
-                "Run 'bindizr tsig-key grants <NAME>' and revoke each one before deleting the key.",
+                "Revoke its grants ('bindizr tsig-key grants <NAME>') and move any secondary off it ('bindizr secondary update --notify-key') before deleting the key.",
             ),
             ErrorCode::DnssecPolicyInUse => Some(
                 "Move those zones onto another policy with 'bindizr dnssec set --policy', or disable DNSSEC on them.",
@@ -164,6 +167,7 @@ impl CliError {
             | ErrorCode::ZoneConflict
             | ErrorCode::RecordConflict
             | ErrorCode::TokenConflict
+            | ErrorCode::SecondaryConflict
             | ErrorCode::TsigKeyConflict
             | ErrorCode::DnssecPolicyConflict
             | ErrorCode::DnssecDsPublished

@@ -10,11 +10,12 @@ use super::print_status;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, parse_response},
+        output::{OutputFormat, parse_payload},
     },
+    params::NameParams,
     socket::{
         client,
-        types::{DaemonCommandKind, ImportZoneDnssecKeysParams, ZoneNameParams},
+        types::{DaemonCommandKind, ImportZoneDnssecKeysParams},
     },
 };
 
@@ -76,10 +77,10 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
     match subcommand {
         DnssecKeysCommand::Export { name } => {
             let response =
-                client::send_command(DaemonCommandKind::ExportDnssecKeys, ZoneNameParams { name })
+                client::send_command(DaemonCommandKind::ExportDnssecKeys, NameParams { name })
                     .await?;
             let exported: ExportDnssecKeysResponse =
-                parse_response(&response.data).map_err(CliError::from)?;
+                parse_payload(&response.data).map_err(CliError::from)?;
             print_key_material(&exported);
         }
         DnssecKeysCommand::Import {
@@ -111,7 +112,10 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
                 DaemonCommandKind::ImportDnssecKeys,
                 ImportZoneDnssecKeysParams {
                     zone_name: name,
-                    request: ImportDnssecKeyRequest { keys, policy },
+                    request: ImportDnssecKeyRequest {
+                        keys,
+                        policy_name: policy,
+                    },
                 },
             )
             .await?;

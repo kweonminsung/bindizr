@@ -1,4 +1,6 @@
-//! A zone's serial next to what each configured secondary is serving.
+//! A zone's serial next to what each enabled secondary is serving.
+
+use bindizr_core::dns::serial_to_u32;
 
 use super::ZoneService;
 use crate::{
@@ -6,8 +8,8 @@ use crate::{
 };
 
 impl ZoneService {
-    /// Probe every configured secondary for the zone and classify each
-    /// against the zone's serial; empty with no secondaries configured.
+    /// Probe every enabled secondary for the zone and classify each
+    /// against the zone's serial; empty with no enabled secondaries.
     pub async fn get_status(
         caller: &Caller,
         zone_name: &str,
@@ -16,13 +18,15 @@ impl ZoneService {
         // ahead for a moment, the drift a read-only path accepts.
         let zone = Self::get_by_name(caller, zone_name).await?;
 
-        let probes = probe::probe_secondaries(zone.name.as_str())
+        let serial = serial_to_u32(zone.serial).map_err(ServiceError::internal)?;
+        let secondaries = probe::probe_secondaries(zone.name.as_str(), Some(serial))
             .await
             .map_err(ServiceError::internal)?;
 
-        Ok(ZoneStatusResponse::from_probes(
-            &zone,
-            probes.into_iter().map(|p| (p.address, p.result)),
-        ))
+        Ok(ZoneStatusResponse {
+            zone_name: zone.name.to_string(),
+            serial,
+            secondaries,
+        })
     }
 }

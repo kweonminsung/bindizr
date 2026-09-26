@@ -4,12 +4,11 @@
 use bindizr_core::dns::dnssec::generate_key;
 use chrono::Utc;
 
-use super::{
-    DnssecService, notify_zone, parent_ns_addrs::normalize_parent_ns_addrs, status::build_status_tx,
-};
+use super::{DnssecService, parent_ns_addrs::normalize_parent_ns_addrs, status::build_status_tx};
 use crate::{
     authorization::Caller,
     database::repository::LockLevel,
+    dnssec::SignedZone,
     dnssec_policy::normalize_policy_name,
     error::ServiceError,
     model::{
@@ -20,7 +19,7 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
-    types::GetDnssecStatusResponse,
+    types::DnssecStatusResponse,
     zone::ZoneService,
 };
 
@@ -56,8 +55,8 @@ impl DnssecService {
         caller: &Caller,
         zone_name: &str,
         policy: Option<&str>,
-        parent_ns_addrs: &str,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+        parent_ns_addrs: &[String],
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
         let policy_name = normalize_policy_name(policy.unwrap_or(DEFAULT_DNSSEC_POLICY_NAME))?;
         let parent_ns_addrs = normalize_parent_ns_addrs(parent_ns_addrs)?;
@@ -119,19 +118,21 @@ impl DnssecService {
                 .map_err(ServiceError::dnssec_signing_failed)?;
                 keys.push(RepositoryService::create_dnssec_key_tx(&mut tx, key).await?);
             }
+            let signed = SignedZone { zone, policy, keys };
 
-            let new_serial = Self::resign_zone_tx(
+            let new_serial =
+                Self::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
+                    .await?
+                    .unwrap_or(signed.zone.serial);
+
+            build_status_tx(
                 &mut tx,
-                &zone,
-                &policy,
-                &keys,
-                false,
-                &caller.change_subject(),
+                &signed.zone,
+                Some(&signed.policy),
+                &signed.keys,
+                new_serial,
             )
-            .await?
-            .unwrap_or(zone.serial);
-
-            build_status_tx(&mut tx, &zone, Some(&policy), &keys, new_serial).await
+            .await
         }
         .await;
         let response = RepositoryService::finish_tx(tx, result, "failed to enable DNSSEC").await?;
@@ -139,7 +140,7 @@ impl DnssecService {
         log::info!("event=dnssec_enable zone={}", response.zone_name);
 
         // Secondaries can fetch the signed view only after the transaction commits.
-        notify_zone(&response.zone_name).await;
+        crate::notify::notify_after_update(&response.zone_name).await;
         Ok(response)
     }
 
@@ -150,8 +151,8 @@ impl DnssecService {
         caller: &Caller,
         zone_name: &str,
         policy: Option<&str>,
-        parent_ns_addrs: Option<&str>,
-    ) -> Result<GetDnssecStatusResponse, ServiceError> {
+        parent_ns_addrs: Option<&[String]>,
+    ) -> Result<DnssecStatusResponse, ServiceError> {
         caller.authorize_global("manage DNSSEC signing")?;
         if policy.is_none() && parent_ns_addrs.is_none() {
             return Err(ServiceError::invalid_input(
@@ -216,23 +217,28 @@ impl DnssecService {
             };
             RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, Some(target.id))
                 .await?;
-            let zone = Zone {
-                dnssec_policy_id: Some(target.id),
-                ..zone
+            let signed = SignedZone {
+                zone: Zone {
+                    dnssec_policy_id: Some(target.id),
+                    ..zone
+                },
+                policy: target,
+                keys,
             };
 
-            let new_serial = Self::resign_zone_tx(
-                &mut tx,
-                &zone,
-                &target,
-                &keys,
-                false,
-                &caller.change_subject(),
-            )
-            .await?
-            .unwrap_or(zone.serial);
+            let new_serial =
+                Self::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
+                    .await?
+                    .unwrap_or(signed.zone.serial);
 
-            build_status_tx(&mut tx, &zone, Some(&target), &keys, new_serial).await
+            build_status_tx(
+                &mut tx,
+                &signed.zone,
+                Some(&signed.policy),
+                &signed.keys,
+                new_serial,
+            )
+            .await
         }
         .await;
         let response =
@@ -241,7 +247,7 @@ impl DnssecService {
         log::info!("event=dnssec_update_settings zone={}", response.zone_name);
         // Only a policy move changes zone data; parent nameservers are not served.
         if policy_name.is_some() {
-            notify_zone(&response.zone_name).await;
+            crate::notify::notify_after_update(&response.zone_name).await;
         }
         Ok(response)
     }
@@ -258,29 +264,28 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to disable DNSSEC").await?;
         let result = async {
-            let (zone, _, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            let signed = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
             if !skip_ds_check {
-                let delegation = Self::probe_delegation(&zone, &keys).await?;
+                let delegation = Self::probe_delegation(&signed).await?;
                 if !delegation.ds_key_tags.is_empty() {
                     return Err(ServiceError::dnssec_ds_published(
-                        zone.name.as_str(),
+                        signed.zone.name.as_str(),
                         &delegation.ds_key_tags,
                     ));
                 }
             }
 
             let derived =
-                RepositoryService::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None)
+                RepositoryService::list_dnssec_records_tx(&mut tx, signed.zone.id, LockLevel::None)
                     .await?;
 
-            let new_serial = generate_serial(Some(zone.serial))?;
+            let new_serial = generate_serial(Some(signed.zone.serial))?;
             // Journal a DEL for every derived row; they carry wire RDATA, not
             // a value.
             let changes: Vec<ZoneChange> = derived
                 .iter()
                 .map(|row| ZoneChange {
-                    zone_id: zone.id,
+                    zone_id: signed.zone.id,
                     serial: new_serial,
                     operation: ChangeOperation::Del,
                     record_name: row.name.clone(),
@@ -293,14 +298,20 @@ impl DnssecService {
                 })
                 .collect();
             RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
-            RepositoryService::delete_dnssec_records_by_zone_id_tx(&mut tx, zone.id).await?;
-            RepositoryService::delete_dnssec_keys_by_zone_id_tx(&mut tx, zone.id).await?;
-            RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, zone.id).await?;
-            RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, None).await?;
-            ZoneService::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject())
+            RepositoryService::delete_dnssec_records_by_zone_id_tx(&mut tx, signed.zone.id).await?;
+            RepositoryService::delete_dnssec_keys_by_zone_id_tx(&mut tx, signed.zone.id).await?;
+            RepositoryService::delete_dnssec_withdrawal_tx(&mut tx, signed.zone.id).await?;
+            RepositoryService::update_zone_dnssec_policy_id_tx(&mut tx, signed.zone.id, None)
                 .await?;
+            ZoneService::advance_serial_tx(
+                &mut tx,
+                &signed.zone,
+                new_serial,
+                &caller.change_subject(),
+            )
+            .await?;
 
-            Ok(zone.name.as_str().to_string())
+            Ok(signed.zone.name.as_str().to_string())
         }
         .await;
         let zone_name =
@@ -310,7 +321,7 @@ impl DnssecService {
             log::warn!("event=dnssec_disable_ds_check_skipped zone={}", zone_name);
         }
         log::info!("event=dnssec_disable zone={}", zone_name);
-        notify_zone(&zone_name).await;
+        crate::notify::notify_after_update(&zone_name).await;
         Ok(())
     }
 
@@ -321,24 +332,15 @@ impl DnssecService {
 
         let mut tx = RepositoryService::begin_tx("failed to sign zone").await?;
         let result = async {
-            let (zone, policy, keys) =
-                Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-            Self::resign_zone_tx(
-                &mut tx,
-                &zone,
-                &policy,
-                &keys,
-                true,
-                &caller.change_subject(),
-            )
-            .await?;
-            Ok(zone.name.as_str().to_string())
+            let signed = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            Self::resign_zone_tx(&mut tx, &signed, true, &caller.change_subject()).await?;
+            Ok(signed.zone.name.as_str().to_string())
         }
         .await;
         let zone_name = RepositoryService::finish_tx(tx, result, "failed to sign zone").await?;
 
         log::info!("event=dnssec_sign zone={}", zone_name);
-        notify_zone(&zone_name).await;
+        crate::notify::notify_after_update(&zone_name).await;
         Ok(())
     }
 }

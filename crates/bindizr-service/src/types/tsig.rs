@@ -53,39 +53,13 @@ impl GetTsigKeyResponse {
     }
 }
 
-/// Request body for granting a TSIG key update and transfer rights in a zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CreateTsigGrantRequest {
-    /// Name of an existing zone.
-    #[schema(example = "example.com")]
-    pub zone_name: String,
-    /// `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
-    /// Defaults to `*`.
-    #[schema(example = "*.dyn")]
-    pub record_name_pattern: Option<String>,
-    /// `*` or a comma-separated list of record types. Defaults to `*`.
-    #[schema(example = "A,AAAA,TXT")]
-    pub record_types: Option<String>,
-    /// Whether the grant carries nsupdate rights. A read-only grant over the
-    /// whole zone still transfers it. Defaults to true.
-    #[serde(default = "default_can_write")]
-    #[schema(example = true)]
-    pub can_write: bool,
-}
-
-/// Enable update access when a new TSIG grant omits the permission flag.
-fn default_can_write() -> bool {
-    true
-}
-
 /// API representation of a TSIG grant.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct GetTsigGrantResponse {
     #[schema(example = 1)]
     pub id: i32,
     #[schema(example = "update-key")]
-    pub tsig_key: String,
+    pub tsig_key_name: String,
     #[schema(example = "example.com")]
     pub zone_name: String,
     #[schema(example = "*.dyn")]
@@ -102,7 +76,7 @@ impl GetTsigGrantResponse {
     pub fn from_grant(grant: &TsigGrantWithNames) -> Self {
         GetTsigGrantResponse {
             id: grant.grant.id,
-            tsig_key: grant.tsig_key_name.clone(),
+            tsig_key_name: grant.tsig_key_name.clone(),
             zone_name: grant.zone_name.clone(),
             record_name_pattern: grant.grant.record_name_pattern.clone(),
             record_types: grant.grant.record_types.clone(),

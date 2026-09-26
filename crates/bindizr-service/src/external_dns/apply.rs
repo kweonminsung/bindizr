@@ -1,7 +1,7 @@
 //! Applying an ExternalDNS change set atomically and idempotently; the change
 //! set itself is computed in `change_set`.
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::{dns::name::OwnerName, time::elapsed_ms};
 use bindizr_db::repository::LockLevel;
 
 use super::{
@@ -36,8 +36,8 @@ impl ExternalDnsService {
             log::info!("event=external_dns_apply zones= ops=0 added=0 deleted=0 noop=true ms=0.0");
             return Ok(ExternalDnsChangesResponse {
                 changed_zones: Vec::new(),
-                records_added: 0,
-                records_deleted: 0,
+                added: 0,
+                deleted: 0,
             });
         }
 
@@ -50,8 +50,8 @@ impl ExternalDnsService {
             let zone_ops = group_ops_by_zone(caller, &zones, ops)?;
 
             let mut changed_zones = Vec::new();
-            let mut records_added = 0u32;
-            let mut records_deleted = 0u32;
+            let mut added = 0u64;
+            let mut deleted = 0u64;
 
             // BTreeMap iteration locks zones in name order, so concurrent
             // multi-zone requests cannot deadlock on row locks.
@@ -128,40 +128,38 @@ impl ExternalDnsService {
                 )
                 .await?;
 
-                records_deleted += change_set.deletes.len() as u32;
-                records_added += change_set.creates.len() as u32;
+                deleted += change_set.deletes.len() as u64;
+                added += change_set.creates.len() as u64;
                 changed_zones.push(zone.name.to_string());
             }
 
-            Ok::<_, ServiceError>((changed_zones, records_added, records_deleted))
+            Ok::<_, ServiceError>((changed_zones, added, deleted))
         }
         .await;
 
-        let (changed_zones, records_added, records_deleted) =
+        let (changed_zones, added, deleted) =
             RepositoryService::finish_tx(tx, apply_result, "Failed to apply ExternalDNS changes")
                 .await?;
 
         // Every affected zone must commit before any secondary is asked to transfer.
         for zone_name in &changed_zones {
-            if let Err(e) = crate::notify::send_notify_after_update(Some(zone_name)).await {
-                log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
-            }
+            crate::notify::notify_after_update(zone_name).await;
         }
 
         log::info!(
             "event=external_dns_apply zones={} ops={} added={} deleted={} noop={} ms={:.1}",
             changed_zones.join(","),
             requested_ops,
-            records_added,
-            records_deleted,
+            added,
+            deleted,
             changed_zones.is_empty(),
-            started.elapsed().as_secs_f64() * 1000.0,
+            elapsed_ms(started),
         );
 
         Ok(ExternalDnsChangesResponse {
             changed_zones,
-            records_added,
-            records_deleted,
+            added,
+            deleted,
         })
     }
 }

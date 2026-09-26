@@ -1,5 +1,5 @@
 //! Asking a zone's parent whether it still delegates trust to the zone: the
-//! DS RRset the zone's `parent_ns_addrs` serve for the child.
+//! DS record set the zone's `parent_ns_addrs` serve for the child.
 
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
@@ -8,7 +8,7 @@ use bindizr_core::{
     dns::{
         message::{Name, Rtype},
         name::ZoneName,
-        query::{DsRrset, build_edns_question, extract_ds_rrset},
+        query::{DsRecordSet, build_edns_question, extract_ds_record_set},
     },
     model::zone::Zone,
 };
@@ -19,13 +19,13 @@ pub(crate) struct ParentDs {
     /// The nameservers asked, as `host[:port]` entries from the zone's
     /// `parent_ns_addrs`.
     pub(crate) ns_addrs: Vec<String>,
-    /// Each server's answer in `ns_addrs` order: its DS RRset, or `None` when
+    /// Each server's answer in `ns_addrs` order: its DS record set, or `None` when
     /// it serves none. Kept apart because dropping trust is unsafe while any
     /// server still serves a DS, and promoting a key until every server does.
-    pub(crate) answers: Vec<Option<DsRrset>>,
+    pub(crate) answers: Vec<Option<DsRecordSet>>,
 }
 
-/// Ask every parent server for the zone's DS RRset. `Err` when the zone
+/// Ask every parent server for the zone's DS record set. `Err` when the zone
 /// names no parent or any server fails to answer: silence never reads as
 /// absence.
 pub(crate) async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
@@ -63,14 +63,14 @@ async fn resolve_parent_ns_addrs(
     Ok(servers)
 }
 
-/// Ask every server for the zone's DS RRset in parallel, reporting each
+/// Ask every server for the zone's DS record set in parallel, reporting each
 /// answer in `servers` order; a server none of whose addresses answers
 /// fails the probe.
 async fn query_ds(
     zone_name: &ZoneName,
     servers: &[(String, Vec<SocketAddr>)],
     timeout: Duration,
-) -> Result<Vec<Option<DsRrset>>, String> {
+) -> Result<Vec<Option<DsRecordSet>>, String> {
     let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
         .map_err(|e| format!("invalid zone name: {}", e))?;
 
@@ -105,15 +105,15 @@ async fn query_ds_at(
     qname: &Name<Vec<u8>>,
     addrs: &[SocketAddr],
     timeout: Duration,
-) -> Result<Option<DsRrset>, String> {
+) -> Result<Option<DsRecordSet>, String> {
     let mut last_error = None;
     for addr in addrs {
         let (query_id, query) = build_edns_question(false, qname, Rtype::DS);
         let result = super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query")
             .await
-            .and_then(|response| extract_ds_rrset(query_id, qname, &response));
+            .and_then(|response| extract_ds_record_set(query_id, qname, &response));
         match result {
-            Ok(rrset) => return Ok(rrset),
+            Ok(record_set) => return Ok(record_set),
             Err(e) => last_error = Some(e),
         }
     }

@@ -13,7 +13,7 @@ pub(crate) enum OutputFormat {
 }
 
 /// Read a daemon response payload as the type the command expects.
-pub(crate) fn parse_response<T: DeserializeOwned>(data: &serde_json::Value) -> Result<T, String> {
+pub(crate) fn parse_payload<T: DeserializeOwned>(data: &serde_json::Value) -> Result<T, String> {
     serde_json::from_value(data.clone()).map_err(|e| format!("Unexpected daemon response: {}", e))
 }
 
@@ -31,7 +31,7 @@ where
 {
     match format {
         OutputFormat::Table => {
-            print_table(to_table_rows(&parse_response(data)?));
+            print_table(to_table_rows(&parse_payload(data)?));
             print_page_remainder(data);
         }
         _ => print_payload(data, format)?,

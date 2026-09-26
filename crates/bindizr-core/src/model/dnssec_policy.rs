@@ -6,8 +6,14 @@ use super::dnssec_key::DnssecAlgorithm;
 /// Name of the policy seeded at startup, used when `enable` names none.
 pub const DEFAULT_DNSSEC_POLICY_NAME: &str = "default";
 
+/// Seconds in a day, the unit the policy's day fields are stored in.
+const SECS_PER_DAY: i64 = 86_400;
+
 /// How a signed zone proves nonexistence (denial of existence).
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum DnssecDenial {
     /// Plain NSEC chain over the zone's names.
     Nsec,
@@ -16,7 +22,7 @@ pub enum DnssecDenial {
 }
 
 impl DnssecDenial {
-    /// Storage and presentation name.
+    /// Storage name, as the columns and the API spell it.
     pub fn as_str(&self) -> &'static str {
         match self {
             DnssecDenial::Nsec => "nsec",
@@ -26,9 +32,12 @@ impl DnssecDenial {
 }
 
 impl std::fmt::Display for DnssecDenial {
-    /// Write the DNSSEC denial in its display form.
+    /// Write the denial mode in the upper case the DNSSEC documents use.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+        f.write_str(match self {
+            DnssecDenial::Nsec => "NSEC",
+            DnssecDenial::Nsec3 => "NSEC3",
+        })
     }
 }
 
@@ -93,14 +102,21 @@ impl DnssecPolicy {
         }
     }
 
-    /// The window the per-RRset expirations spread over, so a pass does not
+    /// The window the per-record-set expirations spread over, so a pass does not
     /// come due for the whole zone at once and push an IXFR the size of it.
     /// Half the room the policy leaves, which keeps even the earliest
     /// signature outside its own refresh window.
     pub fn expiration_jitter_secs(&self) -> i64 {
-        let validity = i64::from(self.signature_validity_days) * 86_400;
-        let refresh = i64::from(self.signature_refresh_days) * 86_400;
+        (self.signature_validity_secs() - self.signature_refresh_secs()).max(0) / 2
+    }
 
-        (validity - refresh).max(0) / 2
+    /// How long a signature stays valid, in seconds.
+    pub fn signature_validity_secs(&self) -> i64 {
+        i64::from(self.signature_validity_days) * SECS_PER_DAY
+    }
+
+    /// How long before it expires a signature is renewed, in seconds.
+    pub fn signature_refresh_secs(&self) -> i64 {
+        i64::from(self.signature_refresh_days) * SECS_PER_DAY
     }
 }

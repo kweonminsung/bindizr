@@ -12,10 +12,12 @@ pub(crate) mod grant_pattern;
 pub mod notify;
 pub mod record;
 mod repository;
+pub mod secondary;
 pub(crate) mod serial;
-pub(crate) mod timing;
+pub(crate) mod text;
 pub mod token;
 pub mod tsig_key;
+pub(crate) mod ttl;
 pub mod types;
 pub mod zone;
 

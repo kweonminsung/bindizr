@@ -10,9 +10,12 @@ use bindizr_service::{
 };
 use serde::Deserialize;
 
-use crate::api::{
-    RequestCaller, ZoneNameParam,
-    error::{ApiError, Path, Query},
+use crate::{
+    api::{
+        RequestCaller,
+        error::{ApiError, Path, Query},
+    },
+    params::NameParams,
 };
 
 pub(crate) struct NotifyApi;
@@ -81,7 +84,7 @@ pub(crate) async fn notify_all_zones(
 )]
 pub(crate) async fn notify_zone(
     RequestCaller(caller): RequestCaller,
-    Path(params): Path<ZoneNameParam>,
+    Path(params): Path<NameParams>,
     Query(query): Query<NotifyQuery>,
 ) -> Result<Response, ApiError> {
     let bump_serial = query.bump_serial.unwrap_or(false);

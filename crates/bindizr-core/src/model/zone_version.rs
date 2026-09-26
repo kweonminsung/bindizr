@@ -27,7 +27,10 @@ pub struct ZoneVersion {
 }
 
 /// The plane a zone version's change came through.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum ChangeSource {
     /// An API token, global or scoped.
     Token,

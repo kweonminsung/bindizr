@@ -238,7 +238,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["changed_zones"], json!([zone_name]));
-    assert_eq!(body["records_added"], json!(3));
+    assert_eq!(body["added"], json!(3));
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 1);
 
     // Same create again: no-op, no serial bump.
@@ -280,8 +280,8 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["records_added"], json!(1));
-    assert_eq!(body["records_deleted"], json!(1));
+    assert_eq!(body["added"], json!(1));
+    assert_eq!(body["deleted"], json!(1));
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 2);
 
     // Delete, then delete again as a no-op.
@@ -293,7 +293,7 @@ async fn external_dns_changes_apply_and_stay_idempotent() {
         .send_request(Method::POST, "/external-dns/changes", Some(delete.clone()))
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["records_deleted"], json!(2));
+    assert_eq!(body["deleted"], json!(2));
     assert_eq!(app.read_zone_serial(&zone_name).await, base_serial + 3);
 
     let (status, body) = app

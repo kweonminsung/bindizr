@@ -5,9 +5,10 @@ use rand::RngExt;
 
 use crate::{
     authorization::Caller,
-    error::ServiceError,
+    error::{ErrorCode, ServiceError},
     model::tsig_key::{TsigAlgorithm, TsigKey},
     repository::RepositoryService,
+    text::MAX_COLUMN_TEXT_LEN,
     types::{GetTsigKeyResponse, PageFilter, PaginatedResponse},
 };
 
@@ -100,7 +101,8 @@ impl TsigKeyService {
         RepositoryService::get_tsig_key_by_name(&name).await
     }
 
-    /// Delete a TSIG key by name; refused while it still holds grants.
+    /// Delete a TSIG key by name; refused while it still holds grants or
+    /// signs a secondary's NOTIFY.
     pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
         caller.authorize_global("manage TSIG keys and grants")?;
 
@@ -110,23 +112,33 @@ impl TsigKeyService {
         if grant_count > 0 {
             return Err(ServiceError::tsig_key_in_use(&key.name, grant_count));
         }
+        let secondary_count =
+            RepositoryService::count_secondaries_by_notify_tsig_key_id(key.id).await?;
+        if secondary_count > 0 {
+            return Err(ServiceError::new(
+                ErrorCode::TsigKeyInUse,
+                format!(
+                    "TSIG key '{}' still signs NOTIFY for {} secondar{}",
+                    key.name,
+                    secondary_count,
+                    if secondary_count == 1 { "y" } else { "ies" }
+                ),
+            ));
+        }
 
         RepositoryService::delete_tsig_key(key.id).await
     }
 }
-
-/// The rendered name must fit the `tsig_keys.name` VARCHAR(255) column.
-const MAX_KEY_NAME_LEN: usize = 255;
 
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so
 /// it must be a valid domain name. Stored lowercase without the trailing dot.
 pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
     let name = parse_lookup_name(value)
         .map_err(|e| ServiceError::invalid_input(format!("TSIG key name {}", e)))?;
-    if name.len() > MAX_KEY_NAME_LEN {
+    if name.len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
             "TSIG key name must be {} characters or fewer in its canonical spelling",
-            MAX_KEY_NAME_LEN
+            MAX_COLUMN_TEXT_LEN
         )));
     }
     Ok(name)
@@ -134,17 +146,15 @@ pub(crate) fn normalize_key_name(value: &str) -> Result<String, ServiceError> {
 
 /// HMAC security degrades to the key length, so refuse imports under 128 bits.
 const MIN_IMPORTED_SECRET_BYTES: usize = 16;
-/// The base64 form must fit the `tsig_keys.secret` VARCHAR(255) column.
-const MAX_SECRET_BASE64_LEN: usize = 255;
 
 /// Validate and normalize a base64-encoded TSIG secret.
 fn normalize_secret(value: &str) -> Result<String, ServiceError> {
     let trimmed = value.trim();
 
-    if trimmed.len() > MAX_SECRET_BASE64_LEN {
+    if trimmed.len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
             "TSIG key secret must be at most {} base64 characters",
-            MAX_SECRET_BASE64_LEN
+            MAX_COLUMN_TEXT_LEN
         )));
     }
 

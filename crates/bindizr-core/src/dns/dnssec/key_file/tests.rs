@@ -85,7 +85,7 @@ fn bind_timing_places_an_imported_key_in_its_rollover() {
     assert_eq!(key.state, DnssecKeyState::Active);
     assert_eq!(key.state_changed_at, now() - Duration::hours(24));
 
-    // Retired: still in the DNSKEY RRset until BIND's own Delete.
+    // Retired: still in the DNSKEY record set until BIND's own Delete.
     let key = import(&[
         ("Publish", stamp(-48)),
         ("Activate", stamp(-24)),

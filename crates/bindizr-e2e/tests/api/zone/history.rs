@@ -81,7 +81,7 @@ async fn zone_versions_list_and_get() {
         .filter(|record| record["type"] == "A")
         .map(|record| record["name"].as_str().unwrap())
         .collect();
-    assert_eq!(a_records, ["www"]);
+    assert_eq!(a_records, [format!("www.{zone_name}.")]);
 
     let (status, body) = app
         .send_request(
@@ -331,7 +331,7 @@ async fn zone_rollback_restores_a_delegation_ns_and_ds_together() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["summary"]["records_added"], 2, "{body}");
+    assert_eq!(body["summary"]["added"], 2, "{body}");
 
     for record_type in ["NS", "DS"] {
         let (_, listing) = app

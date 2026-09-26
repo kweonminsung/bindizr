@@ -47,7 +47,7 @@ struct ComputeArgs<'a> {
     denial: DnssecDenial,
     new_serial: i32,
     expiration: DateTime<Utc>,
-    /// `0` pins every RRset to `expiration`; the spread has its own test.
+    /// `0` pins every record set to `expiration`; the spread has its own test.
     expiration_jitter_secs: i64,
     force: bool,
 }

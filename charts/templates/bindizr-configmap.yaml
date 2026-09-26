@@ -33,20 +33,16 @@ data:
     listen_port = {{ .Values.bindizr.dns.port }}
     catalog_zone_name = "{{ .Values.bindizr.dns.catalogZoneName }}"
     nsupdate_tsig_required = {{ .Values.bindizr.dns.nsupdateTsigRequired }}
-    secondary_addrs = "{{ include "bindizr-chart.secondaryAddrs" . }}"
     zone_history_retention_days = {{ .Values.bindizr.dns.zoneHistoryRetentionDays }}
     scheduler_interval_secs = {{ .Values.bindizr.dns.schedulerIntervalSecs }}
 
 
     [dns.notify]
-    after_update = {{ .Values.bindizr.dns.notify.afterUpdate }}
-    on_startup = {{ .Values.bindizr.dns.notify.onStartup }}
     batch_ms = {{ .Values.bindizr.dns.notify.batchMs }}
     retries = {{ .Values.bindizr.dns.notify.retries }}
     timeout_secs = {{ .Values.bindizr.dns.notify.timeoutSecs }}
 
     [dns.transfer_cache]
-    enabled = {{ .Values.bindizr.dns.transferCache.enabled }}
     max_records = {{ .Values.bindizr.dns.transferCache.maxRecords }}
 
     [dns.zone_defaults]

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::GetDnssecPolicyResponse;
+use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 
 /// Request body for enabling DNSSEC on a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
@@ -13,11 +14,11 @@ pub struct EnableDnssecRequest {
     /// Name of the DNSSEC policy to sign under; defaults to `default`.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "default")]
-    pub policy: Option<String>,
-    /// The parent zone's nameservers (comma-separated `host[:port]`), asked
-    /// for the zone's DS by every later check.
-    #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
-    pub parent_ns_addrs: String,
+    pub policy_name: Option<String>,
+    /// The parent zone's nameservers as `host[:port]` entries, asked for the
+    /// zone's DS by every later check.
+    #[schema(example = json!(["a.gtld-servers.net", "b.gtld-servers.net"]))]
+    pub parent_ns_addrs: Vec<String>,
 }
 
 /// Request body for changing a zone's signing settings; an omitted field
@@ -30,12 +31,12 @@ pub struct UpdateDnssecSettingsRequest {
     /// new algorithm starts a rollover.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "strict")]
-    pub policy: Option<String>,
-    /// The parent zone's nameservers (comma-separated `host[:port]`); must
-    /// name at least one server.
+    pub policy_name: Option<String>,
+    /// The parent zone's nameservers as `host[:port]` entries; must name at
+    /// least one server.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
-    pub parent_ns_addrs: Option<String>,
+    #[schema(example = json!(["a.gtld-servers.net", "b.gtld-servers.net"]))]
+    pub parent_ns_addrs: Option<Vec<String>>,
 }
 
 /// One of the zone's SEP keys against the parent's DS records.
@@ -45,12 +46,8 @@ pub struct DnssecDelegationKeyInfo {
     pub id: i32,
     #[schema(example = 34217)]
     pub key_tag: u16,
-    /// `csk` or `ksk`.
-    #[schema(example = "csk")]
-    pub role: String,
-    /// `published`, `active`, or `retired`.
-    #[schema(example = "published")]
-    pub state: String,
+    pub role: DnssecKeyRole,
+    pub state: DnssecKeyState,
     /// Whether every parent server serves this key's DS (matched whole, not
     /// by key tag).
     #[schema(example = true)]
@@ -61,8 +58,15 @@ pub struct DnssecDelegationKeyInfo {
     #[schema(example = false)]
     pub ds_digest_unsupported: bool,
     /// When a `published` key's hold-down ends.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eligible_at: Option<DateTime<Utc>>,
+}
+
+/// Whether the parent serves a DS for the zone.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DsState {
+    Published,
+    Hidden,
 }
 
 /// What the parent zone's servers answered when asked for the zone's DS.
@@ -70,17 +74,13 @@ pub struct DnssecDelegationKeyInfo {
 pub struct DnssecDelegationInfo {
     /// The nameservers asked, from the zone's setting.
     pub parent_ns_addrs: Vec<String>,
-    /// `published` when the parent serves a DS for the zone, `hidden` when
-    /// it serves none.
-    #[schema(example = "published")]
-    pub ds_state: String,
+    pub ds_state: DsState,
     /// Key tags of the DS records the parent serves.
     pub ds_key_tags: Vec<u16>,
     /// The zone's SEP keys, each with whether the parent serves its DS.
     pub keys: Vec<DnssecDelegationKeyInfo>,
     /// TTL of the parent's DS records: how long caches may keep serving
     /// them once removed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 86400)]
     pub ds_ttl: Option<u32>,
     pub checked_at: DateTime<Utc>,
@@ -101,21 +101,17 @@ pub struct RolloverDnssecRequest {
 pub struct DnssecKeyInfo {
     #[schema(example = 1)]
     pub id: i32,
-    /// `csk`, `ksk`, or `zsk`.
-    #[schema(example = "csk")]
-    pub role: String,
-    /// Rollover lifecycle state: `published`, `active`, or `retired`.
-    #[schema(example = "active")]
-    pub state: String,
+    pub role: DnssecKeyRole,
+    /// Rollover lifecycle state.
+    pub state: DnssecKeyState,
     pub state_changed_at: DateTime<Utc>,
     /// Next allowed transition: promotion for `published`, removal for
     /// `retired`; absent for `active`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eligible_at: Option<DateTime<Utc>>,
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: String,
     #[schema(example = 34217)]
-    pub key_tag: i32,
+    pub key_tag: u16,
     /// Apex DNSKEY RDATA: `<flags> 3 <alg> <public key>`; flags are 256 for
     /// a ZSK and 257 for a CSK or KSK.
     #[schema(
@@ -129,7 +125,7 @@ pub struct DnssecKeyInfo {
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct DnssecDsInfo {
     #[schema(example = 34217)]
-    pub key_tag: i32,
+    pub key_tag: u16,
     #[schema(example = 13)]
     pub algorithm: u8,
     /// DS digest type: 4 (SHA-384) for P-384 keys, otherwise 2 (SHA-256).
@@ -146,13 +142,12 @@ pub struct DnssecDsInfo {
 
 /// DNSSEC signing state of a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct GetDnssecStatusResponse {
+pub struct DnssecStatusResponse {
     #[schema(example = "example.com")]
     pub zone_name: String,
     #[schema(example = true)]
     pub enabled: bool,
     /// The policy the zone signs under; absent for an unsigned zone.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub policy: Option<GetDnssecPolicyResponse>,
     pub keys: Vec<DnssecKeyInfo>,
     /// DS forms of the keys, to be registered in the parent zone.
@@ -163,15 +158,12 @@ pub struct GetDnssecStatusResponse {
     #[schema(example = false)]
     pub withdrawing: bool,
     /// Configured parent nameservers; may also be set while the zone is unsigned.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = "a.gtld-servers.net,b.gtld-servers.net")]
-    pub parent_ns_addrs: Option<String>,
+    #[schema(example = json!(["a.gtld-servers.net", "b.gtld-servers.net"]))]
+    pub parent_ns_addrs: Option<Vec<String>>,
     /// The parent's answer about the zone's DS; present only when this
     /// status comes from a parent check.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegation: Option<DnssecDelegationInfo>,
     /// Earliest stored signature expiration; the re-signer renews before it.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub earliest_signature_expires_at: Option<DateTime<Utc>>,
     /// Signatures the zone serves.
     #[schema(example = 42)]
@@ -181,20 +173,19 @@ pub struct GetDnssecStatusResponse {
     #[schema(example = 0)]
     pub expired_signatures: u64,
     /// When the re-signer next has work; absent for an unsigned zone.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub next_resign_at: Option<DateTime<Utc>>,
     #[schema(example = 7)]
-    pub serial: i32,
+    pub serial: u32,
 }
 
 /// One key's BIND file contents. Served only over the daemon socket:
 /// private keys never transit the HTTP API.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DnssecKeyMaterial {
-    pub role: String,
+    pub role: DnssecKeyRole,
     /// IANA algorithm number.
     pub algorithm: i32,
-    pub key_tag: i32,
+    pub key_tag: u16,
     /// `K*.key` contents: the DNSKEY record line.
     pub dnskey_record: String,
     /// `K*.private` contents.
@@ -226,11 +217,5 @@ pub struct ImportDnssecKeyRequest {
     pub keys: Vec<ImportDnssecKeyPair>,
     /// Policy the zone signs under; defaults to `default`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub policy: Option<String>,
-}
-
-/// A zone's DNSSEC status wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct DnssecStatusResponse {
-    pub dnssec: GetDnssecStatusResponse,
+    pub policy_name: Option<String>,
 }

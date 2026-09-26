@@ -87,7 +87,7 @@ async fn zone_versions_and_rollback_flow() {
         .filter(|record| record["type"] == "A")
         .map(|record| record["name"].as_str().unwrap())
         .collect();
-    assert_eq!(a_records, ["www"]);
+    assert_eq!(a_records, [format!("www.{zone_name}.")]);
 
     // Serial 1 -> 2 added the www A record; 2 -> 3 added extra.
     let diff = app
@@ -95,7 +95,7 @@ async fn zone_versions_and_rollback_flow() {
         .await;
     assert!(diff.contains("SOA serial: 1 -> 2"), "{diff}");
     assert!(diff.contains("By name and type: +1 -0 ~0"), "{diff}");
-    // The added RRset renders as a zone-file line under a `+`.
+    // The added record set renders as a zone-file line under a `+`.
     assert!(diff.contains(&format!("+ www.{zone_name}.")), "{diff}");
     assert!(
         diff.contains("IN A") && diff.contains("192.0.2.80"),

@@ -4,18 +4,18 @@ use chrono::Utc;
 
 use super::{
     RecordService,
-    bulk::{PreparedRecord, parse_record},
+    bulk::{PreparedRecord, parse_record_request},
     validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
 };
 use crate::{
     authorization::{Caller, RecordWrite},
     dnssec::DnssecService,
     error::ServiceError,
-    model::record::Record,
+    model::record::{Record, RecordData},
     repository::RepositoryService,
     serial::generate_serial,
     types::{CreateRecordRequest, GetRecordResponse, RecordDiff, RecordWriteResponse},
-    zone::{ZoneService, diff::build_record_diff, history::ReconstructedRecord},
+    zone::{ZoneService, diff::build_record_diff},
 };
 
 impl RecordService {
@@ -31,7 +31,7 @@ impl RecordService {
             value: record_value,
             priority,
             ..
-        } = parse_record(
+        } = parse_record_request(
             &create_record_request.name,
             &create_record_request.record_type,
             &create_record_request.value,
@@ -95,10 +95,10 @@ impl RecordService {
             )?;
 
             // The owner's rows frame the diff, as they do for every change.
-            let before: Vec<ReconstructedRecord> = records_at_name
+            let before: Vec<RecordData> = records_at_name
                 .iter()
                 .cloned()
-                .map(ReconstructedRecord::from)
+                .map(RecordData::from)
                 .collect();
             let candidate = Record {
                 id: 0,
@@ -111,7 +111,7 @@ impl RecordService {
                 created_at: Utc::now(),
             };
             let mut after = before.clone();
-            after.push(ReconstructedRecord::from(candidate.clone()));
+            after.push(RecordData::from(candidate.clone()));
             let diff = build_record_diff(&zone, &before, &after);
 
             // The record is validated and authorized, so a dry run stops here.
@@ -163,10 +163,8 @@ impl RecordService {
         );
 
         // Request secondary transfers only after the new record is committed.
-        if !create_record_request.dry_run
-            && let Err(e) = crate::notify::send_notify_after_update(Some(zone_name.as_str())).await
-        {
-            log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
+        if !create_record_request.dry_run {
+            crate::notify::notify_after_update(zone_name.as_str()).await;
         }
 
         Ok(RecordWriteResponse {

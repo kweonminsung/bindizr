@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use axum::{
     http::{StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
@@ -13,8 +11,7 @@ use bindizr_service::{
 };
 use chrono::Utc;
 
-/// Same budget as /health: scrapes must not hang on a wedged database.
-const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+use crate::daemon::DB_PROBE_TIMEOUT;
 
 /// Prometheus text-format scrape endpoint.
 pub(crate) async fn handle_metrics() -> Response {

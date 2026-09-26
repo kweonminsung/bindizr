@@ -18,6 +18,10 @@ use crate::{api, cli::error::CliError, dns, shutdown::Shutdown, socket};
 /// exits anyway.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long a front end waits for the database before answering without it;
+/// a wedged database must not hang a probe, a scrape, `status`, or `doctor`.
+pub(crate) const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Re-exec path captured at startup: after a package upgrade /proc/self/exe
 /// reads as a "(deleted)" path, while this path points at the replacement.
 static DAEMON_EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
@@ -92,16 +96,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
 
     service::dnssec::initialize_scheduler();
 
-    // DNS must be listening before startup NOTIFY can prompt secondary transfers.
     let shutdown = Shutdown::new();
     let (dns_tcp_task, dns_udp_task) = dns::initialize(&shutdown).await?;
-
-    if config::bindizr_config().dns.notify.on_startup {
-        match service::notify::send_notify(None).await {
-            Ok(()) => log::info!("Startup DNS NOTIFY completed."),
-            Err(e) => log::error!("Startup DNS NOTIFY failed: {}", e),
-        }
-    }
 
     let mut control_rx = socket::server::control::initialize();
     let socket_task = socket::server::serve(socket_listener, &shutdown)?;

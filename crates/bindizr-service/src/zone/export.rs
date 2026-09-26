@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use bindizr_core::dns::{dnssec::rdata_presentation, name::to_fqdn};
+use bindizr_core::dns::name::to_fqdn;
 use bindizr_db::repository::LockLevel;
 
 use super::ZoneService;
@@ -98,7 +98,7 @@ impl ZoneService {
             (
                 row.name.clone(),
                 row.record_type,
-                rdata_presentation(row.record_type, &row.rdata),
+                row.rdata.to_presentation(row.record_type),
             )
         });
         for row in &derived {
@@ -108,7 +108,7 @@ impl ZoneService {
                 row.name,
                 row.ttl,
                 row.record_type,
-                rdata_presentation(row.record_type, &row.rdata),
+                row.rdata.to_presentation(row.record_type),
             );
         }
 

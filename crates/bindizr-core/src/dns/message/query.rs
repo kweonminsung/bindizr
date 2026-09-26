@@ -149,6 +149,6 @@ fn extract_ixfr_serial(message: &Message<&[u8]>) -> Option<u32> {
         .authority()
         .ok()?
         .limit_to::<Soa<_>>()
-        .find_map(|rr| rr.ok())
-        .map(|rr| rr.data().serial().into_int())
+        .find_map(|record| record.ok())
+        .map(|record| record.data().serial().into_int())
 }

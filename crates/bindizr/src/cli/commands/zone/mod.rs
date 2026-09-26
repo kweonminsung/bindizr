@@ -18,16 +18,16 @@ use crate::{
         error::CliError,
         output::{
             ImportSummaryRow, OutputFormat, SecondaryStatusRow, TokenGrantRow, TsigGrantRow,
-            ZoneRow, parse_response, print_payload, print_response, print_table,
+            ZoneRow, parse_payload, print_payload, print_response, print_table,
             render_change_preview,
         },
     },
+    params::NameParams,
     socket::{
         client,
         types::{
             DaemonCommandKind, DeleteZoneParams, ExportZoneFileParams, ImportZoneParams,
             ListGrantsParams, NotifyAllZonesParams, NotifyZoneParams, UpdateZoneParams,
-            ZoneNameParams,
         },
     },
 };
@@ -58,7 +58,7 @@ and the contact is the address a resolver operator writes to.")]
         default_ttl: Option<i32>,
         /// Starting serial, 1-2137483647 (optional, auto-generated if not provided)
         #[arg(long)]
-        serial: Option<i32>,
+        serial: Option<u32>,
         /// SOA refresh interval (seconds)
         #[arg(long)]
         refresh: Option<i32>,
@@ -105,13 +105,13 @@ and the contact is the address a resolver operator writes to.")]
         max_default_ttl: Option<i32>,
         /// Filter by serial
         #[arg(long)]
-        serial: Option<i32>,
+        serial: Option<u32>,
         /// Filter by minimum serial
         #[arg(long)]
-        min_serial: Option<i32>,
+        min_serial: Option<u32>,
         /// Filter by maximum serial
         #[arg(long)]
-        max_serial: Option<i32>,
+        max_serial: Option<u32>,
         /// Keep zones created at or after this RFC 3339 timestamp
         #[arg(long, value_name = "TIMESTAMP")]
         created_after: Option<chrono::DateTime<chrono::Utc>>,
@@ -491,13 +491,13 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             )?;
         }
         ZoneCommand::Get { name, output } => {
-            let data = client::send_command(DaemonCommandKind::GetZone, ZoneNameParams { name })
+            let data = client::send_command(DaemonCommandKind::GetZone, NameParams { name })
                 .await?
                 .data;
 
             match output {
                 OutputFormat::Table => {
-                    let response: ZoneResponse = parse_response(&data)?;
+                    let response: ZoneResponse = parse_payload(&data)?;
                     print_table(vec![ZoneRow::from(&response.zone)]);
                 }
                 _ => print_payload(&data, output)?,
@@ -568,7 +568,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             )
             .await?
             .data;
-            let export: ExportZoneFileResponse = parse_response(&data)?;
+            let export: ExportZoneFileResponse = parse_payload(&data)?;
             out!("{}", export.zone_file);
         }
         ZoneCommand::Import {
@@ -598,7 +598,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             )
             .await?;
 
-            let import: ImportZoneResponse = parse_response(&response.data)?;
+            let import: ImportZoneResponse = parse_payload(&response.data)?;
             match output {
                 OutputFormat::Table => {
                     outln!("{}", response.message);
@@ -630,17 +630,16 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
         ZoneCommand::Version { subcommand } => version::handle_command(subcommand).await?,
         ZoneCommand::Status { name, output } => {
             let response =
-                client::send_command(DaemonCommandKind::GetZoneStatus, ZoneNameParams { name })
-                    .await?;
+                client::send_command(DaemonCommandKind::GetZoneStatus, NameParams { name }).await?;
 
             if output != OutputFormat::Table {
                 print_payload(&response.data, output)?;
                 return Ok(());
             }
-            let status: ZoneStatusResponse = parse_response(&response.data)?;
-            outln!("Zone {} (serial {})", status.zone, status.serial);
+            let status: ZoneStatusResponse = parse_payload(&response.data)?;
+            outln!("Zone {} (serial {})", status.zone_name, status.serial);
             if status.secondaries.is_empty() {
-                outln!("No secondaries configured.");
+                outln!("No enabled secondaries.");
                 return Ok(());
             }
             print_table(SecondaryStatusRow::rows_from_status(&status));

@@ -5,10 +5,13 @@ use std::collections::{HashMap, HashSet};
 use bindizr_core::dns::name::OwnerName;
 
 use crate::{
-    model::{record::Record, zone::Zone},
+    model::{
+        record::{Record, RecordData},
+        zone::Zone,
+    },
     record::bulk::PreparedRecord,
     types::{ImportMode, RecordDiff},
-    zone::{diff::build_record_diff, history::ReconstructedRecord},
+    zone::diff::build_record_diff,
 };
 
 /// A record the import wants present, with its owner name already normalized so
@@ -141,18 +144,14 @@ impl ImportPlan<'_> {
             .map(|r| r.id)
             .collect();
 
-        let before: Vec<ReconstructedRecord> = existing
-            .iter()
-            .cloned()
-            .map(ReconstructedRecord::from)
-            .collect();
-        let mut after: Vec<ReconstructedRecord> = existing
+        let before: Vec<RecordData> = existing.iter().cloned().map(RecordData::from).collect();
+        let mut after: Vec<RecordData> = existing
             .iter()
             .filter(|record| !deleted_ids.contains(&record.id))
             .cloned()
-            .map(ReconstructedRecord::from)
+            .map(RecordData::from)
             .collect();
-        after.extend(self.adds.iter().map(|add| ReconstructedRecord {
+        after.extend(self.adds.iter().map(|add| RecordData {
             name: add.stored_name.clone(),
             record_type: add.prepared.record_type.clone(),
             value: add.prepared.value.clone(),

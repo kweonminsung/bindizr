@@ -40,9 +40,9 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
     }
 }
 
-/// Verify that initial signing emits key RRsets NSEC chain and RRSIGs.
+/// Verify that initial signing emits key record sets NSEC chain and RRSIGs.
 #[test]
-fn initial_signing_emits_key_rrsets_nsec_chain_and_rrsigs() {
+fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
     let zone = test_zone();
     let keys = [test_key(
         &zone,
@@ -123,7 +123,7 @@ fn initial_signing_emits_key_rrsets_nsec_chain_and_rrsigs() {
     assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
     assert_eq!(rrsigs_covering(&diff.added, &www, RECORD_TYPE_A).len(), 1);
     assert!(rrsigs.iter().all(|row| row.expires_at.is_some()));
-    assert!(rrsigs.iter().all(|row| row.rrset_digest.is_some()));
+    assert!(rrsigs.iter().all(|row| row.record_set_digest.is_some()));
 }
 
 /// Verify that NSEC3 mode builds hashed chain with nsec3param.
@@ -165,7 +165,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
     assert_eq!(nsec3s.len(), 2);
     assert!(nsec3s.iter().all(|row| !row.name.is_apex()));
 
-    // Every NSEC3 and the NSEC3PARAM RRset is signed.
+    // Every NSEC3 and the NSEC3PARAM record set is signed.
     for row in nsec3s {
         assert_eq!(
             rrsigs_covering(
@@ -227,13 +227,13 @@ fn delegation_ns_and_glue_are_unsigned() {
     let sub = OwnerName::parse_in_zone("sub", &zone.name).unwrap();
     let glue = OwnerName::parse_in_zone("ns.sub", &zone.name).unwrap();
 
-    // RFC 4035, Section 2.2: the delegation NS RRset and glue — the A at the
+    // RFC 4035, Section 2.2: the delegation NS record set and glue — the A at the
     // cut owner included — are not signed, and glue owns no NSEC; the
     // delegation point itself stays in the chain.
     assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_NS).is_empty());
     assert!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_A).is_empty());
     assert!(rrsigs_covering(&diff.added, &glue, RECORD_TYPE_A).is_empty());
-    // The DS RRset at the cut is the parent's authoritative data (RFC 4035,
+    // The DS record set at the cut is the parent's authoritative data (RFC 4035,
     // Section 2.4), unlike the NS beside it.
     assert_eq!(rrsigs_covering(&diff.added, &sub, RECORD_TYPE_DS).len(), 1);
     assert!(
@@ -251,7 +251,7 @@ fn delegation_ns_and_glue_are_unsigned() {
 
 /// Verify that mixed TTL RRSET signs at the minimum.
 #[test]
-fn mixed_ttl_rrset_signs_at_the_minimum() {
+fn mixed_ttl_record_set_signs_at_the_minimum() {
     let zone = test_zone();
     let keys = [test_key(
         &zone,
@@ -315,7 +315,7 @@ fn withdrawal_publishes_the_delete_cds_pair() {
     .unwrap();
 
     // RFC 8078, Section 4: a single 0-algorithm CDS/CDNSKEY pair replaces the
-    // per-key set and asks the parent to delete the DS RRset.
+    // per-key set and asks the parent to delete the DS record set.
     let cds = records_of_type(&diff.added, DnssecRecordType::Cds);
     assert_eq!(cds.len(), 1);
     assert_eq!(cds[0].rdata.as_bytes(), &[0, 0, 0, 0, 0]);

@@ -62,6 +62,43 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          # Register the secondaries over the daemon's socket once it answers:
+          # an existing one takes the chart's address, a replica scaled away
+          # loses its row.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    for entry in {{ include "bindizr-chart.secondaries" . }}; do
+                      name="${entry%%=*}"
+                      address="${entry#*=}"
+                      attempt=0
+                      until bindizr secondary update "$name" --address "$address" >/dev/null 2>&1 \
+                        || bindizr secondary create "$name" --address "$address" >/dev/null 2>&1; do
+                        attempt=$((attempt + 1))
+                        if [ "$attempt" -ge 120 ]; then
+                          echo "failed to register secondary $name at $address" >&2
+                          exit 1
+                        fi
+                        sleep 1
+                      done
+                    done
+                    replicas={{ .Values.bind9.replicas | int }}
+                    for name in $(bindizr secondary list --limit 1000 -o yaml | sed -n 's/^  name: //p'); do
+                      case "$name" in
+                        bind9-*) index="${name#bind9-}" ;;
+                        *) continue ;;
+                      esac
+                      case "$index" in
+                        ''|*[!0-9]*) continue ;;
+                      esac
+                      if [ "$index" -ge "$replicas" ]; then
+                        bindizr secondary delete "$name" >/dev/null 2>&1 || true
+                      fi
+                    done
           {{- with .Values.bindizr.startupProbe }}
           startupProbe:
             {{- toYaml . | nindent 12 }}

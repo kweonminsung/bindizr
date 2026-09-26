@@ -25,6 +25,15 @@ pub enum RecordValueRequest {
 }
 
 impl RecordValueRequest {
+    /// The value as one string; TXT segments concatenate into the text they
+    /// encode.
+    pub fn to_text(&self) -> String {
+        match self {
+            RecordValueRequest::String(value) => value.clone(),
+            RecordValueRequest::Segments(segments) => segments.concat(),
+        }
+    }
+
     /// Encode the request value into its record-row form. A TXT string is raw
     /// content (never presentation form), so quotes carry no special meaning.
     pub(crate) fn to_encoded_value(
@@ -191,37 +200,49 @@ pub struct DeleteRecordsResponse {
     #[schema(example = false)]
     pub dry_run: bool,
     #[schema(example = 3)]
-    pub deleted: usize,
+    pub deleted: u64,
     pub records: Vec<GetRecordResponse>,
     /// The removal as a record diff, for previewing the change.
     pub diff: RecordDiff,
 }
 
 /// Query filters and pagination for listing records.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct GetRecordsFilter {
+    /// The name of the DNS zone to filter records by.
     #[schema(example = "example.com")]
     pub zone_name: Option<String>,
+    /// Filter by record name.
     #[schema(example = "sub")]
     pub name: Option<String>,
+    /// Filter by record type.
     #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: Option<String>,
+    /// Partially filter by record value.
     #[schema(example = "192.168.1.100")]
     pub value: Option<String>,
+    /// Filter by TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
+    /// Filter by minimum TTL.
     #[schema(example = 300)]
     pub min_ttl: Option<i32>,
+    /// Filter by maximum TTL.
     #[schema(example = 86400)]
     pub max_ttl: Option<i32>,
+    /// Filter by priority.
     #[schema(example = 10)]
     pub priority: Option<i32>,
+    /// Filter by minimum priority.
     #[schema(example = 1)]
     pub min_priority: Option<i32>,
+    /// Filter by maximum priority.
     #[schema(example = 20)]
     pub max_priority: Option<i32>,
+    /// Partially search records.
     #[schema(example = "api")]
     pub search: Option<String>,
     /// `name` (the default), `type`, `ttl`, `priority`, or `created_at`.
@@ -230,25 +251,34 @@ pub struct GetRecordsFilter {
     /// `asc` (the default) or `desc`.
     #[schema(example = "asc")]
     pub order: Option<String>,
-    /// With true, the derived DNSSEC records page after the user records.
+    /// Append the zone's derived DNSSEC records (RRSIG, DNSKEY,
+    /// NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the
+    /// same pagination. Derived rows carry no id, and `type` also accepts a
+    /// derived type. A search narrows them by name only, a priority filter
+    /// leaves them out, and a value filter is refused rather than answered
+    /// without them.
     #[schema(example = false)]
     pub signed: Option<bool>,
-    /// Defaults to 50 when omitted; 1000 is the largest page accepted.
+    /// Records per page; defaults to 50 when omitted, 1000 is the largest
+    /// page accepted.
     #[schema(example = 50)]
+    #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
+    /// Number of records to skip.
     #[schema(example = 0)]
     pub offset: Option<u64>,
 }
 
-/// API representation of a record.
+/// API representation of a record. `name` is the owner's absolute name with
+/// its trailing dot, as name-valued rdata is rendered; `zone_name` is the
+/// zone's bare name, the spelling `/zones/{name}` takes.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct GetRecordResponse {
     /// Absent on the derived DNSSEC rows of a signed listing, which are not
     /// addressable records.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 1)]
     pub id: Option<i32>,
-    #[schema(example = "sub")]
+    #[schema(example = "www.example.com.")]
     pub name: String,
     #[serde(rename = "type")]
     #[schema(example = "A")]
@@ -276,7 +306,7 @@ impl GetRecordResponse {
             ttl: record.ttl,
             priority: record.priority,
             zone_id: record.zone_id,
-            zone_name: zone_name.to_fqdn(),
+            zone_name: zone_name.to_string(),
         }
     }
 
@@ -306,9 +336,9 @@ pub struct RecordWriteResponse {
     pub diff: RecordDiff,
 }
 
-/// Response for a bulk insert: the count inserted and the created records. On a
+/// Response for a bulk insert: the count added and the created records. On a
 /// dry run `records` holds the validated would-be records (with placeholder
-/// IDs) and nothing is inserted.
+/// IDs) and nothing is added.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct BulkRecordsResponse {
     #[schema(example = true)]
@@ -316,7 +346,7 @@ pub struct BulkRecordsResponse {
     #[schema(example = false)]
     pub dry_run: bool,
     #[schema(example = 3)]
-    pub inserted: usize,
+    pub added: u64,
     pub records: Vec<GetRecordResponse>,
     /// Dry-run diff; adding a value at an existing name and type is a changed group.
     pub diff: RecordDiff,

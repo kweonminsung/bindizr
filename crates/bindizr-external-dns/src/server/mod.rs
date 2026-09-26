@@ -55,6 +55,44 @@ pub(crate) fn health_router(state: Arc<AppState>) -> Router {
 }
 
 /// Serialize a webhook response with its JSON content type.
+impl IntoResponse for UpstreamError {
+    /// external-dns retries only 5xx; upstream 4xx pass through as permanent
+    /// errors and upstream 5xx / transport failures become a retryable 502.
+    ///
+    /// An unauthenticated 401 is the exception: replacing the token heals it, so it
+    /// answers 503 and the change set is retried afterwards instead of being
+    /// dropped as permanently bad. A 403 stays permanent — the token is known and
+    /// the zone is genuinely not the adapter's to write.
+    fn into_response(self) -> Response {
+        match self {
+            UpstreamError::Status {
+                status: 401,
+                message,
+            } => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("bindizr rejected the adapter's token: {}", message),
+            )
+                .into_response(),
+            UpstreamError::Status { status, message } if status < 500 => (
+                StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST),
+                message,
+            )
+                .into_response(),
+            UpstreamError::Status { status, .. } => (
+                StatusCode::BAD_GATEWAY,
+                format!("bindizr responded with status {}", status),
+            )
+                .into_response(),
+            UpstreamError::Unreachable(message) => {
+                (StatusCode::BAD_GATEWAY, message).into_response()
+            }
+            UpstreamError::NoManageableNames => {
+                (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
+            }
+        }
+    }
+}
+
 fn json_response<T: serde::Serialize>(value: &T) -> Response {
     match serde_json::to_string(value) {
         // external-dns compares the negotiation Content-Type byte-for-byte,
@@ -65,40 +103,6 @@ fn json_response<T: serde::Serialize>(value: &T) -> Response {
             format!("failed to encode response: {}", e),
         )
             .into_response(),
-    }
-}
-
-/// external-dns retries only 5xx; upstream 4xx pass through as permanent
-/// errors and upstream 5xx / transport failures become a retryable 502.
-///
-/// An unauthenticated 401 is the exception: replacing the token heals it, so it
-/// answers 503 and the change set is retried afterwards instead of being
-/// dropped as permanently bad. A 403 stays permanent — the token is known and
-/// the zone is genuinely not the adapter's to write.
-fn upstream_error_response(error: UpstreamError) -> Response {
-    match error {
-        UpstreamError::Status {
-            status: 401,
-            message,
-        } => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!("bindizr rejected the adapter's token: {}", message),
-        )
-            .into_response(),
-        UpstreamError::Status { status, message } if status < 500 => (
-            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST),
-            message,
-        )
-            .into_response(),
-        UpstreamError::Status { status, .. } => (
-            StatusCode::BAD_GATEWAY,
-            format!("bindizr responded with status {}", status),
-        )
-            .into_response(),
-        UpstreamError::Unreachable(message) => (StatusCode::BAD_GATEWAY, message).into_response(),
-        UpstreamError::NoManageableNames => {
-            (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
-        }
     }
 }
 
@@ -177,7 +181,7 @@ async fn negotiate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
             log::info!("event=negotiate domains={}", domains.len());
             json_response(&DomainFilter { include: domains })
         }
-        Err(e) => upstream_error_response(e),
+        Err(e) => e.into_response(),
     }
 }
 
@@ -200,7 +204,7 @@ async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
             log::info!("event=records_get endpoints={}", endpoints.len());
             json_response(&endpoints)
         }
-        Err(e) => upstream_error_response(e),
+        Err(e) => e.into_response(),
     }
 }
 
@@ -238,7 +242,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
             );
             StatusCode::NO_CONTENT.into_response()
         }
-        Err(e) => upstream_error_response(e),
+        Err(e) => e.into_response(),
     }
 }
 
@@ -279,7 +283,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
             log::info!("event=adjust_endpoints endpoints={}", endpoints.len());
             json_response(&build_adjusted_endpoints(endpoints, adjusted))
         }
-        Err(e) => upstream_error_response(e),
+        Err(e) => e.into_response(),
     }
 }
 

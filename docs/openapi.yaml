@@ -577,25 +577,33 @@ paths:
           type: string
       - name: sort
         in: query
-        description: Sort by name (the default), type, ttl, priority, or created_at.
+        description: '`name` (the default), `type`, `ttl`, `priority`, or `created_at`.'
         required: false
         schema:
           type: string
       - name: order
         in: query
-        description: asc (the default) or desc.
+        description: '`asc` (the default) or `desc`.'
         required: false
         schema:
           type: string
       - name: signed
         in: query
-        description: Append the zone's derived DNSSEC records (RRSIG, DNSKEY, NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the same pagination. Derived rows carry no id, and type also accepts a derived type. A search narrows them by name only — their type is stored as a number and their rdata as wire bytes — a priority filter leaves them out, since none carries one, and a value filter is refused outright rather than answered without them.
+        description: |-
+          Append the zone's derived DNSSEC records (RRSIG, DNSKEY,
+          NSEC/NSEC3/NSEC3PARAM, CDS, CDNSKEY) after the user records, in the
+          same pagination. Derived rows carry no id, and `type` also accepts a
+          derived type. A search narrows them by name only, a priority filter
+          leaves them out, and a value filter is refused rather than answered
+          without them.
         required: false
         schema:
           type: boolean
       - name: limit
         in: query
-        description: Records per page; defaults to 50.
+        description: |-
+          Records per page; defaults to 50 when omitted, 1000 is the largest
+          page accepted.
         required: false
         schema:
           type: integer
@@ -854,14 +862,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /records/{record_id}:
+  /records/{id}:
     get:
       tags:
       - Record
       summary: Get a specific DNS record
       operationId: get_record
       parameters:
-      - name: record_id
+      - name: id
         in: path
         description: The ID of the DNS record to retrieve.
         required: true
@@ -900,7 +908,7 @@ paths:
       description: Applies the given fields and keeps the rest. `value` is required when `type` changes, since a stored value is encoded per type.
       operationId: update_record
       parameters:
-      - name: record_id
+      - name: id
         in: path
         description: The ID of the DNS record to update.
         required: true
@@ -968,7 +976,7 @@ paths:
       summary: Delete a specific DNS record
       operationId: delete_record
       parameters:
-      - name: record_id
+      - name: id
         in: path
         description: The ID of the DNS record to delete.
         required: true
@@ -1014,6 +1022,314 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /secondaries:
+    get:
+      tags:
+      - Secondary
+      summary: List all secondaries
+      description: Lists every registered secondary, disabled ones included. An enabled secondary receives NOTIFY for every zone, may pull zones unsigned from its address, and is probed for the serial it serves.
+      operationId: list_secondaries
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+      responses:
+        '200':
+          description: All secondaries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse_GetSecondaryResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Secondary
+      summary: Register a secondary
+      description: Registers a secondary by name and `host[:port]` address (port 53 when left out). It receives NOTIFY from the next change on and may pull zones unsigned from that address; a hostname is resolved when used. A signed transfer is authorized by its key instead, but NOTIFY still goes only to the registered secondaries. With `notify_key_name`, every NOTIFY to it is signed with that TSIG key and the answer's signature checked.
+      operationId: create_secondary
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecondaryRequest'
+        required: true
+      responses:
+        '201':
+          description: Secondary registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondaryResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A secondary with the same name or address already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /secondaries/{name}:
+    get:
+      tags:
+      - Secondary
+      summary: Get a secondary
+      operationId: get_secondary
+      parameters:
+      - name: name
+        in: path
+        description: The name of the secondary.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The secondary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondaryResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Secondary not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+      - Secondary
+      summary: Update a secondary
+      description: Changes the address, the NOTIFY key (empty sends NOTIFY unsigned again), or enables or disables the secondary; an omitted field keeps its value. A disabled secondary receives no NOTIFY, may not transfer unsigned, and is not probed, but stays registered.
+      operationId: update_secondary
+      parameters:
+      - name: name
+        in: path
+        description: The name of the secondary.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSecondaryRequest'
+        required: true
+      responses:
+        '200':
+          description: Secondary updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondaryResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Secondary not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Another secondary already has the address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - Secondary
+      summary: Delete a secondary
+      description: 'Forgets the secondary: it receives no further NOTIFY and its unsigned transfers are refused from the next request on.'
+      operationId: delete_secondary
+      parameters:
+      - name: name
+        in: path
+        description: The name of the secondary.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Secondary deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Secondary not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /secondaries/{name}/check:
+    post:
+      tags:
+      - Secondary
+      summary: Check a secondary
+      description: Resolves the secondary's address, asks it for the catalog zone's SOA serial and compares that with the serial Bindizr serves, and sends it a NOTIFY for the catalog zone. A disabled secondary is checked all the same. The NOTIFY is a real one, so the secondary may transfer the catalog as a result.
+      operationId: check_secondary
+      parameters:
+      - name: name
+        in: path
+        description: The name of the secondary.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: What the secondary answered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondaryCheckResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Secondary not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error, including Bindizr's own DNS listener not answering
           content:
             application/json:
               schema:
@@ -1320,7 +1636,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateTokenGrantRequest'
+              $ref: '#/components/schemas/CreateGrantRequest'
         required: true
       responses:
         '201':
@@ -1696,7 +2012,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateTsigGrantRequest'
+              $ref: '#/components/schemas/CreateGrantRequest'
         required: true
       responses:
         '201':
@@ -1852,6 +2168,7 @@ paths:
         schema:
           type: integer
           format: int32
+          minimum: 0
       - name: min_serial
         in: query
         description: Filter by minimum serial.
@@ -1859,6 +2176,7 @@ paths:
         schema:
           type: integer
           format: int32
+          minimum: 0
       - name: max_serial
         in: query
         description: Filter by maximum serial.
@@ -1866,27 +2184,30 @@ paths:
         schema:
           type: integer
           format: int32
+          minimum: 0
       - name: created_after
         in: query
         description: Keep zones created at or after this RFC 3339 timestamp.
         required: false
         schema:
           type: string
+          format: date-time
       - name: created_before
         in: query
         description: Keep zones created at or before this RFC 3339 timestamp.
         required: false
         schema:
           type: string
+          format: date-time
       - name: signed
         in: query
-        description: true keeps the zones signing under a DNSSEC policy, false the rest.
+        description: '`true` keeps the zones signing under a DNSSEC policy, `false` the rest.'
         required: false
         schema:
           type: boolean
       - name: enabled
         in: query
-        description: true keeps the zones the DNS plane serves, false the disabled ones.
+        description: '`true` keeps the zones the DNS plane serves, `false` the disabled ones.'
         required: false
         schema:
           type: boolean
@@ -1898,19 +2219,21 @@ paths:
           type: string
       - name: sort
         in: query
-        description: Sort by name (the default), serial, default_ttl, or created_at.
+        description: '`name` (the default), `serial`, `default_ttl`, or `created_at`.'
         required: false
         schema:
           type: string
       - name: order
         in: query
-        description: asc (the default) or desc.
+        description: '`asc` (the default) or `desc`.'
         required: false
         schema:
           type: string
       - name: limit
         in: query
-        description: Zones per page; defaults to 50.
+        description: |-
+          Zones per page; defaults to 50 when omitted, 1000 is the largest page
+          accepted.
         required: false
         schema:
           type: integer
@@ -2216,7 +2539,7 @@ paths:
       tags:
       - DNSSEC
       summary: Change a zone's DNSSEC settings
-      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy` moves a signed zone to another policy: the key layout must match the current policy''s (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys are removed after promotion and cache drain (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as comma-separated `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
+      description: 'Applies the given fields in one transaction; an omitted field keeps its value. `policy_name` moves a signed zone to another policy: the key layout must match the current policy''s (it is fixed while signed; disable and re-enable to change it), a different denial mode replaces the chain under one serial, and a different algorithm starts an algorithm rollover that double-signs the zone until the old keys are removed after promotion and cache drain (RFC 6840, Section 5.11). `parent_ns_addrs` names the parent zone''s nameservers asked for the zone''s DS, as `host[:port]` entries; the list must name at least one server, and it applies to unsigned zones too.'
       operationId: update_dnssec_settings
       parameters:
       - name: name
@@ -2284,7 +2607,7 @@ paths:
       tags:
       - DNSSEC
       summary: Enable DNSSEC for a zone
-      description: 'Generates the zone''s signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC3 denial — when `policy` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone''s nameservers that every later DS check asks.'
+      description: 'Generates the zone''s signing key(s) as the named DNSSEC policy prescribes (the built-in `default` policy — an ECDSA P-256 CSK with NSEC3 denial — when `policy_name` is omitted) and signs the whole zone. The response includes the DS records to register in the parent zone. `parent_ns_addrs` is required: it names the parent zone''s nameservers that every later DS check asks.'
       operationId: enable_dnssec
       parameters:
       - name: name
@@ -2932,7 +3255,7 @@ paths:
       tags:
       - Zone
       summary: Check how far each secondary has caught up with a zone
-      description: Queries every configured secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no secondaries configured the list is empty.
+      description: Queries every enabled secondary for the SOA serial it currently serves and compares it with the zone's serial. Probes run live and in parallel; an unreachable secondary is reported with the failure reason. With no enabled secondaries the list is empty.
       operationId: get_zone_status
       parameters:
       - name: name
@@ -3171,6 +3494,7 @@ paths:
         schema:
           type: integer
           format: int32
+          minimum: 0
       - name: to
         in: query
         description: The serial to diff to; defaults to the current serial.
@@ -3178,6 +3502,7 @@ paths:
         schema:
           type: integer
           format: int32
+          minimum: 0
       responses:
         '200':
           description: The record differences between the two serials
@@ -3224,6 +3549,7 @@ paths:
         schema:
           type: integer
           format: int32
+          minimum: 0
       responses:
         '200':
           description: The version and its reconstructed records
@@ -3270,6 +3596,7 @@ paths:
         schema:
           type: integer
           format: int32
+          minimum: 0
       - name: dry_run
         in: query
         description: Compute and report the rollback without applying it.
@@ -3324,16 +3651,21 @@ components:
     BulkRecordsResponse:
       type: object
       description: |-
-        Response for a bulk insert: the count inserted and the created records. On a
+        Response for a bulk insert: the count added and the created records. On a
         dry run `records` holds the validated would-be records (with placeholder
-        IDs) and nothing is inserted.
+        IDs) and nothing is added.
       required:
       - applied
       - dry_run
-      - inserted
+      - added
       - records
       - diff
       properties:
+        added:
+          type: integer
+          format: int64
+          example: 3
+          minimum: 0
         applied:
           type: boolean
           example: true
@@ -3343,14 +3675,18 @@ components:
         dry_run:
           type: boolean
           example: false
-        inserted:
-          type: integer
-          example: 3
-          minimum: 0
         records:
           type: array
           items:
             $ref: '#/components/schemas/GetRecordResponse'
+    ChangeSource:
+      type: string
+      description: The plane a zone version's change came through.
+      enum:
+      - token
+      - nsupdate
+      - system
+      - local
     CreateBulkRecordsRequest:
       type: object
       description: Request body for bulk-inserting records into a zone.
@@ -3432,6 +3768,40 @@ components:
           example: 90
           minimum: 0
       additionalProperties: false
+    CreateGrantRequest:
+      type: object
+      description: |-
+        Request body for granting a credential record rights in a zone: an API
+        token's HTTP writes, or a TSIG key's updates and transfers.
+      required:
+      - zone_name
+      properties:
+        can_write:
+          type: boolean
+          description: |-
+            Whether the grant carries write rights. A read-only grant still makes
+            the zone visible to a token, narrowed the same way, and over a whole
+            zone still lets a key transfer it. Defaults to true.
+          example: true
+        record_name_pattern:
+          type:
+          - string
+          - 'null'
+          description: |-
+            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
+            Defaults to `*`.
+          example: '*.dyn'
+        record_types:
+          type:
+          - string
+          - 'null'
+          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
+          example: A,AAAA,TXT
+        zone_name:
+          type: string
+          description: Name of an existing zone.
+          example: example.com
+      additionalProperties: false
     CreateRecordRequest:
       type: object
       description: Request body for creating a record in a named zone.
@@ -3473,36 +3843,27 @@ components:
           type: string
           example: example.com
       additionalProperties: false
-    CreateTokenGrantRequest:
+    CreateSecondaryRequest:
       type: object
-      description: Request body for granting an API token record rights in a zone.
+      description: Request body for registering a secondary.
       required:
-      - zone_name
+      - name
+      - address
       properties:
-        can_write:
-          type: boolean
-          description: |-
-            Whether the grant carries write rights. A read-only grant still makes
-            the zone visible, narrowed the same way. Defaults to true.
-          example: true
-        record_name_pattern:
-          type:
-          - string
-          - 'null'
-          description: |-
-            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
-            Defaults to `*`.
-          example: '*.dyn'
-        record_types:
-          type:
-          - string
-          - 'null'
-          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
-          example: A,AAAA,TXT
-        zone_name:
+        address:
           type: string
-          description: Name of an existing zone.
-          example: example.com
+          description: '`host[:port]`, port 53 when left out; a hostname is resolved when used.'
+          example: ns2.example.net:53
+        name:
+          type: string
+          description: A plain identifier, since it travels in URL paths.
+          example: ns2
+        notify_key_name:
+          type:
+          - string
+          - 'null'
+          description: TSIG key to sign NOTIFY to this server with; omitted sends it unsigned.
+          example: notify-key
       additionalProperties: false
     CreateTokenRequest:
       type: object
@@ -3533,37 +3894,6 @@ components:
           type: string
           description: 'Letters, digits, `.`, `_`, and `-`: one URL path segment.'
           example: external-dns
-      additionalProperties: false
-    CreateTsigGrantRequest:
-      type: object
-      description: Request body for granting a TSIG key update and transfer rights in a zone.
-      required:
-      - zone_name
-      properties:
-        can_write:
-          type: boolean
-          description: |-
-            Whether the grant carries nsupdate rights. A read-only grant over the
-            whole zone still transfers it. Defaults to true.
-          example: true
-        record_name_pattern:
-          type:
-          - string
-          - 'null'
-          description: |-
-            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
-            Defaults to `*`.
-          example: '*.dyn'
-        record_types:
-          type:
-          - string
-          - 'null'
-          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
-          example: A,AAAA,TXT
-        zone_name:
-          type: string
-          description: Name of an existing zone.
-          example: example.com
       additionalProperties: false
     CreateTsigKeyRequest:
       type: object
@@ -3660,6 +3990,7 @@ components:
           format: int32
           description: Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
           example: 42
+          minimum: 0
       additionalProperties: false
     CreatedTokenResponse:
       type: object
@@ -3694,6 +4025,7 @@ components:
           example: true
         deleted:
           type: integer
+          format: int64
           example: 3
           minimum: 0
         diff:
@@ -3715,8 +4047,8 @@ components:
       - applied
       - dry_run
       - zone
-      - records
-      - versions
+      - records_deleted
+      - versions_deleted
       properties:
         applied:
           type: boolean
@@ -3725,13 +4057,13 @@ components:
         dry_run:
           type: boolean
           example: false
-        records:
+        records_deleted:
           type: integer
           format: int64
           description: Records the zone holds, all of which go with it.
           example: 1240
           minimum: 0
-        versions:
+        versions_deleted:
           type: integer
           format: int64
           description: Saved versions, so the rollback history goes too.
@@ -3760,11 +4092,7 @@ components:
             minimum: 0
           description: Key tags of the DS records the parent serves.
         ds_state:
-          type: string
-          description: |-
-            `published` when the parent serves a DS for the zone, `hidden` when
-            it serves none.
-          example: published
+          $ref: '#/components/schemas/DsState'
         ds_ttl:
           type:
           - integer
@@ -3825,13 +4153,15 @@ components:
           example: 34217
           minimum: 0
         role:
-          type: string
-          description: '`csk` or `ksk`.'
-          example: csk
+          $ref: '#/components/schemas/DnssecKeyRole'
         state:
-          type: string
-          description: '`published`, `active`, or `retired`.'
-          example: published
+          $ref: '#/components/schemas/DnssecKeyState'
+    DnssecDenial:
+      type: string
+      description: How a signed zone proves nonexistence (denial of existence).
+      enum:
+      - nsec
+      - nsec3
     DnssecDsInfo:
       type: object
       description: A key's DS form for parent-zone registration.
@@ -3860,6 +4190,7 @@ components:
           type: integer
           format: int32
           example: 34217
+          minimum: 0
         presentation:
           type: string
           description: 'Full presentation form: `<zone>. IN DS <tag> <alg> <digest_type> <digest>`.'
@@ -3905,17 +4236,34 @@ components:
           type: integer
           format: int32
           example: 34217
+          minimum: 0
         role:
-          type: string
-          description: '`csk`, `ksk`, or `zsk`.'
-          example: csk
+          $ref: '#/components/schemas/DnssecKeyRole'
         state:
-          type: string
-          description: 'Rollover lifecycle state: `published`, `active`, or `retired`.'
-          example: active
+          $ref: '#/components/schemas/DnssecKeyState'
+          description: Rollover lifecycle state.
         state_changed_at:
           type: string
           format: date-time
+    DnssecKeyRole:
+      type: string
+      description: |-
+        What a key signs: a CSK everything, a KSK/ZSK pair splits the apex DNSKEY
+        records (whose signer the parent DS must name, RFC 7344, Section 4.1) from
+        the zone data.
+      enum:
+      - csk
+      - ksk
+      - zsk
+    DnssecKeyState:
+      type: string
+      description: |-
+        Rollover lifecycle position (RFC 7583); a settled zone holds only
+        `Active` keys.
+      enum:
+      - published
+      - active
+      - retired
     DnssecPolicyResponse:
       type: object
       description: A DNSSEC policy wrapped in a response envelope.
@@ -3926,12 +4274,96 @@ components:
           $ref: '#/components/schemas/GetDnssecPolicyResponse'
     DnssecStatusResponse:
       type: object
-      description: A zone's DNSSEC status wrapped in a response envelope.
+      description: DNSSEC signing state of a zone.
       required:
-      - dnssec
+      - zone_name
+      - enabled
+      - keys
+      - ds_records
+      - signatures
+      - expired_signatures
+      - serial
       properties:
-        dnssec:
-          $ref: '#/components/schemas/GetDnssecStatusResponse'
+        delegation:
+          oneOf:
+          - $ref: '#/components/schemas/DnssecDelegationInfo'
+            description: |-
+              The parent's answer about the zone's DS; present only when this
+              status comes from a parent check.
+          - type: 'null'
+        ds_records:
+          type: array
+          items:
+            $ref: '#/components/schemas/DnssecDsInfo'
+          description: DS forms of the keys, to be registered in the parent zone.
+        earliest_signature_expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Earliest stored signature expiration; the re-signer renews before it.
+        enabled:
+          type: boolean
+          example: true
+        expired_signatures:
+          type: integer
+          format: int64
+          description: |-
+            Signatures already past their expiration; any at all mean resolvers
+            are failing part of the zone.
+          example: 0
+          minimum: 0
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/DnssecKeyInfo'
+        next_resign_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: When the re-signer next has work; absent for an unsigned zone.
+        parent_ns_addrs:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: Configured parent nameservers; may also be set while the zone is unsigned.
+          example:
+          - a.gtld-servers.net
+          - b.gtld-servers.net
+        policy:
+          oneOf:
+          - $ref: '#/components/schemas/GetDnssecPolicyResponse'
+            description: The policy the zone signs under; absent for an unsigned zone.
+          - type: 'null'
+        serial:
+          type: integer
+          format: int32
+          example: 7
+          minimum: 0
+        signatures:
+          type: integer
+          format: int64
+          description: Signatures the zone serves.
+          example: 42
+          minimum: 0
+        withdrawing:
+          type: boolean
+          description: |-
+            Whether the RFC 8078 delete CDS/CDNSKEY pair is published, asking the
+            parent to drop the zone's DS.
+          example: false
+        zone_name:
+          type: string
+          example: example.com
+    DsState:
+      type: string
+      description: Whether the parent serves a DS for the zone.
+      enum:
+      - published
+      - hidden
     EnableDnssecRequest:
       type: object
       description: Request body for enabling DNSSEC on a zone.
@@ -3939,12 +4371,16 @@ components:
       - parent_ns_addrs
       properties:
         parent_ns_addrs:
-          type: string
+          type: array
+          items:
+            type: string
           description: |-
-            The parent zone's nameservers (comma-separated `host[:port]`), asked
-            for the zone's DS by every later check.
-          example: a.gtld-servers.net,b.gtld-servers.net
-        policy:
+            The parent zone's nameservers as `host[:port]` entries, asked for the
+            zone's DS by every later check.
+          example:
+          - a.gtld-servers.net
+          - b.gtld-servers.net
+        policy_name:
           type:
           - string
           - 'null'
@@ -3965,10 +4401,12 @@ components:
             `INVALID_RECORD_VALUE`, `INVALID_JSON_BODY`, `UNAUTHORIZED`,
             `INVALID_TOKEN`, `FORBIDDEN`, `ENDPOINT_NOT_FOUND`,
             `METHOD_NOT_ALLOWED`, `ZONE_NOT_FOUND`, `RECORD_NOT_FOUND`,
-            `TOKEN_NOT_FOUND`, `VERSION_NOT_FOUND`, `TSIG_KEY_NOT_FOUND`,
+            `TOKEN_NOT_FOUND`, `VERSION_NOT_FOUND`, `SECONDARY_NOT_FOUND`,
+            `TSIG_KEY_NOT_FOUND`,
             `TSIG_GRANT_NOT_FOUND`, `TOKEN_GRANT_NOT_FOUND`,
             `DNSSEC_POLICY_NOT_FOUND`, `ZONE_CONFLICT`, `RECORD_CONFLICT`,
-            `TOKEN_CONFLICT`, `TSIG_KEY_CONFLICT`, `TSIG_KEY_IN_USE`,
+            `TOKEN_CONFLICT`, `SECONDARY_CONFLICT`, `TSIG_KEY_CONFLICT`,
+            `TSIG_KEY_IN_USE`,
             `DNSSEC_POLICY_CONFLICT`, `DNSSEC_POLICY_IN_USE`,
             `DNSSEC_ALREADY_ENABLED`, `DNSSEC_NOT_ENABLED`,
             `DNSSEC_ROLLOVER_IN_PROGRESS`, `DNSSEC_NO_ROLLOVER_IN_PROGRESS`,
@@ -4023,9 +4461,15 @@ components:
       description: Summary of an applied ExternalDNS change set.
       required:
       - changed_zones
-      - records_added
-      - records_deleted
+      - added
+      - deleted
       properties:
+        added:
+          type: integer
+          format: int64
+          description: Counted one per value written, not per name and type.
+          example: 2
+          minimum: 0
         changed_zones:
           type: array
           items:
@@ -4033,15 +4477,9 @@ components:
           description: Zones whose serial advanced; empty when the request was a no-op.
           example:
           - example.com
-        records_added:
+        deleted:
           type: integer
-          format: int32
-          description: Counted one per value written, not per name and type.
-          example: 2
-          minimum: 0
-        records_deleted:
-          type: integer
-          format: int32
+          format: int64
           description: Counted one per value removed, not per name and type.
           example: 1
           minimum: 0
@@ -4134,9 +4572,7 @@ components:
           type: string
           format: date-time
         denial:
-          type: string
-          description: '`nsec` or `nsec3`.'
-          example: nsec3
+          $ref: '#/components/schemas/DnssecDenial'
         id:
           type: integer
           format: int32
@@ -4163,90 +4599,12 @@ components:
           description: 0 disables scheduled ZSK rollovers.
           example: 0
           minimum: 0
-    GetDnssecStatusResponse:
-      type: object
-      description: DNSSEC signing state of a zone.
-      required:
-      - zone_name
-      - enabled
-      - keys
-      - ds_records
-      - signatures
-      - expired_signatures
-      - serial
-      properties:
-        delegation:
-          oneOf:
-          - type: 'null'
-          - $ref: '#/components/schemas/DnssecDelegationInfo'
-            description: |-
-              The parent's answer about the zone's DS; present only when this
-              status comes from a parent check.
-        ds_records:
-          type: array
-          items:
-            $ref: '#/components/schemas/DnssecDsInfo'
-          description: DS forms of the keys, to be registered in the parent zone.
-        earliest_signature_expires_at:
-          type:
-          - string
-          - 'null'
-          format: date-time
-          description: Earliest stored signature expiration; the re-signer renews before it.
-        enabled:
-          type: boolean
-          example: true
-        expired_signatures:
-          type: integer
-          format: int64
-          description: |-
-            Signatures already past their expiration; any at all mean resolvers
-            are failing part of the zone.
-          example: 0
-          minimum: 0
-        keys:
-          type: array
-          items:
-            $ref: '#/components/schemas/DnssecKeyInfo'
-        next_resign_at:
-          type:
-          - string
-          - 'null'
-          format: date-time
-          description: When the re-signer next has work; absent for an unsigned zone.
-        parent_ns_addrs:
-          type:
-          - string
-          - 'null'
-          description: Configured parent nameservers; may also be set while the zone is unsigned.
-          example: a.gtld-servers.net,b.gtld-servers.net
-        policy:
-          oneOf:
-          - type: 'null'
-          - $ref: '#/components/schemas/GetDnssecPolicyResponse'
-            description: The policy the zone signs under; absent for an unsigned zone.
-        serial:
-          type: integer
-          format: int32
-          example: 7
-        signatures:
-          type: integer
-          format: int64
-          description: Signatures the zone serves.
-          example: 42
-          minimum: 0
-        withdrawing:
-          type: boolean
-          description: |-
-            Whether the RFC 8078 delete CDS/CDNSKEY pair is published, asking the
-            parent to drop the zone's DS.
-          example: false
-        zone_name:
-          type: string
-          example: example.com
     GetRecordResponse:
       type: object
-      description: API representation of a record.
+      description: |-
+        API representation of a record. `name` is the owner's absolute name with
+        its trailing dot, as name-valued rdata is rendered; `zone_name` is the
+        zone's bare name, the spelling `/zones/{name}` takes.
       required:
       - name
       - type
@@ -4266,7 +4624,7 @@ components:
           example: 1
         name:
           type: string
-          example: sub
+          example: www.example.com.
         priority:
           type:
           - integer
@@ -4289,21 +4647,50 @@ components:
         zone_name:
           type: string
           example: example.com
+    GetSecondaryResponse:
+      type: object
+      description: API representation of a secondary.
+      required:
+      - id
+      - name
+      - address
+      - enabled
+      - created_at
+      properties:
+        address:
+          type: string
+          example: ns2.example.net:53
+        created_at:
+          type: string
+          format: date-time
+        enabled:
+          type: boolean
+          example: true
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: ns2
+        notify_key_name:
+          type:
+          - string
+          - 'null'
+          description: The TSIG key NOTIFY to this server is signed with, if any.
+          example: notify-key
     GetTokenGrantResponse:
       type: object
       description: API representation of a token grant.
       required:
       - id
-      - api_token
+      - token_name
       - zone_name
       - record_name_pattern
       - record_types
       - can_write
       - created_at
       properties:
-        api_token:
-          type: string
-          example: external-dns
         can_write:
           type: boolean
           example: true
@@ -4320,6 +4707,9 @@ components:
         record_types:
           type: string
           example: A,AAAA,TXT
+        token_name:
+          type: string
+          example: external-dns
         zone_name:
           type: string
           example: example.com
@@ -4365,7 +4755,7 @@ components:
       description: API representation of a TSIG grant.
       required:
       - id
-      - tsig_key
+      - tsig_key_name
       - zone_name
       - record_name_pattern
       - record_types
@@ -4388,7 +4778,7 @@ components:
         record_types:
           type: string
           example: A,AAAA,TXT
-        tsig_key:
+        tsig_key_name:
           type: string
           example: update-key
         zone_name:
@@ -4486,6 +4876,7 @@ components:
           type: integer
           format: int32
           example: 42
+          minimum: 0
     HealthResponse:
       type: object
       description: Health probe response.
@@ -4518,26 +4909,32 @@ components:
       properties:
         added:
           type: integer
+          format: int64
           example: 8
           minimum: 0
         deleted:
           type: integer
+          format: int64
           example: 2
           minimum: 0
         parsed:
           type: integer
+          format: int64
           example: 12
           minimum: 0
         skipped:
           type: integer
+          format: int64
           example: 0
           minimum: 0
         unchanged:
           type: integer
+          format: int64
           example: 2
           minimum: 0
         updated:
           type: integer
+          format: int64
           example: 1
           minimum: 0
     ImportZoneRequest:
@@ -4618,6 +5015,21 @@ components:
         message:
           type: string
           example: Deleted successfully
+    NotifyCheckResponse:
+      type: object
+      description: |-
+        One NOTIFY sent to a resolved address during a check; `error` is null
+        when the server accepted it.
+      required:
+      - address
+      properties:
+        address:
+          type: string
+          example: 10.0.0.14:53
+        error:
+          type:
+          - string
+          - 'null'
     PaginatedResponse_GetDnssecPolicyResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -4648,9 +5060,7 @@ components:
                 type: string
                 format: date-time
               denial:
-                type: string
-                description: '`nsec` or `nsec3`.'
-                example: nsec3
+                $ref: '#/components/schemas/DnssecDenial'
               id:
                 type: integer
                 format: int32
@@ -4690,7 +5100,10 @@ components:
           type: array
           items:
             type: object
-            description: API representation of a record.
+            description: |-
+              API representation of a record. `name` is the owner's absolute name with
+              its trailing dot, as name-valued rdata is rendered; `zone_name` is the
+              zone's bare name, the spelling `/zones/{name}` takes.
             required:
             - name
             - type
@@ -4710,7 +5123,7 @@ components:
                 example: 1
               name:
                 type: string
-                example: sub
+                example: www.example.com.
               priority:
                 type:
                 - integer
@@ -4735,6 +5148,49 @@ components:
                 example: example.com
         pagination:
           $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetSecondaryResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a secondary.
+            required:
+            - id
+            - name
+            - address
+            - enabled
+            - created_at
+            properties:
+              address:
+                type: string
+                example: ns2.example.net:53
+              created_at:
+                type: string
+                format: date-time
+              enabled:
+                type: boolean
+                example: true
+              id:
+                type: integer
+                format: int32
+                example: 1
+              name:
+                type: string
+                example: ns2
+              notify_key_name:
+                type:
+                - string
+                - 'null'
+                description: The TSIG key NOTIFY to this server is signed with, if any.
+                example: notify-key
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetTokenGrantResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -4749,16 +5205,13 @@ components:
             description: API representation of a token grant.
             required:
             - id
-            - api_token
+            - token_name
             - zone_name
             - record_name_pattern
             - record_types
             - can_write
             - created_at
             properties:
-              api_token:
-                type: string
-                example: external-dns
               can_write:
                 type: boolean
                 example: true
@@ -4775,6 +5228,9 @@ components:
               record_types:
                 type: string
                 example: A,AAAA,TXT
+              token_name:
+                type: string
+                example: external-dns
               zone_name:
                 type: string
                 example: example.com
@@ -4842,7 +5298,7 @@ components:
             description: API representation of a TSIG grant.
             required:
             - id
-            - tsig_key
+            - tsig_key_name
             - zone_name
             - record_name_pattern
             - record_types
@@ -4865,7 +5321,7 @@ components:
               record_types:
                 type: string
                 example: A,AAAA,TXT
-              tsig_key:
+              tsig_key_name:
                 type: string
                 example: update-key
               zone_name:
@@ -4985,6 +5441,7 @@ components:
                 type: integer
                 format: int32
                 example: 42
+                minimum: 0
         pagination:
           $ref: '#/components/schemas/Pagination'
     PaginatedResponse_ZoneVersionResponse:
@@ -5014,12 +5471,11 @@ components:
             - created_at
             properties:
               change_source:
-                type: string
+                $ref: '#/components/schemas/ChangeSource'
                 description: |-
                   Which plane asked for this version: `token`, `nsupdate`, `system`
                   (the DNSSEC scheduler), or `local` (the daemon socket, or
                   any request while authentication is disabled).
-                example: token
               changed_by:
                 type:
                 - string
@@ -5061,6 +5517,7 @@ components:
                 type: integer
                 format: int32
                 example: 7
+                minimum: 0
         pagination:
           $ref: '#/components/schemas/Pagination'
     Pagination:
@@ -5086,6 +5543,13 @@ components:
           format: int64
           example: 125
           minimum: 0
+    RecordChange:
+      type: string
+      description: Which way the records of one name and type differ between two serials.
+      enum:
+      - added
+      - removed
+      - changed
     RecordDiff:
       type: object
       description: |-
@@ -5114,9 +5578,7 @@ components:
       - to
       properties:
         change:
-          type: string
-          description: '`added`, `removed`, or `changed`.'
-          example: changed
+          $ref: '#/components/schemas/RecordChange'
         from:
           type: array
           items:
@@ -5141,14 +5603,17 @@ components:
       properties:
         added:
           type: integer
+          format: int64
           example: 1
           minimum: 0
         changed:
           type: integer
+          format: int64
           example: 1
           minimum: 0
         removed:
           type: integer
+          format: int64
           example: 1
           minimum: 0
     RecordDiffValue:
@@ -5255,26 +5720,29 @@ components:
         Counts of what a rollback changes. TTL-only differences count as one
         delete plus one add.
       required:
-      - records_added
-      - records_deleted
-      - records_unchanged
+      - added
+      - deleted
+      - unchanged
       - soa_changed
       properties:
-        records_added:
+        added:
           type: integer
+          format: int64
           example: 2
           minimum: 0
-        records_deleted:
+        deleted:
           type: integer
+          format: int64
           example: 3
-          minimum: 0
-        records_unchanged:
-          type: integer
-          example: 5
           minimum: 0
         soa_changed:
           type: boolean
           example: true
+        unchanged:
+          type: integer
+          format: int64
+          example: 5
+          minimum: 0
     RollbackZoneResponse:
       type: object
       description: |-
@@ -5297,12 +5765,14 @@ components:
           type: integer
           format: int32
           example: 13
+          minimum: 0
         summary:
           $ref: '#/components/schemas/RollbackSummary'
         target_serial:
           type: integer
           format: int32
           example: 7
+          minimum: 0
     RolloverDnssecRequest:
       type: object
       description: Request body for starting a key rollover.
@@ -5316,9 +5786,80 @@ components:
             omitted for CSK zones.
           example: zsk
       additionalProperties: false
+    SecondaryCheckResponse:
+      type: object
+      description: |-
+        What a secondary answered when checked: where its address resolves, the
+        catalog zone serial it serves against Bindizr's, and whether it accepted
+        a NOTIFY.
+      required:
+      - secondary
+      - addresses
+      - catalog_zone_name
+      - catalog
+      - notifies
+      properties:
+        addresses:
+          type: array
+          items:
+            type: string
+          description: Socket addresses the registered `host[:port]` resolves to now.
+          example:
+          - 10.0.0.14:53
+        catalog:
+          $ref: '#/components/schemas/SecondaryStatusResponse'
+          description: The secondary's catalog probe, classified against `catalog_serial`.
+        catalog_serial:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            The serial Bindizr's own listener serves the catalog zone at; absent
+            with `listener_error`, and `catalog` is then `reachable` at best.
+          example: 42
+          minimum: 0
+        catalog_zone_name:
+          type: string
+          description: The catalog zone the secondary was asked for.
+          example: catalog.bindizr
+        listener_error:
+          type:
+          - string
+          - 'null'
+        notifies:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotifyCheckResponse'
+          description: The NOTIFY sent for the catalog zone, one per resolved address.
+        resolve_error:
+          type:
+          - string
+          - 'null'
+        secondary:
+          $ref: '#/components/schemas/GetSecondaryResponse'
+    SecondaryResponse:
+      type: object
+      description: A secondary wrapped in a response envelope.
+      required:
+      - secondary
+      properties:
+        secondary:
+          $ref: '#/components/schemas/GetSecondaryResponse'
+    SecondaryStatus:
+      type: string
+      description: How the serial a secondary serves compares with the one Bindizr serves.
+      enum:
+      - in_sync
+      - lagging
+      - ahead
+      - reachable
+      - unreachable
     SecondaryStatusResponse:
       type: object
-      description: Sync state of one configured secondary for a zone.
+      description: |-
+        What one secondary answered when probed for a zone's SOA, classified
+        against the serial Bindizr serves.
       required:
       - address
       - status
@@ -5331,15 +5872,14 @@ components:
           - string
           - 'null'
         status:
-          type: string
-          description: '`in_sync` | `lagging` | `ahead` | `unreachable`'
-          example: in_sync
+          $ref: '#/components/schemas/SecondaryStatus'
         visible_serial:
           type:
           - integer
           - 'null'
-          format: int64
+          format: int32
           example: 42
+          minimum: 0
     TokenGrantResponse:
       type: object
       description: A single token grant wrapped in a response envelope.
@@ -5412,13 +5952,17 @@ components:
       properties:
         parent_ns_addrs:
           type:
-          - string
+          - array
           - 'null'
+          items:
+            type: string
           description: |-
-            The parent zone's nameservers (comma-separated `host[:port]`); must
-            name at least one server.
-          example: a.gtld-servers.net,b.gtld-servers.net
-        policy:
+            The parent zone's nameservers as `host[:port]` entries; must name at
+            least one server.
+          example:
+          - a.gtld-servers.net
+          - b.gtld-servers.net
+        policy_name:
           type:
           - string
           - 'null'
@@ -5465,8 +6009,32 @@ components:
           example: A
         value:
           oneOf:
-          - type: 'null'
           - $ref: '#/components/schemas/RecordValueRequest'
+          - type: 'null'
+      additionalProperties: false
+    UpdateSecondaryRequest:
+      type: object
+      description: Request body for changing a secondary; an omitted field keeps its value.
+      properties:
+        address:
+          type:
+          - string
+          - 'null'
+          example: 192.0.2.7:53
+        enabled:
+          type:
+          - boolean
+          - 'null'
+          description: |-
+            `false` stops NOTIFY, unsigned transfers, and probes without
+            forgetting the server.
+          example: true
+        notify_key_name:
+          type:
+          - string
+          - 'null'
+          description: TSIG key to sign NOTIFY with; empty sends it unsigned again.
+          example: notify-key
       additionalProperties: false
     UpdateZoneRequest:
       type: object
@@ -5543,6 +6111,7 @@ components:
           - 'null'
           format: int32
           example: 42
+          minimum: 0
       additionalProperties: false
     VersionDetailResponse:
       type: object
@@ -5571,15 +6140,17 @@ components:
           type: integer
           format: int32
           example: 41
+          minimum: 0
         to_serial:
           type: integer
           format: int32
           example: 42
+          minimum: 0
     VersionRecordResponse:
       type: object
       description: |-
-        A record reconstructed from the zone's journal; unlike stored
-        records it has no database id.
+        A record reconstructed from the zone's journal, named as the record
+        listing names it; unlike stored records it has no database id.
       required:
       - name
       - type
@@ -5588,7 +6159,7 @@ components:
       properties:
         name:
           type: string
-          example: www
+          example: www.example.com.
         priority:
           type:
           - integer
@@ -5617,10 +6188,10 @@ components:
     ZoneStatusResponse:
       type: object
       description: |-
-        A zone's serial and the sync state of every configured secondary, probed
+        A zone's serial and the sync state of every enabled secondary, probed
         live via SOA queries.
       required:
-      - zone
+      - zone_name
       - serial
       - secondaries
       properties:
@@ -5632,7 +6203,8 @@ components:
           type: integer
           format: int32
           example: 42
-        zone:
+          minimum: 0
+        zone_name:
           type: string
           example: example.com
     ZoneVersionResponse:
@@ -5653,12 +6225,11 @@ components:
       - created_at
       properties:
         change_source:
-          type: string
+          $ref: '#/components/schemas/ChangeSource'
           description: |-
             Which plane asked for this version: `token`, `nsupdate`, `system`
             (the DNSSEC scheduler), or `local` (the daemon socket, or
             any request while authentication is disabled).
-          example: token
         changed_by:
           type:
           - string
@@ -5700,6 +6271,7 @@ components:
           type: integer
           format: int32
           example: 7
+          minimum: 0
     ZoneWriteResponse:
       type: object
       description: |-
@@ -5734,6 +6306,8 @@ tags:
   description: Manage DNS records including creation, update, deletion, and retrieval.
 - name: Notify
   description: Send DNS NOTIFY messages to secondary servers.
+- name: Secondary
+  description: 'The secondary servers: each receives NOTIFY, may pull zones unsigned from its address, and is probed for the serial it serves.'
 - name: TSIG
   description: Manage TSIG keys and the zone grants each holds for nsupdate.
 - name: Token

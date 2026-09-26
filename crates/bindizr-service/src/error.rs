@@ -19,6 +19,8 @@ pub enum ErrorCode {
     RecordNotFound,
     TokenNotFound,
     VersionNotFound,
+    SecondaryNotFound,
+    SecondaryConflict,
     TsigKeyNotFound,
     TsigKeyConflict,
     TsigKeyInUse,
@@ -61,6 +63,8 @@ impl ErrorCode {
             ErrorCode::RecordNotFound => "RECORD_NOT_FOUND",
             ErrorCode::TokenNotFound => "TOKEN_NOT_FOUND",
             ErrorCode::VersionNotFound => "VERSION_NOT_FOUND",
+            ErrorCode::SecondaryNotFound => "SECONDARY_NOT_FOUND",
+            ErrorCode::SecondaryConflict => "SECONDARY_CONFLICT",
             ErrorCode::TsigKeyNotFound => "TSIG_KEY_NOT_FOUND",
             ErrorCode::TsigKeyConflict => "TSIG_KEY_CONFLICT",
             ErrorCode::TsigKeyInUse => "TSIG_KEY_IN_USE",
@@ -104,6 +108,8 @@ impl ErrorCode {
             "RECORD_NOT_FOUND" => ErrorCode::RecordNotFound,
             "TOKEN_NOT_FOUND" => ErrorCode::TokenNotFound,
             "VERSION_NOT_FOUND" => ErrorCode::VersionNotFound,
+            "SECONDARY_NOT_FOUND" => ErrorCode::SecondaryNotFound,
+            "SECONDARY_CONFLICT" => ErrorCode::SecondaryConflict,
             "TSIG_KEY_NOT_FOUND" => ErrorCode::TsigKeyNotFound,
             "TSIG_KEY_CONFLICT" => ErrorCode::TsigKeyConflict,
             "TSIG_KEY_IN_USE" => ErrorCode::TsigKeyInUse,
@@ -145,6 +151,7 @@ impl ErrorCode {
             | ErrorCode::RecordNotFound
             | ErrorCode::TokenNotFound
             | ErrorCode::VersionNotFound
+            | ErrorCode::SecondaryNotFound
             | ErrorCode::TsigKeyNotFound
             | ErrorCode::TsigGrantNotFound
             | ErrorCode::TokenGrantNotFound
@@ -152,6 +159,7 @@ impl ErrorCode {
             ErrorCode::ZoneConflict
             | ErrorCode::RecordConflict
             | ErrorCode::TokenConflict
+            | ErrorCode::SecondaryConflict
             | ErrorCode::TsigKeyConflict
             | ErrorCode::TsigKeyInUse
             | ErrorCode::DnssecAlreadyEnabled
@@ -304,6 +312,19 @@ impl ServiceError {
             ErrorCode::TokenConflict,
             format!("API token with name '{}' already exists", name.into()),
         )
+    }
+
+    /// Build an error naming the missing secondary.
+    pub(crate) fn secondary_not_found(name: impl Into<String>) -> Self {
+        Self::new(
+            ErrorCode::SecondaryNotFound,
+            format!("Secondary with name '{}' not found", name.into()),
+        )
+    }
+
+    /// Build an error for a secondary name or address already in use.
+    pub(crate) fn secondary_conflict(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::SecondaryConflict, message)
     }
 
     /// Build an error naming the missing TSIG key.

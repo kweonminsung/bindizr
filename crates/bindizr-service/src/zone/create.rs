@@ -55,15 +55,8 @@ impl ZoneService {
 
         // Send catalog NOTIFY so secondaries pick up the new zone
         let config = bindizr_config();
-        if !create_zone_request.dry_run
-            && let Err(e) =
-                crate::notify::send_notify_after_update(Some(&config.dns.catalog_zone_name)).await
-        {
-            log::warn!(
-                "Failed to send NOTIFY for {}: {}",
-                config.dns.catalog_zone_name,
-                e
-            );
+        if !create_zone_request.dry_run {
+            crate::notify::notify_after_update(&config.dns.catalog_zone_name).await;
         }
 
         Ok(ZoneWriteResponse {
