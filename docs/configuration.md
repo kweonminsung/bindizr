@@ -76,8 +76,7 @@ nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false adm
 # timeout_secs = 3            # Seconds to wait for each NOTIFY
 
 [dns.transfer_cache]          # Zone records cached per serial, so repeated transfers skip the database
-# enabled = true
-# max_records = 500000        # Records the cache holds; a larger zone is served uncached
+# max_records = 500000        # Records the cache holds; a larger zone is served uncached (0 = no cache)
 
 [dns.zone_defaults]           # Applied when a zone-creation request omits the field
 ttl = 3600                    # Default record TTL (seconds)
@@ -130,8 +129,7 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](#batching-notify) |
 | `BINDIZR_DNS_NOTIFY_RETRIES` | `dns.notify.retries` | |
 | `BINDIZR_DNS_NOTIFY_TIMEOUT_SECS` | `dns.notify.timeout_secs` | |
-| `BINDIZR_DNS_TRANSFER_CACHE_ENABLED` | `dns.transfer_cache.enabled` | |
-| `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer_cache.max_records` | see [Sizing the transfer cache](#sizing-the-transfer-cache) |
+| `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer_cache.max_records` | `0` caches nothing; see [Sizing the transfer cache](#sizing-the-transfer-cache) |
 | `BINDIZR_DNS_ZONE_DEFAULTS_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
 | `BINDIZR_DNS_ZONE_DEFAULTS_REFRESH` | `dns.zone_defaults.refresh` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_RETRY` | `dns.zone_defaults.retry` | |

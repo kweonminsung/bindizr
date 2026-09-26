@@ -342,8 +342,8 @@ pub(crate) struct DaemonStatusResponse {
 /// `zone status` classifies them against a member zone's.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DaemonDoctorResponse {
-    pub(crate) database: DoctorCheckResult,
-    pub(crate) dns_server: DoctorCheckResult,
+    pub(crate) database: DoctorCheck,
+    pub(crate) dns_server: DoctorCheck,
     pub(crate) catalog_zone_name: String,
     /// Catalog serial served by bindizr's own DNS listener, when reachable.
     pub(crate) catalog_serial: Option<u32>,
@@ -351,8 +351,18 @@ pub(crate) struct DaemonDoctorResponse {
     pub(crate) notifies: Vec<NotifyCheckResponse>,
 }
 
+/// One check's outcome.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum DoctorCheckStatus {
+    Ok,
+    Fail,
+    Skip,
+}
+
+/// One installation check, worded as `doctor` reports it.
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct DoctorCheckResult {
-    pub(crate) ok: bool,
-    pub(crate) detail: String,
+pub(crate) struct DoctorCheck {
+    pub(crate) status: DoctorCheckStatus,
+    pub(crate) message: String,
 }

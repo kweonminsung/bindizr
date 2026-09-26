@@ -1,5 +1,4 @@
-//! The wire RDATA a key implies — DNSKEY and its DS digests — and the
-//! presentation form a stored derived row prints as.
+//! The wire RDATA a key implies: DNSKEY and its DS digests.
 
 use base64::Engine;
 use domain::base::{iana::SecurityAlgorithm, rdata::ComposeRecordData};
@@ -7,31 +6,7 @@ use sha1::Sha1;
 use sha2::{Digest, Sha256, Sha384};
 
 use super::WireName;
-use crate::{
-    dns::record::Rdata,
-    model::{dnssec_key::DnssecKey, dnssec_record::DnssecRecordType},
-};
-
-/// Presentation form of a derived row's wire RDATA, as `dig` prints it; the
-/// base64 row form when it does not parse.
-pub fn rdata_presentation(record_type: DnssecRecordType, rdata: &Rdata) -> String {
-    use domain::{
-        base::{iana::Rtype, name::ParsedName, rdata::ParseRecordData},
-        dep::octseq::parse::Parser,
-        rdata::AllRecordData,
-    };
-
-    let mut parser = Parser::from_ref(rdata.as_bytes());
-    AllRecordData::<_, ParsedName<_>>::parse_rdata(
-        Rtype::from_int(record_type.wire_type()),
-        &mut parser,
-    )
-    .ok()
-    .flatten()
-    .filter(|_| parser.remaining() == 0)
-    .map(|data| data.to_string())
-    .unwrap_or_else(|| rdata.to_base64())
-}
+use crate::{dns::record::Rdata, model::dnssec_key::DnssecKey};
 
 /// The digest types `DnssecKey::ds_rdata` computes. SHA-1 only matches a parent's
 /// existing DS: RFC 8624, Section 3.3 forbids it for new delegations, so

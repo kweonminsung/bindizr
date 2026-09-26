@@ -43,7 +43,6 @@ data:
     timeout_secs = {{ .Values.bindizr.dns.notify.timeoutSecs }}
 
     [dns.transfer_cache]
-    enabled = {{ .Values.bindizr.dns.transferCache.enabled }}
     max_records = {{ .Values.bindizr.dns.transferCache.maxRecords }}
 
     [dns.zone_defaults]

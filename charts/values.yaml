@@ -58,8 +58,7 @@ bindizr:
       timeoutSecs: 3
     # Zone records cached per serial, so repeated transfers skip the database.
     transferCache:
-      enabled: true
-      # Records the cache holds; a larger zone is served uncached.
+      # Records the cache holds; a larger zone is served uncached, 0 caches nothing.
       maxRecords: 500000
     service:
       port: 53

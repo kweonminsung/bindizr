@@ -369,7 +369,7 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
         "Zone {} (serial {}): DNSSEC enabled, {} denial",
         status.zone_name,
         status.serial,
-        policy.denial.to_string().to_uppercase()
+        policy.denial
     );
     if status.withdrawing {
         outln!(
