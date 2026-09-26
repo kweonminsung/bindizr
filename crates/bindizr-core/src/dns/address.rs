@@ -36,6 +36,11 @@ impl ParsedAddress {
         } else {
             format!("{}:{}", value, default_port)
         };
+        // A trailing root dot names the same host, so one server has one spelling.
+        let host_port = match host_port.rsplit_once(':') {
+            Some((host, port)) => format!("{}:{}", host.strip_suffix('.').unwrap_or(host), port),
+            None => host_port,
+        };
 
         ParsedAddress::HostPort(host_port)
     }
@@ -139,6 +144,19 @@ mod tests {
         );
         assert_eq!(
             target_to_string(ParsedAddress::parse("ns2.example.com:5353", 53)),
+            "HostPort(ns2.example.com:5353)"
+        );
+    }
+
+    /// Verify that `ParsedAddress::parse` drops a hostname's trailing root dot.
+    #[test]
+    fn parse_drops_a_hostnames_trailing_root_dot() {
+        assert_eq!(
+            target_to_string(ParsedAddress::parse("ns2.example.com.", 53)),
+            "HostPort(ns2.example.com:53)"
+        );
+        assert_eq!(
+            target_to_string(ParsedAddress::parse("ns2.example.com.:5353", 53)),
             "HostPort(ns2.example.com:5353)"
         );
     }
