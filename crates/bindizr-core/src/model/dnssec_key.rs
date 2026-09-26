@@ -116,9 +116,9 @@ impl TryFrom<i32> for DnssecAlgorithm {
     }
 }
 
-/// What a key signs: a CSK everything, a KSK/ZSK pair splits the apex key
-/// record sets (whose signer the parent DS must name, RFC 7344, Section 4.1)
-/// from the zone data.
+/// What a key signs: a CSK everything, a KSK/ZSK pair splits the apex DNSKEY
+/// records (whose signer the parent DS must name, RFC 7344, Section 4.1) from
+/// the zone data.
 #[derive(
     Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
 )]
