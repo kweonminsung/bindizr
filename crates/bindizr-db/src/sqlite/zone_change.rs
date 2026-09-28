@@ -39,10 +39,7 @@ pub(crate) async fn create_many_tx(
                 .bind(c.derived)
                 .bind(now);
         }
-        query
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        query.execute(&mut **tx).await?;
     }
     Ok(())
 }
@@ -67,7 +64,7 @@ pub(crate) async fn list_between_serials(
     .bind(to_serial)
     .fetch_all(pool)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }
 
 /// Count journal entries in the interval `(from_serial, to_serial]`.
@@ -88,8 +85,7 @@ pub(crate) async fn count_between_serials(
     .bind(from_serial)
     .bind(to_serial)
     .fetch_one(pool)
-    .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    .await?;
 
     Ok(count as u64)
 }
@@ -116,7 +112,7 @@ pub(crate) async fn list_between_serials_tx(
     .bind(to_serial)
     .fetch_all(&mut **tx)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }
 
 /// Prune one zone's journal rows older than `cutoff` in the current transaction.
@@ -143,8 +139,7 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     .bind(zone_id)
     .bind(cutoff)
     .execute(&mut **tx)
-    .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    .await?;
 
     Ok(result.rows_affected())
 }

@@ -1,6 +1,21 @@
 //! What a listing sorts by, as a closed vocabulary: the query renders its
 //! `ORDER BY` from these, so no caller text reaches the SQL.
 
+use thiserror::Error;
+
+/// A sort parameter a listing did not recognise.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ParseSortError {
+    #[error("unknown sort field '{value}': expected {expected}")]
+    UnknownField {
+        value: String,
+        expected: &'static str,
+    },
+
+    #[error("unknown sort order '{value}': expected asc or desc")]
+    UnknownOrder { value: String },
+}
+
 /// The column a zone listing sorts by.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ZoneSort {
@@ -78,7 +93,7 @@ impl RecordSort {
 }
 
 impl std::str::FromStr for ZoneSort {
-    type Err = String;
+    type Err = ParseSortError;
 
     /// Parse a zone sort from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -87,15 +102,16 @@ impl std::str::FromStr for ZoneSort {
             "serial" => Ok(ZoneSort::Serial),
             "default_ttl" => Ok(ZoneSort::DefaultTtl),
             "created_at" => Ok(ZoneSort::CreatedAt),
-            other => Err(format!(
-                "unknown sort field '{other}': expected name, serial, default_ttl, or created_at"
-            )),
+            other => Err(ParseSortError::UnknownField {
+                value: other.to_string(),
+                expected: "name, serial, default_ttl, or created_at",
+            }),
         }
     }
 }
 
 impl std::str::FromStr for RecordSort {
-    type Err = String;
+    type Err = ParseSortError;
 
     /// Parse a record sort from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -105,25 +121,25 @@ impl std::str::FromStr for RecordSort {
             "ttl" => Ok(RecordSort::Ttl),
             "priority" => Ok(RecordSort::Priority),
             "created_at" => Ok(RecordSort::CreatedAt),
-            other => Err(format!(
-                "unknown sort field '{other}': expected name, type, ttl, priority, or \
-                 created_at"
-            )),
+            other => Err(ParseSortError::UnknownField {
+                value: other.to_string(),
+                expected: "name, type, ttl, priority, or created_at",
+            }),
         }
     }
 }
 
 impl std::str::FromStr for SortOrder {
-    type Err = String;
+    type Err = ParseSortError;
 
     /// Parse a sort order from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "asc" => Ok(SortOrder::Asc),
             "desc" => Ok(SortOrder::Desc),
-            other => Err(format!(
-                "unknown sort order '{other}': expected asc or desc"
-            )),
+            other => Err(ParseSortError::UnknownOrder {
+                value: other.to_string(),
+            }),
         }
     }
 }

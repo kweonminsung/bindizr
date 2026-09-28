@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
+use thiserror::Error;
 
 /// Point-in-time version of a zone's SOA fields at a given serial.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
@@ -24,6 +25,13 @@ pub struct ZoneVersion {
     /// answer outlives the credential.
     pub changed_by: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+/// A change-source column holding none of the known sources.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("unknown change source '{value}'")]
+pub struct ParseChangeSourceError {
+    pub value: String,
 }
 
 /// The plane a zone version's change came through.
@@ -63,7 +71,7 @@ impl std::fmt::Display for ChangeSource {
 }
 
 impl std::str::FromStr for ChangeSource {
-    type Err = String;
+    type Err = ParseChangeSourceError;
 
     /// Parse the stored text of a change source.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -72,13 +80,15 @@ impl std::str::FromStr for ChangeSource {
             "nsupdate" => Ok(ChangeSource::Nsupdate),
             "system" => Ok(ChangeSource::System),
             "local" => Ok(ChangeSource::Local),
-            other => Err(format!("unknown change source '{}'", other)),
+            other => Err(ParseChangeSourceError {
+                value: other.to_string(),
+            }),
         }
     }
 }
 
 impl TryFrom<String> for ChangeSource {
-    type Error = String;
+    type Error = ParseChangeSourceError;
 
     /// Validate and convert the stored value into a change source.
     fn try_from(value: String) -> Result<Self, Self::Error> {

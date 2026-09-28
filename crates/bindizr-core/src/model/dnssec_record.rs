@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
+use thiserror::Error;
 
 use crate::dns::{
     name::{OwnerName, ZoneName},
@@ -67,6 +68,15 @@ pub struct DnssecRecordWithZone {
     pub zone_name: ZoneName,
 }
 
+/// A derived record type bindizr does not generate, by number or mnemonic.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ParseDnssecRecordTypeError {
+    #[error("unknown derived record type {0}")]
+    Number(i32),
+    #[error("unknown derived record type '{0}'")]
+    Name(String),
+}
+
 /// The record types the signer derives; rows store the wire record type number
 /// (RFC 4034).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -116,7 +126,7 @@ impl std::fmt::Display for DnssecRecordType {
 }
 
 impl TryFrom<i32> for DnssecRecordType {
-    type Error = String;
+    type Error = ParseDnssecRecordTypeError;
 
     /// Validate and convert the stored value into a DNSSEC record type.
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -128,13 +138,13 @@ impl TryFrom<i32> for DnssecRecordType {
             51 => Ok(DnssecRecordType::Nsec3param),
             59 => Ok(DnssecRecordType::Cds),
             60 => Ok(DnssecRecordType::Cdnskey),
-            other => Err(format!("unknown derived record type {}", other)),
+            other => Err(ParseDnssecRecordTypeError::Number(other)),
         }
     }
 }
 
 impl std::str::FromStr for DnssecRecordType {
-    type Err = String;
+    type Err = ParseDnssecRecordTypeError;
 
     /// Parse a DNSSEC record type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -146,7 +156,7 @@ impl std::str::FromStr for DnssecRecordType {
             "NSEC3PARAM" => Ok(DnssecRecordType::Nsec3param),
             "CDS" => Ok(DnssecRecordType::Cds),
             "CDNSKEY" => Ok(DnssecRecordType::Cdnskey),
-            other => Err(format!("unknown derived record type '{}'", other)),
+            other => Err(ParseDnssecRecordTypeError::Name(other.to_string())),
         }
     }
 }

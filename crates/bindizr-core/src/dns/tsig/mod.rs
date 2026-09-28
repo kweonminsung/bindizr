@@ -18,21 +18,57 @@ use domain::{
         ServerTransaction,
     },
 };
+use thiserror::Error;
 
 use crate::{
-    dns::name::MAX_DOMAIN_LEN,
+    dns::{LibraryError, name::MAX_DOMAIN_LEN},
     model::tsig_key::{TsigAlgorithm, TsigKey},
 };
 
 /// Why a TSIG-signed request could not be accepted.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum TsigError {
     /// The request could not be read as a DNS message.
-    Malformed(String),
-    /// Stored key material, or building the error response, failed.
-    Internal(String),
+    #[error("invalid DNS message: {0}")]
+    Malformed(#[source] LibraryError),
+    #[error("invalid TSIG key name '{name}': {source}")]
+    InvalidKeyName {
+        name: String,
+        #[source]
+        source: LibraryError,
+    },
+    #[error("stored TSIG secret is not valid base64: {0}")]
+    SecretNotBase64(#[source] base64::DecodeError),
+    #[error("stored TSIG secret decodes to an empty key")]
+    EmptySecret,
+    #[error("invalid TSIG key '{name}': {source}")]
+    InvalidKey {
+        name: String,
+        #[source]
+        source: LibraryError,
+    },
+    /// The caller checked for a TSIG record, so `domain` must find one too.
+    #[error("TSIG record not found during validation")]
+    RecordMissing,
+    #[error("failed to build TSIG error response ({rcode})")]
+    ErrorResponse { rcode: TsigRcode },
     /// Validation failed; carries the complete NOTAUTH response to send.
-    Failed { message: String, response: Vec<u8> },
+    #[error("TSIG validation failed: {rcode}")]
+    Failed { rcode: TsigRcode, response: Vec<u8> },
+}
+
+/// Signing an outbound request failed.
+#[derive(Debug, Error)]
+#[error("failed to sign the request: {0}")]
+pub struct SignRequestError(#[source] LibraryError);
+
+/// The answer to a signed request did not verify under the key.
+#[derive(Debug, Error)]
+pub enum VerifyAnswerError {
+    #[error("invalid DNS message: {0}")]
+    Malformed(#[source] LibraryError),
+    #[error("TSIG validation of the answer failed: {0}")]
+    Rejected(#[source] LibraryError),
 }
 
 /// Context for signing the response to a validated TSIG request.
@@ -53,19 +89,19 @@ pub type RequestSigner = ClientTransaction<Arc<Key>>;
 pub fn sign_request(
     builder: &mut AdditionalBuilder<Vec<u8>>,
     key: TsigSigningKey,
-) -> Result<RequestSigner, String> {
+) -> Result<RequestSigner, SignRequestError> {
     ClientTransaction::request(key, builder, Time48::now())
-        .map_err(|e| format!("failed to sign the request: {}", e))
+        .map_err(|e| SignRequestError(Box::new(e)))
 }
 
 /// Check the answer to a signed request against the key that signed it
 /// (RFC 8945, Section 5.4.2).
-pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), String> {
+pub fn verify_response(signer: &RequestSigner, response: &[u8]) -> Result<(), VerifyAnswerError> {
     let mut message = Message::from_octets(response.to_vec())
-        .map_err(|e| format!("invalid DNS message: {}", e))?;
+        .map_err(|e| VerifyAnswerError::Malformed(Box::new(e)))?;
     signer
         .answer(&mut message, Time48::now())
-        .map_err(|e| format!("TSIG validation of the answer failed: {}", e))
+        .map_err(|e| VerifyAnswerError::Rejected(Box::new(e)))
 }
 
 /// The largest TSIG record a response can carry, so an intake cap can reserve
@@ -95,8 +131,9 @@ impl KeyStore for DbKeyStore {
 impl TsigKey {
     /// Convert this stored TSIG key into a `domain` signing key.
     pub fn to_domain_key(&self) -> Result<Arc<Key>, TsigError> {
-        let name = KeyName::from_str(&self.name).map_err(|e| {
-            TsigError::Internal(format!("invalid TSIG key name '{}': {}", self.name, e))
+        let name = KeyName::from_str(&self.name).map_err(|e| TsigError::InvalidKeyName {
+            name: self.name.clone(),
+            source: Box::new(e),
         })?;
 
         let algorithm = match self.algorithm {
@@ -107,18 +144,17 @@ impl TsigKey {
 
         let secret = base64::engine::general_purpose::STANDARD
             .decode(&self.secret)
-            .map_err(|e| {
-                TsigError::Internal(format!("stored TSIG secret is not valid base64: {}", e))
-            })?;
+            .map_err(TsigError::SecretNotBase64)?;
         if secret.is_empty() {
-            return Err(TsigError::Internal(
-                "stored TSIG secret decodes to an empty key".to_string(),
-            ));
+            return Err(TsigError::EmptySecret);
         }
 
         Key::new(algorithm, &secret, name, None, None)
             .map(Arc::new)
-            .map_err(|e| TsigError::Internal(format!("invalid TSIG key '{}': {}", self.name, e)))
+            .map_err(|e| TsigError::InvalidKey {
+                name: self.name.clone(),
+                source: Box::new(e),
+            })
     }
 }
 
@@ -148,15 +184,12 @@ fn verify<T>(
         Time48,
     ) -> Result<Option<T>, ServerError<Arc<Key>>>,
 ) -> Result<T, TsigError> {
-    let mut message = Message::from_octets(query_data.to_vec())
-        .map_err(|e| TsigError::Malformed(format!("invalid DNS message: {}", e)))?;
+    let mut message =
+        Message::from_octets(query_data.to_vec()).map_err(|e| TsigError::Malformed(Box::new(e)))?;
 
     match request(&DbKeyStore(key), &mut message, Time48::now()) {
         Ok(Some(context)) => Ok(context),
-        // The caller checked for a TSIG record, so `domain` must find one too.
-        Ok(None) => Err(TsigError::Internal(
-            "TSIG record not found during validation".to_string(),
-        )),
+        Ok(None) => Err(TsigError::RecordMissing),
         Err(err) => Err(tsig_error(query_data, err)),
     }
 }
@@ -203,7 +236,7 @@ pub fn request_signature(query_data: &[u8]) -> RequestSignature {
 fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
     let msg = match Message::from_octets(query_data) {
         Ok(msg) => msg,
-        Err(e) => return TsigError::Internal(format!("invalid DNS message: {}", e)),
+        Err(e) => return TsigError::Malformed(Box::new(e)),
     };
 
     let error = err.error();
@@ -221,10 +254,10 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
 
     match response {
         Some(response) => TsigError::Failed {
-            message: format!("TSIG validation failed: {}", error),
+            rcode: error,
             response,
         },
-        None => TsigError::Internal(format!("failed to build TSIG error response ({})", error)),
+        None => TsigError::ErrorResponse { rcode: error },
     }
 }
 

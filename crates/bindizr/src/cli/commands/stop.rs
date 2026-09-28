@@ -37,7 +37,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
             }
             Ok(())
         }
-        None => Err(CliError::from(format!(
+        None => Err(CliError::request(format!(
             "Bindizr did not stop within {} seconds",
             STOP_DEADLINE.as_secs()
         ))),

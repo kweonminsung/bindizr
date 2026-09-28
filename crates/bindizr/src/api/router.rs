@@ -7,10 +7,7 @@ use axum::{
     routing,
 };
 use bindizr_service::{
-    Context,
-    authorization::Caller,
-    error::{ErrorCode, ServiceError},
-    types::MessageResponse,
+    Context, authorization::Caller, error::ServiceError, types::MessageResponse,
 };
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
@@ -125,24 +122,22 @@ async fn openapi_yaml() -> axum::response::Response {
 
 /// Return the API error for an unsupported HTTP method.
 async fn method_not_allowed() -> impl IntoResponse {
-    ApiError(ServiceError::new(
-        ErrorCode::MethodNotAllowed,
-        "this path does not take that method",
+    ApiError(ServiceError::MethodNotAllowed(
+        "this path does not take that method".to_string(),
     ))
 }
 
 /// Return the API error for the OpenAPI document while it is not served.
 async fn openapi_disabled() -> impl IntoResponse {
-    ApiError(ServiceError::new(
-        ErrorCode::EndpointNotFound,
-        "the OpenAPI document is not served; set api.openapi_enabled = true to serve it",
+    ApiError(ServiceError::EndpointNotFound(
+        "the OpenAPI document is not served; set api.openapi_enabled = true to serve it"
+            .to_string(),
     ))
 }
 
 /// Return the API error for an unknown route.
 async fn not_found() -> impl IntoResponse {
-    ApiError(ServiceError::new(
-        ErrorCode::EndpointNotFound,
-        "no route matches this path",
+    ApiError(ServiceError::EndpointNotFound(
+        "no route matches this path".to_string(),
     ))
 }

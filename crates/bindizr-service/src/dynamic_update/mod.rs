@@ -11,6 +11,7 @@ mod tests;
 use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName, to_fqdn};
 use chrono::Utc;
 use prerequisite::evaluate_prerequisites_tx;
+use thiserror::Error;
 
 use crate::{
     Context, Transaction, db, dnssec,
@@ -29,14 +30,21 @@ use crate::{
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
 /// response code.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DynamicUpdateError {
+    #[error("{0}")]
     Refused(String),
+    #[error("{0}")]
     YxDomain(String),
+    #[error("{0}")]
     YxRrset(String),
+    #[error("{0}")]
     NxDomain(String),
+    #[error("{0}")]
     NxRrset(String),
+    #[error("{0}")]
     NotZone(String),
+    #[error("{0}")]
     Internal(String),
 }
 
@@ -45,7 +53,7 @@ pub enum DynamicUpdateError {
 impl From<ServiceError> for DynamicUpdateError {
     /// Map a service failure to the corresponding dynamic update error.
     fn from(err: ServiceError) -> Self {
-        if err.code.http_status() < 500 {
+        if !err.code().is_internal() {
             DynamicUpdateError::Refused(err.to_string())
         } else {
             DynamicUpdateError::Internal(err.to_string())

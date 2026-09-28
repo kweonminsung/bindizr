@@ -9,6 +9,7 @@ use std::{future::Future, io::ErrorKind, net::SocketAddr, sync::Arc, time::Durat
 
 use bindizr_core::dns::message::{self, Opcode, Rcode, Rtype};
 use bindizr_service::Context;
+use thiserror::Error;
 use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
     sync::Semaphore,
@@ -17,7 +18,7 @@ use tokio::{
 };
 
 use self::server::DnsContext;
-use crate::shutdown::Shutdown;
+use crate::{dns::error::XfrError, shutdown::Shutdown};
 
 const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -27,13 +28,45 @@ const MAX_UDP_IN_FLIGHT: usize = 256;
 /// Connections served at once; the accept backlog holds the rest.
 const MAX_TCP_CONNECTIONS: usize = 128;
 
+/// Why a DNS listener could not come up.
+#[derive(Debug, Error)]
+pub(crate) enum StartDnsError {
+    /// Names the usual cause when the port is already taken.
+    #[error("Failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == std::io::ErrorKind::AddrInUse { " (BIND on this host? change dns.listen_port)" } else { "" })]
+    Bind {
+        socket: &'static str,
+        addr: SocketAddr,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+/// Why a connection or datagram was not served, for the listener's log.
+#[derive(Debug, Error)]
+enum ServeDnsError {
+    #[error(transparent)]
+    Closed(#[from] tokio::sync::AcquireError),
+    #[error("Failed to read DNS TCP message: {0}")]
+    Read(#[source] XfrError),
+    #[error("Failed to answer an unsupported DNS TCP opcode: {0}")]
+    AnswerOpcode(#[source] XfrError),
+    #[error("Failed to handle SOA TCP query: {0}")]
+    Soa(#[source] XfrError),
+    #[error("Failed to handle XFR TCP query: {0}")]
+    Xfr(#[source] XfrError),
+    #[error("Failed to refuse a DNS TCP query: {0}")]
+    Refuse(#[source] XfrError),
+    #[error(transparent)]
+    Nsupdate(#[from] server::nsupdate::NsupdateError),
+}
+
 /// Bring the DNS front end up: prepare the catalog zone and spawn the TCP and
 /// UDP servers, handing back their accept loops so the daemon notices one
 /// that stops.
 pub(crate) async fn initialize(
     cx: Arc<Context>,
     shutdown: &Shutdown,
-) -> Result<(JoinHandle<()>, JoinHandle<()>), String> {
+) -> Result<(JoinHandle<()>, JoinHandle<()>), StartDnsError> {
     let dns_cx = Arc::new(DnsContext::new(cx.clone()));
 
     // The catalog zone must exist before a secondary asks for it.
@@ -53,12 +86,21 @@ pub(crate) async fn initialize(
     let config = cx.config();
     let listen_addr = SocketAddr::new(config.dns.listen_addr, config.dns.listen_port);
 
-    let tcp_listener = TcpListener::bind(listen_addr)
-        .await
-        .map_err(|e| bind_error("TCP listener", listen_addr, &e))?;
+    let tcp_listener =
+        TcpListener::bind(listen_addr)
+            .await
+            .map_err(|source| StartDnsError::Bind {
+                socket: "TCP listener",
+                addr: listen_addr,
+                source,
+            })?;
     let udp_socket = UdpSocket::bind(listen_addr)
         .await
-        .map_err(|e| bind_error("UDP socket", listen_addr, &e))?;
+        .map_err(|source| StartDnsError::Bind {
+            socket: "UDP socket",
+            addr: listen_addr,
+            source,
+        })?;
 
     log::info!("DNS TCP server listening on {}", listen_addr);
     log::info!("DNS UDP server listening on {}", listen_addr);
@@ -87,14 +129,14 @@ async fn run_tcp_server(
     dns_cx: Arc<DnsContext>,
     listener: TcpListener,
     stop: impl Future<Output = ()>,
-) -> Result<(), String> {
+) -> Result<(), ServeDnsError> {
     let open = Arc::new(Semaphore::new(MAX_TCP_CONNECTIONS));
     tokio::pin!(stop);
 
     loop {
         // The slot comes before the accept, so the backlog holds the excess.
         let permit = tokio::select! {
-            permit = open.clone().acquire_owned() => permit.map_err(|e| e.to_string())?,
+            permit = open.clone().acquire_owned() => permit?,
             () = &mut stop => {
                 log::info!("DNS TCP server stopping");
                 return Ok(());
@@ -131,7 +173,7 @@ async fn handle_tcp_connection(
     dns_cx: &DnsContext,
     mut stream: TcpStream,
     client_addr: SocketAddr,
-) -> Result<(), String> {
+) -> Result<(), ServeDnsError> {
     loop {
         let query_data = match timeout(
             TCP_IDLE_TIMEOUT,
@@ -140,12 +182,10 @@ async fn handle_tcp_connection(
         .await
         {
             Ok(Ok(query_data)) => query_data,
-            Ok(Err(crate::dns::error::XfrError::IoError(e)))
-                if e.kind() == ErrorKind::UnexpectedEof =>
-            {
+            Ok(Err(XfrError::Io(e))) if e.kind() == ErrorKind::UnexpectedEof => {
                 break;
             }
-            Ok(Err(e)) => return Err(format!("Failed to read DNS TCP message: {}", e)),
+            Ok(Err(e)) => return Err(ServeDnsError::Read(e)),
             Err(_) => {
                 log::info!(
                     "Closing idle DNS TCP connection from {} after {:?}",
@@ -168,7 +208,7 @@ async fn dispatch_tcp_query(
     stream: &mut TcpStream,
     client_addr: SocketAddr,
     query_data: &[u8],
-) -> Result<(), String> {
+) -> Result<(), ServeDnsError> {
     if message::is_response(query_data) {
         log::warn!("Ignoring a DNS TCP response from {}", client_addr);
         return Ok(());
@@ -177,8 +217,9 @@ async fn dispatch_tcp_query(
     // nsupdate owns its own parsing (including TSIG); everything else shares
     // one upfront parse.
     if server::nsupdate::is_nsupdate(query_data) {
-        return server::nsupdate::handle_tcp_nsupdate(dns_cx, stream, query_data, client_addr)
-            .await;
+        return Ok(
+            server::nsupdate::handle_tcp_nsupdate(dns_cx, stream, query_data, client_addr).await?,
+        );
     }
 
     let query = match message::ParsedQuery::parse(query_data) {
@@ -198,17 +239,17 @@ async fn dispatch_tcp_query(
         let response = query.error_response(Rcode::NOTIMP);
         return wire::write_tcp_message(stream, &response)
             .await
-            .map_err(|e| format!("Failed to answer an unsupported DNS TCP opcode: {}", e));
+            .map_err(ServeDnsError::AnswerOpcode);
     }
 
     if query.qtype == Rtype::SOA {
         server::soa::handle_tcp_soa(dns_cx, stream, client_addr, &query, query_data)
             .await
-            .map_err(|e| format!("Failed to handle SOA TCP query: {}", e))?;
+            .map_err(ServeDnsError::Soa)?;
     } else if server::is_xfr_query_type(query.qtype) {
         server::handle_tcp_xfr(dns_cx, stream, client_addr, &query, query_data)
             .await
-            .map_err(|e| format!("Failed to handle XFR TCP query: {}", e))?;
+            .map_err(ServeDnsError::Xfr)?;
     } else {
         // bindizr answers secondaries, not resolvers.
         log::info!(
@@ -219,7 +260,7 @@ async fn dispatch_tcp_query(
         let response = query.error_response(Rcode::REFUSED);
         wire::write_tcp_message(stream, &response)
             .await
-            .map_err(|e| format!("Failed to refuse a DNS TCP query: {}", e))?;
+            .map_err(ServeDnsError::Refuse)?;
     }
 
     Ok(())
@@ -230,7 +271,7 @@ async fn run_udp_server(
     dns_cx: Arc<DnsContext>,
     socket: UdpSocket,
     stop: impl Future<Output = ()>,
-) -> Result<(), String> {
+) -> Result<(), ServeDnsError> {
     let socket = Arc::new(socket);
     let in_flight = Arc::new(Semaphore::new(MAX_UDP_IN_FLIGHT));
     let mut buf = vec![0u8; 65535];
@@ -336,14 +377,4 @@ async fn send_udp_response(socket: &UdpSocket, client_addr: SocketAddr, response
     if let Err(e) = socket.send_to(response, client_addr).await {
         log::warn!("Failed to answer DNS UDP query from {}: {}", client_addr, e);
     }
-}
-
-/// The bind failure, naming the usual cause when the port is already taken.
-fn bind_error(socket: &str, addr: SocketAddr, e: &std::io::Error) -> String {
-    let hint = if e.kind() == std::io::ErrorKind::AddrInUse {
-        " (BIND on this host? change dns.listen_port)"
-    } else {
-        ""
-    };
-    format!("Failed to bind DNS {} on {}: {}{}", socket, addr, e, hint)
 }

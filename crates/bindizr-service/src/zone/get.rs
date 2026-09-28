@@ -64,9 +64,7 @@ pub async fn list_changes_between_serials(
 
 /// Cheap database round-trip (limit-1 zones probe), for health checks.
 pub async fn ping(cx: &Context) -> Result<(), ServiceError> {
-    db::zone::ping(cx.db())
-        .await
-        .map_err(|e| ServiceError::internal(format!("failed to reach the zones table: {}", e)))
+    Ok(db::zone::ping(cx.db()).await?)
 }
 
 /// The zones the DNS plane serves: the catalog's membership and the NOTIFY

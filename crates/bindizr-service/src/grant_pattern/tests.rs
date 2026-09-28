@@ -23,7 +23,7 @@ fn normalize_pattern_rejects_invalid_patterns() {
     let long_label = "x".repeat(64);
     for invalid in ["*.", "a*b", "*.a*", "bad name", "a..b", "*.**", &long_label] {
         let err = normalize_pattern(Some(invalid)).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput, "input: {:?}", invalid);
+        assert_eq!(err.code(), ErrorCode::InvalidInput, "input: {:?}", invalid);
     }
 }
 
@@ -38,7 +38,7 @@ fn normalize_types_parses_and_dedupes() {
     );
 
     let err = normalize_types(Some("A,BOGUS")).unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidInput);
+    assert_eq!(err.code(), ErrorCode::InvalidInput);
 }
 
 /// Verify that `normalize_pattern` canonicalizes escapes and rejects malformed ones.
@@ -51,7 +51,7 @@ fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
 
     for invalid in [r"a\", "www.", "*.sub."] {
         let err = normalize_pattern(Some(invalid)).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput, "input: {:?}", invalid);
+        assert_eq!(err.code(), ErrorCode::InvalidInput, "input: {:?}", invalid);
     }
 }
 
@@ -63,7 +63,11 @@ fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
 fn rejects_a_wildcard_label_however_it_is_spelled() {
     for pattern in [r"\042", r"\042.sub", r"\042x", r"a\042b", "a*b", "*x"] {
         let err = normalize_pattern(Some(pattern)).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput, "{pattern} was accepted");
+        assert_eq!(
+            err.code(),
+            ErrorCode::InvalidInput,
+            "{pattern} was accepted"
+        );
     }
 
     // The two spellings the language does define keep working.
@@ -89,7 +93,7 @@ fn an_escaped_dot_is_label_data_not_a_root_marker() {
 
     // A real trailing dot still is: a pattern is relative to its zone.
     assert_eq!(
-        normalize_pattern(Some("sub.")).unwrap_err().code,
+        normalize_pattern(Some("sub.")).unwrap_err().code(),
         ErrorCode::InvalidInput
     );
 }

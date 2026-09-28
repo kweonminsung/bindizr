@@ -53,7 +53,7 @@ fn stamp(offset_hours: i64) -> String {
 }
 
 /// Import a key-file fixture with the supplied timing metadata.
-fn import(timing: &[(&str, String)]) -> Result<DnssecKey, String> {
+fn import(timing: &[(&str, String)]) -> Result<DnssecKey, ImportKeyError> {
     let mut private = BIND_PRIVATE.to_string();
     for (field, at) in timing {
         private.push_str(&format!("{}: {}\n", field, at));
@@ -116,7 +116,10 @@ fn a_schedule_bind_left_open_falls_back_to_the_dnskey_ttl() {
 #[test]
 fn a_key_outside_the_window_bind_serves_it_in_is_refused() {
     let not_yet = import(&[("Publish", stamp(1)), ("Activate", stamp(2))]).unwrap_err();
-    assert!(not_yet.contains("not published until"), "{not_yet}");
+    assert!(
+        matches!(not_yet, ImportKeyError::NotYetPublished { .. }),
+        "{not_yet}"
+    );
 
     let gone = import(&[
         ("Publish", stamp(-48)),
@@ -124,10 +127,13 @@ fn a_key_outside_the_window_bind_serves_it_in_is_refused() {
         ("Delete", stamp(-1)),
     ])
     .unwrap_err();
-    assert!(gone.contains("no longer serves it"), "{gone}");
+    assert!(matches!(gone, ImportKeyError::Deleted { .. }), "{gone}");
 
     let malformed = import(&[("Publish", "not-a-time".to_string())]).unwrap_err();
-    assert!(malformed.contains("invalid Publish time"), "{malformed}");
+    assert!(
+        matches!(malformed, ImportKeyError::InvalidTime { .. }),
+        "{malformed}"
+    );
 }
 
 /// Verify that an exported key file re-imports in the state it left.

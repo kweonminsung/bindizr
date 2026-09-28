@@ -10,8 +10,7 @@ pub(crate) async fn create_tx(
     sqlx::query("INSERT INTO dnssec_withdrawals (zone_id) VALUES ($1)")
         .bind(zone_id)
         .execute(&mut **tx)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        .await?;
 
     Ok(())
 }
@@ -25,7 +24,7 @@ pub(crate) async fn get_tx(
         .bind(zone_id)
         .fetch_optional(&mut **tx)
         .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+        .map_err(DatabaseError::from)
 }
 
 /// Clear a zone's DNSSEC withdrawal marker in the current transaction.
@@ -36,8 +35,7 @@ pub(crate) async fn delete_tx(
     sqlx::query("DELETE FROM dnssec_withdrawals WHERE zone_id = $1")
         .bind(zone_id)
         .execute(&mut **tx)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        .await?;
 
     Ok(())
 }

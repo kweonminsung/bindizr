@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use super::secondary::TransferResponse;
-use crate::{error::ServiceError, model::zone::Zone, serial::validate_initial_serial};
+use crate::{
+    dns_client::probe::ProbeError, error::ServiceError, model::zone::Zone,
+    serial::validate_initial_serial,
+};
 
 /// API representation of a zone.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
@@ -341,7 +344,7 @@ impl SecondaryStatusResponse {
     pub fn from_probe(
         address: String,
         expected_serial: Option<u32>,
-        result: Result<u32, String>,
+        result: Result<u32, ProbeError>,
     ) -> Self {
         match result {
             Ok(visible) => {
@@ -365,7 +368,7 @@ impl SecondaryStatusResponse {
                 address,
                 status: SecondaryStatus::Unreachable,
                 visible_serial: None,
-                error: Some(error),
+                error: Some(error.to_string()),
                 last_transfer: None,
             },
         }

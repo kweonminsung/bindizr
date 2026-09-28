@@ -128,7 +128,7 @@ fn parse_record_set_op_rejects_unsupported_types() {
     for record_type in ["NS", "MX", "SRV", "SOA", "PTR"] {
         let err = parse_record_set_op(&record_set("a.example.com", record_type, None, &["x"]))
             .unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert_eq!(err.code(), ErrorCode::InvalidInput);
     }
     assert!(parse_record_set_op(&record_set("a.example.com", "BOGUS", None, &["x"])).is_err());
 }
@@ -143,10 +143,10 @@ fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
         &["one.example.com", "two.example.com"],
     ))
     .unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidRecordValue);
+    assert_eq!(err.code(), ErrorCode::InvalidRecordValue);
 
     let err = parse_record_set_op(&record_set("a.example.com", "A", None, &[])).unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidInput);
+    assert_eq!(err.code(), ErrorCode::InvalidInput);
 }
 
 /// Verify that `parse_record_set_op` normalizes TTL.
@@ -318,7 +318,7 @@ fn group_ops_rejects_names_without_authoritative_zone() {
     let ops = parse_changes_request(&request).unwrap();
 
     let err = group_ops_by_zone(&Caller::Global, &zones, ops).unwrap_err();
-    assert_eq!(err.code, ErrorCode::ZoneNotFound);
+    assert_eq!(err.code(), ErrorCode::ZoneNotFound);
 }
 
 /// Verify that group ops reads a hidden zone as absent instead of its granted parent.
@@ -355,7 +355,7 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
     let ops = parse_changes_request(&request).unwrap();
 
     let err = group_ops_by_zone(&caller, &zones, ops).unwrap_err();
-    assert_eq!(err.code, ErrorCode::ZoneNotFound);
+    assert_eq!(err.code(), ErrorCode::ZoneNotFound);
     assert!(
         err.to_string()
             .contains("No zone is authoritative for 'api.internal.example.com'"),
@@ -582,7 +582,7 @@ fn change_set_enforces_cname_exclusivity() {
     let err = zone_ops(&request, &zone)
         .compute_change_set(&zone, &existing)
         .unwrap_err();
-    assert_eq!(err.code, ErrorCode::RecordConflict);
+    assert_eq!(err.code(), ErrorCode::RecordConflict);
 }
 
 /// Verify that change set allows CNAME when conflicting row is deleted in same request.

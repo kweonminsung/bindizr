@@ -29,8 +29,7 @@ pub(crate) async fn upsert_tx(
     .bind(digest)
     .bind(base_serial)
     .execute(&mut **tx)
-    .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    .await?;
 
     sqlx::query_scalar::<_, i32>(
         r#"
@@ -42,5 +41,5 @@ pub(crate) async fn upsert_tx(
     .bind(name)
     .fetch_one(&mut **tx)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }

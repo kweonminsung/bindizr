@@ -24,6 +24,7 @@ use std::{
 
 use bindizr_service::{Context, error::ServiceError, types::ErrorResponse};
 use control::DaemonControl;
+use thiserror::Error;
 use tokio::{
     fs,
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -44,6 +45,24 @@ use crate::{
 /// force unbounded allocation. Sized above the HTTP upload cap (32 MB) because
 /// zone-file content arrives JSON-escaped, roughly doubling in the worst case.
 const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Why the control socket could not be bound.
+#[derive(Debug, Error)]
+pub(crate) enum BindSocketError {
+    /// Another daemon answers on the socket; its message is the io error's.
+    #[error("{0}")]
+    InUse(#[source] io::Error),
+    /// Every candidate path failed, each with its reason.
+    #[error("Failed to bind the daemon Unix socket ({})", failures.iter().map(|(path, e)| format!("'{path}': {e}")).collect::<Vec<_>>().join("; "))]
+    Unavailable { failures: Vec<(String, io::Error)> },
+}
+
+/// Why the bound socket could not be served.
+#[derive(Debug, Error)]
+pub(crate) enum ServeSocketError {
+    #[error("Failed to read the daemon's uid: {0}")]
+    ReadUid(#[source] io::Error),
+}
 
 /// The socket front end's context: the daemon's, plus the control channel
 /// the lifecycle loop awaits. A command handler takes the daemon's context;
@@ -251,8 +270,8 @@ pub(crate) fn serve(
     socket_cx: Arc<SocketContext>,
     listener: UnixListener,
     shutdown: &Shutdown,
-) -> Result<JoinHandle<()>, String> {
-    let own_uid = read_own_uid().map_err(|e| format!("Failed to read the daemon's uid: {}", e))?;
+) -> Result<JoinHandle<()>, ServeSocketError> {
+    let own_uid = read_own_uid().map_err(ServeSocketError::ReadUid)?;
     let stop = shutdown.waiter();
     Ok(tokio::spawn(async move {
         tokio::pin!(stop);
@@ -308,7 +327,7 @@ const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FIL
 
 /// Bind the daemon's configured control socket. Owning it is what refuses a
 /// second daemon, so the daemon binds before anything else it would share.
-pub(crate) async fn bind() -> Result<(String, UnixListener), String> {
+pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
     let mut failures = Vec::new();
 
     for (i, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {
@@ -316,7 +335,9 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), String> {
             Ok(listener) => return Ok(((*path).to_string(), listener)),
             // Another daemon already owns this socket. Trying the next candidate
             // would start a second daemon instead of reporting the conflict.
-            Err(err) if err.kind() == io::ErrorKind::AddrInUse => return Err(err.to_string()),
+            Err(err) if err.kind() == io::ErrorKind::AddrInUse => {
+                return Err(BindSocketError::InUse(err));
+            }
             Err(err) => err,
         };
 
@@ -328,13 +349,9 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), String> {
                 next
             );
         }
-        failures.push(format!("'{}': {}", path, err));
+        failures.push((path.to_string(), err));
     }
-
-    Err(format!(
-        "Failed to bind the daemon Unix socket ({})",
-        failures.join("; ")
-    ))
+    Err(BindSocketError::Unavailable { failures })
 }
 
 /// Bind a Unix listener at the requested path.

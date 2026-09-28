@@ -85,11 +85,11 @@ fn the_key_layout_cannot_change_under_a_signed_zone() {
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 
-    assert!(error.message.contains("key layout"), "{}", error.message);
+    assert!(error.to_string().contains("key layout"), "{}", error);
     assert!(
-        error.message.contains("split KSK/ZSK keys"),
+        error.to_string().contains("split KSK/ZSK keys"),
         "{}",
-        error.message
+        error
     );
 }
 
@@ -103,5 +103,5 @@ fn the_key_layout_is_still_refused_when_the_denial_chain_moves_with_it() {
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 
-    assert!(error.message.contains("key layout"), "{}", error.message);
+    assert!(error.to_string().contains("key layout"), "{}", error);
 }

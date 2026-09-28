@@ -280,7 +280,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             }
         }
         TokenCommand::Revoke { .. } => {
-            return Err(CliError::from(
+            return Err(CliError::request(
                 "give a token name and a zone name, or --id to revoke one grant",
             ));
         }

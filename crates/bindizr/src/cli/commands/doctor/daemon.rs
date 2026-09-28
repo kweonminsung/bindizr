@@ -6,6 +6,7 @@ use std::{net::SocketAddr, time::Duration};
 use axum::http::StatusCode;
 use bindizr_core::{config::Config, dns::address::loopback_if_unspecified};
 use bindizr_service::types::SecondaryStatus;
+use thiserror::Error;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -19,6 +20,20 @@ use crate::{
         types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse, DoctorCheckStatus},
     },
 };
+
+/// Why the API did not answer a probe as a reachable API.
+#[derive(Debug, Error)]
+enum ProbeApiError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("timed out")]
+    TimedOut,
+    #[error("unexpected response: {line}")]
+    UnexpectedResponse { line: String },
+    /// The API answers but cannot serve; the status line says why.
+    #[error("{line}")]
+    ServerError { line: String },
+}
 
 const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -75,23 +90,20 @@ pub(crate) async fn check_api(config: &Config, report: &mut Report) {
 
 /// Minimal HTTP GET returning the status line; a plain-HTTP API needs no full
 /// HTTP client dependency here.
-async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
+async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiError> {
     let exchange = async {
-        let mut stream = TcpStream::connect(addr).await.map_err(|e| e.to_string())?;
+        let mut stream = TcpStream::connect(addr).await?;
         let request = format!(
             "GET / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
             addr
         );
-        stream
-            .write_all(request.as_bytes())
-            .await
-            .map_err(|e| e.to_string())?;
+        stream.write_all(request.as_bytes()).await?;
 
         // TCP may split the response; read until the status line is complete.
         let mut buf = Vec::new();
         let mut chunk = [0u8; 256];
         loop {
-            let read = stream.read(&mut chunk).await.map_err(|e| e.to_string())?;
+            let read = stream.read(&mut chunk).await?;
             if read == 0 {
                 break;
             }
@@ -100,16 +112,17 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
                 break;
             }
         }
-        Ok::<_, String>(String::from_utf8_lossy(&buf).to_string())
+        Ok::<_, ProbeApiError>(String::from_utf8_lossy(&buf).to_string())
     };
-
     let response = tokio::time::timeout(API_CHECK_TIMEOUT, exchange)
         .await
-        .map_err(|_| "timed out".to_string())??;
+        .map_err(|_| ProbeApiError::TimedOut)??;
 
     let status_line = response.lines().next().unwrap_or_default().trim();
     if !status_line.starts_with("HTTP/") {
-        return Err(format!("unexpected response: {}", status_line));
+        return Err(ProbeApiError::UnexpectedResponse {
+            line: status_line.to_string(),
+        });
     }
     // A 5xx to this request means the API is answering but cannot serve, which
     // is a failing check rather than a reachable API.
@@ -120,7 +133,9 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, String> {
         .and_then(|code| StatusCode::from_u16(code).ok())
         .is_some_and(|status| status.is_server_error());
     if answered_5xx {
-        return Err(status_line.to_string());
+        return Err(ProbeApiError::ServerError {
+            line: status_line.to_string(),
+        });
     }
     Ok(status_line.to_string())
 }

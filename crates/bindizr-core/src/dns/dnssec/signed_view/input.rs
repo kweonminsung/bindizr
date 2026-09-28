@@ -19,7 +19,7 @@ use domain::{
     rdata::ZoneRecordData,
 };
 
-use super::{SignRecord, SignedViewParams, Signer, WireName, to_rdata};
+use super::{SignRecord, SignZoneError, SignedViewParams, Signer, WireName, to_rdata};
 use crate::{dns::record::EncodedRdata, model::dnssec_policy::DnssecDenial};
 
 impl SignedViewParams<'_> {
@@ -29,7 +29,7 @@ impl SignedViewParams<'_> {
         &self,
         apex: &WireName,
         signers: &[Signer<'_>],
-    ) -> Result<Vec<SignRecord>, String> {
+    ) -> Result<Vec<SignRecord>, SignZoneError> {
         let zone = self.zone;
         let mut input: Vec<SignRecord> = Vec::new();
 
@@ -57,7 +57,10 @@ impl SignedViewParams<'_> {
                         .ds_rdata(apex, signer.key.algorithm.ds_digest_type())?
                         .into_bytes(),
                 )
-                .map_err(|e| format!("invalid CDS rdata: {}", e))?;
+                .map_err(|e| SignZoneError::Rdata {
+                    rtype: "CDS",
+                    source: Box::new(e),
+                })?;
                 input.push(WireRecord::new(
                     apex.clone(),
                     Class::IN,
@@ -68,7 +71,10 @@ impl SignedViewParams<'_> {
                     Rtype::CDNSKEY,
                     to_rdata(&signer.dnskey).into_bytes(),
                 )
-                .map_err(|e| format!("invalid CDNSKEY rdata: {}", e))?;
+                .map_err(|e| SignZoneError::Rdata {
+                    rtype: "CDNSKEY",
+                    source: Box::new(e),
+                })?;
                 input.push(WireRecord::new(
                     apex.clone(),
                     Class::IN,
@@ -81,8 +87,13 @@ impl SignedViewParams<'_> {
         // RFC 8078, Section 4: the 0-algorithm pair asks the parent to delete
         // the DS record set entirely.
         if self.withdraw_parent_ds && !signers.is_empty() {
-            let cds = UnknownRecordData::from_octets(Rtype::CDS, vec![0, 0, 0, 0, 0])
-                .map_err(|e| format!("invalid CDS rdata: {}", e))?;
+            let cds =
+                UnknownRecordData::from_octets(Rtype::CDS, vec![0, 0, 0, 0, 0]).map_err(|e| {
+                    SignZoneError::Rdata {
+                        rtype: "CDS",
+                        source: Box::new(e),
+                    }
+                })?;
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
@@ -90,7 +101,10 @@ impl SignedViewParams<'_> {
                 ZoneRecordData::Unknown(cds),
             ));
             let cdnskey = UnknownRecordData::from_octets(Rtype::CDNSKEY, vec![0, 0, 3, 0, 0])
-                .map_err(|e| format!("invalid CDNSKEY rdata: {}", e))?;
+                .map_err(|e| SignZoneError::Rdata {
+                    rtype: "CDNSKEY",
+                    source: Box::new(e),
+                })?;
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
@@ -105,7 +119,10 @@ impl SignedViewParams<'_> {
                 EncodedRdata::from_columns(&record.record_type, &record.value, record.priority)?;
             let data =
                 UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
-                    .map_err(|e| format!("invalid record rdata: {}", e))?;
+                    .map_err(|e| SignZoneError::Rdata {
+                        rtype: "record",
+                        source: Box::new(e),
+                    })?;
             let owner = record.name.to_wire_name(&zone.name)?;
             input.push(WireRecord::new(
                 owner,
@@ -140,12 +157,12 @@ impl SignedViewParams<'_> {
 
 /// The typed SOA the denial generators require (they read MINIMUM per
 /// RFC 9077), parsed back from the one byte encoding the transfer serves.
-fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, String> {
+fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, SignZoneError> {
     let mut parser = Parser::from_ref(rdata);
     domain::rdata::Soa::parse(&mut parser)
-        .map_err(|e| format!("invalid SOA rdata: {}", e))?
+        .map_err(|e| SignZoneError::Soa(Box::new(e)))?
         .try_flatten_into()
-        .map_err(|e| format!("invalid SOA rdata: {}", e))
+        .map_err(|e| SignZoneError::Soa(Box::new(e)))
 }
 
 /// The complete denial chain for `input` (canonical order): NSEC records, or
@@ -156,7 +173,7 @@ pub(crate) fn denial_records(
     apex: &WireName,
     input: &[SignRecord],
     denial: DnssecDenial,
-) -> Result<Vec<SignRecord>, String> {
+) -> Result<Vec<SignRecord>, SignZoneError> {
     /// Wrap a denial record's data in the signing record type.
     fn into_sign_record<D>(
         record: WireRecord<WireName, D>,
@@ -177,7 +194,9 @@ pub(crate) fn denial_records(
             RecordsIter::new_from_owned(input),
             &GenerateNsec3Config::<Vec<u8>, DefaultSorter>::default(),
         )
-        .map_err(|e| format!("NSEC3 generation failed: {}", e))?;
+        .map_err(|e| SignZoneError::Nsec3 {
+            reason: e.to_string(),
+        })?;
 
         for nsec3 in nsec3s {
             records.push(into_sign_record(nsec3, ZoneRecordData::Nsec3));
@@ -189,7 +208,9 @@ pub(crate) fn denial_records(
             RecordsIter::new_from_owned(input),
             &GenerateNsecConfig::new(),
         )
-        .map_err(|e| format!("NSEC generation failed: {}", e))?;
+        .map_err(|e| SignZoneError::Nsec {
+            reason: e.to_string(),
+        })?;
         for nsec in nsecs {
             records.push(into_sign_record(nsec, ZoneRecordData::Nsec));
         }

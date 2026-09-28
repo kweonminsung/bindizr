@@ -2,7 +2,7 @@
 //! by the operator at the delegation point.
 
 use super::{
-    Rdata,
+    EncodeRdataError, ParseRecordValueError, Rdata,
     value::{
         MAX_RECORD_RDATA, hex_upper, parse_hex_record_field, parse_u8_record_field,
         parse_u16_record_field,
@@ -19,14 +19,14 @@ pub struct DsRecordValue {
 impl DsRecordValue {
     /// The value is `<key tag> <algorithm> <digest type> <digest>`; the hex
     /// digest may be split into whitespace-separated groups, as `dig` prints.
-    pub fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
         let mut fields = value.split_whitespace();
         let (Some(key_tag), Some(algorithm), Some(digest_type)) =
             (fields.next(), fields.next(), fields.next())
         else {
-            return Err(format!(
-                "DS record value must be '<key tag> <algorithm> <digest type> <digest>': {value}"
-            ));
+            return Err(ParseRecordValueError::DsShape {
+                value: value.to_string(),
+            });
         };
         Ok(Self {
             key_tag: parse_u16_record_field("DS key tag", key_tag)?,
@@ -37,7 +37,7 @@ impl DsRecordValue {
     }
 
     /// Validate the fields of this DS value.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), ParseRecordValueError> {
         // Digest lengths are fixed per type (RFC 4509 for SHA-256); a wrong
         // length is a broken delegation, not a serveable record.
         let expected = match self.digest_type {
@@ -49,21 +49,20 @@ impl DsRecordValue {
         if let Some(expected) = expected
             && self.digest.len() != expected
         {
-            return Err(format!(
-                "DS digest type {} takes a {}-byte digest, got {}",
-                self.digest_type,
+            return Err(ParseRecordValueError::DsDigestLength {
+                digest_type: self.digest_type,
                 expected,
-                self.digest.len()
-            ));
+                len: self.digest.len(),
+            });
         }
         // Bounded so the record fits one transfer message beside its 4 fixed
         // RDATA bytes; enforced here so a stored row cannot poison an AXFR.
         const MAX_DIGEST: usize = MAX_RECORD_RDATA - 4;
         if self.digest.len() > MAX_DIGEST {
-            return Err(format!(
-                "DS digest must be at most {MAX_DIGEST} bytes, got {}",
-                self.digest.len()
-            ));
+            return Err(ParseRecordValueError::DsDigestTooLong {
+                max: MAX_DIGEST,
+                len: self.digest.len(),
+            });
         }
         Ok(())
     }
@@ -80,7 +79,7 @@ impl DsRecordValue {
     }
 
     /// The wire-format RDATA of a stored value (RFC 4034, Section 5.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub(crate) fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(4 + self.digest.len());
         rdata.extend_from_slice(&self.key_tag.to_be_bytes());
         rdata.push(self.algorithm);
@@ -105,7 +104,13 @@ mod tests {
     #[test]
     fn validate_pins_the_digest_length_per_type() {
         let short = DsRecordValue::parse("1 13 2 4B9B").unwrap();
-        assert!(short.validate().unwrap_err().contains("32-byte"));
+        assert!(
+            short
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("32-byte")
+        );
         // Unknown digest types carry no known length to enforce.
         assert!(
             DsRecordValue::parse("1 13 9 4B9B")

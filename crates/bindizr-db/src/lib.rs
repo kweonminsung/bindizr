@@ -38,7 +38,7 @@ pub mod zone_version;
 use bindizr_core::config;
 pub use bindizr_core::model;
 use error::DatabaseError;
-pub use sql::{RecordSort, SortOrder, ZoneSort};
+pub use sql::{ParseSortError, RecordSort, SortOrder, ZoneSort};
 use tx::TransactionKind;
 pub use tx::{LockLevel, Transaction};
 
@@ -65,18 +65,14 @@ impl Db {
             }
             config::DatabaseType::Sqlite => {
                 // The file is created on a clean install, so its directory is too.
-                utils::create_parent_dir(&database.sqlite.file_path)
-                    .map_err(DatabaseError::PoolError)?;
-                let url = utils::to_sqlite_url(&database.sqlite.file_path)
-                    .map_err(DatabaseError::PoolError)?;
+                utils::create_parent_dir(&database.sqlite.file_path)?;
+                let url = utils::to_sqlite_url(&database.sqlite.file_path)?;
                 Backend::connect_sqlite(&url).await?
             }
         };
 
         let db = Db(backend);
-        db.create_tables()
-            .await
-            .map_err(DatabaseError::QueryFailed)?;
+        db.create_tables().await?;
 
         log::info!("Database pool initialized");
         Ok(db)
@@ -108,7 +104,7 @@ impl Db {
                 .await
                 .map(TransactionKind::Sqlite),
         }
-        .map_err(|e| DatabaseError::TransactionFailed(e.to_string()))?;
+        .map_err(DatabaseError::TransactionFailed)?;
         Ok(Transaction(kind))
     }
 
@@ -138,27 +134,20 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
                 .max_connections(1)
                 .connect(&database.mysql.url)
                 .await
-                .map_err(|e| DatabaseError::PoolError(mysql_connect_error(&e)))?;
-            sqlx::query("SELECT 1")
-                .execute(&pool)
-                .await
-                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+                .map_err(DatabaseError::MySqlConnect)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
         }
         config::DatabaseType::Postgresql => {
             let pool = PgPoolOptions::new()
                 .max_connections(1)
                 .connect(&database.postgresql.url)
                 .await
-                .map_err(|e| DatabaseError::PoolError(postgres_connect_error(&e)))?;
-            sqlx::query("SELECT 1")
-                .execute(&pool)
-                .await
-                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+                .map_err(DatabaseError::PostgresConnect)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
         }
         config::DatabaseType::Sqlite => {
             // Creating the file here would leave it owned by whoever ran doctor.
-            let url = utils::to_sqlite_url(&database.sqlite.file_path)
-                .map_err(DatabaseError::PoolError)?;
+            let url = utils::to_sqlite_url(&database.sqlite.file_path)?;
             let connect_options = sqlite_connect_options(&url)?
                 .create_if_missing(false)
                 .read_only(true);
@@ -166,11 +155,8 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
                 .max_connections(1)
                 .connect_with(connect_options)
                 .await
-                .map_err(|e| DatabaseError::PoolError(sqlite_connect_error(&e)))?;
-            sqlx::query("SELECT 1")
-                .execute(&pool)
-                .await
-                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+                .map_err(DatabaseError::SqliteOpen)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
         }
     }
     Ok(())
@@ -178,29 +164,7 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
 
 /// Parse a SQLite URL into connection options.
 fn sqlite_connect_options(url: &str) -> Result<SqliteConnectOptions, DatabaseError> {
-    SqliteConnectOptions::from_str(url)
-        .map_err(|e| DatabaseError::PoolError(format!("Invalid SQLite file path: {}", e)))
-}
-
-/// The MySQL connection failure, naming the key an operator would fix.
-fn mysql_connect_error(e: &sqlx::Error) -> String {
-    format!("MySQL connection failed (check database.mysql.url): {}", e)
-}
-
-/// The PostgreSQL connection failure, naming the key an operator would fix.
-fn postgres_connect_error(e: &sqlx::Error) -> String {
-    format!(
-        "PostgreSQL connection failed (check database.postgresql.url): {}",
-        e
-    )
-}
-
-/// The SQLite open failure, naming the key an operator would fix.
-fn sqlite_connect_error(e: &sqlx::Error) -> String {
-    format!(
-        "SQLite open failed (check database.sqlite.file_path): {}",
-        e
-    )
+    SqliteConnectOptions::from_str(url).map_err(DatabaseError::InvalidSqlitePath)
 }
 
 /// How full the connection pool is. sqlx counts held connections, not waiters,
@@ -238,7 +202,7 @@ impl Backend {
             })
             .connect(url)
             .await
-            .map_err(|e| DatabaseError::PoolError(mysql_connect_error(&e)))?;
+            .map_err(DatabaseError::MySqlConnect)?;
 
         Ok(Backend::MySql(pool))
     }
@@ -260,7 +224,7 @@ impl Backend {
             })
             .connect(url)
             .await
-            .map_err(|e| DatabaseError::PoolError(postgres_connect_error(&e)))?;
+            .map_err(DatabaseError::PostgresConnect)?;
 
         Ok(Backend::Postgres(pool))
     }
@@ -301,7 +265,7 @@ impl Backend {
             })
             .connect_with(connect_options)
             .await
-            .map_err(|e| DatabaseError::PoolError(sqlite_connect_error(&e)))?;
+            .map_err(DatabaseError::SqliteOpen)?;
 
         Ok(Backend::Sqlite(pool))
     }
@@ -309,17 +273,14 @@ impl Backend {
 
 impl Db {
     /// Run this backend's creation statements and seed the built-in policy.
-    async fn create_tables(&self) -> Result<(), String> {
+    async fn create_tables(&self) -> Result<(), DatabaseError> {
         match &self.0 {
             Backend::MySql(pool) => {
-                let mut conn = pool.acquire().await.map_err(|e| {
-                    log::error!("Failed to acquire MySQL connection: {}", e);
-                    e.to_string()
-                })?;
+                let mut conn = pool.acquire().await?;
                 for query in schema::mysql::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
                 }
                 let seed = schema::mysql::default_policy_seed();
@@ -329,18 +290,15 @@ impl Db {
                     .await
                     .map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", seed, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
             }
             Backend::Postgres(pool) => {
-                let mut conn = pool.acquire().await.map_err(|e| {
-                    log::error!("Failed to acquire PostgreSQL connection: {}", e);
-                    e.to_string()
-                })?;
+                let mut conn = pool.acquire().await?;
                 for query in schema::postgres::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
                 }
                 let seed = schema::postgres::default_policy_seed();
@@ -350,18 +308,15 @@ impl Db {
                     .await
                     .map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", seed, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
             }
             Backend::Sqlite(pool) => {
-                let mut conn = pool.acquire().await.map_err(|e| {
-                    log::error!("Failed to acquire SQLite connection: {}", e);
-                    e.to_string()
-                })?;
+                let mut conn = pool.acquire().await?;
                 for query in schema::sqlite::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
                 }
                 let seed = schema::sqlite::default_policy_seed();
@@ -371,7 +326,7 @@ impl Db {
                     .await
                     .map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", seed, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
             }
         }

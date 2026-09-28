@@ -87,8 +87,8 @@ impl IntoResponse for UpstreamError {
                 format!("bindizr responded with status {}", status),
             )
                 .into_response(),
-            UpstreamError::Unreachable(message) => {
-                (StatusCode::BAD_GATEWAY, message).into_response()
+            err @ (UpstreamError::Unreachable(_) | UpstreamError::InvalidResponse(_)) => {
+                (StatusCode::BAD_GATEWAY, err.to_string()).into_response()
             }
             UpstreamError::NoManageableNames => {
                 (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()
@@ -237,7 +237,7 @@ async fn apply_changes(State(state): State<Arc<AppState>>, body: String) -> Resp
         Ok(converted) => converted,
         Err(message) => {
             log::warn!("event=records_apply rejected={}", message);
-            return (StatusCode::BAD_REQUEST, message).into_response();
+            return (StatusCode::BAD_REQUEST, message.to_string()).into_response();
         }
     };
 
@@ -274,7 +274,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
         Ok(records) => records,
         Err(message) => {
             log::warn!("event=adjust_endpoints rejected={}", message);
-            return (StatusCode::BAD_REQUEST, message).into_response();
+            return (StatusCode::BAD_REQUEST, message.to_string()).into_response();
         }
     };
 
@@ -307,8 +307,8 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
             format!("bindizr answered {}: {}", status, message),
         )
             .into_response(),
-        Err(UpstreamError::Unreachable(message)) => {
-            (StatusCode::SERVICE_UNAVAILABLE, message).into_response()
+        Err(err @ (UpstreamError::Unreachable(_) | UpstreamError::InvalidResponse(_))) => {
+            (StatusCode::SERVICE_UNAVAILABLE, err.to_string()).into_response()
         }
         Err(UpstreamError::NoManageableNames) => {
             (StatusCode::SERVICE_UNAVAILABLE, NO_MANAGEABLE_NAMES).into_response()

@@ -3,20 +3,44 @@
 use std::time::Duration;
 
 use serde::Deserialize;
+use thiserror::Error;
 
 use crate::wire::{BindizrChanges, BindizrRecord};
 
 /// A bindizr API failure, split for the webhook error mapping in `server`.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub(crate) enum UpstreamError {
-    Status {
-        status: u16,
-        message: String,
-    },
+    /// The error body bindizr answered with, under its status.
+    #[error("{message}")]
+    Status { status: u16, message: String },
     /// Connect error or timeout.
-    Unreachable(String),
+    #[error("bindizr is unreachable: {0}")]
+    Unreachable(#[source] reqwest::Error),
+    /// bindizr answered something that was not the payload asked for.
+    #[error("invalid response from bindizr: {0}")]
+    InvalidResponse(#[source] reqwest::Error),
     /// bindizr answered, but the token reaches no zone this adapter could manage.
+    #[error("no manageable names")]
     NoManageableNames,
+}
+
+/// Why the client to bindizr could not be built.
+#[derive(Debug, Error)]
+pub(crate) enum BuildClientError {
+    #[error("Failed to read the CA certificate '{path}': {source}")]
+    ReadCa {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("Invalid CA certificate '{path}': {source}")]
+    InvalidCa {
+        path: String,
+        #[source]
+        source: reqwest::Error,
+    },
+    #[error("Failed to build HTTP client: {0}")]
+    Build(#[source] reqwest::Error),
 }
 
 /// The `error` message a bindizr API error response carries.
@@ -40,22 +64,25 @@ impl UpstreamClient {
         token: Option<String>,
         timeout_secs: u64,
         ca_file: Option<&str>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, BuildClientError> {
         let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs));
         // Added to the system roots rather than replacing them, so one private
         // CA does not cut off a publicly issued certificate beside it.
         if let Some(path) = ca_file {
-            let pem = std::fs::read(path)
-                .map_err(|e| format!("Failed to read the CA certificate '{}': {}", path, e))?;
-            for certificate in reqwest::Certificate::from_pem_bundle(&pem)
-                .map_err(|e| format!("Invalid CA certificate '{}': {}", path, e))?
-            {
+            let pem = std::fs::read(path).map_err(|source| BuildClientError::ReadCa {
+                path: path.to_string(),
+                source,
+            })?;
+            for certificate in reqwest::Certificate::from_pem_bundle(&pem).map_err(|source| {
+                BuildClientError::InvalidCa {
+                    path: path.to_string(),
+                    source,
+                }
+            })? {
                 builder = builder.add_root_certificate(certificate);
             }
         }
-        let http = builder
-            .build()
-            .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+        let http = builder.build().map_err(BuildClientError::Build)?;
         Ok(UpstreamClient {
             http,
             base_url,
@@ -113,9 +140,10 @@ impl UpstreamClient {
             .request(reqwest::Method::POST, "/external-dns/adjust")
             .json(&AdjustRequest { records });
         let response = self.send(request).await?;
-        let body: AdjustBody = response.json().await.map_err(|e| {
-            UpstreamError::Unreachable(format!("invalid response from bindizr: {}", e))
-        })?;
+        let body: AdjustBody = response
+            .json()
+            .await
+            .map_err(UpstreamError::InvalidResponse)?;
         Ok(body.records)
     }
 
@@ -135,9 +163,10 @@ impl UpstreamClient {
         path: &str,
     ) -> Result<T, UpstreamError> {
         let response = self.send(self.request(reqwest::Method::GET, path)).await?;
-        response.json::<T>().await.map_err(|e| {
-            UpstreamError::Unreachable(format!("invalid response from bindizr: {}", e))
-        })
+        response
+            .json::<T>()
+            .await
+            .map_err(UpstreamError::InvalidResponse)
     }
 
     /// Build an authenticated request to a bindizr API path.
@@ -156,10 +185,7 @@ impl UpstreamClient {
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, UpstreamError> {
-        let response = request
-            .send()
-            .await
-            .map_err(|e| UpstreamError::Unreachable(format!("bindizr is unreachable: {}", e)))?;
+        let response = request.send().await.map_err(UpstreamError::Unreachable)?;
 
         let status = response.status();
         if status.is_success() {

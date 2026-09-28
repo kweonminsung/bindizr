@@ -1,8 +1,9 @@
 //! Stored records, SOA versions, and catalog members as response answers.
 
-use super::{DnsMessageBuilder, Name};
+use super::{DnsMessageBuilder, EncodeMessageError, Name};
 use crate::{
     dns::{
+        dnssec::WireNameError,
         name::{OwnerName, ZoneName, encode_name, to_fqdn},
         record::{EncodedRdata, SoaRecordValue, TxtRecordValue},
     },
@@ -19,13 +20,17 @@ const SOA_WIRE_TYPE: u16 = 6;
 
 impl DnsMessageBuilder {
     /// Append one journal change to a DNS transfer message.
-    pub fn add_change(&mut self, change: &ZoneChange, zone_name: &ZoneName) -> Result<(), String> {
+    pub fn add_change(
+        &mut self,
+        change: &ZoneChange,
+        zone_name: &ZoneName,
+    ) -> Result<(), EncodeMessageError> {
         match &change.record_type {
             JournalRecordType::Derived(record_type) => {
                 let rdata = change
                     .record_rdata
                     .clone()
-                    .ok_or_else(|| "derived change carries no wire rdata".to_string())?;
+                    .ok_or(EncodeMessageError::MissingRdata)?;
                 self.add_raw_rdata(
                     change.record_name.to_wire(zone_name),
                     record_type.wire_type(),
@@ -37,7 +42,7 @@ impl DnsMessageBuilder {
                 let value = change
                     .record_value
                     .as_deref()
-                    .ok_or_else(|| "user change carries no record value".to_string())?;
+                    .ok_or(EncodeMessageError::MissingValue)?;
                 self.add_record_parts(
                     zone_name,
                     &change.record_name,
@@ -53,7 +58,7 @@ impl DnsMessageBuilder {
     }
 
     /// Append the zone's synthesized SOA answer.
-    pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), String> {
+    pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), EncodeMessageError> {
         let rdata = zone.soa_rdata(serial)?;
         self.add_raw_rdata(
             zone.name.to_wire(),
@@ -64,7 +69,7 @@ impl DnsMessageBuilder {
     }
 
     /// Adds a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
-    pub fn add_catalog_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), String> {
+    pub fn add_catalog_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), EncodeMessageError> {
         let rdata = SoaRecordValue {
             mname: "invalid",
             rname: "invalid",
@@ -87,7 +92,7 @@ impl DnsMessageBuilder {
     pub fn add_version_soa(
         &mut self,
         soa: &crate::model::zone_version::ZoneVersion,
-    ) -> Result<(), String> {
+    ) -> Result<(), EncodeMessageError> {
         let serial = crate::dns::serial_to_u32(soa.serial)?;
         let rdata = SoaRecordValue {
             mname: &soa.mname,
@@ -117,14 +122,14 @@ impl DnsMessageBuilder {
         record_type: &RecordType,
         value: &str,
         priority: Option<i32>,
-    ) -> Result<(), String> {
+    ) -> Result<(), EncodeMessageError> {
         let EncodedRdata { record_type, rdata } =
             EncodedRdata::from_columns(record_type, value, priority)?;
         self.add_raw_rdata(parse_name(name)?, record_type, ttl, rdata)
     }
 
     /// Adds the catalog-zone NS record, which is the placeholder "invalid".
-    pub fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), String> {
+    pub fn add_catalog_ns(&mut self, zone: &Zone) -> Result<(), EncodeMessageError> {
         let owner_name = zone.name.to_fqdn();
         self.add_text_rdata(
             &owner_name,
@@ -136,7 +141,7 @@ impl DnsMessageBuilder {
     }
 
     /// Adds the catalog-zone version TXT record.
-    pub fn add_catalog_schema_version(&mut self, zone: &Zone) -> Result<(), String> {
+    pub fn add_catalog_schema_version(&mut self, zone: &Zone) -> Result<(), EncodeMessageError> {
         let version_name = format!("version.{}.", zone.name);
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_text_rdata(
@@ -149,7 +154,11 @@ impl DnsMessageBuilder {
     }
 
     /// Append a catalog membership PTR answer.
-    pub fn add_catalog_ptr(&mut self, zone: &Zone, member_zone: &str) -> Result<(), String> {
+    pub fn add_catalog_ptr(
+        &mut self,
+        zone: &Zone,
+        member_zone: &str,
+    ) -> Result<(), EncodeMessageError> {
         let member_id = crate::dns::zone_name_to_member_id(member_zone);
         let ptr_name = format!("{}.zones.{}.", member_id, zone.name);
         let ptr_target = to_fqdn(member_zone);
@@ -163,7 +172,11 @@ impl DnsMessageBuilder {
     }
 
     /// Encode a stored record and append it as an answer.
-    pub fn add_record(&mut self, record: &Record, zone_name: &ZoneName) -> Result<(), String> {
+    pub fn add_record(
+        &mut self,
+        record: &Record,
+        zone_name: &ZoneName,
+    ) -> Result<(), EncodeMessageError> {
         self.add_record_parts(
             zone_name,
             &record.name,
@@ -184,7 +197,7 @@ impl DnsMessageBuilder {
         value: &str,
         ttl: i32,
         priority: Option<i32>,
-    ) -> Result<(), String> {
+    ) -> Result<(), EncodeMessageError> {
         let EncodedRdata { record_type, rdata } =
             EncodedRdata::from_columns(record_type, value, priority)?;
         self.add_raw_rdata(name.to_wire(zone_name), record_type, ttl as u32, rdata)
@@ -195,7 +208,7 @@ impl DnsMessageBuilder {
         &mut self,
         record: &DnssecRecord,
         zone_name: &ZoneName,
-    ) -> Result<(), String> {
+    ) -> Result<(), EncodeMessageError> {
         self.add_raw_rdata(
             record.name.to_wire(zone_name),
             record.record_type.wire_type(),
@@ -206,7 +219,7 @@ impl DnsMessageBuilder {
 }
 
 /// Parses a presentation-form name through the one core name encoding.
-fn parse_name(name: &str) -> Result<Name<Vec<u8>>, String> {
+fn parse_name(name: &str) -> Result<Name<Vec<u8>>, EncodeMessageError> {
     let wire = encode_name(name)?;
-    Name::from_octets(wire).map_err(|e| format!("Invalid domain name '{}': {}", name, e))
+    Name::from_octets(wire).map_err(|e| WireNameError::Octets(Box::new(e)).into())
 }

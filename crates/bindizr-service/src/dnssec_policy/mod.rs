@@ -9,7 +9,7 @@ use crate::{
     authorization::Caller,
     db,
     db::LockLevel,
-    error::{ErrorCode, ServiceError},
+    error::ServiceError,
     model::{
         dnssec_key::DnssecAlgorithm,
         dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
@@ -204,9 +204,8 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
             // A zone enabled between the count above and this delete trips
             // the FK; it reads as the in-use conflict.
             if e.is_foreign_key_violation() {
-                ServiceError::new(
-                    ErrorCode::DnssecPolicyInUse,
-                    "DNSSEC policy is still used by signed zones",
+                ServiceError::DnssecPolicyInUse(
+                    "DNSSEC policy is still used by signed zones".to_string(),
                 )
             } else {
                 e.into()

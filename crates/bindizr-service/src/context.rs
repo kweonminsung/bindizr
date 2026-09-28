@@ -5,12 +5,41 @@
 
 use std::sync::{Arc, OnceLock, RwLock};
 
-use bindizr_core::{config::Config, metrics::Metrics};
+use bindizr_core::{
+    config::{Config, ConfigError},
+    metrics::Metrics,
+};
 use bindizr_db::{Db, PoolStats};
 use chrono::{DateTime, Utc};
+use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedSender, watch};
 
-use crate::notify::queue::NotifyJob;
+use crate::{error::ServiceError, notify::queue::NotifyJob};
+
+/// Why a reload left the configuration as it was.
+#[derive(Debug, Error)]
+pub enum ReloadConfigError {
+    #[error(transparent)]
+    Load(#[from] ConfigError),
+    #[error("Bindizr configuration lock is poisoned")]
+    Poisoned,
+    #[error("these settings are fixed while bindizr runs, so nothing was reloaded: {}", settings.join(", "))]
+    FixedSettingsChanged { settings: Vec<String> },
+}
+
+/// A refused reload is the operator's to fix, except a poisoned lock.
+impl From<ReloadConfigError> for ServiceError {
+    /// Classify the reload failure for the error payload.
+    fn from(err: ReloadConfigError) -> Self {
+        match err {
+            ReloadConfigError::Poisoned => ServiceError::Internal {
+                message: err.to_string(),
+                source: Some(Box::new(err)),
+            },
+            other => ServiceError::invalid_input(other),
+        }
+    }
+}
 
 /// What every service function takes first. The workers that need it back
 /// (the NOTIFY queue, the scheduler) are spawned after it with an `Arc` of
@@ -58,7 +87,10 @@ impl Context {
     /// already taken, so hold one for as long as a single decision takes and
     /// no longer.
     pub fn config(&self) -> Arc<Config> {
-        self.config.read().expect(POISONED).clone()
+        self.config
+            .read()
+            .expect("Bindizr configuration lock is poisoned")
+            .clone()
     }
 
     /// The file the configuration came from.
@@ -70,16 +102,16 @@ impl Context {
     /// settings that changed. A setting a running process cannot adopt is
     /// refused rather than stored. The caller applies what only it can: the
     /// logger's level, the scheduler's period.
-    pub fn reload_config(&self) -> Result<Vec<String>, String> {
+    pub fn reload_config(&self) -> Result<Vec<String>, ReloadConfigError> {
         let next = Config::load(&self.config_path)?;
 
-        let mut stored = self.config.write().map_err(|_| POISONED)?;
+        let mut stored = self
+            .config
+            .write()
+            .map_err(|_| ReloadConfigError::Poisoned)?;
         let fixed = stored.fixed_settings_changed(&next);
         if !fixed.is_empty() {
-            return Err(format!(
-                "these settings are fixed while bindizr runs, so nothing was reloaded: {}",
-                fixed.join(", ")
-            ));
+            return Err(ReloadConfigError::FixedSettingsChanged { settings: fixed });
         }
 
         let changed = stored.changed_settings(&next);
@@ -129,5 +161,3 @@ impl Context {
         }
     }
 }
-
-const POISONED: &str = "Bindizr configuration lock is poisoned";

@@ -1,14 +1,18 @@
 use std::net::Ipv6Addr;
 
+use super::ParseRecordValueError;
+
 pub struct AaaaRecordValue(Ipv6Addr);
 
 impl AaaaRecordValue {
     /// Parse and validate a AAAA record value.
-    pub fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
         value
             .parse::<Ipv6Addr>()
             .map(Self)
-            .map_err(|_| format!("AAAA record value must be a valid IPv6 address: {}", value))
+            .map_err(|_| ParseRecordValueError::Ipv6 {
+                value: value.to_string(),
+            })
     }
 
     /// Render the AAAA value in canonical text form.

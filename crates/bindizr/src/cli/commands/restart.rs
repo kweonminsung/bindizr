@@ -5,7 +5,7 @@ use bindizr_core::outln;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, parse_payload, print_payload},
+        output::{OutputFormat, RenderOutputError, parse_payload, print_payload},
     },
     socket::{
         client,
@@ -56,14 +56,13 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
                     status.version
                 ),
                 _ => {
-                    let payload =
-                        serde_json::to_value(&status).map_err(|e| CliError::from(e.to_string()))?;
+                    let payload = serde_json::to_value(&status).map_err(RenderOutputError::Json)?;
                     print_payload(&payload, output)?
                 }
             }
             Ok(())
         }
-        None => Err(CliError::from(format!(
+        None => Err(CliError::request(format!(
             "Bindizr did not come back within {} seconds after the restart request",
             RESTART_DEADLINE.as_secs()
         ))),

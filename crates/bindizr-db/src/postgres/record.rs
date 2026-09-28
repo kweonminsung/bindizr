@@ -57,10 +57,7 @@ pub(crate) async fn create_many_tx(
                 .bind(r.zone_id)
                 .bind(now);
         }
-        let rows = query
-            .fetch_all(&mut **tx)
-            .await
-            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        let rows = query.fetch_all(&mut **tx).await?;
 
         // Postgres returns RETURNING rows in the order the VALUES were given.
         for (r, row) in chunk.iter().zip(rows) {

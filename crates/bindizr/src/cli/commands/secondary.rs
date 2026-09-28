@@ -10,8 +10,8 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            OutputFormat, SecondaryRow, TransferRow, display_transfer_summary, parse_payload,
-            print_payload, print_response, print_table,
+            OutputFormat, RenderOutputError, SecondaryRow, TransferRow, display_transfer_summary,
+            parse_payload, print_payload, print_response, print_table,
         },
     },
     params::NameParams,
@@ -239,7 +239,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             }
             // A failed part exits non-zero, so a script can branch on it.
             if !check.is_healthy() {
-                return Err(CliError::from(format!(
+                return Err(CliError::request(format!(
                     "Secondary '{}' failed the check",
                     name
                 )));
@@ -318,7 +318,10 @@ fn print_check(check: &SecondaryCheckResponse) {
 }
 
 /// Print one secondary in the requested format.
-fn print_secondary(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
+fn print_secondary(
+    data: &serde_json::Value,
+    output: OutputFormat,
+) -> Result<(), RenderOutputError> {
     print_response(data, output, |response: &SecondaryResponse| {
         vec![SecondaryRow::from(&response.secondary)]
     })

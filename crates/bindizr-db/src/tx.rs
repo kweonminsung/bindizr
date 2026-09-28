@@ -50,7 +50,7 @@ impl Transaction<'_> {
             TransactionKind::Postgres(tx) => tx.commit().await,
             TransactionKind::Sqlite(tx) => tx.commit().await,
         }
-        .map_err(|e| DatabaseError::TransactionFailed(e.to_string()))
+        .map_err(DatabaseError::TransactionFailed)
     }
 
     /// Roll back the transaction on its database backend.
@@ -60,6 +60,6 @@ impl Transaction<'_> {
             TransactionKind::Postgres(tx) => tx.rollback().await,
             TransactionKind::Sqlite(tx) => tx.rollback().await,
         }
-        .map_err(|e| DatabaseError::TransactionFailed(e.to_string()))
+        .map_err(DatabaseError::TransactionFailed)
     }
 }

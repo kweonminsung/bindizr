@@ -59,14 +59,11 @@ pub(crate) async fn upsert_tx(
     .bind(&version.changed_by)
     .bind(Utc::now())
     .execute(&mut **tx)
-    .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    .await?;
 
     get_by_serial_tx(tx, version.zone_id, version.serial, LockLevel::None)
         .await?
-        .ok_or_else(|| {
-            DatabaseError::QueryFailed("upserted zone version did not read back".to_string())
-        })
+        .ok_or_else(|| DatabaseError::QueryFailed(sqlx::Error::RowNotFound))
 }
 
 /// Find a zone version by zone ID and serial.
@@ -86,7 +83,7 @@ pub(crate) async fn get_by_serial(
     .bind(serial)
     .fetch_optional(pool)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }
 
 /// List zone versions in the closed interval `[from_serial, to_serial]`.
@@ -108,7 +105,7 @@ pub(crate) async fn list_in_serial_range(
     .bind(to_serial)
     .fetch_all(pool)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }
 
 /// List zone versions for a zone.
@@ -142,7 +139,7 @@ pub(crate) async fn list(
         .bind(i64::try_from(offset).unwrap_or(i64::MAX))
         .fetch_all(pool)
         .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+        .map_err(DatabaseError::from)
 }
 
 /// Count zone versions using the requested change filter.
@@ -163,10 +160,7 @@ pub(crate) async fn count(
     if user_changes_only {
         query = query.bind(zone_id);
     }
-    let count: i64 = query
-        .fetch_one(pool)
-        .await
-        .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    let count: i64 = query.fetch_one(pool).await?;
     Ok(count as u64)
 }
 
@@ -188,7 +182,7 @@ pub(crate) async fn get_by_serial_tx(
     .bind(serial)
     .fetch_optional(&mut **tx)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }
 
 /// Prune one zone's old versions, keeping its newest, in the current transaction.
@@ -215,8 +209,7 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     .bind(cutoff)
     .bind(zone_id)
     .execute(&mut **tx)
-    .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    .await?;
 
     Ok(result.rows_affected())
 }

@@ -9,7 +9,7 @@ mod error;
 mod owner_name;
 mod zone_name;
 
-pub use error::ParseNameError;
+pub use error::{EncodeNameError, ParseNameError};
 pub use owner_name::{OwnerName, decode_name_labels, is_label_suffix};
 pub use zone_name::ZoneName;
 
@@ -110,15 +110,17 @@ pub fn to_fqdn(value: &str) -> String {
 
 /// Encode a presentation-form name as uncompressed wire labels, mapping
 /// empty/root input to the root name.
-pub fn encode_name(name: &str) -> Result<Vec<u8>, String> {
+pub fn encode_name(name: &str) -> Result<Vec<u8>, EncodeNameError> {
     if name.trim_end_matches('.').is_empty() {
         return Ok(vec![0]);
     }
 
-    let (labels, _) =
-        decode_name_labels(name).map_err(|e| format!("Invalid domain name '{}': {}", name, e))?;
-    labels_to_wire(labels.iter().map(String::as_str))
-        .map_err(|e| format!("Invalid domain name '{}': {}", name, e))
+    let failed = |source| EncodeNameError {
+        name: name.to_string(),
+        source,
+    };
+    let (labels, _) = decode_name_labels(name).map_err(failed)?;
+    labels_to_wire(labels.iter().map(String::as_str)).map_err(failed)
 }
 
 /// Length-prefixed wire labels plus the root. Limits are re-checked at this

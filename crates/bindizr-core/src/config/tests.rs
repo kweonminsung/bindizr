@@ -1,3 +1,4 @@
+use super::ConfigError;
 use crate::config::{
     BINDIZR_CONF_PATH, Config, DatabaseType, LogFormat, LogLevel, resolve_config_path_with_env,
 };
@@ -71,7 +72,7 @@ level = "debug"
 }
 
 /// Parse a TOML configuration fixture.
-fn parse_config(toml: &TestConfigToml) -> Result<Config, String> {
+fn parse_config(toml: &TestConfigToml) -> Result<Config, ConfigError> {
     Config::from_toml(&toml.render(), |_| None)
 }
 
@@ -140,7 +141,11 @@ fn from_toml_rejects_an_unknown_key() {
     })
     .unwrap_err();
 
-    assert!(err.contains("unknown field `listen_prot`"), "{}", err);
+    assert!(
+        err.to_string().contains("unknown field `listen_prot`"),
+        "{}",
+        err
+    );
 }
 
 /// Verify that `from_toml` defaults unselected database sections.
@@ -169,7 +174,7 @@ fn from_toml_rejects_invalid_listen_addr() {
     })
     .unwrap_err();
 
-    assert!(err.contains("Invalid Bindizr configuration"));
+    assert!(err.to_string().contains("Invalid Bindizr configuration"));
 }
 
 /// Verify that `from_toml` rejects empty selected database url.
@@ -181,7 +186,10 @@ fn from_toml_rejects_empty_selected_database_url() {
     })
     .unwrap_err();
 
-    assert!(err.contains("database.mysql.url must not be empty"));
+    assert!(
+        err.to_string()
+            .contains("database.mysql.url must not be empty")
+    );
 }
 
 /// Verify that `apply_env_overrides` replaces config values before validation.
@@ -262,7 +270,10 @@ fn apply_env_overrides_rejects_invalid_values() {
         })
         .unwrap_err();
 
-    assert!(err.contains("Invalid BINDIZR_API_LISTEN_PORT environment variable"));
+    assert!(
+        err.to_string()
+            .contains("Invalid BINDIZR_API_LISTEN_PORT environment variable")
+    );
 }
 
 /// Verify that `resolve_config_path` prefers argument then env then default.
@@ -290,14 +301,22 @@ fn from_toml_rejects_port_zero() {
         ..Default::default()
     })
     .unwrap_err();
-    assert!(err.contains("dns.listen_port must not be 0"), "{}", err);
+    assert!(
+        err.to_string().contains("dns.listen_port must not be 0"),
+        "{}",
+        err
+    );
 
     let err = parse_config(&TestConfigToml {
         api_listen_port: 0,
         ..Default::default()
     })
     .unwrap_err();
-    assert!(err.contains("api.listen_port must not be 0"), "{}", err);
+    assert!(
+        err.to_string().contains("api.listen_port must not be 0"),
+        "{}",
+        err
+    );
 }
 
 /// Verify that `from_toml` rejects listeners sharing a port.
@@ -310,7 +329,11 @@ fn from_toml_rejects_listeners_sharing_a_port() {
     })
     .unwrap_err();
 
-    assert!(err.contains("cannot share port 5353"), "{}", err);
+    assert!(
+        err.to_string().contains("cannot share port 5353"),
+        "{}",
+        err
+    );
 }
 
 /// Verify that a reload refuses what a running process cannot adopt.
@@ -358,7 +381,7 @@ fn from_toml_rejects_an_unusable_catalog_zone_name() {
     })
     .unwrap_err();
     assert!(
-        error.contains("dns.catalog_zone_name"),
+        error.to_string().contains("dns.catalog_zone_name"),
         "unexpected error: {error}"
     );
 }

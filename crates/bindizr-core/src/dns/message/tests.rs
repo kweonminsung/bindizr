@@ -38,7 +38,7 @@ fn overflowing_answers_split_into_multiple_frames() {
                     None,
                 )
             })
-            .unwrap_or_else(|e| panic!("{}", e.message));
+            .unwrap_or_else(|e| panic!("{}", e));
         if let Some(frame) = frame {
             wire.extend_from_slice(&frame);
         }
@@ -154,7 +154,7 @@ fn every_envelope_of_a_signed_transfer_carries_a_verifiable_mac() {
                     None,
                 )
             })
-            .unwrap_or_else(|e| panic!("{}", e.message));
+            .unwrap_or_else(|e| panic!("{}", e));
         if let Some(frame) = frame {
             frames.push(frame);
         }

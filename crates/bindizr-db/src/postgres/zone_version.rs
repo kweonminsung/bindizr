@@ -62,7 +62,7 @@ pub(crate) async fn upsert_tx(
     .bind(Utc::now())
     .fetch_one(&mut **tx)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }
 
 /// Find a zone version by zone ID and serial.
@@ -82,7 +82,7 @@ pub(crate) async fn get_by_serial(
     .bind(serial)
     .fetch_optional(pool)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }
 
 /// List zone versions in the closed interval `[from_serial, to_serial]`.
@@ -104,7 +104,7 @@ pub(crate) async fn list_in_serial_range(
     .bind(to_serial)
     .fetch_all(pool)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }
 
 /// List zone versions for a zone.
@@ -134,7 +134,7 @@ pub(crate) async fn list(
     .bind(i64::try_from(offset).unwrap_or(i64::MAX))
     .fetch_all(pool)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }
 
 /// Count zone versions using the requested change filter.
@@ -153,8 +153,7 @@ pub(crate) async fn count(
     )))
     .bind(zone_id)
     .fetch_one(pool)
-    .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    .await?;
     Ok(count as u64)
 }
 
@@ -176,7 +175,7 @@ pub(crate) async fn get_by_serial_tx(
     .bind(serial)
     .fetch_optional(&mut **tx)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }
 
 /// Prune one zone's old versions, keeping its newest, in the current transaction.
@@ -197,8 +196,7 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     .bind(zone_id)
     .bind(cutoff)
     .execute(&mut **tx)
-    .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+    .await?;
 
     Ok(result.rows_affected())
 }

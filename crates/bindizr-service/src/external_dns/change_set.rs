@@ -9,7 +9,7 @@ use chrono::Utc;
 use super::policy::{authoritative_zone, normalize_lookup_name};
 use crate::{
     authorization::Caller,
-    error::{ErrorCode, ServiceError},
+    error::ServiceError,
     model::{
         record::{Record, RecordType},
         zone::Zone,
@@ -205,10 +205,10 @@ pub(crate) fn group_ops_by_zone(
         let zone = authoritative_zone(zones, &pending.op.name)
             .filter(|zone| caller.sees_zone(zone.id))
             .ok_or_else(|| {
-                ServiceError::new(
-                    ErrorCode::ZoneNotFound,
-                    format!("No zone is authoritative for '{}'", pending.op.name),
-                )
+                ServiceError::ZoneNotFound(format!(
+                    "No zone is authoritative for '{}'",
+                    pending.op.name
+                ))
             })?;
 
         let op = ZoneRecordSetOp {

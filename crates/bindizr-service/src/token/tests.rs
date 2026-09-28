@@ -20,7 +20,7 @@ fn normalize_token_name_trims_and_folds_case() {
 fn normalize_token_name_rejects_empty_and_whitespace_names() {
     for name in ["", "   ", "bad name", "bad\tname"] {
         let err = normalize_token_name(name).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert_eq!(err.code(), ErrorCode::InvalidInput);
     }
 }
 
@@ -31,7 +31,7 @@ fn normalize_token_name_rejects_empty_and_whitespace_names() {
 fn normalize_token_name_rejects_names_that_are_not_one_path_segment() {
     for name in [".", "..", "self", "a/b", "a?b", "a#b", "a%2fb", "토큰"] {
         let err = normalize_token_name(name).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput, "{name}");
+        assert_eq!(err.code(), ErrorCode::InvalidInput, "{name}");
     }
     assert_eq!(
         normalize_token_name("ci.prod_v2-x").unwrap(),
@@ -53,8 +53,8 @@ fn to_expires_at_rejects_non_positive_values() {
     let zero = normalize_expires_at(Some(0)).unwrap_err();
     let negative = normalize_expires_at(Some(-1)).unwrap_err();
 
-    assert_eq!(zero.code, ErrorCode::InvalidInput);
-    assert_eq!(negative.code, ErrorCode::InvalidInput);
+    assert_eq!(zero.code(), ErrorCode::InvalidInput);
+    assert_eq!(negative.code(), ErrorCode::InvalidInput);
 }
 
 /// Verify that `normalize_expires_at` rejects values beyond the cap.
@@ -63,6 +63,6 @@ fn to_expires_at_rejects_values_beyond_the_cap() {
     let just_over = normalize_expires_at(Some(MAX_EXPIRES_IN_DAYS + 1)).unwrap_err();
     let overflow = normalize_expires_at(Some(i64::MAX)).unwrap_err();
 
-    assert_eq!(just_over.code, ErrorCode::InvalidInput);
-    assert_eq!(overflow.code, ErrorCode::InvalidInput);
+    assert_eq!(just_over.code(), ErrorCode::InvalidInput);
+    assert_eq!(overflow.code(), ErrorCode::InvalidInput);
 }

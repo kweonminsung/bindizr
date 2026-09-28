@@ -19,23 +19,72 @@ use domain::{
 };
 use input::denial_records;
 use sha2::{Digest, Sha256};
+use thiserror::Error;
 
 use super::WireName;
 use crate::{
     dns::{
-        name::{OwnerName, ZoneName},
-        record::Rdata,
+        LibraryError,
+        dnssec::{KeyRdataError, WireNameError},
+        name::{OwnerName, ParseNameError, ZoneName},
+        record::{EncodeRdataError, Rdata},
     },
     model::{
         dnssec_key::DnssecKey,
         dnssec_policy::DnssecDenial,
-        dnssec_record::{DnssecRecord, DnssecRecordKey, DnssecRecordType},
+        dnssec_record::{
+            DnssecRecord, DnssecRecordKey, DnssecRecordType, ParseDnssecRecordTypeError,
+        },
         record::Record,
         zone::Zone,
     },
 };
 
 type SignRecord = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
+
+/// Why a zone's signed view could not be computed.
+#[derive(Debug, Error)]
+pub enum SignZoneError {
+    #[error("zone has keys but no usable signer for the key records or the zone data")]
+    NoUsableSigner,
+    #[error("derived owner '{owner}' is not inside zone '{zone}': {source}")]
+    OwnerOutsideZone {
+        owner: String,
+        zone: String,
+        #[source]
+        source: ParseNameError,
+    },
+    #[error("stored private key is invalid: {0}")]
+    PrivateKey(#[source] LibraryError),
+    #[error("failed to load signing key: {0}")]
+    LoadKey(#[source] LibraryError),
+    /// The `domain` signer's errors implement no `Error`, so their text is
+    /// what is kept.
+    #[error("mismatched records for one name and type: {reason}")]
+    MismatchedRecordSet { reason: String },
+    #[error("signing failed: {reason}")]
+    Sign { reason: String },
+    #[error("invalid {rtype} rdata: {source}")]
+    Rdata {
+        rtype: &'static str,
+        #[source]
+        source: LibraryError,
+    },
+    #[error("invalid SOA rdata: {0}")]
+    Soa(#[source] LibraryError),
+    #[error("NSEC3 generation failed: {reason}")]
+    Nsec3 { reason: String },
+    #[error("NSEC generation failed: {reason}")]
+    Nsec { reason: String },
+    #[error(transparent)]
+    WireName(#[from] WireNameError),
+    #[error(transparent)]
+    Key(#[from] KeyRdataError),
+    #[error(transparent)]
+    EncodeRdata(#[from] EncodeRdataError),
+    #[error(transparent)]
+    RecordType(#[from] ParseDnssecRecordTypeError),
+}
 
 pub struct SignedViewParams<'a> {
     pub zone: &'a Zone,
@@ -82,7 +131,7 @@ impl SignedViewParams<'_> {
     }
 
     /// Compute the signed DNSSEC view and its changes from the previous view.
-    pub fn compute(&self) -> Result<SignedViewDiff, String> {
+    pub fn compute(&self) -> Result<SignedViewDiff, SignZoneError> {
         let zone = self.zone;
         let apex = zone.name.to_wire_name()?;
 
@@ -100,10 +149,7 @@ impl SignedViewParams<'_> {
             .filter(|s| s.key.signs_zone_data(self.keys))
             .collect();
         if !signers.is_empty() && (key_signers.is_empty() || data_signers.is_empty()) {
-            return Err(
-                "zone has keys but no usable signer for the key records or the zone data"
-                    .to_string(),
-            );
+            return Err(SignZoneError::NoUsableSigner);
         }
 
         let input = self.signing_input(&apex, &signers)?;
@@ -338,12 +384,13 @@ fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8
 }
 
 /// Convert a derived absolute owner to a name relative to its zone.
-fn parse_derived_owner(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, String> {
-    OwnerName::parse_absolute_in_zone(&owner.to_string(), zone_name).map_err(|e| {
-        format!(
-            "derived owner '{}' is not inside zone '{}': {}",
-            owner, zone_name, e
-        )
+fn parse_derived_owner(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, SignZoneError> {
+    OwnerName::parse_absolute_in_zone(&owner.to_string(), zone_name).map_err(|source| {
+        SignZoneError::OwnerOutsideZone {
+            owner: owner.to_string(),
+            zone: zone_name.to_string(),
+            source,
+        }
     })
 }
 
@@ -358,12 +405,12 @@ pub(crate) struct Signer<'a> {
 
 impl<'a> Signer<'a> {
     /// Load a stored DNSSEC key into a signer for the zone apex.
-    fn new(apex: &WireName, key: &'a DnssecKey) -> Result<Self, String> {
+    fn new(apex: &WireName, key: &'a DnssecKey) -> Result<Self, SignZoneError> {
         let dnskey = key.to_dnskey()?;
         let secret = SecretKeyBytes::parse_from_bind(&key.private_key)
-            .map_err(|e| format!("stored private key is invalid: {}", e))?;
+            .map_err(|e| SignZoneError::PrivateKey(Box::new(e)))?;
         let key_pair = KeyPair::from_bytes(&secret, &dnskey)
-            .map_err(|e| format!("failed to load signing key: {}", e))?;
+            .map_err(|e| SignZoneError::LoadKey(Box::new(e)))?;
         Ok(Signer {
             key,
             signing_key: SigningKey::new(apex.clone(), key.role.flags(), key_pair),
@@ -379,16 +426,20 @@ impl<'a> Signer<'a> {
         record_set: &[&SignRecord],
         inception: DateTime<Utc>,
         expiration: DateTime<Utc>,
-    ) -> Result<WireRecord<WireName, domain::rdata::Rrsig<Vec<u8>, WireName>>, String> {
-        let record_set = Rrset::new_from_refs(record_set)
-            .map_err(|e| format!("mismatched records for one name and type: {}", e))?;
+    ) -> Result<WireRecord<WireName, domain::rdata::Rrsig<Vec<u8>, WireName>>, SignZoneError> {
+        let record_set =
+            Rrset::new_from_refs(record_set).map_err(|e| SignZoneError::MismatchedRecordSet {
+                reason: e.to_string(),
+            })?;
         sign_rrset(
             &self.signing_key,
             &record_set,
             Timestamp::from(inception.timestamp() as u32),
             Timestamp::from(expiration.timestamp() as u32),
         )
-        .map_err(|e| format!("signing failed: {}", e))
+        .map_err(|e| SignZoneError::Sign {
+            reason: e.to_string(),
+        })
     }
 }
 

@@ -71,24 +71,14 @@ in order, with the full suite green at each — however large the diff. A
 phase is never split to shrink its diff, only where the tree would not
 build otherwise. The HTTP API, the CLI, and the DNS behaviour — error codes
 and messages included — change in none of them, so the e2e suite is the
-regression gate throughout; only phase 2 touches the daemon socket, which
+regression gate throughout; only phase 1 touches the daemon socket, which
 the CLI and the daemon share in one binary. Until a phase lands, the code
 it names still has the old shape: new code follows the rule, a module is
 converted whole and never half, and an example in a rule that names the new
 shape is the target, not a claim about the tree. Delete a phase's entry
 when it lands, and this section when all have.
 
-1. **Errors are types.** `DatabaseError` keeps its `sqlx::Error` as
-   `#[source]`. `ServiceError { code, message }` becomes an enum of its
-   `ErrorCode`s with `code()` and `Display`, `ErrorCode` staying the wire
-   projection; `http_status` moves to `api/error.rs`, and
-   `DynamicUpdateError` asks `is_internal()`. The some 170
-   `Result<_, String>` signatures and 31 `type Err = String` get a type per
-   raising module — a record value's parse error in `dns/record`, the probe
-   and transfer errors of `dns_client`, `Config::load`'s — and
-   `From<String>` for `CliError`, `XfrError` and `UpdateError` goes with
-   them.
-2. **Shapes.** The socket's `DaemonCommandKind` + `serde_json::Value` +
+1. **Shapes.** The socket's `DaemonCommandKind` + `serde_json::Value` +
    `*Params` become one data-carrying `DaemonCommand`, and
    `DaemonResponse { message, data: Value }` a `DaemonResponse<T>`. The
    `bool` and `Option<&str>` selectors *Rust idioms* lists become enums,
@@ -97,7 +87,7 @@ when it lands, and this section when all have.
    `from_record_with_zone` become `From` impls and `from_version` a
    `TryFrom`; `IntoOwner` goes, its callers writing `?`. Every type gains
    the derives *Common traits* lists.
-3. **Newtypes.** `Serial` and `Ttl` replace the `i32` row / `u32` wire
+2. **Newtypes.** `Serial` and `Ttl` replace the `i32` row / `u32` wire
    pairs and `serial_to_u32` / `serial_to_i32`; `ZoneId`, `RecordId`,
    `TokenId`, `TsigKeyId`, `DnssecKeyId`, `PolicyId`, `SecondaryId` replace
    the bare `i32` keys — `list_by_zone_id_and_key_id_tx(tx, key_id,
@@ -164,10 +154,20 @@ each rule says which spelling is this project's.
   the source to text; `map_err` appears where the site adds a
   classification the source cannot (a UNIQUE violation read as
   `zone_conflict`). `ServiceError` is an enum whose variants are its
-  `ErrorCode`s — `code()` and `Display` are the two faces the error payload
-  reads — and it knows nothing of HTTP: a front end maps a code to its
-  own status (`api/error.rs` to an HTTP status, the nsupdate server to an
-  RCODE) and asks the service only what it can answer (`is_internal()`).
+  `ErrorCode`s, each carrying the message the error payload shows — the
+  wire fixes that text, so a variant holds it rather than typed fields —
+  and the two server-fault variants (`Internal`, `DnssecSigningFailed`)
+  keep the failure beneath them as their `source`. `code()` and `Display`
+  are the two faces the payload reads, and it knows nothing of HTTP: a
+  front end maps a code to its own status (`api/error.rs` to an HTTP
+  status, `cli/error.rs` to an exit code, the nsupdate server to an RCODE)
+  and asks the service only what it can answer (`is_internal()`). A layer
+  above the service names its own type the same way (`DaemonError`,
+  `XfrError`, `CliError`), with `From` impls for what it wraps. An error of
+  the `domain` crate is carried boxed (`dns::LibraryError`): its types vary
+  across versions and nothing here matches on them; the few that implement
+  no `Error` at all (`SigningError`, `TxtError`) keep their text in a
+  `reason` field, which is the one place a message stands in for a source.
 - **Conversions are the standard traits** (`C-CONV-TRAITS`, `C-CTOR`,
   `C-CONV`). A value derived from one other value and nothing else is
   `impl From<&Zone> for GetZoneResponse` (`TryFrom` when it can fail),

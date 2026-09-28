@@ -27,9 +27,7 @@ pub(crate) fn signed_error(
     signer: Option<&mut TransferSigner>,
 ) -> Result<Vec<u8>, XfrError> {
     match signer {
-        Some(signer) => query
-            .signed_error_response(rcode, signer)
-            .map_err(XfrError::ProtocolError),
+        Some(signer) => Ok(query.signed_error_response(rcode, signer)?),
         None => Ok(query.error_response(rcode)),
     }
 }
@@ -139,14 +137,12 @@ impl From<TsigError> for TransferRefusal {
     /// Translate a TSIG error into a transfer refusal with its required response.
     fn from(error: TsigError) -> Self {
         match error {
-            TsigError::Failed { message, response } => TransferRefusal {
-                reason: message,
+            TsigError::Failed { rcode, response } => TransferRefusal {
+                reason: format!("TSIG validation failed: {}", rcode),
                 response: Some(response),
                 signer: None,
             },
-            TsigError::Malformed(message) | TsigError::Internal(message) => {
-                TransferRefusal::refused(message, None)
-            }
+            other => TransferRefusal::refused(other.to_string(), None),
         }
     }
 }

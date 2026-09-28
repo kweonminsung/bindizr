@@ -2,11 +2,20 @@
 
 use base64::Engine;
 use chrono::{DateTime, Utc};
+use thiserror::Error;
 
-use crate::model::{
-    dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
-    zone::Zone,
+use crate::{
+    dns::LibraryError,
+    model::{
+        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
+        zone::Zone,
+    },
 };
+
+/// The `domain` crate could not produce key material for the algorithm.
+#[derive(Debug, Error)]
+#[error("failed to generate DNSSEC key: {0}")]
+pub struct GenerateKeyError(#[source] LibraryError);
 
 /// Generate a DNSSEC key pair for the requested algorithm and role.
 pub fn generate_key(
@@ -16,7 +25,7 @@ pub fn generate_key(
     state: DnssecKeyState,
     now: DateTime<Utc>,
     eligible_at: DateTime<Utc>,
-) -> Result<DnssecKey, String> {
+) -> Result<DnssecKey, GenerateKeyError> {
     let params = match algorithm {
         // 2048 bits is the interoperable RSA size (RFC 8624 requires >= 2048).
         DnssecAlgorithm::RsaSha256 => {
@@ -31,7 +40,7 @@ pub fn generate_key(
         DnssecAlgorithm::Ed448 => domain::crypto::sign::GenerateParams::Ed448,
     };
     let (secret, dnskey) = domain::crypto::sign::generate(&params, role.flags())
-        .map_err(|e| format!("failed to generate DNSSEC key: {}", e))?;
+        .map_err(|e| GenerateKeyError(Box::new(e)))?;
 
     Ok(DnssecKey {
         id: 0,

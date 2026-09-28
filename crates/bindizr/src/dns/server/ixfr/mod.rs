@@ -159,7 +159,7 @@ pub(crate) async fn handle_ixfr(
     }
 
     let version_serials: Vec<u32> = versions_by_serial.keys().copied().collect();
-    if let Some(gap) = delta_gap(
+    if let Err(gap) = delta_gap(
         client_serial,
         current_serial,
         &journal_serials,

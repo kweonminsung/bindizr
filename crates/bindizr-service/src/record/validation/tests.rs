@@ -21,13 +21,13 @@ fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
     let zone = ZoneName::from_row("test.example.com");
 
     let outside = normalize_record_owner_name("a1.other.com.", &zone).unwrap_err();
-    assert_eq!(outside.code, ErrorCode::InvalidRecordName);
-    assert!(outside.message.contains("a1.other.com."));
-    assert!(outside.message.contains(zone.as_str()));
+    assert_eq!(outside.code(), ErrorCode::InvalidRecordName);
+    assert!(outside.to_string().contains("a1.other.com."));
+    assert!(outside.to_string().contains(zone.as_str()));
 
     let empty = normalize_record_owner_name("  ", &zone).unwrap_err();
-    assert_eq!(empty.code, ErrorCode::InvalidRecordName);
-    assert!(empty.message.starts_with("record name "));
+    assert_eq!(empty.code(), ErrorCode::InvalidRecordName);
+    assert!(empty.to_string().starts_with("record name "));
 }
 
 /// Validate an add whose owner name is already in stored form.
@@ -57,7 +57,7 @@ fn add_rejects_ds_at_apex_but_defers_the_ns_coupling() {
         "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
 
     let at_apex = validate_add(&[], "", &RecordType::DS, DS_VALUE, RRSET_TTL, None);
-    assert_eq!(at_apex.unwrap_err().code, ErrorCode::InvalidRecordName);
+    assert_eq!(at_apex.unwrap_err().code(), ErrorCode::InvalidRecordName);
 
     // The NS coupling is a final-state rule, enforced when the zone is
     // versioned — a lone DS passes the per-add shape checks.
@@ -77,7 +77,7 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
         None,
     );
     assert_eq!(
-        cname_at_apex.unwrap_err().code,
+        cname_at_apex.unwrap_err().code(),
         ErrorCode::InvalidRecordName
     );
 
@@ -100,7 +100,10 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
         RRSET_TTL,
         None,
     );
-    assert_eq!(cname_conflict.unwrap_err().code, ErrorCode::RecordConflict);
+    assert_eq!(
+        cname_conflict.unwrap_err().code(),
+        ErrorCode::RecordConflict
+    );
 }
 
 /// Verify that `add` rejects wire equivalent MX and SRV duplicates.
@@ -116,7 +119,7 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
         RRSET_TTL,
         Some(10),
     );
-    assert_eq!(duplicate_mx.unwrap_err().code, ErrorCode::RecordConflict);
+    assert_eq!(duplicate_mx.unwrap_err().code(), ErrorCode::RecordConflict);
 
     let existing_srv = test_record(
         2,
@@ -133,7 +136,7 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
         RRSET_TTL,
         Some(10),
     );
-    assert_eq!(duplicate_srv.unwrap_err().code, ErrorCode::RecordConflict);
+    assert_eq!(duplicate_srv.unwrap_err().code(), ErrorCode::RecordConflict);
 }
 
 /// Verify that `add` treats an omitted MX priority as the default.
@@ -150,7 +153,7 @@ fn add_treats_an_omitted_mx_priority_as_the_default() {
         RRSET_TTL,
         Some(10),
     );
-    assert_eq!(duplicate_mx.unwrap_err().code, ErrorCode::RecordConflict);
+    assert_eq!(duplicate_mx.unwrap_err().code(), ErrorCode::RecordConflict);
 }
 
 /// Verify that `add` rejects null MX alongside other MX records.
@@ -160,7 +163,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
     let null_mx_with_existing_mx =
         validate_add(&[existing_mx], "", &RecordType::MX, ".", RRSET_TTL, Some(0));
     assert_eq!(
-        null_mx_with_existing_mx.unwrap_err().code,
+        null_mx_with_existing_mx.unwrap_err().code(),
         ErrorCode::RecordConflict
     );
 
@@ -174,7 +177,7 @@ fn add_rejects_null_mx_alongside_other_mx_records() {
         Some(10),
     );
     assert_eq!(
-        mx_with_existing_null_mx.unwrap_err().code,
+        mx_with_existing_null_mx.unwrap_err().code(),
         ErrorCode::RecordConflict
     );
 }
@@ -192,7 +195,7 @@ fn add_enforces_one_ttl_per_record_set() {
         600,
         None,
     );
-    assert_eq!(differing_ttl.unwrap_err().code, ErrorCode::RecordConflict);
+    assert_eq!(differing_ttl.unwrap_err().code(), ErrorCode::RecordConflict);
 
     let matching_ttl = validate_add(
         std::slice::from_ref(&existing_a),

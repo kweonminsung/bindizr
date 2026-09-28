@@ -13,8 +13,8 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            DnssecKeyRow, DnssecPolicyRow, OutputFormat, display_time, parse_payload,
-            print_payload, print_table,
+            DnssecKeyRow, DnssecPolicyRow, OutputFormat, RenderOutputError, display_time,
+            parse_payload, print_payload, print_table,
         },
     },
     params::NameParams,
@@ -351,7 +351,7 @@ pub(crate) async fn handle_command(subcommand: DnssecCommand) -> Result<(), CliE
 
 /// Print the zone's DNSSEC status and key information in the selected output
 /// format.
-fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
+fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), RenderOutputError> {
     if output != OutputFormat::Table {
         return print_payload(data, output);
     }

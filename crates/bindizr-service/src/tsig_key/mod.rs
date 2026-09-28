@@ -9,7 +9,7 @@ use crate::{
     Context,
     authorization::Caller,
     db,
-    error::{ErrorCode, ServiceError},
+    error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
     text::MAX_COLUMN_TEXT_LEN,
     types::{GetTsigKeyResponse, PageFilter, PaginatedResponse},
@@ -124,24 +124,20 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     }
     let secondary_count = db::secondary::count_by_notify_tsig_key_id(cx.db(), key.id).await?;
     if secondary_count > 0 {
-        return Err(ServiceError::new(
-            ErrorCode::TsigKeyInUse,
-            format!(
-                "TSIG key '{}' still signs NOTIFY for {} secondar{}",
-                key.name,
-                secondary_count,
-                if secondary_count == 1 { "y" } else { "ies" }
-            ),
-        ));
+        return Err(ServiceError::TsigKeyInUse(format!(
+            "TSIG key '{}' still signs NOTIFY for {} secondar{}",
+            key.name,
+            secondary_count,
+            if secondary_count == 1 { "y" } else { "ies" }
+        )));
     }
 
     db::tsig_key::delete(cx.db(), key.id).await.map_err(|e| {
         // A grant or secondary that took the key between the counts above and
         // this delete trips the FK: the same in-use conflict.
         if e.is_foreign_key_violation() {
-            ServiceError::new(
-                ErrorCode::TsigKeyInUse,
-                "TSIG key is still referenced by zone TSIG grants or secondaries",
+            ServiceError::TsigKeyInUse(
+                "TSIG key is still referenced by zone TSIG grants or secondaries".to_string(),
             )
         } else {
             e.into()

@@ -19,9 +19,7 @@ pub async fn get_status(
     let zone = super::get_by_name(cx, caller, zone_name).await?;
 
     let serial = serial_to_u32(zone.serial).map_err(ServiceError::internal)?;
-    let secondaries = probe::probe_secondaries(cx, zone.name.as_str(), Some(serial))
-        .await
-        .map_err(ServiceError::internal)?;
+    let secondaries = probe::probe_secondaries(cx, zone.name.as_str(), Some(serial)).await?;
 
     Ok(ZoneStatusResponse {
         zone_name: zone.name.to_string(),

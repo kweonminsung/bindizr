@@ -4,15 +4,25 @@
 use bindizr_core::{
     dns::{
         name::ZoneName,
-        record::{TxtContent, TxtRecordValue},
+        record::{ParseRecordValueError, TxtContent, TxtRecordValue},
     },
     model::written_id,
 };
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use utoipa::{IntoParams, ToSchema};
 
 use super::version::RecordDiff;
 use crate::model::record::{Record, RecordType, RecordWithZone};
+
+/// A request value that has no record-row form.
+#[derive(Debug, Error)]
+pub(crate) enum EncodeRecordValueError {
+    #[error("array value is only supported for TXT records")]
+    SegmentsNotTxt,
+    #[error(transparent)]
+    Value(#[from] ParseRecordValueError),
+}
 
 /// A record value as sent by the client: a single string or TXT segments.
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -40,19 +50,19 @@ impl RecordValueRequest {
         &self,
         record_type: &RecordType,
         priority: Option<i32>,
-    ) -> Result<String, String> {
+    ) -> Result<String, EncodeRecordValueError> {
         match (record_type, self) {
             (RecordType::TXT, RecordValueRequest::String(value)) => {
                 Ok(TxtRecordValue::from_string(value).to_presentation())
             }
-            (RecordType::TXT, RecordValueRequest::Segments(segments)) => {
+            (RecordType::TXT, RecordValueRequest::Segments(segments)) => Ok(
                 TxtRecordValue::from_segments(segments.iter().map(String::as_str))
-                    .map(|parsed| parsed.to_presentation())
+                    .map(|parsed| parsed.to_presentation())?,
+            ),
+            (_, RecordValueRequest::String(value)) => {
+                Ok(record_type.encoded_value(value, priority)?)
             }
-            (_, RecordValueRequest::String(value)) => record_type.encoded_value(value, priority),
-            (_, RecordValueRequest::Segments(_)) => {
-                Err("array value is only supported for TXT records".to_string())
-            }
+            (_, RecordValueRequest::Segments(_)) => Err(EncodeRecordValueError::SegmentsNotTxt),
         }
     }
 }

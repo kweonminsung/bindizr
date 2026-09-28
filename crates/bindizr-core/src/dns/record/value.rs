@@ -1,5 +1,6 @@
 //! Shared field parsing/validation helpers for stored record values.
 
+use super::ParseRecordValueError;
 use crate::dns::{
     DNS_TCP_MAX_SIZE,
     name::{MAX_DOMAIN_LEN, decode_name_labels, has_whitespace_or_control},
@@ -19,38 +20,44 @@ pub(crate) const MAX_RECORD_RDATA: usize =
 
 /// Parse an optional unsigned 16-bit record field.
 pub(crate) fn parse_optional_u16_record_field(
-    field: &str,
+    field: &'static str,
     value: Option<i32>,
     default: u16,
-) -> Result<u16, String> {
+) -> Result<u16, ParseRecordValueError> {
     value.map_or(Ok(default), |value| {
-        u16::try_from(value).map_err(|_| format!("{field} must be between 0 and 65535"))
+        u16::try_from(value).map_err(|_| ParseRecordValueError::OutOfRange { field })
     })
 }
 
 /// Parse an unsigned 8-bit record field.
-pub(crate) fn parse_u8_record_field(field: &str, value: &str) -> Result<u8, String> {
+pub(crate) fn parse_u8_record_field(
+    field: &'static str,
+    value: &str,
+) -> Result<u8, ParseRecordValueError> {
     value
         .parse::<u8>()
-        .map_err(|_| format!("{field} must be an unsigned 8-bit integer: {value}"))
+        .map_err(|_| ParseRecordValueError::NotU8 {
+            field,
+            value: value.to_string(),
+        })
 }
 
 /// Decode a hex field that presentation form may split into whitespace-
 /// separated groups, as `dig` prints. RFC 1035 `(`/`)` markers are dropped:
 /// nsupdate and import re-parse `domain`'s form, which wraps hex in them.
 pub(crate) fn parse_hex_record_field<'a>(
-    field: &str,
+    field: &'static str,
     groups: impl Iterator<Item = &'a str>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ParseRecordValueError> {
     let hex: String = groups
         .filter(|group| !matches!(*group, "(" | ")"))
         .collect();
     let hex = hex.as_str();
     if hex.is_empty() {
-        return Err(format!("{field} must not be empty"));
+        return Err(ParseRecordValueError::Empty { field });
     }
     if !hex.len().is_multiple_of(2) {
-        return Err(format!("{field} must be an even number of hex digits"));
+        return Err(ParseRecordValueError::OddHexLength { field });
     }
     // Decoded from bytes, not `&str` slices: a multi-byte character must fail
     // as non-hex instead of panicking on a char boundary.
@@ -61,7 +68,7 @@ pub(crate) fn parse_hex_record_field<'a>(
             let lo = (pair[1] as char).to_digit(16);
             hi.zip(lo)
                 .map(|(hi, lo)| (hi * 16 + lo) as u8)
-                .ok_or_else(|| format!("{field} must be hex"))
+                .ok_or(ParseRecordValueError::NotHex { field })
         })
         .collect()
 }
@@ -72,22 +79,31 @@ pub(crate) fn hex_upper(bytes: &[u8]) -> String {
 }
 
 /// Parse an unsigned 16-bit record field.
-pub(crate) fn parse_u16_record_field(field: &str, value: &str) -> Result<u16, String> {
+pub(crate) fn parse_u16_record_field(
+    field: &'static str,
+    value: &str,
+) -> Result<u16, ParseRecordValueError> {
     value
         .parse::<u16>()
-        .map_err(|_| format!("{field} must be an unsigned 16-bit integer: {value}"))
+        .map_err(|_| ParseRecordValueError::NotU16 {
+            field,
+            value: value.to_string(),
+        })
 }
 
 /// One leading quoted string and what follows it, for the rdata grammars that
 /// mix them with other fields. `\\` escapes a byte and `\\DDD` a decimal one, as
 /// RFC 1035, Section 5.1 spells them. The caller bounds its own field.
 pub(crate) fn parse_quoted_string<'a>(
-    field: &str,
+    field: &'static str,
     input: &'a str,
-) -> Result<(String, &'a str), String> {
+) -> Result<(String, &'a str), ParseRecordValueError> {
     let rest = input
         .strip_prefix('"')
-        .ok_or_else(|| format!("{field} must be a quoted string: {input}"))?;
+        .ok_or_else(|| ParseRecordValueError::NotQuoted {
+            field,
+            input: input.to_string(),
+        })?;
 
     let mut out = Vec::new();
     let mut bytes = rest.bytes().enumerate();
@@ -96,7 +112,7 @@ pub(crate) fn parse_quoted_string<'a>(
             b'"' => {
                 let consumed = &rest[index + 1..];
                 let text =
-                    String::from_utf8(out).map_err(|_| format!("{field} must be valid UTF-8"))?;
+                    String::from_utf8(out).map_err(|_| ParseRecordValueError::NotUtf8 { field })?;
                 return Ok((text, consumed.trim_start()));
             }
             b'\\' => match bytes.next() {
@@ -104,34 +120,34 @@ pub(crate) fn parse_quoted_string<'a>(
                     let d2 = bytes.next().map(|(_, b)| b).filter(u8::is_ascii_digit);
                     let d3 = bytes.next().map(|(_, b)| b).filter(u8::is_ascii_digit);
                     let (Some(d2), Some(d3)) = (d2, d3) else {
-                        return Err(format!("{field} contains an invalid \\DDD escape"));
+                        return Err(ParseRecordValueError::InvalidEscape { field });
                     };
                     let code = u16::from(d - b'0') * 100
                         + u16::from(d2 - b'0') * 10
                         + u16::from(d3 - b'0');
                     let byte = u8::try_from(code)
-                        .map_err(|_| format!("{field} contains an invalid \\DDD escape"))?;
+                        .map_err(|_| ParseRecordValueError::InvalidEscape { field })?;
                     out.push(byte);
                 }
                 Some((_, escaped)) => out.push(escaped),
-                None => return Err(format!("{field} ends in a dangling escape")),
+                None => return Err(ParseRecordValueError::DanglingEscape { field }),
             },
             other => out.push(other),
         }
     }
 
-    Err(format!("{field} has an unterminated quote"))
+    Err(ParseRecordValueError::UnterminatedQuote { field })
 }
 
 /// A character-string: [`parse_quoted_string`] under the 255-byte limit
 /// RFC 1035, Section 3.3 puts on one.
 pub(crate) fn parse_char_string<'a>(
-    field: &str,
+    field: &'static str,
     input: &'a str,
-) -> Result<(String, &'a str), String> {
+) -> Result<(String, &'a str), ParseRecordValueError> {
     let (text, rest) = parse_quoted_string(field, input)?;
     if text.len() > 255 {
-        return Err(format!("{field} must be 255 bytes or less"));
+        return Err(ParseRecordValueError::CharStringTooLong { field });
     }
 
     Ok((text, rest))
@@ -141,27 +157,25 @@ pub(crate) fn parse_char_string<'a>(
 ///
 /// Splitting on `.` would break escaped dots; non-LDH labels also occur in RFC 2317, Section 4
 /// delegations such as `0/25`.
-pub(crate) fn validate_domain_record_value(field: &str, value: &str) -> Result<(), String> {
+pub(crate) fn validate_domain_record_value(
+    field: &'static str,
+    value: &str,
+) -> Result<(), ParseRecordValueError> {
     let trimmed = value.trim();
-
     if trimmed.is_empty() {
-        return Err(format!("{} must not be empty", field));
+        return Err(ParseRecordValueError::Empty { field });
     }
 
     // Escapes reach the labels below; this catches the raw octets, which no
     // presentation form can spell back.
     if has_whitespace_or_control(value) {
-        return Err(format!(
-            "{} must not contain whitespace or control characters",
-            field
-        ));
+        return Err(ParseRecordValueError::Whitespace { field });
     }
 
     if trimmed == "." {
-        return Err(format!("{} must not be the root zone", field));
+        return Err(ParseRecordValueError::RootZone { field });
     }
-
-    decode_name_labels(trimmed).map_err(|e| format!("{} {}", field, e))?;
+    decode_name_labels(trimmed).map_err(|source| ParseRecordValueError::Name { field, source })?;
 
     Ok(())
 }
