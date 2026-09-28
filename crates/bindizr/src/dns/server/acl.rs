@@ -9,9 +9,7 @@ use std::{
 };
 
 use bindizr_core::dns::address::{DEFAULT_DNS_PORT, ParsedAddress};
-use bindizr_service::{
-    dns_client::resolve_address_entry, error::ServiceError, secondary::SecondaryService,
-};
+use bindizr_service::{dns_client::resolve_address_entry, error::ServiceError, secondary};
 
 /// How long a resolved hostname is reused; an address changes rarely.
 const RESOLVED_TTL: Duration = Duration::from_secs(60);
@@ -98,7 +96,7 @@ fn locked_cache() -> std::sync::MutexGuard<'static, HashMap<String, CachedAddrs>
 /// the next transfer; parsing a short list costs nothing next to the
 /// hostname resolution it may avoid.
 pub(crate) async fn is_client_allowed(client_ip: IpAddr) -> Result<bool, ServiceError> {
-    let secondaries = SecondaryService::list_enabled().await?;
+    let secondaries = secondary::list_enabled().await?;
     let acl = SecondaryAcl::from_addresses(secondaries.iter().map(|s| s.address.as_str()));
     Ok(acl.allows(client_ip).await)
 }

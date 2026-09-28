@@ -1,7 +1,7 @@
 use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
-    tsig_key::{TsigKeyService, grant::TsigGrantService},
+    tsig_key::{self, grant},
     types::{
         CreateTsigKeyRequest, GetTsigGrantResponse, MessageResponse, PageFilter, TsigGrantResponse,
         TsigKeyResponse,
@@ -25,7 +25,7 @@ pub(crate) async fn create_tsig_key(
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateTsigKeyRequest = parse_params(data)?;
 
-    let key = TsigKeyService::create(
+    let key = tsig_key::create(
         &Caller::Global,
         &request.name,
         request.algorithm.as_deref(),
@@ -46,7 +46,7 @@ pub(crate) async fn list_tsig_keys(
 ) -> Result<DaemonResponse, ServiceError> {
     let page: PageFilter = parse_params(data)?;
 
-    let response = TsigKeyService::list(&Caller::Global, page).await?;
+    let response = tsig_key::list(&Caller::Global, page).await?;
 
     Ok(DaemonResponse {
         message: "TSIG keys retrieved successfully".to_string(),
@@ -58,7 +58,7 @@ pub(crate) async fn list_tsig_keys(
 pub(crate) async fn get_tsig_key(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: NameParams = parse_params(data)?;
 
-    let key = TsigKeyService::get(&Caller::Global, &params.name).await?;
+    let key = tsig_key::get(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
         message: "TSIG key retrieved successfully".to_string(),
@@ -72,7 +72,7 @@ pub(crate) async fn delete_tsig_key(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: NameParams = parse_params(data)?;
 
-    TsigKeyService::delete(&Caller::Global, &params.name).await?;
+    tsig_key::delete(&Caller::Global, &params.name).await?;
 
     let message = format!("TSIG key '{}' deleted successfully", params.name);
     Ok(DaemonResponse {
@@ -87,7 +87,7 @@ pub(crate) async fn create_tsig_grant(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: CreateTsigGrantParams = parse_params(data)?;
 
-    let grant = TsigGrantService::grant(
+    let grant = grant::create(
         &Caller::Global,
         &params.key_name,
         &params.request.zone_name,
@@ -111,8 +111,7 @@ pub(crate) async fn list_tsig_grants(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ListGrantsParams = parse_params(data)?;
 
-    let response =
-        TsigGrantService::list_by_key(&Caller::Global, &params.name, params.page).await?;
+    let response = grant::list_by_key(&Caller::Global, &params.name, params.page).await?;
 
     Ok(DaemonResponse {
         message: "TSIG grants retrieved successfully".to_string(),
@@ -126,8 +125,7 @@ pub(crate) async fn list_zone_tsig_grants(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ListGrantsParams = parse_params(data)?;
 
-    let response =
-        TsigGrantService::list_by_zone(&Caller::Global, &params.name, params.page).await?;
+    let response = grant::list_by_zone(&Caller::Global, &params.name, params.page).await?;
 
     Ok(DaemonResponse {
         message: "TSIG grants retrieved successfully".to_string(),
@@ -141,7 +139,7 @@ pub(crate) async fn delete_tsig_grant(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: IdParams = parse_params(data)?;
 
-    TsigGrantService::revoke_by_id(&Caller::Global, params.id).await?;
+    grant::revoke_by_id(&Caller::Global, params.id).await?;
 
     let message = "TSIG grant revoked successfully".to_string();
     Ok(DaemonResponse {
@@ -156,12 +154,8 @@ pub(crate) async fn delete_tsig_grants_by_key_and_zone(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DeleteTsigGrantsByKeyAndZoneParams = parse_params(data)?;
 
-    let revoked = TsigGrantService::revoke_by_key_and_zone(
-        &Caller::Global,
-        &params.key_name,
-        &params.zone_name,
-    )
-    .await?;
+    let revoked =
+        grant::revoke_by_key_and_zone(&Caller::Global, &params.key_name, &params.zone_name).await?;
 
     let message = format!("{} TSIG grant(s) revoked successfully", revoked);
     Ok(DaemonResponse {

@@ -1,3 +1,5 @@
+//! Manages TSIG credentials shared by update and transfer authentication.
+
 use base64::Engine;
 use bindizr_core::dns::name::parse_lookup_name;
 use chrono::Utc;
@@ -7,7 +9,7 @@ use crate::{
     authorization::Caller,
     error::{ErrorCode, ServiceError},
     model::tsig_key::{TsigAlgorithm, TsigKey},
-    repository::RepositoryService,
+    repository,
     text::MAX_COLUMN_TEXT_LEN,
     types::{GetTsigKeyResponse, PageFilter, PaginatedResponse},
 };
@@ -16,118 +18,109 @@ use crate::{
 /// HMAC-SHA256 and is sufficient entropy for the larger algorithms too.
 const GENERATED_SECRET_LEN: usize = 32;
 
-/// Manages TSIG credentials shared by update and transfer authentication.
-pub struct TsigKeyService;
+/// Create a TSIG key. When `secret` is omitted a random one is generated;
+/// when provided it must be valid, non-empty base64 (an imported key).
+pub async fn create(
+    caller: &Caller,
+    name: &str,
+    algorithm: Option<&str>,
+    secret: Option<&str>,
+    is_global: bool,
+) -> Result<TsigKey, ServiceError> {
+    caller.authorize_global("manage TSIG keys and grants")?;
 
-impl TsigKeyService {
-    /// Create a TSIG key. When `secret` is omitted a random one is generated;
-    /// when provided it must be valid, non-empty base64 (an imported key).
-    pub async fn create(
-        caller: &Caller,
-        name: &str,
-        algorithm: Option<&str>,
-        secret: Option<&str>,
-        is_global: bool,
-    ) -> Result<TsigKey, ServiceError> {
-        caller.authorize_global("manage TSIG keys and grants")?;
+    let name = normalize_key_name(name)?;
+    let algorithm = match algorithm {
+        None => TsigAlgorithm::default(),
+        Some(raw) => raw.parse().map_err(ServiceError::invalid_input)?,
+    };
+    let secret = match secret {
+        Some(secret) => normalize_secret(secret)?,
+        None => generate_secret(),
+    };
 
-        let name = normalize_key_name(name)?;
-        let algorithm = match algorithm {
-            None => TsigAlgorithm::default(),
-            Some(raw) => raw.parse().map_err(ServiceError::invalid_input)?,
-        };
-        let secret = match secret {
-            Some(secret) => normalize_secret(secret)?,
-            None => generate_secret(),
-        };
-
-        // Friendly pre-check; the UNIQUE(name) backstop covers the race.
-        if RepositoryService::get_tsig_key_by_name(&name)
-            .await?
-            .is_some()
-        {
-            return Err(ServiceError::tsig_key_conflict(&name));
-        }
-
-        RepositoryService::create_tsig_key(TsigKey {
-            id: 0,
-            name,
-            algorithm,
-            secret,
-            is_global,
-            created_at: Utc::now(),
-        })
-        .await
+    // Friendly pre-check; the UNIQUE(name) backstop covers the race.
+    if repository::get_tsig_key_by_name(&name).await?.is_some() {
+        return Err(ServiceError::tsig_key_conflict(&name));
     }
 
-    /// List all TSIG keys.
-    pub async fn list(
-        caller: &Caller,
-        page: PageFilter,
-    ) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
-        caller.authorize_global("manage TSIG keys and grants")?;
+    repository::create_tsig_key(TsigKey {
+        id: 0,
+        name,
+        algorithm,
+        secret,
+        is_global,
+        created_at: Utc::now(),
+    })
+    .await
+}
 
-        let keys = RepositoryService::list_tsig_keys().await?;
-        PaginatedResponse::from_collection(
-            keys.iter().map(GetTsigKeyResponse::from_key).collect(),
-            page.limit,
-            page.offset,
-        )
+/// List all TSIG keys.
+pub async fn list(
+    caller: &Caller,
+    page: PageFilter,
+) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
+    caller.authorize_global("manage TSIG keys and grants")?;
+
+    let keys = repository::list_tsig_keys().await?;
+    PaginatedResponse::from_collection(
+        keys.iter().map(GetTsigKeyResponse::from_key).collect(),
+        page.limit,
+        page.offset,
+    )
+}
+
+/// Fetch one TSIG key by name, including its secret.
+pub async fn get(caller: &Caller, name: &str) -> Result<TsigKey, ServiceError> {
+    caller.authorize_global("manage TSIG keys and grants")?;
+
+    lookup_by_name(name).await
+}
+
+/// Fetch one TSIG key by name. This is the unchecked lookup for
+/// service-internal use; front ends go through [`get`].
+pub(crate) async fn lookup_by_name(name: &str) -> Result<TsigKey, ServiceError> {
+    let name = normalize_key_name(name)?;
+    repository::get_tsig_key_by_name(&name)
+        .await?
+        .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
+}
+
+/// Look up the key an incoming TSIG record names. Authentication precedes
+/// any zone transaction, so this is a plain read.
+pub async fn find_by_wire_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
+    // Canonicalize like storage does; an unparseable name matches no key.
+    let Ok(name) = normalize_key_name(name) else {
+        return Ok(None);
+    };
+    repository::get_tsig_key_by_name(&name).await
+}
+
+/// Delete a TSIG key by name; refused while it still holds grants or
+/// signs a secondary's NOTIFY.
+pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
+    caller.authorize_global("manage TSIG keys and grants")?;
+
+    let key = lookup_by_name(name).await?;
+
+    let grant_count = repository::count_tsig_grants_by_key_id(key.id).await?;
+    if grant_count > 0 {
+        return Err(ServiceError::tsig_key_in_use(&key.name, grant_count));
+    }
+    let secondary_count = repository::count_secondaries_by_notify_tsig_key_id(key.id).await?;
+    if secondary_count > 0 {
+        return Err(ServiceError::new(
+            ErrorCode::TsigKeyInUse,
+            format!(
+                "TSIG key '{}' still signs NOTIFY for {} secondar{}",
+                key.name,
+                secondary_count,
+                if secondary_count == 1 { "y" } else { "ies" }
+            ),
+        ));
     }
 
-    /// Fetch one TSIG key by name, including its secret.
-    pub async fn get(caller: &Caller, name: &str) -> Result<TsigKey, ServiceError> {
-        caller.authorize_global("manage TSIG keys and grants")?;
-
-        Self::lookup_by_name(name).await
-    }
-
-    /// Fetch one TSIG key by name. This is the unchecked lookup for
-    /// service-internal use; front ends go through [`Self::get`].
-    pub(crate) async fn lookup_by_name(name: &str) -> Result<TsigKey, ServiceError> {
-        let name = normalize_key_name(name)?;
-        RepositoryService::get_tsig_key_by_name(&name)
-            .await?
-            .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
-    }
-
-    /// Look up the key an incoming TSIG record names. Authentication precedes
-    /// any zone transaction, so this is a plain read.
-    pub async fn find_by_wire_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
-        // Canonicalize like storage does; an unparseable name matches no key.
-        let Ok(name) = normalize_key_name(name) else {
-            return Ok(None);
-        };
-        RepositoryService::get_tsig_key_by_name(&name).await
-    }
-
-    /// Delete a TSIG key by name; refused while it still holds grants or
-    /// signs a secondary's NOTIFY.
-    pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
-        caller.authorize_global("manage TSIG keys and grants")?;
-
-        let key = Self::lookup_by_name(name).await?;
-
-        let grant_count = RepositoryService::count_tsig_grants_by_key_id(key.id).await?;
-        if grant_count > 0 {
-            return Err(ServiceError::tsig_key_in_use(&key.name, grant_count));
-        }
-        let secondary_count =
-            RepositoryService::count_secondaries_by_notify_tsig_key_id(key.id).await?;
-        if secondary_count > 0 {
-            return Err(ServiceError::new(
-                ErrorCode::TsigKeyInUse,
-                format!(
-                    "TSIG key '{}' still signs NOTIFY for {} secondar{}",
-                    key.name,
-                    secondary_count,
-                    if secondary_count == 1 { "y" } else { "ies" }
-                ),
-            ));
-        }
-
-        RepositoryService::delete_tsig_key(key.id).await
-    }
+    repository::delete_tsig_key(key.id).await
 }
 
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so

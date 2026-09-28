@@ -24,7 +24,6 @@ use axum_server::{Handle, tls_rustls::RustlsConfig};
 use bindizr_core::{config, config::TlsFiles, model::api_token::ApiToken};
 use bindizr_service::{authorization::Caller, error::ServiceError};
 use error::ApiError;
-use router::ApiRouter;
 use tokio::{net::TcpListener, task::JoinHandle};
 
 use crate::{cli::error::CliError, shutdown::Shutdown};
@@ -100,7 +99,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, Cl
         log::info!("HTTP API server listening on http://{}", addr);
         let stop = shutdown.waiter();
         return Ok(tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, ApiRouter::routes().await)
+            if let Err(e) = axum::serve(listener, router::routes())
                 .with_graceful_shutdown(stop)
                 .await
             {
@@ -140,7 +139,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, Cl
     Ok(tokio::spawn(async move {
         if let Err(e) = server
             .handle(handle)
-            .serve(ApiRouter::routes().await.into_make_service())
+            .serve(router::routes().into_make_service())
             .await
         {
             log::error!("API server error: {:?}", e);

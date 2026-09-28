@@ -6,7 +6,7 @@ use axum::{
     routing,
 };
 use bindizr_service::{
-    external_dns::ExternalDnsService,
+    external_dns,
     types::{
         ErrorResponse, ExternalDnsAdjustRequest, ExternalDnsAdjustResponse,
         ExternalDnsChangesRequest, ExternalDnsChangesResponse, ExternalDnsDomainsResponse,
@@ -20,35 +20,32 @@ use crate::api::{
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
 
+/// Build the external DNS API routes.
+///
 /// Registered only when `api.external_dns_enabled` is set.
-pub(crate) struct ExternalDnsApi;
-
-impl ExternalDnsApi {
-    /// Build the external DNS API routes.
-    pub(crate) async fn routes() -> Router {
-        Router::new()
-            .route(
-                "/external-dns/domains",
-                routing::get(list_external_dns_domains),
-            )
-            .route(
-                "/external-dns/records",
-                routing::get(list_external_dns_records),
-            )
-            .route(
-                "/external-dns/changes",
-                // A whole external-dns plan arrives in one request, so it gets
-                // the same upload cap as bulk insert, not axum's 2 MiB default.
-                routing::post(apply_external_dns_changes)
-                    .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
-            )
-            .route(
-                "/external-dns/adjust",
-                // The whole desired set arrives at once; same cap as changes.
-                routing::post(adjust_external_dns_records)
-                    .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
-            )
-    }
+pub(crate) fn routes() -> Router {
+    Router::new()
+        .route(
+            "/external-dns/domains",
+            routing::get(list_external_dns_domains),
+        )
+        .route(
+            "/external-dns/records",
+            routing::get(list_external_dns_records),
+        )
+        .route(
+            "/external-dns/changes",
+            // A whole external-dns plan arrives in one request, so it gets
+            // the same upload cap as bulk insert, not axum's 2 MiB default.
+            routing::post(apply_external_dns_changes)
+                .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+        )
+        .route(
+            "/external-dns/adjust",
+            // The whole desired set arrives at once; same cap as changes.
+            routing::post(adjust_external_dns_records)
+                .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+        )
 }
 
 /// List the names the ExternalDNS caller may manage.
@@ -67,7 +64,7 @@ impl ExternalDnsApi {
 pub(crate) async fn list_external_dns_domains(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
-    let domains = ExternalDnsService::list_managed_domains(&caller).await?;
+    let domains = external_dns::list_managed_domains(&caller).await?;
     Ok((StatusCode::OK, Json(ExternalDnsDomainsResponse { domains })).into_response())
 }
 
@@ -87,7 +84,7 @@ pub(crate) async fn list_external_dns_domains(
 pub(crate) async fn list_external_dns_records(
     RequestCaller(caller): RequestCaller,
 ) -> Result<Response, ApiError> {
-    let records = ExternalDnsService::list_records(&caller).await?;
+    let records = external_dns::list_records(&caller).await?;
     Ok((StatusCode::OK, Json(ExternalDnsRecordsResponse { records })).into_response())
 }
 
@@ -111,7 +108,7 @@ pub(crate) async fn adjust_external_dns_records(
     RequestCaller(_caller): RequestCaller,
     JsonBody(body): JsonBody<ExternalDnsAdjustRequest>,
 ) -> Result<Response, ApiError> {
-    let response = ExternalDnsService::adjust_records(&body)?;
+    let response = external_dns::adjust_records(&body)?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -138,6 +135,6 @@ pub(crate) async fn apply_external_dns_changes(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<ExternalDnsChangesRequest>,
 ) -> Result<Response, ApiError> {
-    let response = ExternalDnsService::apply_changes(&caller, &body).await?;
+    let response = external_dns::apply_changes(&caller, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

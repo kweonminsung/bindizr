@@ -6,14 +6,14 @@ use axum::{
     routing,
 };
 use bindizr_service::{
-    record::RecordService,
+    record,
     types::{
         CreateZoneRequest, DEFAULT_PAGE_LIMIT, DeleteZoneResponse, ErrorResponse, GetZoneResponse,
         GetZonesFilter, ImportZoneRequest, ImportZoneResponse, PaginatedResponse,
         RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
         ZoneResponse, ZoneStatusResponse, ZoneVersionResponse, ZoneWriteResponse,
     },
-    zone::ZoneService,
+    zone,
 };
 use serde::Deserialize;
 
@@ -27,37 +27,33 @@ use crate::{
     params::NameParams,
 };
 
-pub(crate) struct ZoneApi;
-
-impl ZoneApi {
-    /// Build the zone API routes.
-    pub(crate) async fn routes() -> Router {
-        Router::new()
-            .route("/zones", routing::get(list_zones))
-            .route("/zones/{name}", routing::get(get_zone))
-            .route("/zones", routing::post(create_zone))
-            .route("/zones/{name}", routing::put(update_zone))
-            .route("/zones/{name}", routing::delete(delete_zone))
-            .route(
-                "/zones/{name}/import",
-                routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
-            )
-            .route("/zones/{name}/export", routing::get(export_zone))
-            .route("/zones/{name}/versions", routing::get(list_zone_versions))
-            .route(
-                "/zones/{name}/versions/diff",
-                routing::get(diff_zone_versions),
-            )
-            .route(
-                "/zones/{name}/versions/{serial}",
-                routing::get(get_zone_version),
-            )
-            .route(
-                "/zones/{name}/versions/{serial}/rollback",
-                routing::post(rollback_zone),
-            )
-            .route("/zones/{name}/status", routing::get(get_zone_status))
-    }
+/// Build the zone API routes.
+pub(crate) fn routes() -> Router {
+    Router::new()
+        .route("/zones", routing::get(list_zones))
+        .route("/zones/{name}", routing::get(get_zone))
+        .route("/zones", routing::post(create_zone))
+        .route("/zones/{name}", routing::put(update_zone))
+        .route("/zones/{name}", routing::delete(delete_zone))
+        .route(
+            "/zones/{name}/import",
+            routing::post(import_zone).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+        )
+        .route("/zones/{name}/export", routing::get(export_zone))
+        .route("/zones/{name}/versions", routing::get(list_zone_versions))
+        .route(
+            "/zones/{name}/versions/diff",
+            routing::get(diff_zone_versions),
+        )
+        .route(
+            "/zones/{name}/versions/{serial}",
+            routing::get(get_zone_version),
+        )
+        .route(
+            "/zones/{name}/versions/{serial}/rollback",
+            routing::post(rollback_zone),
+        )
+        .route("/zones/{name}/status", routing::get(get_zone_status))
 }
 
 /// Report the sync state of every enabled secondary for a zone.
@@ -81,7 +77,7 @@ pub(crate) async fn get_zone_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = ZoneService::get_status(&caller, &params.name).await?;
+    let status = zone::get_status(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -114,8 +110,7 @@ pub(crate) async fn export_zone(
     Path(params): Path<NameParams>,
     Query(query): Query<ExportZoneQuery>,
 ) -> Result<Response, ApiError> {
-    let zone_file =
-        ZoneService::export(&caller, &params.name, query.signed.unwrap_or(false)).await?;
+    let zone_file = zone::export(&caller, &params.name, query.signed.unwrap_or(false)).await?;
     Ok((
         StatusCode::OK,
         [("content-type", "text/plain; charset=utf-8")],
@@ -149,7 +144,7 @@ pub(crate) async fn list_zone_versions(
     Path(params): Path<NameParams>,
     Query(query): Query<VersionListQuery>,
 ) -> Result<Response, ApiError> {
-    let response = ZoneService::list_versions(
+    let response = zone::list_versions(
         &caller,
         &params.name,
         query.limit.or(Some(DEFAULT_PAGE_LIMIT)),
@@ -182,7 +177,7 @@ pub(crate) async fn get_zone_version(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneVersionParams>,
 ) -> Result<Response, ApiError> {
-    let response = ZoneService::get_version(&caller, &params.name, params.serial).await?;
+    let response = zone::get_version(&caller, &params.name, params.serial).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -213,8 +208,7 @@ pub(crate) async fn rollback_zone(
     Path(params): Path<ZoneVersionParams>,
     Query(query): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    let response =
-        ZoneService::rollback(&caller, &params.name, params.serial, query.dry_run).await?;
+    let response = zone::rollback(&caller, &params.name, params.serial, query.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -265,7 +259,7 @@ pub(crate) async fn diff_zone_versions(
     Path(params): Path<NameParams>,
     Query(query): Query<VersionDiffQuery>,
 ) -> Result<Response, ApiError> {
-    let diff = ZoneService::diff_versions(&caller, &params.name, query.from, query.to).await?;
+    let diff = zone::diff_versions(&caller, &params.name, query.from, query.to).await?;
     Ok((StatusCode::OK, Json(diff)).into_response())
 }
 
@@ -288,7 +282,7 @@ pub(crate) async fn list_zones(
     Query(mut query): Query<GetZonesFilter>,
 ) -> Result<Response, ApiError> {
     query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = ZoneService::list_by_filter(&caller, query).await?;
+    let response = zone::list_by_filter(&caller, query).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -313,7 +307,7 @@ pub(crate) async fn get_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let zone = ZoneService::get_by_name(&caller, &params.name).await?;
+    let zone = zone::get_by_name(&caller, &params.name).await?;
     Ok((
         StatusCode::OK,
         Json(ZoneResponse {
@@ -345,7 +339,7 @@ pub(crate) async fn create_zone(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let response = ZoneService::create(&caller, &body).await?;
+    let response = zone::create(&caller, &body).await?;
     // 201 says a resource now exists; a preview created nothing.
     let status = if response.applied {
         StatusCode::CREATED
@@ -382,7 +376,7 @@ pub(crate) async fn update_zone(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let response = ZoneService::update(&caller, &params.name, &body).await?;
+    let response = zone::update(&caller, &params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -410,7 +404,7 @@ pub(crate) async fn delete_zone(
     Path(params): Path<NameParams>,
     Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    let response = ZoneService::delete(&caller, &params.name, preview.dry_run).await?;
+    let response = zone::delete(&caller, &params.name, preview.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -442,7 +436,7 @@ pub(crate) async fn import_zone(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<ImportZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let response = RecordService::import_zone(&caller, &params.name, &body).await?;
+    let response = record::import_zone(&caller, &params.name, &body).await?;
     // A rejected file is a failed request, so a generic client does not read it
     // as an import; the body stays the same so the errors survive the status.
     let status = if response.was_rejected() {

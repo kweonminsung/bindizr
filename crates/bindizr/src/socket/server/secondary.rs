@@ -1,7 +1,7 @@
 use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
-    secondary::SecondaryService,
+    secondary,
     types::{CreateSecondaryRequest, MessageResponse, PageFilter, SecondaryResponse},
 };
 
@@ -18,7 +18,7 @@ pub(crate) async fn create_secondary(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateSecondaryRequest = parse_params(data)?;
-    let secondary = SecondaryService::create(
+    let secondary = secondary::create(
         &Caller::Global,
         &request.name,
         &request.address,
@@ -37,7 +37,7 @@ pub(crate) async fn list_secondaries(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let page: PageFilter = parse_params(data)?;
-    let response = SecondaryService::list(&Caller::Global, page).await?;
+    let response = secondary::list(&Caller::Global, page).await?;
 
     Ok(DaemonResponse {
         message: "Secondaries retrieved successfully".to_string(),
@@ -50,7 +50,7 @@ pub(crate) async fn get_secondary(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: NameParams = parse_params(data)?;
-    let secondary = SecondaryService::get(&Caller::Global, &params.name).await?;
+    let secondary = secondary::get(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
         message: "Secondary retrieved successfully".to_string(),
@@ -63,7 +63,7 @@ pub(crate) async fn update_secondary(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateSecondaryParams = parse_params(data)?;
-    let secondary = SecondaryService::update(&Caller::Global, &params.name, params.request).await?;
+    let secondary = secondary::update(&Caller::Global, &params.name, params.request).await?;
 
     Ok(DaemonResponse {
         message: "Secondary updated successfully".to_string(),
@@ -76,7 +76,7 @@ pub(crate) async fn delete_secondary(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: NameParams = parse_params(data)?;
-    SecondaryService::delete(&Caller::Global, &params.name).await?;
+    secondary::delete(&Caller::Global, &params.name).await?;
 
     let message = format!("Secondary '{}' deleted successfully", params.name);
     Ok(DaemonResponse {
@@ -90,7 +90,7 @@ pub(crate) async fn check_secondary(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: NameParams = parse_params(data)?;
-    let check = SecondaryService::check(&Caller::Global, &params.name).await?;
+    let check = secondary::check(&Caller::Global, &params.name).await?;
 
     let message = if check.is_healthy() {
         format!("Secondary '{}' passed the check", params.name)
@@ -108,8 +108,7 @@ pub(crate) async fn list_secondary_transfers(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ListSecondaryTransfersParams = parse_params(data)?;
-    let transfers =
-        SecondaryService::list_transfers(&Caller::Global, &params.name, params.filter).await?;
+    let transfers = secondary::list_transfers(&Caller::Global, &params.name, params.filter).await?;
     Ok(DaemonResponse {
         message: format!(
             "{} transfer(s) served to secondary '{}'",

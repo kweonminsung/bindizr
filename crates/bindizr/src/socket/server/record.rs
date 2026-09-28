@@ -1,7 +1,7 @@
 use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
-    record::RecordService,
+    record,
     types::{
         CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter, GetRecordResponse,
         GetRecordsFilter, RecordResponse,
@@ -20,7 +20,7 @@ use crate::{
 pub(crate) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: IdParams = parse_params(data)?;
 
-    let record = RecordService::get_with_zone(&Caller::Global, params.id).await?;
+    let record = record::get_with_zone(&Caller::Global, params.id).await?;
     Ok(DaemonResponse {
         message: "Record retrieved successfully".to_string(),
         data: to_response_data(RecordResponse {
@@ -37,7 +37,7 @@ pub(crate) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
         parse_params(data)?
     };
 
-    let response = RecordService::list_with_zone_by_filter(&Caller::Global, filter).await?;
+    let response = record::list_with_zone_by_filter(&Caller::Global, filter).await?;
 
     Ok(DaemonResponse {
         message: "Records retrieved successfully".to_string(),
@@ -51,7 +51,7 @@ pub(crate) async fn create_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateRecordRequest = parse_params(data)?;
 
-    let response = RecordService::create(&Caller::Global, &request).await?;
+    let response = record::create(&Caller::Global, &request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Record would be created".to_string()
@@ -68,7 +68,7 @@ pub(crate) async fn update_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordParams = parse_params(data)?;
 
-    let response = RecordService::update(&Caller::Global, params.id, &params.request).await?;
+    let response = record::update(&Caller::Global, params.id, &params.request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Record would be updated".to_string()
@@ -85,7 +85,7 @@ pub(crate) async fn update_record_by_name(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordByNameParams = parse_params(data)?;
 
-    let response = RecordService::update_by_name(
+    let response = record::update_by_name(
         &Caller::Global,
         &params.zone_name,
         &params.record_name,
@@ -108,7 +108,7 @@ pub(crate) async fn create_records_bulk(
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateBulkRecordsRequest = parse_params(data)?;
 
-    let response = RecordService::create_bulk(
+    let response = record::create_bulk(
         &Caller::Global,
         &request.zone_name,
         &request.records,
@@ -136,7 +136,7 @@ pub(crate) async fn delete_record(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DeleteRecordParams = parse_params(data)?;
 
-    let response = RecordService::delete(&Caller::Global, params.id, params.dry_run).await?;
+    let response = record::delete(&Caller::Global, params.id, params.dry_run).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!("Record {} would be deleted", params.id)
@@ -154,7 +154,7 @@ pub(crate) async fn delete_records_matching(
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let filter: DeleteRecordsFilter = parse_params(data)?;
-    let response = RecordService::delete_matching(&Caller::Global, &filter).await?;
+    let response = record::delete_matching(&Caller::Global, &filter).await?;
 
     Ok(DaemonResponse {
         message: if response.dry_run {

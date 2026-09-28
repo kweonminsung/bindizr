@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use bindizr_db::repository::ZoneFilter;
 use chrono::Utc;
 
-use super::TokenService;
 use crate::{
     authorization::Caller,
     error::ServiceError,
@@ -16,183 +15,173 @@ use crate::{
         api_token::ApiToken,
         token_grant::{TokenGrant, TokenGrantWithNames},
     },
-    repository::RepositoryService,
+    repository,
     types::{GetTokenGrantResponse, PageFilter, PaginatedResponse},
-    zone::ZoneService,
+    zone,
 };
 
-/// Grants and revokes zone record rights for API tokens.
-pub struct TokenGrantService;
+/// Grant `token_name` record rights in `zone_name`, optionally restricted
+/// to a record name pattern and/or record types. Global tokens are
+/// rejected: they already cover every zone and never carry grants.
+pub async fn create(
+    caller: &Caller,
+    token_name: &str,
+    zone_name: &str,
+    record_name_pattern: Option<&str>,
+    record_types: Option<&str>,
+    can_write: bool,
+) -> Result<TokenGrantWithNames, ServiceError> {
+    caller.authorize_global("manage token grants")?;
 
-impl TokenGrantService {
-    /// Grant `token_name` record rights in `zone_name`, optionally restricted
-    /// to a record name pattern and/or record types. Global tokens are
-    /// rejected: they already cover every zone and never carry grants.
-    pub async fn grant(
-        caller: &Caller,
-        token_name: &str,
-        zone_name: &str,
-        record_name_pattern: Option<&str>,
-        record_types: Option<&str>,
-        can_write: bool,
-    ) -> Result<TokenGrantWithNames, ServiceError> {
-        caller.authorize_global("manage token grants")?;
-
-        let token = TokenService::lookup_by_name(token_name).await?;
-        if token.is_global {
-            return Err(ServiceError::invalid_input(format!(
-                "API token '{}' is global and already covers every zone; it cannot be granted one",
-                token.name
-            )));
-        }
-        let zone = ZoneService::lookup_by_name(zone_name).await?;
-
-        let record_name_pattern = normalize_pattern(record_name_pattern)?;
-        let record_types = normalize_types(record_types)?;
-
-        let grant = RepositoryService::create_token_grant(TokenGrant {
-            id: 0,
-            zone_id: zone.id,
-            api_token_id: token.id,
-            record_name_pattern,
-            record_types,
-            can_write,
-            created_at: Utc::now(),
-        })
-        .await?;
-
-        Ok(TokenGrantWithNames {
-            grant,
-            api_token_name: token.name,
-            zone_name: zone.name.to_string(),
-        })
+    let token = super::lookup_by_name(token_name).await?;
+    if token.is_global {
+        return Err(ServiceError::invalid_input(format!(
+            "API token '{}' is global and already covers every zone; it cannot be granted one",
+            token.name
+        )));
     }
+    let zone = zone::lookup_by_name(zone_name).await?;
 
-    /// Every grant of `token_name`, with the zone each covers.
-    pub async fn list_by_token(
-        caller: &Caller,
-        token_name: &str,
-        page: PageFilter,
-    ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
-        caller.authorize_global("manage token grants")?;
+    let record_name_pattern = normalize_pattern(record_name_pattern)?;
+    let record_types = normalize_types(record_types)?;
 
-        let token = TokenService::lookup_by_name(token_name).await?;
-        Self::list_self(&token, page).await
-    }
+    let grant = repository::create_token_grant(TokenGrant {
+        id: 0,
+        zone_id: zone.id,
+        api_token_id: token.id,
+        record_name_pattern,
+        record_types,
+        can_write,
+        created_at: Utc::now(),
+    })
+    .await?;
 
-    /// Every grant of `token`, with the zone each covers. Any token may read
-    /// its own, so there is no caller to gate.
-    pub async fn list_self(
-        token: &ApiToken,
-        page: PageFilter,
-    ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
-        let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
+    Ok(TokenGrantWithNames {
+        grant,
+        api_token_name: token.name,
+        zone_name: zone.name.to_string(),
+    })
+}
 
-        // Any token reaches this, so read only its granted zones.
-        let zone_names: HashMap<i32, String> =
-            RepositoryService::list_zones_by_filter(ZoneFilter {
-                scope_token_id: Some(token.id),
-                ..ZoneFilter::default()
+/// Every grant of `token_name`, with the zone each covers.
+pub async fn list_by_token(
+    caller: &Caller,
+    token_name: &str,
+    page: PageFilter,
+) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
+    caller.authorize_global("manage token grants")?;
+
+    let token = super::lookup_by_name(token_name).await?;
+    list_self(&token, page).await
+}
+
+/// Every grant of `token`, with the zone each covers. Any token may read
+/// its own, so there is no caller to gate.
+pub async fn list_self(
+    token: &ApiToken,
+    page: PageFilter,
+) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
+    let grants = repository::list_token_grants_by_token_id(token.id).await?;
+
+    // Any token reaches this, so read only its granted zones.
+    let zone_names: HashMap<i32, String> = repository::list_zones_by_filter(ZoneFilter {
+        scope_token_id: Some(token.id),
+        ..ZoneFilter::default()
+    })
+    .await?
+    .into_iter()
+    .map(|zone| (zone.id, zone.name.to_string()))
+    .collect();
+
+    PaginatedResponse::from_collection(
+        grants
+            .into_iter()
+            .map(|grant| {
+                GetTokenGrantResponse::from_grant(&TokenGrantWithNames {
+                    zone_name: zone_names.get(&grant.zone_id).cloned().unwrap_or_default(),
+                    api_token_name: token.name.clone(),
+                    grant,
+                })
             })
-            .await?
+            .collect(),
+        page.limit,
+        page.offset,
+    )
+}
+
+/// Every grant that applies to `zone_name`, with the token each belongs to.
+pub async fn list_by_zone(
+    caller: &Caller,
+    zone_name: &str,
+    page: PageFilter,
+) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
+    caller.authorize_global("manage token grants")?;
+
+    let zone = zone::lookup_by_name(zone_name).await?;
+    let grants = repository::list_token_grants_by_zone_id(zone.id).await?;
+
+    let token_names: HashMap<i32, String> = repository::list_api_tokens()
+        .await?
+        .into_iter()
+        .map(|token| (token.id, token.name))
+        .collect();
+
+    PaginatedResponse::from_collection(
+        grants
             .into_iter()
-            .map(|zone| (zone.id, zone.name.to_string()))
-            .collect();
-
-        PaginatedResponse::from_collection(
-            grants
-                .into_iter()
-                .map(|grant| {
-                    GetTokenGrantResponse::from_grant(&TokenGrantWithNames {
-                        zone_name: zone_names.get(&grant.zone_id).cloned().unwrap_or_default(),
-                        api_token_name: token.name.clone(),
-                        grant,
-                    })
+            .map(|grant| {
+                GetTokenGrantResponse::from_grant(&TokenGrantWithNames {
+                    api_token_name: token_names
+                        .get(&grant.api_token_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                    zone_name: zone.name.to_string(),
+                    grant,
                 })
-                .collect(),
-            page.limit,
-            page.offset,
-        )
-    }
+            })
+            .collect(),
+        page.limit,
+        page.offset,
+    )
+}
 
-    /// Every grant that applies to `zone_name`, with the token each belongs to.
-    pub async fn list_by_zone(
-        caller: &Caller,
-        zone_name: &str,
-        page: PageFilter,
-    ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
-        caller.authorize_global("manage token grants")?;
+/// Revoke one of `token_name`'s grants by id. An id that belongs to another
+/// token reads as not found.
+pub async fn revoke(caller: &Caller, token_name: &str, grant_id: i32) -> Result<(), ServiceError> {
+    caller.authorize_global("manage token grants")?;
 
-        let zone = ZoneService::lookup_by_name(zone_name).await?;
-        let grants = RepositoryService::list_token_grants_by_zone_id(zone.id).await?;
+    let token = super::lookup_by_name(token_name).await?;
+    let grant = repository::get_token_grant(grant_id)
+        .await?
+        .filter(|grant| grant.api_token_id == token.id)
+        .ok_or_else(|| ServiceError::token_grant_not_found(grant_id))?;
 
-        let token_names: HashMap<i32, String> = RepositoryService::list_api_tokens()
-            .await?
-            .into_iter()
-            .map(|token| (token.id, token.name))
-            .collect();
+    repository::delete_token_grant(grant.id).await
+}
 
-        PaginatedResponse::from_collection(
-            grants
-                .into_iter()
-                .map(|grant| {
-                    GetTokenGrantResponse::from_grant(&TokenGrantWithNames {
-                        api_token_name: token_names
-                            .get(&grant.api_token_id)
-                            .cloned()
-                            .unwrap_or_default(),
-                        zone_name: zone.name.to_string(),
-                        grant,
-                    })
-                })
-                .collect(),
-            page.limit,
-            page.offset,
-        )
-    }
+/// Revoke every grant `token_name` holds in `zone_name`, returning how
+/// many went. Matching none is not an error: the rights already read the
+/// way the request asked for.
+pub async fn revoke_by_token_and_zone(
+    caller: &Caller,
+    token_name: &str,
+    zone_name: &str,
+) -> Result<u64, ServiceError> {
+    caller.authorize_global("manage token grants")?;
 
-    /// Revoke one of `token_name`'s grants by id. An id that belongs to another
-    /// token reads as not found.
-    pub async fn revoke(
-        caller: &Caller,
-        token_name: &str,
-        grant_id: i32,
-    ) -> Result<(), ServiceError> {
-        caller.authorize_global("manage token grants")?;
+    let token = super::lookup_by_name(token_name).await?;
+    let zone = zone::lookup_by_name(zone_name).await?;
 
-        let token = TokenService::lookup_by_name(token_name).await?;
-        let grant = RepositoryService::get_token_grant(grant_id)
-            .await?
-            .filter(|grant| grant.api_token_id == token.id)
-            .ok_or_else(|| ServiceError::token_grant_not_found(grant_id))?;
+    repository::delete_token_grants_by_token_id_and_zone_id(token.id, zone.id).await
+}
 
-        RepositoryService::delete_token_grant(grant.id).await
-    }
+/// Revoke a grant by its id, which identifies the row on its own.
+pub async fn revoke_by_id(caller: &Caller, grant_id: i32) -> Result<(), ServiceError> {
+    caller.authorize_global("manage token grants")?;
 
-    /// Revoke every grant `token_name` holds in `zone_name`, returning how
-    /// many went. Matching none is not an error: the rights already read the
-    /// way the request asked for.
-    pub async fn revoke_by_token_and_zone(
-        caller: &Caller,
-        token_name: &str,
-        zone_name: &str,
-    ) -> Result<u64, ServiceError> {
-        caller.authorize_global("manage token grants")?;
+    let grant = repository::get_token_grant(grant_id)
+        .await?
+        .ok_or_else(|| ServiceError::token_grant_not_found(grant_id))?;
 
-        let token = TokenService::lookup_by_name(token_name).await?;
-        let zone = ZoneService::lookup_by_name(zone_name).await?;
-
-        RepositoryService::delete_token_grants_by_token_id_and_zone_id(token.id, zone.id).await
-    }
-
-    /// Revoke a grant by its id, which identifies the row on its own.
-    pub async fn revoke_by_id(caller: &Caller, grant_id: i32) -> Result<(), ServiceError> {
-        caller.authorize_global("manage token grants")?;
-
-        let grant = RepositoryService::get_token_grant(grant_id)
-            .await?
-            .ok_or_else(|| ServiceError::token_grant_not_found(grant_id))?;
-
-        RepositoryService::delete_token_grant(grant.id).await
-    }
+    repository::delete_token_grant(grant.id).await
 }

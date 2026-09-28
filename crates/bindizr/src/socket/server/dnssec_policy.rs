@@ -1,6 +1,6 @@
 use bindizr_service::{
     authorization::Caller,
-    dnssec_policy::DnssecPolicyService,
+    dnssec_policy,
     error::ServiceError,
     types::{
         CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, MessageResponse,
@@ -22,7 +22,7 @@ pub(crate) async fn create_dnssec_policy(
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateDnssecPolicyRequest = parse_params(data)?;
 
-    let policy = DnssecPolicyService::create(&Caller::Global, request).await?;
+    let policy = dnssec_policy::create(&Caller::Global, request).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policy created successfully".to_string(),
@@ -38,7 +38,7 @@ pub(crate) async fn list_dnssec_policies(
 ) -> Result<DaemonResponse, ServiceError> {
     let page: PageFilter = parse_params(data)?;
 
-    let response = DnssecPolicyService::list(&Caller::Global, page).await?;
+    let response = dnssec_policy::list(&Caller::Global, page).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policies retrieved successfully".to_string(),
@@ -52,7 +52,7 @@ pub(crate) async fn get_dnssec_policy(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: NameParams = parse_params(data)?;
 
-    let policy = DnssecPolicyService::get(&Caller::Global, &params.name).await?;
+    let policy = dnssec_policy::get(&Caller::Global, &params.name).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policy retrieved successfully".to_string(),
@@ -68,7 +68,7 @@ pub(crate) async fn update_dnssec_policy(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateDnssecPolicyParams = parse_params(data)?;
 
-    let policy = DnssecPolicyService::update(&Caller::Global, &params.name, params.request).await?;
+    let policy = dnssec_policy::update(&Caller::Global, &params.name, params.request).await?;
 
     Ok(DaemonResponse {
         message: "DNSSEC policy updated successfully".to_string(),
@@ -84,7 +84,7 @@ pub(crate) async fn delete_dnssec_policy(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: NameParams = parse_params(data)?;
 
-    DnssecPolicyService::delete(&Caller::Global, &params.name).await?;
+    dnssec_policy::delete(&Caller::Global, &params.name).await?;
 
     let message = format!("DNSSEC policy '{}' deleted successfully", params.name);
     Ok(DaemonResponse {

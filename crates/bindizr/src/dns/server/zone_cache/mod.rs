@@ -16,7 +16,7 @@ use bindizr_core::{
 };
 use bindizr_service::{
     error::ServiceError,
-    zone::{TransferAccess, TransferContent, ZoneService},
+    zone::{self, TransferAccess, TransferContent},
 };
 
 /// Read the configured cache record budget, which counts records rather than bytes.
@@ -62,8 +62,9 @@ fn tick() -> u64 {
 }
 
 /// The transfer content of the zone `zone_name` names, as far as `key`
-/// may read it, from cache when one is configured and fresh. The zone and the grant are
-/// decided on one locked row; a hit serves the content of that row's serial.
+/// may read it, from cache when one is configured and fresh. The zone and
+/// the grant are decided on one locked row; a hit serves the content of
+/// that row's serial.
 pub(crate) async fn authorize_transfer_content_by_name(
     zone_name: &str,
     key: Option<&TsigKey>,
@@ -72,7 +73,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
         return fetch_transfer_content(zone_name, key).await;
     }
 
-    let zone = match ZoneService::authorize_transfer_by_name(zone_name, key).await? {
+    let zone = match zone::authorize_transfer_by_name(zone_name, key).await? {
         TransferAccess::Granted(zone) => zone,
         TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
@@ -96,24 +97,22 @@ async fn fetch_transfer_content(
     zone_name: &str,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
-    Ok(
-        ZoneService::authorize_transfer_content_by_name(zone_name, key)
-            .await?
-            .map(|content| {
-                let TransferContent {
-                    zone,
-                    records,
-                    dnssec_records,
-                } = content;
-                (
-                    zone,
-                    CachedTransferContent {
-                        records: Arc::new(records),
-                        dnssec_records: Arc::new(dnssec_records),
-                    },
-                )
-            }),
-    )
+    Ok(zone::authorize_transfer_content_by_name(zone_name, key)
+        .await?
+        .map(|content| {
+            let TransferContent {
+                zone,
+                records,
+                dnssec_records,
+            } = content;
+            (
+                zone,
+                CachedTransferContent {
+                    records: Arc::new(records),
+                    dnssec_records: Arc::new(dnssec_records),
+                },
+            )
+        }))
 }
 
 /// Lock the shared zone cache, recovering a poisoned lock because panics cannot leave a cache

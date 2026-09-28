@@ -22,7 +22,7 @@ use crate::{
         api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone,
         zone_version::ChangeSource,
     },
-    repository::RepositoryService,
+    repository,
     token::hash_token,
     zone::version::ChangeSubject,
 };
@@ -81,7 +81,7 @@ impl Caller {
             };
             return Ok((caller, token));
         }
-        let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
+        let grants = repository::list_token_grants_by_token_id(token.id).await?;
         let caller = Caller::Token {
             id: token.id,
             name: token.name.as_str().into(),
@@ -149,7 +149,7 @@ impl Caller {
         match self {
             Caller::Global | Caller::GlobalToken { .. } => Ok(()),
             Caller::Token { id, .. } => {
-                let grants = RepositoryService::list_token_grants_by_zone_id_and_token_id_tx(
+                let grants = repository::list_token_grants_by_zone_id_and_token_id_tx(
                     tx,
                     zone.id,
                     *id,
@@ -236,7 +236,7 @@ const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
 /// Validate an API token, rejecting expired tokens and stamping `last_used_at`.
 async fn authenticate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
     let token_hash = hash_token(token_str);
-    let stored_token = match RepositoryService::get_api_token_by_token(&token_hash).await {
+    let stored_token = match repository::get_api_token_by_token(&token_hash).await {
         Ok(Some(token)) => token,
         Ok(None) => {
             return Err(ServiceError::invalid_token(
@@ -264,7 +264,7 @@ async fn authenticate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
         return Ok(stored_token);
     }
 
-    let updated_token = RepositoryService::update_api_token(ApiToken {
+    let updated_token = repository::update_api_token(ApiToken {
         last_used_at: Some(Utc::now()),
         ..stored_token
     })

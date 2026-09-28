@@ -5,7 +5,7 @@ use axum::{
     routing,
 };
 use bindizr_service::{
-    dnssec::DnssecService,
+    dnssec,
     types::{
         DnssecStatusResponse, EnableDnssecRequest, ErrorResponse, MessageResponse,
         RolloverDnssecRequest, UpdateDnssecSettingsRequest,
@@ -22,34 +22,30 @@ use crate::{
     params::NameParams,
 };
 
-pub(crate) struct DnssecApi;
-
-impl DnssecApi {
-    /// Build the DNSSEC API routes.
-    pub(crate) async fn routes() -> Router {
-        Router::new()
-            .route("/zones/{name}/dnssec", routing::get(get_dnssec_status))
-            .route("/zones/{name}/dnssec", routing::post(enable_dnssec))
-            .route("/zones/{name}/dnssec", routing::delete(disable_dnssec))
-            .route("/zones/{name}/dnssec", routing::put(update_dnssec_settings))
-            .route("/zones/{name}/dnssec/sign", routing::post(sign_zone))
-            .route(
-                "/zones/{name}/dnssec/rollover",
-                routing::post(start_dnssec_rollover),
-            )
-            .route(
-                "/zones/{name}/dnssec/rollover/ds-seen",
-                routing::post(ds_seen_dnssec_rollover),
-            )
-            .route(
-                "/zones/{name}/dnssec/withdraw",
-                routing::post(withdraw_dnssec).delete(cancel_dnssec_withdrawal),
-            )
-            .route(
-                "/zones/{name}/dnssec/check-ds",
-                routing::post(check_dnssec_ds),
-            )
-    }
+/// Build the DNSSEC API routes.
+pub(crate) fn routes() -> Router {
+    Router::new()
+        .route("/zones/{name}/dnssec", routing::get(get_dnssec_status))
+        .route("/zones/{name}/dnssec", routing::post(enable_dnssec))
+        .route("/zones/{name}/dnssec", routing::delete(disable_dnssec))
+        .route("/zones/{name}/dnssec", routing::put(update_dnssec_settings))
+        .route("/zones/{name}/dnssec/sign", routing::post(sign_zone))
+        .route(
+            "/zones/{name}/dnssec/rollover",
+            routing::post(start_dnssec_rollover),
+        )
+        .route(
+            "/zones/{name}/dnssec/rollover/ds-seen",
+            routing::post(ds_seen_dnssec_rollover),
+        )
+        .route(
+            "/zones/{name}/dnssec/withdraw",
+            routing::post(withdraw_dnssec).delete(cancel_dnssec_withdrawal),
+        )
+        .route(
+            "/zones/{name}/dnssec/check-ds",
+            routing::post(check_dnssec_ds),
+        )
 }
 
 /// Report the DNSSEC signing state of a zone.
@@ -74,7 +70,7 @@ pub(crate) async fn get_dnssec_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::get_status(&caller, &params.name).await?;
+    let status = dnssec::get_status(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -105,7 +101,7 @@ pub(crate) async fn enable_dnssec(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<EnableDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::enable(
+    let status = dnssec::enable(
         &caller,
         &params.name,
         body.policy_name.as_deref(),
@@ -146,7 +142,7 @@ pub(crate) async fn disable_dnssec(
     Path(params): Path<NameParams>,
     Query(query): Query<DisableDnssecQuery>,
 ) -> Result<Response, ApiError> {
-    DnssecService::disable(&caller, &params.name, query.skip_ds_check.unwrap_or(false)).await?;
+    dnssec::disable(&caller, &params.name, query.skip_ds_check.unwrap_or(false)).await?;
     let response = MessageResponse {
         message: "DNSSEC disabled successfully".to_string(),
     };
@@ -176,7 +172,7 @@ pub(crate) async fn sign_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    DnssecService::sign(&caller, &params.name).await?;
+    dnssec::sign(&caller, &params.name).await?;
     let response = MessageResponse {
         message: "Zone signed successfully".to_string(),
     };
@@ -210,7 +206,7 @@ pub(crate) async fn start_dnssec_rollover(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<RolloverDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::start_rollover(&caller, &params.name, body.role.as_deref()).await?;
+    let status = dnssec::start_rollover(&caller, &params.name, body.role.as_deref()).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -248,7 +244,7 @@ pub(crate) async fn ds_seen_dnssec_rollover(
     Path(params): Path<NameParams>,
     Query(query): Query<DsSeenQuery>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::advance_rollover(
+    let status = dnssec::advance_rollover(
         &caller,
         &params.name,
         query.skip_ds_check.unwrap_or(false),
@@ -282,7 +278,7 @@ pub(crate) async fn withdraw_dnssec(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::withdraw(&caller, &params.name).await?;
+    let status = dnssec::withdraw(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -310,7 +306,7 @@ pub(crate) async fn cancel_dnssec_withdrawal(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::cancel_withdrawal(&caller, &params.name).await?;
+    let status = dnssec::cancel_withdrawal(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -337,7 +333,7 @@ pub(crate) async fn check_dnssec_ds(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::check_ds(&caller, &params.name).await?;
+    let status = dnssec::check_ds(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -368,7 +364,7 @@ pub(crate) async fn update_dnssec_settings(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateDnssecSettingsRequest>,
 ) -> Result<Response, ApiError> {
-    let status = DnssecService::update_settings(
+    let status = dnssec::update_settings(
         &caller,
         &params.name,
         body.policy_name.as_deref(),

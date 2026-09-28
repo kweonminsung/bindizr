@@ -5,7 +5,7 @@ use axum::{
     routing,
 };
 use bindizr_service::{
-    dnssec_policy::DnssecPolicyService,
+    dnssec_policy,
     types::{
         CreateDnssecPolicyRequest, DEFAULT_PAGE_LIMIT, DnssecPolicyResponse, ErrorResponse,
         GetDnssecPolicyResponse, MessageResponse, PageFilter, PaginatedResponse,
@@ -22,24 +22,20 @@ use crate::{
     params::NameParams,
 };
 
-pub(crate) struct DnssecPolicyApi;
-
-impl DnssecPolicyApi {
-    /// Build the DNSSEC policy API routes.
-    pub(crate) async fn routes() -> Router {
-        Router::new()
-            .route("/dnssec-policies", routing::get(list_dnssec_policies))
-            .route("/dnssec-policies", routing::post(create_dnssec_policy))
-            .route("/dnssec-policies/{name}", routing::get(get_dnssec_policy))
-            .route(
-                "/dnssec-policies/{name}",
-                routing::put(update_dnssec_policy),
-            )
-            .route(
-                "/dnssec-policies/{name}",
-                routing::delete(delete_dnssec_policy),
-            )
-    }
+/// Build the DNSSEC policy API routes.
+pub(crate) fn routes() -> Router {
+    Router::new()
+        .route("/dnssec-policies", routing::get(list_dnssec_policies))
+        .route("/dnssec-policies", routing::post(create_dnssec_policy))
+        .route("/dnssec-policies/{name}", routing::get(get_dnssec_policy))
+        .route(
+            "/dnssec-policies/{name}",
+            routing::put(update_dnssec_policy),
+        )
+        .route(
+            "/dnssec-policies/{name}",
+            routing::delete(delete_dnssec_policy),
+        )
 }
 
 /// List all DNSSEC policies.
@@ -62,7 +58,7 @@ pub(crate) async fn list_dnssec_policies(
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = DnssecPolicyService::list(&caller, page).await?;
+    let response = dnssec_policy::list(&caller, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -88,7 +84,7 @@ pub(crate) async fn create_dnssec_policy(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateDnssecPolicyRequest>,
 ) -> Result<Response, ApiError> {
-    let policy = DnssecPolicyService::create(&caller, body).await?;
+    let policy = dnssec_policy::create(&caller, body).await?;
     let response = DnssecPolicyResponse {
         dnssec_policy: GetDnssecPolicyResponse::from_policy(&policy),
     };
@@ -116,7 +112,7 @@ pub(crate) async fn get_dnssec_policy(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let policy = DnssecPolicyService::get(&caller, &params.name).await?;
+    let policy = dnssec_policy::get(&caller, &params.name).await?;
     let response = DnssecPolicyResponse {
         dnssec_policy: GetDnssecPolicyResponse::from_policy(&policy),
     };
@@ -149,7 +145,7 @@ pub(crate) async fn update_dnssec_policy(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateDnssecPolicyRequest>,
 ) -> Result<Response, ApiError> {
-    let policy = DnssecPolicyService::update(&caller, &params.name, body).await?;
+    let policy = dnssec_policy::update(&caller, &params.name, body).await?;
     let response = DnssecPolicyResponse {
         dnssec_policy: GetDnssecPolicyResponse::from_policy(&policy),
     };
@@ -180,7 +176,7 @@ pub(crate) async fn delete_dnssec_policy(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    DnssecPolicyService::delete(&caller, &params.name).await?;
+    dnssec_policy::delete(&caller, &params.name).await?;
     let response = MessageResponse {
         message: "DNSSEC policy deleted successfully".to_string(),
     };

@@ -1,9 +1,7 @@
 use std::{net::SocketAddr, process};
 
 use bindizr_core::config;
-use bindizr_service::{
-    error::ServiceError, secondary::SecondaryService, types::MessageResponse, zone::ZoneService,
-};
+use bindizr_service::{error::ServiceError, secondary, types::MessageResponse, zone};
 
 use crate::{
     daemon::{db_probe::DB_PROBE_TIMEOUT, started_at::started_at},
@@ -17,8 +15,8 @@ use crate::{
 pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
     let config = config::bindizr_config();
     let counts = async {
-        let zones = ZoneService::count_all().await?;
-        let secondaries = SecondaryService::list_enabled().await?.len();
+        let zones = zone::count_all().await?;
+        let secondaries = secondary::list_enabled().await?.len();
         Ok::<_, ServiceError>((zones, secondaries))
     };
     let (zones, secondaries, database_error) =

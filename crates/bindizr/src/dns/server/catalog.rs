@@ -3,7 +3,7 @@ use bindizr_core::{
     dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
     model::zone::Zone,
 };
-use bindizr_service::zone::ZoneService;
+use bindizr_service::zone;
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
@@ -16,7 +16,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     let catalog_zone_name = config.dns.catalog_zone_name.as_str();
     log::info!("Generating catalog zone: {}", catalog_zone_name);
 
-    let all_zones = ZoneService::list().await?;
+    let all_zones = zone::list().await?;
 
     // The catalog zone is not a member of itself.
     let member_zones: Vec<String> = all_zones
@@ -31,8 +31,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     // The catalog zone is virtual (no DB row).
     let digest = catalog_digest(&member_zones);
     let base_serial = all_zones.iter().map(|z| z.serial).max().unwrap_or(1);
-    let serial =
-        ZoneService::advance_catalog_serial(catalog_zone_name, &digest, base_serial).await?;
+    let serial = zone::advance_catalog_serial(catalog_zone_name, &digest, base_serial).await?;
 
     let catalog_zone = Zone {
         id: 0,

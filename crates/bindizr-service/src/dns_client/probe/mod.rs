@@ -17,8 +17,7 @@ use bindizr_core::{
 
 use crate::{
     model::secondary::Secondary,
-    secondary::SecondaryService,
-    transfer::TransferService,
+    secondary, transfer,
     types::{SecondaryStatusResponse, TransferResponse},
 };
 
@@ -29,9 +28,7 @@ pub async fn probe_secondaries(
     zone_name: &str,
     expected_serial: Option<u32>,
 ) -> Result<Vec<SecondaryStatusResponse>, String> {
-    let secondaries = SecondaryService::list_enabled()
-        .await
-        .map_err(|e| e.to_string())?;
+    let secondaries = secondary::list_enabled().await.map_err(|e| e.to_string())?;
     if secondaries.is_empty() {
         return Ok(Vec::new());
     }
@@ -136,14 +133,13 @@ async fn probe_entry(
     let mut probe = last.expect("resolve_address_entry never yields an empty Ok");
     // What Bindizr last sent the secondary for the zone, beside what it
     // serves now.
-    probe.last_transfer =
-        match TransferService::find_by_clients_and_zone_name(&clients, zone_name).await {
-            Ok(transfer) => transfer.as_ref().map(TransferResponse::from_transfer),
-            Err(e) => {
-                log::warn!("Failed to read the transfers of {}: {}", zone_name, e);
-                None
-            }
-        };
+    probe.last_transfer = match transfer::find_by_clients_and_zone_name(&clients, zone_name).await {
+        Ok(transfer) => transfer.as_ref().map(TransferResponse::from_transfer),
+        Err(e) => {
+            log::warn!("Failed to read the transfers of {}: {}", zone_name, e);
+            None
+        }
+    };
     probe
 }
 

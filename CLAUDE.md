@@ -35,17 +35,24 @@ cargo +nightly fmt                                         # format (needs night
   types, wire encoding/decoding, DNSSEC signing, TSIG, and zone-file parsing.
   It owns the whole `domain` crate dependency; nothing above it uses `domain`
   directly.
-- `bindizr-db` — repository layer. One impl per backend under
-  `repository/{mysql,postgres,sqlite}/`. **The three backends are intentionally
-  duplicated** (per-backend SQL + error text); do not try to deduplicate them.
+- `bindizr-db` — data access behind a `Db` value: `Db::connect` returns an
+  enum over the three sqlx pools, and `db.begin()` a `Transaction` enum
+  over their transactions. One module per entity at the crate root
+  (`bindizr_db::zone`), whose functions take the `Db` or the `Transaction`
+  first and match its backend to call the same-named function in `mysql/`,
+  `postgres/`, or `sqlite/`, where the SQL lives. **The three backends are
+  intentionally duplicated** (per-backend SQL + error text); do not try to
+  deduplicate them.
 - `bindizr-service` — business logic for zones/records (create/update/delete,
   bulk, zone-file import, tokens, serial bumping, RFC 2136 apply), plus the
   outbound DNS clients its flows drive (`dns_client/`: NOTIFY fan-out, SOA
   probing, parent-DS probing, inbound AXFR) — the wire format stays core's.
   `transfer` records what the DNS server served each client, in the
-  database, so a secondary's transfers read back across restarts.
-- `bindizr` — the binary: the daemon runtime (`daemon/`: `bootstrap` brings
-  the process up, `lifecycle` serves it) and every front end
+  database, so a secondary's transfers read back across restarts. It owns
+  `Context`, the daemon's state — configuration, `Db`, metrics, the NOTIFY
+  and scheduler senders — which every service function takes first.
+- `bindizr` — the binary: the daemon runtime (`daemon/`: `bootstrap` builds
+  the `Context` in dependency order and serves it) and every front end
   it serves — HTTP API (axum), CLI (clap), Unix-socket daemon IPC, and the DNS
   **server** (`dns/`: TCP/UDP listeners, AXFR/IXFR/catalog/NOTIFY serving,
   nsupdate dispatch). The protocol itself lives in core, outbound clients in
@@ -56,28 +63,224 @@ cargo +nightly fmt                                         # format (needs night
 - `bindizr-e2e` — end-to-end API/CLI/DNS tests. Its `[[bin]]` targets exist
   only so `env!("CARGO_BIN_EXE_…")` resolves inside the test package.
 
+## Restructuring — the phases still open
+
+The rules in this file describe the target shape (see *Rust idioms*); the
+code reaches it in the phases below, each one branch and one PR off `main`,
+in order, with the full suite green at each — however large the diff. A
+phase is never split to shrink its diff, only where the tree would not
+build otherwise. The HTTP API, the CLI, and the DNS behaviour — error codes
+and messages included — change in none of them, so the e2e suite is the
+regression gate throughout; only phase 3 touches the daemon socket, which
+the CLI and the daemon share in one binary. Until a phase lands, the code
+it names still has the old shape: new code follows the rule, a module is
+converted whole and never half, and an example in a rule that names the new
+shape is the target, not a claim about the tree. Delete a phase's entry
+when it lands, and this section when all have.
+
+1. **State is a value.** Every `static` but the two *State is a value*
+   names goes. `Config::load` replaces `config::initialize` and the
+   `RwLock<Option<Arc<_>>>` behind `bindizr_config()`. `Db::connect`
+   replaces `bindizr_db::initialize` and `pool()`, and with it the fifteen
+   `#[async_trait]` repository traits, their 45 backend impls with a
+   `new(pool)` each, the fifteen `get_<entity>_repository()` factories and
+   the fifteen `DatabasePool::<entity>_repository()` matches become one
+   root function per query (`bindizr_db::zone::get_by_name(&db, name)`)
+   that matches the backend and calls the same-named function in
+   `mysql/zone.rs`, `postgres/zone.rs`, `sqlite/zone.rs`, each taking an
+   `Executor` of its own database; the SQL stays as it is. `RepositoryTx`
+   becomes `Transaction`, matched instead of downcast; the
+   `bindizr_db::DatabaseType` mirror of `config::DatabaseType` goes;
+   `MySQL` / `PostgreSQL` / `SQLite` become `MySql` / `Postgres` /
+   `Sqlite`, `clippy::upper_case_acronyms` leaves the lint table, and
+   `async-trait` leaves `Cargo.toml`. `Metrics::new` replaces `metrics()`
+   (in `bindizr-external-dns` too), the NOTIFY queue and the scheduler
+   become channel-plus-worker pairs, `started_at` a `Context` field, the
+   zone and ACL caches fields of the DNS server, the control channel a
+   field of the socket server. `bootstrap` builds `bindizr_service::Context`
+   from them; every service function gains `cx: &Context` first, every
+   axum handler `State<Arc<Context>>`, every task an `Arc<Context>`. The
+   facade in `bindizr-service/src/repository.rs` is deleted — a service
+   function writes `bindizr_db::zone::get_by_name(cx.db(), name).await?`
+   over `impl From<DatabaseError> for ServiceError` (to `Internal`, until
+   phase 3 refines it), the seven sites that read a UNIQUE violation as a
+   conflict do so where they call, and `finish_tx` / `discard_tx` move to
+   `bindizr-service/src/transaction.rs`.
+2. **Errors are types.** `DatabaseError` keeps its `sqlx::Error` as
+   `#[source]`. `ServiceError { code, message }` becomes an enum of its
+   `ErrorCode`s with `code()` and `Display`, `ErrorCode` staying the wire
+   projection; `http_status` moves to `api/error.rs`, and
+   `DynamicUpdateError` asks `is_internal()`. The some 170
+   `Result<_, String>` signatures and 31 `type Err = String` get a type per
+   raising module — a record value's parse error in `dns/record`, the probe
+   and transfer errors of `dns_client`, `Config::load`'s — and
+   `From<String>` for `CliError`, `XfrError` and `UpdateError` goes with
+   them.
+3. **Shapes.** The socket's `DaemonCommandKind` + `serde_json::Value` +
+   `*Params` become one data-carrying `DaemonCommand`, and
+   `DaemonResponse { message, data: Value }` a `DaemonResponse<T>`. The
+   `bool` and `Option<&str>` selectors *Rust idioms* lists become enums,
+   parsed at the front end. `from_zone`, `from_token`, `from_key`,
+   `from_grant`, `from_policy`, `from_transfer(s)` and
+   `from_record_with_zone` become `From` impls and `from_version` a
+   `TryFrom`; `IntoOwner` goes, its callers writing `?`. Every type gains
+   the derives *Common traits* lists.
+4. **Newtypes.** `Serial` and `Ttl` replace the `i32` row / `u32` wire
+   pairs and `serial_to_u32` / `serial_to_i32`; `ZoneId`, `RecordId`,
+   `TokenId`, `TsigKeyId`, `DnssecKeyId`, `PolicyId`, `SecondaryId` replace
+   the bare `i32` keys — `list_by_zone_id_and_key_id_tx(tx, key_id,
+   zone_id)` compiles today.
+
 ## Design rules
+
+### Rust idioms — a module is the namespace, an enum the closed set, a type the error
+
+The [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
+settle what this file does not; a checklist tag beside a rule
+(`C-GOOD-ERR`) names the item it rests on. The shapes below are the ones a
+reader coming from Java reaches for by reflex and Rust spells differently;
+each rule says which spelling is this project's.
+
+- **A module is the namespace.** A unit struct whose `impl` holds only
+  associated functions (`pub struct ZoneService; impl ZoneService { pub
+  async fn create(…) }`) is a module spelled as a class, and does not exist
+  here: `bindizr_service::zone` is a module of functions, and a front end
+  imports the module and calls `zone::create(&cx, &caller, &request)`. The
+  entity is the module's name, so a function omits it (`zone::get_by_name`,
+  never `zone::get_zone_by_name`). A module that spreads over files by verb
+  (`zone/create.rs`, `zone/get.rs`) declares them in `mod.rs` and
+  re-exports their functions flat (`pub use create::create;`), so the path
+  a caller writes is `zone::create` — the shape of `tokio::fs::read` — and
+  a sibling reaches a sibling by that same path (`super::lookup_by_name`),
+  never `Self::`. An HTTP route group is the same: `api::zone::routes()` is
+  a function, not `ZoneApi::routes()`. A struct exists where there is a
+  value — fields, or an invariant behind them — and its methods take
+  `self` (`C-METHOD`): `Caller`, `OwnerName`, `DnsMessageBuilder`,
+  `Metrics`.
+- **A closed set is an enum; a trait is for an open one.** The process
+  chooses one of three database backends at startup and never another, so
+  the backend is `enum DatabasePool { MySql(…), Postgres(…), Sqlite(…) }`
+  and the code that differs per backend is a `match` on it, in a function
+  per query (`bindizr_db::zone::get_by_name`) that calls the same-named
+  backend function where the SQL lives. A trait with three implementors
+  that nothing names generically — no `T: ZoneRepository` bound, no test
+  double, since a test builds a `Context` over in-memory SQLite — is an
+  interface in the Java sense: it exists only to be boxed,
+  and `Box<dyn ZoneRepository>` from a factory adds a heap allocation, a
+  vtable and a `pool.clone()` to every query to reach a backend the enum
+  already knows. A trait is declared when its implementors are open (a
+  caller outside the crate may add one) or a generic bound needs it
+  (`impl IntoIterator<Item = &Record>`); one whose implementors all live
+  in one crate and are only ever boxed is an enum. The transaction
+  follows: `Transaction<'a>` is an enum a `_tx` function matches, so a
+  backend function receives its own `sqlx::Transaction` and no "kind
+  mismatch" error can exist. Nothing needs `async-trait`.
+- **An error is a type** (`C-GOOD-ERR`). Every fallible function returns
+  a `Result` whose error is a type declared in the module that raises it,
+  derived with `thiserror`, implementing `std::error::Error` with its
+  `source()` intact, `Send + Sync`, its `Display` lowercase without a
+  trailing period, named `<Verb><Object>Error` (`ParseNameError`,
+  `C-WORD-ORDER`) or `<Layer>Error` for a layer's whole surface
+  (`DatabaseError`, `ServiceError`). `String` is never an error type — not
+  `Result<T, String>`, not `type Err = String`, not an `Option<String>`
+  holding the reason — and no error type implements `From<String>` or
+  `From<&str>`: that impl is the sink a stringly error drains into. A
+  variant is what a caller can match on; the site's detail (a name, a
+  value) is a field of it. Crossing a layer is a `From` impl and `?`
+  (`From<DatabaseError> for ServiceError`), never a `map_err(|e|
+  ServiceError::internal(format!("failed to …: {}", e)))` that flattens
+  the source to text; `map_err` appears where the site adds a
+  classification the source cannot (a UNIQUE violation read as
+  `zone_conflict`). `ServiceError` is an enum whose variants are its
+  `ErrorCode`s — `code()` and `Display` are the two faces the error payload
+  reads — and it knows nothing of HTTP: a front end maps a code to its
+  own status (`api/error.rs` to an HTTP status, the nsupdate server to an
+  RCODE) and asks the service only what it can answer (`is_internal()`).
+- **Conversions are the standard traits** (`C-CONV-TRAITS`, `C-CTOR`,
+  `C-CONV`). A value derived from one other value and nothing else is
+  `impl From<&Zone> for GetZoneResponse` (`TryFrom` when it can fail),
+  which is how `cli/output/table.rs` already builds every row; a named
+  `from_<source>` constructor exists only where `From` cannot say it — an
+  extra argument (`from_secondary(secondary, notify_key_name)`), or an
+  encoding the type name does not fix (`OwnerName::from_row`,
+  `SoaMailbox::from_email`). `Into` and `TryInto` are never implemented.
+  The prefix says the cost: `as_` borrows for free, `to_` does work and
+  returns an owned value, `into_` consumes `self`. A conversion trait is
+  implemented for a type, never for a `Result` — the caller writes `?`
+  first.
+- **A constructor is an associated function named by how the value comes
+  to be** (`C-CTOR`): `new` for the plain case, with `Default` beside it
+  when there is a no-argument form; `connect`, `load`, `spawn` for one that
+  does I/O or starts work (`Db::connect`, `Config::load`,
+  `NotifyQueue::spawn`); `from_<source>` for the conversions above. A
+  builder (`DnsMessageBuilder`) exists where construction is incremental;
+  a struct of optional fields with `Default` and update syntax
+  (`ZoneFilter { name, ..Default::default() }`) is the plain form, not a
+  builder (`C-BUILDER`).
+- **An argument carries its meaning in its type** (`C-CUSTOM-TYPE`,
+  `C-NEWTYPE`). A `bool` parameter states a fact the field is named by
+  (`enabled: bool` being written); a `bool` that selects what the function
+  does — `dry_run`, `force`, `skip_ds_check`, `signed`, `incremental`,
+  `user_changes_only` — is a two-variant enum named for the choice, so
+  `zone::delete(&caller, &name, Run::DryRun)` reads without the signature,
+  and several such choices on one call are one struct of named fields. An
+  `Option<&str>` that means "all" when `None` is an enum with an `All`
+  variant; an `Option<&str>` that spells an enum (`role`, `algorithm`,
+  `policy`) is parsed to that enum by the front end — parse at the
+  boundary, pass the type. A number with a meaning of its own is a
+  newtype: `Serial`, with the `i32` row form and the `u32` wire form as
+  its conversions rather than free `serial_to_u32` helpers.
+- **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type
+  derives `Debug`; `Clone` unless it owns a resource; `PartialEq, Eq` when
+  its fields allow; `Copy` for a fieldless enum or a small plain struct;
+  `Hash` and `Ord` when it keys a map or sorts; `Default` when the empty
+  value means something (a filter); `Serialize` / `Deserialize` on every
+  payload and row. A fixed set keeps `as_str` and `Display` as
+  *Presentation* says.
+- **Casing is RFC 430** (`C-CASE`): an acronym is one word — `MySql`,
+  `Postgres`, `Sqlite`, `Tsig`, `Dnssec` — and no lint is allowed away to
+  hide an exception. A protocol token keeps its own spelling only inside a
+  string (`"AXFR"`).
+- **A protocol message is a data-carrying enum.** The daemon socket's
+  command is one `enum DaemonCommand` whose variants carry their payload
+  (`UpdateZone { zone_name, request }`), serialized as
+  `#[serde(tag = "command", content = "data")]`, and the server `match`es
+  it straight into typed data; a unit-variant kind beside a
+  `serde_json::Value` that a `parse_params` step re-types is one message
+  described twice.
+- **State is a value, passed by reference.** Every service function takes
+  the `Context` first (`zone::create(&cx, &caller, &request)`), the way
+  cargo's `ops` take their `GlobalContext`; an axum handler receives it as
+  `State<Arc<Context>>`, a spawned task holds an `Arc<Context>`. No
+  function reaches for a `static` to find the configuration, the pool, the
+  metrics, or a cache: *State is a value* says what the `Context` holds,
+  what a front end holds for itself, and which two globals remain. A test
+  that needs a database builds its own `Context` over an in-memory SQLite
+  `Db` — what explicit state buys, and why nothing is mocked.
 
 ### Who decides what
 
 - **Authorization is the service's.** Every service operation a front end can
-  reach takes a `Caller` first and gates itself; a transport never calls
+  reach takes the `Context` first, a `Caller` next, and gates itself; a
+  transport never calls
   `authorize_global` on its own. The daemon socket passes `Caller::Global`.
   Service-internal lookups that must skip visibility are `pub(crate)` under
-  their own name (`ZoneService::lookup_by_name`). The daemon socket
+  their own name (`zone::lookup_by_name`). The daemon socket
   authenticates its peer by uid (`peer_cred` on both ends: the daemon's own
   user or root); the socket's file mode is a courtesy, not the boundary.
   DNS-plane operations
   (transfers, NOTIFY, nsupdate) take no caller — ACL and TSIG authorize there.
   So do operations with nothing to gate: pure request normalization
-  (`ExternalDnsService::adjust_records`), a token reading itself
-  (`TokenGrantService::list_self`, keyed by the authenticated `ApiToken`), and
+  (`external_dns::adjust_records`), a token reading itself
+  (`token::grant::list_self`, keyed by the authenticated `ApiToken`), and
   the aggregate counts behind the unauthenticated metrics endpoint
   (`count_all`), which expose no zone data.
-- **Transactions are the service's.** No other crate opens one, so `*_tx`
-  methods and `RepositoryTx` are `pub(crate)`.
+- **Transactions are the service's.** No other crate opens one: `Db` is a
+  private field of `Context`, read by `cx.db()` inside the service crate
+  alone, so the service's `*_tx` functions and its `Transaction` re-export
+  are `pub(crate)`.
 - **A use case has one home.** When two front ends answer the same question,
-  the assembly lives in one place both reach (`ZoneService::get_status`,
+  the assembly lives in one place both reach (`zone::get_status`,
   shared by the HTTP API and the daemon socket), not once per transport.
 - **Payload shapes are the service's.** `bindizr_service::types` is the wire
   contract of the HTTP API, the daemon socket, and the CLI alike; response
@@ -104,10 +307,10 @@ cargo +nightly fmt                                         # format (needs night
 One locking model covers the service layer; keep new code on it:
 
 - A **zone-data mutation** (records, serial, journal rows, versions) is one
-  transaction that locks the zone row (`ZoneService::get_by_name_tx` /
-  `get_zone_by_name_tx` / `get_zone_tx`, `FOR UPDATE`) **before** any record
-  rows — that order is
-  the deadlock rule. Authorization, validation, and conflict checks decide on
+  transaction that locks the zone row (`zone::get_by_name_tx` in the
+  service, `bindizr_db::zone::get_by_name_tx` / `get_tx` beneath it,
+  `FOR UPDATE`) **before** any record rows — that order is the deadlock
+  rule. Authorization, validation, and conflict checks decide on
   rows loaded inside that transaction, never on an earlier unlocked read.
   `get_by_name_tx` is the unchecked tx lookup (record writes authorize
   through `authorize_record_writes_tx`); the caller-gated tx read is
@@ -122,7 +325,7 @@ One locking model covers the service layer; keep new code on it:
   page as plain statements; drift between the two is accepted.
 - **Single-statement management writes** (tokens, TSIG keys, policies) take
   no transaction: UNIQUE/FK constraints backstop their check-then-act races,
-  mapped to friendly errors in the repository facade.
+  read as friendly conflicts where the service calls the statement.
 - Isolation is pinned to READ COMMITTED on every backend; correctness comes
   from row locks and constraints, never from snapshot isolation. The
   ExternalDNS apply resolves authoritative zones from committed state inside
@@ -195,24 +398,35 @@ else, including `bindizr-core` and `bindizr-db`, report the failure and let it
 propagate: a library that exits takes that decision away from whoever embedded
 it, and the e2e suite runs both binaries in-process.
 
-### Process-wide state — installed in order, or created on first use
+### State is a value — built in order, passed by reference
 
-Process-wide state is one of two kinds, and each has one shape. What the
-daemon brings up in dependency order — the configuration, the logger, the
-database pool, the NOTIFY queue, the DNSSEC scheduler, the listeners, the
-control channel — is one module each, installed by that module's
-`initialize` (with `stop` beside it when the daemon must drain it), called
-once from `bootstrap` and handing back whatever the daemon must hold: a
-handle it watches, a receiver it awaits, the path it reports. The daemon
-socket is the one split — `bind` first, so a second daemon is refused before
-anything else starts, then `serve`. What depends on nothing outside the
-process — the metrics registry, the transfer and ACL caches, color
-detection — is created on first use behind a `OnceLock` by its accessor and
-has no `initialize`; nothing is called merely to touch it. The daemon's own
-start is a fact it records, not a service it brings up: `bootstrap` sets
-it with `started_at::set` once every front end serves and sets the
-started-at gauge in the same breath, and `started_at::started_at` is what
-reports it (the `status` uptime).
+The daemon's state is one value, `bindizr_service::Context`, that
+`bootstrap` builds in dependency order and hands to every front end as an
+`Arc<Context>`: the configuration (`Config::load`, held behind a swap so
+`reload` replaces it in place and `cx.config()` hands out the current
+`Arc<Config>`), the database (`Db::connect(&config.database)`, a private
+field only the service crate reads), the metrics (`Metrics::new`), and the
+senders of the NOTIFY queue and the DNSSEC scheduler — whose channels are
+created before the `Context` and whose workers are spawned after it with an
+`Arc<Context>` of their own, since they need the database it holds. What
+one front end owns lives in that front end's struct, not in the `Context`:
+the DNS server's zone and ACL caches, the socket server's control channel.
+The daemon's own start is a fact the `Context` records once every front end
+serves (`cx.started_at`, a `OnceLock` field set in the same breath as the
+started-at gauge) and the `status` uptime reads. Every piece is a
+constructor returning the value (`C-CTOR`), never an `initialize` that
+fills a `static`, with a `stop` beside it where the daemon must drain it.
+The daemon socket keeps its split — `bind` first, so a second daemon is
+refused before anything else is built, then `serve`.
+
+Two process globals remain, because the process is their receiver: the
+`log` facade (`Logger::init` once, `set_level` on reload — the level and
+format atomics are the logger's own state) and the stdout/stderr write
+state behind `outln!`. A pure fact about the environment (colour
+detection) may memoize in a function-local `OnceLock`. Nothing else is a
+`static` — not the configuration, not a pool, not a metrics registry, not
+a cache: a `static` hides a dependency the signature should show, and
+forbids a second instance in one process, which is what a test wants.
 
 ### `--output` renders a result, so a command that is its output has none
 
@@ -229,13 +443,16 @@ than returning anything.
 
 ## Naming
 
-### Data-access methods — repository traits and the `RepositoryService` facade
+### Data-access functions — `bindizr-db`
 
-A facade method is one SQL call plus error mapping — nothing more. Every
-data-access method name is an instance of
+A data-access function is one SQL statement — the root function takes the
+`Db` or the `Transaction` first, matches its backend, and calls the
+same-named function in `mysql/`, `postgres/`, or `sqlite/` — and nothing
+more: no error mapping, no rule. It lives in the module named for its
+entity, and every name is an instance of
 
 ```text
-<verb>[_many]_<entity>[_by_<keys>][_with_<join>][_<predicate>][_tx]
+<entity>::<verb>[_many][_by_<keys>][_with_<join>][_<predicate>][_tx]
 ```
 
 No other segment exists. `_for_<x>` in particular is banned — the grammar has
@@ -243,12 +460,19 @@ no slot saying which role `x` plays: if `x` identifies rows it is `_by_<x>`;
 if it is a value being written it is just an argument; if it is a condition
 it folds into the verb (`upsert`) or the doc comment.
 
+The first parameter is the connection: `&Db` for a statement on the pool,
+`&mut Transaction<'_>` for `_tx`. A backend function takes an `Executor`
+of its database (`impl SqliteExecutor<'_>`) and is written once when the
+SQL is the same on the pool and in a transaction; a root pair
+(`get_by_name` / `get_by_name_tx`) exists only where the service needs
+both, and the `_tx` form alone where it needs the lock (`LockLevel`).
+
 **Verbs are a closed set — do not invent others:**
 
 - `get` — one row by identity; returns `Option`. 404 mapping happens in the
   service layer, never here.
 - `list` / `count` — a filtered collection / its cardinality. `list_all` is
-  the unfiltered trait form.
+  the unfiltered form.
 - `create` / `update` / `delete` — literal row operations. A partial update
   names the one field it touches: `update_<entity>_<field>`
   (`update_zone_serial_tx`).
@@ -259,16 +483,15 @@ it folds into the verb (`upsert`) or the doc comment.
   matches (the newest zone version, serial boundaries) — semantics a literal
   `delete_*_older_than` would misdescribe.
 
-`begin_tx` / `begin_read_tx` / `finish_tx` / `discard_tx` / `ping` are
-transaction/connectivity plumbing, not entity methods, and are the only
-exemptions.
+`Transaction::begin` / `begin_read` / `commit` / `rollback`, the service's
+`finish_tx` / `discard_tx` around them, and `ping` are transaction and
+connectivity plumbing, not entity functions, and are the only exemptions.
 
 **Segments:**
 
-- `_many` / entity — the facade always names the entity, pluralized for batch
-  methods (`create_records_tx`); trait methods omit the entity their trait
-  already names and mark batch variants `_many`
-  (`RecordRepository::create_many_tx`). `_many` never appears in the facade.
+- `_many` / entity — the module names the entity, so a function omits it
+  and marks the batch form `_many` (`record::create_many_tx`, never
+  `record::create_records_tx`).
 - `_by_<keys>` — equality on named columns, joined with `_and_` and never
   dropping `_id` (`list_by_zone_id_and_key_id_tx`). The entity's canonical id
   keys are elided, carried by the signature alone: bare `get`/`update`/
@@ -279,7 +502,7 @@ exemptions.
   many values of that one key (`list_by_names_tx`). Every other key path is
   spelled in full: a non-canonical side (`list_by_token_id`,
   `count_by_key_id`, `delete_by_zone_id_tx`), and any key set whose elision
-  would leave two methods of one surface distinguishable only by their
+  would leave two functions of one module distinguishable only by their
   signatures — which is why the two-sided policy tables spell everything.
   `_by_filter` is the one non-column key: a struct of optional predicates for
   the listing queries.
@@ -289,10 +512,10 @@ exemptions.
   intervals keep their contracts in doc comments — the journal's
   `between_serials` is the IXFR half-open `(from, to]`, the versions'
   `in_serial_range` the closed `[from, to]`.
-- Projections — a method returning one column rather than entity rows names
-  that column, pluralized, where the rows would be
-  (`list_zone_ids_expiring_within_refresh`); the facade prefixes the row set
-  being filtered (`list_rrsig_zone_ids_expiring_within_refresh` — `rrsig`,
+- Projections — a function returning one column rather than entity rows
+  names that column, pluralized, where the rows would be, prefixed by the
+  row set it filters when the module's entity does not say it
+  (`dnssec_record::list_rrsig_zone_ids_expiring_within_refresh` — `rrsig`,
   since only RRSIG rows carry `expires_at`).
 - `_tx` — runs on the caller's transaction, taken as the first parameter.
 
@@ -311,10 +534,11 @@ Never spell a raw column name into the predicate (`state_changed_before`):
 it reads as a bare column filter and hides that the state itself is an
 equality selector the name must carry as `_by_state`.
 
-### Service methods
+### Service functions
 
-- `XxxService` methods carry the domain semantics and omit the entity the
-  struct already names (`ZoneService::get_by_name`, not `get_zone_by_name`).
+- The functions of `bindizr_service::<entity>` carry the domain semantics
+  and omit the entity the module already names (`zone::get_by_name`, not
+  `zone::get_zone_by_name`).
   Verbs: `get_*` maps a miss to NotFound, `find_*` returns `Option`, `list_*`
   returns a collection, `count_*` a count; a domain verb is preferred where
   it says more (`advance_catalog_serial`, `sign_zone_tx`).
@@ -322,13 +546,13 @@ equality selector the name must carry as `_by_state`.
   `*_with_changes_tx`. Preconditions (e.g. "caller already validated the
   rows") belong in the doc comment, not the name.
 - A history row — kept so what happened can be read back later — is written
-  by `save_*` (`save_version_tx`; `TransferService::save_ok`,
+  by `save_*` (`save_version_tx`; `transfer::save_ok`,
   `save_refused`, and `save_failed`, named by the result `XfrResult`
   counts). `track_*` is a
   metrics counter, and `record` is never a verb: it is the noun of
   *Vocabulary*.
 - Adjacent layers never reuse one name for different semantics (e.g. a raw
-  row delete in the facade vs. a delete-plus-journal-log in the service).
+  row delete in `bindizr-db` vs. a delete-plus-journal-log in the service).
 
 ### Diagnostics — `status`, `check`, `doctor`
 
@@ -345,25 +569,25 @@ never takes the bare name.
 The `get_*`/`find_*`/`list_*`/`count_*` verbs above are reserved for data
 access and mean the same thing in every crate, not just the service — a free
 helper that computes a value never takes `get_`, and a metrics counter is
-`track_`, never `count_`. The `get_<entity>_repository()` factories in
-`bindizr-db` are the one exception: they hand out the data-access object
-itself. The verb says what is read, not where: a stored row is `get`/`list`
-in the facade, the service, and a front end alike; a value the process
-holds — the configuration, the metrics registry, a `OnceLock` fact — is
-read by a noun (`bindizr_config()`, `metrics()`, `started_at()`) and
-written by `set_<field>` (`logger::set_level` on reload, never a second
-`initialize`), or bare `set` in a module holding one fact
-(`started_at::set`). A row is never `set`: it is created, updated, or
-deleted. `convert_` does not exist: a conversion is `to_`, a parse
-`parse_`. Every other helper starts with one of these verbs:
+`track_`, never `count_`. The verb says what is read, not where: a stored
+row is `get`/`list` in `bindizr-db`, the service, and a front end alike; a
+value the `Context` holds — the configuration snapshot, the metrics, the
+start time — is read by a noun (`cx.config()`, `cx.metrics()`,
+`cx.started_at()`) and, where it changes, written by `set_<field>`
+(`cx.set_config` on reload, `logger::set_level`). A row is never `set`: it
+is created, updated, or deleted. `convert_` does not exist: a conversion is
+`to_`, a parse `parse_`. Every other helper starts with one of these verbs:
 
-- Conversion: a name says only what the call site cannot see. `to_<form>`
-  when the source is evident there — a method's receiver, or the one
-  argument (`to_fqdn(name)`, `to_sqlite_url(path)`, `to_response_data(status)`).
-  `<source>_to_<form>` only when the source carries the meaning: the form is
-  a bare type (`serial_to_u32`), several sources reach the same form
-  (`labels_to_wire` beside `encode_name`), or the
-  source is the point (`zone_name_to_member_id`). Two or more inputs make an
+- Conversion: the prefix says the cost (`C-CONV`) — `as_` a free borrow,
+  `to_` work returning an owned value, `into_` consuming `self` — and a
+  name says only what the call site cannot see. `to_<form>` when the
+  source is evident there — a method's receiver, or the one argument
+  (`to_fqdn(name)`, `to_sqlite_url(path)`, `to_response_data(status)`).
+  `<source>_to_<form>` only when the source carries the meaning: several
+  sources reach the same form (`labels_to_wire` beside `encode_name`), or
+  the source is the point (`zone_name_to_member_id`). A conversion from
+  one value with nothing else is a `From`/`TryFrom` impl, as *Rust idioms*
+  says, before it is a helper. Two or more inputs make an
   assembly, `build_`. `parse_<thing>` — text or wire bytes into a typed
   value, fallible; an infallible reading is `to_` (`to_record_value_request`
   over the `--value` arguments). `encode_<thing>` / `decode_<thing>` — a
@@ -524,19 +748,21 @@ set; every crate opts in with `[lints] workspace = true`. `unsafe_code` is
 denied (the project is pure safe Rust), and `unreachable_pub` mechanically
 enforces the visibility rule below. Keep the set small: a lint that fights an
 idiom the codebase uses deliberately costs more than it catches, because the
-build must stay warning-free without `#[allow]`.
+build must stay warning-free without `#[allow]`. No `allow` hides a naming
+the API guidelines reject: an acronym is one word (`MySql`, `Sqlite`;
+`C-CASE`), so `clippy::upper_case_acronyms` stays at its default.
 
 ### No dead code, no `#[allow(dead_code)]`
 
 The workspace builds warning-free with no `#[allow(dead_code)]` anywhere; keep
-it that way. Repository traits and the `RepositoryService` facade carry only
-methods with a live caller — do **not** add one "for symmetry" with an existing
-`_tx`/non-`_tx` pair or to round out a trait's surface.
+it that way. `bindizr-db` carries only functions with a live caller in the
+service — do **not** add one "for symmetry" with an existing `_tx`/non-`_tx`
+pair or to round out an entity's surface.
 
-The traits are `pub` and consumed across crates, so rustc cannot see when
-removing a facade method orphans the trait method beneath it. After deleting
-anything from the facade, re-check the layer below: a dead facade method, its
-trait declaration, and its three backend impls all go together.
+Its root functions are `pub` and consumed across crates, so rustc cannot see
+when deleting a service call orphans one. After deleting a call, re-check the
+layer below: a dead root function and its three backend functions go
+together.
 
 ### Module file layout — `mod.rs`, never the sibling form
 
@@ -591,13 +817,13 @@ asks for the split.
 
 A type owns a method when the answer comes from that one value: its fields,
 its arguments, and the wire or protocol rule the type embodies — nothing
-read from config, the repository, or another domain value of equal
+read from config, the database, or another domain value of equal
 standing, and no I/O. Such a method is a derivation
 (`rdata.to_presentation(record_type)`), a predicate about the receiver
 (`record.matches(type, value, priority)`, `key.wants_parent_ds()`), or a
-rendering (`Display`); when it can fail it says so with `String` or
-`Option`, never `ServiceError`. It lives beside the type, so a core type's
-method uses only core.
+rendering (`Display`); when it can fail it says so with the module's own
+error type or `Option`, never `ServiceError`. It lives beside the type, so
+a core type's method uses only core.
 
 Everything else is a function of the flow that needs it: a rule phrased
 against a layer's error type (`normalize_*`, `validate_*`), an assembly of
@@ -616,7 +842,7 @@ property, and keep their `ServiceError`.
 A struct exists for a shape that travels with a name: a value that is
 stored, passed on, compared, or keys a map another function reads
 (`RecordSetKey`), and every payload. A pair the caller takes apart on
-arrival stays a tuple (`let (token, secret) = TokenService::create(…)`),
+arrival stays a tuple (`let (token, secret) = token::create(…)`),
 and values that travel together only inside one function stay locals. A
 wrapper that only renames another struct's fields is not a struct — use the
 original. One shape has one struct: two with the same fields merge, but two
@@ -630,9 +856,10 @@ only assembles `SomeStruct { field: arg, … }` from its parameters hides which
 fields are set without shortening anything — spell the literal at each site,
 even when several sites fill the same fields and even though that duplicates
 them. The exceptions are type-owned conversions deriving a value from one
-source (`From` impls, `from_<source>` constructors like
-`GetZoneResponse::from_zone`) and constructors guarding an invariant behind
-private fields (`OwnerName`); a bag of loose parameters is neither.
+source (`From` impls — `impl From<&Zone> for GetZoneResponse` — and the
+`from_<source>` constructors *Rust idioms* keeps) and constructors guarding
+an invariant behind private fields (`OwnerName`); a bag of loose parameters
+is neither.
 
 ### Test helpers — extraction and visibility
 

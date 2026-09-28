@@ -1,3 +1,5 @@
+//! Business logic for creating, updating, and querying DNS records.
+
 mod bulk;
 mod create;
 mod delete;
@@ -6,16 +8,19 @@ mod import;
 mod update;
 mod validation;
 
-pub(crate) use validation::{AddResult, validate_record_name_in_zone};
+pub use bulk::create_bulk;
+pub(crate) use bulk::{create_with_changes_tx, delete_with_changes_tx, update_with_changes_tx};
+pub use create::create;
+pub use delete::{delete, delete_matching};
+pub use get::{count_all, get_with_zone, list_with_zone_by_filter};
+pub use import::import_zone;
+pub use update::{update, update_by_name};
+pub(crate) use validation::{AddResult, validate_add_tx, validate_record_name_in_zone};
 
 use crate::{
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},
     types::{GetRecordResponse, RecordValueRequest},
 };
-
-/// Business logic for creating, updating, and querying DNS records.
-#[derive(Clone)]
-pub struct RecordService;
 
 /// One row of the records listing: a user record or, behind the `signed`
 /// flag, a row of the derived DNSSEC plane.

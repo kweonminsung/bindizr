@@ -15,7 +15,7 @@ use bindizr_core::{
     },
     model::tsig_key::TsigKey,
 };
-use bindizr_service::tsig_key::TsigKeyService;
+use bindizr_service::tsig_key;
 
 use super::acl;
 use crate::dns::error::XfrError;
@@ -108,7 +108,7 @@ pub(crate) async fn authenticate_transfer(
 
     // An unknown key still runs validation: the empty key store makes it
     // produce the BADKEY error response.
-    let key = TsigKeyService::find_by_wire_name(&key_name)
+    let key = tsig_key::find_by_wire_name(&key_name)
         .await
         .map_err(|e| TransferRefusal::refused(format!("failed to load TSIG key: {}", e), None))?;
     let domain_key = key

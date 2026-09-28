@@ -5,7 +5,7 @@ use bindizr_core::{
     dns::{message, message::Rtype},
     model::transfer::TransferKind,
 };
-use bindizr_service::{transfer::TransferService, zone::TransferAccess};
+use bindizr_service::{transfer, zone::TransferAccess};
 use tokio::net::TcpStream;
 
 use super::{auth::TransferIdentity, catalog, zone_cache};
@@ -107,7 +107,7 @@ pub(crate) async fn handle_axfr(
         content.records.len() + content.dnssec_records.len(),
         messages_sent
     );
-    TransferService::save_ok(
+    transfer::save_ok(
         client_ip,
         zone.id,
         TransferKind::from_qtype(response_qtype),
