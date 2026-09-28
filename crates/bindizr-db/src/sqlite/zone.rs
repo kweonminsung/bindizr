@@ -1,3 +1,7 @@
+use bindizr_core::{
+    dns::Serial,
+    model::{dnssec_policy::PolicyId, zone::ZoneId},
+};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
@@ -33,7 +37,7 @@ pub(crate) async fn create_tx(
     .execute(&mut **tx)
     .await?;
 
-    zone.id = result.last_insert_rowid() as i32;
+    zone.id = ZoneId::from(result.last_insert_rowid() as i32);
     zone.created_at = now;
     Ok(zone)
 }
@@ -41,7 +45,7 @@ pub(crate) async fn create_tx(
 /// Find a zone by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    id: i32,
+    id: ZoneId,
     _lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
     let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE id = ?")
@@ -316,8 +320,8 @@ pub(crate) async fn update_tx(
 /// Set or clear a zone's DNSSEC policy assignment in the current transaction.
 pub(crate) async fn update_dnssec_policy_id_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: i32,
-    dnssec_policy_id: Option<i32>,
+    zone_id: ZoneId,
+    dnssec_policy_id: Option<PolicyId>,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET dnssec_policy_id = ? WHERE id = ?")
         .bind(dnssec_policy_id)
@@ -331,7 +335,7 @@ pub(crate) async fn update_dnssec_policy_id_tx(
 /// Set or clear a zone's configured parent name servers in the current transaction.
 pub(crate) async fn update_parent_ns_addrs_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: i32,
+    zone_id: ZoneId,
     parent_ns_addrs: Option<&str>,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET parent_ns_addrs = ? WHERE id = ?")
@@ -346,7 +350,7 @@ pub(crate) async fn update_parent_ns_addrs_tx(
 /// Count zones using a DNSSEC policy.
 pub(crate) async fn count_by_dnssec_policy_id(
     pool: &Pool<Sqlite>,
-    dnssec_policy_id: i32,
+    dnssec_policy_id: PolicyId,
 ) -> Result<u64, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
@@ -362,8 +366,8 @@ pub(crate) async fn count_by_dnssec_policy_id(
 /// Update only a zone's serial in the current transaction.
 pub(crate) async fn update_serial_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: i32,
-    serial: i32,
+    zone_id: ZoneId,
+    serial: Serial,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE zones SET serial = ? WHERE id = ?")
         .bind(serial)
@@ -376,7 +380,7 @@ pub(crate) async fn update_serial_tx(
 /// Delete a zone by ID in the current transaction.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    id: i32,
+    id: ZoneId,
 ) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM zones WHERE id = ?")
         .bind(id)

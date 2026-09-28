@@ -1,9 +1,13 @@
 use chrono::Utc;
 
 use super::{Record, RecordType};
-use crate::dns::{
-    name::{OwnerName, ZoneName},
-    record::TxtRecordValue,
+use crate::{
+    dns::{
+        Ttl,
+        name::{OwnerName, ZoneName},
+        record::TxtRecordValue,
+    },
+    model::{record::RecordId, zone::ZoneId},
 };
 
 /// Verify that `values_equal` normalizes name like values.
@@ -318,14 +322,14 @@ fn txt_display_value_escapes_control_characters() {
 /// Build a record fixture with the requested fields.
 fn record(record_type: RecordType, value: &str, priority: Option<i32>) -> Record {
     Record {
-        id: 1,
+        id: RecordId::from(1),
         name: OwnerName::parse_in_zone("www", &ZoneName::parse("example.com").unwrap()).unwrap(),
         record_type,
         value: value.to_string(),
-        ttl: 300,
+        ttl: Ttl::from_secs(300),
         priority,
         created_at: Utc::now(),
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
     }
 }
 

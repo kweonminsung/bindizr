@@ -1,5 +1,9 @@
 use std::fmt;
 
+use bindizr_core::{
+    dns::Serial,
+    model::{record::RecordId, token_grant::TokenGrantId, tsig_grant::TsigGrantId},
+};
 use thiserror::Error;
 
 /// Machine-readable error codes exposed to API and CLI clients. The
@@ -288,6 +292,28 @@ impl ServiceError {
 
 /// A database failure the service did not classify is internal; the sites
 /// that read a UNIQUE or FK violation as a conflict do so where they call.
+/// A stored serial that does not convert is corrupt data: a server fault.
+impl From<bindizr_core::dns::ConvertSerialError> for ServiceError {
+    /// Report the conversion failure as an internal error, keeping it as source.
+    fn from(err: bindizr_core::dns::ConvertSerialError) -> Self {
+        ServiceError::Internal {
+            message: err.to_string(),
+            source: Some(Box::new(err)),
+        }
+    }
+}
+
+/// A stored TTL that does not convert is corrupt data: a server fault.
+impl From<bindizr_core::dns::ConvertTtlError> for ServiceError {
+    /// Report the conversion failure as an internal error, keeping it as source.
+    fn from(err: bindizr_core::dns::ConvertTtlError) -> Self {
+        ServiceError::Internal {
+            message: err.to_string(),
+            source: Some(Box::new(err)),
+        }
+    }
+}
+
 impl From<bindizr_db::error::DatabaseError> for ServiceError {
     /// Wrap a database error as an internal service error.
     fn from(err: bindizr_db::error::DatabaseError) -> Self {
@@ -358,7 +384,7 @@ impl ServiceError {
     }
 
     /// Build an error identifying the missing record.
-    pub(crate) fn record_not_found(id: i32) -> Self {
+    pub(crate) fn record_not_found(id: RecordId) -> Self {
         ServiceError::RecordNotFound(format!("Record with id '{}' not found", id))
     }
 
@@ -428,12 +454,12 @@ impl ServiceError {
     }
 
     /// Build an error identifying the missing TSIG grant.
-    pub(crate) fn tsig_grant_not_found(id: i32) -> Self {
+    pub(crate) fn tsig_grant_not_found(id: TsigGrantId) -> Self {
         ServiceError::TsigGrantNotFound(format!("TSIG grant with id '{}' not found", id))
     }
 
     /// Build an error identifying the missing token grant.
-    pub(crate) fn token_grant_not_found(id: i32) -> Self {
+    pub(crate) fn token_grant_not_found(id: TokenGrantId) -> Self {
         ServiceError::TokenGrantNotFound(format!("Token grant with id '{}' not found", id))
     }
 
@@ -560,7 +586,7 @@ impl ServiceError {
     }
 
     /// Build an error naming the missing zone serial.
-    pub(crate) fn version_not_found(zone_name: impl fmt::Display, serial: i32) -> Self {
+    pub(crate) fn version_not_found(zone_name: impl fmt::Display, serial: Serial) -> Self {
         ServiceError::VersionNotFound(format!(
             "No version with serial '{}' for zone '{}'",
             serial, zone_name

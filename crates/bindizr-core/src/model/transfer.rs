@@ -5,7 +5,10 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::dns::message::Rtype;
+use crate::{
+    dns::{Serial, message::Rtype},
+    model::zone::ZoneId,
+};
 
 /// A transfer column holding a kind or result bindizr does not record.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -135,7 +138,7 @@ impl TryFrom<String> for TransferResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Transfer {
     pub client_addr: String,
-    pub zone_id: i32,
+    pub zone_id: ZoneId,
     /// The transfer the client asked for.
     pub kind: TransferKind,
     pub result: TransferResult,
@@ -143,7 +146,7 @@ pub struct Transfer {
     /// went out as the whole zone.
     pub incremental: bool,
     /// The serial the answer reached; absent when nothing was transferred.
-    pub serial: Option<i32>,
+    pub serial: Option<Serial>,
     pub served_at: DateTime<Utc>,
     /// Why the transfer was refused or failed.
     pub error: Option<String>,
@@ -158,7 +161,7 @@ pub struct TransferWithZone {
     #[sqlx(try_from = "String")]
     pub result: TransferResult,
     pub incremental: bool,
-    pub serial: Option<i32>,
+    pub serial: Option<Serial>,
     pub served_at: DateTime<Utc>,
     pub error: Option<String>,
     pub zone_name: String,

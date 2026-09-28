@@ -3,10 +3,11 @@
 
 use bindizr_core::{
     dns::{
+        Ttl,
         name::ZoneName,
         record::{ParseRecordValueError, TxtContent, TxtRecordValue},
     },
-    model::written_id,
+    model::{record::RecordId, zone::ZoneId},
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -284,8 +285,8 @@ pub struct GetRecordsFilter {
 pub struct GetRecordResponse {
     /// Absent on the derived DNSSEC rows of a signed listing, which are not
     /// addressable records.
-    #[schema(example = 1)]
-    pub id: Option<i32>,
+    #[schema(example = 1, value_type = Option<i32>)]
+    pub id: Option<RecordId>,
     #[schema(example = "www.example.com.")]
     pub name: String,
     #[serde(rename = "type")]
@@ -293,12 +294,12 @@ pub struct GetRecordResponse {
     pub record_type: String,
     #[schema(example = "192.168.1.100")]
     pub value: RecordValueRequest,
-    #[schema(example = 3600)]
-    pub ttl: i32,
+    #[schema(example = 3600, value_type = i32)]
+    pub ttl: Ttl,
     #[schema(example = 10)]
     pub priority: Option<i32>,
-    #[schema(example = 1)]
-    pub zone_id: i32,
+    #[schema(example = 1, value_type = i32)]
+    pub zone_id: ZoneId,
     #[schema(example = "example.com")]
     pub zone_name: String,
 }
@@ -307,7 +308,7 @@ impl GetRecordResponse {
     /// Build a response from a [`Record`], rendering owner/value as display names within `zone_name`.
     pub(crate) fn from_record_and_zone_name(record: &Record, zone_name: &ZoneName) -> Self {
         GetRecordResponse {
-            id: written_id(record.id),
+            id: record.id.written(),
             name: record.name.to_fqdn(zone_name),
             record_type: record.record_type.to_string(),
             value: build_display_value(&record.value, &record.record_type),

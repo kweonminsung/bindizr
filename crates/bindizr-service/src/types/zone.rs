@@ -1,8 +1,8 @@
 //! Zone request, patch, filter, and response payloads.
 
 use bindizr_core::{
-    dns::{record::SoaMailbox, zonefile::ZoneFileSoa},
-    model::written_id,
+    dns::{Serial, Ttl, record::SoaMailbox, zonefile::ZoneFileSoa},
+    model::zone::ZoneId,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -58,26 +58,26 @@ impl NotifySerial {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetZoneResponse {
     /// Absent on a dry run, where nothing was written to carry one.
-    #[schema(example = 1)]
-    pub id: Option<i32>,
+    #[schema(example = 1, value_type = Option<i32>)]
+    pub id: Option<ZoneId>,
     #[schema(example = "example.com")]
     pub name: String,
     #[schema(example = "ns1.example.com")]
     pub mname: String,
     #[schema(example = "admin@example.com")]
     pub rname: String,
-    #[schema(example = 3600)]
-    pub default_ttl: i32,
-    #[schema(example = 42)]
-    pub serial: u32,
+    #[schema(example = 3600, value_type = i32)]
+    pub default_ttl: Ttl,
+    #[schema(example = 42, value_type = u32)]
+    pub serial: Serial,
     #[schema(example = 7200)]
     pub refresh: i32,
     #[schema(example = 3600)]
     pub retry: i32,
     #[schema(example = 604800)]
     pub expire: i32,
-    #[schema(example = 3600)]
-    pub minimum_ttl: i32,
+    #[schema(example = 3600, value_type = i32)]
+    pub minimum_ttl: Ttl,
     /// Whether the DNS plane serves the zone. A disabled one stays editable but
     /// leaves the catalog and answers no transfer, so secondaries drop it.
     #[schema(example = true)]
@@ -89,12 +89,12 @@ impl From<&Zone> for GetZoneResponse {
     /// Build a zone response from its stored settings.
     fn from(zone: &Zone) -> Self {
         GetZoneResponse {
-            id: written_id(zone.id),
+            id: zone.id.written(),
             name: zone.name.to_string(),
             mname: zone.mname.clone(),
             rname: zone.rname.clone(),
             default_ttl: zone.default_ttl,
-            serial: zone.serial.max(0) as u32,
+            serial: zone.serial,
             refresh: zone.refresh,
             retry: zone.retry,
             expire: zone.expire,
@@ -120,8 +120,8 @@ pub struct CreateZoneRequest {
     #[schema(example = 3600)]
     pub default_ttl: Option<i32>,
     /// Starting serial, auto-generated if not provided. Must be 1-2137483647 so the counter keeps room to advance, and can only be set at creation.
-    #[schema(example = 42)]
-    pub serial: Option<u32>,
+    #[schema(example = 42, value_type = Option<u32>)]
+    pub serial: Option<Serial>,
     #[schema(example = 7200)]
     pub refresh: Option<i32>,
     #[schema(example = 3600)]
@@ -166,7 +166,7 @@ impl CreateZoneRequest {
             refresh: Some(soa.refresh),
             retry: Some(soa.retry),
             expire: Some(soa.expire),
-            minimum_ttl: Some(soa.minimum_ttl),
+            minimum_ttl: Some(i32::from(soa.minimum_ttl)),
             description: None,
         })
     }
@@ -181,8 +181,9 @@ pub struct GetZonesFilter {
     #[schema(example = "example.com")]
     pub name: Option<String>,
     /// Filter by zone ID.
-    #[schema(example = 1)]
-    pub id: Option<i32>,
+    #[schema(example = 1, value_type = Option<i32>)]
+    #[param(value_type = Option<i32>)]
+    pub id: Option<ZoneId>,
     /// Filter by mname.
     #[schema(example = "ns1.example.com")]
     pub mname: Option<String>,
@@ -199,14 +200,17 @@ pub struct GetZonesFilter {
     #[schema(example = 86400)]
     pub max_default_ttl: Option<i32>,
     /// Filter by serial.
-    #[schema(example = 42)]
-    pub serial: Option<u32>,
+    #[schema(example = 42, value_type = Option<u32>)]
+    #[param(value_type = Option<u32>)]
+    pub serial: Option<Serial>,
     /// Filter by minimum serial.
-    #[schema(example = 1)]
-    pub min_serial: Option<u32>,
+    #[schema(example = 1, value_type = Option<u32>)]
+    #[param(value_type = Option<u32>)]
+    pub min_serial: Option<Serial>,
     /// Filter by maximum serial.
-    #[schema(example = 99)]
-    pub max_serial: Option<u32>,
+    #[schema(example = 99, value_type = Option<u32>)]
+    #[param(value_type = Option<u32>)]
+    pub max_serial: Option<Serial>,
     /// Keep zones created at or after this RFC 3339 timestamp.
     pub created_after: Option<DateTime<Utc>>,
     /// Keep zones created at or before this RFC 3339 timestamp.
@@ -229,7 +233,6 @@ pub struct GetZonesFilter {
     /// Zones per page; defaults to 50 when omitted, 1000 is the largest page
     /// accepted.
     #[schema(example = 50)]
-    #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
     /// Number of zones to skip.
     #[schema(example = 0)]
@@ -373,8 +376,8 @@ pub struct SecondaryStatusResponse {
     #[schema(example = "10.0.1.10:53")]
     pub address: String,
     pub status: SecondaryStatus,
-    #[schema(example = 42)]
-    pub visible_serial: Option<u32>,
+    #[schema(example = 42, value_type = Option<u32>)]
+    pub visible_serial: Option<Serial>,
     pub error: Option<String>,
     /// The latest transfer of this zone Bindizr served the address.
     pub last_transfer: Option<TransferResponse>,
@@ -386,8 +389,8 @@ impl SecondaryStatusResponse {
     /// it to as `reachable`.
     pub fn from_probe(
         address: String,
-        expected_serial: Option<u32>,
-        result: Result<u32, ProbeError>,
+        expected_serial: Option<Serial>,
+        result: Result<Serial, ProbeError>,
     ) -> Self {
         match result {
             Ok(visible) => {
@@ -434,7 +437,7 @@ impl SecondaryStatusResponse {
 pub struct ZoneStatusResponse {
     #[schema(example = "example.com")]
     pub zone_name: String,
-    #[schema(example = 42)]
-    pub serial: u32,
+    #[schema(example = 42, value_type = u32)]
+    pub serial: Serial,
     pub secondaries: Vec<SecondaryStatusResponse>,
 }

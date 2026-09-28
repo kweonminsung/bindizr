@@ -1,4 +1,4 @@
-use bindizr_core::dns::{ConvertSerialError, message::EncodeMessageError};
+use bindizr_core::dns::{ConvertSerialError, Serial, message::EncodeMessageError};
 use bindizr_service::error::ServiceError;
 use thiserror::Error;
 
@@ -37,7 +37,7 @@ pub(crate) enum XfrError {
 
     /// An IXFR whose version rows do not cover a serial the journal names.
     #[error("DNS protocol error: Missing {which} SOA version for serial {serial}")]
-    MissingVersion { which: &'static str, serial: u32 },
+    MissingVersion { which: &'static str, serial: Serial },
 
     #[error("Invalid query: {0}")]
     InvalidQuery(String),

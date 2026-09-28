@@ -1,5 +1,6 @@
 //! Creates, lists, and revokes API tokens.
 
+use bindizr_core::model::api_token::TokenId;
 use chrono::{DateTime, Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
@@ -55,7 +56,7 @@ pub async fn create(
     let created = db::api_token::create(
         cx.db(),
         ApiToken {
-            id: 0,
+            id: TokenId::UNWRITTEN,
             name: name.clone(),
             token: token_hash,
             description,

@@ -1,18 +1,19 @@
 use super::*;
+use crate::model::{record::RecordId, zone::ZoneId};
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 3600,
-        serial: 5,
+        default_ttl: Ttl::from_secs(3600),
+        serial: Serial::from(5),
         refresh: 300,
         retry: 60,
         expire: 3600000,
-        minimum_ttl: 900,
+        minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -25,7 +26,7 @@ fn test_zone() -> Zone {
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
-        id: 0,
+        id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
@@ -33,10 +34,10 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
         },
         record_type,
         value: value.to_string(),
-        ttl,
+        ttl: Ttl::try_from(ttl).unwrap(),
         priority: None,
         created_at: Utc::now(),
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
     }
 }
 
@@ -96,7 +97,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
         "last NSEC must wrap around to the apex"
     );
     // NSEC TTL is min(SOA TTL, SOA MINIMUM) per RFC 9077.
-    assert!(nsecs.iter().all(|row| row.ttl == 900));
+    assert!(nsecs.iter().all(|row| row.ttl == Ttl::from_secs(900)));
 
     // RRSIGs: SOA, DNSKEY, CDS, CDNSKEY, apex NS, apex NSEC, www A, www NSEC.
     let rrsigs = records_of_type(&diff.added, DnssecRecordType::Rrsig);
@@ -280,7 +281,7 @@ fn mixed_ttl_record_set_signs_at_the_minimum() {
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
     let rrsig = rrsigs_covering(&diff.added, &www, RECORD_TYPE_A);
     assert_eq!(rrsig.len(), 1);
-    assert_eq!(rrsig[0].ttl, 300);
+    assert_eq!(rrsig[0].ttl, Ttl::from_secs(300));
 }
 
 /// Verify that withdrawal publishes the delete CDS pair.
@@ -298,7 +299,7 @@ fn withdrawal_publishes_the_delete_cds_pair() {
     let now = fixed_now();
     let diff = SignedViewParams {
         zone: &zone,
-        new_serial: 2,
+        new_serial: Serial::from(2),
         records: &records,
         keys: &keys,
         prev: &[],

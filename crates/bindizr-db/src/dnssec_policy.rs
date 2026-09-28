@@ -1,3 +1,5 @@
+use bindizr_core::model::dnssec_policy::PolicyId;
+
 use crate::{
     Backend, Db, LockLevel, Transaction, error::DatabaseError, model::dnssec_policy::DnssecPolicy,
     mysql, postgres, sqlite, tx::TransactionKind,
@@ -15,7 +17,7 @@ pub async fn create(db: &Db, policy: DnssecPolicy) -> Result<DnssecPolicy, Datab
 /// Find a DNSSEC policy by ID in the current transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
-    id: i32,
+    id: PolicyId,
     lock_level: LockLevel,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     match &mut tx.0 {
@@ -76,7 +78,7 @@ pub async fn update_tx(
 }
 
 /// Delete a DNSSEC policy by ID.
-pub async fn delete(db: &Db, id: i32) -> Result<(), DatabaseError> {
+pub async fn delete(db: &Db, id: PolicyId) -> Result<(), DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::dnssec_policy::delete(pool, id).await,
         Backend::Postgres(pool) => postgres::dnssec_policy::delete(pool, id).await,

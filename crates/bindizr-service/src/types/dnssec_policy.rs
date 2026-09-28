@@ -1,5 +1,6 @@
 //! DNSSEC policy payloads.
 
+use bindizr_core::model::dnssec_policy::PolicyId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -59,8 +60,8 @@ pub struct UpdateDnssecPolicyRequest {
 /// API representation of a DNSSEC policy.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetDnssecPolicyResponse {
-    #[schema(example = 1)]
-    pub id: i32,
+    #[schema(example = 1, value_type = i32)]
+    pub id: PolicyId,
     #[schema(example = "default")]
     pub name: String,
     #[schema(example = "ecdsap256sha256")]

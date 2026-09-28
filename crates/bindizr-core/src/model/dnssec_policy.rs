@@ -73,13 +73,18 @@ impl TryFrom<String> for DnssecDenial {
     }
 }
 
+id_newtype!(
+    /// The id of a DNSSEC policy row.
+    PolicyId
+);
+
 /// A named bundle of signing parameters zones reference by id (BIND's
 /// `dnssec-policy`, Knot's `policy`). Key layout, algorithm, and denial mode
 /// are fixed at creation; the timing fields are editable and apply on the
 /// next signing pass.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct DnssecPolicy {
-    pub id: i32,
+    pub id: PolicyId,
     pub name: String,
     #[sqlx(try_from = "i32")]
     pub algorithm: DnssecAlgorithm,

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use bindizr_db::LockLevel;
 
 use crate::{
@@ -18,9 +19,9 @@ use crate::{
 /// SOA rows are skipped (SOA state is restored from `zone_versions`).
 pub(crate) async fn reconstruct_records_at_serial_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
-    target_serial: i32,
-    current_serial: i32,
+    zone_id: ZoneId,
+    target_serial: Serial,
+    current_serial: Serial,
 ) -> Result<Vec<RecordData>, ServiceError> {
     let records = db::record::list_tx(tx, zone_id, LockLevel::Unlocked).await?;
     let changes = db::zone_change::list_between_serials_tx(
@@ -99,9 +100,9 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
 /// otherwise reconstructed from the journal.
 pub(crate) async fn list_records_at_serial_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
-    serial: i32,
-    current_serial: i32,
+    zone_id: ZoneId,
+    serial: Serial,
+    current_serial: Serial,
 ) -> Result<Vec<RecordData>, ServiceError> {
     if serial == current_serial {
         let mut records: Vec<RecordData> = db::record::list_tx(tx, zone_id, LockLevel::Unlocked)

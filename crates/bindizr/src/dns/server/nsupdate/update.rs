@@ -4,6 +4,7 @@
 
 use bindizr_core::{
     dns::{
+        Ttl,
         message::{Class, Rtype},
         name::ZoneName,
         nsupdate::parser::{ParseUpdateError, UpdateRecord, UpdateRequest},
@@ -241,18 +242,18 @@ fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOpera
     match record.class {
         Class::IN => {
             let (record_type, value, priority) = record.to_record_value(query_data)?;
-            if record.ttl > i32::MAX as u32 {
-                return Err(UpdateError::Refused(format!(
+            let ttl = Ttl::try_from(record.ttl).map_err(|_| {
+                UpdateError::Refused(format!(
                     "TTL value {} exceeds maximum allowed value ({})",
                     record.ttl,
                     i32::MAX
-                )));
-            }
+                ))
+            })?;
             Ok(UpdateOperation::AddRecord {
                 name,
                 record_type,
                 value,
-                ttl: record.ttl as i32,
+                ttl,
                 priority,
             })
         }

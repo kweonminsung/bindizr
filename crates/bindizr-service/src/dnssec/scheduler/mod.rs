@@ -5,7 +5,7 @@ mod steps;
 
 use std::sync::Arc;
 
-use bindizr_core::metrics::SchedulerResult;
+use bindizr_core::{metrics::SchedulerResult, model::zone::ZoneId};
 use chrono::{Duration, Utc};
 use tokio::sync::watch;
 
@@ -180,7 +180,7 @@ async fn run_scheduler_pass(cx: &Context) {
     {
         Ok(keys) => {
             // Keys arrive ordered by zone id, so dedup() leaves one entry per zone.
-            let mut zone_ids: Vec<i32> = keys
+            let mut zone_ids: Vec<ZoneId> = keys
                 .iter()
                 .filter(|key| key.role == DnssecKeyRole::Zsk)
                 .map(|key| key.zone_id)
@@ -203,7 +203,7 @@ async fn run_scheduler_pass(cx: &Context) {
             // A SEP key also needs its DS at the parent, so this asks. A
             // parent that consumes the CDS bindizr publishes installs it
             // itself.
-            let mut zone_ids: Vec<i32> = keys
+            let mut zone_ids: Vec<ZoneId> = keys
                 .iter()
                 .filter(|key| key.role.is_sep())
                 .map(|key| key.zone_id)
@@ -242,7 +242,7 @@ async fn run_scheduler_pass(cx: &Context) {
     {
         Ok(keys) => {
             // Keys arrive ordered by zone id, so dedup() leaves one entry per zone.
-            let mut zone_ids: Vec<i32> = keys.iter().map(|key| key.zone_id).collect();
+            let mut zone_ids: Vec<ZoneId> = keys.iter().map(|key| key.zone_id).collect();
             zone_ids.dedup();
             for zone_id in zone_ids {
                 match prune_retired_keys_by_zone_id(cx, zone_id).await {

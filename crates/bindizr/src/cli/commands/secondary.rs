@@ -1,4 +1,4 @@
-use bindizr_core::outln;
+use bindizr_core::{dns::Serial, outln};
 use bindizr_service::types::{
     CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, MessageResponse,
     PageFilter, PaginatedResponse, SecondaryCheckResponse, SecondaryResponse, SecondaryStatus,
@@ -269,7 +269,7 @@ fn print_check(check: &SecondaryCheckResponse) {
             check.catalog_zone_name,
             status,
             serial,
-            check.catalog_serial.unwrap_or_default()
+            check.catalog_serial.map_or(0, Serial::as_u32)
         ),
         (None, status) => outln!(
             "Catalog zone {}: {} ({})",

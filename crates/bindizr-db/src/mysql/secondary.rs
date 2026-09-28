@@ -1,3 +1,4 @@
+use bindizr_core::model::{secondary::SecondaryId, tsig_key::TsigKeyId};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
@@ -25,7 +26,7 @@ pub(crate) async fn create(
     .execute(&mut *conn)
     .await?;
 
-    secondary.id = result.last_insert_id() as i32;
+    secondary.id = SecondaryId::from(result.last_insert_id() as i32);
     secondary.created_at = now;
     Ok(secondary)
 }
@@ -116,7 +117,7 @@ pub(crate) async fn update_tx(
 /// delete.
 pub(crate) async fn count_by_notify_tsig_key_id(
     pool: &Pool<MySql>,
-    tsig_key_id: i32,
+    tsig_key_id: TsigKeyId,
 ) -> Result<u64, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
@@ -131,7 +132,7 @@ pub(crate) async fn count_by_notify_tsig_key_id(
 }
 
 /// Delete a secondary by ID.
-pub(crate) async fn delete(pool: &Pool<MySql>, id: i32) -> Result<(), DatabaseError> {
+pub(crate) async fn delete(pool: &Pool<MySql>, id: SecondaryId) -> Result<(), DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     sqlx::query("DELETE FROM secondaries WHERE id = ?")

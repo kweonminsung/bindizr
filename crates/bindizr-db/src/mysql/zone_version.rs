@@ -23,6 +23,8 @@ const USER_CHANGES_FILTER: &str = r#"
                   )
               )"#;
 
+use bindizr_core::{dns::Serial, model::zone::ZoneId};
+
 use crate::{
     LockLevel,
     error::DatabaseError,
@@ -73,8 +75,8 @@ pub(crate) async fn upsert_tx(
 /// Find a zone version by zone ID and serial.
 pub(crate) async fn get_by_serial(
     pool: &Pool<MySql>,
-    zone_id: i32,
-    serial: i32,
+    zone_id: ZoneId,
+    serial: Serial,
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         r#"
@@ -93,9 +95,9 @@ pub(crate) async fn get_by_serial(
 /// List zone versions in the closed interval `[from_serial, to_serial]`.
 pub(crate) async fn list_in_serial_range(
     pool: &Pool<MySql>,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         r#"
@@ -115,7 +117,7 @@ pub(crate) async fn list_in_serial_range(
 /// List zone versions for a zone.
 pub(crate) async fn list(
     pool: &Pool<MySql>,
-    zone_id: i32,
+    zone_id: ZoneId,
     scope: VersionScope,
     limit: u32,
     offset: u64,
@@ -148,7 +150,7 @@ pub(crate) async fn list(
 /// Count zone versions using the requested change filter.
 pub(crate) async fn count(
     pool: &Pool<MySql>,
-    zone_id: i32,
+    zone_id: ZoneId,
     scope: VersionScope,
 ) -> Result<u64, DatabaseError> {
     let filter = match scope {
@@ -169,8 +171,8 @@ pub(crate) async fn count(
 /// Find a zone version by zone ID and serial in the current transaction.
 pub(crate) async fn get_by_serial_tx(
     tx: &mut Transaction<'_, MySql>,
-    zone_id: i32,
-    serial: i32,
+    zone_id: ZoneId,
+    serial: Serial,
     lock_level: LockLevel,
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
@@ -190,7 +192,7 @@ pub(crate) async fn get_by_serial_tx(
 /// Prune one zone's old versions, keeping its newest, in the current transaction.
 pub(crate) async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_, MySql>,
-    zone_id: i32,
+    zone_id: ZoneId,
     cutoff: chrono::DateTime<chrono::Utc>,
 ) -> Result<u64, DatabaseError> {
     // The zone's newest version survives regardless of age: the IXFR

@@ -1,3 +1,4 @@
+use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use chrono::{DateTime, Utc};
 
 use crate::{
@@ -21,9 +22,9 @@ pub async fn create_many_tx(
 /// half-open interval: changes strictly after `from_serial`.
 pub async fn list_between_serials(
     db: &Db,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
 ) -> Result<Vec<ZoneChange>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
@@ -42,9 +43,9 @@ pub async fn list_between_serials(
 /// weigh the delta before loading it.
 pub async fn count_between_serials(
     db: &Db,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
 ) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
@@ -64,9 +65,9 @@ pub async fn count_between_serials(
 /// current transaction.
 pub async fn list_between_serials_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
     lock_level: LockLevel,
 ) -> Result<Vec<ZoneChange>, DatabaseError> {
     match &mut tx.0 {
@@ -108,7 +109,7 @@ pub async fn list_between_serials_tx(
 /// back to AXFR. Returns the number of rows deleted.
 pub async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
     cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
     match &mut tx.0 {

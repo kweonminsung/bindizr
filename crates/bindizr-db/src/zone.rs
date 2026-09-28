@@ -1,3 +1,7 @@
+use bindizr_core::{
+    dns::Serial,
+    model::{api_token::TokenId, dnssec_policy::PolicyId, zone::ZoneId},
+};
 use chrono::{DateTime, Utc};
 
 use crate::{
@@ -13,15 +17,15 @@ use crate::{
 #[derive(Clone, Debug, Default)]
 pub struct ZoneFilter {
     pub name: Option<String>,
-    pub id: Option<i32>,
+    pub id: Option<ZoneId>,
     pub mname: Option<String>,
     pub rname: Option<String>,
     pub default_ttl: Option<i32>,
     pub min_default_ttl: Option<i32>,
     pub max_default_ttl: Option<i32>,
-    pub serial: Option<i32>,
-    pub min_serial: Option<i32>,
-    pub max_serial: Option<i32>,
+    pub serial: Option<Serial>,
+    pub min_serial: Option<Serial>,
+    pub max_serial: Option<Serial>,
     pub created_after: Option<DateTime<Utc>>,
     pub created_before: Option<DateTime<Utc>>,
     /// `Some(true)` keeps the zones signing under a policy, `Some(false)`
@@ -34,7 +38,7 @@ pub struct ZoneFilter {
     /// Restrict to zones granted to this token, joined against
     /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
-    pub scope_token_id: Option<i32>,
+    pub scope_token_id: Option<TokenId>,
     pub sort: ZoneSort,
     pub order: SortOrder,
     pub limit: Option<u32>,
@@ -53,7 +57,7 @@ pub async fn create_tx(tx: &mut Transaction<'_>, zone: Zone) -> Result<Zone, Dat
 /// Find a zone by ID in the current transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
-    id: i32,
+    id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
     match &mut tx.0 {
@@ -148,8 +152,8 @@ pub async fn update_tx(tx: &mut Transaction<'_>, zone: Zone) -> Result<Zone, Dat
 /// untouched; `None` marks the zone unsigned.
 pub async fn update_dnssec_policy_id_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
-    dnssec_policy_id: Option<i32>,
+    zone_id: ZoneId,
+    dnssec_policy_id: Option<PolicyId>,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
@@ -168,7 +172,7 @@ pub async fn update_dnssec_policy_id_tx(
 /// untouched; `None` clears the configured parent servers.
 pub async fn update_parent_ns_addrs_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
     parent_ns_addrs: Option<&str>,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
@@ -187,7 +191,7 @@ pub async fn update_parent_ns_addrs_tx(
 /// Zones signed under the policy: the in-use check before a delete.
 pub async fn count_by_dnssec_policy_id(
     db: &Db,
-    dnssec_policy_id: i32,
+    dnssec_policy_id: PolicyId,
 ) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
@@ -205,8 +209,8 @@ pub async fn count_by_dnssec_policy_id(
 /// Bump only the serial, leaving the zone's other columns untouched.
 pub async fn update_serial_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
-    serial: i32,
+    zone_id: ZoneId,
+    serial: Serial,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::zone::update_serial_tx(tx, zone_id, serial).await,
@@ -218,7 +222,7 @@ pub async fn update_serial_tx(
 }
 
 /// Delete a zone by ID in the current transaction.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: i32) -> Result<(), DatabaseError> {
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: ZoneId) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::zone::delete_tx(tx, id).await,
         TransactionKind::Postgres(tx) => postgres::zone::delete_tx(tx, id).await,

@@ -8,7 +8,13 @@ mod prerequisite;
 #[cfg(test)]
 mod tests;
 
-use bindizr_core::dns::name::{OwnerName, ParseNameError, ZoneName, to_fqdn};
+use bindizr_core::{
+    dns::{
+        Serial, Ttl,
+        name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
+    },
+    model::record::RecordId,
+};
 use chrono::Utc;
 use prerequisite::evaluate_prerequisites_tx;
 use thiserror::Error;
@@ -107,7 +113,7 @@ pub enum UpdateOperation {
         record_type: RecordType,
         /// TXT arrives row-encoded; every other type in presentation form.
         value: String,
-        ttl: i32,
+        ttl: Ttl,
         priority: Option<i32>,
     },
     /// CLASS ANY: delete a record set, or every record set at the owner name when
@@ -162,7 +168,7 @@ pub struct DynamicUpdate {
 pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicUpdateError> {
     let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
 
-    let apply_result: Result<(bool, Zone, i32), DynamicUpdateError> = async {
+    let apply_result: Result<(bool, Zone, Serial), DynamicUpdateError> = async {
         let zone =
             zone::find_served_by_name_tx(&mut tx, update.zone_name.as_str(), LockLevel::Exclusive)
                 .await?
@@ -299,7 +305,7 @@ async fn apply_op_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     op: &UpdateOperation,
-    new_serial: i32,
+    new_serial: Serial,
 ) -> Result<bool, DynamicUpdateError> {
     match op {
         UpdateOperation::AddRecord {
@@ -340,7 +346,7 @@ async fn apply_op_tx(
                 zone.id,
                 new_serial,
                 &[Record {
-                    id: 0,
+                    id: RecordId::UNWRITTEN,
                     name: owner,
                     value,
                     ttl: *ttl,
@@ -386,7 +392,7 @@ async fn delete_matching_tx(
     record_type: Option<&RecordType>,
     value: Option<&str>,
     priority: Option<i32>,
-    new_serial: i32,
+    new_serial: Serial,
 ) -> Result<bool, DynamicUpdateError> {
     let owner = parse_update_owner(name, &zone.name)?;
     // Only records at the owner name can match, so lock just those.

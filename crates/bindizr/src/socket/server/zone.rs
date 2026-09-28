@@ -1,4 +1,4 @@
-use bindizr_core::model::zone_version::VersionScope;
+use bindizr_core::{dns::Serial, model::zone_version::VersionScope};
 use bindizr_service::{
     Context,
     authorization::Caller,
@@ -129,7 +129,7 @@ pub(crate) async fn list_zone_versions(
 pub(crate) async fn get_zone_version(
     cx: &Context,
     name: &str,
-    serial: u32,
+    serial: Serial,
 ) -> Result<DaemonResponse<VersionDetailResponse>, ServiceError> {
     let response = zone::get_version(cx, &Caller::Global, name, serial).await?;
     Ok(DaemonResponse {
@@ -142,8 +142,8 @@ pub(crate) async fn get_zone_version(
 pub(crate) async fn diff_zone_versions(
     cx: &Context,
     name: &str,
-    from_serial: u32,
-    to_serial: Option<u32>,
+    from_serial: Serial,
+    to_serial: Option<Serial>,
 ) -> Result<DaemonResponse<VersionDiffResponse>, ServiceError> {
     let response = zone::diff_versions(cx, &Caller::Global, name, from_serial, to_serial).await?;
     Ok(DaemonResponse {
@@ -163,7 +163,7 @@ pub(crate) async fn diff_zone_versions(
 pub(crate) async fn rollback_zone(
     cx: &Context,
     name: &str,
-    serial: u32,
+    serial: Serial,
     run: Run,
 ) -> Result<DaemonResponse<RollbackZoneResponse>, ServiceError> {
     let response = zone::rollback(cx, &Caller::Global, name, serial, run).await?;

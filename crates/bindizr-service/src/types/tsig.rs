@@ -1,5 +1,6 @@
 //! TSIG key and TSIG grant payloads.
 
+use bindizr_core::model::{tsig_grant::TsigGrantId, tsig_key::TsigKeyId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -28,8 +29,8 @@ pub struct CreateTsigKeyRequest {
 /// API representation of a TSIG key; never carries the secret.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetTsigKeyResponse {
-    #[schema(example = 1)]
-    pub id: i32,
+    #[schema(example = 1, value_type = i32)]
+    pub id: TsigKeyId,
     #[schema(example = "update-key")]
     pub name: String,
     #[schema(example = "hmac-sha256")]
@@ -56,8 +57,8 @@ impl From<&TsigKey> for GetTsigKeyResponse {
 /// API representation of a TSIG grant.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetTsigGrantResponse {
-    #[schema(example = 1)]
-    pub id: i32,
+    #[schema(example = 1, value_type = i32)]
+    pub id: TsigGrantId,
     #[schema(example = "update-key")]
     pub tsig_key_name: String,
     #[schema(example = "example.com")]

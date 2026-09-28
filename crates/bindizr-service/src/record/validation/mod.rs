@@ -1,9 +1,13 @@
 //! DNS record constraint validation: CNAME/NS/MX/SOA rules, duplicate
 //! detection, and owner-name normalization.
 
-use bindizr_core::dns::{
-    name::{OwnerName, ParseNameError, ZoneName},
-    record::MxRecordValue,
+use bindizr_core::{
+    dns::{
+        Ttl,
+        name::{OwnerName, ParseNameError, ZoneName},
+        record::MxRecordValue,
+    },
+    model::record::RecordId,
 };
 use bindizr_db::LockLevel;
 
@@ -58,9 +62,9 @@ pub(crate) fn validate_record_add_constraints_normalized(
     stored_name: &OwnerName,
     record_type: &RecordType,
     value: &str,
-    ttl: i32,
+    ttl: Ttl,
     priority: Option<i32>,
-    except_record_id: Option<i32>,
+    except_record_id: Option<RecordId>,
 ) -> Result<(), ServiceError> {
     record_type
         .validate_value(value, priority)
@@ -198,7 +202,7 @@ pub(crate) async fn validate_add_tx(
     owner_name: &OwnerName,
     record_type: &RecordType,
     value: &str,
-    ttl: i32,
+    ttl: Ttl,
     priority: Option<i32>,
 ) -> Result<AddResult, ServiceError> {
     // Only records sharing the owner name can conflict, so load just those

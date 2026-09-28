@@ -69,6 +69,11 @@ impl TryFrom<String> for TsigAlgorithm {
     }
 }
 
+id_newtype!(
+    /// The id of a TSIG key row.
+    TsigKeyId
+);
+
 /// A TSIG credential for updates and transfers; `name` is its wire name.
 /// Zone rights come from [`super::tsig_grant::TsigGrant`] rows.
 ///
@@ -76,7 +81,7 @@ impl TryFrom<String> for TsigAlgorithm {
 /// every zone without any grant.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TsigKey {
-    pub id: i32,
+    pub id: TsigKeyId,
     pub name: String,
     #[sqlx(try_from = "String")]
     pub algorithm: TsigAlgorithm,

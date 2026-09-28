@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use bindizr_core::{
-    dns::{message, message::Rtype, tsig::TransferSigner},
+    dns::{Serial, message, message::Rtype, tsig::TransferSigner},
     model::{
         zone::Zone,
         zone_change::{ChangeOperation, ZoneChange},
@@ -60,9 +60,9 @@ pub(crate) async fn send_ixfr_response(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     zone: &Zone,
-    client_serial: u32,
+    client_serial: Serial,
     changes: &[ZoneChange],
-    versions_by_serial: &HashMap<u32, ZoneVersion>,
+    versions_by_serial: &HashMap<Serial, ZoneVersion>,
     signer: Option<TransferSigner>,
 ) -> Result<(), IxfrSendError> {
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
@@ -72,12 +72,13 @@ pub(crate) async fn send_ixfr_response(
     let mut messages_sent = 0usize;
 
     let result = async {
-        let current_version = versions_by_serial
-            .get(&bindizr_core::dns::serial_to_u32(zone.serial)?)
-            .ok_or(XfrError::MissingVersion {
-                which: "current serial",
-                serial: bindizr_core::dns::serial_to_u32(zone.serial)?,
-            })?;
+        let current_version =
+            versions_by_serial
+                .get(&zone.serial)
+                .ok_or(XfrError::MissingVersion {
+                    which: "current serial",
+                    serial: zone.serial,
+                })?;
 
         // Initial SOA (current serial).
         crate::dns::wire::add_answer_and_flush_if_needed(
@@ -88,13 +89,13 @@ pub(crate) async fn send_ixfr_response(
         )
         .await?;
 
-        let mut changes_by_serial: HashMap<u32, Vec<&ZoneChange>> = HashMap::new();
+        let mut changes_by_serial: HashMap<Serial, Vec<&ZoneChange>> = HashMap::new();
         for change in changes {
-            let serial = bindizr_core::dns::serial_to_u32(change.serial)?;
+            let serial = change.serial;
             changes_by_serial.entry(serial).or_default().push(change);
         }
 
-        let mut serials: Vec<u32> = changes_by_serial.keys().copied().collect();
+        let mut serials: Vec<Serial> = changes_by_serial.keys().copied().collect();
         serials.sort();
 
         for (idx, &serial) in serials.iter().enumerate() {

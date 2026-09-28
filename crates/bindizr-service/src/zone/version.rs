@@ -1,3 +1,7 @@
+use bindizr_core::{
+    dns::Serial,
+    model::{zone::ZoneId, zone_version::ZoneVersionId},
+};
 use chrono::Utc;
 
 use crate::{
@@ -42,7 +46,7 @@ pub(crate) async fn advance_serial_tx(
     cx: &Context,
     tx: &mut Transaction<'_>,
     zone: &Zone,
-    new_serial: i32,
+    new_serial: Serial,
     subject: &ChangeSubject,
 ) -> Result<(), ServiceError> {
     db::zone::update_serial_tx(tx, zone.id, new_serial)
@@ -59,7 +63,7 @@ pub(crate) async fn advance_serial_tx(
 /// zone's key (RFC 4034, Section 5).
 async fn validate_delegations_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<(), ServiceError> {
     let orphaned = db::record::get_ds_name_without_ns_tx(tx, zone_id).await?;
     if let Some(name) = orphaned.as_deref() {
@@ -79,14 +83,14 @@ pub(crate) async fn save_version_tx(
     cx: &Context,
     tx: &mut Transaction<'_>,
     zone: &Zone,
-    serial: i32,
+    serial: Serial,
     subject: &ChangeSubject,
 ) -> Result<(), ServiceError> {
     validate_delegations_tx(tx, zone.id).await?;
     db::zone_version::upsert_tx(
         tx,
         ZoneVersion {
-            id: 0,
+            id: ZoneVersionId::UNWRITTEN,
             zone_id: zone.id,
             serial,
             mname: zone.mname.clone(),
@@ -119,8 +123,8 @@ pub(crate) async fn save_version_tx(
 /// Fetch the SOA version recorded for a zone at the given serial, if any.
 pub async fn find_version_by_serial(
     cx: &Context,
-    zone_id: i32,
-    serial: i32,
+    zone_id: ZoneId,
+    serial: Serial,
 ) -> Result<Option<ZoneVersion>, ServiceError> {
     Ok(db::zone_version::get_by_serial(cx.db(), zone_id, serial).await?)
 }
@@ -128,9 +132,9 @@ pub async fn find_version_by_serial(
 /// Fetch every SOA version for a zone with serial in `[from_serial, to_serial]`.
 pub async fn list_versions_in_serial_range(
     cx: &Context,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
 ) -> Result<Vec<ZoneVersion>, ServiceError> {
     Ok(db::zone_version::list_in_serial_range(cx.db(), zone_id, from_serial, to_serial).await?)
 }

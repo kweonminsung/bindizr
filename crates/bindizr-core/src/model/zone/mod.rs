@@ -1,30 +1,39 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-use crate::dns::{
-    name::ZoneName,
-    record::{EncodeRdataError, ParseMailboxError, Rdata, SoaMailbox, SoaRecordValue},
+use crate::{
+    dns::{
+        Serial, Ttl,
+        name::ZoneName,
+        record::{EncodeRdataError, ParseMailboxError, Rdata, SoaMailbox, SoaRecordValue},
+    },
+    model::dnssec_policy::PolicyId,
 };
+
+id_newtype!(
+    /// The id of a zone row.
+    ZoneId
+);
 
 /// Zone metadata used to generate the SOA and NS records.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Zone {
-    pub id: i32,
+    pub id: ZoneId,
     #[sqlx(try_from = "String")]
     pub name: ZoneName,
     pub mname: String,
     /// Stored as the admin email (`admin@example.com`); rendered to the SOA
     /// RNAME mailbox form only when served. `ZoneVersion.rname` differs.
     pub rname: String,
-    pub default_ttl: i32,
-    pub serial: i32,
+    pub default_ttl: Ttl,
+    pub serial: Serial,
     pub refresh: i32,
     pub retry: i32,
     pub expire: i32,
-    pub minimum_ttl: i32,
+    pub minimum_ttl: Ttl,
     /// The DNSSEC policy a signed zone signs under; owned by DNSSEC
     /// enable/disable, untouched by ordinary zone updates.
-    pub dnssec_policy_id: Option<i32>,
+    pub dnssec_policy_id: Option<PolicyId>,
     /// The parent zone's nameservers asked for the zone's DS, as
     /// comma-separated `host[:port]`; `None` means unconfigured. DNSSEC-owned
     /// like `dnssec_policy_id`.
@@ -56,16 +65,16 @@ impl Zone {
 
     /// This zone's wire-format SOA RDATA at `serial`; the SOA is synthesized
     /// from zone columns, never stored as a record row.
-    pub(crate) fn soa_rdata(&self, serial: u32) -> Result<Rdata, EncodeRdataError> {
+    pub(crate) fn soa_rdata(&self, serial: Serial) -> Result<Rdata, EncodeRdataError> {
         let rname = self.soa_mailbox()?;
         SoaRecordValue {
             mname: &self.mname,
             rname: rname.as_str(),
-            serial,
+            serial: serial.as_u32(),
             refresh: self.refresh as u32,
             retry: self.retry as u32,
             expire: self.expire as u32,
-            minimum: self.minimum_ttl as u32,
+            minimum: self.minimum_ttl.as_secs(),
         }
         .to_rdata()
     }

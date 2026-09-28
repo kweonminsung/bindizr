@@ -1,4 +1,10 @@
-use bindizr_core::model::zone_version::VersionScope;
+use bindizr_core::{
+    dns::Serial,
+    model::{
+        record::RecordId, token_grant::TokenGrantId, tsig_grant::TsigGrantId,
+        zone_version::VersionScope,
+    },
+};
 use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateDnssecPolicyRequest, CreateGrantRequest, CreateRecordRequest,
     CreateSecondaryRequest, CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest,
@@ -37,7 +43,7 @@ pub(crate) enum DaemonCommand {
         page: PageFilter,
     },
     DeleteTokenGrant {
-        id: i32,
+        id: TokenGrantId,
     },
     DeleteTokenGrantsByTokenAndZone {
         token_name: String,
@@ -60,7 +66,7 @@ pub(crate) enum DaemonCommand {
         page: PageFilter,
     },
     DeleteTsigGrant {
-        id: i32,
+        id: TsigGrantId,
     },
     DeleteTsigGrantsByKeyAndZone {
         key_name: String,
@@ -144,27 +150,27 @@ pub(crate) enum DaemonCommand {
     },
     GetZoneVersion {
         name: String,
-        serial: u32,
+        serial: Serial,
     },
     /// A missing `to_serial` compares against the current serial.
     DiffZoneVersions {
         name: String,
-        from_serial: u32,
-        to_serial: Option<u32>,
+        from_serial: Serial,
+        to_serial: Option<Serial>,
     },
     RollbackZone {
         name: String,
-        serial: u32,
+        serial: Serial,
         run: Run,
     },
     CreateRecord(CreateRecordRequest),
     CreateRecordsBulk(CreateBulkRecordsRequest),
     ListRecords(GetRecordsFilter),
     GetRecord {
-        id: i32,
+        id: RecordId,
     },
     UpdateRecord {
-        id: i32,
+        id: RecordId,
         request: UpdateRecordRequest,
     },
     /// `record_name` is the owner to update; the request's own `name` is the
@@ -175,7 +181,7 @@ pub(crate) enum DaemonCommand {
         request: UpdateRecordRequest,
     },
     DeleteRecord {
-        id: i32,
+        id: RecordId,
         run: Run,
     },
     DeleteRecordsMatching(DeleteRecordsFilter),
@@ -261,7 +267,7 @@ pub(crate) struct DaemonDoctorResponse {
     pub(crate) dns_server: DoctorCheck,
     pub(crate) catalog_zone_name: String,
     /// Catalog serial served by bindizr's own DNS listener, when reachable.
-    pub(crate) catalog_serial: Option<u32>,
+    pub(crate) catalog_serial: Option<Serial>,
     pub(crate) secondaries: Vec<SecondaryStatusResponse>,
     pub(crate) notifies: Vec<NotifyCheckResponse>,
     /// How Bindizr served each enabled secondary.

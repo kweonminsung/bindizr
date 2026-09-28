@@ -1,4 +1,7 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, labels_to_presentation};
+use bindizr_core::{
+    dns::name::{OwnerName, ZoneName, decode_name_labels, labels_to_presentation},
+    model::record::RecordId,
+};
 use bindizr_db::{dnssec_record::DnssecRecordFilter, record::RecordFilter};
 
 use super::ListedRecord;
@@ -190,7 +193,7 @@ pub async fn list_with_zone_by_filter(
 pub async fn get_with_zone(
     cx: &Context,
     caller: &Caller,
-    record_id: i32,
+    record_id: RecordId,
 ) -> Result<RecordWithZone, ServiceError> {
     let record = match db::record::get_with_zone(cx.db(), record_id).await {
         Ok(Some(record)) => record,

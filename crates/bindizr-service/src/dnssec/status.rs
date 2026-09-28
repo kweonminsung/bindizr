@@ -1,7 +1,7 @@
 //! Assembling the status a signed zone reports: its policy, key inventory,
 //! and the DS records the parent needs.
 
-use bindizr_core::dns::serial_to_u32;
+use bindizr_core::dns::Serial;
 use chrono::{DateTime, Duration, Utc};
 
 use super::parent_ns_addrs::parent_ns_addr_entries;
@@ -75,7 +75,7 @@ pub(crate) async fn build_status_tx(
     zone: &Zone,
     policy: Option<&DnssecPolicy>,
     keys: &[DnssecKey],
-    serial: i32,
+    serial: Serial,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     let derived = db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     let earliest_signature_expires_at = derived.iter().filter_map(|row| row.expires_at).min();
@@ -134,7 +134,7 @@ pub(crate) async fn build_status_tx(
         signatures,
         expired_signatures,
         next_resign_at,
-        serial: serial_to_u32(serial).map_err(ServiceError::internal)?,
+        serial,
         withdrawing,
         parent_ns_addrs: zone.parent_ns_addrs.as_deref().map(parent_ns_addr_entries),
         delegation: None,

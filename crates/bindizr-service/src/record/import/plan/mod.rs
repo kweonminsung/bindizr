@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::{dns::name::OwnerName, model::record::RecordId};
 
 use crate::{
     model::{
@@ -139,7 +139,7 @@ pub(crate) fn compute_import_plan<'a>(
 impl ImportPlan<'_> {
     /// Preview against the same zone and record snapshot used to compute this plan.
     pub(crate) fn diff(&self, zone: &Zone, existing: &[Record]) -> RecordDiff {
-        let deleted_ids: HashSet<i32> = self
+        let deleted_ids: HashSet<RecordId> = self
             .dels
             .iter()
             .chain(&self.ttl_dels)

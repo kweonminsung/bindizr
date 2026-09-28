@@ -1,5 +1,6 @@
 //! Token grant payloads.
 
+use bindizr_core::model::token_grant::TokenGrantId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -9,8 +10,8 @@ use crate::model::token_grant::TokenGrantWithNames;
 /// API representation of a token grant.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetTokenGrantResponse {
-    #[schema(example = 1)]
-    pub id: i32,
+    #[schema(example = 1, value_type = i32)]
+    pub id: TokenGrantId,
     #[schema(example = "external-dns")]
     pub token_name: String,
     #[schema(example = "example.com")]

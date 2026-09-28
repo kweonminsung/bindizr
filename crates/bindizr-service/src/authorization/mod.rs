@@ -11,7 +11,10 @@
 
 use std::sync::Arc;
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::{
+    dns::name::OwnerName,
+    model::{api_token::TokenId, zone::ZoneId},
+};
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
@@ -37,7 +40,7 @@ pub enum Caller {
         name: Arc<str>,
     },
     Token {
-        id: i32,
+        id: TokenId,
         name: Arc<str>,
         grants: Arc<[TokenGrant]>,
     },
@@ -106,7 +109,7 @@ impl Caller {
 
     /// The token whose grants bound the caller's visibility; `None` means
     /// unrestricted. List queries join it against the grants in SQL.
-    pub(crate) fn scope_token_id(&self) -> Option<i32> {
+    pub(crate) fn scope_token_id(&self) -> Option<TokenId> {
         match self {
             Caller::Global | Caller::GlobalToken { .. } => None,
             Caller::Token { id, .. } => Some(*id),
@@ -122,7 +125,7 @@ impl Caller {
     }
 
     /// Whether the caller may see `zone_id`.
-    pub(crate) fn sees_zone(&self, zone_id: i32) -> bool {
+    pub(crate) fn sees_zone(&self, zone_id: ZoneId) -> bool {
         match self {
             Caller::Global | Caller::GlobalToken { .. } => true,
             Caller::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
@@ -173,7 +176,7 @@ impl Caller {
     /// narrows reads the same way it narrows writes.
     pub(crate) fn sees_record(
         &self,
-        zone_id: i32,
+        zone_id: ZoneId,
         name: &OwnerName,
         record_type: Option<&RecordType>,
     ) -> bool {

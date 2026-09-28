@@ -1,6 +1,14 @@
 //! Table rows for CLI output, each built from the typed daemon response so
 //! the column set is all this module decides; the cells come from `display`.
 
+use bindizr_core::{
+    dns::{Serial, Ttl},
+    model::{
+        api_token::TokenId, dnssec_key::DnssecKeyId, dnssec_policy::PolicyId, record::RecordId,
+        secondary::SecondaryId, token_grant::TokenGrantId, tsig_grant::TsigGrantId,
+        tsig_key::TsigKeyId, zone::ZoneId,
+    },
+};
 use bindizr_service::types::{
     CreatedTokenResponse, DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse,
     GetSecondaryResponse, GetTokenGrantResponse, GetTokenResponse, GetTsigGrantResponse,
@@ -18,7 +26,7 @@ use super::display::{
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct ZoneRow {
     #[tabled(rename = "ID", display = "display_option")]
-    pub(crate) id: Option<i32>,
+    pub(crate) id: Option<ZoneId>,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
     #[tabled(rename = "MNAME")]
@@ -28,7 +36,7 @@ pub(crate) struct ZoneRow {
     #[tabled(rename = "DEFAULT-TTL")]
     pub(crate) default_ttl: i32,
     #[tabled(rename = "SERIAL")]
-    pub(crate) serial: u32,
+    pub(crate) serial: Serial,
     #[tabled(rename = "REFRESH")]
     pub(crate) refresh: i32,
     #[tabled(rename = "RETRY")]
@@ -51,12 +59,12 @@ impl From<&GetZoneResponse> for ZoneRow {
             name: zone.name.clone(),
             mname: zone.mname.clone(),
             rname: zone.rname.clone(),
-            default_ttl: zone.default_ttl,
+            default_ttl: i32::from(zone.default_ttl),
             serial: zone.serial,
             refresh: zone.refresh,
             retry: zone.retry,
             expire: zone.expire,
-            minimum_ttl: zone.minimum_ttl,
+            minimum_ttl: i32::from(zone.minimum_ttl),
             served: display_yes_no(&zone.enabled),
             description: display_option(&zone.description),
         }
@@ -66,7 +74,7 @@ impl From<&GetZoneResponse> for ZoneRow {
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct RecordRow {
     #[tabled(rename = "ID", display = "display_option")]
-    pub(crate) id: Option<i32>,
+    pub(crate) id: Option<RecordId>,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
     #[tabled(rename = "TYPE")]
@@ -74,11 +82,11 @@ pub(crate) struct RecordRow {
     #[tabled(rename = "VALUE")]
     pub(crate) value: String,
     #[tabled(rename = "TTL")]
-    pub(crate) ttl: i32,
+    pub(crate) ttl: Ttl,
     #[tabled(rename = "PRIORITY", display = "display_option")]
     pub(crate) priority: Option<i32>,
     #[tabled(rename = "ZONE-ID")]
-    pub(crate) zone_id: i32,
+    pub(crate) zone_id: ZoneId,
     #[tabled(rename = "ZONE")]
     pub(crate) zone_name: String,
 }
@@ -113,7 +121,7 @@ impl RecordRow {
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct DnssecKeyRow {
     #[tabled(rename = "ID")]
-    pub(crate) id: i32,
+    pub(crate) id: DnssecKeyId,
     #[tabled(rename = "ROLE")]
     pub(crate) role: String,
     #[tabled(rename = "STATE")]
@@ -152,7 +160,7 @@ impl From<&DnssecKeyInfo> for DnssecKeyRow {
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct DnssecPolicyRow {
     #[tabled(rename = "ID")]
-    pub(crate) id: i32,
+    pub(crate) id: PolicyId,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
     #[tabled(rename = "ALGORITHM")]
@@ -195,7 +203,7 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct SecondaryRow {
     #[tabled(rename = "ID")]
-    pub(crate) id: i32,
+    pub(crate) id: SecondaryId,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
     #[tabled(rename = "ADDRESS")]
@@ -225,7 +233,7 @@ impl From<&GetSecondaryResponse> for SecondaryRow {
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct VersionRow {
     #[tabled(rename = "SERIAL")]
-    pub(crate) serial: u32,
+    pub(crate) serial: Serial,
     #[tabled(rename = "MNAME")]
     pub(crate) mname: String,
     #[tabled(rename = "RNAME")]
@@ -255,11 +263,11 @@ impl From<&ZoneVersionResponse> for VersionRow {
             serial: version.serial,
             mname: version.mname.clone(),
             rname: version.rname.clone(),
-            default_ttl: version.default_ttl,
+            default_ttl: i32::from(version.default_ttl),
             refresh: version.refresh,
             retry: version.retry,
             expire: version.expire,
-            minimum_ttl: version.minimum_ttl,
+            minimum_ttl: i32::from(version.minimum_ttl),
             change_source: version.change_source.to_string(),
             changed_by: display_option(&version.changed_by),
             created_at: display_time(version.created_at),
@@ -277,7 +285,7 @@ pub(crate) struct VersionRecordRow {
     #[tabled(rename = "VALUE")]
     pub(crate) value: String,
     #[tabled(rename = "TTL")]
-    pub(crate) ttl: i32,
+    pub(crate) ttl: Ttl,
     #[tabled(rename = "PRIORITY", display = "display_option")]
     pub(crate) priority: Option<i32>,
 }
@@ -319,8 +327,8 @@ impl From<&RollbackZoneResponse> for RollbackSummaryRow {
     /// Build a CLI table row from the zone rollback summary.
     fn from(response: &RollbackZoneResponse) -> Self {
         RollbackSummaryRow {
-            target_serial: response.target_serial,
-            new_serial: response.new_serial,
+            target_serial: response.target_serial.as_u32(),
+            new_serial: response.new_serial.as_u32(),
             applied: response.applied,
             dry_run: response.dry_run,
             added: response.summary.added,
@@ -357,7 +365,7 @@ impl SecondaryStatusRow {
     }
 
     /// Build a table row from a secondary server's status.
-    fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: u32) -> Self {
+    fn from_secondary(secondary: &SecondaryStatusResponse, zone_serial: Serial) -> Self {
         let detail = match secondary.error.as_deref() {
             Some(error) if secondary.is_unreachable() => {
                 format!("{} ({})", secondary.status, error)
@@ -370,7 +378,7 @@ impl SecondaryStatusRow {
             visible_serial: display_option(&secondary.visible_serial),
             lag: secondary.visible_serial.map_or_else(
                 || MISSING_CELL.to_string(),
-                |serial| (i64::from(zone_serial) - i64::from(serial)).to_string(),
+                |serial| (i64::from(zone_serial.as_u32()) - i64::from(serial.as_u32())).to_string(),
             ),
             last_transfer: secondary
                 .last_transfer
@@ -422,7 +430,7 @@ impl From<&ImportZoneResponse> for ImportSummaryRow {
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct TokenRow {
     #[tabled(rename = "ID")]
-    pub(crate) id: i32,
+    pub(crate) id: TokenId,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
     #[tabled(rename = "TOKEN")]
@@ -472,7 +480,7 @@ impl From<&CreatedTokenResponse> for TokenRow {
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct TsigKeyRow {
     #[tabled(rename = "ID")]
-    pub(crate) id: i32,
+    pub(crate) id: TsigKeyId,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
     #[tabled(rename = "ALGORITHM")]
@@ -512,7 +520,7 @@ impl From<&TsigKeyResponse> for TsigKeyRow {
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct TokenGrantRow {
     #[tabled(rename = "ID")]
-    pub(crate) id: i32,
+    pub(crate) id: TokenGrantId,
     #[tabled(rename = "TOKEN")]
     pub(crate) token_name: String,
     #[tabled(rename = "ZONE")]
@@ -550,7 +558,7 @@ impl From<&GetTokenGrantResponse> for TokenGrantRow {
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct TsigGrantRow {
     #[tabled(rename = "ID")]
-    pub(crate) id: i32,
+    pub(crate) id: TsigGrantId,
     #[tabled(rename = "TSIG-KEY")]
     pub(crate) tsig_key_name: String,
     #[tabled(rename = "ZONE")]

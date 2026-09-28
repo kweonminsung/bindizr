@@ -7,14 +7,14 @@ use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Sha256, Sha384, Sha512};
 
 use super::*;
-use crate::dns::nsupdate::parser::tests::minimal_update_with_ztype;
+use crate::{dns::nsupdate::parser::tests::minimal_update_with_ztype, model::tsig_key::TsigKeyId};
 
 const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
 /// Build a signing-key fixture for the test.
 pub(crate) fn test_key(algorithm: TsigAlgorithm) -> TsigKey {
     TsigKey {
-        id: 1,
+        id: TsigKeyId::from(1),
         name: "update-key".to_string(),
         algorithm,
         secret: base64::engine::general_purpose::STANDARD.encode(SECRET),

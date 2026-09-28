@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::{dns::name::ZoneName, model::record::RecordId};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
@@ -14,6 +14,7 @@ use crate::{
     model::record::{Record, RecordData},
     serial::generate_serial,
     transaction,
+    ttl::validate_record_ttl,
     types::{CreateRecordRequest, GetRecordResponse, RecordDiff, RecordWriteResponse},
     zone::{self, diff::build_record_diff},
 };
@@ -77,7 +78,10 @@ pub async fn create(
             };
 
         // Fixed at write time: a later zone TTL change will not move it.
-        let ttl = create_record_request.ttl.unwrap_or(zone.default_ttl);
+        let ttl = match create_record_request.ttl {
+            Some(ttl) => validate_record_ttl(ttl)?,
+            None => zone.default_ttl,
+        };
 
         validate_record_add_constraints_normalized(
             &records_at_name,
@@ -96,7 +100,7 @@ pub async fn create(
             .map(RecordData::from)
             .collect();
         let candidate = Record {
-            id: 0,
+            id: RecordId::UNWRITTEN,
             name: owner_name,
             record_type,
             value: record_value,

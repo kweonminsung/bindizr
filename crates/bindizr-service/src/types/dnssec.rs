@@ -1,5 +1,6 @@
 //! DNSSEC management payloads.
 
+use bindizr_core::{dns::Serial, model::dnssec_key::DnssecKeyId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -82,8 +83,8 @@ pub struct UpdateDnssecSettingsRequest {
 /// One of the zone's SEP keys against the parent's DS records.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DnssecDelegationKeyInfo {
-    #[schema(example = 1)]
-    pub id: i32,
+    #[schema(example = 1, value_type = i32)]
+    pub id: DnssecKeyId,
     #[schema(example = 34217)]
     pub key_tag: u16,
     pub role: DnssecKeyRole,
@@ -139,8 +140,8 @@ pub struct RolloverDnssecRequest {
 /// Public signing-key metadata; private material is excluded from HTTP responses.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DnssecKeyInfo {
-    #[schema(example = 1)]
-    pub id: i32,
+    #[schema(example = 1, value_type = i32)]
+    pub id: DnssecKeyId,
     pub role: DnssecKeyRole,
     /// Rollover lifecycle state.
     pub state: DnssecKeyState,
@@ -214,8 +215,8 @@ pub struct DnssecStatusResponse {
     pub expired_signatures: u64,
     /// When the re-signer next has work; absent for an unsigned zone.
     pub next_resign_at: Option<DateTime<Utc>>,
-    #[schema(example = 7)]
-    pub serial: u32,
+    #[schema(example = 7, value_type = u32)]
+    pub serial: Serial,
 }
 
 /// One key's BIND file contents. Served only over the daemon socket:

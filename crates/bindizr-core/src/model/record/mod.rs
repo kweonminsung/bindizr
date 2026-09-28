@@ -5,29 +5,38 @@ use domain::base::iana::Rtype;
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::dns::{
-    name::{OwnerName, ZoneName, to_fqdn_lowercase},
-    record::{
-        ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
-        DnameRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, NsRecordValue,
-        ParseRecordValueError, PtrRecordValue, SrvRecordValue, SshfpRecordValue, TlsaRecordValue,
-        TxtContent, TxtRecordValue,
+use crate::{
+    dns::{
+        Ttl,
+        name::{OwnerName, ZoneName, to_fqdn_lowercase},
+        record::{
+            ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
+            DnameRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, NsRecordValue,
+            ParseRecordValueError, PtrRecordValue, SrvRecordValue, SshfpRecordValue,
+            TlsaRecordValue, TxtContent, TxtRecordValue,
+        },
     },
+    model::zone::ZoneId,
 };
+
+id_newtype!(
+    /// The id of a record row.
+    RecordId
+);
 
 /// One stored DNS record of a zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Record {
-    pub id: i32,
+    pub id: RecordId,
     #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
     pub value: String,
-    pub ttl: i32,
+    pub ttl: Ttl,
     pub priority: Option<i32>,
     pub created_at: DateTime<Utc>,
-    pub zone_id: i32,
+    pub zone_id: ZoneId,
 }
 
 /// What makes two records the same record to DNS: owner, type, and rdata,
@@ -102,7 +111,7 @@ pub struct RecordData {
     pub name: OwnerName,
     pub record_type: RecordType,
     pub value: String,
-    pub ttl: i32,
+    pub ttl: Ttl,
     pub priority: Option<i32>,
 }
 
@@ -136,16 +145,16 @@ impl RecordData {
 /// A [`Record`] joined with the name of its owning zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RecordWithZone {
-    id: i32,
+    id: RecordId,
     #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
     value: String,
-    ttl: i32,
+    ttl: Ttl,
     priority: Option<i32>,
     created_at: DateTime<Utc>,
-    pub zone_id: i32,
+    pub zone_id: ZoneId,
     #[sqlx(try_from = "String")]
     pub zone_name: ZoneName,
 }

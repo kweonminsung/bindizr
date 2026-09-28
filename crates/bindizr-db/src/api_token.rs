@@ -1,3 +1,5 @@
+use bindizr_core::model::api_token::TokenId;
+
 use crate::{
     Backend, Db, error::DatabaseError, model::api_token::ApiToken, mysql, postgres, sqlite,
 };
@@ -51,7 +53,7 @@ pub async fn update(db: &Db, token: ApiToken) -> Result<ApiToken, DatabaseError>
 }
 
 /// Delete an API token by ID.
-pub async fn delete(db: &Db, id: i32) -> Result<(), DatabaseError> {
+pub async fn delete(db: &Db, id: TokenId) -> Result<(), DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::api_token::delete(pool, id).await,
         Backend::Postgres(pool) => postgres::api_token::delete(pool, id).await,

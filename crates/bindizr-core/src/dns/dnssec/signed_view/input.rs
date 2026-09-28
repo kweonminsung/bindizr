@@ -34,11 +34,11 @@ impl SignedViewParams<'_> {
         let mut input: Vec<SignRecord> = Vec::new();
 
         // Synthesize the apex records owned by zone metadata and signing keys.
-        let soa_bytes = zone.soa_rdata(self.new_serial as u32)?;
+        let soa_bytes = zone.soa_rdata(self.new_serial)?;
         input.push(WireRecord::new(
             apex.clone(),
             Class::IN,
-            Ttl::from_secs(zone.default_ttl as u32),
+            Ttl::from_secs(zone.default_ttl.as_secs()),
             ZoneRecordData::Soa(parse_soa(soa_bytes.as_bytes())?),
         ));
 
@@ -46,7 +46,7 @@ impl SignedViewParams<'_> {
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
-                Ttl::from_secs(zone.default_ttl as u32),
+                Ttl::from_secs(zone.default_ttl.as_secs()),
                 ZoneRecordData::Dnskey(signer.dnskey.clone()),
             ));
             if signer.key.wants_parent_ds() && !self.withdraw_parent_ds {
@@ -64,7 +64,7 @@ impl SignedViewParams<'_> {
                 input.push(WireRecord::new(
                     apex.clone(),
                     Class::IN,
-                    Ttl::from_secs(zone.default_ttl as u32),
+                    Ttl::from_secs(zone.default_ttl.as_secs()),
                     ZoneRecordData::Unknown(cds),
                 ));
                 let cdnskey = UnknownRecordData::from_octets(
@@ -78,7 +78,7 @@ impl SignedViewParams<'_> {
                 input.push(WireRecord::new(
                     apex.clone(),
                     Class::IN,
-                    Ttl::from_secs(zone.default_ttl as u32),
+                    Ttl::from_secs(zone.default_ttl.as_secs()),
                     ZoneRecordData::Unknown(cdnskey),
                 ));
             }
@@ -97,7 +97,7 @@ impl SignedViewParams<'_> {
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
-                Ttl::from_secs(zone.default_ttl as u32),
+                Ttl::from_secs(zone.default_ttl.as_secs()),
                 ZoneRecordData::Unknown(cds),
             ));
             let cdnskey = UnknownRecordData::from_octets(Rtype::CDNSKEY, vec![0, 0, 3, 0, 0])
@@ -108,7 +108,7 @@ impl SignedViewParams<'_> {
             input.push(WireRecord::new(
                 apex.clone(),
                 Class::IN,
-                Ttl::from_secs(zone.default_ttl as u32),
+                Ttl::from_secs(zone.default_ttl.as_secs()),
                 ZoneRecordData::Unknown(cdnskey),
             ));
         }
@@ -127,7 +127,7 @@ impl SignedViewParams<'_> {
             input.push(WireRecord::new(
                 owner,
                 Class::IN,
-                Ttl::from_secs(record.ttl as u32),
+                Ttl::from_secs(record.ttl.as_secs()),
                 ZoneRecordData::Unknown(data),
             ));
         }

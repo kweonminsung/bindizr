@@ -1,6 +1,10 @@
 use bindizr_core::{
-    dns::name::ZoneName,
-    model::{dnssec_key::DnssecAlgorithm, dnssec_policy::DnssecDenial},
+    dns::{Serial, Ttl, name::ZoneName},
+    model::{
+        dnssec_key::DnssecAlgorithm,
+        dnssec_policy::{DnssecDenial, PolicyId},
+        zone::ZoneId,
+    },
 };
 
 use super::*;
@@ -8,17 +12,17 @@ use super::*;
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 300,
-        serial: 5,
+        default_ttl: Ttl::from_secs(300),
+        serial: Serial::from(5),
         refresh: 300,
         retry: 60,
         expire: 3600000,
-        minimum_ttl: 900,
-        dnssec_policy_id: Some(1),
+        minimum_ttl: Ttl::from_secs(900),
+        dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: None,
         enabled: true,
         description: None,
@@ -29,7 +33,7 @@ fn zone() -> Zone {
 /// Build a DNSSEC policy fixture with the requested identity.
 fn policy(id: i32, name: &str) -> DnssecPolicy {
     DnssecPolicy {
-        id,
+        id: PolicyId::from(id),
         name: name.to_string(),
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
         denial: DnssecDenial::Nsec,

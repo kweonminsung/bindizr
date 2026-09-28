@@ -10,9 +10,9 @@ use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use domain::base::iana::SecurityAlgorithm;
 
 use crate::{
-    dns::LibraryError,
+    dns::{LibraryError, Ttl},
     model::{
-        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
+        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
         zone::Zone,
     },
 };
@@ -115,7 +115,7 @@ struct DnssecKeyPhase {
 /// carrying no timing is a settled active key.
 fn bind_key_phase(
     private_key: &str,
-    default_ttl: i32,
+    default_ttl: Ttl,
     now: DateTime<Utc>,
 ) -> Result<DnssecKeyPhase, ImportKeyError> {
     let time = |field| parse_bind_key_time(private_key, field);
@@ -134,7 +134,7 @@ fn bind_key_phase(
     }
     // The DNSKEY record set's own TTL bounds how long a resolver can hold an answer
     // that lacks this key, or holds it; a recorded schedule is exact and wins.
-    let ttl_wait = Duration::seconds(i64::from(default_ttl));
+    let ttl_wait = Duration::seconds(i64::from(default_ttl.as_secs()));
     if let Some(inactive) = passed(inactive) {
         // Its signatures outlive it in caches for the TTL of the record sets it
         // signed, which a zone signed elsewhere never told bindizr.
@@ -247,7 +247,7 @@ pub fn import_key(
     } = bind_key_phase(private_key, zone.default_ttl, now)?;
 
     Ok(DnssecKey {
-        id: 0,
+        id: DnssecKeyId::UNWRITTEN,
         zone_id: zone.id,
         role,
         algorithm,
@@ -257,7 +257,7 @@ pub fn import_key(
         state,
         state_changed_at,
         eligible_at,
-        max_signed_ttl: 0,
+        max_signed_ttl: Ttl::from_secs(0),
         created_at: now,
     })
 }

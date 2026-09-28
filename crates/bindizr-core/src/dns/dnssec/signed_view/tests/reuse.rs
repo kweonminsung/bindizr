@@ -1,18 +1,19 @@
 use super::*;
+use crate::model::{record::RecordId, zone::ZoneId};
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 3600,
-        serial: 5,
+        default_ttl: Ttl::from_secs(3600),
+        serial: Serial::from(5),
         refresh: 300,
         retry: 60,
         expire: 3600000,
-        minimum_ttl: 900,
+        minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -25,7 +26,7 @@ fn test_zone() -> Zone {
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
-        id: 0,
+        id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
@@ -33,10 +34,10 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
         },
         record_type,
         value: value.to_string(),
-        ttl,
+        ttl: Ttl::try_from(ttl).unwrap(),
         priority: None,
         created_at: Utc::now(),
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
     }
 }
 

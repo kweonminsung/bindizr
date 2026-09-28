@@ -3,6 +3,7 @@
 use super::{DnsMessageBuilder, EncodeMessageError, Name};
 use crate::{
     dns::{
+        Serial, Ttl,
         dnssec::WireNameError,
         name::{OwnerName, ZoneName, encode_name, to_fqdn},
         record::{EncodedRdata, SoaRecordValue, TxtRecordValue},
@@ -34,7 +35,7 @@ impl DnsMessageBuilder {
                 self.add_raw_rdata(
                     change.record_name.to_wire_name(zone_name)?,
                     record_type.wire_type(),
-                    change.record_ttl as u32,
+                    change.record_ttl.as_secs(),
                     rdata,
                 )
             }
@@ -58,32 +59,36 @@ impl DnsMessageBuilder {
     }
 
     /// Append the zone's synthesized SOA answer.
-    pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), EncodeMessageError> {
+    pub fn add_soa(&mut self, zone: &Zone, serial: Serial) -> Result<(), EncodeMessageError> {
         let rdata = zone.soa_rdata(serial)?;
         self.add_raw_rdata(
             zone.name.to_wire_name()?,
             SOA_WIRE_TYPE,
-            zone.default_ttl as u32,
+            zone.default_ttl.as_secs(),
             rdata,
         )
     }
 
     /// Adds a catalog-zone SOA with placeholder `invalid` MNAME/RNAME.
-    pub fn add_catalog_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), EncodeMessageError> {
+    pub fn add_catalog_soa(
+        &mut self,
+        zone: &Zone,
+        serial: Serial,
+    ) -> Result<(), EncodeMessageError> {
         let rdata = SoaRecordValue {
             mname: "invalid",
             rname: "invalid",
-            serial,
+            serial: serial.as_u32(),
             refresh: zone.refresh as u32,
             retry: zone.retry as u32,
             expire: zone.expire as u32,
-            minimum: zone.minimum_ttl as u32,
+            minimum: zone.minimum_ttl.as_secs(),
         }
         .to_rdata()?;
         self.add_raw_rdata(
             zone.name.to_wire_name()?,
             SOA_WIRE_TYPE,
-            zone.default_ttl as u32,
+            zone.default_ttl.as_secs(),
             rdata,
         )
     }
@@ -93,15 +98,14 @@ impl DnsMessageBuilder {
         &mut self,
         soa: &crate::model::zone_version::ZoneVersion,
     ) -> Result<(), EncodeMessageError> {
-        let serial = crate::dns::serial_to_u32(soa.serial)?;
         let rdata = SoaRecordValue {
             mname: &soa.mname,
             rname: &soa.rname,
-            serial,
+            serial: soa.serial.as_u32(),
             refresh: soa.refresh as u32,
             retry: soa.retry as u32,
             expire: soa.expire as u32,
-            minimum: soa.minimum_ttl as u32,
+            minimum: soa.minimum_ttl.as_secs(),
         }
         .to_rdata()?;
 
@@ -109,7 +113,7 @@ impl DnsMessageBuilder {
         self.add_raw_rdata(
             self.qname.clone(),
             SOA_WIRE_TYPE,
-            soa.default_ttl as u32,
+            soa.default_ttl.as_secs(),
             rdata,
         )
     }
@@ -133,7 +137,7 @@ impl DnsMessageBuilder {
         let owner_name = zone.name.to_fqdn();
         self.add_text_rdata(
             &owner_name,
-            zone.default_ttl as u32,
+            zone.default_ttl.as_secs(),
             &RecordType::Ns,
             "invalid",
             None,
@@ -146,7 +150,7 @@ impl DnsMessageBuilder {
         // "2" is the RFC 9432 catalog zone schema version.
         self.add_text_rdata(
             &version_name,
-            zone.default_ttl as u32,
+            zone.default_ttl.as_secs(),
             &RecordType::Txt,
             &TxtRecordValue::from_string("2").to_presentation(),
             None,
@@ -164,7 +168,7 @@ impl DnsMessageBuilder {
         let ptr_target = to_fqdn(member_zone);
         self.add_text_rdata(
             &ptr_name,
-            zone.default_ttl as u32,
+            zone.default_ttl.as_secs(),
             &RecordType::Ptr,
             &ptr_target,
             None,
@@ -195,7 +199,7 @@ impl DnsMessageBuilder {
         name: &OwnerName,
         record_type: &RecordType,
         value: &str,
-        ttl: i32,
+        ttl: Ttl,
         priority: Option<i32>,
     ) -> Result<(), EncodeMessageError> {
         let EncodedRdata { record_type, rdata } =
@@ -203,7 +207,7 @@ impl DnsMessageBuilder {
         self.add_raw_rdata(
             name.to_wire_name(zone_name)?,
             record_type,
-            ttl as u32,
+            ttl.as_secs(),
             rdata,
         )
     }
@@ -217,7 +221,7 @@ impl DnsMessageBuilder {
         self.add_raw_rdata(
             record.name.to_wire_name(zone_name)?,
             record.record_type.wire_type(),
-            record.ttl as u32,
+            record.ttl.as_secs(),
             record.rdata.clone(),
         )
     }

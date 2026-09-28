@@ -1,6 +1,6 @@
 use bindizr_core::{
-    dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
-    model::zone::Zone,
+    dns::{Serial, Ttl, message, message::Rtype, name::ZoneName, tsig::TransferSigner},
+    model::zone::{Zone, ZoneId},
 };
 use bindizr_service::zone;
 use chrono::Utc;
@@ -32,20 +32,24 @@ pub(crate) async fn generate_catalog_zone(
 
     // The catalog zone is virtual (no DB row).
     let digest = catalog_digest(&member_zones);
-    let base_serial = all_zones.iter().map(|z| z.serial).max().unwrap_or(1);
+    let base_serial = all_zones
+        .iter()
+        .map(|z| z.serial)
+        .max()
+        .unwrap_or(Serial::from(1));
     let serial = zone::advance_catalog_serial(cx, catalog_zone_name, &digest, base_serial).await?;
 
     let catalog_zone = Zone {
-        id: 0,
+        id: ZoneId::from(0),
         name: ZoneName::from_row(catalog_zone_name),
         mname: "invalid".to_string(),
         rname: "invalid".to_string(),
-        default_ttl: 3600,
+        default_ttl: Ttl::from_secs(3600),
         serial,
         refresh: 3600,
         retry: 600,
         expire: 86400,
-        minimum_ttl: 60,
+        minimum_ttl: Ttl::from_secs(60),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -98,7 +102,7 @@ pub(crate) async fn handle_catalog_axfr(
     let mut messages_sent = 0usize;
 
     // Both SOAs must carry this snapshot's serial to delimit the AXFR.
-    let serial = bindizr_core::dns::serial_to_u32(catalog_zone.serial)?;
+    let serial = catalog_zone.serial;
 
     crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,

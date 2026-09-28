@@ -2,8 +2,8 @@ use chrono::{DateTime, Duration, Utc};
 
 use super::*;
 use crate::{
-    dns::{dnssec::generate_key, name::ZoneName},
-    model::zone::Zone,
+    dns::{Serial, dnssec::generate_key, name::ZoneName},
+    model::zone::{Zone, ZoneId},
 };
 
 /// A real `dnssec-keygen -a ECDSAP256SHA256` pair (BIND 9.20), so the tests
@@ -20,16 +20,16 @@ Created: 20260913195832
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 3600,
-        serial: 5,
+        default_ttl: Ttl::from_secs(3600),
+        serial: Serial::from(5),
         refresh: 300,
         retry: 60,
         expire: 3600000,
-        minimum_ttl: 900,
+        minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -101,7 +101,7 @@ fn bind_timing_places_an_imported_key_in_its_rollover() {
 /// Verify that a schedule bind left open falls back to the DNSKEY TTL.
 #[test]
 fn a_schedule_bind_left_open_falls_back_to_the_dnskey_ttl() {
-    let ttl = Duration::seconds(i64::from(test_zone().default_ttl));
+    let ttl = Duration::seconds(i64::from(test_zone().default_ttl.as_secs()));
 
     let key = import(&[("Publish", stamp(-1))]).unwrap();
     assert_eq!(key.state, DnssecKeyState::Published);
@@ -225,6 +225,6 @@ fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) ->
         now(),
     )
     .unwrap();
-    key.id = id;
+    key.id = DnssecKeyId::from(id);
     key
 }

@@ -1,3 +1,4 @@
+use bindizr_core::model::{tsig_grant::TsigGrantId, tsig_key::TsigKeyId, zone::ZoneId};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
@@ -26,14 +27,17 @@ pub(crate) async fn create(
     .execute(&mut *conn)
     .await?;
 
-    grant.id = result.last_insert_id() as i32;
+    grant.id = TsigGrantId::from(result.last_insert_id() as i32);
     grant.created_at = now;
 
     Ok(grant)
 }
 
 /// Find a TSIG grant by ID.
-pub(crate) async fn get(pool: &Pool<MySql>, id: i32) -> Result<Option<TsigGrant>, DatabaseError> {
+pub(crate) async fn get(
+    pool: &Pool<MySql>,
+    id: TsigGrantId,
+) -> Result<Option<TsigGrant>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     let grant = sqlx::query_as::<_, TsigGrant>(
@@ -49,7 +53,7 @@ pub(crate) async fn get(pool: &Pool<MySql>, id: i32) -> Result<Option<TsigGrant>
 /// List TSIG grants for a zone.
 pub(crate) async fn list_by_zone_id(
     pool: &Pool<MySql>,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<Vec<TsigGrant>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
@@ -66,8 +70,8 @@ pub(crate) async fn list_by_zone_id(
 /// List TSIG grants for a TSIG key in a zone in the current transaction.
 pub(crate) async fn list_by_zone_id_and_key_id_tx(
     tx: &mut Transaction<'_, MySql>,
-    zone_id: i32,
-    tsig_key_id: i32,
+    zone_id: ZoneId,
+    tsig_key_id: TsigKeyId,
     lock_level: LockLevel,
 ) -> Result<Vec<TsigGrant>, DatabaseError> {
     let grants = sqlx::query_as::<_, TsigGrant>(AssertSqlSafe(
@@ -85,7 +89,7 @@ pub(crate) async fn list_by_zone_id_and_key_id_tx(
 /// List TSIG grants for a TSIG key.
 pub(crate) async fn list_by_key_id(
     pool: &Pool<MySql>,
-    tsig_key_id: i32,
+    tsig_key_id: TsigKeyId,
 ) -> Result<Vec<TsigGrant>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
@@ -102,7 +106,7 @@ pub(crate) async fn list_by_key_id(
 /// Count TSIG grants for a TSIG key.
 pub(crate) async fn count_by_key_id(
     pool: &Pool<MySql>,
-    tsig_key_id: i32,
+    tsig_key_id: TsigKeyId,
 ) -> Result<u64, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
@@ -116,7 +120,7 @@ pub(crate) async fn count_by_key_id(
 }
 
 /// Delete a TSIG grant by ID.
-pub(crate) async fn delete(pool: &Pool<MySql>, id: i32) -> Result<(), DatabaseError> {
+pub(crate) async fn delete(pool: &Pool<MySql>, id: TsigGrantId) -> Result<(), DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     sqlx::query("DELETE FROM tsig_grants WHERE id = ?")
@@ -130,8 +134,8 @@ pub(crate) async fn delete(pool: &Pool<MySql>, id: i32) -> Result<(), DatabaseEr
 /// Delete every grant a TSIG key holds in one zone, returning how many rows went.
 pub(crate) async fn delete_by_key_id_and_zone_id(
     pool: &Pool<MySql>,
-    tsig_key_id: i32,
-    zone_id: i32,
+    tsig_key_id: TsigKeyId,
+    zone_id: ZoneId,
 ) -> Result<u64, DatabaseError> {
     let mut conn = pool.acquire().await?;
 

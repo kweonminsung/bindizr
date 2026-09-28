@@ -3,7 +3,10 @@
 
 use std::collections::HashMap;
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::{
+    dns::name::OwnerName,
+    model::{tsig_grant::TsigGrantId, tsig_key::TsigKeyId, zone::ZoneId},
+};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
@@ -52,7 +55,7 @@ pub async fn create(
     let grant = db::tsig_grant::create(
         cx.db(),
         TsigGrant {
-            id: 0,
+            id: TsigGrantId::UNWRITTEN,
             zone_id: zone.id,
             tsig_key_id: key.id,
             record_name_pattern,
@@ -91,7 +94,7 @@ pub async fn list_by_key(
     let key = super::lookup_by_name(cx, key_name).await?;
     let grants = db::tsig_grant::list_by_key_id(cx.db(), key.id).await?;
 
-    let zone_names: HashMap<i32, String> = db::zone::list_all(cx.db())
+    let zone_names: HashMap<ZoneId, String> = db::zone::list_all(cx.db())
         .await?
         .into_iter()
         .map(|zone| (zone.id, zone.name.to_string()))
@@ -125,7 +128,7 @@ pub async fn list_by_zone(
     let zone = zone::lookup_by_name(cx, zone_name).await?;
     let grants = db::tsig_grant::list_by_zone_id(cx.db(), zone.id).await?;
 
-    let key_names: HashMap<i32, String> = db::tsig_key::list_all(cx.db())
+    let key_names: HashMap<TsigKeyId, String> = db::tsig_key::list_all(cx.db())
         .await?
         .into_iter()
         .map(|key| (key.id, key.name))
@@ -173,7 +176,7 @@ pub async fn revoke(
     cx: &Context,
     caller: &Caller,
     key_name: &str,
-    grant_id: i32,
+    grant_id: TsigGrantId,
 ) -> Result<(), ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
@@ -207,7 +210,7 @@ pub async fn revoke_by_key_and_zone(
 pub async fn revoke_by_id(
     cx: &Context,
     caller: &Caller,
-    grant_id: i32,
+    grant_id: TsigGrantId,
 ) -> Result<(), ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 

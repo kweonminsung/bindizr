@@ -1,6 +1,6 @@
 //! Zone version, diff, and rollback payloads.
 
-use bindizr_core::dns::{name::ZoneName, record::SoaMailbox, serial_to_u32};
+use bindizr_core::dns::{Serial, Ttl, name::ZoneName, record::SoaMailbox};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -18,22 +18,22 @@ use crate::{
 /// (`rname` converted back from SOA mailbox form).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ZoneVersionResponse {
-    #[schema(example = 7)]
-    pub serial: u32,
+    #[schema(example = 7, value_type = u32)]
+    pub serial: Serial,
     #[schema(example = "ns1.example.com")]
     pub mname: String,
     #[schema(example = "admin@example.com")]
     pub rname: String,
-    #[schema(example = 3600)]
-    pub default_ttl: i32,
+    #[schema(example = 3600, value_type = i32)]
+    pub default_ttl: Ttl,
     #[schema(example = 7200)]
     pub refresh: i32,
     #[schema(example = 3600)]
     pub retry: i32,
     #[schema(example = 604800)]
     pub expire: i32,
-    #[schema(example = 3600)]
-    pub minimum_ttl: i32,
+    #[schema(example = 3600, value_type = i32)]
+    pub minimum_ttl: Ttl,
     /// Which plane asked for this version: `token`, `nsupdate`, `system`
     /// (the DNSSEC scheduler), or `local` (the daemon socket, or
     /// any request while authentication is disabled).
@@ -57,7 +57,7 @@ impl TryFrom<&ZoneVersion> for ZoneVersionResponse {
                 ServiceError::internal(format!("Failed to decode version rname: {}", e))
             })?;
         Ok(ZoneVersionResponse {
-            serial: serial_to_u32(version.serial).map_err(ServiceError::internal)?,
+            serial: version.serial,
             mname: version.mname.clone(),
             rname,
             default_ttl: version.default_ttl,
@@ -82,8 +82,8 @@ pub struct VersionRecordResponse {
     #[schema(example = "A")]
     pub record_type: String,
     pub value: RecordValueRequest,
-    #[schema(example = 3600)]
-    pub ttl: i32,
+    #[schema(example = 3600, value_type = i32)]
+    pub ttl: Ttl,
     #[schema(example = 10)]
     pub priority: Option<i32>,
 }
@@ -115,8 +115,8 @@ pub struct VersionDetailResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct RecordDiffValue {
     pub value: RecordValueRequest,
-    #[schema(example = 300)]
-    pub ttl: i32,
+    #[schema(example = 300, value_type = i32)]
+    pub ttl: Ttl,
     #[schema(example = 10)]
     pub priority: Option<i32>,
 }
@@ -177,10 +177,10 @@ pub struct RecordDiff {
 /// The difference between two of a zone's serials.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct VersionDiffResponse {
-    #[schema(example = 41)]
-    pub from_serial: u32,
-    #[schema(example = 42)]
-    pub to_serial: u32,
+    #[schema(example = 41, value_type = u32)]
+    pub from_serial: Serial,
+    #[schema(example = 42, value_type = u32)]
+    pub to_serial: Serial,
     pub diff: RecordDiff,
 }
 
@@ -206,9 +206,9 @@ pub struct RollbackZoneResponse {
     pub applied: bool,
     #[schema(example = false)]
     pub dry_run: bool,
-    #[schema(example = 7)]
-    pub target_serial: u32,
-    #[schema(example = 13)]
-    pub new_serial: u32,
+    #[schema(example = 7, value_type = u32)]
+    pub target_serial: Serial,
+    #[schema(example = 13, value_type = u32)]
+    pub new_serial: Serial,
     pub summary: RollbackSummary,
 }

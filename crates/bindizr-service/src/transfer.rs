@@ -5,8 +5,11 @@
 use std::net::IpAddr;
 
 use bindizr_core::{
-    dns::serial_to_i32,
-    model::transfer::{Transfer, TransferKind, TransferResult, TransferWithZone},
+    dns::Serial,
+    model::{
+        transfer::{Transfer, TransferKind, TransferResult, TransferWithZone},
+        zone::ZoneId,
+    },
 };
 use chrono::Utc;
 
@@ -17,10 +20,10 @@ use crate::{Context, db, error::ServiceError};
 pub async fn save_ok(
     cx: &Context,
     client: IpAddr,
-    zone_id: i32,
+    zone_id: ZoneId,
     kind: TransferKind,
     incremental: bool,
-    serial: u32,
+    serial: Serial,
 ) {
     let saved = db::transfer::upsert(
         cx.db(),
@@ -30,7 +33,7 @@ pub async fn save_ok(
             kind,
             result: TransferResult::Ok,
             incremental,
-            serial: serial_to_i32(serial).ok(),
+            serial: Some(serial),
             served_at: Utc::now(),
             error: None,
         },
