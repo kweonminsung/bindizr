@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
+use thiserror::Error;
 
 use super::dnssec_key::DnssecAlgorithm;
 
@@ -8,6 +9,13 @@ pub const DEFAULT_DNSSEC_POLICY_NAME: &str = "default";
 
 /// Seconds in a day, the unit the policy's day fields are stored in.
 const SECS_PER_DAY: i64 = 86_400;
+
+/// A denial mode outside NSEC and NSEC3.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("unsupported denial mode '{value}' (supported: nsec, nsec3)")]
+pub struct ParseDenialError {
+    pub value: String,
+}
 
 /// How a signed zone proves nonexistence (denial of existence).
 #[derive(
@@ -42,23 +50,22 @@ impl std::fmt::Display for DnssecDenial {
 }
 
 impl std::str::FromStr for DnssecDenial {
-    type Err = String;
+    type Err = ParseDenialError;
 
     /// Parse a DNSSEC denial from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "nsec" => Ok(DnssecDenial::Nsec),
             "nsec3" => Ok(DnssecDenial::Nsec3),
-            _ => Err(format!(
-                "unsupported denial mode '{}' (supported: nsec, nsec3)",
-                s
-            )),
+            _ => Err(ParseDenialError {
+                value: s.to_string(),
+            }),
         }
     }
 }
 
 impl TryFrom<String> for DnssecDenial {
-    type Error = String;
+    type Error = ParseDenialError;
 
     /// Validate and convert the stored value into a DNSSEC denial.
     fn try_from(s: String) -> Result<Self, Self::Error> {

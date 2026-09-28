@@ -13,9 +13,21 @@ use bindizr_core::{
     },
     metrics::NsupdateResult,
 };
+use thiserror::Error;
 use tokio::net::{TcpStream, UdpSocket};
 
-use crate::dns::server::DnsContext;
+use crate::dns::{error::XfrError, server::DnsContext};
+
+/// Why an UPDATE was not answered, for the listener's log.
+#[derive(Debug, Error)]
+pub(crate) enum NsupdateError {
+    #[error("Failed to build NSUPDATE TCP response")]
+    BuildResponse,
+    #[error("Failed to write NSUPDATE TCP response: {0}")]
+    WriteTcp(#[source] XfrError),
+    #[error("Failed to write NSUPDATE UDP response: {0}")]
+    SendUdp(#[source] std::io::Error),
+}
 
 /// Apply a dynamic update received over TCP and send its response.
 pub(crate) async fn handle_tcp_nsupdate(
@@ -23,16 +35,14 @@ pub(crate) async fn handle_tcp_nsupdate(
     stream: &mut TcpStream,
     query_data: &[u8],
     client_addr: SocketAddr,
-) -> Result<(), String> {
+) -> Result<(), NsupdateError> {
     log::info!("NSUPDATE TCP request from {}", client_addr);
-
     let response = handle_nsupdate_request(dns_cx, query_data, client_addr)
         .await
-        .ok_or_else(|| "Failed to build NSUPDATE TCP response".to_string())?;
-
+        .ok_or(NsupdateError::BuildResponse)?;
     crate::dns::wire::write_tcp_message(stream, &response)
         .await
-        .map_err(|e| format!("Failed to write NSUPDATE TCP response: {}", e))
+        .map_err(NsupdateError::WriteTcp)
 }
 
 /// Apply a dynamic update received over UDP and return its response.
@@ -41,7 +51,7 @@ pub(crate) async fn handle_udp_nsupdate(
     socket: &UdpSocket,
     query_data: &[u8],
     client_addr: SocketAddr,
-) -> Result<(), String> {
+) -> Result<(), NsupdateError> {
     log::info!("NSUPDATE UDP request from {}", client_addr);
 
     let response = match handle_nsupdate_request(dns_cx, query_data, client_addr).await {
@@ -55,8 +65,7 @@ pub(crate) async fn handle_udp_nsupdate(
     socket
         .send_to(&response, client_addr)
         .await
-        .map_err(|e| format!("Failed to write NSUPDATE UDP response: {}", e))?;
-
+        .map_err(NsupdateError::SendUdp)?;
     Ok(())
 }
 

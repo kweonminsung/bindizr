@@ -70,8 +70,8 @@ fn authorize_global_rejects_scoped_tokens() {
         grants: Arc::from(vec![]),
     };
     let err = scoped.authorize_global("create zones").unwrap_err();
-    assert_eq!(err.code, ErrorCode::Forbidden);
-    assert!(err.message.contains("create zones"));
+    assert_eq!(err.code(), ErrorCode::Forbidden);
+    assert!(err.to_string().contains("create zones"));
 }
 
 /// Verify that `authorize` grants writes matching pattern and types.
@@ -87,8 +87,8 @@ fn authorize_grants_writes_matching_pattern_and_types() {
 #[test]
 fn authorize_rejects_writes_without_any_grant() {
     let err = authorize(&[], &[write("app", Some(&RecordType::A))]).unwrap_err();
-    assert_eq!(err.code, ErrorCode::Forbidden);
-    assert!(err.message.contains("example.com"));
+    assert_eq!(err.code(), ErrorCode::Forbidden);
+    assert!(err.to_string().contains("example.com"));
 }
 
 /// Verify that `authorize` enforces record name patterns.
@@ -100,7 +100,7 @@ fn authorize_enforces_record_name_patterns() {
     assert!(authorize(&grants, &[write("dyn", Some(&RecordType::A))]).is_ok());
 
     let err = authorize(&grants, &[write("www", Some(&RecordType::A))]).unwrap_err();
-    assert_eq!(err.code, ErrorCode::Forbidden);
+    assert_eq!(err.code(), ErrorCode::Forbidden);
 }
 
 /// Verify that `authorize` enforces record types.
@@ -112,11 +112,11 @@ fn authorize_enforces_record_types() {
     assert!(authorize(&grants, &[write("app", Some(&RecordType::TXT))]).is_ok());
 
     let err = authorize(&grants, &[write("app", Some(&RecordType::CNAME))]).unwrap_err();
-    assert_eq!(err.code, ErrorCode::Forbidden);
+    assert_eq!(err.code(), ErrorCode::Forbidden);
 
     // A typeless write (whole-name delete) needs an unrestricted-type grant.
     let err = authorize(&grants, &[write("app", None)]).unwrap_err();
-    assert_eq!(err.code, ErrorCode::Forbidden);
+    assert_eq!(err.code(), ErrorCode::Forbidden);
 }
 
 /// Verify that `authorize` rejects when any single write is denied.
@@ -132,8 +132,8 @@ fn authorize_rejects_when_any_single_write_is_denied() {
         ],
     )
     .unwrap_err();
-    assert_eq!(err.code, ErrorCode::Forbidden);
-    assert!(err.message.contains("other"));
+    assert_eq!(err.code(), ErrorCode::Forbidden);
+    assert!(err.to_string().contains("other"));
 }
 
 /// Verify that `authorize` rejects a read only grant.
@@ -143,7 +143,7 @@ fn authorize_rejects_a_read_only_grant() {
     read_only.can_write = false;
 
     let err = authorize(&[read_only], &[write("app", Some(&RecordType::A))]).unwrap_err();
-    assert_eq!(err.code, ErrorCode::Forbidden);
+    assert_eq!(err.code(), ErrorCode::Forbidden);
 }
 
 /// Build a scoped caller with the supplied token grants.
@@ -205,11 +205,11 @@ fn authorize_zone_unrestricted_rejects_a_scoped_grant() {
     let err = token(vec![grant("*.dyn", "*")])
         .authorize_zone_unrestricted(&test_zone())
         .unwrap_err();
-    assert_eq!(err.code, ErrorCode::Forbidden);
+    assert_eq!(err.code(), ErrorCode::Forbidden);
 
     // A zone with no grant at all keeps reading as absent.
     let err = token(vec![])
         .authorize_zone_unrestricted(&test_zone())
         .unwrap_err();
-    assert_eq!(err.code, ErrorCode::ZoneNotFound);
+    assert_eq!(err.code(), ErrorCode::ZoneNotFound);
 }

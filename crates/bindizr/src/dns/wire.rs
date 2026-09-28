@@ -4,7 +4,7 @@
 
 use std::{io::ErrorKind, time::Duration};
 
-use bindizr_core::dns::message::{DnsMessageBuilder, encode_tcp_message};
+use bindizr_core::dns::message::{DnsMessageBuilder, EncodeMessageError, encode_tcp_message};
 use tokio::time::timeout;
 
 use crate::dns::error::XfrError;
@@ -23,7 +23,7 @@ pub(crate) async fn add_answer_and_flush_if_needed<W, F>(
 ) -> Result<(), XfrError>
 where
     W: tokio::io::AsyncWriteExt + Unpin,
-    F: FnOnce(&mut DnsMessageBuilder) -> Result<(), String>,
+    F: FnOnce(&mut DnsMessageBuilder) -> Result<(), EncodeMessageError>,
 {
     match builder.add_answer_or_overflow(add_answer) {
         Ok(Some(frame)) => {
@@ -37,7 +37,7 @@ where
                 write_frame(writer, &frame).await?;
                 *messages_sent += 1;
             }
-            Err(XfrError::ProtocolError(overflow.message))
+            Err(XfrError::Protocol(overflow.source))
         }
     }
 }
@@ -69,8 +69,8 @@ where
         writer.flush().await
     };
     match timeout(TCP_WRITE_TIMEOUT, write).await {
-        Ok(result) => result.map_err(XfrError::IoError),
-        Err(_) => Err(XfrError::IoError(std::io::Error::new(
+        Ok(result) => result.map_err(XfrError::Io),
+        Err(_) => Err(XfrError::Io(std::io::Error::new(
             ErrorKind::TimedOut,
             format!(
                 "the client read nothing for {} seconds",
@@ -85,22 +85,17 @@ pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     reader: &mut R,
 ) -> Result<Vec<u8>, XfrError> {
     let mut len_buf = [0u8; 2];
-    if reader
-        .read(&mut len_buf[..1])
-        .await
-        .map_err(XfrError::IoError)?
-        == 0
-    {
-        return Err(XfrError::IoError(std::io::Error::new(
+    if reader.read(&mut len_buf[..1]).await.map_err(XfrError::Io)? == 0 {
+        return Err(XfrError::Io(std::io::Error::new(
             std::io::ErrorKind::UnexpectedEof,
             "connection closed",
         )));
     }
     reader.read_exact(&mut len_buf[1..]).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::UnexpectedEof {
-            XfrError::ProtocolError("Incomplete DNS TCP length prefix".to_string())
+            XfrError::IncompletePrefix
         } else {
-            XfrError::IoError(e)
+            XfrError::Io(e)
         }
     })?;
 
@@ -110,12 +105,9 @@ pub(crate) async fn read_tcp_message<R: tokio::io::AsyncReadExt + Unpin>(
     let mut message_buf = vec![0u8; len];
     reader.read_exact(&mut message_buf).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::UnexpectedEof {
-            XfrError::ProtocolError(format!(
-                "Incomplete DNS TCP message: expected {} bytes",
-                len
-            ))
+            XfrError::IncompleteMessage { expected: len }
         } else {
-            XfrError::IoError(e)
+            XfrError::Io(e)
         }
     })?;
 
@@ -157,7 +149,7 @@ mod tests {
         // transfers reads as EOF rather than a malformed length prefix.
         let error = read(b"").await.unwrap_err();
 
-        assert!(matches!(error, XfrError::IoError(_)), "{error:?}");
+        assert!(matches!(error, XfrError::Io(_)), "{error:?}");
     }
 
     /// Verify that a truncated length prefix is a protocol error.
@@ -165,10 +157,7 @@ mod tests {
     async fn a_truncated_length_prefix_is_a_protocol_error() {
         let error = read(&[0x00]).await.unwrap_err();
 
-        assert!(
-            matches!(&error, XfrError::ProtocolError(m) if m.contains("length prefix")),
-            "{error:?}"
-        );
+        assert!(matches!(&error, XfrError::IncompletePrefix), "{error:?}");
     }
 
     /// Verify that a body shorter than its prefix names the length it expected.
@@ -177,7 +166,7 @@ mod tests {
         let error = read(&[0x00, 0x04, b'a', b'b']).await.unwrap_err();
 
         assert!(
-            matches!(&error, XfrError::ProtocolError(m) if m.contains("expected 4 bytes")),
+            matches!(&error, XfrError::IncompleteMessage { expected: 4 }),
             "{error:?}"
         );
     }
@@ -203,7 +192,7 @@ mod tests {
             .expect_err("the write should have timed out");
 
         assert!(
-            matches!(&error, XfrError::IoError(e) if e.kind() == ErrorKind::TimedOut),
+            matches!(&error, XfrError::Io(e) if e.kind() == ErrorKind::TimedOut),
             "{error}"
         );
     }

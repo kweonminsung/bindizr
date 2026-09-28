@@ -1,4 +1,4 @@
-use super::value::validate_domain_record_value;
+use super::{ParseRecordValueError, value::validate_domain_record_value};
 use crate::dns::name::to_fqdn_lowercase;
 
 pub struct DnameRecordValue<'a> {
@@ -7,7 +7,7 @@ pub struct DnameRecordValue<'a> {
 
 impl<'a> DnameRecordValue<'a> {
     /// Parse and validate a DNAME record value.
-    pub fn parse(value: &'a str) -> Result<Self, String> {
+    pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
         validate_domain_record_value("DNAME record value", value)?;
         Ok(Self { target: value })
     }

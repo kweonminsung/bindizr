@@ -83,7 +83,7 @@ mod tests {
     fn rejects_empty_long_and_odd_identifiers() {
         for value in ["", "  ", "a b", "a/b", &"n".repeat(65)] {
             let err = normalize_identifier(value, "name", 64).unwrap_err();
-            assert_eq!(err.code, ErrorCode::InvalidInput, "{value:?}");
+            assert_eq!(err.code(), ErrorCode::InvalidInput, "{value:?}");
         }
     }
 
@@ -103,7 +103,7 @@ mod tests {
         let too_long = normalize(Some(over.as_str())).unwrap_err();
         let nul = normalize(Some("a\0b")).unwrap_err();
 
-        assert_eq!(too_long.code, ErrorCode::InvalidInput);
-        assert_eq!(nul.code, ErrorCode::InvalidInput);
+        assert_eq!(too_long.code(), ErrorCode::InvalidInput);
+        assert_eq!(nul.code(), ErrorCode::InvalidInput);
     }
 }

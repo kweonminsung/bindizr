@@ -1,8 +1,12 @@
 use sqlx::FromRow;
+use thiserror::Error;
 
 use crate::{
     dns::{name::OwnerName, record::Rdata},
-    model::{dnssec_record::DnssecRecordType, record::RecordType},
+    model::{
+        dnssec_record::{DnssecRecordType, ParseDnssecRecordTypeError},
+        record::RecordType,
+    },
 };
 
 /// A single record add/delete change within a zone, used for IXFR.
@@ -32,6 +36,13 @@ pub struct ZoneChange {
     pub derived: bool,
 }
 
+/// A journal operation column holding neither ADD nor DEL.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("unknown journal operation '{value}'")]
+pub struct ParseChangeOperationError {
+    pub value: String,
+}
+
 /// What a journal row did to its record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeOperation {
@@ -50,20 +61,22 @@ impl ChangeOperation {
 }
 
 impl std::str::FromStr for ChangeOperation {
-    type Err = String;
+    type Err = ParseChangeOperationError;
 
     /// Parse the stored text of a change operation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "ADD" => Ok(ChangeOperation::Add),
             "DEL" => Ok(ChangeOperation::Del),
-            other => Err(format!("unknown journal operation '{}'", other)),
+            other => Err(ParseChangeOperationError {
+                value: other.to_string(),
+            }),
         }
     }
 }
 
 impl TryFrom<String> for ChangeOperation {
-    type Error = String;
+    type Error = ParseChangeOperationError;
 
     /// Validate and convert the stored value into a change operation.
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -101,7 +114,7 @@ impl std::fmt::Display for JournalRecordType {
 }
 
 impl TryFrom<String> for JournalRecordType {
-    type Error = String;
+    type Error = ParseDnssecRecordTypeError;
 
     /// Validate and convert the stored value into a journal record type.
     fn try_from(value: String) -> Result<Self, Self::Error> {

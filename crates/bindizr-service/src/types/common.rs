@@ -55,8 +55,8 @@ impl ErrorResponse {
     /// Build an error response from a service error's code and message.
     pub fn new(err: &ServiceError) -> Self {
         ErrorResponse {
-            error: err.message.clone(),
-            code: err.code.as_str().to_string(),
+            error: err.to_string(),
+            code: err.code().as_str().to_string(),
         }
     }
 }

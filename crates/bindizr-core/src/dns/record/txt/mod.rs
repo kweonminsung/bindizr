@@ -1,4 +1,4 @@
-use super::value::MAX_RECORD_RDATA;
+use super::{ParseRecordValueError, value::MAX_RECORD_RDATA};
 
 /// The content of a TXT value: a single string or multiple character-strings.
 #[derive(Debug, PartialEq, Eq)]
@@ -17,10 +17,10 @@ impl TxtRecordValue {
     /// quoted strings (max 255 bytes each, `\"`/`\\`/`\DDD` escapes per
     /// RFC 1035, Section 5.1); any other value is one raw string kept
     /// byte-for-byte, split at 255 bytes on UTF-8 boundaries.
-    pub fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, ParseRecordValueError> {
         if !value.trim().starts_with('"') {
             if value.is_empty() {
-                return Err("TXT value must not be empty".to_string());
+                return Err(ParseRecordValueError::Empty { field: "TXT value" });
             }
             return Ok(Self::from_string(value));
         }
@@ -30,16 +30,16 @@ impl TxtRecordValue {
     }
 
     /// Wrap raw RDATA bytes, validating the character-string chain.
-    pub(crate) fn from_rdata(rdata: &[u8]) -> Result<Self, String> {
+    pub(crate) fn from_rdata(rdata: &[u8]) -> Result<Self, ParseRecordValueError> {
         if rdata.is_empty() || char_strings(rdata).is_none() {
-            return Err("TXT RDATA is not a valid character-string sequence".to_string());
+            return Err(ParseRecordValueError::TxtRdata);
         }
         Ok(Self(rdata.to_vec()))
     }
 
     /// Encode character-strings; errors if a segment exceeds 255 bytes or no
     /// segments are given.
-    pub fn from_segments<'a, I>(segments: I) -> Result<Self, String>
+    pub fn from_segments<'a, I>(segments: I) -> Result<Self, ParseRecordValueError>
     where
         I: IntoIterator<Item = &'a str>,
     {
@@ -49,13 +49,15 @@ impl TxtRecordValue {
             has_segments = true;
             let bytes = segment.as_bytes();
             if bytes.len() > 255 {
-                return Err("TXT character-string must be 255 bytes or less".to_string());
+                return Err(ParseRecordValueError::CharStringTooLong {
+                    field: "TXT character-string",
+                });
             }
             rdata.push(bytes.len() as u8);
             rdata.extend_from_slice(bytes);
         }
         if !has_segments {
-            return Err("TXT record must contain at least one character-string".to_string());
+            return Err(ParseRecordValueError::TxtNoCharString);
         }
         Ok(Self(rdata))
     }
@@ -85,12 +87,12 @@ impl TxtRecordValue {
 
     /// Bounded so the record fits one transfer message; enforced here so a
     /// stored row cannot poison an AXFR.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), ParseRecordValueError> {
         if self.0.len() > MAX_RECORD_RDATA {
-            return Err(format!(
-                "TXT record data must be at most {MAX_RECORD_RDATA} bytes, got {}",
-                self.0.len()
-            ));
+            return Err(ParseRecordValueError::TxtTooLong {
+                max: MAX_RECORD_RDATA,
+                len: self.0.len(),
+            });
         }
         Ok(())
     }
@@ -139,13 +141,13 @@ impl TxtRecordValue {
 }
 
 /// Parse quoted TXT character strings and their escapes.
-fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, String> {
+fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, ParseRecordValueError> {
     let mut segments = Vec::new();
     let mut bytes = trimmed.bytes().peekable();
 
     while let Some(byte) = bytes.next() {
         if byte != b'"' {
-            return Err("TXT character-strings must be separated by spaces".to_string());
+            return Err(ParseRecordValueError::TxtUnseparated);
         }
 
         // Decode escapes before checking the character-string's wire byte length.
@@ -158,28 +160,35 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, String> {
                         let d2 = bytes.next().filter(u8::is_ascii_digit);
                         let d3 = bytes.next().filter(u8::is_ascii_digit);
                         let (Some(d2), Some(d3)) = (d2, d3) else {
-                            return Err("TXT value contains an invalid \\DDD escape".to_string());
+                            return Err(ParseRecordValueError::InvalidEscape {
+                                field: "TXT value",
+                            });
                         };
                         let code =
                             (d - b'0') as u16 * 100 + (d2 - b'0') as u16 * 10 + (d3 - b'0') as u16;
                         if code > 255 {
-                            return Err("TXT value contains an invalid \\DDD escape".to_string());
+                            return Err(ParseRecordValueError::InvalidEscape {
+                                field: "TXT value",
+                            });
                         }
                         segment.push(code as u8);
                     }
                     Some(escaped) => segment.push(escaped),
-                    None => return Err("TXT value contains a dangling escape".to_string()),
+                    None => return Err(ParseRecordValueError::TxtDanglingEscape),
                 },
                 Some(other) => segment.push(other),
-                None => return Err("TXT value contains an unterminated quote".to_string()),
+                None => return Err(ParseRecordValueError::TxtUnterminatedQuote),
             }
         }
 
         if segment.len() > 255 {
-            return Err("TXT character-string must be 255 bytes or less".to_string());
+            return Err(ParseRecordValueError::CharStringTooLong {
+                field: "TXT character-string",
+            });
         }
         segments.push(
-            String::from_utf8(segment).map_err(|_| "TXT value must be valid UTF-8".to_string())?,
+            String::from_utf8(segment)
+                .map_err(|_| ParseRecordValueError::NotUtf8 { field: "TXT value" })?,
         );
 
         // Require spaces between quoted strings while preserving each wire segment.
@@ -194,13 +203,13 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, String> {
                 }
             }
             Some(_) => {
-                return Err("TXT character-strings must be separated by spaces".to_string());
+                return Err(ParseRecordValueError::TxtUnseparated);
             }
         }
     }
 
     if segments.is_empty() {
-        return Err("TXT record must contain at least one character-string".to_string());
+        return Err(ParseRecordValueError::TxtNoCharString);
     }
     Ok(segments)
 }

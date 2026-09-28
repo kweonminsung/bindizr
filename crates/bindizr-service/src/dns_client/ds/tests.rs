@@ -336,8 +336,8 @@ async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
     )
     .await
     .unwrap_err();
-    assert!(err.contains(&silent.to_string()), "{err}");
-    assert!(err.contains("timeout"), "{err}");
+    assert!(err.to_string().contains(&silent.to_string()), "{err}");
+    assert!(err.to_string().contains("timeout"), "{err}");
 
     let cache = fake_server(Answer::Ds {
         aa: false,
@@ -347,7 +347,7 @@ async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
     let err = query_ds(&zone_name("example.com"), &servers(&[cache]), TIMEOUT)
         .await
         .unwrap_err();
-    assert!(err.contains("not authoritative"), "{err}");
+    assert!(err.to_string().contains("not authoritative"), "{err}");
 }
 
 /// Verify that `query_ds` falls through to the next address of a server.
@@ -382,7 +382,7 @@ async fn resolve_parent_ns_addrs_rejects_an_unresolvable_entry() {
     let err = resolve_parent_ns_addrs("127.0.0.1:5353,nx.invalid", TIMEOUT)
         .await
         .unwrap_err();
-    assert!(err.contains("nx.invalid"), "{err}");
+    assert!(err.to_string().contains("nx.invalid"), "{err}");
 
     let servers = resolve_parent_ns_addrs("127.0.0.1:5353, 192.0.2.1", TIMEOUT)
         .await

@@ -2,16 +2,14 @@
 //! plus the key's TOML path upper-cased with `_` for `.`; `BINDIZR_DATABASE_URL`
 //! is the one convenience outside that rule.
 
-use std::fmt;
-
-use super::{Config, DatabaseType};
+use super::{Config, ConfigError, DatabaseType};
 
 impl Config {
     /// Apply the `BINDIZR_*` environment variables to the loaded configuration.
     pub(crate) fn apply_env_overrides(
         &mut self,
         get_env: impl Fn(&str) -> Option<String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), ConfigError> {
         if let Some(value) = get_env("BINDIZR_API_LISTEN_ADDR") {
             self.api.listen_addr = parse_env_value("BINDIZR_API_LISTEN_ADDR", &value)?;
         }
@@ -133,12 +131,14 @@ fn to_optional_setting(value: String) -> Option<String> {
 }
 
 /// Parse an environment override or return a configuration error.
-fn parse_env_value<T>(name: &str, value: &str) -> Result<T, String>
+fn parse_env_value<T>(name: &'static str, value: &str) -> Result<T, ConfigError>
 where
     T: std::str::FromStr,
-    T::Err: fmt::Display,
+    T::Err: std::error::Error + Send + Sync + 'static,
 {
-    value
-        .parse::<T>()
-        .map_err(|e| format!("Invalid {} environment variable '{}': {}", name, value, e))
+    value.parse::<T>().map_err(|e| ConfigError::Env {
+        name,
+        value: value.to_string(),
+        source: Box::new(e),
+    })
 }

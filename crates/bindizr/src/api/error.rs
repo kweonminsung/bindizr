@@ -9,12 +9,58 @@ use bindizr_service::{
     types::ErrorResponse,
 };
 use serde::de::DeserializeOwned;
+use thiserror::Error;
 
 use crate::api::middleware::body_parser::MAX_UPLOAD_BODY_BYTES;
 
+/// The HTTP status each error code answers with. Every code is spelled out,
+/// so a new one has to choose its status here.
+pub(crate) fn http_status(code: ErrorCode) -> StatusCode {
+    match code {
+        ErrorCode::InvalidInput
+        | ErrorCode::InvalidZoneField
+        | ErrorCode::InvalidRecordName
+        | ErrorCode::InvalidRecordValue
+        | ErrorCode::InvalidJsonBody => StatusCode::BAD_REQUEST,
+        ErrorCode::Unauthorized | ErrorCode::InvalidToken => StatusCode::UNAUTHORIZED,
+        ErrorCode::Forbidden => StatusCode::FORBIDDEN,
+        ErrorCode::EndpointNotFound
+        | ErrorCode::ZoneNotFound
+        | ErrorCode::RecordNotFound
+        | ErrorCode::TokenNotFound
+        | ErrorCode::VersionNotFound
+        | ErrorCode::SecondaryNotFound
+        | ErrorCode::TsigKeyNotFound
+        | ErrorCode::TsigGrantNotFound
+        | ErrorCode::TokenGrantNotFound
+        | ErrorCode::DnssecPolicyNotFound => StatusCode::NOT_FOUND,
+        ErrorCode::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+        ErrorCode::ZoneConflict
+        | ErrorCode::RecordConflict
+        | ErrorCode::TokenConflict
+        | ErrorCode::SecondaryConflict
+        | ErrorCode::TsigKeyConflict
+        | ErrorCode::TsigKeyInUse
+        | ErrorCode::DnssecAlreadyEnabled
+        | ErrorCode::DnssecNotEnabled
+        | ErrorCode::DnssecRolloverInProgress
+        | ErrorCode::DnssecNoRolloverInProgress
+        | ErrorCode::DnssecDsPublished
+        | ErrorCode::DnssecDsNotPublished
+        | ErrorCode::DnssecDsUnverified
+        | ErrorCode::DnssecPolicyConflict
+        | ErrorCode::DnssecPolicyInUse => StatusCode::CONFLICT,
+        ErrorCode::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+        ErrorCode::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        // Server-side like Internal, but nameable for alerting.
+        ErrorCode::DnssecSigningFailed | ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
 /// Newtype over [`ServiceError`] so the service error can be converted into an
 /// HTTP response (orphan rules forbid implementing `IntoResponse` directly).
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error(transparent)]
 pub(crate) struct ApiError(pub(crate) ServiceError);
 
 impl From<ServiceError> for ApiError {
@@ -27,9 +73,11 @@ impl From<ServiceError> for ApiError {
 impl IntoResponse for ApiError {
     /// Convert a service error into its HTTP status and JSON error body.
     fn into_response(self) -> Response {
-        let status = StatusCode::from_u16(self.0.code.http_status())
-            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        (status, Json(ErrorResponse::new(&self.0))).into_response()
+        (
+            http_status(self.0.code()),
+            Json(ErrorResponse::new(&self.0)),
+        )
+            .into_response()
     }
 }
 
@@ -40,27 +88,23 @@ impl From<JsonRejection> for ApiError {
 
         let error = match rejection {
             JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
-                ServiceError::new(
-                    ErrorCode::InvalidJsonBody,
-                    format!("Invalid JSON body: {}", rejection.body_text()),
-                )
+                ServiceError::InvalidJsonBody(format!(
+                    "Invalid JSON body: {}",
+                    rejection.body_text()
+                ))
             }
-            JsonRejection::MissingJsonContentType(_) => ServiceError::new(
-                ErrorCode::UnsupportedMediaType,
-                "Unsupported media type: expected 'Content-Type: application/json'",
+            JsonRejection::MissingJsonContentType(_) => ServiceError::UnsupportedMediaType(
+                "Unsupported media type: expected 'Content-Type: application/json'".to_string(),
             ),
             // A body over DefaultBodyLimit arrives as a BytesRejection; it is a
             // client size error, so keep axum's status instead of reporting 500.
             JsonRejection::BytesRejection(_)
                 if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE =>
             {
-                ServiceError::new(
-                    ErrorCode::PayloadTooLarge,
-                    format!(
-                        "Request body exceeds the {} MiB limit",
-                        MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
-                    ),
-                )
+                ServiceError::PayloadTooLarge(format!(
+                    "Request body exceeds the {} MiB limit",
+                    MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
+                ))
             }
             _ => ServiceError::internal("Failed to read request body"),
         };
@@ -129,11 +173,11 @@ mod tests {
         else {
             panic!("an unknown query key must be rejected");
         };
-        assert_eq!(error.0.code, ErrorCode::InvalidInput);
+        assert_eq!(error.0.code(), ErrorCode::InvalidInput);
         assert!(
-            error.0.message.contains("unknown field `record_type`"),
+            error.0.to_string().contains("unknown field `record_type`"),
             "{}",
-            error.0.message
+            error.0
         );
     }
 
@@ -171,11 +215,11 @@ mod tests {
             panic!("an unknown body field must be rejected");
         };
         let error = ApiError::from(rejection);
-        assert_eq!(error.0.code, ErrorCode::InvalidJsonBody);
+        assert_eq!(error.0.code(), ErrorCode::InvalidJsonBody);
         assert!(
-            error.0.message.contains("unknown field `tll`"),
+            error.0.to_string().contains("unknown field `tll`"),
             "{}",
-            error.0.message
+            error.0
         );
     }
 }

@@ -62,7 +62,7 @@ pub(crate) async fn handle_status(cx: &Context) -> Result<DaemonResponse, Servic
 
 /// Reload the daemon configuration and return the result.
 pub(crate) fn reload_config(cx: &Context) -> Result<DaemonResponse, ServiceError> {
-    let changed = crate::daemon::reload_config(cx).map_err(ServiceError::invalid_input)?;
+    let changed = crate::daemon::reload_config(cx)?;
 
     let message = if changed.is_empty() {
         "Configuration reloaded; nothing changed".to_string()

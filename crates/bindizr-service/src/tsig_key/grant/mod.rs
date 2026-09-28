@@ -11,7 +11,7 @@ use crate::{
     Context, Transaction,
     authorization::Caller,
     db,
-    error::{ErrorCode, ServiceError},
+    error::ServiceError,
     grant_pattern::{normalize_pattern, normalize_types},
     model::{
         record::RecordType,
@@ -66,7 +66,7 @@ pub async fn create(
         // The zone or key can go between the lookups above and this insert;
         // the FK reports it.
         if e.is_foreign_key_violation() {
-            ServiceError::new(ErrorCode::ZoneNotFound, "Zone or TSIG key no longer exists")
+            ServiceError::ZoneNotFound("Zone or TSIG key no longer exists".to_string())
         } else {
             e.into()
         }

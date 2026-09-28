@@ -5,7 +5,7 @@ use clap::Subcommand;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, color, parse_payload, print_payload},
+        output::{OutputFormat, RenderOutputError, color, parse_payload, print_payload},
     },
     socket::{client, types::DaemonCommandKind},
 };
@@ -85,7 +85,7 @@ fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliEr
         // Built here rather than by the daemon: the check never reaches one.
         _ => {
             let payload = serde_json::to_value(MessageResponse { message })
-                .map_err(|e| CliError::from(e.to_string()))?;
+                .map_err(RenderOutputError::Json)?;
             print_payload(&payload, output)?
         }
     }
@@ -111,15 +111,17 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
     let found = key
         .split('.')
         .try_fold(&response.data, |value, part| value.get(part))
-        .ok_or_else(|| format!("Unknown configuration key: {}", key))?;
+        .ok_or_else(|| CliError::request(format!("Unknown configuration key: {}", key)))?;
 
     match output {
         OutputFormat::Table => match found {
             serde_json::Value::String(value) => outln!("{}", value),
             serde_json::Value::Object(_) => outln!(
                 "{}",
-                serde_json::to_string_pretty(found)
-                    .map_err(|e| format!("Failed to render configuration value: {}", e))?
+                serde_json::to_string_pretty(found).map_err(|e| CliError::request(format!(
+                    "Failed to render configuration value: {}",
+                    e
+                )))?
             ),
             value => outln!("{}", value),
         },

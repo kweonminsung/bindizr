@@ -8,7 +8,7 @@ use crate::{
     Context,
     authorization::{Caller, RecordWrite},
     db, dnssec,
-    error::{ErrorCode, ServiceError},
+    error::ServiceError,
     model::{
         record::{Record, RecordData, RecordType},
         zone::Zone,
@@ -168,10 +168,10 @@ async fn update_locked(
                 let zone = match db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
                     Ok(Some(zone)) => zone,
                     Ok(None) => {
-                        return Err(ServiceError::new(
-                            ErrorCode::ZoneNotFound,
-                            format!("Zone with id '{}' not found", zone_id),
-                        ));
+                        return Err(ServiceError::ZoneNotFound(format!(
+                            "Zone with id '{}' not found",
+                            zone_id
+                        )));
                     }
                     Err(e) => {
                         log::error!("Failed to fetch zone: {}", e);

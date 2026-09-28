@@ -8,12 +8,43 @@ use bindizr_core::{
     },
     metrics::NotifyResult,
 };
+use thiserror::Error;
 
-use crate::{Context, model::secondary::Secondary, secondary, types::NotifyCheckResponse};
+use super::ExchangeError;
+use crate::{
+    Context, error::ServiceError, model::secondary::Secondary, secondary,
+    types::NotifyCheckResponse,
+};
+
+/// Why one NOTIFY to one address was not acknowledged.
+#[derive(Debug, Error)]
+pub enum SendNotifyError {
+    #[error(transparent)]
+    Sign(#[from] bindizr_core::dns::tsig::SignRequestError),
+    #[error(transparent)]
+    Exchange(#[from] ExchangeError),
+    #[error(transparent)]
+    Verify(#[from] bindizr_core::dns::tsig::VerifyAnswerError),
+    #[error(transparent)]
+    Response(#[from] bindizr_core::dns::query::ReadResponseError),
+}
+
+/// NOTIFY for a zone did not reach every address of its secondaries.
+#[derive(Debug, Error)]
+pub enum NotifyZoneError {
+    #[error(transparent)]
+    Service(#[from] ServiceError),
+    /// The addresses that failed, each with the text its report carries.
+    #[error("NOTIFY failed for zone {zone_name} ({})", failures.iter().map(|(address, error)| format!("{address}: {error}")).collect::<Vec<_>>().join("; "))]
+    Failed {
+        zone_name: String,
+        failures: Vec<(String, String)>,
+    },
+}
 
 /// Sends DNS NOTIFY to every enabled secondary for one zone. Which
 /// zones to notify is the caller's decision.
-pub(crate) async fn send_zone_notify(cx: &Context, zone_name: &str) -> Result<(), String> {
+pub(crate) async fn send_zone_notify(cx: &Context, zone_name: &str) -> Result<(), NotifyZoneError> {
     log::info!("Sending NOTIFY for zone: {}", zone_name);
 
     let reports = send_notify_to_secondaries(cx, zone_name).await?;
@@ -22,24 +53,17 @@ pub(crate) async fn send_zone_notify(cx: &Context, zone_name: &str) -> Result<()
         return Ok(());
     }
 
-    let failures: Vec<String> = reports
-        .iter()
-        .filter_map(|report| {
-            report
-                .error
-                .as_ref()
-                .map(|e| format!("{}: {}", report.address, e))
-        })
+    let failures: Vec<(String, String)> = reports
+        .into_iter()
+        .filter_map(|report| report.error.map(|error| (report.address, error)))
         .collect();
-
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(format!(
-            "NOTIFY failed for zone {} ({})",
-            zone_name,
-            failures.join("; ")
-        ))
+        Err(NotifyZoneError::Failed {
+            zone_name: zone_name.to_string(),
+            failures,
+        })
     }
 }
 
@@ -48,10 +72,8 @@ pub(crate) async fn send_zone_notify(cx: &Context, zone_name: &str) -> Result<()
 pub async fn send_notify_to_secondaries(
     cx: &Context,
     zone_name: &str,
-) -> Result<Vec<NotifyCheckResponse>, String> {
-    let secondaries = secondary::list_enabled(cx)
-        .await
-        .map_err(|e| e.to_string())?;
+) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
+    let secondaries = secondary::list_enabled(cx).await?;
 
     let mut reports = Vec::new();
     for secondary in &secondaries {
@@ -66,13 +88,14 @@ pub async fn send_notify_to_secondary(
     cx: &Context,
     zone_name: &str,
     secondary: &Secondary,
-) -> Result<Vec<NotifyCheckResponse>, String> {
+) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
     let dns_config = &cx.config().dns;
     let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
     let retries = dns_config.notify.retries;
-
-    let qname =
-        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
+    // The zone name is a stored row, so one that does not parse is the
+    // server's fault.
+    let qname = Name::<Vec<u8>>::from_str(zone_name)
+        .map_err(|e| ServiceError::internal(format!("invalid zone name: {}", e)))?;
 
     let key = match secondary::notify_signing_key(cx, secondary).await {
         Ok(key) => key,
@@ -112,7 +135,7 @@ pub async fn send_notify_to_secondary(
         };
         reports.push(NotifyCheckResponse {
             address: addr.to_string(),
-            error: result.err(),
+            error: result.err().map(|e| e.to_string()),
         });
     }
 
@@ -127,7 +150,7 @@ async fn send_notify_to_server(
     timeout: Duration,
     retries: u32,
     key: Option<&TsigSigningKey>,
-) -> Result<(), String> {
+) -> Result<(), SendNotifyError> {
     let attempts = retries.saturating_add(1);
     let mut last_error = None;
 
@@ -149,7 +172,7 @@ async fn send_notify_to_server(
         }
     }
 
-    Err(last_error.unwrap_or_else(|| format!("NOTIFY to {} was not attempted", server_addr)))
+    Err(last_error.expect("attempts is at least one"))
 }
 
 /// Send one NOTIFY attempt and validate the server's response, its
@@ -159,7 +182,7 @@ async fn send_notify_to_server_once(
     server_addr: SocketAddr,
     timeout: Duration,
     key: Option<&TsigSigningKey>,
-) -> Result<(), String> {
+) -> Result<(), SendNotifyError> {
     let (query_id, mut builder) = question_builder(Opcode::NOTIFY, true, false, qname, Rtype::SOA);
     let signer = match key {
         Some(key) => Some(sign_request(&mut builder, key.clone())?),

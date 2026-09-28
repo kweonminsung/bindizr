@@ -204,7 +204,7 @@ async fn reconcile_zone_file(
             {
                 Ok(stored_name) => stored_name,
                 Err(e) => {
-                    errors.push(format!("{}: {}", record.owner_fqdn, e.message));
+                    errors.push(format!("{}: {}", record.owner_fqdn, e));
                     continue;
                 }
             };
@@ -331,7 +331,7 @@ async fn reconcile_zone_file(
                     created_at: Utc::now(),
                 }),
                 Err(e) => {
-                    errors.push(format!("{}: {}", add.prepared.owner_name, e.message))
+                    errors.push(format!("{}: {}", add.prepared.owner_name, e))
                 }
             }
         }

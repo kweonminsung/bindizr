@@ -23,8 +23,7 @@ pub(crate) async fn create_many_tx(
     let increment =
         sqlx::query_scalar::<_, i64>("SELECT CAST(@@auto_increment_increment AS SIGNED)")
             .fetch_one(&mut **tx)
-            .await
-            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?
+            .await?
             .max(1) as i32;
 
     const CHUNK: usize = 500;
@@ -54,10 +53,7 @@ pub(crate) async fn create_many_tx(
                 .bind(r.zone_id)
                 .bind(now);
         }
-        let result = query
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        let result = query.execute(&mut **tx).await?;
 
         // MySQL returns the id of the FIRST row of a multi-row insert; the
         // ids are contiguous by `increment` for a simple insert under every

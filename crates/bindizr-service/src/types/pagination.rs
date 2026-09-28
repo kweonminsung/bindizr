@@ -1,5 +1,6 @@
 //! Paginated response envelope shared by every listing endpoint.
 
+use bindizr_db::ParseSortError;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -26,12 +27,15 @@ pub(crate) fn normalize_page_limit(limit: Option<u32>) -> Result<u32, ServiceErr
 /// Read a listing's sort or order from the request, or take the default. The
 /// vocabulary lives with the enum the query renders from, so two listings
 /// cannot drift apart on a spelling.
-pub(crate) fn parse_setting<T: Default + std::str::FromStr<Err = String>>(
-    value: Option<&str>,
-) -> Result<T, ServiceError> {
+pub(crate) fn parse_setting<T>(value: Option<&str>) -> Result<T, ServiceError>
+where
+    T: Default + std::str::FromStr<Err = ParseSortError>,
+{
     match value {
         None => Ok(T::default()),
-        Some(value) => value.parse().map_err(ServiceError::invalid_input),
+        Some(value) => value
+            .parse()
+            .map_err(|e: ParseSortError| ServiceError::invalid_input(e.to_string())),
     }
 }
 

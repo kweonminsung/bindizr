@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn normalize_parent_ns_addrs_rejects_an_empty_list() {
         let err = normalize_parent_ns_addrs(&entries(&[" ", ""])).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert_eq!(err.code(), ErrorCode::InvalidInput);
     }
 
     /// Verify that `normalize_parent_ns_addrs` rejects an entry that is not an address target.
@@ -82,7 +82,7 @@ mod tests {
     fn normalize_parent_ns_addrs_rejects_an_entry_that_is_not_an_address_target() {
         let err =
             normalize_parent_ns_addrs(&entries(&["ns.parent.example:not-a-port"])).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert_eq!(err.code(), ErrorCode::InvalidInput);
     }
 
     /// Verify that `normalize_parent_ns_addrs` rejects a list wider than the column.
@@ -90,7 +90,7 @@ mod tests {
     fn normalize_parent_ns_addrs_rejects_a_list_wider_than_the_column() {
         let entry = format!("{}.parent.example", "n".repeat(60));
         let err = normalize_parent_ns_addrs(&vec![entry; 20]).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert_eq!(err.code(), ErrorCode::InvalidInput);
     }
 
     /// Verify that the stored form splits back into the entries it was built from.

@@ -82,13 +82,10 @@ pub(crate) async fn check_installation(cx: &Context) -> Result<DaemonResponse, S
     } else {
         // Capture secondary serials before the NOTIFY check can trigger a refresh.
         let secondaries =
-            probe::probe_secondaries(cx, &config.dns.catalog_zone_name, catalog_serial)
-                .await
-                .map_err(ServiceError::internal)?;
+            probe::probe_secondaries(cx, &config.dns.catalog_zone_name, catalog_serial).await?;
         // Actively test NOTIFY delivery; this can prompt secondaries to transfer the catalog.
-        let notifies = notify::send_notify_to_secondaries(cx, &config.dns.catalog_zone_name)
-            .await
-            .map_err(ServiceError::internal)?;
+        let notifies =
+            notify::send_notify_to_secondaries(cx, &config.dns.catalog_zone_name).await?;
         let mut transfers = Vec::new();
         for secondary in secondary::list_enabled(cx).await? {
             transfers.push(SecondaryTransferSummary {

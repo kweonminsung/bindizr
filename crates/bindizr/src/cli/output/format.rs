@@ -2,6 +2,18 @@ use bindizr_core::outln;
 use clap::ValueEnum;
 use serde::de::DeserializeOwned;
 use tabled::{Table, Tabled, settings::Style};
+use thiserror::Error;
+
+/// Why a daemon response could not be rendered.
+#[derive(Debug, Error)]
+pub(crate) enum RenderOutputError {
+    #[error("Unexpected daemon response: {0}")]
+    UnexpectedPayload(#[source] serde_json::Error),
+    #[error("Failed to serialize to YAML: {0}")]
+    Yaml(#[source] serde_norway::Error),
+    #[error("Failed to serialize to JSON: {0}")]
+    Json(#[source] serde_json::Error),
+}
 
 /// How a command renders its result. Deriving `ValueEnum` is what puts the
 /// values in `--help` and in the generated shell completions.
@@ -13,8 +25,10 @@ pub(crate) enum OutputFormat {
 }
 
 /// Read a daemon response payload as the type the command expects.
-pub(crate) fn parse_payload<T: DeserializeOwned>(data: &serde_json::Value) -> Result<T, String> {
-    serde_json::from_value(data.clone()).map_err(|e| format!("Unexpected daemon response: {}", e))
+pub(crate) fn parse_payload<T: DeserializeOwned>(
+    data: &serde_json::Value,
+) -> Result<T, RenderOutputError> {
+    serde_json::from_value(data.clone()).map_err(RenderOutputError::UnexpectedPayload)
 }
 
 /// Print a daemon response: the payload verbatim for JSON and YAML, or a table
@@ -24,7 +38,7 @@ pub(crate) fn print_response<T, U>(
     data: &serde_json::Value,
     format: OutputFormat,
     to_table_rows: impl Fn(&T) -> Vec<U>,
-) -> Result<(), String>
+) -> Result<(), RenderOutputError>
 where
     T: DeserializeOwned,
     U: Tabled,
@@ -59,12 +73,15 @@ fn print_page_remainder(data: &serde_json::Value) {
 }
 
 /// Print the payload as JSON or YAML, for a command that renders its own table.
-pub(crate) fn print_payload(data: &serde_json::Value, format: OutputFormat) -> Result<(), String> {
+pub(crate) fn print_payload(
+    data: &serde_json::Value,
+    format: OutputFormat,
+) -> Result<(), RenderOutputError> {
     let rendered = match format {
-        OutputFormat::Yaml => serde_norway::to_string(data)
-            .map_err(|e| format!("Failed to serialize to YAML: {}", e))?,
-        OutputFormat::Json | OutputFormat::Table => serde_json::to_string_pretty(data)
-            .map_err(|e| format!("Failed to serialize to JSON: {}", e))?,
+        OutputFormat::Yaml => serde_norway::to_string(data).map_err(RenderOutputError::Yaml)?,
+        OutputFormat::Json | OutputFormat::Table => {
+            serde_json::to_string_pretty(data).map_err(RenderOutputError::Json)?
+        }
     };
     outln!("{}", rendered);
     Ok(())

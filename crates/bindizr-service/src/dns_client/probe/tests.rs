@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use bindizr_core::dns::message::Name;
+use bindizr_core::dns::{message::Name, query::ReadResponseError};
 
 use super::extract_soa_serial;
 use crate::dns_client::ds::tests::encode_name;
@@ -67,6 +67,7 @@ fn extract_soa_serial_rejects_id_mismatch() {
     assert!(
         extract_soa_serial(7, &zone(), &response)
             .unwrap_err()
+            .to_string()
             .contains("ID mismatch")
     );
 }
@@ -76,10 +77,10 @@ fn extract_soa_serial_rejects_id_mismatch() {
 fn extract_soa_serial_rejects_error_rcode() {
     // RCODE 5 (REFUSED)
     let response = build_soa_response(42, 0x8405, "example.com", true, 2026);
-    assert_eq!(
+    assert!(matches!(
         extract_soa_serial(42, &zone(), &response).unwrap_err(),
-        "RCODE 5"
-    );
+        ReadResponseError::Rcode(5)
+    ));
 }
 
 /// Verify that `extract_soa_serial` rejects missing qr bit.
@@ -89,6 +90,7 @@ fn extract_soa_serial_rejects_missing_qr_bit() {
     assert!(
         extract_soa_serial(42, &zone(), &response)
             .unwrap_err()
+            .to_string()
             .contains("QR bit")
     );
 }
@@ -97,20 +99,20 @@ fn extract_soa_serial_rejects_missing_qr_bit() {
 #[test]
 fn extract_soa_serial_rejects_truncated_response() {
     let response = build_soa_response(42, 0x8600, "example.com", true, 2026);
-    assert_eq!(
+    assert!(matches!(
         extract_soa_serial(42, &zone(), &response).unwrap_err(),
-        "truncated response"
-    );
+        ReadResponseError::Truncated
+    ));
 }
 
 /// Verify that `extract_soa_serial` rejects answer without SOA.
 #[test]
 fn extract_soa_serial_rejects_answer_without_soa() {
     let response = build_soa_response(42, 0x8400, "example.com", false, 0);
-    assert_eq!(
+    assert!(matches!(
         extract_soa_serial(42, &zone(), &response).unwrap_err(),
-        "no SOA record in answer"
-    );
+        ReadResponseError::NoSoa
+    ));
 }
 
 /// Verify that `extract_soa_serial` rejects a cache or another question.
@@ -118,13 +120,13 @@ fn extract_soa_serial_rejects_answer_without_soa() {
 fn extract_soa_serial_rejects_a_cache_or_another_question() {
     // 0x8000 = QR without AA: a cache answered, not the secondary.
     let cached = build_soa_response(42, 0x8000, "example.com", true, 2026);
-    assert_eq!(
+    assert!(matches!(
         extract_soa_serial(42, &zone(), &cached).unwrap_err(),
-        "response is not authoritative"
-    );
+        ReadResponseError::NotAuthoritative
+    ));
     let other = build_soa_response(42, 0x8400, "other.com", true, 2026);
-    assert_eq!(
+    assert!(matches!(
         extract_soa_serial(42, &zone(), &other).unwrap_err(),
-        "response answers another question"
-    );
+        ReadResponseError::OtherQuestion
+    ));
 }

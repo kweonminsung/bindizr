@@ -1,4 +1,4 @@
-use super::{ParseError, UpdateRecord, UpdateRequest};
+use super::{ParseUpdateError, UpdateRecord, UpdateRequest};
 use crate::{
     dns::message::{Class, Rtype},
     model::record::RecordType,
@@ -70,7 +70,7 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
 fn parse_update_request_rejects_non_soa_zone_type() {
     let message = minimal_update_with_ztype(1);
     let err = UpdateRequest::parse(&message).unwrap_err();
-    assert!(matches!(err, ParseError::InvalidZoneSection));
+    assert!(matches!(err, ParseUpdateError::InvalidZoneSection));
 }
 
 /// Verify that `UpdateRequest::parse` accepts SOA zone type.
@@ -155,7 +155,7 @@ fn parse_update_request_rejects_tsig_before_other_additional_records() {
     append_opt_record(&mut message);
 
     let err = UpdateRequest::parse(&message).unwrap_err();
-    assert!(matches!(err, ParseError::InvalidTsig));
+    assert!(matches!(err, ParseUpdateError::InvalidTsig));
 }
 
 /// Verify that `to_record_value` preserves TXT character string boundaries.
@@ -224,7 +224,7 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
     for message in [&forward[..], &self_referential[..]] {
         let record = update_record(Rtype::CNAME, Class::IN, 300, message[..2].to_vec());
         let err = record.to_record_value(message).unwrap_err();
-        assert!(!err.is_empty());
+        assert!(!err.to_string().is_empty());
     }
 }
 
@@ -234,7 +234,7 @@ fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
     let message = [1, b'a', 0, 0];
     let record = update_record(Rtype::CNAME, Class::IN, 300, message.to_vec());
     let err = record.to_record_value(&message).unwrap_err();
-    assert!(!err.is_empty());
+    assert!(!err.to_string().is_empty());
 }
 
 /// Verify rejection of empty TXT RDATA, which lacks the character-string required by RFC 1035,
@@ -243,7 +243,7 @@ fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
 fn to_record_value_rejects_empty_txt_rdata() {
     let record = update_record(Rtype::TXT, Class::IN, 300, Vec::new());
     let err = record.to_record_value(&[]).unwrap_err();
-    assert!(!err.is_empty());
+    assert!(!err.to_string().is_empty());
 }
 
 /// Verify that `to_record_value` rejects non UTF8 TXT character strings.
@@ -251,7 +251,7 @@ fn to_record_value_rejects_empty_txt_rdata() {
 fn to_record_value_rejects_non_utf8_txt_character_strings() {
     let record = update_record(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
     let err = record.to_record_value(&record.rdata).unwrap_err();
-    assert!(!err.is_empty());
+    assert!(!err.to_string().is_empty());
 }
 
 /// Verify that `to_record_value` splits SRV priority into its own column.

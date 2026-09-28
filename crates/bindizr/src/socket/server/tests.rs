@@ -22,13 +22,13 @@ fn parse_params_rejects_wrongly_typed_fields() {
     // dry_run once defaulted to false).
     let err =
         parse_params::<CreateTsigKeyRequest>(&json!({ "name": "k", "secret": 123 })).unwrap_err();
-    assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
+    assert_eq!(err.code(), bindizr_service::error::ErrorCode::InvalidInput);
     for dry_run in [json!("true"), json!(1)] {
         let err = parse_params::<RollbackZoneParams>(
             &json!({ "name": "z", "serial": 7, "dry_run": dry_run }),
         )
         .unwrap_err();
-        assert_eq!(err.code, bindizr_service::error::ErrorCode::InvalidInput);
+        assert_eq!(err.code(), bindizr_service::error::ErrorCode::InvalidInput);
     }
 }
 

@@ -219,7 +219,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
         TsigKeyCommand::Export { name } => {
             let res =
                 client::send_command(DaemonCommandKind::GetTsigKey, NameParams { name }).await?;
-            let key: TsigKeyResponse = parse_payload(&res.data).map_err(CliError::from)?;
+            let key: TsigKeyResponse = parse_payload(&res.data)?;
             print_bind_key(&key);
         }
         TsigKeyCommand::Delete { name, output } => {
@@ -314,7 +314,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             }
         }
         TsigKeyCommand::Revoke { .. } => {
-            return Err(CliError::from(
+            return Err(CliError::request(
                 "give a TSIG key name and a zone name, or --id to revoke one grant",
             ));
         }

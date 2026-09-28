@@ -410,21 +410,22 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let content = super::read_input(&file)?;
             // YAML is a superset of JSON, so one parse accepts both formats.
-            let parsed: serde_json::Value = serde_norway::from_str(&content)
-                .map_err(|e| format!("Invalid JSON/YAML in '{}': {}", file, e))?;
+            let parsed: serde_json::Value = serde_norway::from_str(&content).map_err(|e| {
+                CliError::request(format!("Invalid JSON/YAML in '{}': {}", file, e))
+            })?;
             let records = match parsed {
                 serde_json::Value::Array(_) => parsed,
-                serde_json::Value::Object(mut obj) => obj
-                    .remove("records")
-                    .ok_or("Input object must contain a 'records' array")?,
+                serde_json::Value::Object(mut obj) => obj.remove("records").ok_or_else(|| {
+                    CliError::request("Input object must contain a 'records' array")
+                })?,
                 _ => {
-                    return Err(
-                        "Expected an array of records or an object with a 'records' array".into(),
-                    );
+                    return Err(CliError::request(
+                        "Expected an array of records or an object with a 'records' array",
+                    ));
                 }
             };
             let records: Vec<RecordItem> = serde_json::from_value(records)
-                .map_err(|e| format!("Invalid record in '{}': {}", file, e))?;
+                .map_err(|e| CliError::request(format!("Invalid record in '{}': {}", file, e)))?;
 
             let response = client::send_command(
                 DaemonCommandKind::CreateRecordsBulk,
@@ -512,7 +513,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             )?;
         }
         RecordCommand::Get { .. } => {
-            return Err(CliError::from(
+            return Err(CliError::request(
                 "give a zone and a record name, or --id to address one record",
             ));
         }
@@ -583,7 +584,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             })?;
         }
         RecordCommand::Update { .. } => {
-            return Err(CliError::from(
+            return Err(CliError::request(
                 "give a zone and a record name, or --id to address one record",
             ));
         }
@@ -631,7 +632,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             }
         }
         RecordCommand::Delete { .. } => {
-            return Err(CliError::from(
+            return Err(CliError::request(
                 "give a zone and a record name, or --id to delete one record",
             ));
         }

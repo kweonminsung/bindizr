@@ -3,8 +3,18 @@
 
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
+use thiserror::Error;
 
 use crate::dns::message::Rtype;
+
+/// A transfer column holding a kind or result bindizr does not record.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ParseTransferError {
+    #[error("unsupported transfer kind '{0}'")]
+    Kind(String),
+    #[error("unsupported transfer result '{0}'")]
+    Result(String),
+}
 
 /// Which transfer a client asked for.
 #[derive(
@@ -46,20 +56,20 @@ impl std::fmt::Display for TransferKind {
 }
 
 impl std::str::FromStr for TransferKind {
-    type Err = String;
+    type Err = ParseTransferError;
 
     /// Parse a transfer kind from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "axfr" => Ok(TransferKind::Axfr),
             "ixfr" => Ok(TransferKind::Ixfr),
-            _ => Err(format!("unsupported transfer kind '{}'", s)),
+            _ => Err(ParseTransferError::Kind(s.to_string())),
         }
     }
 }
 
 impl TryFrom<String> for TransferKind {
-    type Error = String;
+    type Error = ParseTransferError;
 
     /// Validate and convert the stored value into a transfer kind.
     fn try_from(s: String) -> Result<Self, Self::Error> {
@@ -98,7 +108,7 @@ impl std::fmt::Display for TransferResult {
 }
 
 impl std::str::FromStr for TransferResult {
-    type Err = String;
+    type Err = ParseTransferError;
 
     /// Parse a transfer result from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -106,13 +116,13 @@ impl std::str::FromStr for TransferResult {
             "ok" => Ok(TransferResult::Ok),
             "refused" => Ok(TransferResult::Refused),
             "failed" => Ok(TransferResult::Failed),
-            _ => Err(format!("unsupported transfer result '{}'", s)),
+            _ => Err(ParseTransferError::Result(s.to_string())),
         }
     }
 }
 
 impl TryFrom<String> for TransferResult {
-    type Error = String;
+    type Error = ParseTransferError;
 
     /// Validate and convert the stored value into a transfer result.
     fn try_from(s: String) -> Result<Self, Self::Error> {

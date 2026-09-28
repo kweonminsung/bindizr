@@ -12,29 +12,64 @@ use domain::{
     },
     rdata::tsig::Time48,
 };
+use thiserror::Error;
 
 use crate::dns::{
-    DNS_TCP_MAX_SIZE,
-    dnssec::to_wire_name,
-    name::ParseNameError,
-    record::Rdata,
+    ConvertSerialError, DNS_TCP_MAX_SIZE, LibraryError,
+    dnssec::{WireNameError, to_wire_name},
+    name::{EncodeNameError, ParseNameError},
+    record::{EncodeRdataError, Rdata},
     tsig::{TransferSigner, signature_len},
 };
 
+/// Why a response could not be composed, signed, or framed.
+#[derive(Debug, Error)]
+pub enum EncodeMessageError {
+    #[error("Invalid raw rdata: {0}")]
+    RawRdata(#[source] LibraryError),
+    #[error(transparent)]
+    Owner(#[from] WireNameError),
+    #[error(transparent)]
+    Name(#[from] EncodeNameError),
+    #[error(transparent)]
+    Rdata(#[from] EncodeRdataError),
+    #[error(transparent)]
+    Serial(#[from] ConvertSerialError),
+    #[error("derived change carries no wire rdata")]
+    MissingRdata,
+    #[error("user change carries no record value")]
+    MissingValue,
+    #[error("DNS message exceeded maximum size without answers")]
+    NoAnswers,
+    #[error("Single DNS answer is too large: {len} bytes")]
+    AnswerTooLarge { len: usize },
+    #[error("Message too large: {len} bytes")]
+    TooLarge { len: usize },
+    #[error("Failed to compose the question: {0}")]
+    ComposeQuestion(#[source] LibraryError),
+    #[error("Failed to compose an answer: {0}")]
+    ComposeAnswer(#[source] LibraryError),
+    #[error("Failed to sign the response: {0}")]
+    Sign(#[source] LibraryError),
+}
+
 /// A size failure that may still carry a frame: the caller must send it so
 /// its message count reflects what reached the client before the failure.
+#[derive(Debug, Error)]
+#[error("{source}")]
 pub struct Overflow {
     /// The answers buffered before the oversized one, if there were any.
     pub frame: Option<Vec<u8>>,
-    pub message: String,
+    #[source]
+    pub source: EncodeMessageError,
 }
 
 impl Overflow {
     /// Build an overflow error without a pending TCP frame.
-    fn without_frame(message: String) -> Self {
+    fn without_frame(source: EncodeMessageError) -> Self {
         Overflow {
             frame: None,
-            message,
+            source,
         }
     }
 }
@@ -43,19 +78,19 @@ impl Overflow {
 /// name, or a typed name's wire bytes still carrying their encoding error.
 pub trait IntoOwner {
     /// Convert an accepted owner representation into a wire-format name.
-    fn into_owner(self) -> Result<Name<Vec<u8>>, String>;
+    fn into_owner(self) -> Result<Name<Vec<u8>>, WireNameError>;
 }
 
 impl IntoOwner for Name<Vec<u8>> {
     /// Convert an accepted owner representation into a wire-format name.
-    fn into_owner(self) -> Result<Name<Vec<u8>>, String> {
+    fn into_owner(self) -> Result<Name<Vec<u8>>, WireNameError> {
         Ok(self)
     }
 }
 
 impl IntoOwner for Result<Vec<u8>, ParseNameError> {
     /// Convert an accepted owner representation into a wire-format name.
-    fn into_owner(self) -> Result<Name<Vec<u8>>, String> {
+    fn into_owner(self) -> Result<Name<Vec<u8>>, WireNameError> {
         to_wire_name(self)
     }
 }
@@ -119,9 +154,9 @@ impl DnsMessageBuilder {
         record_type: u16,
         ttl: u32,
         rdata: Rdata,
-    ) -> Result<(), String> {
+    ) -> Result<(), EncodeMessageError> {
         let data = UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
-            .map_err(|e| format!("Invalid raw rdata: {}", e))?;
+            .map_err(|e| EncodeMessageError::RawRdata(Box::new(e)))?;
         self.add_answer(owner.into_owner()?, ttl, data);
         Ok(())
     }
@@ -174,7 +209,7 @@ impl DnsMessageBuilder {
     /// the new answer stays buffered for the next one.
     pub fn add_answer_or_overflow<F>(&mut self, add_answer: F) -> Result<Option<Vec<u8>>, Overflow>
     where
-        F: FnOnce(&mut DnsMessageBuilder) -> Result<(), String>,
+        F: FnOnce(&mut DnsMessageBuilder) -> Result<(), EncodeMessageError>,
     {
         add_answer(self).map_err(Overflow::without_frame)?;
 
@@ -183,13 +218,13 @@ impl DnsMessageBuilder {
         }
 
         // Keep the overflowing answer out of the frame built from earlier answers.
-        let last_answer = self.pop_last_answer().ok_or_else(|| {
-            Overflow::without_frame("DNS message exceeded maximum size without answers".to_string())
-        })?;
+        let last_answer = self
+            .pop_last_answer()
+            .ok_or_else(|| Overflow::without_frame(EncodeMessageError::NoAnswers))?;
 
         if self.answer_count() == 0 {
             self.push_answer(last_answer);
-            return Err(Overflow::without_frame(self.too_large_message()));
+            return Err(Overflow::without_frame(self.answer_too_large()));
         }
 
         let frame = self.take_frame().map_err(Overflow::without_frame)?;
@@ -198,7 +233,7 @@ impl DnsMessageBuilder {
         if self.message_len() > DNS_TCP_MAX_SIZE {
             return Err(Overflow {
                 frame,
-                message: self.too_large_message(),
+                source: self.answer_too_large(),
             });
         }
 
@@ -207,7 +242,7 @@ impl DnsMessageBuilder {
 
     /// The buffered answers as a length-prefixed TCP frame, clearing them;
     /// `None` when nothing is buffered.
-    pub fn take_frame(&mut self) -> Result<Option<Vec<u8>>, String> {
+    pub fn take_frame(&mut self) -> Result<Option<Vec<u8>>, EncodeMessageError> {
         if self.answer_count() == 0 {
             return Ok(None);
         }
@@ -216,18 +251,17 @@ impl DnsMessageBuilder {
         Ok(Some(frame))
     }
 
-    /// Describe the buffered answer that exceeds the DNS message limit.
-    fn too_large_message(&self) -> String {
-        format!(
-            "Single DNS answer is too large: {} bytes",
-            self.message_len()
-        )
+    /// The error for a buffered answer that exceeds the DNS message limit.
+    fn answer_too_large(&self) -> EncodeMessageError {
+        EncodeMessageError::AnswerTooLarge {
+            len: self.message_len(),
+        }
     }
 
     /// Compose the buffered answers into one authoritative response, signed
     /// when the request was. Built through `domain`, which composes the
     /// additional section a TSIG record needs.
-    fn build_message(&mut self) -> Result<Vec<u8>, String> {
+    fn build_message(&mut self) -> Result<Vec<u8>, EncodeMessageError> {
         let mut builder = MessageBuilder::new_vec();
         let header = builder.header_mut();
         header.set_id(self.query_id);
@@ -237,40 +271,40 @@ impl DnsMessageBuilder {
         let mut question = builder.question();
         question
             .push((&self.qname, Rtype::from_int(self.qtype), Class::IN))
-            .map_err(|e| format!("Failed to compose the question: {}", e))?;
+            .map_err(|e| EncodeMessageError::ComposeQuestion(Box::new(e)))?;
 
         let mut answer = question.answer();
         for composed in &self.answers {
             answer
                 .push(ComposedRecord(composed))
-                .map_err(|e| format!("Failed to compose an answer: {}", e))?;
+                .map_err(|e| EncodeMessageError::ComposeAnswer(Box::new(e)))?;
         }
 
         let mut additional = answer.additional();
         if let Some(signer) = self.signer.as_mut() {
             signer
                 .answer(&mut additional, Time48::now())
-                .map_err(|e| format!("Failed to sign the response: {}", e))?;
+                .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
         }
         Ok(additional.finish())
     }
 
     /// Serializes into a length-prefixed TCP frame.
-    fn build_tcp_frame(&mut self) -> Result<Vec<u8>, String> {
+    fn build_tcp_frame(&mut self) -> Result<Vec<u8>, EncodeMessageError> {
         let message = self.build_message()?;
         encode_tcp_message(&message)
     }
 
     /// Consume the builder and serialize its DNS response.
-    pub fn build(mut self) -> Result<Vec<u8>, String> {
+    pub fn build(mut self) -> Result<Vec<u8>, EncodeMessageError> {
         self.build_message()
     }
 }
 
 /// Prefix a DNS message with its two-byte TCP frame length.
-pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, String> {
+pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, EncodeMessageError> {
     if message.len() > DNS_TCP_MAX_SIZE {
-        return Err(format!("Message too large: {} bytes", message.len()));
+        return Err(EncodeMessageError::TooLarge { len: message.len() });
     }
 
     let len = message.len() as u16;
@@ -283,7 +317,7 @@ pub fn encode_tcp_message(message: &[u8]) -> Result<Vec<u8>, String> {
 mod query;
 mod records;
 
-pub use query::{ParsedQuery, is_response};
+pub use query::{ParseQueryError, ParsedQuery, is_response};
 
 #[cfg(test)]
 mod tests;

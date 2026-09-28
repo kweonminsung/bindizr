@@ -1,26 +1,53 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
+/// A failure of the database layer, with the sqlx or I/O error that caused
+/// it kept as its source.
 #[derive(Debug, Error)]
 pub enum DatabaseError {
     #[error("Query failed: {0}")]
-    QueryFailed(String),
+    QueryFailed(#[source] sqlx::Error),
 
     /// A UNIQUE constraint rejected the statement. Kept distinct so callers
     /// can map lost check-then-insert races to a conflict instead of a
     /// generic internal error.
     #[error("Unique constraint violation: {0}")]
-    UniqueViolation(String),
+    UniqueViolation(#[source] sqlx::Error),
 
     /// A FOREIGN KEY constraint rejected the statement: the referenced row is
     /// gone, or the row is still referenced.
     #[error("Foreign key constraint violation: {0}")]
-    ForeignKeyViolation(String),
+    ForeignKeyViolation(#[source] sqlx::Error),
 
     #[error("Transaction failed: {0}")]
-    TransactionFailed(String),
+    TransactionFailed(#[source] sqlx::Error),
 
-    #[error("Pool error: {0}")]
-    PoolError(String),
+    #[error("Pool timed out")]
+    PoolTimedOut,
+
+    /// Each names the setting an operator would fix.
+    #[error("MySQL connection failed (check database.mysql.url): {0}")]
+    MySqlConnect(#[source] sqlx::Error),
+
+    #[error("PostgreSQL connection failed (check database.postgresql.url): {0}")]
+    PostgresConnect(#[source] sqlx::Error),
+
+    #[error("SQLite open failed (check database.sqlite.file_path): {0}")]
+    SqliteOpen(#[source] sqlx::Error),
+
+    #[error("Invalid SQLite file path: {0}")]
+    InvalidSqlitePath(#[source] sqlx::Error),
+
+    #[error("File path cannot be empty")]
+    EmptySqlitePath,
+
+    #[error("Failed to create the SQLite directory '{}' (check database.sqlite.file_path): {source}", path.display())]
+    CreateSqliteDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 impl DatabaseError {
@@ -36,24 +63,19 @@ impl DatabaseError {
 }
 
 impl From<sqlx::Error> for DatabaseError {
-    /// Convert a SQLx error into a database error with constraint information.
+    /// Classify a sqlx error by the constraint it reports, keeping it as the
+    /// source.
     fn from(err: sqlx::Error) -> Self {
         match &err {
-            sqlx::Error::PoolTimedOut => {
-                return DatabaseError::PoolError("Pool timed out".to_string());
-            }
+            sqlx::Error::PoolTimedOut => DatabaseError::PoolTimedOut,
             sqlx::Error::Database(db_err) => match db_err.kind() {
-                sqlx::error::ErrorKind::UniqueViolation => {
-                    return DatabaseError::UniqueViolation(err.to_string());
-                }
+                sqlx::error::ErrorKind::UniqueViolation => DatabaseError::UniqueViolation(err),
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
-                    return DatabaseError::ForeignKeyViolation(err.to_string());
+                    DatabaseError::ForeignKeyViolation(err)
                 }
-                _ => {}
+                _ => DatabaseError::QueryFailed(err),
             },
-            _ => {}
+            _ => DatabaseError::QueryFailed(err),
         }
-
-        DatabaseError::QueryFailed(err.to_string())
     }
 }

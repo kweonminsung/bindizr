@@ -11,13 +11,43 @@ use bindizr_core::dns::{
     message::{Name, Opcode, Rtype},
     query::{build_question, extract_soa_serial},
 };
+use thiserror::Error;
 
+use super::{ExchangeError, ResolveAddressError};
 use crate::{
     Context,
+    error::ServiceError,
     model::secondary::Secondary,
     secondary, transfer,
     types::{SecondaryStatusResponse, TransferResponse},
 };
+
+/// Why a secondary's serial could not be read.
+#[derive(Debug, Error)]
+pub enum ProbeError {
+    #[error("invalid zone name: {0}")]
+    ZoneName(#[source] bindizr_core::dns::LibraryError),
+    #[error("failed to resolve: {0}")]
+    Resolve(#[source] ResolveAddressError),
+    #[error(transparent)]
+    Exchange(#[from] ExchangeError),
+    #[error(transparent)]
+    Response(#[from] bindizr_core::dns::query::ReadResponseError),
+    #[error("probe task failed: {0}")]
+    TaskFailed(#[source] tokio::task::JoinError),
+}
+
+/// A probe that failed before any secondary answered is the server's fault:
+/// the zone name is a stored row, the task a runtime.
+impl From<ProbeError> for ServiceError {
+    /// Report the probe failure as an internal error, keeping it as source.
+    fn from(err: ProbeError) -> Self {
+        ServiceError::Internal {
+            message: err.to_string(),
+            source: Some(Box::new(err)),
+        }
+    }
+}
 
 /// Query every enabled secondary for the zone's SOA serial in parallel and
 /// classify each against `expected_serial`. No enabled secondary yields an
@@ -26,10 +56,8 @@ pub async fn probe_secondaries(
     cx: &Context,
     zone_name: &str,
     expected_serial: Option<u32>,
-) -> Result<Vec<SecondaryStatusResponse>, String> {
-    let secondaries = secondary::list_enabled(cx)
-        .await
-        .map_err(|e| e.to_string())?;
+) -> Result<Vec<SecondaryStatusResponse>, ServiceError> {
+    let secondaries = secondary::list_enabled(cx).await?;
     if secondaries.is_empty() {
         return Ok(Vec::new());
     }
@@ -55,11 +83,11 @@ pub async fn probe_secondaries(
             Ok(Ok((probe, clients))) => {
                 probes.push(with_last_transfer(cx, zone_name, probe, &clients).await)
             }
-            Ok(Err(e)) => return Err(e),
+            Ok(Err(e)) => return Err(e.into()),
             Err(e) => probes.push(SecondaryStatusResponse::from_probe(
                 address,
                 expected_serial,
-                Err(format!("probe task failed: {}", e)),
+                Err(ProbeError::TaskFailed(e)),
             )),
         }
     }
@@ -75,7 +103,7 @@ pub async fn probe_secondary(
     zone_name: &str,
     secondary: &Secondary,
     expected_serial: Option<u32>,
-) -> Result<SecondaryStatusResponse, String> {
+) -> Result<SecondaryStatusResponse, ServiceError> {
     let timeout = Duration::from_secs(cx.config().dns.notify.timeout_secs);
     let (probe, clients) = probe_addresses(zone_name, secondary, timeout, expected_serial).await?;
     Ok(with_last_transfer(cx, zone_name, probe, &clients).await)
@@ -89,9 +117,9 @@ async fn probe_addresses(
     secondary: &Secondary,
     timeout: Duration,
     expected_serial: Option<u32>,
-) -> Result<(SecondaryStatusResponse, Vec<IpAddr>), String> {
+) -> Result<(SecondaryStatusResponse, Vec<IpAddr>), ProbeError> {
     let qname =
-        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
+        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| ProbeError::ZoneName(Box::new(e)))?;
 
     let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
         Ok(addrs) => addrs,
@@ -100,7 +128,7 @@ async fn probe_addresses(
                 SecondaryStatusResponse::from_probe(
                     secondary.address.clone(),
                     expected_serial,
-                    Err(format!("failed to resolve: {}", e)),
+                    Err(ProbeError::Resolve(e)),
                 ),
                 Vec::new(),
             ));
@@ -137,9 +165,9 @@ pub async fn probe_server(
     server_addr: SocketAddr,
     zone_name: &str,
     timeout: Duration,
-) -> Result<u32, String> {
+) -> Result<u32, ProbeError> {
     let qname =
-        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("invalid zone name: {}", e))?;
+        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| ProbeError::ZoneName(Box::new(e)))?;
     probe_one(&qname, server_addr, timeout).await
 }
 
@@ -185,13 +213,11 @@ async fn probe_one(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
-) -> Result<u32, String> {
+) -> Result<u32, ProbeError> {
     let (query_id, query) = build_question(Opcode::QUERY, false, false, qname, Rtype::SOA);
-
     let (received, response) =
         super::exchange_over_udp(server_addr, timeout, &query, "SOA probe").await?;
-
-    extract_soa_serial(query_id, qname, &response[..received])
+    Ok(extract_soa_serial(query_id, qname, &response[..received])?)
 }
 
 #[cfg(test)]

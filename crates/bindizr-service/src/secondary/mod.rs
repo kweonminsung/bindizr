@@ -244,14 +244,10 @@ pub async fn check(
     let (addresses, resolve_error) = match resolve_address_entry(&secondary.address, timeout).await
     {
         Ok(addrs) => (addrs.iter().map(ToString::to_string).collect(), None),
-        Err(e) => (Vec::new(), Some(e)),
+        Err(e) => (Vec::new(), Some(e.to_string())),
     };
-    let catalog = probe::probe_secondary(cx, &catalog_zone, &secondary, catalog_serial)
-        .await
-        .map_err(ServiceError::internal)?;
-    let notifies = notify::send_notify_to_secondary(cx, &catalog_zone, &secondary)
-        .await
-        .map_err(ServiceError::internal)?;
+    let catalog = probe::probe_secondary(cx, &catalog_zone, &secondary, catalog_serial).await?;
+    let notifies = notify::send_notify_to_secondary(cx, &catalog_zone, &secondary).await?;
     let transfers = transfer_summary(cx, &secondary).await?;
 
     Ok(SecondaryCheckResponse {
@@ -436,7 +432,7 @@ mod tests {
     fn normalize_secondary_name_rejects_a_name_that_is_not_a_plain_identifier() {
         for name in ["", "ns 2", "ns2/eu", &"n".repeat(256)] {
             let err = normalize_secondary_name(name).unwrap_err();
-            assert_eq!(err.code, ErrorCode::InvalidInput, "{name:?}");
+            assert_eq!(err.code(), ErrorCode::InvalidInput, "{name:?}");
         }
     }
 
@@ -470,7 +466,7 @@ mod tests {
     fn normalize_secondary_address_rejects_an_entry_that_is_not_an_address_target() {
         for address in ["", "not a host", "ns2.example.net:port", "192.0.2.7:0"] {
             let err = normalize_secondary_address(address).unwrap_err();
-            assert_eq!(err.code, ErrorCode::InvalidInput, "{address:?}");
+            assert_eq!(err.code(), ErrorCode::InvalidInput, "{address:?}");
         }
     }
 }

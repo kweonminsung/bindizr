@@ -31,5 +31,5 @@ pub(crate) async fn upsert_tx(
     .bind(base_serial)
     .fetch_one(&mut **tx)
     .await
-    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))
+    .map_err(DatabaseError::from)
 }

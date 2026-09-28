@@ -3,7 +3,7 @@ use sqlx::FromRow;
 
 use crate::dns::{
     name::ZoneName,
-    record::{Rdata, SoaMailbox, SoaRecordValue},
+    record::{EncodeRdataError, ParseMailboxError, Rdata, SoaMailbox, SoaRecordValue},
 };
 
 /// Zone metadata used to generate the SOA and NS records.
@@ -39,7 +39,7 @@ pub struct Zone {
 
 impl Zone {
     /// SOA RNAME (mailbox) in presentation form, e.g. `admin.example.com`.
-    pub fn soa_mailbox(&self) -> Result<SoaMailbox, String> {
+    pub fn soa_mailbox(&self) -> Result<SoaMailbox, ParseMailboxError> {
         SoaMailbox::from_email(&self.rname)
     }
 
@@ -56,7 +56,7 @@ impl Zone {
 
     /// This zone's wire-format SOA RDATA at `serial`; the SOA is synthesized
     /// from zone columns, never stored as a record row.
-    pub(crate) fn soa_rdata(&self, serial: u32) -> Result<Rdata, String> {
+    pub(crate) fn soa_rdata(&self, serial: u32) -> Result<Rdata, EncodeRdataError> {
         let rname = self.soa_mailbox()?;
         SoaRecordValue {
             mname: &self.mname,
@@ -72,7 +72,7 @@ impl Zone {
 
     /// SOA RDATA in presentation form:
     /// `<mname> <rname> <serial> <refresh> <retry> <expire> <minimum>`.
-    pub fn soa_presentation_rdata(&self) -> Result<String, String> {
+    pub fn soa_presentation_rdata(&self) -> Result<String, ParseMailboxError> {
         Ok(format!(
             "{} {} {} {} {} {} {}",
             self.mname,

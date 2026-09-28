@@ -6,6 +6,55 @@ mod tests;
 use std::{env, fmt, net::IpAddr, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+/// Why the configuration could not be loaded or does not describe a runnable
+/// process. Each message names the setting an operator would fix.
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("Bindizr config does not exist: {path}")]
+    NotFound { path: String },
+    #[error("Failed to read the configuration file '{path}': {source}")]
+    Read {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    /// A parse or validation failure, named with the file it came from.
+    #[error("{source} (in {path})")]
+    InFile {
+        path: String,
+        #[source]
+        source: Box<ConfigError>,
+    },
+    #[error("Invalid Bindizr configuration: {0}")]
+    Parse(#[source] toml::de::Error),
+    #[error("Invalid {name} environment variable '{value}': {source}")]
+    Env {
+        name: &'static str,
+        value: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
+    #[error("expected {expected}")]
+    UnknownValue { expected: &'static str },
+    #[error("api and dns cannot share port {port}")]
+    SharedPort { port: u16 },
+    #[error("{key} must not be empty when database.type is {database_type}")]
+    EmptyDatabaseLocation {
+        key: &'static str,
+        database_type: DatabaseType,
+    },
+    #[error("{section}.listen_port must not be 0")]
+    PortZero { section: &'static str },
+    #[error("{present} needs {missing}")]
+    TlsHalfPair {
+        present: &'static str,
+        missing: &'static str,
+    },
+    #[error("dns.catalog_zone_name is not a zone name: {0}")]
+    CatalogZoneName(#[source] crate::dns::name::ParseNameError),
+}
 
 const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
@@ -106,7 +155,7 @@ impl fmt::Display for DatabaseType {
 }
 
 impl std::str::FromStr for DatabaseType {
-    type Err = String;
+    type Err = ConfigError;
 
     /// Parse a database type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -114,7 +163,9 @@ impl std::str::FromStr for DatabaseType {
             "mysql" => Ok(DatabaseType::Mysql),
             "sqlite" => Ok(DatabaseType::Sqlite),
             "postgresql" => Ok(DatabaseType::Postgresql),
-            _ => Err("expected mysql, postgresql, or sqlite".to_string()),
+            _ => Err(ConfigError::UnknownValue {
+                expected: "mysql, postgresql, or sqlite",
+            }),
         }
     }
 }
@@ -334,14 +385,16 @@ impl fmt::Display for LogFormat {
 }
 
 impl std::str::FromStr for LogFormat {
-    type Err = String;
+    type Err = ConfigError;
 
     /// Parse a log format from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "text" => Ok(LogFormat::Text),
             "json" => Ok(LogFormat::Json),
-            _ => Err("expected text or json".to_string()),
+            _ => Err(ConfigError::UnknownValue {
+                expected: "text or json",
+            }),
         }
     }
 }
@@ -372,7 +425,7 @@ impl fmt::Display for LogLevel {
 }
 
 impl std::str::FromStr for LogLevel {
-    type Err = String;
+    type Err = ConfigError;
 
     /// Parse a log level from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -382,7 +435,9 @@ impl std::str::FromStr for LogLevel {
             "info" => Ok(LogLevel::Info),
             "warn" => Ok(LogLevel::Warn),
             "error" => Ok(LogLevel::Error),
-            _ => Err("expected trace, debug, info, warn, or error".to_string()),
+            _ => Err(ConfigError::UnknownValue {
+                expected: "trace, debug, info, warn, or error",
+            }),
         }
     }
 }
@@ -407,21 +462,23 @@ fn resolve_config_path_with_env(
 impl Config {
     /// Load and validate the file at `conf_file_path`, applying environment
     /// overrides. The value is the caller's to hold; nothing is stored.
-    pub fn load(conf_file_path: &str) -> Result<Config, String> {
+    pub fn load(conf_file_path: &str) -> Result<Config, ConfigError> {
         if !PathBuf::from(conf_file_path).exists() {
-            return Err(format!("Bindizr config does not exist: {}", conf_file_path));
+            return Err(ConfigError::NotFound {
+                path: conf_file_path.to_string(),
+            });
         }
 
-        let text = std::fs::read_to_string(conf_file_path).map_err(|e| {
-            format!(
-                "Failed to read the configuration file '{}': {}",
-                conf_file_path, e
-            )
+        let text = std::fs::read_to_string(conf_file_path).map_err(|source| ConfigError::Read {
+            path: conf_file_path.to_string(),
+            source,
         })?;
         // A parse or validation failure names no file, and the path may be a
         // default the caller never spelled.
-        Config::from_toml(&text, |name| env::var(name).ok())
-            .map_err(|e| format!("{} (in {})", e, conf_file_path))
+        Config::from_toml(&text, |name| env::var(name).ok()).map_err(|source| ConfigError::InFile {
+            path: conf_file_path.to_string(),
+            source: Box::new(source),
+        })
     }
 
     /// The settings a reload actually changed, for the line that reports it.
@@ -462,9 +519,11 @@ impl Config {
     }
 
     /// Assemble the effective configuration from its raw sections.
-    fn from_toml(text: &str, get_env: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
-        let mut bindizr_config = toml::from_str::<Self>(text)
-            .map_err(|e| format!("Invalid Bindizr configuration: {}", e))?;
+    fn from_toml(
+        text: &str,
+        get_env: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, ConfigError> {
+        let mut bindizr_config = toml::from_str::<Self>(text).map_err(ConfigError::Parse)?;
 
         bindizr_config.apply_env_overrides(get_env)?;
         bindizr_config.api.validate()?;
@@ -476,16 +535,15 @@ impl Config {
     }
 
     /// Reject overlapping API and DNS endpoints so both servers can bind at startup.
-    fn validate_listeners(&self) -> Result<(), String> {
+    fn validate_listeners(&self) -> Result<(), ConfigError> {
         if self.api.listen_port == self.dns.listen_port
             && (self.api.listen_addr == self.dns.listen_addr
                 || self.api.listen_addr.is_unspecified()
                 || self.dns.listen_addr.is_unspecified())
         {
-            return Err(format!(
-                "api and dns cannot share port {}",
-                self.api.listen_port
-            ));
+            return Err(ConfigError::SharedPort {
+                port: self.api.listen_port,
+            });
         }
         Ok(())
     }
@@ -493,19 +551,26 @@ impl Config {
 
 impl DatabaseConfig {
     /// Validate the database configuration fields.
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), ConfigError> {
         match self.database_type {
             DatabaseType::Mysql if self.mysql.url.trim().is_empty() => {
-                Err("database.mysql.url must not be empty when database.type is mysql".to_string())
+                Err(ConfigError::EmptyDatabaseLocation {
+                    key: "database.mysql.url",
+                    database_type: DatabaseType::Mysql,
+                })
             }
-            DatabaseType::Postgresql if self.postgresql.url.trim().is_empty() => Err(
-                "database.postgresql.url must not be empty when database.type is postgresql"
-                    .to_string(),
-            ),
-            DatabaseType::Sqlite if self.sqlite.file_path.trim().is_empty() => Err(
-                "database.sqlite.file_path must not be empty when database.type is sqlite"
-                    .to_string(),
-            ),
+            DatabaseType::Postgresql if self.postgresql.url.trim().is_empty() => {
+                Err(ConfigError::EmptyDatabaseLocation {
+                    key: "database.postgresql.url",
+                    database_type: DatabaseType::Postgresql,
+                })
+            }
+            DatabaseType::Sqlite if self.sqlite.file_path.trim().is_empty() => {
+                Err(ConfigError::EmptyDatabaseLocation {
+                    key: "database.sqlite.file_path",
+                    database_type: DatabaseType::Sqlite,
+                })
+            }
             _ => Ok(()),
         }
     }
@@ -527,15 +592,21 @@ impl ApiConfig {
     }
 
     /// Validate the API configuration fields.
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), ConfigError> {
         if self.listen_port == 0 {
-            return Err("api.listen_port must not be 0".to_string());
+            return Err(ConfigError::PortZero { section: "api" });
         }
         // Half a pair would serve plain HTTP on a port the operator means to
         // be HTTPS, which no later error would reveal.
         match (self.tls_cert_file.as_deref(), self.tls_key_file.as_deref()) {
-            (Some(_), None) => Err("api.tls_cert_file needs api.tls_key_file".to_string()),
-            (None, Some(_)) => Err("api.tls_key_file needs api.tls_cert_file".to_string()),
+            (Some(_), None) => Err(ConfigError::TlsHalfPair {
+                present: "api.tls_cert_file",
+                missing: "api.tls_key_file",
+            }),
+            (None, Some(_)) => Err(ConfigError::TlsHalfPair {
+                present: "api.tls_key_file",
+                missing: "api.tls_cert_file",
+            }),
             _ => Ok(()),
         }
     }
@@ -551,9 +622,9 @@ impl DnsConfig {
 
     /// Validate the DNS configuration fields, leaving the catalog zone name
     /// canonical.
-    fn validate(&mut self) -> Result<(), String> {
+    fn validate(&mut self) -> Result<(), ConfigError> {
         if self.listen_port == 0 {
-            return Err("dns.listen_port must not be 0".to_string());
+            return Err(ConfigError::PortZero { section: "dns" });
         }
         // The name is served as a zone and spelled into every secondary's
         // configuration, so an unusable one must not reach startup. Parsing is
@@ -561,7 +632,7 @@ impl DnsConfig {
         // match no query name, which carries no root dot.
         match crate::dns::name::ZoneName::parse(&self.catalog_zone_name) {
             Ok(name) => self.catalog_zone_name = name.to_string(),
-            Err(e) => return Err(format!("dns.catalog_zone_name is not a zone name: {}", e)),
+            Err(e) => return Err(ConfigError::CatalogZoneName(e)),
         }
         Ok(())
     }

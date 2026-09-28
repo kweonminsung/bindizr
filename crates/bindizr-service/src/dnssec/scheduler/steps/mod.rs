@@ -189,7 +189,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
                 log::warn!(
                     "Parent of zone {} could not be asked for its DS, so the rollover waits: {}",
                     signed.zone.name.as_str(),
-                    e.message
+                    e
                 );
                 return Ok(None);
             }

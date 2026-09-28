@@ -47,10 +47,7 @@ pub(crate) async fn create_many_tx(
                 .bind(r.zone_id)
                 .bind(now);
         }
-        let result = query
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+        let result = query.execute(&mut **tx).await?;
 
         // SQLite assigns contiguous rowids within a single insert; the last
         // one is `last_insert_rowid()`, so the chunk spans first..=last.

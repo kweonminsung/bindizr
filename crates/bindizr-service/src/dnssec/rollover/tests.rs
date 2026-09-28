@@ -89,7 +89,7 @@ fn nothing_published_means_no_rollover_to_confirm() {
 
     let error = promotable_sep_key_ids(&signed(&keys), false).unwrap_err();
 
-    assert_eq!(error.code, ErrorCode::DnssecNoRolloverInProgress);
+    assert_eq!(error.code(), ErrorCode::DnssecNoRolloverInProgress);
 }
 
 /// Verify that a ZSK rollover has no parent DS to confirm.
@@ -104,8 +104,8 @@ fn a_zsk_rollover_has_no_parent_ds_to_confirm() {
 
     let error = promotable_sep_key_ids(&signed(&keys), false).unwrap_err();
 
-    assert_eq!(error.code, ErrorCode::InvalidInput);
-    assert!(error.message.contains("ZSK"), "{}", error.message);
+    assert_eq!(error.code(), ErrorCode::InvalidInput);
+    assert!(error.to_string().contains("ZSK"), "{}", error);
 }
 
 /// Verify that a hold down still running names the time to retry.
@@ -118,8 +118,8 @@ fn a_hold_down_still_running_names_the_time_to_retry() {
 
     let error = promotable_sep_key_ids(&signed(&keys), false).unwrap_err();
 
-    assert_eq!(error.code, ErrorCode::InvalidInput);
-    assert!(error.message.contains("retry after"), "{}", error.message);
+    assert_eq!(error.code(), ErrorCode::InvalidInput);
+    assert!(error.to_string().contains("retry after"), "{}", error);
 }
 
 /// Verify that skipping the hold down promotes anyway.
@@ -145,7 +145,7 @@ fn the_latest_deadline_among_the_published_keys_gates_them_all() {
 
     let error = promotable_sep_key_ids(&signed(&keys), false).unwrap_err();
 
-    assert_eq!(error.code, ErrorCode::InvalidInput);
+    assert_eq!(error.code(), ErrorCode::InvalidInput);
 }
 
 /// Verify that a retiring key waits out the signatures it made.

@@ -38,7 +38,5 @@ pub async fn notify(
         }
     }
 
-    crate::notify::send_notify(cx, zone_name)
-        .await
-        .map_err(ServiceError::internal)
+    Ok(crate::notify::send_notify(cx, zone_name).await?)
 }

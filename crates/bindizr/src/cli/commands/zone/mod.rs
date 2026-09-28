@@ -621,7 +621,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
 
             // A rejected import applied nothing, so it must not exit as a success.
             if import.was_rejected() {
-                return Err(CliError::from(format!(
+                return Err(CliError::request(format!(
                     "import rejected: {} record(s) failed validation; nothing was applied",
                     import.errors.len()
                 )));

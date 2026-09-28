@@ -4,30 +4,61 @@
 
 pub mod queue;
 
-use crate::Context;
+use thiserror::Error;
+
+use crate::{Context, dns_client::notify::NotifyZoneError, error::ServiceError};
+
+/// Why a NOTIFY round did not reach every secondary.
+#[derive(Debug, Error)]
+pub enum NotifyError {
+    #[error(transparent)]
+    Service(#[from] ServiceError),
+    #[error(transparent)]
+    Zone(#[from] NotifyZoneError),
+    /// Every zone whose NOTIFY failed, when all were sent.
+    #[error("NOTIFY failed for {}", failures.iter().map(|(zone, error)| format!("{zone}: {error}")).collect::<Vec<_>>().join("; "))]
+    Zones {
+        failures: Vec<(String, NotifyZoneError)>,
+    },
+}
+
+/// A NOTIFY that did not go out is the server's to report: the change has
+/// committed, and the requester can do nothing about the secondaries.
+impl From<NotifyError> for ServiceError {
+    /// Report the NOTIFY failure as an internal error, keeping it as source.
+    fn from(err: NotifyError) -> Self {
+        match err {
+            NotifyError::Service(err) => err,
+            other => ServiceError::Internal {
+                message: other.to_string(),
+                source: Some(Box::new(other)),
+            },
+        }
+    }
+}
 
 /// Send a DNS NOTIFY for `zone_name`, or — with `None` — for every zone,
 /// aggregating per-zone failures. Enumerating the zones is this layer's
 /// call, not the client's.
-pub async fn send_notify(cx: &Context, zone_name: Option<&str>) -> Result<(), String> {
+pub async fn send_notify(cx: &Context, zone_name: Option<&str>) -> Result<(), NotifyError> {
     let Some(zone_name) = zone_name else {
-        let zones = crate::zone::list(cx).await.map_err(|e| e.to_string())?;
+        let zones = crate::zone::list(cx).await?;
         let mut failures = Vec::new();
         for zone in zones {
             if let Err(e) =
                 crate::dns_client::notify::send_zone_notify(cx, zone.name.as_str()).await
             {
                 log::warn!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
-                failures.push(format!("{}: {}", zone.name, e));
+                failures.push((zone.name.to_string(), e));
             }
         }
         return if failures.is_empty() {
             Ok(())
         } else {
-            Err(format!("NOTIFY failed for {}", failures.join("; ")))
+            Err(NotifyError::Zones { failures })
         };
     };
-    crate::dns_client::notify::send_zone_notify(cx, zone_name).await
+    Ok(crate::dns_client::notify::send_zone_notify(cx, zone_name).await?)
 }
 
 /// NOTIFY the secondaries after a zone update: queued when `dns.notify.batch_ms`

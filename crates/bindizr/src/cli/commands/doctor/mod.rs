@@ -137,7 +137,7 @@ pub(crate) async fn handle_command(
             checks: report.checks,
         };
         let value = serde_json::to_value(&document)
-            .map_err(|e| format!("Failed to render the report: {}", e))?;
+            .map_err(|e| CliError::request(format!("Failed to render the report: {}", e)))?;
         print_payload(&value, format)?;
     }
 
@@ -145,7 +145,7 @@ pub(crate) async fn handle_command(
         Ok(())
     } else {
         // To stderr, leaving a JSON document alone on stdout.
-        Err(CliError::from(format!(
+        Err(CliError::request(format!(
             "installation has {} failing check(s)",
             report.failures
         )))

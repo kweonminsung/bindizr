@@ -8,7 +8,7 @@ use clap::Subcommand;
 use crate::{
     cli::{
         error::CliError,
-        output::{DnssecPolicyRow, OutputFormat, print_payload, print_response},
+        output::{DnssecPolicyRow, OutputFormat, RenderOutputError, print_payload, print_response},
     },
     params::NameParams,
     socket::{
@@ -217,7 +217,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
 }
 
 /// Print a DNSSEC policy in the selected output format.
-fn print_policy(data: &serde_json::Value, output: OutputFormat) -> Result<(), String> {
+fn print_policy(data: &serde_json::Value, output: OutputFormat) -> Result<(), RenderOutputError> {
     print_response(data, output, |response: &DnssecPolicyResponse| {
         vec![DnssecPolicyRow::from(&response.dnssec_policy)]
     })

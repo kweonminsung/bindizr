@@ -18,7 +18,7 @@ fn normalize_key_name_lowercases_and_strips_trailing_dot() {
 fn normalize_key_name_rejects_invalid_names() {
     for invalid in ["", ".", "bad name", "bad..label", &"a".repeat(300)] {
         let err = normalize_key_name(invalid).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput, "input: {:?}", invalid);
+        assert_eq!(err.code(), ErrorCode::InvalidInput, "input: {:?}", invalid);
     }
 }
 
@@ -32,7 +32,7 @@ fn normalize_key_name_holds_the_rendered_name_to_the_column() {
 
     assert_eq!(normalize_key_name(&fits).unwrap().len(), 252);
     assert_eq!(
-        normalize_key_name(&too_long).unwrap_err().code,
+        normalize_key_name(&too_long).unwrap_err().code(),
         ErrorCode::InvalidInput
     );
 }
@@ -47,10 +47,10 @@ fn normalize_secret_accepts_base64_and_rejects_garbage() {
     );
 
     let invalid = normalize_secret("not base64!!").unwrap_err();
-    assert_eq!(invalid.code, ErrorCode::InvalidInput);
+    assert_eq!(invalid.code(), ErrorCode::InvalidInput);
 
     let empty = normalize_secret("").unwrap_err();
-    assert_eq!(empty.code, ErrorCode::InvalidInput);
+    assert_eq!(empty.code(), ErrorCode::InvalidInput);
 }
 
 /// Verify that `normalize_secret` enforces length bounds.
@@ -58,8 +58,8 @@ fn normalize_secret_accepts_base64_and_rejects_garbage() {
 fn normalize_secret_enforces_length_bounds() {
     // 6 decoded bytes: far below the 128-bit minimum.
     let short = normalize_secret("c2VjcmV0").unwrap_err();
-    assert_eq!(short.code, ErrorCode::InvalidInput);
-    assert!(short.message.contains("at least 16 bytes"));
+    assert_eq!(short.code(), ErrorCode::InvalidInput);
+    assert!(short.to_string().contains("at least 16 bytes"));
 
     // Exactly 16 decoded bytes passes.
     let sixteen = base64::engine::general_purpose::STANDARD.encode([0x42u8; 16]);
@@ -69,6 +69,6 @@ fn normalize_secret_enforces_length_bounds() {
     let oversized = base64::engine::general_purpose::STANDARD.encode([0x42u8; 200]);
     assert!(oversized.len() > 255);
     let too_long = normalize_secret(&oversized).unwrap_err();
-    assert_eq!(too_long.code, ErrorCode::InvalidInput);
-    assert!(too_long.message.contains("at most 255"));
+    assert_eq!(too_long.code(), ErrorCode::InvalidInput);
+    assert!(too_long.to_string().contains("at most 255"));
 }

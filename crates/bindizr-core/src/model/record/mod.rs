@@ -3,14 +3,15 @@ use std::borrow::Cow;
 use chrono::{DateTime, Utc};
 use domain::base::iana::Rtype;
 use sqlx::FromRow;
+use thiserror::Error;
 
 use crate::dns::{
     name::{OwnerName, ZoneName, to_fqdn_lowercase},
     record::{
         ARecordValue, AaaaRecordValue, CaaRecordValue, CnameRecordValue, DEFAULT_PRIORITY,
         DnameRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, NsRecordValue,
-        PtrRecordValue, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtContent,
-        TxtRecordValue,
+        ParseRecordValueError, PtrRecordValue, SrvRecordValue, SshfpRecordValue, TlsaRecordValue,
+        TxtContent, TxtRecordValue,
     },
 };
 
@@ -206,8 +207,18 @@ impl std::fmt::Display for RecordType {
     }
 }
 
+/// A record type outside the user records bindizr stores, by mnemonic or by
+/// wire type.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ParseRecordTypeError {
+    #[error("Invalid record type: {0}")]
+    Unknown(String),
+    #[error("unsupported record type: {0}")]
+    Unsupported(Rtype),
+}
+
 impl TryFrom<String> for RecordType {
-    type Error = String;
+    type Error = ParseRecordTypeError;
 
     /// Validate and convert the stored value into a record type.
     fn try_from(s: String) -> Result<Self, Self::Error> {
@@ -246,7 +257,7 @@ where
 }
 
 impl std::str::FromStr for RecordType {
-    type Err = String;
+    type Err = ParseRecordTypeError;
 
     /// Parse a record type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -265,13 +276,13 @@ impl std::str::FromStr for RecordType {
             "PTR" => Ok(RecordType::PTR),
             "SSHFP" => Ok(RecordType::SSHFP),
             "TLSA" => Ok(RecordType::TLSA),
-            _ => Err(format!("Invalid record type: {}", s)),
+            _ => Err(ParseRecordTypeError::Unknown(s.to_string())),
         }
     }
 }
 
 impl TryFrom<Rtype> for RecordType {
-    type Error = String;
+    type Error = ParseRecordTypeError;
 
     /// The record types bindizr stores as user records, keyed by wire record type.
     /// SOA is excluded because it is managed through the zone's own fields.
@@ -291,7 +302,7 @@ impl TryFrom<Rtype> for RecordType {
             Rtype::TXT => Ok(RecordType::TXT),
             Rtype::AAAA => Ok(RecordType::AAAA),
             Rtype::SRV => Ok(RecordType::SRV),
-            _ => Err(format!("unsupported record type: {}", rtype)),
+            _ => Err(ParseRecordTypeError::Unsupported(rtype)),
         }
     }
 }
@@ -338,11 +349,16 @@ impl RecordType {
     }
 
     /// Validate a stored value (and its priority column) for this record type.
-    /// Errors are plain messages; callers map them to their own error kind.
-    pub fn validate_value(&self, value: &str, priority: Option<i32>) -> Result<(), String> {
+    pub fn validate_value(
+        &self,
+        value: &str,
+        priority: Option<i32>,
+    ) -> Result<(), ParseRecordValueError> {
         // Only MX and SRV encode a priority
         if priority.is_some() && !matches!(self, RecordType::MX | RecordType::SRV) {
-            return Err(format!("{} records do not take a priority", self));
+            return Err(ParseRecordValueError::PriorityNotTaken {
+                record_type: self.clone(),
+            });
         }
 
         match self {
@@ -356,7 +372,9 @@ impl RecordType {
             RecordType::NAPTR => NaptrRecordValue::parse(value)?.validate(),
             // Stored TXT is always the presentation form.
             RecordType::TXT => TxtRecordValue::from_presentation(value)
-                .ok_or_else(|| format!("stored TXT value is not in presentation form: {value}"))?
+                .ok_or_else(|| ParseRecordValueError::StoredTxtNotPresentation {
+                    value: value.to_string(),
+                })?
                 .validate(),
             RecordType::NS => NsRecordValue::parse(value).map(|_| ()),
             RecordType::SRV => SrvRecordValue::parse(value, priority)?.validate(),
@@ -437,7 +455,11 @@ impl RecordType {
     /// Counterpart of [`Self::canonical_value`] for writes: the one spelling
     /// record rows encode, so every entry path stores equal bytes. TXT takes
     /// presentation form; other TXT grammars go through [`TxtRecordValue`] directly.
-    pub fn encoded_value(&self, value: &str, priority: Option<i32>) -> Result<String, String> {
+    pub fn encoded_value(
+        &self,
+        value: &str,
+        priority: Option<i32>,
+    ) -> Result<String, ParseRecordValueError> {
         // TXT keeps raw bytes; every other type tolerates surrounding whitespace.
         let trimmed = value.trim();
         match self {
