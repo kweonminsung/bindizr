@@ -11,7 +11,7 @@ use bindizr_service::{
 };
 use chrono::Utc;
 
-use crate::daemon::DB_PROBE_TIMEOUT;
+use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 
 /// Prometheus text-format scrape endpoint.
 pub(crate) async fn handle_metrics() -> Response {
