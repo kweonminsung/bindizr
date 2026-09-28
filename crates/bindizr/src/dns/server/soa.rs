@@ -12,7 +12,7 @@ use bindizr_core::{
     },
     metrics::{SoaResult, track_soa},
 };
-use bindizr_service::zone::{TransferAccess, ZoneService};
+use bindizr_service::zone::{self, TransferAccess};
 use tokio::net::{TcpStream, UdpSocket};
 
 use crate::dns::{
@@ -117,9 +117,7 @@ async fn handle_soa_request(
         return Ok((builder.build()?, SoaResult::Ok));
     }
 
-    let zone = match ZoneService::authorize_transfer_by_name(zone_name_str, identity.key.as_ref())
-        .await?
-    {
+    let zone = match zone::authorize_transfer_by_name(zone_name_str, identity.key.as_ref()).await? {
         TransferAccess::Granted(zone) => zone,
         TransferAccess::NotAuth => {
             return signed_error(query, Rcode::NOTAUTH, identity.signer.as_mut())

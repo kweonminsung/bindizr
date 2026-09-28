@@ -13,10 +13,8 @@ use bindizr_core::{
     model::{record::RecordType, tsig_key::TsigKey},
 };
 use bindizr_service::{
-    dynamic_update::{
-        DynamicUpdate, DynamicUpdateError, DynamicUpdateService, Prerequisite, UpdateOp,
-    },
-    tsig_key::TsigKeyService,
+    dynamic_update::{self, DynamicUpdate, DynamicUpdateError, Prerequisite, UpdateOp},
+    tsig_key,
 };
 
 #[derive(Debug)]
@@ -113,7 +111,7 @@ pub(crate) async fn apply_update(
                 .collect::<Result<_, _>>()?,
         };
 
-        let changed = DynamicUpdateService::apply(update).await?;
+        let changed = dynamic_update::apply(update).await?;
         Ok(changed)
     }
     .await;
@@ -144,7 +142,7 @@ async fn authenticate_request(
         }
     };
 
-    let key = TsigKeyService::find_by_wire_name(&tsig.name)
+    let key = tsig_key::find_by_wire_name(&tsig.name)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?;
 

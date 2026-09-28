@@ -6,7 +6,7 @@ use axum::{
 };
 use bindizr_service::{
     types::{ErrorResponse, MessageResponse, build_notify_message},
-    zone::ZoneService,
+    zone,
 };
 use serde::Deserialize;
 
@@ -18,15 +18,11 @@ use crate::{
     params::NameParams,
 };
 
-pub(crate) struct NotifyApi;
-
-impl NotifyApi {
-    /// Build the notify API routes.
-    pub(crate) async fn routes() -> Router {
-        Router::new()
-            .route("/notify", routing::post(notify_all_zones))
-            .route("/zones/{name}/notify", routing::post(notify_zone))
-    }
+/// Build the notify API routes.
+pub(crate) fn routes() -> Router {
+    Router::new()
+        .route("/notify", routing::post(notify_all_zones))
+        .route("/zones/{name}/notify", routing::post(notify_zone))
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,7 +52,7 @@ pub(crate) async fn notify_all_zones(
     Query(query): Query<NotifyQuery>,
 ) -> Result<Response, ApiError> {
     let bump_serial = query.bump_serial.unwrap_or(false);
-    ZoneService::notify(&caller, None, bump_serial).await?;
+    zone::notify(&caller, None, bump_serial).await?;
 
     let response = MessageResponse {
         message: build_notify_message(None, bump_serial),
@@ -88,7 +84,7 @@ pub(crate) async fn notify_zone(
     Query(query): Query<NotifyQuery>,
 ) -> Result<Response, ApiError> {
     let bump_serial = query.bump_serial.unwrap_or(false);
-    ZoneService::notify(&caller, Some(&params.name), bump_serial).await?;
+    zone::notify(&caller, Some(&params.name), bump_serial).await?;
 
     let response = MessageResponse {
         message: build_notify_message(Some(&params.name), bump_serial),

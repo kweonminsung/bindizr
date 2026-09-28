@@ -1,7 +1,7 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use bindizr_service::{
     types::{HealthResponse, HealthStatus},
-    zone::ZoneService,
+    zone,
 };
 
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
@@ -21,7 +21,7 @@ use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
         )
 )]
 pub(crate) async fn handle_health() -> impl IntoResponse {
-    match tokio::time::timeout(DB_PROBE_TIMEOUT, ZoneService::ping()).await {
+    match tokio::time::timeout(DB_PROBE_TIMEOUT, zone::ping()).await {
         Ok(Ok(())) => (
             StatusCode::OK,
             Json(HealthResponse {

@@ -7,14 +7,13 @@ use bindizr_core::dns::{
 };
 use bindizr_db::repository::LockLevel;
 
-use super::RecordService;
 use crate::{
     error::ServiceError,
     model::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    repository::{RepositoryService, RepositoryTx},
+    repository::{self, RepositoryTx},
 };
 
 /// Parse a supported record type from request text.
@@ -187,51 +186,45 @@ pub(crate) enum AddResult {
     Duplicate,
 }
 
-impl RecordService {
-    /// Validate an add against conflicting records loaded within the caller's
-    /// transaction, reporting an rdata-identical record as
-    /// [`AddResult::Duplicate`] rather than rejecting it — RFC 2136,
-    /// Section 3.4.2.2 makes it a silent no-op. The API paths call the
-    /// validator directly, where the same case stays a conflict.
-    pub(crate) async fn validate_add_tx(
-        tx: &mut RepositoryTx<'_>,
-        zone: &Zone,
-        owner_name: &OwnerName,
-        record_type: &RecordType,
-        value: &str,
-        ttl: i32,
-        priority: Option<i32>,
-    ) -> Result<AddResult, ServiceError> {
-        // Only records sharing the owner name can conflict, so load just those
-        // instead of the whole zone.
-        let records_at_name = RepositoryService::list_records_by_name_tx(
-            tx,
-            zone.id,
-            owner_name,
-            LockLevel::Exclusive,
-        )
-        .await
-        .map_err(|e| {
-            log::error!("Failed to load records: {}", e);
-            ServiceError::internal("Failed to load records")
-        })?;
+/// Validate an add against conflicting records loaded within the caller's
+/// transaction, reporting an rdata-identical record as
+/// [`AddResult::Duplicate`] rather than rejecting it — RFC 2136,
+/// Section 3.4.2.2 makes it a silent no-op. The API paths call the
+/// validator directly, where the same case stays a conflict.
+pub(crate) async fn validate_add_tx(
+    tx: &mut RepositoryTx<'_>,
+    zone: &Zone,
+    owner_name: &OwnerName,
+    record_type: &RecordType,
+    value: &str,
+    ttl: i32,
+    priority: Option<i32>,
+) -> Result<AddResult, ServiceError> {
+    // Only records sharing the owner name can conflict, so load just those
+    // instead of the whole zone.
+    let records_at_name =
+        repository::list_records_by_name_tx(tx, zone.id, owner_name, LockLevel::Exclusive)
+            .await
+            .map_err(|e| {
+                log::error!("Failed to load records: {}", e);
+                ServiceError::internal("Failed to load records")
+            })?;
 
-        if has_matching_rdata(records_at_name.iter(), record_type, value, priority) {
-            return Ok(AddResult::Duplicate);
-        }
-
-        validate_record_add_constraints_normalized(
-            &records_at_name,
-            owner_name,
-            record_type,
-            value,
-            ttl,
-            priority,
-            None,
-        )?;
-
-        Ok(AddResult::New)
+    if has_matching_rdata(records_at_name.iter(), record_type, value, priority) {
+        return Ok(AddResult::Duplicate);
     }
+
+    validate_record_add_constraints_normalized(
+        &records_at_name,
+        owner_name,
+        record_type,
+        value,
+        ttl,
+        priority,
+        None,
+    )?;
+
+    Ok(AddResult::New)
 }
 
 #[cfg(test)]

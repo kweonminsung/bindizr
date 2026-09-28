@@ -11,9 +11,7 @@ use bindizr_core::config;
 /// call, not the client's.
 pub async fn send_notify(zone_name: Option<&str>) -> Result<(), String> {
     let Some(zone_name) = zone_name else {
-        let zones = crate::zone::ZoneService::list()
-            .await
-            .map_err(|e| e.to_string())?;
+        let zones = crate::zone::list().await.map_err(|e| e.to_string())?;
         let mut failures = Vec::new();
         for zone in zones {
             if let Err(e) = crate::dns_client::notify::send_zone_notify(zone.name.as_str()).await {

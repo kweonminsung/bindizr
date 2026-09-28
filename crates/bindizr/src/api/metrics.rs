@@ -6,9 +6,7 @@ use bindizr_core::{
     metrics::{TEXT_CONTENT_TYPE, metrics, track_db_pool},
     model::dnssec_key::DnssecKeyState,
 };
-use bindizr_service::{
-    dnssec::DnssecService, error::ServiceError, record::RecordService, zone::ZoneService,
-};
+use bindizr_service::{dnssec, error::ServiceError, record, zone};
 use chrono::Utc;
 
 use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
@@ -40,16 +38,16 @@ async fn track_db_gauges() -> Result<(), ServiceError> {
 
     // Run counts concurrently so the timeout budgets one round trip, not one per query.
     let (zones, records, dnssec_zones, published, active, retired, expiring, expired) = tokio::try_join!(
-        ZoneService::count_all(),
-        RecordService::count_all(),
-        DnssecService::count_signed_zones(),
-        DnssecService::count_keys_by_state(DnssecKeyState::Published),
-        DnssecService::count_keys_by_state(DnssecKeyState::Active),
-        DnssecService::count_keys_by_state(DnssecKeyState::Retired),
+        zone::count_all(),
+        record::count_all(),
+        dnssec::count_signed_zones(),
+        dnssec::count_keys_by_state(DnssecKeyState::Published),
+        dnssec::count_keys_by_state(DnssecKeyState::Active),
+        dnssec::count_keys_by_state(DnssecKeyState::Retired),
         // Use the scheduler's per-policy refresh window so a persistent nonzero
         // count indicates that re-signing is not keeping up.
-        DnssecService::count_rrsigs_expiring_within_refresh(Utc::now()),
-        DnssecService::count_rrsigs_expired(Utc::now()),
+        dnssec::count_rrsigs_expiring_within_refresh(Utc::now()),
+        dnssec::count_rrsigs_expired(Utc::now()),
     )?;
 
     metrics.zones_total.set(zones as i64);

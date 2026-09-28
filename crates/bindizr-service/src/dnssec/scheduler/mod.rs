@@ -18,7 +18,7 @@ use self::steps::{
 };
 use crate::{
     model::dnssec_key::{DnssecKeyRole, DnssecKeyState},
-    repository::RepositoryService,
+    repository,
 };
 
 /// The running scheduler's period, so a reload reaches it without waiting the
@@ -100,7 +100,7 @@ async fn run_scheduler_pass() {
     let retention_days = config.dns.zone_history_retention_days;
     if retention_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(retention_days));
-        match RepositoryService::list_zones().await {
+        match repository::list_zones().await {
             Ok(zones) => {
                 let (mut journal_rows, mut version_rows) = (0u64, 0u64);
                 for zone in zones {
@@ -136,7 +136,7 @@ async fn run_scheduler_pass() {
     }
 
     // Refresh expiring signatures even when the zone's user records have not changed.
-    match RepositoryService::list_rrsig_zone_ids_expiring_within_refresh(Utc::now()).await {
+    match repository::list_rrsig_zone_ids_expiring_within_refresh(Utc::now()).await {
         Ok(zone_ids) => {
             for zone_id in zone_ids {
                 match resign_zone_by_zone_id(zone_id).await {
@@ -160,7 +160,7 @@ async fn run_scheduler_pass() {
 
     // ZSK rollover needs no parent interaction, so a policy lifetime lets
     // the scheduler start it too; CSK rollover stays the operator's.
-    match RepositoryService::list_dnssec_key_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
+    match repository::list_dnssec_key_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
         DnssecKeyRole::Zsk,
         DnssecKeyState::Active,
         Utc::now(),
@@ -193,7 +193,7 @@ async fn run_scheduler_pass() {
     }
 
     // The hold-down stamped at publication is the only gate ZSK promotion has.
-    match RepositoryService::list_dnssec_keys_by_state_eligible_before(
+    match repository::list_dnssec_keys_by_state_eligible_before(
         DnssecKeyState::Published,
         Utc::now(),
     )
@@ -254,11 +254,8 @@ async fn run_scheduler_pass() {
     }
 
     // Remove retired keys after the hold-down for cached signed data has elapsed.
-    match RepositoryService::list_dnssec_keys_by_state_eligible_before(
-        DnssecKeyState::Retired,
-        Utc::now(),
-    )
-    .await
+    match repository::list_dnssec_keys_by_state_eligible_before(DnssecKeyState::Retired, Utc::now())
+        .await
     {
         Ok(keys) => {
             // Keys arrive ordered by zone id, so dedup() leaves one entry per zone.

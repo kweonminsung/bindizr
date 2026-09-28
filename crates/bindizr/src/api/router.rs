@@ -14,134 +14,129 @@ use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 
 use super::{
-    dnssec::DnssecApi, dnssec_policy::DnssecPolicyApi, error::ApiError,
-    external_dns::ExternalDnsApi, notify::NotifyApi, openapi::ApiDoc, record::RecordApi,
-    secondary::SecondaryApi, token::TokenApi, tsig_key::TsigKeyApi, zone::ZoneApi,
+    dnssec, dnssec_policy, error::ApiError, external_dns, notify, openapi::ApiDoc, record,
+    secondary, token, tsig_key, zone,
 };
 
-pub(crate) struct ApiRouter;
+/// Build the full axum router with auth, CORS, and the optional route groups.
+pub(crate) fn routes() -> Router {
+    let api_config = &config::bindizr_config().api;
 
-impl ApiRouter {
-    /// Build the full axum router with auth, CORS, and the optional route groups.
-    pub(crate) async fn routes() -> Router {
-        let api_config = &config::bindizr_config().api;
+    let mut api_router = Router::new()
+        .merge(zone::routes())
+        .merge(record::routes())
+        .merge(notify::routes())
+        .merge(secondary::routes())
+        .merge(tsig_key::routes())
+        .merge(token::routes())
+        .merge(dnssec::routes())
+        .merge(dnssec_policy::routes())
+        .route("/", routing::get(handle_home));
 
-        let mut api_router = Router::new()
-            .merge(ZoneApi::routes().await)
-            .merge(RecordApi::routes().await)
-            .merge(NotifyApi::routes().await)
-            .merge(SecondaryApi::routes().await)
-            .merge(TsigKeyApi::routes().await)
-            .merge(TokenApi::routes().await)
-            .merge(DnssecApi::routes().await)
-            .merge(DnssecPolicyApi::routes().await)
-            .route("/", routing::get(ApiRouter::handle_home));
+    // Unregistered when disabled, so the endpoints fall through to 404.
+    if api_config.external_dns_enabled {
+        api_router = api_router.merge(external_dns::routes());
+    }
 
-        // Unregistered when disabled, so the endpoints fall through to 404.
-        if api_config.external_dns_enabled {
-            api_router = api_router.merge(ExternalDnsApi::routes().await);
-        }
+    if api_config.authentication_required {
+        api_router = api_router.layer(axum::middleware::from_fn(
+            super::middleware::auth::auth_middleware,
+        ));
+    } else {
+        // Grant Global explicitly so a missing caller stays a wiring
+        // error the extractor rejects instead of implying full access.
+        api_router = api_router.layer(Extension(Caller::Global));
+    }
 
-        if api_config.authentication_required {
-            api_router = api_router.layer(axum::middleware::from_fn(
-                super::middleware::auth::auth_middleware,
-            ));
-        } else {
-            // Grant Global explicitly so a missing caller stays a wiring
-            // error the extractor rejects instead of implying full access.
-            api_router = api_router.layer(Extension(Caller::Global));
-        }
+    let mut router = api_router;
 
-        let mut router = api_router;
+    // Outside the auth layer: probes must work without credentials.
+    router = router.route("/health", routing::get(super::health::handle_health));
 
-        // Outside the auth layer: probes must work without credentials.
-        router = router.route("/health", routing::get(super::health::handle_health));
+    // Also outside auth: scrapers get only aggregate counts, no zone data.
+    if api_config.metrics_enabled {
+        router = router.route("/metrics", routing::get(super::metrics::handle_metrics));
+    }
 
-        // Also outside auth: scrapers get only aggregate counts, no zone data.
-        if api_config.metrics_enabled {
-            router = router.route("/metrics", routing::get(super::metrics::handle_metrics));
-        }
-
-        // Also outside auth: the document is the API's own description.
-        if api_config.openapi_enabled {
-            router = router
-                .route("/openapi.json", routing::get(ApiRouter::openapi_json))
-                .route("/openapi.yaml", routing::get(ApiRouter::openapi_yaml));
-        } else {
-            // A bare 404 reads as "no such endpoint" for a path the docs name.
-            router = router
-                .route("/openapi.json", routing::get(ApiRouter::openapi_disabled))
-                .route("/openapi.yaml", routing::get(ApiRouter::openapi_disabled));
-        }
-
+    // Also outside auth: the document is the API's own description.
+    if api_config.openapi_enabled {
         router = router
-            .fallback(Self::not_found)
-            .method_not_allowed_fallback(Self::method_not_allowed);
-
-        // Layered after the fallback so every route, including 404s, is measured.
-        if api_config.metrics_enabled {
-            router = router.layer(axum::middleware::from_fn(
-                super::middleware::metrics::track_http_metrics,
-            ));
-        }
-
-        router = router.layer(CorsLayer::permissive());
-
-        router
+            .route("/openapi.json", routing::get(openapi_json))
+            .route("/openapi.yaml", routing::get(openapi_yaml));
+    } else {
+        // A bare 404 reads as "no such endpoint" for a path the docs name.
+        router = router
+            .route("/openapi.json", routing::get(openapi_disabled))
+            .route("/openapi.yaml", routing::get(openapi_disabled));
     }
 
-    /// Return the API's running-status message.
-    async fn handle_home() -> impl IntoResponse {
-        (
+    router = router
+        .fallback(not_found)
+        .method_not_allowed_fallback(method_not_allowed);
+
+    // Layered after the fallback so every route, including 404s, is measured.
+    if api_config.metrics_enabled {
+        router = router.layer(axum::middleware::from_fn(
+            super::middleware::metrics::track_http_metrics,
+        ));
+    }
+
+    router = router.layer(CorsLayer::permissive());
+
+    router
+}
+
+/// Return the API's running-status message.
+async fn handle_home() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "bindizr API running".to_string(),
+        }),
+    )
+}
+
+/// Return the OpenAPI document as JSON.
+async fn openapi_json() -> impl IntoResponse {
+    (StatusCode::OK, Json(ApiDoc::openapi()))
+}
+
+/// Return the OpenAPI document as YAML.
+async fn openapi_yaml() -> axum::response::Response {
+    match ApiDoc::openapi().to_yaml() {
+        Ok(openapi_yaml) => (
             StatusCode::OK,
-            Json(MessageResponse {
-                message: "bindizr API running".to_string(),
-            }),
+            [(CONTENT_TYPE, "application/yaml; charset=utf-8")],
+            openapi_yaml,
         )
-    }
-
-    /// Return the OpenAPI document as JSON.
-    async fn openapi_json() -> impl IntoResponse {
-        (StatusCode::OK, Json(ApiDoc::openapi()))
-    }
-
-    /// Return the OpenAPI document as YAML.
-    async fn openapi_yaml() -> axum::response::Response {
-        match ApiDoc::openapi().to_yaml() {
-            Ok(openapi_yaml) => (
-                StatusCode::OK,
-                [(CONTENT_TYPE, "application/yaml; charset=utf-8")],
-                openapi_yaml,
-            )
-                .into_response(),
-            Err(err) => ApiError(ServiceError::internal(format!(
-                "failed to generate OpenAPI YAML: {err}"
-            )))
             .into_response(),
-        }
+        Err(err) => ApiError(ServiceError::internal(format!(
+            "failed to generate OpenAPI YAML: {err}"
+        )))
+        .into_response(),
     }
+}
 
-    /// Return the API error for an unsupported HTTP method.
-    async fn method_not_allowed() -> impl IntoResponse {
-        ApiError(ServiceError::new(
-            ErrorCode::MethodNotAllowed,
-            "this path does not take that method",
-        ))
-    }
+/// Return the API error for an unsupported HTTP method.
+async fn method_not_allowed() -> impl IntoResponse {
+    ApiError(ServiceError::new(
+        ErrorCode::MethodNotAllowed,
+        "this path does not take that method",
+    ))
+}
 
-    /// Return the API error for the OpenAPI document while it is not served.
-    async fn openapi_disabled() -> impl IntoResponse {
-        ApiError(ServiceError::new(
-            ErrorCode::EndpointNotFound,
-            "the OpenAPI document is not served; set api.openapi_enabled = true to serve it",
-        ))
-    }
+/// Return the API error for the OpenAPI document while it is not served.
+async fn openapi_disabled() -> impl IntoResponse {
+    ApiError(ServiceError::new(
+        ErrorCode::EndpointNotFound,
+        "the OpenAPI document is not served; set api.openapi_enabled = true to serve it",
+    ))
+}
 
-    /// Return the API error for an unknown route.
-    async fn not_found() -> impl IntoResponse {
-        ApiError(ServiceError::new(
-            ErrorCode::EndpointNotFound,
-            "no route matches this path",
-        ))
-    }
+/// Return the API error for an unknown route.
+async fn not_found() -> impl IntoResponse {
+    ApiError(ServiceError::new(
+        ErrorCode::EndpointNotFound,
+        "no route matches this path",
+    ))
 }

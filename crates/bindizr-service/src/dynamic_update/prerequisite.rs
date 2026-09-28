@@ -12,7 +12,7 @@ use crate::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    repository::RepositoryService,
+    repository,
 };
 
 /// Evaluate UPDATE prerequisites against the locked zone contents.
@@ -25,8 +25,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
         return Ok(());
     }
 
-    let zone_records =
-        RepositoryService::list_records_tx(tx, zone.id, LockLevel::Exclusive).await?;
+    let zone_records = repository::list_records_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
     let mut record_sets: Vec<WantedRecordSet<'_>> = Vec::new();
     for prerequisite in prerequisites {

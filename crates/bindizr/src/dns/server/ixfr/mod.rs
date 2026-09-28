@@ -12,8 +12,8 @@ use bindizr_core::{
     model::{transfer::TransferKind, zone_version::ZoneVersion},
 };
 use bindizr_service::{
-    transfer::TransferService,
-    zone::{TransferAccess, ZoneService},
+    transfer,
+    zone::{self, TransferAccess},
 };
 use tokio::net::TcpStream;
 
@@ -48,9 +48,7 @@ pub(crate) async fn handle_ixfr(
 
     // The zone and the grant are decided on one locked row; the journal
     // reads that follow use its id, so the delta is that zone's.
-    let zone = match ZoneService::authorize_transfer_by_name(zone_name_str, identity.key.as_ref())
-        .await?
-    {
+    let zone = match zone::authorize_transfer_by_name(zone_name_str, identity.key.as_ref()).await? {
         TransferAccess::Granted(zone) => zone,
         TransferAccess::NotAuth => {
             return Err(XfrError::NotAuth(zone_name_str.to_string()));
@@ -70,8 +68,7 @@ pub(crate) async fn handle_ixfr(
 
     if client_serial == current_serial {
         log::info!("IXFR: Client is up-to-date (serial={})", current_serial);
-        let current_soa = match ZoneService::find_version_by_serial(zone.id, current_serial as i32)
-            .await?
+        let current_soa = match zone::find_version_by_serial(zone.id, current_serial as i32).await?
         {
             Some(version) => version,
             None => {
@@ -99,13 +96,10 @@ pub(crate) async fn handle_ixfr(
     // incremental one stops being smaller; counting first also keeps a
     // long-absent secondary from pulling its whole absence into memory. Rows,
     // not bytes: summing lengths would read the rows this decides whether to read.
-    let delta_rows = ZoneService::count_changes_between_serials(
-        zone.id,
-        client_serial as i32,
-        current_serial as i32,
-    )
-    .await?;
-    if delta_rows >= ZoneService::count_transfer_records(zone.name.as_str()).await? {
+    let delta_rows =
+        zone::count_changes_between_serials(zone.id, client_serial as i32, current_serial as i32)
+            .await?;
+    if delta_rows >= zone::count_transfer_records(zone.name.as_str()).await? {
         log::info!(
             "IXFR: Delta from serial {} to {} is no smaller than the zone, falling back to AXFR",
             client_serial,
@@ -115,12 +109,9 @@ pub(crate) async fn handle_ixfr(
     }
 
     // Pair journal steps with their SOA versions to prove the delta has no gaps.
-    let changes = ZoneService::list_changes_between_serials(
-        zone.id,
-        client_serial as i32,
-        current_serial as i32,
-    )
-    .await?;
+    let changes =
+        zone::list_changes_between_serials(zone.id, client_serial as i32, current_serial as i32)
+            .await?;
 
     if changes.is_empty() {
         log::warn!(
@@ -141,12 +132,9 @@ pub(crate) async fn handle_ixfr(
     let mut versions_by_serial: HashMap<u32, ZoneVersion> = HashMap::new();
     versions_by_serial.reserve(journal_serials.len() + 1);
 
-    for version in ZoneService::list_versions_in_serial_range(
-        zone.id,
-        client_serial as i32,
-        current_serial as i32,
-    )
-    .await?
+    for version in
+        zone::list_versions_in_serial_range(zone.id, client_serial as i32, current_serial as i32)
+            .await?
     {
         if let Ok(serial) = bindizr_core::dns::serial_to_u32(version.serial) {
             versions_by_serial.insert(serial, version);
@@ -209,7 +197,7 @@ pub(crate) async fn handle_ixfr(
     }
 
     log::info!("IXFR completed for zone {}", zone_name_str);
-    TransferService::save_ok(client_ip, zone.id, TransferKind::Ixfr, true, current_serial).await;
+    transfer::save_ok(client_ip, zone.id, TransferKind::Ixfr, true, current_serial).await;
 
     Ok(())
 }

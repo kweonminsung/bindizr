@@ -13,19 +13,18 @@ use chrono::Utc;
 use prerequisite::evaluate_prerequisites_tx;
 
 use crate::{
-    RepositoryTx,
-    dnssec::DnssecService,
+    RepositoryTx, dnssec,
     error::ServiceError,
     model::{
         record::{Record, RecordType},
         tsig_key::TsigKey,
         zone::Zone,
     },
-    record::{AddResult, RecordService},
-    repository::RepositoryService,
+    record::{self, AddResult},
+    repository,
     serial::generate_serial,
     tsig_key::grant::{authorize_prerequisite, authorize_update},
-    zone::{ZoneService, version::ChangeSubject},
+    zone::{self, version::ChangeSubject},
 };
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
@@ -138,81 +137,72 @@ pub struct DynamicUpdate {
     pub updates: Vec<UpdateOp>,
 }
 
-/// Applies RFC 2136 dynamic updates to zone data.
-pub struct DynamicUpdateService;
+/// Apply an update as one transaction, reporting whether it changed
+/// anything. On a change the zone serial advances once and a NOTIFY is
+/// sent after commit.
+pub async fn apply(update: DynamicUpdate) -> Result<bool, DynamicUpdateError> {
+    let mut tx = repository::begin_tx("failed to begin NSUPDATE transaction").await?;
 
-impl DynamicUpdateService {
-    /// Apply an update as one transaction, reporting whether it changed
-    /// anything. On a change the zone serial advances once and a NOTIFY is
-    /// sent after commit.
-    pub async fn apply(update: DynamicUpdate) -> Result<bool, DynamicUpdateError> {
-        let mut tx = RepositoryService::begin_tx("failed to begin NSUPDATE transaction").await?;
+    let apply_result: Result<(bool, Zone, i32), DynamicUpdateError> = async {
+        let zone =
+            zone::find_served_by_name_tx(&mut tx, update.zone_name.as_str(), LockLevel::Exclusive)
+                .await?
+                .ok_or_else(|| {
+                    DynamicUpdateError::NotZone(format!("zone '{}' not found", update.zone_name))
+                })?;
 
-        let apply_result: Result<(bool, Zone, i32), DynamicUpdateError> = async {
-            let zone = ZoneService::find_served_by_name_tx(
-                &mut tx,
-                update.zone_name.as_str(),
-                LockLevel::Exclusive,
-            )
-            .await?
-            .ok_or_else(|| {
-                DynamicUpdateError::NotZone(format!("zone '{}' not found", update.zone_name))
-            })?;
+        authorize_key_tx(
+            &mut tx,
+            &zone,
+            update.key.as_ref(),
+            &update.prerequisites,
+            &update.updates,
+        )
+        .await?;
+        evaluate_prerequisites_tx(&mut tx, &zone, &update.prerequisites).await?;
 
-            authorize_key_tx(
-                &mut tx,
-                &zone,
-                update.key.as_ref(),
-                &update.prerequisites,
-                &update.updates,
-            )
-            .await?;
-            evaluate_prerequisites_tx(&mut tx, &zone, &update.prerequisites).await?;
+        // An exhausted serial cannot advance, so refuse rather than commit
+        // changes secondaries could never detect.
+        let new_serial = generate_serial(Some(zone.serial))?;
+        let mut changed = false;
 
-            // An exhausted serial cannot advance, so refuse rather than commit
-            // changes secondaries could never detect.
-            let new_serial = generate_serial(Some(zone.serial))?;
-            let mut changed = false;
-
-            for op in &update.updates {
-                changed |= apply_op_tx(&mut tx, &zone, op, new_serial).await?;
-            }
-
-            if changed {
-                DnssecService::sign_zone_tx(&mut tx, &zone, new_serial).await?;
-                // Bump the serial and version it so secondaries detect the change via
-                // SOA/NOTIFY and can serve it as an IXFR delta.
-                ZoneService::advance_serial_tx(
-                    &mut tx,
-                    &zone,
-                    new_serial,
-                    &ChangeSubject::nsupdate(update.key.as_ref().map(|key| key.name.as_str())),
-                )
-                .await?;
-            }
-
-            Ok((changed, zone, new_serial))
+        for op in &update.updates {
+            changed |= apply_op_tx(&mut tx, &zone, op, new_serial).await?;
         }
-        .await;
-
-        let (changed, zone, new_serial) =
-            RepositoryService::finish_tx(tx, apply_result, "failed to commit NSUPDATE transaction")
-                .await?;
 
         if changed {
-            log::info!(
-                "event=nsupdate_apply zone={} serial={}",
-                zone.name,
-                new_serial
-            );
-
-            // Queue through the service like every other mutation path, so
-            // `dns.notify.batch_ms` governs RFC 2136 writes too.
-            crate::notify::notify_after_update(zone.name.as_str()).await;
+            dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
+            // Bump the serial and version it so secondaries detect the change via
+            // SOA/NOTIFY and can serve it as an IXFR delta.
+            zone::advance_serial_tx(
+                &mut tx,
+                &zone,
+                new_serial,
+                &ChangeSubject::nsupdate(update.key.as_ref().map(|key| key.name.as_str())),
+            )
+            .await?;
         }
 
-        Ok(changed)
+        Ok((changed, zone, new_serial))
     }
+    .await;
+
+    let (changed, zone, new_serial) =
+        repository::finish_tx(tx, apply_result, "failed to commit NSUPDATE transaction").await?;
+
+    if changed {
+        log::info!(
+            "event=nsupdate_apply zone={} serial={}",
+            zone.name,
+            new_serial
+        );
+
+        // Queue through the service like every other mutation path, so
+        // `dns.notify.batch_ms` governs RFC 2136 writes too.
+        crate::notify::notify_after_update(zone.name.as_str()).await;
+    }
+
+    Ok(changed)
 }
 
 /// Authorize an authenticated request: global keys may do anything, other
@@ -234,7 +224,7 @@ async fn authorize_key_tx(
 
     // Share-lock the grants so a concurrent revocation waits for this
     // transaction instead of racing it.
-    let grants = RepositoryService::list_tsig_grants_by_zone_id_and_key_id_tx(
+    let grants = repository::list_tsig_grants_by_zone_id_and_key_id_tx(
         tx,
         zone.id,
         key.id,
@@ -319,16 +309,9 @@ async fn apply_op_tx(
                 })?
             };
 
-            let outcome = RecordService::validate_add_tx(
-                tx,
-                zone,
-                &owner,
-                record_type,
-                &value,
-                *ttl,
-                *priority,
-            )
-            .await?;
+            let outcome =
+                record::validate_add_tx(tx, zone, &owner, record_type, &value, *ttl, *priority)
+                    .await?;
 
             // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op. The
             // TTL-replace clause is not implemented; record set TTLs change via the API.
@@ -336,7 +319,7 @@ async fn apply_op_tx(
                 return Ok(false);
             }
 
-            RecordService::create_with_changes_tx(
+            record::create_with_changes_tx(
                 tx,
                 zone.id,
                 new_serial,
@@ -392,8 +375,7 @@ async fn delete_matching_tx(
     let owner = parse_update_owner(name, &zone.name)?;
     // Only records at the owner name can match, so lock just those.
     let owner_records =
-        RepositoryService::list_records_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive)
-            .await?;
+        repository::list_records_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive).await?;
 
     let matched: Vec<Record> = owner_records
         .iter()
@@ -405,7 +387,7 @@ async fn delete_matching_tx(
         return Ok(false);
     }
 
-    RecordService::delete_with_changes_tx(tx, zone.id, new_serial, &matched).await?;
+    record::delete_with_changes_tx(tx, zone.id, new_serial, &matched).await?;
 
     Ok(true)
 }

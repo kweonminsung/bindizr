@@ -1,11 +1,11 @@
 use bindizr_service::{
     authorization::Caller,
     error::ServiceError,
-    record::RecordService,
+    record,
     types::{
         CreateZoneRequest, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter, ZoneResponse,
     },
-    zone::ZoneService,
+    zone,
 };
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
 pub(crate) async fn get_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: NameParams = parse_params(data)?;
 
-    let zone = ZoneService::get_by_name(&Caller::Global, &params.name).await?;
+    let zone = zone::get_by_name(&Caller::Global, &params.name).await?;
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
         data: to_response_data(ZoneResponse {
@@ -41,7 +41,7 @@ pub(crate) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
         parse_params(data)?
     };
 
-    let response = ZoneService::list_by_filter(&Caller::Global, filter).await?;
+    let response = zone::list_by_filter(&Caller::Global, filter).await?;
     Ok(DaemonResponse {
         message: "Zones retrieved successfully".to_string(),
         data: to_response_data(response)?,
@@ -52,7 +52,7 @@ pub(crate) async fn list_zones(data: &serde_json::Value) -> Result<DaemonRespons
 pub(crate) async fn create_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let request: CreateZoneRequest = parse_params(data)?;
 
-    let response = ZoneService::create(&Caller::Global, &request).await?;
+    let response = zone::create(&Caller::Global, &request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Zone would be created".to_string()
@@ -67,7 +67,7 @@ pub(crate) async fn create_zone(data: &serde_json::Value) -> Result<DaemonRespon
 pub(crate) async fn update_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateZoneParams = parse_params(data)?;
 
-    let response = ZoneService::update(&Caller::Global, &params.zone_name, &params.request).await?;
+    let response = zone::update(&Caller::Global, &params.zone_name, &params.request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Zone would be updated".to_string()
@@ -82,8 +82,7 @@ pub(crate) async fn update_zone(data: &serde_json::Value) -> Result<DaemonRespon
 pub(crate) async fn import_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ImportZoneParams = parse_params(data)?;
 
-    let response =
-        RecordService::import_zone(&Caller::Global, &params.zone_name, &params.request).await?;
+    let response = record::import_zone(&Caller::Global, &params.zone_name, &params.request).await?;
     let message = if !response.errors.is_empty() {
         format!(
             "Import validation failed with {} error(s); nothing applied",
@@ -104,7 +103,7 @@ pub(crate) async fn import_zone(data: &serde_json::Value) -> Result<DaemonRespon
 /// Export the requested zone as a zone file.
 pub(crate) async fn export_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: ExportZoneFileParams = parse_params(data)?;
-    let zone_file = ZoneService::export(&Caller::Global, &params.name, params.signed).await?;
+    let zone_file = zone::export(&Caller::Global, &params.name, params.signed).await?;
     Ok(DaemonResponse {
         message: "Zone exported successfully".to_string(),
         data: to_response_data(ExportZoneFileResponse { zone_file })?,
@@ -117,7 +116,7 @@ pub(crate) async fn list_zone_versions(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ListZoneVersionsParams = parse_params(data)?;
 
-    let response = ZoneService::list_versions(
+    let response = zone::list_versions(
         &Caller::Global,
         &params.name,
         params.limit,
@@ -138,7 +137,7 @@ pub(crate) async fn get_zone_version(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ZoneVersionParams = parse_params(data)?;
 
-    let response = ZoneService::get_version(&Caller::Global, &params.name, params.serial).await?;
+    let response = zone::get_version(&Caller::Global, &params.name, params.serial).await?;
 
     Ok(DaemonResponse {
         message: format!("Version '{}' retrieved successfully", params.serial),
@@ -152,7 +151,7 @@ pub(crate) async fn diff_zone_versions(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DiffZoneVersionsParams = parse_params(data)?;
 
-    let response = ZoneService::diff_versions(
+    let response = zone::diff_versions(
         &Caller::Global,
         &params.name,
         params.from_serial,
@@ -179,7 +178,7 @@ pub(crate) async fn rollback_zone(
     let params: RollbackZoneParams = parse_params(data)?;
 
     let response =
-        ZoneService::rollback(&Caller::Global, &params.name, params.serial, params.dry_run).await?;
+        zone::rollback(&Caller::Global, &params.name, params.serial, params.dry_run).await?;
     let message = if response.dry_run {
         format!(
             "Dry run: rollback to serial {} would add {} and delete {} record(s); nothing applied",
@@ -204,7 +203,7 @@ pub(crate) async fn get_zone_status(
 ) -> Result<DaemonResponse, ServiceError> {
     let params: NameParams = parse_params(data)?;
 
-    let response = ZoneService::get_status(&Caller::Global, &params.name).await?;
+    let response = zone::get_status(&Caller::Global, &params.name).await?;
 
     let in_sync = response
         .secondaries
@@ -232,7 +231,7 @@ pub(crate) async fn get_zone_status(
 pub(crate) async fn delete_zone(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
     let params: DeleteZoneParams = parse_params(data)?;
 
-    let response = ZoneService::delete(&Caller::Global, &params.name, params.dry_run).await?;
+    let response = zone::delete(&Caller::Global, &params.name, params.dry_run).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!(

@@ -10,117 +10,109 @@ use bindizr_core::{
 };
 use chrono::Utc;
 
-use crate::{error::ServiceError, repository::RepositoryService};
+use crate::{error::ServiceError, repository};
 
-/// Keeps the transfers the DNS server answers, refuses, or fails and reads
-/// them back per client.
-pub struct TransferService;
-
-impl TransferService {
-    /// Save a transfer answered for `zone_id` up to `serial`. A failure to
-    /// save is logged; the transfer already went out.
-    pub async fn save_ok(
-        client: IpAddr,
-        zone_id: i32,
-        kind: TransferKind,
-        incremental: bool,
-        serial: u32,
-    ) {
-        let saved = RepositoryService::upsert_transfer(Transfer {
-            client_addr: client.to_string(),
-            zone_id,
-            kind,
-            result: TransferResult::Ok,
-            incremental,
-            serial: serial_to_i32(serial).ok(),
-            served_at: Utc::now(),
-            error: None,
-        })
-        .await;
-        if let Err(e) = saved {
-            log::warn!("Failed to save a transfer: {}", e);
-        }
+/// Save a transfer answered for `zone_id` up to `serial`. A failure to
+/// save is logged; the transfer already went out.
+pub async fn save_ok(
+    client: IpAddr,
+    zone_id: i32,
+    kind: TransferKind,
+    incremental: bool,
+    serial: u32,
+) {
+    let saved = repository::upsert_transfer(Transfer {
+        client_addr: client.to_string(),
+        zone_id,
+        kind,
+        result: TransferResult::Ok,
+        incremental,
+        serial: serial_to_i32(serial).ok(),
+        served_at: Utc::now(),
+        error: None,
+    })
+    .await;
+    if let Err(e) = saved {
+        log::warn!("Failed to save a transfer: {}", e);
     }
+}
 
-    /// Save a refusal for the zone `zone_name` names.
-    pub async fn save_refused(client: IpAddr, zone_name: &str, kind: TransferKind, reason: String) {
-        Self::save_unserved(client, zone_name, kind, TransferResult::Refused, reason).await;
-    }
+/// Save a refusal for the zone `zone_name` names.
+pub async fn save_refused(client: IpAddr, zone_name: &str, kind: TransferKind, reason: String) {
+    save_unserved(client, zone_name, kind, TransferResult::Refused, reason).await;
+}
 
-    /// Save a transfer of the zone `zone_name` names that was allowed and
-    /// then broke off.
-    pub async fn save_failed(client: IpAddr, zone_name: &str, kind: TransferKind, error: String) {
-        Self::save_unserved(client, zone_name, kind, TransferResult::Failed, error).await;
-    }
+/// Save a transfer of the zone `zone_name` names that was allowed and
+/// then broke off.
+pub async fn save_failed(client: IpAddr, zone_name: &str, kind: TransferKind, error: String) {
+    save_unserved(client, zone_name, kind, TransferResult::Failed, error).await;
+}
 
-    /// Save a refusal or failure for the zone `zone_name` names; a zone
-    /// Bindizr does not have leaves no row, and a failure to save is logged.
-    async fn save_unserved(
-        client: IpAddr,
-        zone_name: &str,
-        kind: TransferKind,
-        result: TransferResult,
-        error: String,
-    ) {
-        let zone = match RepositoryService::get_zone_by_name(zone_name).await {
-            Ok(Some(zone)) => zone,
-            Ok(None) => return,
-            Err(e) => {
-                log::warn!("Failed to save a transfer of {}: {}", zone_name, e);
-                return;
-            }
-        };
-        let saved = RepositoryService::upsert_transfer(Transfer {
-            client_addr: client.to_string(),
-            zone_id: zone.id,
-            kind,
-            result,
-            incremental: false,
-            serial: None,
-            served_at: Utc::now(),
-            error: Some(error),
-        })
-        .await;
-        if let Err(e) = saved {
+/// Save a refusal or failure for the zone `zone_name` names; a zone
+/// Bindizr does not have leaves no row, and a failure to save is logged.
+async fn save_unserved(
+    client: IpAddr,
+    zone_name: &str,
+    kind: TransferKind,
+    result: TransferResult,
+    error: String,
+) {
+    let zone = match repository::get_zone_by_name(zone_name).await {
+        Ok(Some(zone)) => zone,
+        Ok(None) => return,
+        Err(e) => {
             log::warn!("Failed to save a transfer of {}: {}", zone_name, e);
+            return;
         }
+    };
+    let saved = repository::upsert_transfer(Transfer {
+        client_addr: client.to_string(),
+        zone_id: zone.id,
+        kind,
+        result,
+        incremental: false,
+        serial: None,
+        served_at: Utc::now(),
+        error: Some(error),
+    })
+    .await;
+    if let Err(e) = saved {
+        log::warn!("Failed to save a transfer of {}: {}", zone_name, e);
     }
+}
 
-    /// The transfers served to any of `clients`, newest first.
-    pub(crate) async fn list_by_clients(
-        clients: &[IpAddr],
-    ) -> Result<Vec<TransferWithZone>, ServiceError> {
-        let mut transfers = Vec::new();
-        for client in clients {
-            transfers.extend(
-                RepositoryService::list_transfers_by_client_addr_with_zone(&client.to_string())
-                    .await?,
-            );
-        }
-        transfers.sort_by_key(|transfer| std::cmp::Reverse(transfer.served_at));
-        Ok(transfers)
+/// The transfers served to any of `clients`, newest first.
+pub(crate) async fn list_by_clients(
+    clients: &[IpAddr],
+) -> Result<Vec<TransferWithZone>, ServiceError> {
+    let mut transfers = Vec::new();
+    for client in clients {
+        transfers.extend(
+            repository::list_transfers_by_client_addr_with_zone(&client.to_string()).await?,
+        );
     }
+    transfers.sort_by_key(|transfer| std::cmp::Reverse(transfer.served_at));
+    Ok(transfers)
+}
 
-    /// The latest transfer of `zone_name` served to any of `clients`.
-    pub(crate) async fn find_by_clients_and_zone_name(
-        clients: &[IpAddr],
-        zone_name: &str,
-    ) -> Result<Option<TransferWithZone>, ServiceError> {
-        let mut latest: Option<TransferWithZone> = None;
-        for client in clients {
-            if let Some(transfer) =
-                RepositoryService::get_transfer_by_client_addr_and_zone_name_with_zone(
-                    &client.to_string(),
-                    zone_name,
-                )
-                .await?
-                && latest
-                    .as_ref()
-                    .is_none_or(|found| transfer.served_at > found.served_at)
-            {
-                latest = Some(transfer);
-            }
+/// The latest transfer of `zone_name` served to any of `clients`.
+pub(crate) async fn find_by_clients_and_zone_name(
+    clients: &[IpAddr],
+    zone_name: &str,
+) -> Result<Option<TransferWithZone>, ServiceError> {
+    let mut latest: Option<TransferWithZone> = None;
+    for client in clients {
+        if let Some(transfer) = repository::get_transfer_by_client_addr_and_zone_name_with_zone(
+            &client.to_string(),
+            zone_name,
+        )
+        .await?
+            && latest
+                .as_ref()
+                .is_none_or(|found| transfer.served_at > found.served_at)
+        {
+            latest = Some(transfer);
         }
-        Ok(latest)
     }
+    Ok(latest)
 }

@@ -11,7 +11,7 @@ use crate::{
         record::{Record, RecordData, RecordKey},
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    repository::RepositoryService,
+    repository,
 };
 
 /// Reverse-apply the zone's journal in `(target_serial, current_serial]`
@@ -23,8 +23,8 @@ pub(crate) async fn reconstruct_records_at_serial_tx(
     target_serial: i32,
     current_serial: i32,
 ) -> Result<Vec<RecordData>, ServiceError> {
-    let records = RepositoryService::list_records_tx(tx, zone_id, LockLevel::None).await?;
-    let changes = RepositoryService::list_zone_changes_between_serials_tx(
+    let records = repository::list_records_tx(tx, zone_id, LockLevel::None).await?;
+    let changes = repository::list_zone_changes_between_serials_tx(
         tx,
         zone_id,
         target_serial,
@@ -106,7 +106,7 @@ pub(crate) async fn list_records_at_serial_tx(
 ) -> Result<Vec<RecordData>, ServiceError> {
     if serial == current_serial {
         let mut records: Vec<RecordData> =
-            RepositoryService::list_records_tx(tx, zone_id, LockLevel::None)
+            repository::list_records_tx(tx, zone_id, LockLevel::None)
                 .await?
                 .into_iter()
                 .map(RecordData::from)

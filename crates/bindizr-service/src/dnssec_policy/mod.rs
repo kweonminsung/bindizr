@@ -12,7 +12,7 @@ use crate::{
         dnssec_key::DnssecAlgorithm,
         dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
     },
-    repository::RepositoryService,
+    repository,
     text::normalize_identifier,
     types::{
         CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageFilter, PaginatedResponse,
@@ -27,170 +27,161 @@ const MAX_SIGNATURE_VALIDITY_DAYS: u32 = 24_855;
 const MAX_ZSK_LIFETIME_DAYS: u32 = 3650;
 const MAX_POLICY_NAME_LEN: usize = 64;
 
-/// Creates, lists, edits, and deletes DNSSEC policies.
-pub struct DnssecPolicyService;
+/// Create a policy; omitted fields take the built-in defaults.
+pub async fn create(
+    caller: &Caller,
+    request: CreateDnssecPolicyRequest,
+) -> Result<DnssecPolicy, ServiceError> {
+    caller.authorize_global("manage DNSSEC policies")?;
 
-impl DnssecPolicyService {
-    /// Create a policy; omitted fields take the built-in defaults.
-    pub async fn create(
-        caller: &Caller,
-        request: CreateDnssecPolicyRequest,
-    ) -> Result<DnssecPolicy, ServiceError> {
-        caller.authorize_global("manage DNSSEC policies")?;
+    let name = normalize_policy_name(&request.name)?;
+    let algorithm = match request.algorithm.as_deref() {
+        Some(raw) => raw
+            .parse::<DnssecAlgorithm>()
+            .map_err(ServiceError::invalid_input)?,
+        None => DnssecAlgorithm::EcdsaP256Sha256,
+    };
+    let denial = match request.denial.as_deref() {
+        Some(raw) => raw
+            .parse::<DnssecDenial>()
+            .map_err(ServiceError::invalid_input)?,
+        // NSEC leaves the zone walkable, so a policy that did not
+        // choose is not opted into it.
+        None => DnssecDenial::Nsec3,
+    };
+    let signature_validity_days = request.signature_validity_days.unwrap_or(14);
+    let signature_refresh_days = request.signature_refresh_days.unwrap_or(5);
+    let zsk_lifetime_days = request.zsk_lifetime_days.unwrap_or(0);
+    validate_timing(
+        signature_validity_days,
+        signature_refresh_days,
+        zsk_lifetime_days,
+    )?;
 
-        let name = normalize_policy_name(&request.name)?;
-        let algorithm = match request.algorithm.as_deref() {
-            Some(raw) => raw
-                .parse::<DnssecAlgorithm>()
-                .map_err(ServiceError::invalid_input)?,
-            None => DnssecAlgorithm::EcdsaP256Sha256,
-        };
-        let denial = match request.denial.as_deref() {
-            Some(raw) => raw
-                .parse::<DnssecDenial>()
-                .map_err(ServiceError::invalid_input)?,
-            // NSEC leaves the zone walkable, so a policy that did not
-            // choose is not opted into it.
-            None => DnssecDenial::Nsec3,
-        };
-        let signature_validity_days = request.signature_validity_days.unwrap_or(14);
-        let signature_refresh_days = request.signature_refresh_days.unwrap_or(5);
-        let zsk_lifetime_days = request.zsk_lifetime_days.unwrap_or(0);
+    // Friendly pre-check; the UNIQUE(name) backstop covers the race.
+    if repository::get_dnssec_policy_by_name(&name)
+        .await?
+        .is_some()
+    {
+        return Err(ServiceError::dnssec_policy_conflict(&name));
+    }
+
+    repository::create_dnssec_policy(DnssecPolicy {
+        id: 0,
+        name,
+        algorithm,
+        denial,
+        split_keys: request.split_keys,
+        signature_validity_days: signature_validity_days as i32,
+        signature_refresh_days: signature_refresh_days as i32,
+        zsk_lifetime_days: zsk_lifetime_days as i32,
+        created_at: Utc::now(),
+    })
+    .await
+}
+
+/// List DNSSEC policies visible to an authorized caller.
+pub async fn list(
+    caller: &Caller,
+    page: PageFilter,
+) -> Result<PaginatedResponse<GetDnssecPolicyResponse>, ServiceError> {
+    caller.authorize_global("manage DNSSEC policies")?;
+
+    let policies = repository::list_dnssec_policies().await?;
+    PaginatedResponse::from_collection(
+        policies
+            .iter()
+            .map(GetDnssecPolicyResponse::from_policy)
+            .collect(),
+        page.limit,
+        page.offset,
+    )
+}
+
+/// Load a named DNSSEC policy for an authorized caller.
+pub async fn get(caller: &Caller, name: &str) -> Result<DnssecPolicy, ServiceError> {
+    caller.authorize_global("manage DNSSEC policies")?;
+
+    lookup_by_name(name).await
+}
+
+/// Fetch one policy by name. This is the unchecked lookup for
+/// service-internal use; front ends go through [`get`].
+pub(crate) async fn lookup_by_name(name: &str) -> Result<DnssecPolicy, ServiceError> {
+    let name = normalize_policy_name(name)?;
+    repository::get_dnssec_policy_by_name(&name)
+        .await?
+        .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))
+}
+
+/// Edit the policy's timing fields; the key layout, algorithm, and
+/// denial mode are fixed at creation. Zones under the policy pick the
+/// new values up on their next signing pass or scheduler scan.
+pub async fn update(
+    caller: &Caller,
+    name: &str,
+    request: UpdateDnssecPolicyRequest,
+) -> Result<DnssecPolicy, ServiceError> {
+    caller.authorize_global("manage DNSSEC policies")?;
+    let name = normalize_policy_name(name)?;
+
+    // Read and write under the row lock, or two partial updates would
+    // each restore the fields the other changed.
+    let mut tx = repository::begin_tx("failed to update DNSSEC policy").await?;
+    let result = async {
+        let policy = repository::get_dnssec_policy_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
+            .await?
+            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))?;
+        let signature_validity_days = request
+            .signature_validity_days
+            .unwrap_or(policy.signature_validity_days as u32);
+        let signature_refresh_days = request
+            .signature_refresh_days
+            .unwrap_or(policy.signature_refresh_days as u32);
+        let zsk_lifetime_days = request
+            .zsk_lifetime_days
+            .unwrap_or(policy.zsk_lifetime_days as u32);
         validate_timing(
             signature_validity_days,
             signature_refresh_days,
             zsk_lifetime_days,
         )?;
 
-        // Friendly pre-check; the UNIQUE(name) backstop covers the race.
-        if RepositoryService::get_dnssec_policy_by_name(&name)
-            .await?
-            .is_some()
-        {
-            return Err(ServiceError::dnssec_policy_conflict(&name));
-        }
-
-        RepositoryService::create_dnssec_policy(DnssecPolicy {
-            id: 0,
-            name,
-            algorithm,
-            denial,
-            split_keys: request.split_keys,
-            signature_validity_days: signature_validity_days as i32,
-            signature_refresh_days: signature_refresh_days as i32,
-            zsk_lifetime_days: zsk_lifetime_days as i32,
-            created_at: Utc::now(),
-        })
+        repository::update_dnssec_policy_tx(
+            &mut tx,
+            DnssecPolicy {
+                signature_validity_days: signature_validity_days as i32,
+                signature_refresh_days: signature_refresh_days as i32,
+                zsk_lifetime_days: zsk_lifetime_days as i32,
+                ..policy
+            },
+        )
         .await
     }
+    .await;
+    repository::finish_tx(tx, result, "failed to update DNSSEC policy").await
+}
 
-    /// List DNSSEC policies visible to an authorized caller.
-    pub async fn list(
-        caller: &Caller,
-        page: PageFilter,
-    ) -> Result<PaginatedResponse<GetDnssecPolicyResponse>, ServiceError> {
-        caller.authorize_global("manage DNSSEC policies")?;
+/// Delete a policy by name; refused for the built-in `default` and while
+/// any zone signs under it.
+pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
+    caller.authorize_global("manage DNSSEC policies")?;
 
-        let policies = RepositoryService::list_dnssec_policies().await?;
-        PaginatedResponse::from_collection(
-            policies
-                .iter()
-                .map(GetDnssecPolicyResponse::from_policy)
-                .collect(),
-            page.limit,
-            page.offset,
-        )
+    let policy = lookup_by_name(name).await?;
+    // `enable` and `keys import` fall back to it by name.
+    if policy.name == DEFAULT_DNSSEC_POLICY_NAME {
+        return Err(ServiceError::invalid_input(format!(
+            "the built-in '{}' policy cannot be deleted; edit it instead",
+            DEFAULT_DNSSEC_POLICY_NAME
+        )));
     }
 
-    /// Load a named DNSSEC policy for an authorized caller.
-    pub async fn get(caller: &Caller, name: &str) -> Result<DnssecPolicy, ServiceError> {
-        caller.authorize_global("manage DNSSEC policies")?;
-
-        Self::lookup_by_name(name).await
+    let zone_count = repository::count_zones_by_dnssec_policy_id(policy.id).await?;
+    if zone_count > 0 {
+        return Err(ServiceError::dnssec_policy_in_use(&policy.name, zone_count));
     }
 
-    /// Fetch one policy by name. This is the unchecked lookup for
-    /// service-internal use; front ends go through [`Self::get`].
-    pub(crate) async fn lookup_by_name(name: &str) -> Result<DnssecPolicy, ServiceError> {
-        let name = normalize_policy_name(name)?;
-        RepositoryService::get_dnssec_policy_by_name(&name)
-            .await?
-            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))
-    }
-
-    /// Edit the policy's timing fields; the key layout, algorithm, and
-    /// denial mode are fixed at creation. Zones under the policy pick the
-    /// new values up on their next signing pass or scheduler scan.
-    pub async fn update(
-        caller: &Caller,
-        name: &str,
-        request: UpdateDnssecPolicyRequest,
-    ) -> Result<DnssecPolicy, ServiceError> {
-        caller.authorize_global("manage DNSSEC policies")?;
-        let name = normalize_policy_name(name)?;
-
-        // Read and write under the row lock, or two partial updates would
-        // each restore the fields the other changed.
-        let mut tx = RepositoryService::begin_tx("failed to update DNSSEC policy").await?;
-        let result = async {
-            let policy = RepositoryService::get_dnssec_policy_by_name_tx(
-                &mut tx,
-                &name,
-                LockLevel::Exclusive,
-            )
-            .await?
-            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))?;
-            let signature_validity_days = request
-                .signature_validity_days
-                .unwrap_or(policy.signature_validity_days as u32);
-            let signature_refresh_days = request
-                .signature_refresh_days
-                .unwrap_or(policy.signature_refresh_days as u32);
-            let zsk_lifetime_days = request
-                .zsk_lifetime_days
-                .unwrap_or(policy.zsk_lifetime_days as u32);
-            validate_timing(
-                signature_validity_days,
-                signature_refresh_days,
-                zsk_lifetime_days,
-            )?;
-
-            RepositoryService::update_dnssec_policy_tx(
-                &mut tx,
-                DnssecPolicy {
-                    signature_validity_days: signature_validity_days as i32,
-                    signature_refresh_days: signature_refresh_days as i32,
-                    zsk_lifetime_days: zsk_lifetime_days as i32,
-                    ..policy
-                },
-            )
-            .await
-        }
-        .await;
-        RepositoryService::finish_tx(tx, result, "failed to update DNSSEC policy").await
-    }
-
-    /// Delete a policy by name; refused for the built-in `default` and while
-    /// any zone signs under it.
-    pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
-        caller.authorize_global("manage DNSSEC policies")?;
-
-        let policy = Self::lookup_by_name(name).await?;
-        // `enable` and `keys import` fall back to it by name.
-        if policy.name == DEFAULT_DNSSEC_POLICY_NAME {
-            return Err(ServiceError::invalid_input(format!(
-                "the built-in '{}' policy cannot be deleted; edit it instead",
-                DEFAULT_DNSSEC_POLICY_NAME
-            )));
-        }
-
-        let zone_count = RepositoryService::count_zones_by_dnssec_policy_id(policy.id).await?;
-        if zone_count > 0 {
-            return Err(ServiceError::dnssec_policy_in_use(&policy.name, zone_count));
-        }
-
-        RepositoryService::delete_dnssec_policy(policy.id).await
-    }
+    repository::delete_dnssec_policy(policy.id).await
 }
 
 /// Lowercased so one name means one policy on every backend (MySQL compares

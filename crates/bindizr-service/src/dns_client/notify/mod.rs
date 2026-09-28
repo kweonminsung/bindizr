@@ -10,7 +10,7 @@ use bindizr_core::{
     metrics::{NotifyResult, track_notify},
 };
 
-use crate::{model::secondary::Secondary, secondary::SecondaryService, types::NotifyCheckResponse};
+use crate::{model::secondary::Secondary, secondary, types::NotifyCheckResponse};
 
 /// Sends DNS NOTIFY to every enabled secondary for one zone. Which
 /// zones to notify is the caller's decision.
@@ -49,9 +49,7 @@ pub(crate) async fn send_zone_notify(zone_name: &str) -> Result<(), String> {
 pub async fn send_notify_to_secondaries(
     zone_name: &str,
 ) -> Result<Vec<NotifyCheckResponse>, String> {
-    let secondaries = SecondaryService::list_enabled()
-        .await
-        .map_err(|e| e.to_string())?;
+    let secondaries = secondary::list_enabled().await.map_err(|e| e.to_string())?;
 
     let mut reports = Vec::new();
     for secondary in &secondaries {
@@ -73,7 +71,7 @@ pub async fn send_notify_to_secondary(
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
 
-    let key = match SecondaryService::notify_signing_key(secondary).await {
+    let key = match secondary::notify_signing_key(secondary).await {
         Ok(key) => key,
         Err(e) => {
             track_notify(NotifyResult::Failed);

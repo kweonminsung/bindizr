@@ -1,71 +1,66 @@
 use bindizr_core::config::bindizr_config;
 use bindizr_db::repository::{LockLevel, RecordFilter};
 
-use super::ZoneService;
 use crate::{
     authorization::Caller,
     error::ServiceError,
-    repository::RepositoryService,
+    repository,
     types::{DeleteZoneResponse, GetZoneResponse},
 };
 
-impl ZoneService {
-    /// Delete a zone by name and NOTIFY the catalog zone after commit. A dry
-    /// run reports what the zone holds and removes nothing, since the delete
-    /// takes the records and the rollback history with it.
-    pub async fn delete(
-        caller: &Caller,
-        zone_name: &str,
-        dry_run: bool,
-    ) -> Result<DeleteZoneResponse, ServiceError> {
-        caller.authorize_global("delete zones")?;
+/// Delete a zone by name and NOTIFY the catalog zone after commit. A dry
+/// run reports what the zone holds and removes nothing, since the delete
+/// takes the records and the rollback history with it.
+pub async fn delete(
+    caller: &Caller,
+    zone_name: &str,
+    dry_run: bool,
+) -> Result<DeleteZoneResponse, ServiceError> {
+    caller.authorize_global("delete zones")?;
 
-        let mut tx = RepositoryService::begin_tx("Failed to delete zone").await?;
+    let mut tx = repository::begin_tx("Failed to delete zone").await?;
 
-        let apply_result = async {
-            // Locked lookup so a raced double-delete reports 404, not success.
-            let zone =
-                ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+    let apply_result = async {
+        // Locked lookup so a raced double-delete reports 404, not success.
+        let zone = super::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
-            // Counted for the report, not acted on, so they run unlocked.
-            let records = RepositoryService::count_records_by_filter(RecordFilter {
-                zone_name: Some(zone.name.to_string()),
-                ..RecordFilter::default()
-            })
-            .await?;
-            let versions = RepositoryService::count_zone_versions(zone.id, false).await?;
+        // Counted for the report, not acted on, so they run unlocked.
+        let records = repository::count_records_by_filter(RecordFilter {
+            zone_name: Some(zone.name.to_string()),
+            ..RecordFilter::default()
+        })
+        .await?;
+        let versions = repository::count_zone_versions(zone.id, false).await?;
 
-            let response = DeleteZoneResponse {
-                applied: !dry_run,
-                dry_run,
-                zone: GetZoneResponse::from_zone(&zone),
-                records_deleted: records,
-                versions_deleted: versions,
-            };
-            if dry_run {
-                return Ok(response);
-            }
-
-            RepositoryService::delete_zone_tx(&mut tx, zone.id)
-                .await
-                .map_err(|e| {
-                    log::error!("Failed to delete zone: {}", e);
-                    ServiceError::internal("Failed to delete zone")
-                })?;
-            log::info!("event=zone_delete zone={} zone_id={}", zone.name, zone.id);
-            Ok(response)
-        }
-        .await;
-
-        let response =
-            RepositoryService::finish_tx(tx, apply_result, "Failed to delete zone").await?;
-
-        // Send catalog NOTIFY so secondaries drop the removed zone
-        let config = bindizr_config();
-        if response.applied {
-            crate::notify::notify_after_update(&config.dns.catalog_zone_name).await;
+        let response = DeleteZoneResponse {
+            applied: !dry_run,
+            dry_run,
+            zone: GetZoneResponse::from_zone(&zone),
+            records_deleted: records,
+            versions_deleted: versions,
+        };
+        if dry_run {
+            return Ok(response);
         }
 
+        repository::delete_zone_tx(&mut tx, zone.id)
+            .await
+            .map_err(|e| {
+                log::error!("Failed to delete zone: {}", e);
+                ServiceError::internal("Failed to delete zone")
+            })?;
+        log::info!("event=zone_delete zone={} zone_id={}", zone.name, zone.id);
         Ok(response)
     }
+    .await;
+
+    let response = repository::finish_tx(tx, apply_result, "Failed to delete zone").await?;
+
+    // Send catalog NOTIFY so secondaries drop the removed zone
+    let config = bindizr_config();
+    if response.applied {
+        crate::notify::notify_after_update(&config.dns.catalog_zone_name).await;
+    }
+
+    Ok(response)
 }

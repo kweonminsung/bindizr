@@ -20,7 +20,7 @@ use bindizr_core::{
     metrics::{XfrResult, track_xfr},
     model::transfer::TransferKind,
 };
-use bindizr_service::transfer::TransferService;
+use bindizr_service::transfer;
 use tokio::net::TcpStream;
 
 use crate::dns::{error::XfrError, wire};
@@ -55,7 +55,7 @@ pub(crate) async fn handle_tcp_xfr(
             );
             // Saved against the client too, so `secondary transfers` can say why
             // a secondary got nothing.
-            TransferService::save_refused(
+            transfer::save_refused(
                 client_ip,
                 &query.zone_name,
                 TransferKind::from_qtype(query.qtype),
@@ -108,7 +108,7 @@ pub(crate) async fn handle_tcp_xfr(
         Err(XfrError::Refused(reason)) => {
             track_result(XfrResult::Refused);
             log::warn!("Refused XFR TCP query from {}: {}", client_ip, reason);
-            TransferService::save_refused(
+            transfer::save_refused(
                 client_ip,
                 &query.zone_name,
                 TransferKind::from_qtype(query.qtype),
@@ -122,7 +122,7 @@ pub(crate) async fn handle_tcp_xfr(
         }
         Err(err) => {
             track_result(XfrResult::Failed);
-            TransferService::save_failed(
+            transfer::save_failed(
                 client_ip,
                 &query.zone_name,
                 TransferKind::from_qtype(query.qtype),

@@ -5,9 +5,9 @@ use bindizr_service::{
     authorization::Caller,
     dns_client::{notify, probe},
     error::ServiceError,
-    secondary::SecondaryService,
+    secondary,
     types::SecondaryTransferSummary,
-    zone::ZoneService,
+    zone,
 };
 
 use crate::{
@@ -24,7 +24,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
     let config = config::bindizr_config();
 
     // Count zones without materializing them; large tables must fit the deadline.
-    let zones_probe = ZoneService::count(&Caller::Global);
+    let zones_probe = zone::count(&Caller::Global);
     let database = match tokio::time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
         Ok(Ok(total)) => DoctorCheck {
             status: DoctorCheckStatus::Ok,
@@ -88,9 +88,9 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
             .await
             .map_err(ServiceError::internal)?;
         let mut transfers = Vec::new();
-        for secondary in SecondaryService::list_enabled().await? {
+        for secondary in secondary::list_enabled().await? {
             transfers.push(SecondaryTransferSummary {
-                summary: SecondaryService::transfer_summary(&secondary).await?,
+                summary: secondary::transfer_summary(&secondary).await?,
                 secondary_name: secondary.name,
                 address: secondary.address,
             });
