@@ -32,7 +32,7 @@ pub struct ZoneChange {
     pub record_ttl: Ttl,
     pub record_priority: Option<i32>,
     /// Signer-generated DNSSEC change (RRSIG/NSEC/DNSKEY). IXFR emits these
-    /// like any change; history reconstruction and diffs skip them — the
+    /// like any change; the history rewind and diffs skip them — the
     /// derived plane is re-signed, never restored.
     pub derived: bool,
 }

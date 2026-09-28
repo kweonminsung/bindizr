@@ -1,4 +1,4 @@
-//! Rebuild a zone's user records by undoing its journal newest first.
+//! Rewind a zone's user records to a serial by undoing its journal newest first.
 
 use std::collections::HashMap;
 
@@ -14,10 +14,10 @@ use crate::{
     },
 };
 
-/// Reverse-apply the zone's journal in `(target_serial, current_serial]`
-/// onto the current records, yielding the records at `target_serial`.
+/// Undo the zone's journal in `(target_serial, current_serial]` on the
+/// current records, yielding the records at `target_serial`.
 /// SOA rows are skipped (SOA state is restored from `zone_versions`).
-pub(crate) async fn reconstruct_records_at_serial_tx(
+pub(crate) async fn rewind_records_to_serial_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
     target_serial: Serial,
@@ -58,7 +58,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
         };
         let Some(record_value) = change.record_value.as_deref() else {
             log::warn!(
-                "User change for '{}' {} carries no value; skipping during reconstruction",
+                "User change for '{}' {} carries no value; skipping during rewind",
                 change.record_name,
                 change.record_type
             );
@@ -77,9 +77,9 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
             ChangeOperation::Add => match state.get_mut(&key).and_then(Vec::pop) {
                 Some(_) => {}
                 // Tolerated: history anomalies (e.g. rows removed outside
-                // the change log) must not brick reconstruction.
+                // the change log) must not brick the rewind.
                 None => log::warn!(
-                    "No matching record to undo ADD of '{}' {} during reconstruction",
+                    "No matching record to undo ADD of '{}' {} during rewind",
                     change.record_name,
                     change.record_type
                 ),
@@ -97,7 +97,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
 }
 
 /// The records at `serial`: the live records when it is the current serial,
-/// otherwise reconstructed from the journal.
+/// otherwise rewound from the journal.
 pub(crate) async fn list_records_at_serial_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
@@ -113,7 +113,7 @@ pub(crate) async fn list_records_at_serial_tx(
         sort_records(&mut records);
         Ok(records)
     } else {
-        reconstruct_records_at_serial_tx(tx, zone_id, serial, current_serial).await
+        rewind_records_to_serial_tx(tx, zone_id, serial, current_serial).await
     }
 }
 

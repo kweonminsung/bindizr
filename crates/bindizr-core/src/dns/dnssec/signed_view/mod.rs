@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
 use domain::{
-    base::{Record as WireRecord, iana::Rtype, rdata::ComposeRecordData},
+    base::{iana::Rtype, rdata::ComposeRecordData},
     crypto::sign::{KeyPair, SecretKeyBytes},
     dnssec::sign::{keys::signingkey::SigningKey, records::Rrset, signatures::rrsigs::sign_rrset},
     rdata::{ZoneRecordData, dnssec::Timestamp},
@@ -21,7 +21,7 @@ use input::denial_records;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use super::WireName;
+use super::{WireName, WireRecord};
 use crate::{
     dns::{
         ConvertTtlError, LibraryError, Serial, Ttl,
@@ -41,7 +41,7 @@ use crate::{
     },
 };
 
-type SignRecord = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
+type SignRecord = WireRecord<ZoneRecordData<Vec<u8>, WireName>>;
 
 /// Why a zone's signed view could not be computed.
 #[derive(Debug, Error)]
@@ -439,7 +439,7 @@ impl<'a> Signer<'a> {
         record_set: &[&SignRecord],
         inception: DateTime<Utc>,
         expiration: DateTime<Utc>,
-    ) -> Result<WireRecord<WireName, domain::rdata::Rrsig<Vec<u8>, WireName>>, SignZoneError> {
+    ) -> Result<WireRecord<domain::rdata::Rrsig<Vec<u8>, WireName>>, SignZoneError> {
         let record_set =
             Rrset::new_from_refs(record_set).map_err(|e| SignZoneError::MismatchedRecordSet {
                 reason: e.to_string(),

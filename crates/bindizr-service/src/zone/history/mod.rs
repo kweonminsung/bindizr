@@ -1,7 +1,7 @@
-//! Zone serial history: version listing, point-in-time record reconstruction,
+//! Zone serial history: version listing, rewinding the records to a serial,
 //! and serial-based rollback.
 
-mod reconstruction;
+mod rewind;
 
 use std::collections::{HashMap, HashSet};
 
@@ -11,7 +11,7 @@ use bindizr_core::{
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
-use reconstruction::{list_records_at_serial_tx, reconstruct_records_at_serial_tx};
+use rewind::{list_records_at_serial_tx, rewind_records_to_serial_tx};
 
 use super::{
     diff::build_record_diff, update::soa_replacement_changes, validation::normalize_zone_name,
@@ -83,8 +83,7 @@ pub async fn list_versions(
     ))
 }
 
-/// Fetch the version at `serial` together with the reconstructed records
-/// at that serial.
+/// Fetch the version at `serial` together with the records rewound to it.
 pub async fn get_version(
     cx: &Context,
     caller: &Caller,
@@ -217,7 +216,7 @@ pub async fn rollback(
 
         let current_records = db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
         let target_records =
-            reconstruct_records_at_serial_tx(&mut tx, zone.id, target, zone.serial).await?;
+            rewind_records_to_serial_tx(&mut tx, zone.id, target, zone.serial).await?;
 
         // Diff current vs target, import-Replace style.
         let mut target_by_key: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
@@ -300,7 +299,7 @@ pub async fn rollback(
             soa_changed,
         };
 
-        // A preview stops after reconstruction and validation, before restoring rows.
+        // A preview stops after the rewind and validation, before restoring rows.
         if run.is_dry_run() {
             return Ok((
                 RollbackZoneResponse {
@@ -326,7 +325,7 @@ pub async fn rollback(
         record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &dels).await?;
         record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
         // The restored user plane gets fresh signatures; old RRSIGs are
-        // never restored (derived journal rows are skipped on reconstruction).
+        // never restored (derived journal rows are skipped on rewind).
         dnssec::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
         super::save_version_tx(
             cx,

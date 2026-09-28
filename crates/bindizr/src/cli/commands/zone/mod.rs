@@ -5,11 +5,10 @@ mod version;
 
 use bindizr_core::{dns::Serial, errln, out, outln};
 use bindizr_service::types::{
-    CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetTokenGrantResponse,
-    GetTsigGrantResponse, GetZoneResponse, GetZonesFilter, ImportMode as ServiceImportMode,
-    ImportZoneRequest, ImportZoneResponse, MessageResponse, NotifySerial, PageFilter,
-    PaginatedResponse, Run, UpdateZoneRequest, ZoneResponse, ZoneStatusResponse, ZoneView,
-    ZoneWriteResponse,
+    self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetTokenGrantResponse,
+    GetTsigGrantResponse, GetZoneResponse, GetZonesFilter, ImportZoneRequest, ImportZoneResponse,
+    MessageResponse, NotifySerial, PageFilter, PaginatedResponse, Run, UpdateZoneRequest,
+    ZoneResponse, ZoneStatusResponse, ZoneView, ZoneWriteResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -338,13 +337,13 @@ pub(crate) enum ImportMode {
     Replace,
 }
 
-impl From<ImportMode> for ServiceImportMode {
+impl From<ImportMode> for types::ImportMode {
     /// Convert the CLI import mode into the service import mode.
     fn from(mode: ImportMode) -> Self {
         match mode {
-            ImportMode::Append => ServiceImportMode::Append,
-            ImportMode::Upsert => ServiceImportMode::Upsert,
-            ImportMode::Replace => ServiceImportMode::Replace,
+            ImportMode::Append => types::ImportMode::Append,
+            ImportMode::Upsert => types::ImportMode::Upsert,
+            ImportMode::Replace => types::ImportMode::Replace,
         }
     }
 }
