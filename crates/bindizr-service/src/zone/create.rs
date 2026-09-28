@@ -61,7 +61,7 @@ pub async fn create(
     Ok(ZoneWriteResponse {
         applied: !create_zone_request.dry_run,
         dry_run: create_zone_request.dry_run,
-        zone: GetZoneResponse::from_zone(&created_zone),
+        zone: GetZoneResponse::from(&created_zone),
     })
 }
 

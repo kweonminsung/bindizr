@@ -53,7 +53,7 @@ pub struct TsigRecord {
     pub fudge: u16,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseUpdateError {
     #[error("DNS message is too short")]
     TooShort,
@@ -324,14 +324,14 @@ impl UpdateRecord {
                 let data = self.parse_rdata(message, "A", |parser| A::parse(parser).ok())?;
                 Ok((RecordType::A, data.addr().to_string(), None))
             }
-            RecordType::AAAA => {
+            RecordType::Aaaa => {
                 let data = self.parse_rdata(message, "AAAA", |parser| Aaaa::parse(parser).ok())?;
-                Ok((RecordType::AAAA, data.addr().to_string(), None))
+                Ok((RecordType::Aaaa, data.addr().to_string(), None))
             }
-            record_type @ (RecordType::CNAME
-            | RecordType::DNAME
-            | RecordType::NS
-            | RecordType::PTR) => {
+            record_type @ (RecordType::Cname
+            | RecordType::Dname
+            | RecordType::Ns
+            | RecordType::Ptr) => {
                 let name = self.parse_rdata(message, record_type.as_str(), |parser| {
                     ParsedName::parse(parser).ok()
                 })?;
@@ -342,7 +342,7 @@ impl UpdateRecord {
                     })?;
                 Ok((record_type, value, None))
             }
-            RecordType::TXT => {
+            RecordType::Txt => {
                 let data = Txt::from_octets(self.rdata.as_slice()).map_err(|e| {
                     ParseUpdateError::TxtRdata {
                         reason: e.to_string(),
@@ -360,21 +360,21 @@ impl UpdateRecord {
                 let value = TxtRecordValue::from_rdata(&self.rdata)
                     .map_err(ParseUpdateError::TxtValue)?
                     .to_presentation();
-                Ok((RecordType::TXT, value, None))
+                Ok((RecordType::Txt, value, None))
             }
-            RecordType::CAA => {
+            RecordType::Caa => {
                 let data = self.parse_rdata(message, "CAA", |parser| {
                     domain::rdata::Caa::parse(parser).ok()
                 })?;
-                Ok((RecordType::CAA, data.to_string(), None))
+                Ok((RecordType::Caa, data.to_string(), None))
             }
-            RecordType::DS => {
+            RecordType::Ds => {
                 let data = self.parse_rdata(message, "DS", |parser| {
                     domain::rdata::Ds::parse(parser).ok()
                 })?;
-                Ok((RecordType::DS, data.to_string(), None))
+                Ok((RecordType::Ds, data.to_string(), None))
             }
-            RecordType::NAPTR => {
+            RecordType::Naptr => {
                 let data = self.parse_rdata(message, "NAPTR", |parser| {
                     domain::rdata::Naptr::parse(parser).ok()
                 })?;
@@ -393,21 +393,21 @@ impl UpdateRecord {
                     &replacement,
                 )?
                 .canonical();
-                Ok((RecordType::NAPTR, value, None))
+                Ok((RecordType::Naptr, value, None))
             }
-            RecordType::SSHFP => {
+            RecordType::Sshfp => {
                 let data = self.parse_rdata(message, "SSHFP", |parser| {
                     domain::rdata::Sshfp::parse(parser).ok()
                 })?;
-                Ok((RecordType::SSHFP, data.to_string(), None))
+                Ok((RecordType::Sshfp, data.to_string(), None))
             }
-            RecordType::TLSA => {
+            RecordType::Tlsa => {
                 let data = self.parse_rdata(message, "TLSA", |parser| {
                     domain::rdata::Tlsa::parse(parser).ok()
                 })?;
-                Ok((RecordType::TLSA, data.to_string(), None))
+                Ok((RecordType::Tlsa, data.to_string(), None))
             }
-            RecordType::MX => {
+            RecordType::Mx => {
                 let data = self.parse_rdata(message, "MX", |parser| Mx::parse(parser).ok())?;
                 let host = to_presentation_name(data.exchange()).map_err(|e| {
                     ParseUpdateError::RdataName {
@@ -415,9 +415,9 @@ impl UpdateRecord {
                         source: Box::new(e),
                     }
                 })?;
-                Ok((RecordType::MX, host, Some(i32::from(data.preference()))))
+                Ok((RecordType::Mx, host, Some(i32::from(data.preference()))))
             }
-            RecordType::SRV => {
+            RecordType::Srv => {
                 let data = self.parse_rdata(message, "SRV", |parser| Srv::parse(parser).ok())?;
                 let target = to_presentation_name(data.target()).map_err(|e| {
                     ParseUpdateError::RdataName {
@@ -427,7 +427,7 @@ impl UpdateRecord {
                 })?;
                 // Priority lives in its own column, so the value holds the rest.
                 Ok((
-                    RecordType::SRV,
+                    RecordType::Srv,
                     format!("{} {} {}", data.weight(), data.port(), target),
                     Some(i32::from(data.priority())),
                 ))

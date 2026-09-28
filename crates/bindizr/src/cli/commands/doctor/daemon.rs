@@ -14,10 +14,10 @@ use tokio::{
 
 use super::Report;
 use crate::{
-    cli::output::{display_transfer_summary, parse_payload},
+    cli::output::display_transfer_summary,
     socket::{
         client,
-        types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse, DoctorCheckStatus},
+        types::{DaemonCommand, DaemonDoctorResponse, DaemonStatusResponse, DoctorCheckStatus},
     },
 };
 
@@ -32,16 +32,16 @@ enum ProbeApiError {
     UnexpectedResponse { line: String },
     /// The API answers but cannot serve; the status line says why.
     #[error("{line}")]
-    ServerError { line: String },
+    ServerFault { line: String },
 }
 
 const API_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Check whether the daemon responds through its control socket.
 pub(crate) async fn check_running(report: &mut Report) -> bool {
-    let status = client::send_control_command(DaemonCommandKind::Status)
+    let status = client::send_control_command::<DaemonStatusResponse>(DaemonCommand::Status)
         .await
-        .and_then(|response| Ok(parse_payload::<DaemonStatusResponse>(&response.data)?));
+        .map(|response| response.data);
     match status {
         Ok(status) => {
             let pid = status
@@ -133,7 +133,7 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiErro
         .and_then(|code| StatusCode::from_u16(code).ok())
         .is_some_and(|status| status.is_server_error());
     if answered_5xx {
-        return Err(ProbeApiError::ServerError {
+        return Err(ProbeApiError::ServerFault {
             line: status_line.to_string(),
         });
     }
@@ -142,18 +142,10 @@ async fn probe_http_status_line(addr: SocketAddr) -> Result<String, ProbeApiErro
 
 /// Check database, DNS listener, and secondary status through the daemon.
 pub(crate) async fn check_services(report: &mut Report) {
-    let res = match client::send_command(DaemonCommandKind::Doctor, ()).await {
-        Ok(res) => res,
+    let doctor = match client::send_command::<DaemonDoctorResponse>(DaemonCommand::Doctor).await {
+        Ok(res) => res.data,
         Err(e) => {
             report.fail(format!("Daemon-side checks failed: {}", e.message));
-            return;
-        }
-    };
-
-    let doctor: DaemonDoctorResponse = match serde_json::from_value(res.data) {
-        Ok(doctor) => doctor,
-        Err(e) => {
-            report.fail(format!("Doctor response was malformed: {}", e));
             return;
         }
     };

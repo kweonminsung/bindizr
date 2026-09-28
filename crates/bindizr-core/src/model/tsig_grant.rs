@@ -44,7 +44,7 @@ impl TsigGrant {
 
 /// A TSIG grant joined with the names of the key it belongs to and the zone
 /// it covers.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TsigGrantWithNames {
     pub grant: TsigGrant,
     pub tsig_key_name: String,

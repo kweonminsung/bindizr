@@ -78,7 +78,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                     Some(record_set) => record_set.records.push((value.as_str(), *priority)),
                     None => record_sets.push(WantedRecordSet {
                         owner,
-                        record_type: record_type.clone(),
+                        record_type: *record_type,
                         records: vec![(value.as_str(), *priority)],
                     }),
                 }

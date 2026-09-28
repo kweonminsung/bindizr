@@ -35,7 +35,7 @@ pub async fn get_status(
     let mut tx = transaction::begin_read_tx(cx, "failed to read DNSSEC status").await?;
     let result = async {
         let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-        let keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::None).await?;
+        let keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
         build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
     }
@@ -77,7 +77,7 @@ pub(crate) async fn build_status_tx(
     keys: &[DnssecKey],
     serial: i32,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    let derived = db::dnssec_record::list_tx(tx, zone.id, LockLevel::None).await?;
+    let derived = db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     let earliest_signature_expires_at = derived.iter().filter_map(|row| row.expires_at).min();
 
     // Only RRSIG rows carry an expiration, so counting those counts signatures.
@@ -109,7 +109,7 @@ pub(crate) async fn build_status_tx(
     Ok(DnssecStatusResponse {
         zone_name: zone.name.as_str().to_string(),
         enabled: !keys.is_empty(),
-        policy: policy.map(GetDnssecPolicyResponse::from_policy),
+        policy: policy.map(GetDnssecPolicyResponse::from),
         keys: keys
             .iter()
             .map(|key| DnssecKeyInfo {

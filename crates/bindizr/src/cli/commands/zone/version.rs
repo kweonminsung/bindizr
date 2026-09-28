@@ -1,8 +1,9 @@
 //! The `zone version` subcommands: list, show, diff, and rollback.
 
-use bindizr_core::{out, outln};
+use bindizr_core::{model::zone_version::VersionScope, out, outln};
 use bindizr_service::types::{
-    PaginatedResponse, RollbackZoneResponse, VersionDetailResponse, ZoneVersionResponse,
+    PaginatedResponse, RollbackZoneResponse, Run, VersionDetailResponse, VersionDiffResponse,
+    ZoneVersionResponse,
 };
 use clap::Subcommand;
 
@@ -10,17 +11,11 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            OutputFormat, RollbackSummaryRow, VersionRecordRow, VersionRow, parse_payload,
-            print_payload, print_response, print_table, render_version_diff,
+            OutputFormat, RollbackSummaryRow, VersionRecordRow, VersionRow, print_page,
+            print_payload, print_table, render_version_diff,
         },
     },
-    socket::{
-        client,
-        types::{
-            DaemonCommandKind, DiffZoneVersionsParams, ListZoneVersionsParams, RollbackZoneParams,
-            ZoneVersionParams,
-        },
-    },
+    socket::{client, types::DaemonCommand},
 };
 
 /// Subcommands for inspecting a zone's versions.
@@ -122,45 +117,35 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             include_signer_serials,
             output,
         } => {
-            let data = client::send_command(
-                DaemonCommandKind::ListZoneVersions,
-                ListZoneVersionsParams {
+            let response = client::send_command::<PaginatedResponse<ZoneVersionResponse>>(
+                DaemonCommand::ListZoneVersions {
                     name,
                     limit,
                     offset,
-                    include_signer_serials,
+                    scope: VersionScope::from_include_signer_serials(include_signer_serials),
                 },
             )
-            .await?
-            .data;
-
-            print_response(
-                &data,
-                output,
-                |page: &PaginatedResponse<ZoneVersionResponse>| {
-                    page.items.iter().map(VersionRow::from).collect()
-                },
-            )?;
+            .await?;
+            print_page(&response.data, output, |item| VersionRow::from(item))?;
         }
         ZoneVersionCommand::Get {
             name,
             serial,
             output,
         } => {
-            let data = client::send_command(
-                DaemonCommandKind::GetZoneVersion,
-                ZoneVersionParams { name, serial },
-            )
-            .await?
-            .data;
-
+            let response =
+                client::send_command::<VersionDetailResponse>(DaemonCommand::GetZoneVersion {
+                    name,
+                    serial,
+                })
+                .await?;
+            let detail = &response.data;
             match output {
                 OutputFormat::Table => {
-                    let detail: VersionDetailResponse = parse_payload(&data)?;
                     print_table(vec![VersionRow::from(&detail.version)]);
                     print_table(detail.records.iter().map(VersionRecordRow::from).collect());
                 }
-                _ => print_payload(&data, output)?,
+                _ => print_payload(detail, output)?,
             }
         }
         ZoneVersionCommand::Diff {
@@ -169,22 +154,16 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             to_serial,
             output,
         } => {
-            let data = client::send_command(
-                DaemonCommandKind::DiffZoneVersions,
-                DiffZoneVersionsParams {
+            let response =
+                client::send_command::<VersionDiffResponse>(DaemonCommand::DiffZoneVersions {
                     name,
                     from_serial,
                     to_serial,
-                },
-            )
-            .await?
-            .data;
-
+                })
+                .await?;
             match output {
-                OutputFormat::Table => {
-                    out!("{}", render_version_diff(&parse_payload(&data)?));
-                }
-                _ => print_payload(&data, output)?,
+                OutputFormat::Table => out!("{}", render_version_diff(&response.data)),
+                _ => print_payload(&response.data, output)?,
             }
         }
         ZoneVersionCommand::Rollback {
@@ -193,26 +172,21 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             dry_run,
             output,
         } => {
-            let response = client::send_command(
-                DaemonCommandKind::RollbackZone,
-                RollbackZoneParams {
+            let response =
+                client::send_command::<RollbackZoneResponse>(DaemonCommand::RollbackZone {
                     name,
                     serial,
-                    dry_run,
-                },
-            )
-            .await?;
-
+                    run: Run::from_dry_run(dry_run),
+                })
+                .await?;
             match output {
                 OutputFormat::Table => {
-                    let rollback: RollbackZoneResponse = parse_payload(&response.data)?;
                     outln!("{}", response.message);
-                    print_table(vec![RollbackSummaryRow::from(&rollback)]);
+                    print_table(vec![RollbackSummaryRow::from(&response.data)]);
                 }
                 _ => print_payload(&response.data, output)?,
             }
         }
     }
-
     Ok(())
 }

@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 /// Request body for granting a credential record rights in a zone: an API
 /// token's HTTP writes, or a TSIG key's updates and transfers.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateGrantRequest {
     /// Name of an existing zone.

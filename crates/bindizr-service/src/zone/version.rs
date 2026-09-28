@@ -11,6 +11,7 @@ use crate::{
 
 /// Who a zone version is recorded as the work of; the scheduler and an
 /// unsigned update have no name to give.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ChangeSubject {
     pub(crate) source: ChangeSource,
     pub(crate) actor: Option<String>,

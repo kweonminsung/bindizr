@@ -233,7 +233,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert!(overridden.api.external_dns_enabled);
     assert!(matches!(
         overridden.database.database_type,
-        DatabaseType::Mysql
+        DatabaseType::MySql
     ));
     assert_eq!(
         overridden.database.mysql.url,
@@ -352,7 +352,7 @@ fn a_reload_refuses_what_a_running_process_cannot_adopt() {
     assert_eq!(current.fixed_settings_changed(&auth_toggled), ["api"]);
 
     let mut db_moved = current.clone();
-    db_moved.database.database_type = DatabaseType::Mysql;
+    db_moved.database.database_type = DatabaseType::MySql;
     assert_eq!(current.fixed_settings_changed(&db_moved), ["database"]);
 
     let mut dns_moved = current.clone();

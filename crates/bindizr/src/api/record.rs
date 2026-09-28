@@ -12,7 +12,7 @@ use bindizr_service::{
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
         DeleteRecordsFilter, DeleteRecordsResponse, ErrorResponse, GetRecordResponse,
-        GetRecordsFilter, PaginatedResponse, RecordResponse, RecordWriteResponse,
+        GetRecordsFilter, PaginatedResponse, RecordResponse, RecordWriteResponse, Run,
         UpdateRecordRequest,
     },
 };
@@ -90,7 +90,7 @@ pub(crate) async fn get_record(
     let raw_record = record::get_with_zone(&cx, &caller, params.id).await?;
 
     let response = RecordResponse {
-        record: GetRecordResponse::from_record_with_zone(&raw_record),
+        record: GetRecordResponse::from(&raw_record),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -186,7 +186,8 @@ pub(crate) async fn delete_record(
     Path(params): Path<IdParams>,
     Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    let response = record::delete(&cx, &caller, params.id, preview.dry_run).await?;
+    let response =
+        record::delete(&cx, &caller, params.id, Run::from_dry_run(preview.dry_run)).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -241,8 +242,14 @@ pub(crate) async fn create_records_bulk(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
 ) -> Result<Response, ApiError> {
-    let response =
-        record::create_bulk(&cx, &caller, &body.zone_name, &body.records, body.dry_run).await?;
+    let response = record::create_bulk(
+        &cx,
+        &caller,
+        &body.zone_name,
+        &body.records,
+        Run::from_dry_run(body.dry_run),
+    )
+    .await?;
 
     // 201 says a resource now exists; a preview created nothing.
     let status = if response.applied {

@@ -7,8 +7,48 @@ use utoipa::ToSchema;
 use super::GetDnssecPolicyResponse;
 use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 
+/// Whether a step that depends on the parent's DS asks the parent
+/// nameservers, or takes the DS on the operator's word.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DsCheck {
+    Probe,
+    Skip,
+}
+
+impl DsCheck {
+    /// The check a `skip_ds_check` flag asks for.
+    pub fn from_skip_ds_check(skip_ds_check: bool) -> Self {
+        if skip_ds_check {
+            DsCheck::Skip
+        } else {
+            DsCheck::Probe
+        }
+    }
+}
+
+/// Whether a key promotion waits out the hold-down resolvers need to learn
+/// the new key, or goes ahead at once.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Holddown {
+    Wait,
+    Skip,
+}
+
+impl Holddown {
+    /// The wait a `skip_holddown` flag asks for.
+    pub fn from_skip_holddown(skip_holddown: bool) -> Self {
+        if skip_holddown {
+            Holddown::Skip
+        } else {
+            Holddown::Wait
+        }
+    }
+}
+
 /// Request body for enabling DNSSEC on a zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EnableDnssecRequest {
     /// Name of the DNSSEC policy to sign under; defaults to `default`.
@@ -23,7 +63,7 @@ pub struct EnableDnssecRequest {
 
 /// Request body for changing a zone's signing settings; an omitted field
 /// keeps its value.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateDnssecSettingsRequest {
     /// Policy to move the signed zone to; it must share the zone's key
@@ -40,7 +80,7 @@ pub struct UpdateDnssecSettingsRequest {
 }
 
 /// One of the zone's SEP keys against the parent's DS records.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DnssecDelegationKeyInfo {
     #[schema(example = 1)]
     pub id: i32,
@@ -70,7 +110,7 @@ pub enum DsState {
 }
 
 /// What the parent zone's servers answered when asked for the zone's DS.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DnssecDelegationInfo {
     /// The nameservers asked, from the zone's setting.
     pub parent_ns_addrs: Vec<String>,
@@ -87,7 +127,7 @@ pub struct DnssecDelegationInfo {
 }
 
 /// Request body for starting a key rollover.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RolloverDnssecRequest {
     /// Which key to roll: required for split-key zones (`ksk` or `zsk`),
@@ -97,7 +137,7 @@ pub struct RolloverDnssecRequest {
 }
 
 /// Public signing-key metadata; private material is excluded from HTTP responses.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DnssecKeyInfo {
     #[schema(example = 1)]
     pub id: i32,
@@ -122,7 +162,7 @@ pub struct DnssecKeyInfo {
 }
 
 /// A key's DS form for parent-zone registration.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DnssecDsInfo {
     #[schema(example = 34217)]
     pub key_tag: u16,
@@ -141,7 +181,7 @@ pub struct DnssecDsInfo {
 }
 
 /// DNSSEC signing state of a zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DnssecStatusResponse {
     #[schema(example = "example.com")]
     pub zone_name: String,
@@ -180,7 +220,7 @@ pub struct DnssecStatusResponse {
 
 /// One key's BIND file contents. Served only over the daemon socket:
 /// private keys never transit the HTTP API.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct DnssecKeyMaterial {
     pub role: DnssecKeyRole,
     /// IANA algorithm number.
@@ -193,7 +233,7 @@ pub struct DnssecKeyMaterial {
 }
 
 /// Response body listing a zone's keys in BIND file form.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ExportDnssecKeysResponse {
     pub zone_name: String,
     pub keys: Vec<DnssecKeyMaterial>,
@@ -201,7 +241,7 @@ pub struct ExportDnssecKeysResponse {
 
 /// One BIND key pair: `K*.key` contents (or the bare DNSKEY RDATA) and the
 /// matching `K*.private` contents.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ImportDnssecKeyPair {
     pub dnskey: String,
@@ -209,7 +249,7 @@ pub struct ImportDnssecKeyPair {
 }
 
 /// Request body importing a zone's complete key set; daemon-socket only.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ImportDnssecKeyRequest {
     /// One CSK pair, or a KSK pair and a ZSK pair under a split-key policy.

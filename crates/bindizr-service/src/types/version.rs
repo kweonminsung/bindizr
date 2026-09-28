@@ -16,7 +16,7 @@ use crate::{
 
 /// One entry of a zone's serial history, with SOA metadata in API form
 /// (`rname` converted back from SOA mailbox form).
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ZoneVersionResponse {
     #[schema(example = 7)]
     pub serial: u32,
@@ -45,9 +45,12 @@ pub struct ZoneVersionResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl ZoneVersionResponse {
-    /// Build a zone-version response from its stored metadata.
-    pub(crate) fn from_version(version: &ZoneVersion) -> Result<Self, ServiceError> {
+impl TryFrom<&ZoneVersion> for ZoneVersionResponse {
+    type Error = ServiceError;
+
+    /// Build a zone-version response from its stored metadata; a stored
+    /// mailbox or serial that does not decode is a server fault.
+    fn try_from(version: &ZoneVersion) -> Result<Self, ServiceError> {
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
             .map_err(|e| {
@@ -71,7 +74,7 @@ impl ZoneVersionResponse {
 
 /// A record reconstructed from the zone's journal, named as the record
 /// listing names it; unlike stored records it has no database id.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct VersionRecordResponse {
     #[schema(example = "www.example.com.")]
     pub name: String,
@@ -101,7 +104,7 @@ impl VersionRecordResponse {
 }
 
 /// One version plus the reconstructed records at that serial.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct VersionDetailResponse {
     pub version: ZoneVersionResponse,
     pub records: Vec<VersionRecordResponse>,
@@ -109,7 +112,7 @@ pub struct VersionDetailResponse {
 
 /// One record on one side of a diff. Rendering (zone-file rdata, priority
 /// placement) is left to the client; the value is in display form.
-#[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct RecordDiffValue {
     pub value: RecordValueRequest,
     #[schema(example = 300)]
@@ -140,7 +143,7 @@ impl std::fmt::Display for RecordChange {
 
 /// The records of one name and type that differ, with those present on
 /// each side. `from` is empty for `added`, `to` for `removed`.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct RecordDiffEntry {
     pub change: RecordChange,
     #[schema(example = "www.example.com.")]
@@ -153,7 +156,7 @@ pub struct RecordDiffEntry {
 }
 
 /// How many name-and-type groups of records were added, removed, and changed.
-#[derive(Default, Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 pub struct RecordDiffSummary {
     #[schema(example = 1)]
     pub added: u64,
@@ -165,14 +168,14 @@ pub struct RecordDiffSummary {
 
 /// Record differences grouped by name and type. Version comparisons always
 /// populate this; mutation responses populate it only for dry-run previews.
-#[derive(Default, Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 pub struct RecordDiff {
     pub entries: Vec<RecordDiffEntry>,
     pub summary: RecordDiffSummary,
 }
 
 /// The difference between two of a zone's serials.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct VersionDiffResponse {
     #[schema(example = 41)]
     pub from_serial: u32,
@@ -183,7 +186,7 @@ pub struct VersionDiffResponse {
 
 /// Counts of what a rollback changes. TTL-only differences count as one
 /// delete plus one add.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct RollbackSummary {
     #[schema(example = 2)]
     pub added: u64,
@@ -197,7 +200,7 @@ pub struct RollbackSummary {
 
 /// Result of a zone rollback. The zone's state returns to `target_serial`
 /// while its serial advances to `new_serial` (serials never go backward).
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct RollbackZoneResponse {
     #[schema(example = true)]
     pub applied: bool,

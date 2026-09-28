@@ -1,7 +1,7 @@
 use super::{ParseRecordValueError, value::MAX_RECORD_RDATA};
 
 /// The content of a TXT value: a single string or multiple character-strings.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TxtContent {
     Single(String),
     Segments(Vec<String>),

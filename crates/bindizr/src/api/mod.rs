@@ -32,6 +32,7 @@ use crate::shutdown::Shutdown;
 /// The caller attached by the auth middleware, or by the router's
 /// `Caller::Global` layer when authentication is disabled. A request without
 /// one reached a handler outside both layers, so extraction fails closed.
+#[derive(Debug, Clone)]
 pub(crate) struct RequestCaller(pub(crate) Caller);
 
 impl<S> FromRequestParts<S> for RequestCaller
@@ -53,7 +54,7 @@ where
 
 /// The token a request authenticated with, attached by the auth middleware;
 /// absent (so a 401) when authentication is disabled.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct AuthenticatedToken(pub(crate) ApiToken);
 
 impl<S> FromRequestParts<S> for AuthenticatedToken

@@ -35,12 +35,12 @@ impl ListedRecord {
     /// DNSSEC row carries none and renders its RDATA in presentation form.
     fn to_response(&self) -> GetRecordResponse {
         match self {
-            ListedRecord::User(record) => GetRecordResponse::from_record_with_zone(record),
+            ListedRecord::User(record) => GetRecordResponse::from(record),
             ListedRecord::Derived(row) => GetRecordResponse {
                 id: None,
                 name: row.name.to_fqdn(&row.zone_name),
                 record_type: row.record_type.to_string(),
-                value: RecordValueRequest::String(row.rdata.to_presentation(row.record_type)),
+                value: RecordValueRequest::Text(row.rdata.to_presentation(row.record_type)),
                 ttl: row.ttl,
                 priority: None,
                 zone_id: row.zone_id,

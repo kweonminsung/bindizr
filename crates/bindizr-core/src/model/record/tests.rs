@@ -10,31 +10,31 @@ use crate::dns::{
 #[test]
 fn values_equal_normalizes_name_like_values() {
     assert!(RecordType::A.values_equal("192.0.2.10", None, "192.0.2.10", None));
-    assert!(RecordType::AAAA.values_equal(
+    assert!(RecordType::Aaaa.values_equal(
         "2001:0db8:0000:0000:0000:0000:0000:0001",
         None,
         "2001:db8::1",
         None
     ));
-    assert!(RecordType::CNAME.values_equal(
+    assert!(RecordType::Cname.values_equal(
         "Target.Example.Net",
         None,
         "target.example.net.",
         None
     ));
-    assert!(RecordType::MX.values_equal(
+    assert!(RecordType::Mx.values_equal(
         "Mail.Example.Com",
         Some(10),
         "mail.example.com.",
         Some(10)
     ));
-    assert!(RecordType::SRV.values_equal(
+    assert!(RecordType::Srv.values_equal(
         "5 5060 Sip.Example.Com",
         Some(10),
         "5 5060 sip.example.com.",
         Some(10)
     ));
-    assert!(!RecordType::TXT.values_equal("Token=ABC", None, "token=abc", None));
+    assert!(!RecordType::Txt.values_equal("Token=ABC", None, "token=abc", None));
 }
 
 /// Verify that a TXT value compares equal across the two spellings of one
@@ -43,36 +43,36 @@ fn values_equal_normalizes_name_like_values() {
 fn txt_values_compare_across_content_and_presentation_spellings() {
     // A conditional delete passes the content the record was created with,
     // while the row holds the presentation form.
-    assert!(RecordType::TXT.values_equal("\"hello world\"", None, "hello world", None));
-    assert!(RecordType::TXT.values_equal("\"v=spf1\" \"~all\"", None, "\"v=spf1\" \"~all\"", None));
+    assert!(RecordType::Txt.values_equal("\"hello world\"", None, "hello world", None));
+    assert!(RecordType::Txt.values_equal("\"v=spf1\" \"~all\"", None, "\"v=spf1\" \"~all\"", None));
     // Segments are joined for display only: two different records read the
     // same way there, so that spelling must not name either of them.
-    assert!(!RecordType::TXT.values_equal("\"v=spf1\" \"~all\"", None, "v=spf1~all", None));
+    assert!(!RecordType::Txt.values_equal("\"v=spf1\" \"~all\"", None, "v=spf1~all", None));
 }
 
 /// Verify that `encoded_value` produces one spelling per RDATA.
 #[test]
 fn encoded_value_produces_one_spelling_per_rdata() {
     assert_eq!(
-        RecordType::AAAA
+        RecordType::Aaaa
             .encoded_value("2001:0DB8:0000:0000:0000:0000:0000:0001", None)
             .as_deref(),
         Ok("2001:db8::1")
     );
     assert_eq!(
-        RecordType::CNAME
+        RecordType::Cname
             .encoded_value("Target.Example.Net", None)
             .as_deref(),
         Ok("target.example.net.")
     );
     assert_eq!(
-        RecordType::MX
+        RecordType::Mx
             .encoded_value("Mail.Example.Com", Some(10))
             .as_deref(),
         Ok("mail.example.com.")
     );
     assert_eq!(
-        RecordType::SRV
+        RecordType::Srv
             .encoded_value("5 5060 Sip.Example.Com.", Some(10))
             .as_deref(),
         Ok("5 5060 sip.example.com.")
@@ -83,11 +83,11 @@ fn encoded_value_produces_one_spelling_per_rdata() {
 #[test]
 fn encoded_value_keeps_null_mx_and_srv_root_targets() {
     assert_eq!(
-        RecordType::MX.encoded_value(".", Some(0)).as_deref(),
+        RecordType::Mx.encoded_value(".", Some(0)).as_deref(),
         Ok(".")
     );
     assert_eq!(
-        RecordType::SRV.encoded_value("0 443 .", Some(0)).as_deref(),
+        RecordType::Srv.encoded_value("0 443 .", Some(0)).as_deref(),
         Ok("0 443 .")
     );
 }
@@ -97,25 +97,25 @@ fn encoded_value_keeps_null_mx_and_srv_root_targets() {
 fn encoded_value_rejects_invalid_values() {
     assert!(RecordType::A.encoded_value("not-an-ip", None).is_err());
     assert!(
-        RecordType::CNAME
+        RecordType::Cname
             .encoded_value("bad..example.com", None)
             .is_err()
     );
     assert!(
-        RecordType::MX
+        RecordType::Mx
             .encoded_value("10 mail.example.com", None)
             .is_err()
     );
-    assert!(RecordType::MX.encoded_value(".", Some(10)).is_err());
-    assert!(RecordType::TXT.encoded_value("", None).is_err());
+    assert!(RecordType::Mx.encoded_value(".", Some(10)).is_err());
+    assert!(RecordType::Txt.encoded_value("", None).is_err());
 }
 
 /// Verify that `encoded_value` round-trips TXT presentation form.
 #[test]
 fn encoded_value_round_trips_txt_presentation_form() {
-    let encoded = RecordType::TXT.encoded_value("\"a\" \"b\"", None).unwrap();
+    let encoded = RecordType::Txt.encoded_value("\"a\" \"b\"", None).unwrap();
     assert_eq!(
-        RecordType::TXT.presentation_rdata(&encoded, None),
+        RecordType::Txt.presentation_rdata(&encoded, None),
         "\"a\" \"b\""
     );
 }
@@ -124,23 +124,23 @@ fn encoded_value_round_trips_txt_presentation_form() {
 #[test]
 fn display_value_adds_trailing_dot_for_name_like_values() {
     assert_eq!(
-        RecordType::NS.display_value("ns.test.example.com"),
+        RecordType::Ns.display_value("ns.test.example.com"),
         "ns.test.example.com."
     );
     assert_eq!(
-        RecordType::CNAME.display_value("Target.Example.Net"),
+        RecordType::Cname.display_value("Target.Example.Net"),
         "target.example.net."
     );
     assert_eq!(
-        RecordType::MX.display_value("mail.example.com"),
+        RecordType::Mx.display_value("mail.example.com"),
         "mail.example.com."
     );
     assert_eq!(
-        RecordType::SRV.display_value("5 5060 sip.example.com"),
+        RecordType::Srv.display_value("5 5060 sip.example.com"),
         "5 5060 sip.example.com."
     );
     assert_eq!(
-        RecordType::PTR.display_value("host.example.com"),
+        RecordType::Ptr.display_value("host.example.com"),
         "host.example.com."
     );
 }
@@ -149,9 +149,9 @@ fn display_value_adds_trailing_dot_for_name_like_values() {
 #[test]
 fn display_value_keeps_non_name_values_unchanged() {
     assert_eq!(RecordType::A.display_value("127.0.0.1"), "127.0.0.1");
-    assert_eq!(RecordType::AAAA.display_value("2001:db8::1"), "2001:db8::1");
+    assert_eq!(RecordType::Aaaa.display_value("2001:db8::1"), "2001:db8::1");
     assert_eq!(
-        RecordType::TXT.display_value("v=spf1 include:example.net"),
+        RecordType::Txt.display_value("v=spf1 include:example.net"),
         "v=spf1 include:example.net"
     );
 }
@@ -163,7 +163,7 @@ fn display_value_leaves_wrong_field_count_unchanged() {
     // rewritten into a fake hostname (e.g. a trailing numeric field gaining a dot).
     for value in ["", "10 mail.example.com", "10 mail.example.com extra"] {
         assert_eq!(
-            RecordType::MX.display_value(value),
+            RecordType::Mx.display_value(value),
             value,
             "malformed MX value {value:?} should be returned unchanged"
         );
@@ -171,7 +171,7 @@ fn display_value_leaves_wrong_field_count_unchanged() {
 
     for value in ["", "10 5", "10 5 5060 sip.example.com"] {
         assert_eq!(
-            RecordType::SRV.display_value(value),
+            RecordType::Srv.display_value(value),
             value,
             "malformed SRV value {value:?} should be returned unchanged"
         );
@@ -183,7 +183,7 @@ fn display_value_leaves_wrong_field_count_unchanged() {
 /// an owner name does, so only what no presentation form spells back is left.
 #[test]
 fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
-    for record_type in [RecordType::CNAME, RecordType::NS, RecordType::PTR] {
+    for record_type in [RecordType::Cname, RecordType::Ns, RecordType::Ptr] {
         for value in [
             "",
             ".",
@@ -204,17 +204,17 @@ fn validate_cname_ns_and_ptr_values_reject_invalid_domain_forms() {
 #[test]
 fn validate_mx_value_accepts_a_target_with_a_field_priority() {
     assert!(
-        RecordType::MX
+        RecordType::Mx
             .validate_value("mail.example.com", Some(10))
             .is_ok()
     );
     // An omitted priority defaults to 10.
     assert!(
-        RecordType::MX
+        RecordType::Mx
             .validate_value("mail.example.com", None)
             .is_ok()
     );
-    assert!(RecordType::MX.validate_value(".", Some(0)).is_ok());
+    assert!(RecordType::Mx.validate_value(".", Some(0)).is_ok());
 }
 
 /// Verify that validate MX value rejects invalid forms.
@@ -234,7 +234,7 @@ fn validate_mx_value_rejects_invalid_forms() {
         ("mail.example.com", Some(65_536)),
     ] {
         assert!(
-            RecordType::MX.validate_value(value, priority).is_err(),
+            RecordType::Mx.validate_value(value, priority).is_err(),
             "MX value {value:?} with priority {priority:?} should be rejected"
         );
     }
@@ -244,17 +244,17 @@ fn validate_mx_value_rejects_invalid_forms() {
 #[test]
 fn validate_srv_value_accepts_weight_port_target_with_a_field_priority() {
     assert!(
-        RecordType::SRV
+        RecordType::Srv
             .validate_value("5 5060 sip.example.com", Some(10))
             .is_ok()
     );
     // An omitted priority defaults to 10.
     assert!(
-        RecordType::SRV
+        RecordType::Srv
             .validate_value("5 5060 sip.example.com", None)
             .is_ok()
     );
-    assert!(RecordType::SRV.validate_value("0 443 .", Some(0)).is_ok());
+    assert!(RecordType::Srv.validate_value("0 443 .", Some(0)).is_ok());
 }
 
 /// Verify that validate SRV value rejects invalid forms.
@@ -277,7 +277,7 @@ fn validate_srv_value_rejects_invalid_forms() {
         ("5 5060 sip.example.com", Some(65_536)),
     ] {
         assert!(
-            RecordType::SRV.validate_value(value, priority).is_err(),
+            RecordType::Srv.validate_value(value, priority).is_err(),
             "SRV value {value:?} with priority {priority:?} should be rejected"
         );
     }
@@ -289,11 +289,11 @@ fn validate_value_rejects_priority_on_types_without_one() {
     let encoded_txt = TxtRecordValue::from_string("hello").to_presentation();
     for (record_type, value) in [
         (RecordType::A, "192.0.2.1"),
-        (RecordType::AAAA, "2001:db8::1"),
-        (RecordType::CNAME, "target.example.com"),
-        (RecordType::TXT, encoded_txt.as_str()),
-        (RecordType::NS, "ns1.example.com"),
-        (RecordType::PTR, "host.example.com"),
+        (RecordType::Aaaa, "2001:db8::1"),
+        (RecordType::Cname, "target.example.com"),
+        (RecordType::Txt, encoded_txt.as_str()),
+        (RecordType::Ns, "ns1.example.com"),
+        (RecordType::Ptr, "host.example.com"),
     ] {
         assert!(
             record_type.validate_value(value, Some(10)).is_err(),
@@ -308,9 +308,9 @@ fn validate_value_rejects_priority_on_types_without_one() {
 fn txt_display_value_escapes_control_characters() {
     // The stored value already spells the NUL as `\000`; the display column
     // must not decode it back into a byte a text column refuses.
-    assert_eq!(RecordType::TXT.display_value(r#""a\000b""#), r"a\000b");
+    assert_eq!(RecordType::Txt.display_value(r#""a\000b""#), r"a\000b");
     assert_eq!(
-        RecordType::TXT.display_value(r#""caf\195\169""#),
+        RecordType::Txt.display_value(r#""caf\195\169""#),
         "caf\u{e9}"
     );
 }
@@ -341,7 +341,7 @@ fn a_type_narrows_to_one_record_set() {
     let a = record(RecordType::A, "192.0.2.1", None);
 
     assert!(a.matches(Some(&RecordType::A), None, None));
-    assert!(!a.matches(Some(&RecordType::TXT), None, None));
+    assert!(!a.matches(Some(&RecordType::Txt), None, None));
 }
 
 /// Verify that a value is compared canonically not as text.
@@ -349,10 +349,10 @@ fn a_type_narrows_to_one_record_set() {
 fn a_value_is_compared_canonically_not_as_text() {
     // The row stores the canonical spelling, so a request naming the same
     // record another way still names it.
-    let cname = record(RecordType::CNAME, "target.example.com.", None);
+    let cname = record(RecordType::Cname, "target.example.com.", None);
 
-    assert!(cname.matches(Some(&RecordType::CNAME), Some("Target.Example.COM"), None));
-    assert!(!cname.matches(Some(&RecordType::CNAME), Some("other.example.com"), None));
+    assert!(cname.matches(Some(&RecordType::Cname), Some("Target.Example.COM"), None));
+    assert!(!cname.matches(Some(&RecordType::Cname), Some("other.example.com"), None));
 }
 
 /// Verify that a value never carries the preference.
@@ -360,22 +360,22 @@ fn a_value_is_compared_canonically_not_as_text() {
 fn a_value_never_carries_the_preference() {
     // MX keeps its preference in its own column, so the value compares to the
     // exchange alone and two rows differing only in preference both match.
-    let ten = record(RecordType::MX, "mail.example.com.", Some(10));
-    let twenty = record(RecordType::MX, "mail.example.com.", Some(20));
+    let ten = record(RecordType::Mx, "mail.example.com.", Some(10));
+    let twenty = record(RecordType::Mx, "mail.example.com.", Some(20));
 
     for row in [&ten, &twenty] {
-        assert!(row.matches(Some(&RecordType::MX), Some("mail.example.com"), None));
+        assert!(row.matches(Some(&RecordType::Mx), Some("mail.example.com"), None));
     }
 }
 
 /// Verify that a preference narrows where the value cannot.
 #[test]
 fn a_preference_narrows_where_the_value_cannot() {
-    let ten = record(RecordType::MX, "mail.example.com.", Some(10));
-    let twenty = record(RecordType::MX, "mail.example.com.", Some(20));
+    let ten = record(RecordType::Mx, "mail.example.com.", Some(10));
+    let twenty = record(RecordType::Mx, "mail.example.com.", Some(20));
 
-    assert!(ten.matches(Some(&RecordType::MX), Some("mail.example.com"), Some(10)));
-    assert!(!twenty.matches(Some(&RecordType::MX), Some("mail.example.com"), Some(10)));
+    assert!(ten.matches(Some(&RecordType::Mx), Some("mail.example.com"), Some(10)));
+    assert!(!twenty.matches(Some(&RecordType::Mx), Some("mail.example.com"), Some(10)));
 }
 
 /// Verify that a preference asked of a type that has none matches nothing.

@@ -9,7 +9,7 @@ use std::{
 };
 
 use bindizr_core::dns::{
-    address::{DEFAULT_DNS_PORT, ParsedAddress, is_address_target, loopback_if_unspecified},
+    address::{AddressTarget, DEFAULT_DNS_PORT, is_address_target, loopback_if_unspecified},
     name::has_whitespace_or_control,
     tsig::TsigSigningKey,
 };
@@ -276,7 +276,7 @@ pub async fn list_transfers(
     let limit = normalize_page_limit(filter.limit)? as usize;
 
     let served = transfer::list_by_clients(cx, &resolved_ips(cx, &secondary).await).await?;
-    let summary = TransferSummary::from_transfers(&served);
+    let summary = TransferSummary::from(served.as_slice());
     let transfers = served
         .iter()
         .filter(|transfer| {
@@ -286,7 +286,7 @@ pub async fn list_transfers(
                 .is_none_or(|zone| transfer.zone_name.eq_ignore_ascii_case(zone))
         })
         .take(limit)
-        .map(TransferResponse::from_transfer)
+        .map(TransferResponse::from)
         .collect();
     Ok(SecondaryTransfersResponse {
         secondary_name: secondary.name,
@@ -302,7 +302,7 @@ pub async fn transfer_summary(
     secondary: &Secondary,
 ) -> Result<TransferSummary, ServiceError> {
     let served = transfer::list_by_clients(cx, &resolved_ips(cx, secondary).await).await?;
-    Ok(TransferSummary::from_transfers(&served))
+    Ok(TransferSummary::from(served.as_slice()))
 }
 
 /// The addresses the secondary resolves to now, which key the transfer
@@ -400,9 +400,9 @@ pub(crate) fn normalize_secondary_address(value: &str) -> Result<String, Service
             address
         )));
     }
-    let address = match ParsedAddress::parse(address, DEFAULT_DNS_PORT) {
-        ParsedAddress::SocketAddr(addr) => addr.to_string(),
-        ParsedAddress::HostPort(host_port) => host_port.to_ascii_lowercase(),
+    let address = match AddressTarget::parse(address, DEFAULT_DNS_PORT) {
+        AddressTarget::Socket(addr) => addr.to_string(),
+        AddressTarget::HostPort(host_port) => host_port.to_ascii_lowercase(),
     };
     if address.len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(

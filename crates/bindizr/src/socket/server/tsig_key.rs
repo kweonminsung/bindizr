@@ -1,180 +1,153 @@
+use bindizr_core::model::tsig_key::TsigAlgorithm;
 use bindizr_service::{
     Context,
     authorization::Caller,
     error::ServiceError,
     tsig_key::{self, grant},
     types::{
-        CreateTsigKeyRequest, GetTsigGrantResponse, MessageResponse, PageFilter, TsigGrantResponse,
-        TsigKeyResponse,
+        CreateGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
+        MessageResponse, PageFilter, PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
     },
 };
 
-use crate::{
-    params::{IdParams, NameParams},
-    socket::{
-        server::{parse_params, to_response_data},
-        types::{
-            CreateTsigGrantParams, DaemonResponse, DeleteTsigGrantsByKeyAndZoneParams,
-            ListGrantsParams,
-        },
-    },
-};
+use crate::socket::types::DaemonResponse;
 
 /// Create TSIG key from the control request.
 pub(crate) async fn create_tsig_key(
     cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let request: CreateTsigKeyRequest = parse_params(data)?;
-
+    request: &CreateTsigKeyRequest,
+) -> Result<DaemonResponse<TsigKeyResponse>, ServiceError> {
+    let algorithm = request
+        .algorithm
+        .as_deref()
+        .map(str::parse::<TsigAlgorithm>)
+        .transpose()
+        .map_err(ServiceError::invalid_input)?;
     let key = tsig_key::create(
         cx,
         &Caller::Global,
         &request.name,
-        request.algorithm.as_deref(),
+        algorithm,
         request.secret.as_deref(),
         request.global,
     )
     .await?;
-
     Ok(DaemonResponse {
         message: "TSIG key created successfully".to_string(),
-        data: to_response_data(TsigKeyResponse::from_key(&key))?,
+        data: TsigKeyResponse::from(&key),
     })
 }
 
 /// List the requested TSIG keys.
 pub(crate) async fn list_tsig_keys(
     cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let page: PageFilter = parse_params(data)?;
-
+    page: PageFilter,
+) -> Result<DaemonResponse<PaginatedResponse<GetTsigKeyResponse>>, ServiceError> {
     let response = tsig_key::list(cx, &Caller::Global, page).await?;
-
     Ok(DaemonResponse {
         message: "TSIG keys retrieved successfully".to_string(),
-        data: to_response_data(response)?,
+        data: response,
     })
 }
 
 /// Get the requested TSIG key.
 pub(crate) async fn get_tsig_key(
     cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: NameParams = parse_params(data)?;
-
-    let key = tsig_key::get(cx, &Caller::Global, &params.name).await?;
-
+    name: &str,
+) -> Result<DaemonResponse<TsigKeyResponse>, ServiceError> {
+    let key = tsig_key::get(cx, &Caller::Global, name).await?;
     Ok(DaemonResponse {
         message: "TSIG key retrieved successfully".to_string(),
-        data: to_response_data(TsigKeyResponse::from_key(&key))?,
+        data: TsigKeyResponse::from(&key),
     })
 }
 
 /// Delete the requested TSIG key.
 pub(crate) async fn delete_tsig_key(
     cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: NameParams = parse_params(data)?;
-
-    tsig_key::delete(cx, &Caller::Global, &params.name).await?;
-
-    let message = format!("TSIG key '{}' deleted successfully", params.name);
+    name: &str,
+) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
+    tsig_key::delete(cx, &Caller::Global, name).await?;
+    let message = format!("TSIG key '{}' deleted successfully", name);
     Ok(DaemonResponse {
         message: message.clone(),
-        data: to_response_data(MessageResponse { message })?,
+        data: MessageResponse { message },
     })
 }
 
 /// Create TSIG grant from the control request.
 pub(crate) async fn create_tsig_grant(
     cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: CreateTsigGrantParams = parse_params(data)?;
-
+    key_name: &str,
+    request: &CreateGrantRequest,
+) -> Result<DaemonResponse<TsigGrantResponse>, ServiceError> {
     let grant = grant::create(
         cx,
         &Caller::Global,
-        &params.key_name,
-        &params.request.zone_name,
-        params.request.record_name_pattern.as_deref(),
-        params.request.record_types.as_deref(),
-        params.request.can_write,
+        key_name,
+        &request.zone_name,
+        request.record_name_pattern.as_deref(),
+        request.record_types.as_deref(),
+        request.can_write,
     )
     .await?;
-
     Ok(DaemonResponse {
         message: "TSIG grant created successfully".to_string(),
-        data: to_response_data(TsigGrantResponse {
-            tsig_grant: GetTsigGrantResponse::from_grant(&grant),
-        })?,
+        data: TsigGrantResponse {
+            tsig_grant: GetTsigGrantResponse::from(&grant),
+        },
     })
 }
 
 /// List the requested TSIG grants for a TSIG key.
 pub(crate) async fn list_tsig_grants(
     cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: ListGrantsParams = parse_params(data)?;
-
-    let response = grant::list_by_key(cx, &Caller::Global, &params.name, params.page).await?;
-
+    key_name: &str,
+    page: PageFilter,
+) -> Result<DaemonResponse<PaginatedResponse<GetTsigGrantResponse>>, ServiceError> {
+    let response = grant::list_by_key(cx, &Caller::Global, key_name, page).await?;
     Ok(DaemonResponse {
         message: "TSIG grants retrieved successfully".to_string(),
-        data: to_response_data(response)?,
+        data: response,
     })
 }
 
 /// List the requested TSIG grants for a zone.
 pub(crate) async fn list_zone_tsig_grants(
     cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: ListGrantsParams = parse_params(data)?;
-
-    let response = grant::list_by_zone(cx, &Caller::Global, &params.name, params.page).await?;
-
+    zone_name: &str,
+    page: PageFilter,
+) -> Result<DaemonResponse<PaginatedResponse<GetTsigGrantResponse>>, ServiceError> {
+    let response = grant::list_by_zone(cx, &Caller::Global, zone_name, page).await?;
     Ok(DaemonResponse {
         message: "TSIG grants retrieved successfully".to_string(),
-        data: to_response_data(response)?,
+        data: response,
     })
 }
 
 /// Delete the requested TSIG grant.
 pub(crate) async fn delete_tsig_grant(
     cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: IdParams = parse_params(data)?;
-
-    grant::revoke_by_id(cx, &Caller::Global, params.id).await?;
-
+    id: i32,
+) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
+    grant::revoke_by_id(cx, &Caller::Global, id).await?;
     let message = "TSIG grant revoked successfully".to_string();
     Ok(DaemonResponse {
         message: message.clone(),
-        data: to_response_data(MessageResponse { message })?,
+        data: MessageResponse { message },
     })
 }
 
 /// Revoke every grant the requested TSIG key holds in the requested zone.
 pub(crate) async fn delete_tsig_grants_by_key_and_zone(
     cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: DeleteTsigGrantsByKeyAndZoneParams = parse_params(data)?;
-
-    let revoked =
-        grant::revoke_by_key_and_zone(cx, &Caller::Global, &params.key_name, &params.zone_name)
-            .await?;
-
+    key_name: &str,
+    zone_name: &str,
+) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
+    let revoked = grant::revoke_by_key_and_zone(cx, &Caller::Global, key_name, zone_name).await?;
     let message = format!("{} TSIG grant(s) revoked successfully", revoked);
     Ok(DaemonResponse {
         message: message.clone(),
-        data: to_response_data(MessageResponse { message })?,
+        data: MessageResponse { message },
     })
 }

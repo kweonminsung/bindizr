@@ -109,9 +109,9 @@ fn authorize_enforces_record_types() {
     let grants = [grant("*", "A,TXT")];
 
     assert!(authorize(&grants, &[write("app", Some(&RecordType::A))]).is_ok());
-    assert!(authorize(&grants, &[write("app", Some(&RecordType::TXT))]).is_ok());
+    assert!(authorize(&grants, &[write("app", Some(&RecordType::Txt))]).is_ok());
 
-    let err = authorize(&grants, &[write("app", Some(&RecordType::CNAME))]).unwrap_err();
+    let err = authorize(&grants, &[write("app", Some(&RecordType::Cname))]).unwrap_err();
     assert_eq!(err.code(), ErrorCode::Forbidden);
 
     // A typeless write (whole-name delete) needs an unrestricted-type grant.
@@ -167,7 +167,7 @@ fn record_visible_narrows_reads_the_way_writes_are_narrowed() {
 
     assert!(visible(&caller, "host.dyn", Some(&RecordType::A)));
     assert!(!visible(&caller, "www", Some(&RecordType::A)));
-    assert!(!visible(&caller, "host.dyn", Some(&RecordType::CNAME)));
+    assert!(!visible(&caller, "host.dyn", Some(&RecordType::Cname)));
 
     // The derived DNSSEC plane carries no type of the grant's vocabulary, so
     // it reaches only a grant restricting neither name nor type.

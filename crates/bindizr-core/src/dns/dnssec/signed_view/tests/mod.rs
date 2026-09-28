@@ -49,7 +49,7 @@ struct ComputeArgs<'a> {
     expiration: DateTime<Utc>,
     /// `0` pins every record set to `expiration`; the spread has its own test.
     expiration_jitter_secs: i64,
-    force: bool,
+    pass: SigningPass,
 }
 
 /// Compute a signed view using the test's signing parameters.
@@ -67,7 +67,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
         expiration: args.expiration,
         expiration_jitter_secs: args.expiration_jitter_secs,
         refresh_secs: 5 * 86_400,
-        force: args.force,
+        pass: args.pass,
         withdraw_parent_ds: false,
     }
     .compute()

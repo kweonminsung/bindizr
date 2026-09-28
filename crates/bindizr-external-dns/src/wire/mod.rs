@@ -43,7 +43,7 @@ pub(crate) enum ConvertChangesError {
 }
 
 /// JSON shape of external-dns `endpoint.Endpoint` (all fields omitempty).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Endpoint {
     #[serde(default)]
@@ -69,7 +69,7 @@ fn is_ttl_unset(ttl: &i64) -> bool {
 }
 
 /// JSON shape of external-dns `endpoint.ProviderSpecificProperty`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct ProviderSpecificProperty {
     #[serde(default)]
     name: String,
@@ -78,7 +78,7 @@ pub(crate) struct ProviderSpecificProperty {
 }
 
 /// JSON shape of external-dns `plan.Changes` (`POST /records` body).
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Changes {
     #[serde(default)]
@@ -92,7 +92,7 @@ pub(crate) struct Changes {
 }
 
 /// JSON shape of external-dns `endpoint.DomainFilter` (negotiation response).
-#[derive(Debug, Serialize)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct DomainFilter {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) include: Vec<String>,
@@ -100,7 +100,7 @@ pub(crate) struct DomainFilter {
 
 /// One record of the bindizr `/external-dns` API: every value of one name and
 /// type (snake_case, internal shape).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BindizrRecord {
     name: String,
     #[serde(rename = "type")]
@@ -111,7 +111,7 @@ pub(crate) struct BindizrRecord {
 }
 
 /// `POST /external-dns/changes` request body of the bindizr API.
-#[derive(Debug, Serialize)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BindizrChanges {
     creates: Vec<BindizrRecord>,
     updates: Vec<BindizrRecordUpdate>,
@@ -120,7 +120,7 @@ pub(crate) struct BindizrChanges {
 
 /// One update of the bindizr change set: the record as stored and its
 /// replacement, paired positionally from `updateOld` and `updateNew`.
-#[derive(Debug, Serialize)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BindizrRecordUpdate {
     old: BindizrRecord,
     new: BindizrRecord,
@@ -156,7 +156,7 @@ impl Endpoint {
             });
         }
         // Whitespace-only TXT content is valid; for other types it is garbage.
-        let is_txt = record_type == RecordType::TXT;
+        let is_txt = record_type == RecordType::Txt;
         if self.targets.iter().any(|t| {
             if is_txt {
                 t.is_empty()
@@ -168,7 +168,7 @@ impl Endpoint {
                 dns_name: self.dns_name.clone(),
             });
         }
-        if record_type == RecordType::CNAME && self.targets.len() > 1 {
+        if record_type == RecordType::Cname && self.targets.len() > 1 {
             return Err(ValidateEndpointError::CnameTargets {
                 dns_name: self.dns_name.clone(),
             });

@@ -6,6 +6,7 @@ use super::{
     value::{MAX_RECORD_RDATA, hex_upper, parse_hex_record_field, parse_u8_record_field},
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SshfpRecordValue {
     algorithm: u8,
     fingerprint_type: u8,

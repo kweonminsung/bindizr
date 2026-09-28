@@ -1,7 +1,7 @@
 //! Turning signing on and off, moving a zone between policies, and the
 //! operator's force re-sign.
 
-use bindizr_core::dns::dnssec::generate_key;
+use bindizr_core::dns::dnssec::{SigningPass, generate_key};
 use chrono::Utc;
 
 use super::{parent_ns_addrs::normalize_parent_ns_addrs, status::build_status_tx};
@@ -21,7 +21,7 @@ use crate::{
     },
     serial::generate_serial,
     transaction,
-    types::DnssecStatusResponse,
+    types::{DnssecStatusResponse, DsCheck},
     zone,
 };
 
@@ -67,7 +67,7 @@ pub async fn enable(
     let result = async {
         // Check the unsigned state under the same lock used to install the keys.
         let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        let existing_keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::None).await?;
+        let existing_keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         if !existing_keys.is_empty() {
             return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
         }
@@ -111,10 +111,15 @@ pub async fn enable(
         }
         let signed = SignedZone { zone, policy, keys };
 
-        let new_serial =
-            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
-                .await?
-                .unwrap_or(signed.zone.serial);
+        let new_serial = super::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &caller.change_subject(),
+        )
+        .await?
+        .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,
@@ -172,7 +177,7 @@ pub async fn update_settings(
             }
             None => zone,
         };
-        let keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::None).await?;
+        let keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
 
         // Parent addresses alone change no served records and need no re-signing.
         let Some(policy_name) = &policy_name else {
@@ -211,10 +216,15 @@ pub async fn update_settings(
             keys,
         };
 
-        let new_serial =
-            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
-                .await?
-                .unwrap_or(signed.zone.serial);
+        let new_serial = super::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &caller.change_subject(),
+        )
+        .await?
+        .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,
@@ -238,19 +248,19 @@ pub async fn update_settings(
 
 /// Disable DNSSEC for a zone. Refused while the parent still serves the
 /// zone's DS or cannot be asked, since signatures dropped under a DS make
-/// the zone bogus; `skip_ds_check` skips that check.
+/// the zone bogus; `ds_check` may skip that check.
 pub async fn disable(
     cx: &Context,
     caller: &Caller,
     zone_name: &str,
-    skip_ds_check: bool,
+    ds_check: DsCheck,
 ) -> Result<(), ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
     let mut tx = transaction::begin_tx(cx, "failed to disable DNSSEC").await?;
     let result = async {
         let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        if !skip_ds_check {
+        if ds_check == DsCheck::Probe {
             let delegation = super::probe_delegation(cx, &signed).await?;
             if !delegation.ds_key_tags.is_empty() {
                 return Err(ServiceError::dnssec_ds_published(
@@ -260,7 +270,8 @@ pub async fn disable(
             }
         }
 
-        let derived = db::dnssec_record::list_tx(&mut tx, signed.zone.id, LockLevel::None).await?;
+        let derived =
+            db::dnssec_record::list_tx(&mut tx, signed.zone.id, LockLevel::Unlocked).await?;
 
         let new_serial = generate_serial(Some(signed.zone.serial))?;
         // Journal a DEL for every derived row; they carry wire RDATA, not
@@ -270,7 +281,7 @@ pub async fn disable(
             .map(|row| ZoneChange {
                 zone_id: signed.zone.id,
                 serial: new_serial,
-                operation: ChangeOperation::Del,
+                operation: ChangeOperation::Delete,
                 record_name: row.name.clone(),
                 record_type: JournalRecordType::Derived(row.record_type),
                 record_value: None,
@@ -299,7 +310,7 @@ pub async fn disable(
     .await;
     let zone_name = transaction::finish_tx(tx, result, "failed to disable DNSSEC").await?;
 
-    if skip_ds_check {
+    if ds_check == DsCheck::Skip {
         log::warn!("event=dnssec_disable_ds_check_skipped zone={}", zone_name);
     }
     log::info!("event=dnssec_disable zone={}", zone_name);
@@ -315,7 +326,14 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &str) -> Result<(), 
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
     let result: Result<_, ServiceError> = async {
         let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        super::resign_zone_tx(cx, &mut tx, &signed, true, &caller.change_subject()).await?;
+        super::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Full,
+            &caller.change_subject(),
+        )
+        .await?;
         Ok(signed.zone.name.as_str().to_string())
     }
     .await;

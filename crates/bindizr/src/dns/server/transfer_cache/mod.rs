@@ -25,7 +25,7 @@ fn max_records(dns_cx: &Context) -> usize {
 
 /// Everything a full transfer serves for one zone: the user records and the
 /// derived DNSSEC plane (empty for an unsigned zone).
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct CachedTransferContent {
     pub(crate) records: Arc<Vec<Record>>,
     pub(crate) dnssec_records: Arc<Vec<DnssecRecord>>,
@@ -40,6 +40,7 @@ impl CachedTransferContent {
 
 /// One zone's transfer as cached: the serial it was built at, its content,
 /// and what the budget and the LRU order read.
+#[derive(Debug, Clone)]
 struct CachedTransfer {
     serial: i32,
     content: CachedTransferContent,
@@ -50,6 +51,7 @@ struct CachedTransfer {
 
 /// The DNS front end's transfer cache: one cached transfer per zone, behind
 /// one lock, within the record budget `dns.transfer_cache.max_records` sets.
+#[derive(Debug)]
 pub(crate) struct TransferCache {
     entries: Mutex<Entries>,
 }
@@ -57,7 +59,7 @@ pub(crate) struct TransferCache {
 /// What the lock guards: the cached transfers by zone id, their record total
 /// against the budget, and the clock recency is measured on. Lock-free, so
 /// the eviction rules are unit-tested as they are.
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct Entries {
     zones: HashMap<i32, CachedTransfer>,
     records: usize,

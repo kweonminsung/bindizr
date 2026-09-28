@@ -28,6 +28,7 @@ use crate::dns::{error::XfrError, wire};
 /// The DNS front end's context: the daemon's, plus the caches only this
 /// front end reads. A handler takes it first as `dns_cx` and binds the
 /// daemon's from it as `cx`.
+#[derive(Debug)]
 pub(crate) struct DnsContext {
     daemon: Arc<Context>,
     pub(crate) transfer_cache: transfer_cache::TransferCache,

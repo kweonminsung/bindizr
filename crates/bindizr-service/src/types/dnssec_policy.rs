@@ -9,7 +9,7 @@ use crate::model::dnssec_policy::{DnssecDenial, DnssecPolicy};
 /// Request body for creating a DNSSEC policy. The key layout, algorithm,
 /// and denial mode are fixed once created. Omitted fields use the built-in
 /// defaults, independent of edits to the policy named `default`.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateDnssecPolicyRequest {
     #[schema(example = "strict")]
@@ -42,7 +42,7 @@ pub struct CreateDnssecPolicyRequest {
 
 /// Request body for editing a DNSSEC policy's timing; an omitted field keeps
 /// its value. Takes effect on the next signing pass or scheduler scan.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateDnssecPolicyRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -57,7 +57,7 @@ pub struct UpdateDnssecPolicyRequest {
 }
 
 /// API representation of a DNSSEC policy.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetDnssecPolicyResponse {
     #[schema(example = 1)]
     pub id: i32,
@@ -78,9 +78,9 @@ pub struct GetDnssecPolicyResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl GetDnssecPolicyResponse {
+impl From<&DnssecPolicy> for GetDnssecPolicyResponse {
     /// Build a public response from a stored DNSSEC policy.
-    pub fn from_policy(policy: &DnssecPolicy) -> Self {
+    fn from(policy: &DnssecPolicy) -> Self {
         GetDnssecPolicyResponse {
             id: policy.id,
             name: policy.name.clone(),
@@ -96,7 +96,7 @@ impl GetDnssecPolicyResponse {
 }
 
 /// A DNSSEC policy wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DnssecPolicyResponse {
     pub dnssec_policy: GetDnssecPolicyResponse,
 }

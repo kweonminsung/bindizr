@@ -61,7 +61,7 @@ pub(crate) struct Cli {
 }
 
 /// The validated adapter settings the listeners and the upstream client start from.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AdapterConfig {
     /// Normalized base URL without a trailing slash.
     pub(crate) bindizr_url: String,

@@ -105,10 +105,7 @@ pub async fn list(
 
     let policies = db::dnssec_policy::list_all(cx.db()).await?;
     PaginatedResponse::from_collection(
-        policies
-            .iter()
-            .map(GetDnssecPolicyResponse::from_policy)
-            .collect(),
+        policies.iter().map(GetDnssecPolicyResponse::from).collect(),
         page.limit,
         page.offset,
     )

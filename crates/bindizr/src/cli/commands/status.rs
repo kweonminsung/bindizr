@@ -3,18 +3,19 @@ use bindizr_core::outln;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, color, display_uptime, parse_payload, print_payload},
+        output::{OutputFormat, color, display_uptime, print_payload},
     },
     socket::{
         client,
-        types::{DaemonCommandKind, DaemonStatusResponse},
+        types::{DaemonCommand, DaemonStatusResponse},
     },
 };
 
 /// Handle the `status` subcommand by querying the daemon and printing its status.
 pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError> {
-    let response = client::send_control_command(DaemonCommandKind::Status).await?;
-    let status: DaemonStatusResponse = parse_payload(&response.data)?;
+    let status = client::send_control_command::<DaemonStatusResponse>(DaemonCommand::Status)
+        .await?
+        .data;
 
     match output {
         OutputFormat::Table => {
@@ -52,7 +53,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
                 None => {}
             }
         }
-        _ => print_payload(&response.data, output)?,
+        _ => print_payload(&status, output)?,
     }
 
     // A daemon whose database does not answer is not healthy, so the exit code

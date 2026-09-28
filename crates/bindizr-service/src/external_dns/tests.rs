@@ -194,7 +194,7 @@ fn parse_record_set_op_parses_quoted_txt_values() {
     ))
     .unwrap();
 
-    assert_eq!(op.record_type, RecordType::TXT);
+    assert_eq!(op.record_type, RecordType::Txt);
     assert_eq!(
         op.values[0],
         "\"heritage=external-dns,external-dns/owner=default\""
@@ -607,5 +607,5 @@ fn change_set_allows_cname_when_conflicting_row_is_deleted_in_same_request() {
 
     assert_eq!(change_set.deletes.len(), 1);
     assert_eq!(change_set.creates.len(), 1);
-    assert_eq!(change_set.creates[0].record_type, RecordType::CNAME);
+    assert_eq!(change_set.creates[0].record_type, RecordType::Cname);
 }

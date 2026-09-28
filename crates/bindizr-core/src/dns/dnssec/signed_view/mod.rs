@@ -86,6 +86,15 @@ pub enum SignZoneError {
     RecordType(#[from] ParseDnssecRecordTypeError),
 }
 
+/// What a signing pass regenerates: the signatures expiring within the
+/// refresh window, or every one (a manual re-sign).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SigningPass {
+    Refresh,
+    Full,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct SignedViewParams<'a> {
     pub zone: &'a Zone,
     pub new_serial: i32,
@@ -102,8 +111,7 @@ pub struct SignedViewParams<'a> {
     pub expiration_jitter_secs: i64,
     /// Re-sign when a stored signature expires within this window.
     pub refresh_secs: i64,
-    /// Ignore stored signatures entirely (manual re-sign).
-    pub force: bool,
+    pub pass: SigningPass,
     /// Publish the RFC 8078 delete CDS/CDNSKEY pair instead of per-key ones,
     /// asking the parent to drop the zone's DS record set.
     pub withdraw_parent_ds: bool,
@@ -249,7 +257,7 @@ impl SignedViewParams<'_> {
 
             // Reuse only a complete, unchanged set of signatures that outlives
             // the refresh window; a forced pass regenerates every signature.
-            let reusable = if self.force {
+            let reusable = if self.pass == SigningPass::Full {
                 None
             } else {
                 prev_rrsigs
@@ -298,6 +306,7 @@ impl SignedViewParams<'_> {
 
 /// The derived plane's change set. Rows in neither list are stored and
 /// current; `removed` rows carry their database ids.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignedViewDiff {
     pub added: Vec<DnssecRecord>,
     pub removed: Vec<DnssecRecord>,
@@ -395,6 +404,7 @@ fn parse_derived_owner(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerNa
 }
 
 /// A key loaded into signing form together with its DNSKEY RDATA.
+#[derive(Debug)]
 pub(crate) struct Signer<'a> {
     key: &'a DnssecKey,
     signing_key: SigningKey<Vec<u8>, KeyPair>,

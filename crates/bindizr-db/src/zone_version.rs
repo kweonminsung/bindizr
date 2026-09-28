@@ -1,8 +1,11 @@
 use chrono::{DateTime, Utc};
 
 use crate::{
-    Backend, Db, LockLevel, Transaction, error::DatabaseError, model::zone_version::ZoneVersion,
-    mysql, postgres, sqlite, tx::TransactionKind,
+    Backend, Db, LockLevel, Transaction,
+    error::DatabaseError,
+    model::zone_version::{VersionScope, ZoneVersion},
+    mysql, postgres, sqlite,
+    tx::TransactionKind,
 };
 
 /// Insert or update a zone version in the current transaction.
@@ -54,39 +57,34 @@ pub async fn list_in_serial_range(
     }
 }
 
-/// List versions for a zone, newest serial first, paginated. With
-/// `user_changes_only`, serials whose journal holds only signer-generated
-/// changes are skipped; the current serial is always listed.
+/// List the versions of a zone that `scope` covers, newest serial first,
+/// paginated; the current serial is always listed.
 pub async fn list(
     db: &Db,
     zone_id: i32,
-    user_changes_only: bool,
+    scope: VersionScope,
     limit: u32,
     offset: u64,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
-            mysql::zone_version::list(pool, zone_id, user_changes_only, limit, offset).await
+            mysql::zone_version::list(pool, zone_id, scope, limit, offset).await
         }
         Backend::Postgres(pool) => {
-            postgres::zone_version::list(pool, zone_id, user_changes_only, limit, offset).await
+            postgres::zone_version::list(pool, zone_id, scope, limit, offset).await
         }
         Backend::Sqlite(pool) => {
-            sqlite::zone_version::list(pool, zone_id, user_changes_only, limit, offset).await
+            sqlite::zone_version::list(pool, zone_id, scope, limit, offset).await
         }
     }
 }
 
-/// Count zone versions using the requested change filter.
-pub async fn count(db: &Db, zone_id: i32, user_changes_only: bool) -> Result<u64, DatabaseError> {
+/// Count the versions of a zone that `scope` covers.
+pub async fn count(db: &Db, zone_id: i32, scope: VersionScope) -> Result<u64, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::zone_version::count(pool, zone_id, user_changes_only).await,
-        Backend::Postgres(pool) => {
-            postgres::zone_version::count(pool, zone_id, user_changes_only).await
-        }
-        Backend::Sqlite(pool) => {
-            sqlite::zone_version::count(pool, zone_id, user_changes_only).await
-        }
+        Backend::MySql(pool) => mysql::zone_version::count(pool, zone_id, scope).await,
+        Backend::Postgres(pool) => postgres::zone_version::count(pool, zone_id, scope).await,
+        Backend::Sqlite(pool) => sqlite::zone_version::count(pool, zone_id, scope).await,
     }
 }
 

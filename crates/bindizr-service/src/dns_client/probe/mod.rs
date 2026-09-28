@@ -150,7 +150,7 @@ async fn with_last_transfer(
     }
     probe.last_transfer =
         match transfer::find_by_clients_and_zone_name(cx, clients, zone_name).await {
-            Ok(transfer) => transfer.as_ref().map(TransferResponse::from_transfer),
+            Ok(transfer) => transfer.as_ref().map(TransferResponse::from),
             Err(e) => {
                 log::warn!("Failed to read the transfers of {}: {}", zone_name, e);
                 None

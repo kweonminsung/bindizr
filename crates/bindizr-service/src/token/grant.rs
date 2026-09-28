@@ -116,7 +116,7 @@ pub async fn list_self(
         grants
             .into_iter()
             .map(|grant| {
-                GetTokenGrantResponse::from_grant(&TokenGrantWithNames {
+                GetTokenGrantResponse::from(&TokenGrantWithNames {
                     zone_name: zone_names.get(&grant.zone_id).cloned().unwrap_or_default(),
                     api_token_name: token.name.clone(),
                     grant,
@@ -150,7 +150,7 @@ pub async fn list_by_zone(
         grants
             .into_iter()
             .map(|grant| {
-                GetTokenGrantResponse::from_grant(&TokenGrantWithNames {
+                GetTokenGrantResponse::from(&TokenGrantWithNames {
                     api_token_name: token_names
                         .get(&grant.api_token_id)
                         .cloned()

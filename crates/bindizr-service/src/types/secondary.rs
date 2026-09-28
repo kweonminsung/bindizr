@@ -13,7 +13,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{model::secondary::Secondary, types::SecondaryStatusResponse};
 
 /// Request body for registering a secondary.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateSecondaryRequest {
     /// A plain identifier, since it travels in URL paths.
@@ -29,7 +29,7 @@ pub struct CreateSecondaryRequest {
 }
 
 /// Request body for changing a secondary; an omitted field keeps its value.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateSecondaryRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,7 +47,7 @@ pub struct UpdateSecondaryRequest {
 }
 
 /// API representation of a secondary.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetSecondaryResponse {
     #[schema(example = 1)]
     pub id: i32,
@@ -79,14 +79,14 @@ impl GetSecondaryResponse {
 }
 
 /// A secondary wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct SecondaryResponse {
     pub secondary: GetSecondaryResponse,
 }
 
 /// One NOTIFY sent to a resolved address during a check; `error` is null
 /// when the server accepted it.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct NotifyCheckResponse {
     #[schema(example = "10.0.0.14:53")]
     pub address: String,
@@ -96,7 +96,7 @@ pub struct NotifyCheckResponse {
 /// What a secondary answered when checked: where its address resolves, the
 /// catalog zone serial it serves against Bindizr's, and whether it accepted
 /// a NOTIFY.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct SecondaryCheckResponse {
     pub secondary: GetSecondaryResponse,
     /// Socket addresses the registered `host[:port]` resolves to now.
@@ -120,7 +120,7 @@ pub struct SecondaryCheckResponse {
 }
 
 /// One transfer Bindizr answered, refused, or failed for a secondary's address.
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct TransferResponse {
     /// The client address the transfer was served to.
     #[schema(example = "10.0.0.14")]
@@ -142,9 +142,9 @@ pub struct TransferResponse {
     pub error: Option<String>,
 }
 
-impl TransferResponse {
+impl From<&TransferWithZone> for TransferResponse {
     /// Build the payload of one saved transfer.
-    pub fn from_transfer(transfer: &TransferWithZone) -> Self {
+    fn from(transfer: &TransferWithZone) -> Self {
         TransferResponse {
             address: transfer.client_addr.clone(),
             zone_name: transfer.zone_name.clone(),
@@ -161,7 +161,7 @@ impl TransferResponse {
 }
 
 /// How the zones a secondary asked for were last served, counted by zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct TransferSummary {
     #[schema(example = 12)]
     pub zones: u64,
@@ -179,9 +179,9 @@ pub struct TransferSummary {
     pub failed: u64,
 }
 
-impl TransferSummary {
+impl From<&[TransferWithZone]> for TransferSummary {
     /// Count each zone by its latest transfer among `transfers`.
-    pub fn from_transfers(transfers: &[TransferWithZone]) -> Self {
+    fn from(transfers: &[TransferWithZone]) -> Self {
         let mut latest: HashMap<&str, &TransferWithZone> = HashMap::new();
         for transfer in transfers {
             let entry = latest
@@ -213,7 +213,7 @@ impl TransferSummary {
 }
 
 /// The transfers Bindizr served one secondary.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct SecondaryTransfersResponse {
     #[schema(example = "ns2")]
     pub secondary_name: String,
@@ -225,7 +225,7 @@ pub struct SecondaryTransfersResponse {
 }
 
 /// One secondary's transfer summary, as `doctor` reports it.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct SecondaryTransferSummary {
     #[schema(example = "ns2")]
     pub secondary_name: String,
@@ -235,7 +235,7 @@ pub struct SecondaryTransferSummary {
 }
 
 /// Query parameters of a secondary's transfer listing.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema, IntoParams)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct GetSecondaryTransfersFilter {

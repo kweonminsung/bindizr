@@ -55,7 +55,7 @@ enum ServeDnsError {
     #[error("Failed to handle XFR TCP query: {0}")]
     Xfr(#[source] XfrError),
     #[error("Failed to refuse a DNS TCP query: {0}")]
-    Refuse(#[source] XfrError),
+    Refusal(#[source] XfrError),
     #[error(transparent)]
     Nsupdate(#[from] server::nsupdate::NsupdateError),
 }
@@ -260,7 +260,7 @@ async fn dispatch_tcp_query(
         let response = query.error_response(Rcode::REFUSED);
         wire::write_tcp_message(stream, &response)
             .await
-            .map_err(ServeDnsError::Refuse)?;
+            .map_err(ServeDnsError::Refusal)?;
     }
 
     Ok(())

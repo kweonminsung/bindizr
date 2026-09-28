@@ -1,23 +1,18 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
     CreateGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
-    GetTokenResponse, PageFilter, PaginatedResponse, TokenGrantResponse,
+    GetTokenResponse, MessageResponse, PageFilter, PaginatedResponse, TokenGrantResponse,
 };
 use clap::Subcommand;
 
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, TokenGrantRow, TokenRow, print_payload, print_response},
-    },
-    params::{IdParams, NameParams},
-    socket::{
-        client,
-        types::{
-            CreateTokenGrantParams, DaemonCommandKind, DeleteTokenGrantsByTokenAndZoneParams,
-            ListGrantsParams,
+        output::{
+            OutputFormat, TokenGrantRow, TokenRow, print_page, print_payload, print_response,
         },
     },
+    socket::{client, types::DaemonCommand},
 };
 
 /// Subcommands for managing API tokens.
@@ -152,51 +147,36 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             global,
             output,
         } => {
-            let res = client::send_command(
-                DaemonCommandKind::CreateToken,
+            let res = client::send_command::<CreatedTokenResponse>(DaemonCommand::CreateToken(
                 CreateTokenRequest {
                     name,
                     description,
                     expires_in_days,
                     global,
                 },
-            )
+            ))
             .await?;
-
             log::debug!("Token creation result: {:?}", res);
-
-            print_response(&res.data, output, |created: &CreatedTokenResponse| {
-                vec![TokenRow::from(created)]
-            })?;
+            print_response(&res.data, output, |created| vec![TokenRow::from(created)])?;
         }
         TokenCommand::List {
             limit,
             offset,
             output,
         } => {
-            let res =
-                client::send_command(DaemonCommandKind::ListTokens, PageFilter { limit, offset })
-                    .await?;
-
+            let res = client::send_command::<PaginatedResponse<GetTokenResponse>>(
+                DaemonCommand::ListTokens(PageFilter { limit, offset }),
+            )
+            .await?;
             log::debug!("Token list result: {:?}", res);
-
-            print_response(
-                &res.data,
-                output,
-                |tokens: &PaginatedResponse<GetTokenResponse>| {
-                    tokens.items.iter().map(TokenRow::from).collect()
-                },
-            )?;
+            print_page(&res.data, output, |item| TokenRow::from(item))?;
         }
         TokenCommand::Delete { name, output } => {
-            let res =
-                client::send_command(DaemonCommandKind::DeleteToken, NameParams { name }).await?;
-
+            let res = client::send_command::<MessageResponse>(DaemonCommand::DeleteToken { name })
+                .await?;
             log::debug!("Token deletion result: {:?}", res);
-
             match output {
                 OutputFormat::Table => outln!("{}", res.message),
-
                 _ => print_payload(&res.data, output)?,
             }
         }
@@ -208,20 +188,17 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             read_only,
             output,
         } => {
-            let res = client::send_command(
-                DaemonCommandKind::CreateTokenGrant,
-                CreateTokenGrantParams {
-                    token_name: name,
-                    request: CreateGrantRequest {
-                        zone_name: zone,
-                        record_name_pattern: pattern,
-                        record_types: types,
-                        can_write: !read_only,
-                    },
+            let res = client::send_command::<TokenGrantResponse>(DaemonCommand::CreateTokenGrant {
+                token_name: name,
+                request: CreateGrantRequest {
+                    zone_name: zone,
+                    record_name_pattern: pattern,
+                    record_types: types,
+                    can_write: !read_only,
                 },
-            )
+            })
             .await?;
-            print_response(&res.data, output, |response: &TokenGrantResponse| {
+            print_response(&res.data, output, |response| {
                 vec![TokenGrantRow::from(&response.token_grant)]
             })?;
         }
@@ -231,21 +208,14 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             offset,
             output,
         } => {
-            let res = client::send_command(
-                DaemonCommandKind::ListTokenGrants,
-                ListGrantsParams {
-                    name,
+            let res = client::send_command::<PaginatedResponse<GetTokenGrantResponse>>(
+                DaemonCommand::ListTokenGrants {
+                    token_name: name,
                     page: PageFilter { limit, offset },
                 },
             )
             .await?;
-            print_response(
-                &res.data,
-                output,
-                |grants: &PaginatedResponse<GetTokenGrantResponse>| {
-                    grants.items.iter().map(TokenGrantRow::from).collect()
-                },
-            )?;
+            print_page(&res.data, output, |item| TokenGrantRow::from(item))?;
         }
         // clap holds the two selectors apart.
         TokenCommand::Revoke {
@@ -254,7 +224,8 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             ..
         } => {
             let res =
-                client::send_command(DaemonCommandKind::DeleteTokenGrant, IdParams { id }).await?;
+                client::send_command::<MessageResponse>(DaemonCommand::DeleteTokenGrant { id })
+                    .await?;
             match output {
                 OutputFormat::Table => outln!("{}", res.message),
                 _ => print_payload(&res.data, output)?,
@@ -266,9 +237,8 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             output,
             ..
         } => {
-            let res = client::send_command(
-                DaemonCommandKind::DeleteTokenGrantsByTokenAndZone,
-                DeleteTokenGrantsByTokenAndZoneParams {
+            let res = client::send_command::<MessageResponse>(
+                DaemonCommand::DeleteTokenGrantsByTokenAndZone {
                     token_name: name,
                     zone_name: zone,
                 },
@@ -285,6 +255,5 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             ));
         }
     }
-
     Ok(())
 }

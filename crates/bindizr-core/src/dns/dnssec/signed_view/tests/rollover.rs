@@ -49,7 +49,7 @@ fn published_key_cosigns_key_record_sets_but_not_zone_data() {
         test_key(&zone, 2, DnssecKeyRole::Csk, DnssecKeyState::Published),
     ];
     let records = [
-        test_record("@", RecordType::NS, "ns1.example.com", 3600),
+        test_record("@", RecordType::Ns, "ns1.example.com", 3600),
         test_record("www", RecordType::A, "192.0.2.10", 300),
     ];
 
@@ -62,7 +62,7 @@ fn published_key_cosigns_key_record_sets_but_not_zone_data() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     let apex = OwnerName::apex();
@@ -99,7 +99,7 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
         test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active),
         test_key(&zone, 2, DnssecKeyRole::Csk, DnssecKeyState::Retired),
     ];
-    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+    let records = [test_record("@", RecordType::Ns, "ns1.example.com", 3600)];
 
     let diff = compute(ComputeArgs {
         zone: &zone,
@@ -110,7 +110,7 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     let apex = OwnerName::apex();
@@ -148,7 +148,7 @@ fn split_keys_partition_key_record_sets_from_zone_data() {
         test_key(&zone, 2, DnssecKeyRole::Zsk, DnssecKeyState::Active),
     ];
     let records = [
-        test_record("@", RecordType::NS, "ns1.example.com", 3600),
+        test_record("@", RecordType::Ns, "ns1.example.com", 3600),
         test_record("www", RecordType::A, "192.0.2.10", 300),
     ];
 
@@ -161,7 +161,7 @@ fn split_keys_partition_key_record_sets_from_zone_data() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     let apex = OwnerName::apex();
@@ -209,7 +209,7 @@ fn algorithm_rollover_double_signs_zone_data_while_published() {
     .unwrap();
     new.id = 2;
     let keys = [old, new];
-    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+    let records = [test_record("@", RecordType::Ns, "ns1.example.com", 3600)];
 
     let diff = compute(ComputeArgs {
         zone: &zone,
@@ -220,14 +220,14 @@ fn algorithm_rollover_double_signs_zone_data_while_published() {
         new_serial: 2,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     // RFC 6840, Section 5.11: every algorithm in the DNSKEY record set must sign
     // all data, so the pre-published new-algorithm key signs immediately.
     let apex = OwnerName::apex();
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32).len(),
+        rrsigs_covering(&diff.added, &apex, RecordType::Ns.wire_type() as i32).len(),
         2
     );
 }
@@ -248,7 +248,7 @@ fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
     .unwrap();
     new.id = 2;
     let keys = [old, new];
-    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+    let records = [test_record("@", RecordType::Ns, "ns1.example.com", 3600)];
 
     let diff = compute(ComputeArgs {
         zone: &zone,
@@ -259,14 +259,14 @@ fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
         new_serial: 2,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     // The old DNSKEY is still served, so the old algorithm must keep covering
     // all data until the key is removed (RFC 6840, Section 5.11).
     let apex = OwnerName::apex();
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32).len(),
+        rrsigs_covering(&diff.added, &apex, RecordType::Ns.wire_type() as i32).len(),
         2
     );
 }

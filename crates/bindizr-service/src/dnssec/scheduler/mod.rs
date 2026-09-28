@@ -51,7 +51,8 @@ pub fn spawn(cx: Arc<Context>, mut period_rx: watch::Receiver<u64>) {
             let pass_cx = cx.clone();
             if let Err(e) = tokio::spawn(async move { run_scheduler_pass(&pass_cx).await }).await {
                 log::error!("DNSSEC scheduler pass did not finish: {}", e);
-                cx.metrics().track_dnssec_scheduler(SchedulerResult::Panic);
+                cx.metrics()
+                    .track_dnssec_scheduler(SchedulerResult::Panicked);
             }
         }
     });

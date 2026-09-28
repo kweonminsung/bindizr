@@ -8,6 +8,13 @@ use thiserror::Error;
 
 use crate::{Context, dns_client::notify::NotifyZoneError, error::ServiceError};
 
+/// Which zones a NOTIFY round covers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotifyTarget<'a> {
+    All,
+    Zone(&'a str),
+}
+
 /// Why a NOTIFY round did not reach every secondary.
 #[derive(Debug, Error)]
 pub enum NotifyError {
@@ -37,11 +44,10 @@ impl From<NotifyError> for ServiceError {
     }
 }
 
-/// Send a DNS NOTIFY for `zone_name`, or — with `None` — for every zone,
-/// aggregating per-zone failures. Enumerating the zones is this layer's
-/// call, not the client's.
-pub async fn send_notify(cx: &Context, zone_name: Option<&str>) -> Result<(), NotifyError> {
-    let Some(zone_name) = zone_name else {
+/// Send a DNS NOTIFY for one zone, or for every zone, aggregating per-zone
+/// failures. Enumerating the zones is this layer's call, not the client's.
+pub async fn send_notify(cx: &Context, target: NotifyTarget<'_>) -> Result<(), NotifyError> {
+    let NotifyTarget::Zone(zone_name) = target else {
         let zones = crate::zone::list(cx).await?;
         let mut failures = Vec::new();
         for zone in zones {
@@ -65,11 +71,11 @@ pub async fn send_notify(cx: &Context, zone_name: Option<&str>) -> Result<(), No
 /// sets a window, otherwise sent inline before the write is answered. The write
 /// has committed, so a failure is logged rather than reported.
 pub(crate) async fn notify_after_update(cx: &Context, zone_name: &str) {
-    if cx.config().dns.notify.batch_ms > 0 && cx.enqueue_notify(Some(zone_name)) {
+    if cx.config().dns.notify.batch_ms > 0 && cx.enqueue_notify(NotifyTarget::Zone(zone_name)) {
         return;
     }
 
-    if let Err(e) = send_notify(cx, Some(zone_name)).await {
+    if let Err(e) = send_notify(cx, NotifyTarget::Zone(zone_name)).await {
         log::warn!("Failed to send NOTIFY for zone {}: {}", zone_name, e);
     }
 }

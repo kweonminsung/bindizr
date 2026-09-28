@@ -12,7 +12,7 @@ use crate::wire::{BindizrChanges, BindizrRecord};
 pub(crate) enum UpstreamError {
     /// The error body bindizr answered with, under its status.
     #[error("{message}")]
-    Status { status: u16, message: String },
+    Rejected { status: u16, message: String },
     /// Connect error or timeout.
     #[error("bindizr is unreachable: {0}")]
     Unreachable(#[source] reqwest::Error),
@@ -51,6 +51,7 @@ struct UpstreamErrorBody {
 
 /// HTTP client for the bindizr `/external-dns` API, sending the Bearer token
 /// with every request.
+#[derive(Debug)]
 pub(crate) struct UpstreamClient {
     http: reqwest::Client,
     base_url: String,
@@ -207,7 +208,7 @@ impl UpstreamClient {
             );
         }
 
-        Err(UpstreamError::Status {
+        Err(UpstreamError::Rejected {
             status: status.as_u16(),
             message,
         })

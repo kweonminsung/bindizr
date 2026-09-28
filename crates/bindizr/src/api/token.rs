@@ -104,7 +104,7 @@ pub(crate) async fn create_token(
     )
     .await?;
     let response = CreatedTokenResponse {
-        token: GetTokenResponse::from_token(&token),
+        token: GetTokenResponse::from(&token),
         secret,
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
@@ -127,7 +127,7 @@ pub(crate) async fn get_self_token(
     AuthenticatedToken(token): AuthenticatedToken,
 ) -> Result<Response, ApiError> {
     let response = TokenResponse {
-        token: GetTokenResponse::from_token(&token),
+        token: GetTokenResponse::from(&token),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -254,7 +254,7 @@ pub(crate) async fn create_token_grant(
     )
     .await?;
     let response = TokenGrantResponse {
-        token_grant: GetTokenGrantResponse::from_grant(&grant),
+        token_grant: GetTokenGrantResponse::from(&grant),
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }

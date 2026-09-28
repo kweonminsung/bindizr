@@ -132,7 +132,7 @@ impl TryFrom<String> for TransferResult {
 
 /// The latest transfer served to one client address for one zone, as it is
 /// written; a refusal or failure keeps its reason and no serial.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Transfer {
     pub client_addr: String,
     pub zone_id: i32,
@@ -150,7 +150,7 @@ pub struct Transfer {
 }
 
 /// A transfer joined with its zone's name, as the listings return it.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct TransferWithZone {
     pub client_addr: String,
     #[sqlx(try_from = "String")]

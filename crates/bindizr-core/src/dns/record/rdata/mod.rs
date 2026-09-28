@@ -132,6 +132,7 @@ where
 }
 
 /// A stored record's wire record type number and RDATA bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EncodedRdata {
     pub(crate) record_type: u16,
     pub(crate) rdata: Rdata,
@@ -147,7 +148,7 @@ impl EncodedRdata {
         priority: Option<i32>,
     ) -> Result<EncodedRdata, EncodeRdataError> {
         let stored_address = || EncodeRdataError::StoredAddress {
-            record_type: record_type.clone(),
+            record_type: *record_type,
             value: value.to_string(),
         };
         let rdata = match record_type {
@@ -155,29 +156,29 @@ impl EncodedRdata {
                 let addr: Ipv4Addr = value.parse().map_err(|_| stored_address())?;
                 Rdata::new(addr.octets().to_vec())?
             }
-            RecordType::AAAA => {
+            RecordType::Aaaa => {
                 let addr: Ipv6Addr = value.parse().map_err(|_| stored_address())?;
                 Rdata::new(addr.octets().to_vec())?
             }
-            RecordType::CAA => CaaRecordValue::parse(value)?.to_rdata()?,
-            RecordType::CNAME | RecordType::DNAME | RecordType::NS | RecordType::PTR => {
+            RecordType::Caa => CaaRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Cname | RecordType::Dname | RecordType::Ns | RecordType::Ptr => {
                 Rdata::new(encode_name(value)?)?
             }
-            RecordType::DS => DsRecordValue::parse(value)?.to_rdata()?,
-            RecordType::MX => MxRecordValue::parse(value, priority)?.to_rdata()?,
-            RecordType::NAPTR => NaptrRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Ds => DsRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Mx => MxRecordValue::parse(value, priority)?.to_rdata()?,
+            RecordType::Naptr => NaptrRecordValue::parse(value)?.to_rdata()?,
             // Stored TXT is always the presentation form; every entry path
             // writes it, so anything else here is corruption, not a plain string.
-            RecordType::TXT => Rdata::new(
+            RecordType::Txt => Rdata::new(
                 TxtRecordValue::from_presentation(value)
                     .ok_or_else(|| ParseRecordValueError::StoredTxtNotPresentation {
                         value: value.to_string(),
                     })?
                     .into_rdata(),
             )?,
-            RecordType::SRV => SrvRecordValue::parse(value, priority)?.to_rdata()?,
-            RecordType::SSHFP => SshfpRecordValue::parse(value)?.to_rdata()?,
-            RecordType::TLSA => TlsaRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Srv => SrvRecordValue::parse(value, priority)?.to_rdata()?,
+            RecordType::Sshfp => SshfpRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Tlsa => TlsaRecordValue::parse(value)?.to_rdata()?,
         };
 
         Ok(Self {

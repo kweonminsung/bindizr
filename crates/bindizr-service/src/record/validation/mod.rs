@@ -66,7 +66,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         .validate_value(value, priority)
         .map_err(ServiceError::invalid_record_value)?;
 
-    if *record_type == RecordType::CNAME && stored_name.is_apex() {
+    if *record_type == RecordType::Cname && stored_name.is_apex() {
         return Err(ServiceError::invalid_record_name(
             "CNAME record cannot have '@' as name".to_string(),
         ));
@@ -89,15 +89,15 @@ pub(crate) fn validate_record_add_constraints_normalized(
         )));
     }
 
-    if *record_type == RecordType::MX {
+    if *record_type == RecordType::Mx {
         let adding_null_mx = MxRecordValue::parse(value, priority).is_ok_and(|mx| mx.is_null());
         let has_existing_null_mx = records_at_name.iter().any(|r| {
-            r.record_type == RecordType::MX
+            r.record_type == RecordType::Mx
                 && MxRecordValue::parse(&r.value, r.priority).is_ok_and(|mx| mx.is_null())
         });
         let has_existing_mx = records_at_name
             .iter()
-            .any(|r| r.record_type == RecordType::MX);
+            .any(|r| r.record_type == RecordType::Mx);
 
         if (adding_null_mx && has_existing_mx) || (!adding_null_mx && has_existing_null_mx) {
             return Err(ServiceError::record_conflict(format!(
@@ -108,7 +108,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
     }
 
     if !records_at_name.is_empty() {
-        if *record_type == RecordType::CNAME {
+        if *record_type == RecordType::Cname {
             return Err(ServiceError::record_conflict(format!(
                 "Another record with name '{}' already exists in this zone, so CNAME cannot be used",
                 stored_name
@@ -116,7 +116,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         }
         if records_at_name
             .iter()
-            .any(|r| r.record_type == RecordType::CNAME)
+            .any(|r| r.record_type == RecordType::Cname)
         {
             return Err(ServiceError::record_conflict(format!(
                 "A CNAME record with name '{}' already exists in this zone",
@@ -127,7 +127,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
 
     // A DS names a child zone's key (RFC 4034, Section 5); the zone's own
     // DS lives in its parent. The NS coupling is checked at versioning.
-    if *record_type == RecordType::DS && stored_name.is_apex() {
+    if *record_type == RecordType::Ds && stored_name.is_apex() {
         return Err(ServiceError::invalid_record_name(
             "DS records secure a child delegation; the zone's own DS belongs in the parent zone"
                 .to_string(),
@@ -180,6 +180,7 @@ pub(crate) fn validate_record_update_constraints_normalized(
 }
 
 /// What an add resolves to against the records already in the zone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AddResult {
     /// Nothing holds this rdata and every constraint passed.
     New,

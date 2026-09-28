@@ -17,7 +17,7 @@ fn txt_rejects_non_utf8_octets() {
         !parsed
             .records
             .iter()
-            .any(|record| record.record_type == RecordType::TXT),
+            .any(|record| record.record_type == RecordType::Txt),
         "the non-UTF-8 TXT record should not have been stored"
     );
 }
@@ -51,10 +51,10 @@ fn txt_utf8_multi_segment_parses_as_segments() {
     let record = parsed
         .records
         .iter()
-        .find(|record| record.record_type == RecordType::TXT)
+        .find(|record| record.record_type == RecordType::Txt)
         .expect("a TXT record");
     match &record.value {
-        ZoneFileValue::CharacterStrings(segments) => assert_eq!(segments, &["foo", "bar"]),
+        ZoneFileValue::Segments(segments) => assert_eq!(segments, &["foo", "bar"]),
         other => panic!("expected segments, got {other:?}"),
     }
 }

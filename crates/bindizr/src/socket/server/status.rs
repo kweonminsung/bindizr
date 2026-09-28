@@ -1,17 +1,17 @@
-use std::{net::SocketAddr, process};
+use std::{net::SocketAddr, process, sync::Arc};
 
+use bindizr_core::config::Config;
 use bindizr_service::{Context, error::ServiceError, secondary, types::MessageResponse, zone};
 
 use crate::{
     daemon::db_probe::DB_PROBE_TIMEOUT,
-    socket::{
-        server::to_response_data,
-        types::{DaemonResponse, DaemonStatusResponse},
-    },
+    socket::types::{DaemonResponse, DaemonStatusResponse},
 };
 
 /// Return the daemon's current status as JSON.
-pub(crate) async fn handle_status(cx: &Context) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn handle_status(
+    cx: &Context,
+) -> Result<DaemonResponse<DaemonStatusResponse>, ServiceError> {
     let config = cx.config();
     let counts = async {
         let zones = zone::count_all(cx).await?;
@@ -53,15 +53,14 @@ pub(crate) async fn handle_status(cx: &Context) -> Result<DaemonResponse, Servic
         database_error,
     };
 
-    let response = DaemonResponse {
+    Ok(DaemonResponse {
         message: "Status retrieved successfully".to_string(),
-        data: to_response_data(status)?,
-    };
-    Ok(response)
+        data: status,
+    })
 }
 
 /// Reload the daemon configuration and return the result.
-pub(crate) fn reload_config(cx: &Context) -> Result<DaemonResponse, ServiceError> {
+pub(crate) fn reload_config(cx: &Context) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     let changed = crate::daemon::reload_config(cx)?;
 
     let message = if changed.is_empty() {
@@ -72,14 +71,14 @@ pub(crate) fn reload_config(cx: &Context) -> Result<DaemonResponse, ServiceError
     log::info!("event=config_reload changed={}", changed.join(","));
     Ok(DaemonResponse {
         message: message.clone(),
-        data: to_response_data(MessageResponse { message })?,
+        data: MessageResponse { message },
     })
 }
 
-/// Return the daemon's effective configuration as JSON.
-pub(crate) fn config(cx: &Context) -> Result<DaemonResponse, ServiceError> {
-    Ok(DaemonResponse {
+/// Return the daemon's effective configuration.
+pub(crate) fn config(cx: &Context) -> DaemonResponse<Arc<Config>> {
+    DaemonResponse {
         message: "Configuration retrieved successfully".to_string(),
-        data: to_response_data(cx.config())?,
-    })
+        data: cx.config(),
+    }
 }

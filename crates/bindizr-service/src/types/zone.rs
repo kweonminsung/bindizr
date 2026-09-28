@@ -10,12 +10,52 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::secondary::TransferResponse;
 use crate::{
-    dns_client::probe::ProbeError, error::ServiceError, model::zone::Zone,
+    dns_client::probe::ProbeError, error::ServiceError, model::zone::Zone, notify::NotifyTarget,
     serial::validate_initial_serial,
 };
 
+/// Which records a zone reads back as: the user records alone, or with the
+/// derived DNSSEC records bindizr generates.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ZoneView {
+    Plain,
+    Signed,
+}
+
+impl ZoneView {
+    /// The view a `signed` flag asks for.
+    pub fn from_signed(signed: bool) -> Self {
+        if signed {
+            ZoneView::Signed
+        } else {
+            ZoneView::Plain
+        }
+    }
+}
+
+/// Whether a manual NOTIFY bumps the zone serial first, so secondaries
+/// transfer even when nothing changed.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NotifySerial {
+    Keep,
+    Bump,
+}
+
+impl NotifySerial {
+    /// The bump a `bump_serial` flag asks for.
+    pub fn from_bump_serial(bump_serial: bool) -> Self {
+        if bump_serial {
+            NotifySerial::Bump
+        } else {
+            NotifySerial::Keep
+        }
+    }
+}
+
 /// API representation of a zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetZoneResponse {
     /// Absent on a dry run, where nothing was written to carry one.
     #[schema(example = 1)]
@@ -45,9 +85,9 @@ pub struct GetZoneResponse {
     pub description: Option<String>,
 }
 
-impl GetZoneResponse {
+impl From<&Zone> for GetZoneResponse {
     /// Build a zone response from its stored settings.
-    pub fn from_zone(zone: &Zone) -> Self {
+    fn from(zone: &Zone) -> Self {
         GetZoneResponse {
             id: written_id(zone.id),
             name: zone.name.to_string(),
@@ -66,7 +106,7 @@ impl GetZoneResponse {
 }
 
 /// Request body for creating a zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateZoneRequest {
     #[schema(example = "example.com")]
@@ -133,7 +173,7 @@ impl CreateZoneRequest {
 }
 
 /// Query filters and pagination for listing zones.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema, IntoParams)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct GetZonesFilter {
@@ -199,7 +239,7 @@ pub struct GetZonesFilter {
 /// Request body for updating a zone; an omitted field keeps the current
 /// value, merged inside the update transaction. `serial` is carried only to
 /// be rejected: it is fixed at creation.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateZoneRequest {
     /// A different name renames the zone.
@@ -245,18 +285,21 @@ pub struct UpdateZoneRequest {
 }
 
 /// The success message every front end serves for a manual NOTIFY.
-pub fn build_notify_message(zone_name: Option<&str>, bump_serial: bool) -> String {
-    let scope = match zone_name {
-        Some(zone_name) => format!("zone: {}", zone_name),
-        None => "all zones".to_string(),
+pub fn build_notify_message(target: NotifyTarget<'_>, serial: NotifySerial) -> String {
+    let scope = match target {
+        NotifyTarget::Zone(zone_name) => format!("zone: {}", zone_name),
+        NotifyTarget::All => "all zones".to_string(),
     };
-    let suffix = if bump_serial { " (serial bumped)" } else { "" };
+    let suffix = match serial {
+        NotifySerial::Bump => " (serial bumped)",
+        NotifySerial::Keep => "",
+    };
     format!("NOTIFY sent successfully for {}{}", scope, suffix)
 }
 
 /// What deleting a zone takes with it. A dry run reports the counts and
 /// removes nothing; deleting a zone cannot be undone from the tool.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DeleteZoneResponse {
     /// Whether this call removed the zone; a dry run answers `false`.
     #[schema(example = true)]
@@ -274,14 +317,14 @@ pub struct DeleteZoneResponse {
 
 /// A single zone wrapped in a response envelope. A dry run answers with the
 /// zone as it would stand and `applied: false`.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ZoneResponse {
     pub zone: GetZoneResponse,
 }
 
 /// What a zone write left behind. The zone's own fields are the change, so
 /// unlike a record write this carries no diff.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ZoneWriteResponse {
     /// Whether this call wrote; a dry run answers `false`.
     #[schema(example = true)]
@@ -293,7 +336,7 @@ pub struct ZoneWriteResponse {
 
 /// A zone rendered as BIND master-file text. Only the daemon socket wraps the
 /// export this way; the HTTP endpoint serves the text as its body.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ExportZoneFileResponse {
     pub zone_file: String,
 }
@@ -325,7 +368,7 @@ impl std::fmt::Display for SecondaryStatus {
 
 /// What one secondary answered when probed for a zone's SOA, classified
 /// against the serial Bindizr serves.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct SecondaryStatusResponse {
     #[schema(example = "10.0.1.10:53")]
     pub address: String,
@@ -387,7 +430,7 @@ impl SecondaryStatusResponse {
 
 /// A zone's serial and the sync state of every enabled secondary, probed
 /// live via SOA queries.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ZoneStatusResponse {
     #[schema(example = "example.com")]
     pub zone_name: String,

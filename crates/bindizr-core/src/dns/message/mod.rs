@@ -16,8 +16,8 @@ use thiserror::Error;
 
 use crate::dns::{
     ConvertSerialError, DNS_TCP_MAX_SIZE, LibraryError,
-    dnssec::{WireNameError, to_wire_name},
-    name::{EncodeNameError, ParseNameError},
+    dnssec::WireNameError,
+    name::EncodeNameError,
     record::{EncodeRdataError, Rdata},
     tsig::{TransferSigner, signature_len},
 };
@@ -74,27 +74,6 @@ impl Overflow {
     }
 }
 
-/// What [`DnsMessageBuilder::add_raw_rdata`] accepts as its owner: a parsed
-/// name, or a typed name's wire bytes still carrying their encoding error.
-pub trait IntoOwner {
-    /// Convert an accepted owner representation into a wire-format name.
-    fn into_owner(self) -> Result<Name<Vec<u8>>, WireNameError>;
-}
-
-impl IntoOwner for Name<Vec<u8>> {
-    /// Convert an accepted owner representation into a wire-format name.
-    fn into_owner(self) -> Result<Name<Vec<u8>>, WireNameError> {
-        Ok(self)
-    }
-}
-
-impl IntoOwner for Result<Vec<u8>, ParseNameError> {
-    /// Convert an accepted owner representation into a wire-format name.
-    fn into_owner(self) -> Result<Name<Vec<u8>>, WireNameError> {
-        to_wire_name(self)
-    }
-}
-
 /// A record already composed into wire bytes, pushed back through `domain`'s
 /// builder so a message can carry a section it did not compose.
 struct ComposedRecord<'a>(&'a [u8]);
@@ -109,6 +88,7 @@ impl ComposeRecord for ComposedRecord<'_> {
     }
 }
 
+#[derive(Debug)]
 pub struct DnsMessageBuilder {
     query_id: u16,
     qname: Name<Vec<u8>>,
@@ -150,14 +130,14 @@ impl DnsMessageBuilder {
     /// Adds an answer from wire-format RDATA bytes, with no per-type parser.
     pub(crate) fn add_raw_rdata(
         &mut self,
-        owner: impl IntoOwner,
+        owner: Name<Vec<u8>>,
         record_type: u16,
         ttl: u32,
         rdata: Rdata,
     ) -> Result<(), EncodeMessageError> {
         let data = UnknownRecordData::from_octets(Rtype::from_int(record_type), rdata.into_bytes())
             .map_err(|e| EncodeMessageError::RawRdata(Box::new(e)))?;
-        self.add_answer(owner.into_owner()?, ttl, data);
+        self.add_answer(owner, ttl, data);
         Ok(())
     }
 

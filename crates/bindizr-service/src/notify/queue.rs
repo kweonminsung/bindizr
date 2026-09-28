@@ -13,20 +13,23 @@ use tokio::{
     time::{Instant, timeout},
 };
 
-use super::send_notify;
+use super::{NotifyTarget, send_notify};
 use crate::Context;
 
-/// A queued propagation job: send NOTIFY for one zone, or for all zones (`None`).
-#[derive(Debug)]
+/// A queued propagation job: send NOTIFY for one zone, or for all zones.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotifyJob {
     zone_name: Option<String>,
 }
 
 impl NotifyJob {
-    /// A job for one zone, or for every zone with `None`.
-    pub(crate) fn new(zone_name: Option<&str>) -> Self {
+    /// A job for the zones `target` names.
+    pub(crate) fn new(target: NotifyTarget<'_>) -> Self {
         NotifyJob {
-            zone_name: zone_name.map(str::to_string),
+            zone_name: match target {
+                NotifyTarget::Zone(zone_name) => Some(zone_name.to_string()),
+                NotifyTarget::All => None,
+            },
         }
     }
 }
@@ -39,6 +42,7 @@ pub fn channel() -> (UnboundedSender<NotifyJob>, UnboundedReceiver<NotifyJob>) {
 
 /// The running worker, as the daemon holds it: `stop` asks it to flush what
 /// it holds and finish, handing back the task to wait for.
+#[derive(Debug)]
 pub struct NotifyWorker {
     task: JoinHandle<()>,
     stop: watch::Sender<bool>,
@@ -142,13 +146,13 @@ impl NotifyBatch {
         }
         if self.all_zones {
             // Notifying all zones covers every per-zone entry in this batch.
-            if let Err(e) = send_notify(cx, None).await {
+            if let Err(e) = send_notify(cx, NotifyTarget::All).await {
                 log::warn!("queued notify: NOTIFY failed for zone <all>: {}", e);
             }
             return;
         }
         for zone in self.zones {
-            if let Err(e) = send_notify(cx, Some(&zone)).await {
+            if let Err(e) = send_notify(cx, NotifyTarget::Zone(&zone)).await {
                 log::warn!("queued notify: NOTIFY failed for zone {}: {}", zone, e);
             }
         }

@@ -114,6 +114,7 @@ impl From<JsonRejection> for ApiError {
 }
 
 /// `axum::extract::Query` whose rejection renders as [`ErrorResponse`].
+#[derive(Debug, Clone)]
 pub(crate) struct Query<T>(pub(crate) T);
 
 impl<T, S> FromRequestParts<S> for Query<T>
@@ -133,6 +134,7 @@ where
 }
 
 /// `axum::extract::Path` with the same treatment as [`Query`].
+#[derive(Debug, Clone)]
 pub(crate) struct Path<T>(pub(crate) T);
 
 impl<T, S> FromRequestParts<S> for Path<T>

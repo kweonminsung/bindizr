@@ -105,7 +105,7 @@ fn ed448_keys_generate_and_sign() {
     .unwrap();
     key.id = 1;
     let keys = [key];
-    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+    let records = [test_record("@", RecordType::Ns, "ns1.example.com", 3600)];
 
     let diff = compute(ComputeArgs {
         zone: &zone,
@@ -116,13 +116,13 @@ fn ed448_keys_generate_and_sign() {
         new_serial: 2,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     // Algorithm 16 only signs through the OpenSSL backend; this guards the
     // ring-to-OpenSSL fallback staying wired up.
     let apex = OwnerName::apex();
-    let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32);
+    let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::Ns.wire_type() as i32);
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 16);
 }
@@ -142,7 +142,7 @@ fn rsa_keys_generate_and_sign() {
     .unwrap();
     key.id = 1;
     let keys = [key];
-    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+    let records = [test_record("@", RecordType::Ns, "ns1.example.com", 3600)];
 
     let diff = compute(ComputeArgs {
         zone: &zone,
@@ -153,12 +153,12 @@ fn rsa_keys_generate_and_sign() {
         new_serial: 2,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     // RSA key generation also runs on the OpenSSL backend (ring only signs).
     let apex = OwnerName::apex();
-    let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32);
+    let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::Ns.wire_type() as i32);
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 8);
 }

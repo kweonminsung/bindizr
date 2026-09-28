@@ -45,9 +45,11 @@ pub use tx::{LockLevel, Transaction};
 /// The database the daemon connected to: one pool on one of the three
 /// backends. Every query is a root function taking it (`zone::get_by_name`)
 /// and matching the backend to reach the same-named function holding the SQL.
+#[derive(Debug)]
 pub struct Db(Backend);
 
 /// Which backend `Db` holds; the root functions match on it.
+#[derive(Debug)]
 pub(crate) enum Backend {
     MySql(Pool<MySql>),
     Postgres(Pool<Postgres>),
@@ -59,8 +61,8 @@ impl Db {
     /// calls this once and holds the value.
     pub async fn connect(database: &config::DatabaseConfig) -> Result<Db, DatabaseError> {
         let backend = match database.database_type {
-            config::DatabaseType::Mysql => Backend::connect_mysql(&database.mysql.url).await?,
-            config::DatabaseType::Postgresql => {
+            config::DatabaseType::MySql => Backend::connect_mysql(&database.mysql.url).await?,
+            config::DatabaseType::Postgres => {
                 Backend::connect_postgres(&database.postgresql.url).await?
             }
             config::DatabaseType::Sqlite => {
@@ -129,7 +131,7 @@ impl Db {
 /// to keep; `doctor` runs this when no daemon is up.
 pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), DatabaseError> {
     match database.database_type {
-        config::DatabaseType::Mysql => {
+        config::DatabaseType::MySql => {
             let pool = MySqlPoolOptions::new()
                 .max_connections(1)
                 .connect(&database.mysql.url)
@@ -137,7 +139,7 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
                 .map_err(DatabaseError::MySqlConnect)?;
             sqlx::query("SELECT 1").execute(&pool).await?;
         }
-        config::DatabaseType::Postgresql => {
+        config::DatabaseType::Postgres => {
             let pool = PgPoolOptions::new()
                 .max_connections(1)
                 .connect(&database.postgresql.url)
@@ -169,6 +171,7 @@ fn sqlite_connect_options(url: &str) -> Result<SqliteConnectOptions, DatabaseErr
 
 /// How full the connection pool is. sqlx counts held connections, not waiters,
 /// so saturation shows as `connections` reaching `max`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PoolStats {
     /// Connections the pool holds, idle and handed out alike.
     pub connections: u32,

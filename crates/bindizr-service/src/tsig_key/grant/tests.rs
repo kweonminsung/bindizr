@@ -36,7 +36,7 @@ fn authorize_update_requires_name_and_type_match() {
     assert!(authorize_update(
         &grants,
         &OwnerName::apex(),
-        Some(&RecordType::TXT)
+        Some(&RecordType::Txt)
     ));
     // Whole-name delete (TYPE ANY) is only covered by unrestricted types.
     assert!(authorize_update(&grants, &OwnerName::apex(), None));
@@ -49,7 +49,7 @@ fn authorize_update_requires_name_and_type_match() {
     assert!(!authorize_update(
         &grants,
         &OwnerName::from_row("host.dyn"),
-        Some(&RecordType::TXT)
+        Some(&RecordType::Txt)
     ));
     assert!(!authorize_update(
         &grants,
@@ -104,7 +104,7 @@ fn authorize_prerequisite_reaches_only_what_the_grant_covers() {
     assert!(!authorize_prerequisite(
         &grants,
         &OwnerName::from_row("host.dyn"),
-        Some(&RecordType::TXT)
+        Some(&RecordType::Txt)
     ));
     assert!(!authorize_prerequisite(
         &grants,

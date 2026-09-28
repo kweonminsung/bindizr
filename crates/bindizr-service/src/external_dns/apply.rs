@@ -45,7 +45,7 @@ pub async fn apply_changes(
     let apply_result = async {
         // Resolve authoritative zones from committed state inside the tx;
         // the residual race with concurrent zone creation is accepted.
-        let zones = db::zone::list_all_tx(&mut tx, LockLevel::None).await?;
+        let zones = db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
         let zone_ops = group_ops_by_zone(caller, &zones, ops)?;
 
         let mut changed_zones = Vec::new();

@@ -43,7 +43,7 @@ impl TokenGrant {
 
 /// A token grant joined with the names of the token it belongs to and the
 /// zone it covers.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenGrantWithNames {
     pub grant: TokenGrant,
     pub api_token_name: String,

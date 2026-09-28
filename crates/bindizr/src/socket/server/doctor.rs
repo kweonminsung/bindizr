@@ -13,15 +13,14 @@ use bindizr_service::{
 
 use crate::{
     daemon::db_probe::DB_PROBE_TIMEOUT,
-    socket::{
-        server::to_response_data,
-        types::{DaemonDoctorResponse, DaemonResponse, DoctorCheck, DoctorCheckStatus},
-    },
+    socket::types::{DaemonDoctorResponse, DaemonResponse, DoctorCheck, DoctorCheckStatus},
 };
 
 /// The daemon-side installation checks. The catalog zone is the one probed
 /// because it exists before any user zone, so serial comparison always works.
-pub(crate) async fn check_installation(cx: &Context) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn check_installation(
+    cx: &Context,
+) -> Result<DaemonResponse<DaemonDoctorResponse>, ServiceError> {
     let config = cx.config();
 
     // Count zones without materializing them; large tables must fit the deadline.
@@ -109,6 +108,6 @@ pub(crate) async fn check_installation(cx: &Context) -> Result<DaemonResponse, S
 
     Ok(DaemonResponse {
         message: "Doctor checks completed".to_string(),
-        data: to_response_data(response)?,
+        data: response,
     })
 }

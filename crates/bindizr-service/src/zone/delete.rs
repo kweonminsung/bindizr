@@ -1,3 +1,4 @@
+use bindizr_core::model::zone_version::VersionScope;
 use bindizr_db::{LockLevel, record::RecordFilter};
 
 use crate::{
@@ -6,7 +7,7 @@ use crate::{
     db,
     error::ServiceError,
     transaction,
-    types::{DeleteZoneResponse, GetZoneResponse},
+    types::{DeleteZoneResponse, GetZoneResponse, Run},
 };
 
 /// Delete a zone by name and NOTIFY the catalog zone after commit. A dry
@@ -16,7 +17,7 @@ pub async fn delete(
     cx: &Context,
     caller: &Caller,
     zone_name: &str,
-    dry_run: bool,
+    run: Run,
 ) -> Result<DeleteZoneResponse, ServiceError> {
     caller.authorize_global("delete zones")?;
 
@@ -35,16 +36,16 @@ pub async fn delete(
             },
         )
         .await?;
-        let versions = db::zone_version::count(cx.db(), zone.id, false).await?;
+        let versions = db::zone_version::count(cx.db(), zone.id, VersionScope::All).await?;
 
         let response = DeleteZoneResponse {
-            applied: !dry_run,
-            dry_run,
-            zone: GetZoneResponse::from_zone(&zone),
+            applied: !run.is_dry_run(),
+            dry_run: run.is_dry_run(),
+            zone: GetZoneResponse::from(&zone),
             records_deleted: records,
             versions_deleted: versions,
         };
-        if dry_run {
+        if run.is_dry_run() {
             return Ok(response);
         }
 

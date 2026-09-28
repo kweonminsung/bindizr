@@ -13,16 +13,16 @@ use serde::Serialize;
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, color, parse_payload, print_payload},
+        output::{OutputFormat, color, print_payload},
     },
     socket::{
         client,
-        types::{DaemonCommandKind, DoctorCheck, DoctorCheckStatus},
+        types::{DaemonCommand, DoctorCheck, DoctorCheckStatus},
     },
 };
 
 /// The whole run, as `--output json` reports it.
-#[derive(Serialize)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 struct DoctorReport {
     healthy: bool,
     failures: usize,
@@ -31,6 +31,7 @@ struct DoctorReport {
 
 /// Collects check outcomes for the exit code, printing each as it lands
 /// unless the caller asked for one document.
+#[derive(Debug, Clone)]
 pub(crate) struct Report {
     format: OutputFormat,
     checks: Vec<DoctorCheck>,
@@ -57,7 +58,7 @@ impl Report {
     /// Record a skipped diagnostic check.
     pub(crate) fn skip(&mut self, message: impl fmt::Display) {
         self.push(DoctorCheck {
-            status: DoctorCheckStatus::Skip,
+            status: DoctorCheckStatus::Skipped,
             message: message.to_string(),
         });
     }
@@ -72,7 +73,7 @@ impl Report {
             let label = match check.status {
                 DoctorCheckStatus::Ok => color::green(&text),
                 DoctorCheckStatus::Failed => color::red(&text),
-                DoctorCheckStatus::Skip => color::yellow(&text),
+                DoctorCheckStatus::Skipped => color::yellow(&text),
             };
             outln!("[{}] {}", label, check.message);
         }
@@ -108,9 +109,9 @@ pub(crate) async fn handle_command(
         }
     };
     if daemon::check_running(&mut report).await {
-        let daemon_config = client::send_control_command(DaemonCommandKind::Config)
+        let daemon_config = client::send_control_command::<Config>(DaemonCommand::Config)
             .await
-            .and_then(|response| Ok(parse_payload::<Config>(&response.data)?));
+            .map(|response| response.data);
         match daemon_config {
             Ok(config) => daemon::check_api(&config, &mut report).await,
             Err(e) => report.fail(format!("Daemon config not readable: {}", e.message)),
@@ -136,9 +137,7 @@ pub(crate) async fn handle_command(
             failures: report.failures,
             checks: report.checks,
         };
-        let value = serde_json::to_value(&document)
-            .map_err(|e| CliError::request(format!("Failed to render the report: {}", e)))?;
-        print_payload(&value, format)?;
+        print_payload(&document, format)?;
     }
 
     if report.failures == 0 {

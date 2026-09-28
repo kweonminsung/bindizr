@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 use crate::model::{tsig_grant::TsigGrantWithNames, tsig_key::TsigKey};
 
 /// Request body for creating a TSIG key. Omitting `secret` generates one.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateTsigKeyRequest {
     #[schema(example = "update-key")]
@@ -26,7 +26,7 @@ pub struct CreateTsigKeyRequest {
 }
 
 /// API representation of a TSIG key; never carries the secret.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetTsigKeyResponse {
     #[schema(example = 1)]
     pub id: i32,
@@ -40,9 +40,9 @@ pub struct GetTsigKeyResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl GetTsigKeyResponse {
+impl From<&TsigKey> for GetTsigKeyResponse {
     /// Build a TSIG key response from the stored key.
-    pub fn from_key(key: &TsigKey) -> Self {
+    fn from(key: &TsigKey) -> Self {
         GetTsigKeyResponse {
             id: key.id,
             name: key.name.clone(),
@@ -54,7 +54,7 @@ impl GetTsigKeyResponse {
 }
 
 /// API representation of a TSIG grant.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetTsigGrantResponse {
     #[schema(example = 1)]
     pub id: i32,
@@ -71,9 +71,9 @@ pub struct GetTsigGrantResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl GetTsigGrantResponse {
+impl From<&TsigGrantWithNames> for GetTsigGrantResponse {
     /// Build a TSIG-grant response with its key and zone names.
-    pub fn from_grant(grant: &TsigGrantWithNames) -> Self {
+    fn from(grant: &TsigGrantWithNames) -> Self {
         GetTsigGrantResponse {
             id: grant.grant.id,
             tsig_key_name: grant.tsig_key_name.clone(),
@@ -87,25 +87,25 @@ impl GetTsigGrantResponse {
 }
 
 /// A key with its secret: the create and get responses.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct TsigKeyResponse {
     pub tsig_key: GetTsigKeyResponse,
     #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: String,
 }
 
-impl TsigKeyResponse {
-    /// Build a TSIG key response from the stored key.
-    pub fn from_key(key: &TsigKey) -> Self {
+impl From<&TsigKey> for TsigKeyResponse {
+    /// Build a TSIG key response, with its secret, from the stored key.
+    fn from(key: &TsigKey) -> Self {
         TsigKeyResponse {
-            tsig_key: GetTsigKeyResponse::from_key(key),
+            tsig_key: GetTsigKeyResponse::from(key),
             secret: key.secret.clone(),
         }
     }
 }
 
 /// A single TSIG grant wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct TsigGrantResponse {
     pub tsig_grant: GetTsigGrantResponse,
 }

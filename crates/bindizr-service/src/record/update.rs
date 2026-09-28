@@ -16,7 +16,7 @@ use crate::{
     serial::generate_serial,
     transaction,
     ttl::validate_record_ttl,
-    types::{GetRecordResponse, RecordDiff, RecordWriteResponse, UpdateRecordRequest},
+    types::{GetRecordResponse, RecordDiff, RecordWriteResponse, Run, UpdateRecordRequest},
     zone::{self, diff::build_record_diff, validation::normalize_zone_name},
 };
 
@@ -49,7 +49,7 @@ fn resolve_update(
     move |zone, existing| {
         let record_type = match &request.record_type {
             Some(record_type) => parse_record_type(record_type)?,
-            None => existing.record_type.clone(),
+            None => existing.record_type,
         };
         // Each type has its own stored grammar (TXT uses quoted presentation),
         // so a type change requires a fresh value.
@@ -60,7 +60,7 @@ fn resolve_update(
         }
         // Only MX/SRV carry a priority: given for another type it is the
         // error creation gives, and retyping to another type clears it.
-        let priority = if matches!(record_type, RecordType::MX | RecordType::SRV) {
+        let priority = if matches!(record_type, RecordType::Mx | RecordType::Srv) {
             record_type.stored_priority(request.priority.or(existing.priority))
         } else if request.priority.is_some() {
             return Err(ServiceError::invalid_record_value(format!(
@@ -111,7 +111,7 @@ pub async fn update(
         cx,
         caller,
         RecordSelector::Id(record_id),
-        request.dry_run,
+        Run::from_dry_run(request.dry_run),
         resolve_update(request),
     )
     .await
@@ -130,7 +130,7 @@ pub async fn update_by_name(
         cx,
         caller,
         RecordSelector::Name { zone_name, name },
-        request.dry_run,
+        Run::from_dry_run(request.dry_run),
         resolve_update(request),
     )
     .await
@@ -141,7 +141,7 @@ async fn update_locked(
     cx: &Context,
     caller: &Caller,
     selector: RecordSelector<'_>,
-    dry_run: bool,
+    run: Run,
     resolve: impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError>,
 ) -> Result<RecordWriteResponse, ServiceError> {
     // Non-locking read for the zone_id, so the tx locks zone before record
@@ -320,7 +320,7 @@ async fn update_locked(
         let diff = build_record_diff(&zone, &before, &after);
 
         // The merge is resolved and validated, so a dry run stops here.
-        if dry_run {
+        if run.is_dry_run() {
             return Ok::<(Record, ZoneName, RecordDiff), ServiceError>((
                 candidate, zone.name, diff,
             ));
@@ -357,13 +357,13 @@ async fn update_locked(
     );
 
     // Request secondary transfers only after the replacement is committed.
-    if !dry_run {
+    if !run.is_dry_run() {
         crate::notify::notify_after_update(cx, zone_name.as_str()).await;
     }
 
     Ok(RecordWriteResponse {
-        applied: !dry_run,
-        dry_run,
+        applied: !run.is_dry_run(),
+        dry_run: run.is_dry_run(),
         record: GetRecordResponse::from_record_and_zone_name(&updated_record, &zone_name),
         diff,
     })

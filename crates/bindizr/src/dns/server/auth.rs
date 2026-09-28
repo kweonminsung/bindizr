@@ -35,6 +35,7 @@ pub(crate) fn signed_error(
 /// A refused transfer and the response it owes the client: a TSIG failure
 /// answers with its own error record, anything else with REFUSED, signed by the
 /// key that got that far.
+#[derive(Debug)]
 pub(crate) struct TransferRefusal {
     pub(crate) reason: String,
     response: Option<Vec<u8>>,
@@ -62,6 +63,7 @@ impl TransferRefusal {
 
 /// Who a transfer request is: the verified key that signed it, or nobody when
 /// the address ACL admitted it unsigned; the signer answers under that key.
+#[derive(Debug)]
 pub(crate) struct TransferIdentity {
     pub(crate) key: Option<TsigKey>,
     pub(crate) signer: Option<TransferSigner>,
@@ -137,7 +139,7 @@ impl From<TsigError> for TransferRefusal {
     /// Translate a TSIG error into a transfer refusal with its required response.
     fn from(error: TsigError) -> Self {
         match error {
-            TsigError::Failed { rcode, response } => TransferRefusal {
+            TsigError::Rejected { rcode, response } => TransferRefusal {
                 reason: format!("TSIG validation failed: {}", rcode),
                 response: Some(response),
                 signer: None,

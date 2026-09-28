@@ -12,6 +12,7 @@ use crate::{
     error::ServiceError,
     model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
     transaction,
+    types::ZoneView,
 };
 
 /// Render a zone and its records as a BIND master file (RFC 1035). The
@@ -23,7 +24,7 @@ pub async fn export(
     cx: &Context,
     caller: &Caller,
     zone_name: &str,
-    signed: bool,
+    view: ZoneView,
 ) -> Result<String, ServiceError> {
     // Read the zone and records in one locked transaction so the export is a
     // single consistent view, not stale SOA metadata with newer records.
@@ -32,9 +33,9 @@ pub async fn export(
         let zone =
             super::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
         caller.authorize_zone_unrestricted(&zone)?;
-        let records = db::record::list_tx(&mut tx, zone.id, LockLevel::None).await?;
-        let derived = if signed {
-            db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::None).await?
+        let records = db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let derived = if view == ZoneView::Signed {
+            db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?
         } else {
             Vec::new()
         };

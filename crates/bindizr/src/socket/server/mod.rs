@@ -22,7 +22,7 @@ use std::{
     sync::Arc,
 };
 
-use bindizr_service::{Context, error::ServiceError, types::ErrorResponse};
+use bindizr_service::{Context, error::ServiceError, notify::NotifyTarget, types::ErrorResponse};
 use control::DaemonControl;
 use thiserror::Error;
 use tokio::{
@@ -37,7 +37,7 @@ use crate::{
     shutdown::Shutdown,
     socket::{
         FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_peer, read_own_uid,
-        types::{DaemonCommand, DaemonCommandKind},
+        types::{DaemonCommand, DaemonResponse},
     },
 };
 
@@ -67,6 +67,7 @@ pub(crate) enum ServeSocketError {
 /// The socket front end's context: the daemon's, plus the control channel
 /// the lifecycle loop awaits. A command handler takes the daemon's context;
 /// only a control command needs this one.
+#[derive(Debug)]
 pub(crate) struct SocketContext {
     daemon: Arc<Context>,
     control: mpsc::Sender<DaemonControl>,
@@ -91,7 +92,6 @@ impl SocketContext {
 
 /// Dispatch a control request and send its JSON response.
 async fn handle_client(socket_cx: &SocketContext, stream: UnixStream) {
-    let cx = socket_cx.daemon();
     let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
 
@@ -102,156 +102,15 @@ async fn handle_client(socket_cx: &SocketContext, stream: UnixStream) {
             return;
         }
 
-        let parsed: Result<DaemonCommand, _> = serde_json::from_str(&line);
-
-        let raw_response = match parsed {
-            Ok(cmd) => match cmd.command {
-                DaemonCommandKind::Status => status::handle_status(cx).await,
-                DaemonCommandKind::Config => status::config(cx),
-                DaemonCommandKind::ReloadConfig => status::reload_config(cx),
-                DaemonCommandKind::CreateToken => token::create_token(cx, &cmd.data).await,
-                DaemonCommandKind::ListTokens => token::list_tokens(cx, &cmd.data).await,
-                DaemonCommandKind::DeleteToken => token::delete_token(cx, &cmd.data).await,
-                DaemonCommandKind::CreateSecondary => {
-                    secondary::create_secondary(cx, &cmd.data).await
-                }
-                DaemonCommandKind::ListSecondaries => {
-                    secondary::list_secondaries(cx, &cmd.data).await
-                }
-                DaemonCommandKind::GetSecondary => secondary::get_secondary(cx, &cmd.data).await,
-                DaemonCommandKind::UpdateSecondary => {
-                    secondary::update_secondary(cx, &cmd.data).await
-                }
-                DaemonCommandKind::DeleteSecondary => {
-                    secondary::delete_secondary(cx, &cmd.data).await
-                }
-                DaemonCommandKind::CheckSecondary => {
-                    secondary::check_secondary(cx, &cmd.data).await
-                }
-                DaemonCommandKind::ListSecondaryTransfers => {
-                    secondary::list_secondary_transfers(cx, &cmd.data).await
-                }
-                DaemonCommandKind::CreateTsigKey => tsig_key::create_tsig_key(cx, &cmd.data).await,
-                DaemonCommandKind::ListTsigKeys => tsig_key::list_tsig_keys(cx, &cmd.data).await,
-                DaemonCommandKind::GetTsigKey => tsig_key::get_tsig_key(cx, &cmd.data).await,
-                DaemonCommandKind::DeleteTsigKey => tsig_key::delete_tsig_key(cx, &cmd.data).await,
-                DaemonCommandKind::CreateDnssecPolicy => {
-                    dnssec_policy::create_dnssec_policy(cx, &cmd.data).await
-                }
-                DaemonCommandKind::ListDnssecPolicies => {
-                    dnssec_policy::list_dnssec_policies(cx, &cmd.data).await
-                }
-                DaemonCommandKind::GetDnssecPolicy => {
-                    dnssec_policy::get_dnssec_policy(cx, &cmd.data).await
-                }
-                DaemonCommandKind::UpdateDnssecPolicy => {
-                    dnssec_policy::update_dnssec_policy(cx, &cmd.data).await
-                }
-                DaemonCommandKind::DeleteDnssecPolicy => {
-                    dnssec_policy::delete_dnssec_policy(cx, &cmd.data).await
-                }
-                DaemonCommandKind::CreateTsigGrant => {
-                    tsig_key::create_tsig_grant(cx, &cmd.data).await
-                }
-                DaemonCommandKind::ListTsigGrants => {
-                    tsig_key::list_tsig_grants(cx, &cmd.data).await
-                }
-                DaemonCommandKind::ListZoneTsigGrants => {
-                    tsig_key::list_zone_tsig_grants(cx, &cmd.data).await
-                }
-                DaemonCommandKind::DeleteTsigGrant => {
-                    tsig_key::delete_tsig_grant(cx, &cmd.data).await
-                }
-                DaemonCommandKind::DeleteTsigGrantsByKeyAndZone => {
-                    tsig_key::delete_tsig_grants_by_key_and_zone(cx, &cmd.data).await
-                }
-                DaemonCommandKind::CreateTokenGrant => {
-                    token::create_token_grant(cx, &cmd.data).await
-                }
-                DaemonCommandKind::ListTokenGrants => token::list_token_grants(cx, &cmd.data).await,
-                DaemonCommandKind::ListZoneTokenGrants => {
-                    token::list_zone_token_grants(cx, &cmd.data).await
-                }
-                DaemonCommandKind::DeleteTokenGrant => {
-                    token::delete_token_grant(cx, &cmd.data).await
-                }
-                DaemonCommandKind::DeleteTokenGrantsByTokenAndZone => {
-                    token::delete_token_grants_by_token_and_zone(cx, &cmd.data).await
-                }
-                DaemonCommandKind::GetZone => zone::get_zone(cx, &cmd.data).await,
-                DaemonCommandKind::ListZones => zone::list_zones(cx, &cmd.data).await,
-                DaemonCommandKind::CreateZone => zone::create_zone(cx, &cmd.data).await,
-                DaemonCommandKind::UpdateZone => zone::update_zone(cx, &cmd.data).await,
-                DaemonCommandKind::DeleteZone => zone::delete_zone(cx, &cmd.data).await,
-                DaemonCommandKind::GetRecord => record::get_record(cx, &cmd.data).await,
-                DaemonCommandKind::ListRecords => record::list_records(cx, &cmd.data).await,
-                DaemonCommandKind::CreateRecord => record::create_record(cx, &cmd.data).await,
-                DaemonCommandKind::UpdateRecord => record::update_record(cx, &cmd.data).await,
-                DaemonCommandKind::UpdateRecordByName => {
-                    record::update_record_by_name(cx, &cmd.data).await
-                }
-                DaemonCommandKind::CreateRecordsBulk => {
-                    record::create_records_bulk(cx, &cmd.data).await
-                }
-                DaemonCommandKind::DeleteRecord => record::delete_record(cx, &cmd.data).await,
-                DaemonCommandKind::DeleteRecordsMatching => {
-                    record::delete_records_matching(cx, &cmd.data).await
-                }
-                DaemonCommandKind::NotifyAllZones => notify::notify_all_zones(cx, &cmd.data).await,
-                DaemonCommandKind::NotifyZone => notify::notify_zone(cx, &cmd.data).await,
-                DaemonCommandKind::ImportZone => zone::import_zone(cx, &cmd.data).await,
-                DaemonCommandKind::ExportZone => zone::export_zone(cx, &cmd.data).await,
-                DaemonCommandKind::ListZoneVersions => {
-                    zone::list_zone_versions(cx, &cmd.data).await
-                }
-                DaemonCommandKind::GetZoneVersion => zone::get_zone_version(cx, &cmd.data).await,
-                DaemonCommandKind::DiffZoneVersions => {
-                    zone::diff_zone_versions(cx, &cmd.data).await
-                }
-                DaemonCommandKind::RollbackZone => zone::rollback_zone(cx, &cmd.data).await,
-                DaemonCommandKind::GetZoneStatus => zone::get_zone_status(cx, &cmd.data).await,
-                DaemonCommandKind::EnableDnssec => dnssec::enable_dnssec(cx, &cmd.data).await,
-                DaemonCommandKind::DisableDnssec => dnssec::disable_dnssec(cx, &cmd.data).await,
-                DaemonCommandKind::GetDnssecStatus => {
-                    dnssec::get_dnssec_status(cx, &cmd.data).await
-                }
-                DaemonCommandKind::SignZone => dnssec::sign_zone(cx, &cmd.data).await,
-                DaemonCommandKind::StartDnssecRollover => {
-                    dnssec::start_dnssec_rollover(cx, &cmd.data).await
-                }
-                DaemonCommandKind::WithdrawDnssec => dnssec::withdraw_dnssec(cx, &cmd.data).await,
-                DaemonCommandKind::CancelDnssecWithdrawal => {
-                    dnssec::cancel_dnssec_withdrawal(cx, &cmd.data).await
-                }
-                DaemonCommandKind::UpdateDnssecSettings => {
-                    dnssec::update_dnssec_settings(cx, &cmd.data).await
-                }
-                DaemonCommandKind::CheckDnssecDs => dnssec::check_dnssec_ds(cx, &cmd.data).await,
-                DaemonCommandKind::ExportDnssecKeys => {
-                    dnssec::export_dnssec_keys(cx, &cmd.data).await
-                }
-                DaemonCommandKind::ImportDnssecKeys => {
-                    dnssec::import_dnssec_keys(cx, &cmd.data).await
-                }
-                DaemonCommandKind::DsSeenDnssecRollover => {
-                    dnssec::ds_seen_dnssec_rollover(cx, &cmd.data).await
-                }
-                DaemonCommandKind::Doctor => doctor::check_installation(cx).await,
-                DaemonCommandKind::Shutdown => control::shutdown(socket_cx),
-                DaemonCommandKind::Restart => control::restart(socket_cx),
-            },
-
+        let response = match serde_json::from_str::<DaemonCommand>(&line) {
+            Ok(command) => handle_command(socket_cx, command).await,
             Err(e) => {
                 log::error!("Failed to parse command: {}", e);
-                Err(ServiceError::invalid_input("Failed to parse command"))
+                encode_error(&ServiceError::invalid_input(format!(
+                    "Failed to parse command: {}",
+                    e
+                )))
             }
-        };
-
-        let response = match raw_response {
-            Ok(res) => serde_json::to_string(&res).unwrap_or_else(|_| {
-                error_response_json(&ServiceError::internal("Failed to serialize response"))
-            }),
-            Err(e) => error_response_json(&e),
         };
 
         let mut stream = reader.into_inner().into_inner();
@@ -400,25 +259,231 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     }
 }
 
-/// Deserialize a command payload into its typed parameter struct, so missing
-/// and wrongly typed fields are rejected instead of silently defaulting.
-pub(crate) fn parse_params<T: serde::de::DeserializeOwned>(
-    data: &serde_json::Value,
-) -> Result<T, ServiceError> {
-    serde_json::from_value(data.clone())
-        .map_err(|e| ServiceError::invalid_input(format!("Invalid command payload: {}", e)))
+/// Run one command and encode its answer as the line the client reads.
+async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> String {
+    let cx = socket_cx.daemon();
+    match command {
+        DaemonCommand::Status => encode_response(status::handle_status(cx).await),
+        DaemonCommand::Config => encode_response(Ok(status::config(cx))),
+        DaemonCommand::ReloadConfig => encode_response(status::reload_config(cx)),
+        DaemonCommand::Doctor => encode_response(doctor::check_installation(cx).await),
+        DaemonCommand::Shutdown => encode_response(Ok(control::shutdown(socket_cx))),
+        DaemonCommand::Restart => encode_response(Ok(control::restart(socket_cx))),
+        DaemonCommand::CreateToken(request) => {
+            encode_response(token::create_token(cx, &request).await)
+        }
+        DaemonCommand::ListTokens(page) => encode_response(token::list_tokens(cx, page).await),
+        DaemonCommand::DeleteToken { name } => {
+            encode_response(token::delete_token(cx, &name).await)
+        }
+        DaemonCommand::CreateTokenGrant {
+            token_name,
+            request,
+        } => encode_response(token::create_token_grant(cx, &token_name, &request).await),
+        DaemonCommand::ListTokenGrants { token_name, page } => {
+            encode_response(token::list_token_grants(cx, &token_name, page).await)
+        }
+        DaemonCommand::ListZoneTokenGrants { zone_name, page } => {
+            encode_response(token::list_zone_token_grants(cx, &zone_name, page).await)
+        }
+        DaemonCommand::DeleteTokenGrant { id } => {
+            encode_response(token::delete_token_grant(cx, id).await)
+        }
+        DaemonCommand::DeleteTokenGrantsByTokenAndZone {
+            token_name,
+            zone_name,
+        } => encode_response(
+            token::delete_token_grants_by_token_and_zone(cx, &token_name, &zone_name).await,
+        ),
+        DaemonCommand::CreateTsigKey(request) => {
+            encode_response(tsig_key::create_tsig_key(cx, &request).await)
+        }
+        DaemonCommand::ListTsigKeys(page) => {
+            encode_response(tsig_key::list_tsig_keys(cx, page).await)
+        }
+        DaemonCommand::GetTsigKey { name } => {
+            encode_response(tsig_key::get_tsig_key(cx, &name).await)
+        }
+        DaemonCommand::DeleteTsigKey { name } => {
+            encode_response(tsig_key::delete_tsig_key(cx, &name).await)
+        }
+        DaemonCommand::CreateTsigGrant { key_name, request } => {
+            encode_response(tsig_key::create_tsig_grant(cx, &key_name, &request).await)
+        }
+        DaemonCommand::ListTsigGrants { key_name, page } => {
+            encode_response(tsig_key::list_tsig_grants(cx, &key_name, page).await)
+        }
+        DaemonCommand::ListZoneTsigGrants { zone_name, page } => {
+            encode_response(tsig_key::list_zone_tsig_grants(cx, &zone_name, page).await)
+        }
+        DaemonCommand::DeleteTsigGrant { id } => {
+            encode_response(tsig_key::delete_tsig_grant(cx, id).await)
+        }
+        DaemonCommand::DeleteTsigGrantsByKeyAndZone {
+            key_name,
+            zone_name,
+        } => encode_response(
+            tsig_key::delete_tsig_grants_by_key_and_zone(cx, &key_name, &zone_name).await,
+        ),
+        DaemonCommand::CreateSecondary(request) => {
+            encode_response(secondary::create_secondary(cx, &request).await)
+        }
+        DaemonCommand::ListSecondaries(page) => {
+            encode_response(secondary::list_secondaries(cx, page).await)
+        }
+        DaemonCommand::GetSecondary { name } => {
+            encode_response(secondary::get_secondary(cx, &name).await)
+        }
+        DaemonCommand::UpdateSecondary { name, request } => {
+            encode_response(secondary::update_secondary(cx, &name, request).await)
+        }
+        DaemonCommand::DeleteSecondary { name } => {
+            encode_response(secondary::delete_secondary(cx, &name).await)
+        }
+        DaemonCommand::CheckSecondary { name } => {
+            encode_response(secondary::check_secondary(cx, &name).await)
+        }
+        DaemonCommand::ListSecondaryTransfers { name, filter } => {
+            encode_response(secondary::list_secondary_transfers(cx, &name, filter).await)
+        }
+        DaemonCommand::CreateDnssecPolicy(request) => {
+            encode_response(dnssec_policy::create_dnssec_policy(cx, request).await)
+        }
+        DaemonCommand::ListDnssecPolicies(page) => {
+            encode_response(dnssec_policy::list_dnssec_policies(cx, page).await)
+        }
+        DaemonCommand::GetDnssecPolicy { name } => {
+            encode_response(dnssec_policy::get_dnssec_policy(cx, &name).await)
+        }
+        DaemonCommand::UpdateDnssecPolicy { name, request } => {
+            encode_response(dnssec_policy::update_dnssec_policy(cx, &name, request).await)
+        }
+        DaemonCommand::DeleteDnssecPolicy { name } => {
+            encode_response(dnssec_policy::delete_dnssec_policy(cx, &name).await)
+        }
+        DaemonCommand::CreateZone(request) => {
+            encode_response(zone::create_zone(cx, &request).await)
+        }
+        DaemonCommand::ListZones(filter) => encode_response(zone::list_zones(cx, filter).await),
+        DaemonCommand::GetZone { name } => encode_response(zone::get_zone(cx, &name).await),
+        DaemonCommand::UpdateZone { zone_name, request } => {
+            encode_response(zone::update_zone(cx, &zone_name, &request).await)
+        }
+        DaemonCommand::DeleteZone { name, run } => {
+            encode_response(zone::delete_zone(cx, &name, run).await)
+        }
+        DaemonCommand::ImportZone { zone_name, request } => {
+            encode_response(zone::import_zone(cx, &zone_name, &request).await)
+        }
+        DaemonCommand::ExportZone { name, view } => {
+            encode_response(zone::export_zone(cx, &name, view).await)
+        }
+        DaemonCommand::GetZoneStatus { name } => {
+            encode_response(zone::get_zone_status(cx, &name).await)
+        }
+        DaemonCommand::NotifyZone { zone_name, serial } => {
+            encode_response(notify::notify(cx, NotifyTarget::Zone(&zone_name), serial).await)
+        }
+        DaemonCommand::NotifyAllZones { serial } => {
+            encode_response(notify::notify(cx, NotifyTarget::All, serial).await)
+        }
+        DaemonCommand::ListZoneVersions {
+            name,
+            limit,
+            offset,
+            scope,
+        } => encode_response(zone::list_zone_versions(cx, &name, limit, offset, scope).await),
+        DaemonCommand::GetZoneVersion { name, serial } => {
+            encode_response(zone::get_zone_version(cx, &name, serial).await)
+        }
+        DaemonCommand::DiffZoneVersions {
+            name,
+            from_serial,
+            to_serial,
+        } => encode_response(zone::diff_zone_versions(cx, &name, from_serial, to_serial).await),
+        DaemonCommand::RollbackZone { name, serial, run } => {
+            encode_response(zone::rollback_zone(cx, &name, serial, run).await)
+        }
+        DaemonCommand::CreateRecord(request) => {
+            encode_response(record::create_record(cx, &request).await)
+        }
+        DaemonCommand::CreateRecordsBulk(request) => {
+            encode_response(record::create_records_bulk(cx, &request).await)
+        }
+        DaemonCommand::ListRecords(filter) => {
+            encode_response(record::list_records(cx, filter).await)
+        }
+        DaemonCommand::GetRecord { id } => encode_response(record::get_record(cx, id).await),
+        DaemonCommand::UpdateRecord { id, request } => {
+            encode_response(record::update_record(cx, id, &request).await)
+        }
+        DaemonCommand::UpdateRecordByName {
+            zone_name,
+            record_name,
+            request,
+        } => encode_response(
+            record::update_record_by_name(cx, &zone_name, &record_name, &request).await,
+        ),
+        DaemonCommand::DeleteRecord { id, run } => {
+            encode_response(record::delete_record(cx, id, run).await)
+        }
+        DaemonCommand::DeleteRecordsMatching(filter) => {
+            encode_response(record::delete_records_matching(cx, &filter).await)
+        }
+        DaemonCommand::EnableDnssec { zone_name, request } => {
+            encode_response(dnssec::enable_dnssec(cx, &zone_name, &request).await)
+        }
+        DaemonCommand::DisableDnssec {
+            zone_name,
+            ds_check,
+        } => encode_response(dnssec::disable_dnssec(cx, &zone_name, ds_check).await),
+        DaemonCommand::GetDnssecStatus { name } => {
+            encode_response(dnssec::get_dnssec_status(cx, &name).await)
+        }
+        DaemonCommand::SignZone { name } => encode_response(dnssec::sign_zone(cx, &name).await),
+        DaemonCommand::StartDnssecRollover { zone_name, request } => {
+            encode_response(dnssec::start_dnssec_rollover(cx, &zone_name, &request).await)
+        }
+        DaemonCommand::AdvanceDnssecRollover {
+            zone_name,
+            ds_check,
+            holddown,
+        } => encode_response(
+            dnssec::advance_dnssec_rollover(cx, &zone_name, ds_check, holddown).await,
+        ),
+        DaemonCommand::WithdrawDnssec { name } => {
+            encode_response(dnssec::withdraw_dnssec(cx, &name).await)
+        }
+        DaemonCommand::CancelDnssecWithdrawal { name } => {
+            encode_response(dnssec::cancel_dnssec_withdrawal(cx, &name).await)
+        }
+        DaemonCommand::UpdateDnssecSettings { zone_name, request } => {
+            encode_response(dnssec::update_dnssec_settings(cx, &zone_name, &request).await)
+        }
+        DaemonCommand::CheckDnssecDs { name } => {
+            encode_response(dnssec::check_dnssec_ds(cx, &name).await)
+        }
+        DaemonCommand::ExportDnssecKeys { name } => {
+            encode_response(dnssec::export_dnssec_keys(cx, &name).await)
+        }
+        DaemonCommand::ImportDnssecKeys { zone_name, request } => {
+            encode_response(dnssec::import_dnssec_keys(cx, &zone_name, request).await)
+        }
+    }
 }
 
-/// Serialize a handler result into the `DaemonResponse` data payload.
-pub(crate) fn to_response_data<T: serde::Serialize>(
-    value: T,
-) -> Result<serde_json::Value, ServiceError> {
-    serde_json::to_value(value)
-        .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))
+/// Encode a handler's response, or the error it failed with, as one JSON line.
+fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, ServiceError>) -> String {
+    match result {
+        Ok(response) => serde_json::to_string(&response).unwrap_or_else(|_| {
+            encode_error(&ServiceError::internal("Failed to serialize response"))
+        }),
+        Err(e) => encode_error(&e),
+    }
 }
 
-/// Serialize a service error as a control response.
-fn error_response_json(err: &ServiceError) -> String {
+/// Encode a service error as one JSON line.
+fn encode_error(err: &ServiceError) -> String {
     serde_json::to_string(&ErrorResponse::new(err)).unwrap_or_else(|_| {
         r#"{"error":"Failed to serialize error response","code":"INTERNAL"}"#.to_string()
     })

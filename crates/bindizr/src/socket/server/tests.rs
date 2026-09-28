@@ -2,58 +2,59 @@ use serde_json::json;
 
 use super::*;
 
-/// Verify that `parse_params` rejects wrongly typed fields.
+/// Verify that a command payload of the wrong shape is refused as a whole,
+/// instead of a wrongly typed field silently defaulting.
 #[test]
-fn parse_params_rejects_wrongly_typed_fields() {
-    use bindizr_service::types::CreateTsigKeyRequest;
-
-    use crate::socket::types::RollbackZoneParams;
-
-    // Absent/null optional fields deserialize as their defaults...
-    let ok: CreateTsigKeyRequest =
-        parse_params(&json!({ "name": "k", "algorithm": null, "secret": null })).unwrap();
-    assert!(!ok.global);
-    let ok: RollbackZoneParams = parse_params(&json!({ "name": "z", "serial": 7 })).unwrap();
-    assert!(!ok.dry_run);
+fn command_rejects_wrongly_typed_fields() {
+    // Absent optional fields deserialize as their defaults...
+    let ok: DaemonCommand = serde_json::from_value(json!({
+        "command": "create_tsig_key",
+        "data": { "name": "k", "algorithm": null, "secret": null },
+    }))
+    .unwrap();
+    assert!(matches!(ok, DaemonCommand::CreateTsigKey(request) if !request.global));
 
     // ...but a present field of the wrong type is rejected instead of being
-    // silently dropped, which would generate a secret instead of importing
-    // one, or apply a rollback the caller asked to preview (a wrongly typed
-    // dry_run once defaulted to false).
-    let err =
-        parse_params::<CreateTsigKeyRequest>(&json!({ "name": "k", "secret": 123 })).unwrap_err();
-    assert_eq!(err.code(), bindizr_service::error::ErrorCode::InvalidInput);
-    for dry_run in [json!("true"), json!(1)] {
-        let err = parse_params::<RollbackZoneParams>(
-            &json!({ "name": "z", "serial": 7, "dry_run": dry_run }),
-        )
+    // dropped, which would generate a secret instead of importing one, or
+    // apply a rollback the caller asked to preview.
+    serde_json::from_value::<DaemonCommand>(json!({
+        "command": "create_tsig_key",
+        "data": { "name": "k", "secret": 123 },
+    }))
+    .unwrap_err();
+    for run in [json!("true"), json!(true), json!(1)] {
+        serde_json::from_value::<DaemonCommand>(json!({
+            "command": "rollback_zone",
+            "data": { "name": "z", "serial": 7, "run": run },
+        }))
         .unwrap_err();
-        assert_eq!(err.code(), bindizr_service::error::ErrorCode::InvalidInput);
     }
 }
 
-/// Verify that command payloads round trip between client and server.
+/// Verify that a command round trips between client and server, its
+/// payload nested under the command name.
 #[test]
-fn command_payloads_round_trip_between_client_and_server() {
+fn command_round_trips_between_client_and_server() {
     use bindizr_service::types::UpdateZoneRequest;
 
-    use crate::socket::types::UpdateZoneParams;
-
-    // The CLI serializes these and the daemon parses them back, so a flattened
-    // request body must survive the round trip alongside its target field.
-    let sent = serde_json::to_value(UpdateZoneParams {
+    let sent = DaemonCommand::UpdateZone {
         zone_name: "example.com".to_string(),
         request: UpdateZoneRequest {
             name: Some("new.example.com".to_string()),
             default_ttl: Some(300),
             ..UpdateZoneRequest::default()
         },
-    })
-    .unwrap();
-    let parsed: UpdateZoneParams = parse_params(&sent).unwrap();
-    assert_eq!(parsed.zone_name, "example.com");
-    assert_eq!(parsed.request.name.as_deref(), Some("new.example.com"));
-    assert_eq!(parsed.request.default_ttl, Some(300));
+    };
+    let line = serde_json::to_string(&sent).unwrap();
+    assert!(line.starts_with(r#"{"command":"update_zone","data":{"zone_name":"example.com","#));
+    let parsed: DaemonCommand = serde_json::from_str(&line).unwrap();
+    assert_eq!(parsed, sent);
+
+    // A command without a payload carries no `data`.
+    assert_eq!(
+        serde_json::to_string(&DaemonCommand::Status).unwrap(),
+        r#"{"command":"status"}"#
+    );
 }
 
 /// Verify that `prepare_socket_path` creates parent directory.

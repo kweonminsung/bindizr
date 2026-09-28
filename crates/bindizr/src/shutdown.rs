@@ -6,7 +6,7 @@ use tokio::sync::watch;
 
 /// A watch, not a broadcast, so a server that subscribes after the trigger
 /// still sees it.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct Shutdown {
     tx: watch::Sender<bool>,
 }

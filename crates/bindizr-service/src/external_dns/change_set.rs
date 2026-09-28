@@ -22,7 +22,7 @@ use crate::{
 /// One desired record set operation as the request spells it: values are
 /// row-encoded, but the owner is still an absolute lookup name with no zone
 /// resolved yet.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordSetOp {
     pub(crate) name: String,
     pub(crate) record_type: RecordType,
@@ -31,6 +31,7 @@ pub(crate) struct RecordSetOp {
     pub(crate) values: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PendingOp {
     pub(crate) op: RecordSetOp,
     pub(crate) is_delete: bool,
@@ -38,7 +39,7 @@ pub(crate) struct PendingOp {
 
 /// The same operation once grouping has decided which zone owns it, so the
 /// owner is relative to that zone.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ZoneRecordSetOp {
     pub(crate) name: OwnerName,
     pub(crate) record_type: RecordType,
@@ -47,14 +48,14 @@ pub(crate) struct ZoneRecordSetOp {
 }
 
 /// Adds and deletes of one request that resolved to the same zone.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct ZoneOps {
     pub(crate) adds: Vec<ZoneRecordSetOp>,
     pub(crate) dels: Vec<ZoneRecordSetOp>,
 }
 
 /// The record rows one zone's operations resolve to.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct ZoneChangeSet {
     pub(crate) deletes: Vec<Record>,
     pub(crate) creates: Vec<Record>,
@@ -92,7 +93,7 @@ fn validate_record_set_shape(
             record.name, record_type
         )));
     }
-    if *record_type == RecordType::CNAME && record.values.len() > 1 {
+    if *record_type == RecordType::Cname && record.values.len() > 1 {
         return Err(ServiceError::invalid_record_value(format!(
             "CNAME record '{}' must have exactly one value",
             record.name
@@ -285,7 +286,7 @@ impl ZoneOps {
                 creates.push(Record {
                     id: 0,
                     name: add.name.clone(),
-                    record_type: add.record_type.clone(),
+                    record_type: add.record_type,
                     value: value.clone(),
                     ttl,
                     priority: None,

@@ -30,9 +30,9 @@ use crate::{
     transaction,
     types::{
         CreateZoneRequest, ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse,
-        RecordDiff, RecordValueRequest,
+        RecordDiff, RecordValueRequest, Run,
     },
-    zone::{self, version::ChangeSubject},
+    zone,
 };
 
 /// Outcome of the transactional part of a zone-file import.
@@ -101,31 +101,22 @@ pub async fn import_zone(
             return Err(ServiceError::invalid_input("give content or from_server"));
         }
     };
-    reconcile_zone_file(
-        cx,
-        zone_name,
-        &content,
-        request.mode,
-        request.dry_run,
-        request.skip_unsupported,
-        request.create.then_some(caller),
-        &caller.change_subject(),
-    )
-    .await
+    reconcile_zone_file(cx, caller, zone_name, &content, request).await
 }
 
-/// Preview or apply a zone-file reconciliation in its own transaction,
-/// creating the zone from the file's SOA when `create_as` says to.
+/// Preview or apply a zone-file reconciliation in its own transaction; a
+/// missing zone is created from the file's SOA as `caller` when the request
+/// says to.
 async fn reconcile_zone_file(
     cx: &Context,
+    caller: &Caller,
     zone_name: &str,
     content: &str,
-    mode: ImportMode,
-    dry_run: bool,
-    skip_unsupported: bool,
-    create_as: Option<&Caller>,
-    subject: &ChangeSubject,
+    request: &ImportZoneRequest,
 ) -> Result<ImportZoneResponse, ServiceError> {
+    let subject = &caller.change_subject();
+    let run = Run::from_dry_run(request.dry_run);
+    let mode = request.mode;
     let t_total = Instant::now();
 
     let mut timings = ImportTimings::default();
@@ -137,12 +128,12 @@ async fn reconcile_zone_file(
         let mut created = false;
         let zone = match (
             zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?,
-            create_as,
+            request.create,
         ) {
             (Some(zone), _) => zone,
             // Created in this transaction, so a dry run rolls it back with
             // the records and an apply commits both at once.
-            (None, Some(caller)) => {
+            (None, true) => {
                 let soa = ParsedZoneFile::parse(content, zone_name, 0)
                     .soa
                     .ok_or_else(|| {
@@ -159,7 +150,7 @@ async fn reconcile_zone_file(
                 )
                 .await?
             }
-            (None, None) => return Err(ServiceError::zone_not_found(zone_name)),
+            (None, false) => return Err(ServiceError::zone_not_found(zone_name)),
         };
         timings.load_zone_ms = elapsed_ms(t);
 
@@ -172,7 +163,7 @@ async fn reconcile_zone_file(
 
         // Refusing a whole file over one line it cannot store leaves a
         // zone served elsewhere no way in.
-        let skipped_records = if skip_unsupported {
+        let skipped_records = if request.skip_unsupported {
             skipped += parsed.unsupported.len();
             parsed.unsupported
         } else {
@@ -188,8 +179,8 @@ async fn reconcile_zone_file(
             HashMap::with_capacity(parsed.records.len());
         for record in parsed.records {
             let requested = match record.value {
-                ZoneFileValue::Rdata(rdata) => RecordValueRequest::String(rdata),
-                ZoneFileValue::CharacterStrings(segments) => {
+                ZoneFileValue::Rdata(rdata) => RecordValueRequest::Text(rdata),
+                ZoneFileValue::Segments(segments) => {
                     RecordValueRequest::Segments(segments)
                 }
             };
@@ -323,7 +314,7 @@ async fn reconcile_zone_file(
                 Ok(()) => records_at_name.push(Record {
                     id: -1,
                     name: add.stored_name.clone(),
-                    record_type: add.prepared.record_type.clone(),
+                    record_type: add.prepared.record_type,
                     value: add.prepared.value.clone(),
                     ttl: effective_ttl(add.prepared.ttl),
                     priority: add.prepared.priority,
@@ -338,8 +329,8 @@ async fn reconcile_zone_file(
         // Mirror of the version-time delegation check, so a dry run
         // reports the violation per name instead of failing the apply.
         for (name, rows) in &simulated_by_name {
-            if rows.iter().any(|r| r.record_type == RecordType::DS)
-                && !rows.iter().any(|r| r.record_type == RecordType::NS)
+            if rows.iter().any(|r| r.record_type == RecordType::Ds)
+                && !rows.iter().any(|r| r.record_type == RecordType::Ns)
             {
                 errors.push(format!(
                     "'{}': DS records require delegation NS records at the same name",
@@ -362,13 +353,13 @@ async fn reconcile_zone_file(
 
         // Only a valid dry run needs a diff; failed validation must not preview
         // changes that cannot be applied.
-        let diff = if dry_run && errors.is_empty() {
+        let diff = if run.is_dry_run() && errors.is_empty() {
             plan.diff(&zone, &existing_records)
         } else {
             RecordDiff::default()
         };
 
-        let will_apply = errors.is_empty() && !dry_run;
+        let will_apply = errors.is_empty() && !run.is_dry_run();
         let has_changes = !plan.dels.is_empty() || !plan.adds.is_empty() || !plan.ttl_dels.is_empty();
 
         // Only a valid, nonempty apply writes rows and advances the serial.
@@ -388,7 +379,7 @@ async fn reconcile_zone_file(
                 .map(|add| Record {
                     id: 0,
                     name: add.stored_name.clone(),
-                    record_type: add.prepared.record_type.clone(),
+                    record_type: add.prepared.record_type,
                     value: add.prepared.value.clone(),
                     ttl: effective_ttl(add.prepared.ttl),
                     priority: add.prepared.priority,
@@ -411,7 +402,7 @@ async fn reconcile_zone_file(
 
         let response = ImportZoneResponse {
             applied: will_apply,
-            dry_run,
+            dry_run: run.is_dry_run(),
             summary,
             diff,
             errors,
@@ -429,7 +420,7 @@ async fn reconcile_zone_file(
 
     // Only an applied import commits: a dry run and a rejected one both
     // answer `applied: false`, so neither may leave the zone `create` made.
-    let discard = dry_run
+    let discard = run.is_dry_run()
         || !apply_result
             .as_ref()
             .is_ok_and(|import| import.response.applied);

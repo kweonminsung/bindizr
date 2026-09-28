@@ -36,7 +36,7 @@ pub enum NotifyZoneError {
     Service(#[from] ServiceError),
     /// The addresses that failed, each with the text its report carries.
     #[error("NOTIFY failed for zone {zone_name} ({})", failures.iter().map(|(address, error)| format!("{address}: {error}")).collect::<Vec<_>>().join("; "))]
-    Failed {
+    Undelivered {
         zone_name: String,
         failures: Vec<(String, String)>,
     },
@@ -60,7 +60,7 @@ pub(crate) async fn send_zone_notify(cx: &Context, zone_name: &str) -> Result<()
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(NotifyZoneError::Failed {
+        Err(NotifyZoneError::Undelivered {
             zone_name: zone_name.to_string(),
             failures,
         })

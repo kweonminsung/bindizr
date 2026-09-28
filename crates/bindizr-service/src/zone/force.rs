@@ -1,22 +1,22 @@
 use bindizr_db::LockLevel;
 
 use crate::{
-    Context, db, dnssec, error::ServiceError, model::zone::Zone, serial::generate_serial,
-    transaction, zone::version::ChangeSubject,
+    Context, db, dnssec, error::ServiceError, model::zone::Zone, notify::NotifyTarget,
+    serial::generate_serial, transaction, zone::version::ChangeSubject,
 };
 
-/// Force-increment the serial of one zone by name, or of every zone when `None`.
+/// Force-increment the serial of one zone by name, or of every zone.
 pub(crate) async fn force_increment_serial(
     cx: &Context,
-    zone_name: Option<&str>,
+    target: NotifyTarget<'_>,
     subject: &ChangeSubject,
 ) -> Result<Vec<Zone>, ServiceError> {
-    match zone_name {
-        Some(name) => {
+    match target {
+        NotifyTarget::Zone(name) => {
             let zone = force_increment_serial_by_name(cx, name, subject).await?;
             Ok(vec![zone])
         }
-        None => {
+        NotifyTarget::All => {
             let zones = super::list(cx).await?;
             let mut bumped_zones = Vec::with_capacity(zones.len());
 

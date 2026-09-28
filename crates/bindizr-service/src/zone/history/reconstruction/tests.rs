@@ -77,7 +77,7 @@ fn undoing_an_add_takes_the_record_back_out() {
 fn undoing_a_delete_restores_the_row_the_journal_kept() {
     let changes = [change(
         5,
-        ChangeOperation::Del,
+        ChangeOperation::Delete,
         "www",
         user(RecordType::A),
         Some("192.0.2.9"),
@@ -112,12 +112,12 @@ fn a_value_spelled_differently_still_matches_its_row() {
     // The key canonicalizes, so a value the journal spelled in another case
     // still names its row.
     let mut live = record(1, "alias", "Target.Example.COM.");
-    live.record_type = RecordType::CNAME;
+    live.record_type = RecordType::Cname;
     let changes = [change(
         5,
         ChangeOperation::Add,
         "alias",
-        user(RecordType::CNAME),
+        user(RecordType::Cname),
         Some("target.example.com"),
     )];
 
@@ -137,7 +137,7 @@ fn a_record_added_and_deleted_inside_the_window_leaves_nothing() {
         ),
         change(
             6,
-            ChangeOperation::Del,
+            ChangeOperation::Delete,
             "tmp",
             user(RecordType::A),
             Some("192.0.2.5"),
@@ -155,12 +155,18 @@ fn derived_and_soa_rows_are_not_user_data_to_restore() {
     let changes = [
         change(
             5,
-            ChangeOperation::Del,
+            ChangeOperation::Delete,
             "@",
             JournalRecordType::Derived(DnssecRecordType::Rrsig),
             Some("ignored"),
         ),
-        change(5, ChangeOperation::Del, "@", JournalRecordType::Soa, None),
+        change(
+            5,
+            ChangeOperation::Delete,
+            "@",
+            JournalRecordType::Soa,
+            None,
+        ),
     ];
 
     assert!(undo_changes(Vec::new(), &changes).is_empty());

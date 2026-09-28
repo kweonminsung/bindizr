@@ -1,4 +1,5 @@
 use bindizr_service::{error::ErrorCode, types::ErrorResponse};
+use serde::de::DeserializeOwned;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
@@ -8,7 +9,7 @@ use crate::{
     cli::error::CliError,
     socket::{
         FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_peer, read_own_uid,
-        types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
+        types::{DaemonCommand, DaemonResponse},
     },
 };
 
@@ -36,12 +37,12 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
 
 /// Send a command the daemon answers from memory (status/lifecycle) under
 /// a short deadline, so a wedged daemon cannot hang polling loops.
-pub(crate) async fn send_control_command(
-    command: DaemonCommandKind,
-) -> Result<DaemonResponse, CliError> {
+pub(crate) async fn send_control_command<T: DeserializeOwned>(
+    command: DaemonCommand,
+) -> Result<DaemonResponse<T>, CliError> {
     const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-    tokio::time::timeout(CONTROL_TIMEOUT, send_command(command, ()))
+    tokio::time::timeout(CONTROL_TIMEOUT, send_command(command))
         .await
         .map_err(|_| {
             CliError::request(format!(
@@ -51,21 +52,14 @@ pub(crate) async fn send_control_command(
         })?
 }
 
-/// Send a command to the daemon and return its parsed response. `data` is
-/// the command's payload type; `()` for the commands that take none.
-pub(crate) async fn send_command(
-    command: DaemonCommandKind,
-    data: impl serde::Serialize,
-) -> Result<DaemonResponse, CliError> {
+/// Send a command to the daemon and read its response, whose payload is
+/// the `T` the command answers with.
+pub(crate) async fn send_command<T: DeserializeOwned>(
+    command: DaemonCommand,
+) -> Result<DaemonResponse<T>, CliError> {
     let mut stream = connect_to_daemon_socket().await?;
 
-    let cmd = DaemonCommand {
-        command,
-        data: serde_json::to_value(data).map_err(|e| {
-            CliError::request(format!("Failed to serialize command payload: {}", e))
-        })?,
-    };
-    let json = serde_json::to_string(&cmd)
+    let json = serde_json::to_string(&command)
         .map_err(|e| CliError::request(format!("Failed to serialize command: {}", e)))?;
 
     stream

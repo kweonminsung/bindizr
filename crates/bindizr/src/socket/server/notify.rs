@@ -2,49 +2,23 @@ use bindizr_service::{
     Context,
     authorization::Caller,
     error::ServiceError,
-    types::{MessageResponse, build_notify_message},
+    notify::NotifyTarget,
+    types::{MessageResponse, NotifySerial, build_notify_message},
     zone,
 };
 
-use crate::socket::{
-    server::{parse_params, to_response_data},
-    types::{DaemonResponse, NotifyAllZonesParams, NotifyZoneParams},
-};
+use crate::socket::types::DaemonResponse;
 
-/// Request NOTIFY delivery for all eligible zones.
-pub(crate) async fn notify_all_zones(
+/// Request NOTIFY delivery for one zone, or for every zone.
+pub(crate) async fn notify(
     cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: NotifyAllZonesParams = parse_params(data)?;
-
-    zone::notify(cx, &Caller::Global, None, params.bump_serial).await?;
-
-    let message = build_notify_message(None, params.bump_serial);
+    target: NotifyTarget<'_>,
+    serial: NotifySerial,
+) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
+    zone::notify(cx, &Caller::Global, target, serial).await?;
+    let message = build_notify_message(target, serial);
     Ok(DaemonResponse {
         message: message.clone(),
-        data: to_response_data(MessageResponse { message })?,
-    })
-}
-
-/// Request NOTIFY delivery for one zone.
-pub(crate) async fn notify_zone(
-    cx: &Context,
-    data: &serde_json::Value,
-) -> Result<DaemonResponse, ServiceError> {
-    let params: NotifyZoneParams = parse_params(data)?;
-
-    zone::notify(
-        cx,
-        &Caller::Global,
-        Some(&params.zone_name),
-        params.bump_serial,
-    )
-    .await?;
-
-    let message = build_notify_message(Some(&params.zone_name), params.bump_serial);
-    Ok(DaemonResponse {
-        message: message.clone(),
-        data: to_response_data(MessageResponse { message })?,
+        data: MessageResponse { message },
     })
 }

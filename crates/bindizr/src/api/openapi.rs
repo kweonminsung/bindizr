@@ -27,7 +27,7 @@ use utoipa::{
 };
 
 /// OpenAPI document for the HTTP API, served when `api.openapi_enabled` is on.
-#[derive(OpenApi)]
+#[derive(Debug, OpenApi)]
 #[openapi(
     paths(
         super::health::handle_health,

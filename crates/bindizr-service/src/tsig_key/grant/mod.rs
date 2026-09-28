@@ -101,7 +101,7 @@ pub async fn list_by_key(
         grants
             .into_iter()
             .map(|grant| {
-                GetTsigGrantResponse::from_grant(&TsigGrantWithNames {
+                GetTsigGrantResponse::from(&TsigGrantWithNames {
                     zone_name: zone_names.get(&grant.zone_id).cloned().unwrap_or_default(),
                     tsig_key_name: key.name.clone(),
                     grant,
@@ -135,7 +135,7 @@ pub async fn list_by_zone(
         grants
             .into_iter()
             .map(|grant| {
-                GetTsigGrantResponse::from_grant(&TsigGrantWithNames {
+                GetTsigGrantResponse::from(&TsigGrantWithNames {
                     tsig_key_name: key_names
                         .get(&grant.tsig_key_id)
                         .cloned()

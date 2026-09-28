@@ -12,7 +12,8 @@ use crate::{
         record::{RecordType, RecordWithZone},
     },
     types::{
-        GetRecordResponse, GetRecordsFilter, PaginatedResponse, normalize_page_limit, parse_setting,
+        GetRecordResponse, GetRecordsFilter, PaginatedResponse, ZoneView, normalize_page_limit,
+        parse_setting,
     },
     zone::{self, validation::normalize_zone_name},
 };
@@ -26,14 +27,16 @@ enum TypeFilter {
 }
 
 /// Resolve a `type` filter to its plane.
-fn parse_type_filter(value: Option<&str>, signed: bool) -> Result<TypeFilter, ServiceError> {
+fn parse_type_filter(value: Option<&str>, view: ZoneView) -> Result<TypeFilter, ServiceError> {
     let Some(value) = value else {
         return Ok(TypeFilter::Any);
     };
     match value.parse::<RecordType>() {
         Ok(record_type) => Ok(TypeFilter::User(record_type)),
         Err(err) => {
-            if signed && let Ok(record_type) = value.to_uppercase().parse::<DnssecRecordType>() {
+            if view == ZoneView::Signed
+                && let Ok(record_type) = value.to_uppercase().parse::<DnssecRecordType>()
+            {
                 return Ok(TypeFilter::Derived(record_type));
             }
             Err(ServiceError::invalid_input(err))
@@ -65,7 +68,7 @@ pub async fn list_with_zone_by_filter(
         .transpose()?;
     let limit = Some(normalize_page_limit(filter.limit)?);
     let offset = filter.offset;
-    let signed = filter.signed.unwrap_or(false);
+    let view = ZoneView::from_signed(filter.signed.unwrap_or(false));
 
     // Scoped callers read unknown and invisible zones alike as empty
     // pages, so skip the 404 probe.
@@ -76,11 +79,11 @@ pub async fn list_with_zone_by_filter(
     }
 
     let name = build_record_name_filter(filter.name, zone_name.as_ref());
-    let type_filter = parse_type_filter(filter.record_type.as_deref(), signed)?;
+    let type_filter = parse_type_filter(filter.record_type.as_deref(), view)?;
 
     // A derived row's rdata is wire bytes, so no `LIKE` reaches it; asking
     // for both would answer a narrower question than the one put.
-    if signed && filter.value.is_some() {
+    if view == ZoneView::Signed && filter.value.is_some() {
         return Err(ServiceError::invalid_input(
             "value cannot narrow the derived DNSSEC records; drop value, or drop signed",
         ));
@@ -89,7 +92,7 @@ pub async fn list_with_zone_by_filter(
     let user_plane = !matches!(type_filter, TypeFilter::Derived(_));
     // A derived row carries no priority, so a priority filter answers
     // "none of them" — which is what leaving the plane out returns.
-    let derived_plane = signed
+    let derived_plane = view == ZoneView::Signed
         && !matches!(type_filter, TypeFilter::User(_))
         && filter.priority.is_none()
         && filter.min_priority.is_none()
@@ -100,7 +103,7 @@ pub async fn list_with_zone_by_filter(
         zone_name: zone_name.clone(),
         name: name.clone(),
         record_type: match &type_filter {
-            TypeFilter::User(record_type) => Some(record_type.clone()),
+            TypeFilter::User(record_type) => Some(*record_type),
             _ => None,
         },
         value: filter.value,

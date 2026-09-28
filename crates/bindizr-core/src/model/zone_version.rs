@@ -1,6 +1,28 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
+
+/// Which of a zone's versions a listing covers: every serial, or only
+/// those a user change produced, since a signer-only serial (a re-sign, a
+/// rollover) holds nothing a rollback could restore.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VersionScope {
+    UserChanges,
+    All,
+}
+
+impl VersionScope {
+    /// The scope an `include_signer_serials` flag asks for.
+    pub fn from_include_signer_serials(include_signer_serials: bool) -> Self {
+        if include_signer_serials {
+            VersionScope::All
+        } else {
+            VersionScope::UserChanges
+        }
+    }
+}
 
 /// Point-in-time version of a zone's SOA fields at a given serial.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
