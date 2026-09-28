@@ -1,4 +1,7 @@
-use bindizr_core::dns::{Serial, name::OwnerName};
+use bindizr_core::dns::{
+    Serial,
+    name::{OwnerName, ZoneName},
+};
 use bindizr_db::LockLevel;
 
 use crate::{
@@ -65,7 +68,7 @@ pub(crate) fn soa_replacement_changes(
 pub async fn update(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     request: &UpdateZoneRequest,
 ) -> Result<ZoneWriteResponse, ServiceError> {
     caller.authorize_global("update zones")?;
@@ -126,7 +129,7 @@ pub async fn update(
 /// bump the serial and record SOA/NS changes for IXFR.
 async fn update_locked(
     cx: &Context,
-    zone_name: &str,
+    zone_name: &ZoneName,
     subject: &ChangeSubject,
     enabled: Option<bool>,
     run: Run,
@@ -166,7 +169,7 @@ async fn update_locked(
         // deadlocks); renames that race past it hit the UNIQUE(name)
         // backstop, which maps to the same conflict error.
         if validated.name != existing_zone.name {
-            match db::zone::get_by_name(cx.db(), validated.name.as_str()).await {
+            match db::zone::get_by_name(cx.db(), &validated.name).await {
                 Ok(Some(zone)) if zone.id != zone_id => {
                     log::error!("Zone with name {} already exists", validated.name);
                     return Err(ServiceError::zone_conflict(format!(
@@ -262,7 +265,7 @@ async fn update_locked(
 
     // Announce the zone's new serial after its data and version have committed.
     if !run.is_dry_run() {
-        crate::notify::notify_after_update(cx, updated_zone.name.as_str()).await;
+        crate::notify::notify_after_update(cx, &updated_zone.name).await;
     }
 
     // Renaming or toggling a zone also changes the catalog seen by secondaries.

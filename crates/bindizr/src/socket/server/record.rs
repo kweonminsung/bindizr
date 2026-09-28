@@ -9,6 +9,7 @@ use bindizr_service::{
         DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, PaginatedResponse,
         RecordResponse, RecordWriteResponse, Run, UpdateRecordRequest,
     },
+    zone,
 };
 
 use crate::socket::types::DaemonResponse;
@@ -79,8 +80,14 @@ pub(crate) async fn update_record_by_name(
     record_name: &str,
     request: &UpdateRecordRequest,
 ) -> Result<DaemonResponse<RecordWriteResponse>, ServiceError> {
-    let response =
-        record::update_by_name(cx, &Caller::Global, zone_name, record_name, request).await?;
+    let response = record::update_by_name(
+        cx,
+        &Caller::Global,
+        &zone::normalize_name(zone_name)?,
+        record_name,
+        request,
+    )
+    .await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Record would be updated".to_string()
@@ -99,7 +106,7 @@ pub(crate) async fn create_records_bulk(
     let response = record::create_bulk(
         cx,
         &Caller::Global,
-        &request.zone_name,
+        &zone::normalize_name(&request.zone_name)?,
         &request.records,
         Run::from_dry_run(request.dry_run),
     )

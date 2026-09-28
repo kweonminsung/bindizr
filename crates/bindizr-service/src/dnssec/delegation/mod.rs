@@ -1,6 +1,6 @@
 //! The parent side of a signed zone: asking its nameservers for the DS.
 
-use bindizr_core::dns::{dnssec::DS_DIGEST_TYPES, query::DsRecordSet};
+use bindizr_core::dns::{dnssec::DS_DIGEST_TYPES, name::ZoneName, query::DsRecordSet};
 use chrono::Utc;
 
 use super::status::build_status_tx;
@@ -24,7 +24,7 @@ use crate::{
 pub async fn check_ds(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 

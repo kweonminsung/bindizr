@@ -1,4 +1,7 @@
-use bindizr_core::model::{api_token::TokenId, dnssec_record::DnssecRecordId, zone::ZoneId};
+use bindizr_core::{
+    dns::name::ZoneName,
+    model::{api_token::TokenId, dnssec_record::DnssecRecordId, zone::ZoneId},
+};
 use chrono::{DateTime, Utc};
 
 use crate::{
@@ -14,7 +17,7 @@ use crate::{
 #[derive(Clone, Debug, Default)]
 pub struct DnssecRecordFilter {
     /// Matched as in `RecordFilter`.
-    pub zone_name: Option<String>,
+    pub zone_name: Option<ZoneName>,
     pub name: Option<String>,
     /// The wire record type number, the column form.
     pub record_type: Option<i32>,

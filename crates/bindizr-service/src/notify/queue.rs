@@ -4,6 +4,7 @@
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
+use bindizr_core::dns::name::ZoneName;
 use tokio::{
     sync::{
         mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
@@ -19,7 +20,7 @@ use crate::Context;
 /// A queued propagation job: send NOTIFY for one zone, or for all zones.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotifyJob {
-    zone_name: Option<String>,
+    zone_name: Option<ZoneName>,
 }
 
 impl NotifyJob {
@@ -27,7 +28,7 @@ impl NotifyJob {
     pub(crate) fn new(target: NotifyTarget<'_>) -> Self {
         NotifyJob {
             zone_name: match target {
-                NotifyTarget::Zone(zone_name) => Some(zone_name.to_string()),
+                NotifyTarget::Zone(zone_name) => Some(zone_name.clone()),
                 NotifyTarget::All => None,
             },
         }
@@ -125,7 +126,7 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
 #[derive(Default)]
 struct NotifyBatch {
     all_zones: bool,
-    zones: HashSet<String>,
+    zones: HashSet<ZoneName>,
 }
 
 impl NotifyBatch {

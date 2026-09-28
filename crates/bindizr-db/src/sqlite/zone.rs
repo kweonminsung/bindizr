@@ -1,5 +1,5 @@
 use bindizr_core::{
-    dns::Serial,
+    dns::{Serial, name::ZoneName},
     model::{dnssec_policy::PolicyId, zone::ZoneId},
 };
 use chrono::Utc;
@@ -59,7 +59,7 @@ pub(crate) async fn get_tx(
 /// Find a zone by name.
 pub(crate) async fn get_by_name(
     pool: &Pool<Sqlite>,
-    name: &str,
+    name: &ZoneName,
 ) -> Result<Option<Zone>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
@@ -74,7 +74,7 @@ pub(crate) async fn get_by_name(
 /// Find a zone by name in the current transaction.
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    name: &str,
+    name: &ZoneName,
     _lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
     let zone = sqlx::query_as::<_, Zone>("SELECT id, name, mname, rname, default_ttl, serial, refresh, retry, expire, minimum_ttl, dnssec_policy_id, parent_ns_addrs, enabled, description, created_at FROM zones WHERE name = ?")

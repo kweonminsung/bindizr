@@ -39,15 +39,12 @@ pub async fn create(
         create_record_request.priority,
     )?;
 
+    let zone_name = zone::normalize_name(&create_record_request.zone_name)?;
+
     let mut tx = transaction::begin_tx(cx, "Failed to create record").await?;
 
     let apply_result = async {
-        let zone = zone::get_by_name_tx(
-            &mut tx,
-            &create_record_request.zone_name,
-            LockLevel::Exclusive,
-        )
-        .await?;
+        let zone = zone::get_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
 
         let owner_name = normalize_record_owner_name(&create_record_request.name, &zone.name)?;
 
@@ -162,7 +159,7 @@ pub async fn create(
 
     // Request secondary transfers only after the new record is committed.
     if !create_record_request.dry_run {
-        crate::notify::notify_after_update(cx, zone_name.as_str()).await;
+        crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(RecordWriteResponse {

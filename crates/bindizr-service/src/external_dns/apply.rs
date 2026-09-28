@@ -55,9 +55,9 @@ pub async fn apply_changes(
         // BTreeMap iteration locks zones in name order, so concurrent
         // multi-zone requests cannot deadlock on row locks.
         for (zone_name, ops) in &zone_ops {
-            let zone = db::zone::get_by_name_tx(&mut tx, zone_name.as_str(), LockLevel::Exclusive)
+            let zone = db::zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive)
                 .await?
-                .ok_or_else(|| ServiceError::zone_not_found(zone_name.as_str()))?;
+                .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
 
             // Authorize the requested operations before idempotent pairs cancel;
             // a no-op must not bypass grants or reveal existing records.
@@ -106,7 +106,7 @@ pub async fn apply_changes(
 
             deleted += change_set.deletes.len() as u64;
             added += change_set.creates.len() as u64;
-            changed_zones.push(zone.name.to_string());
+            changed_zones.push(zone.name.clone());
         }
 
         Ok::<_, ServiceError>((changed_zones, added, deleted))
@@ -121,6 +121,7 @@ pub async fn apply_changes(
         crate::notify::notify_after_update(cx, zone_name).await;
     }
 
+    let changed_zones: Vec<String> = changed_zones.iter().map(ToString::to_string).collect();
     log::info!(
         "event=external_dns_apply zones={} ops={} added={} deleted={} noop={} ms={:.1}",
         changed_zones.join(","),

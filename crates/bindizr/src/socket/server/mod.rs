@@ -22,7 +22,7 @@ use std::{
     sync::Arc,
 };
 
-use bindizr_service::{Context, error::ServiceError, notify::NotifyTarget, types::ErrorResponse};
+use bindizr_service::{Context, error::ServiceError, types::ErrorResponse};
 use control::DaemonControl;
 use thiserror::Error;
 use tokio::{
@@ -382,10 +382,10 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             encode_response(zone::get_zone_status(cx, &name).await)
         }
         DaemonCommand::NotifyZone { zone_name, serial } => {
-            encode_response(notify::notify(cx, NotifyTarget::Zone(&zone_name), serial).await)
+            encode_response(notify::notify_zone(cx, &zone_name, serial).await)
         }
         DaemonCommand::NotifyAllZones { serial } => {
-            encode_response(notify::notify(cx, NotifyTarget::All, serial).await)
+            encode_response(notify::notify_all_zones(cx, serial).await)
         }
         DaemonCommand::ListZoneVersions {
             name,

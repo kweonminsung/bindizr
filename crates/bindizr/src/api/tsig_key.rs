@@ -17,6 +17,7 @@ use bindizr_service::{
         GetTsigGrantResponse, GetTsigKeyResponse, MessageResponse, PageFilter, PaginatedResponse,
         TsigGrantResponse, TsigKeyResponse,
     },
+    zone,
 };
 
 use crate::{
@@ -234,7 +235,7 @@ pub(crate) async fn create_tsig_grant(
         &cx,
         &caller,
         &params.name,
-        &body.zone_name,
+        &zone::normalize_name(&body.zone_name)?,
         body.record_name_pattern.as_deref(),
         body.record_types.as_deref(),
         body.can_write,
@@ -302,6 +303,7 @@ pub(crate) async fn list_zone_tsig_grants(
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = grant::list_by_zone(&cx, &caller, &params.name, page).await?;
+    let response =
+        grant::list_by_zone(&cx, &caller, &zone::normalize_name(&params.name)?, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

@@ -1,9 +1,11 @@
-use bindizr_core::{dns::Serial, model::zone::ZoneId};
+use bindizr_core::{
+    dns::{Serial, name::ZoneName},
+    model::zone::ZoneId,
+};
 use bindizr_db::{
     LockLevel, dnssec_record::DnssecRecordFilter, record::RecordFilter, zone::ZoneFilter,
 };
 
-use super::validation::normalize_zone_name;
 use crate::{
     Context, Transaction,
     authorization::Caller,
@@ -19,15 +21,12 @@ use crate::{
 /// served. The nsupdate apply and the transfer authorization read it.
 pub(crate) async fn find_served_by_name_tx(
     tx: &mut Transaction<'_>,
-    zone_name: &str,
+    zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, ServiceError> {
-    let lookup_name = normalize_zone_name(zone_name)?;
-    Ok(
-        db::zone::get_by_name_tx(tx, lookup_name.as_str(), lock_level)
-            .await?
-            .filter(|zone| zone.enabled),
-    )
+    Ok(db::zone::get_by_name_tx(tx, zone_name, lock_level)
+        .await?
+        .filter(|zone| zone.enabled))
 }
 
 /// Fetch a zone by name within the caller's transaction at `lock_level`,
@@ -35,11 +34,10 @@ pub(crate) async fn find_served_by_name_tx(
 /// disabled zone still takes records.
 pub(crate) async fn find_by_name_tx(
     tx: &mut Transaction<'_>,
-    zone_name: &str,
+    zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, ServiceError> {
-    let lookup_name = normalize_zone_name(zone_name)?;
-    Ok(db::zone::get_by_name_tx(tx, lookup_name.as_str(), lock_level).await?)
+    Ok(db::zone::get_by_name_tx(tx, zone_name, lock_level).await?)
 }
 
 /// Count journal rows in `(from_serial, to_serial]` for the IXFR size estimate.
@@ -139,7 +137,7 @@ pub async fn list_by_filter(
 pub async fn get_by_name(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<Zone, ServiceError> {
     let zone = lookup_by_name(cx, zone_name).await?;
     caller.authorize_zone_visible(&zone)?;
@@ -148,12 +146,13 @@ pub async fn get_by_name(
 
 /// The unchecked lookup, `NotFound` on a miss, for service-internal use;
 /// anything a front end reaches goes through [`get_by_name`].
-pub(crate) async fn lookup_by_name(cx: &Context, zone_name: &str) -> Result<Zone, ServiceError> {
-    // Canonical, like the hidden-zone 404s: an echoed spelling would tell them apart.
-    let lookup_name = normalize_zone_name(zone_name)?;
-    db::zone::get_by_name(cx.db(), lookup_name.as_str())
+pub(crate) async fn lookup_by_name(
+    cx: &Context,
+    zone_name: &ZoneName,
+) -> Result<Zone, ServiceError> {
+    db::zone::get_by_name(cx.db(), zone_name)
         .await?
-        .ok_or_else(|| ServiceError::zone_not_found(lookup_name.as_str()))
+        .ok_or_else(|| ServiceError::zone_not_found(zone_name))
 }
 
 /// Fetch a zone by name for `caller` within the caller's transaction at
@@ -163,7 +162,7 @@ pub(crate) async fn lookup_by_name(cx: &Context, zone_name: &str) -> Result<Zone
 pub(crate) async fn get_visible_by_name_tx(
     tx: &mut Transaction<'_>,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Zone, ServiceError> {
     let zone = get_by_name_tx(tx, zone_name, lock_level).await?;
@@ -175,22 +174,24 @@ pub(crate) async fn get_visible_by_name_tx(
 /// returning `NotFound` if it does not exist.
 pub(crate) async fn get_by_name_tx(
     tx: &mut Transaction<'_>,
-    zone_name: &str,
+    zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Zone, ServiceError> {
-    let lookup_name = normalize_zone_name(zone_name)?;
-    db::zone::get_by_name_tx(tx, lookup_name.as_str(), lock_level)
+    db::zone::get_by_name_tx(tx, zone_name, lock_level)
         .await?
-        .ok_or_else(|| ServiceError::zone_not_found(lookup_name.as_str()))
+        .ok_or_else(|| ServiceError::zone_not_found(zone_name))
 }
 
 /// Count both record planes for the IXFR/AXFR size comparison. These unlocked
 /// counts may drift during a write; they choose the transfer format only.
-pub async fn count_transfer_records(cx: &Context, zone_name: &str) -> Result<u64, ServiceError> {
+pub async fn count_transfer_records(
+    cx: &Context,
+    zone_name: &ZoneName,
+) -> Result<u64, ServiceError> {
     let records = db::record::count_by_filter(
         cx.db(),
         RecordFilter {
-            zone_name: Some(zone_name.to_string()),
+            zone_name: Some(zone_name.clone()),
             ..RecordFilter::default()
         },
     )
@@ -199,7 +200,7 @@ pub async fn count_transfer_records(cx: &Context, zone_name: &str) -> Result<u64
     let dnssec_records = db::dnssec_record::count_by_filter(
         cx.db(),
         DnssecRecordFilter {
-            zone_name: Some(zone_name.to_string()),
+            zone_name: Some(zone_name.clone()),
             ..DnssecRecordFilter::default()
         },
     )

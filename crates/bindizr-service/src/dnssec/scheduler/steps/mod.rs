@@ -2,7 +2,7 @@
 //! zone ids are handed to, and the journal retention that runs beside them.
 
 use bindizr_core::{
-    dns::dnssec::SigningPass,
+    dns::{dnssec::SigningPass, name::ZoneName},
     model::{
         dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
         zone::ZoneId,
@@ -67,7 +67,7 @@ pub(crate) async fn prune_zone_history_by_zone_id(
 pub(crate) async fn resign_zone_by_zone_id(
     cx: &Context,
     zone_id: ZoneId,
-) -> Result<Option<String>, ServiceError> {
+) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
     let result = async {
         let Some(signed) =
@@ -88,7 +88,7 @@ pub(crate) async fn resign_zone_by_zone_id(
         {
             return Ok(None);
         }
-        Ok(Some(signed.zone.name.as_str().to_string()))
+        Ok(Some(signed.zone.name.clone()))
     }
     .await;
     transaction::finish_tx(tx, result, "failed to sign zone").await
@@ -99,7 +99,7 @@ pub(crate) async fn resign_zone_by_zone_id(
 pub(crate) async fn start_zsk_rollover_by_zone_id(
     cx: &Context,
     zone_id: ZoneId,
-) -> Result<Option<String>, ServiceError> {
+) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
     let result = async {
         let Some(mut signed) =
@@ -138,7 +138,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
             &ChangeSubject::system(),
         )
         .await?;
-        Ok(Some(signed.zone.name.as_str().to_string()))
+        Ok(Some(signed.zone.name.clone()))
     }
     .await;
     transaction::finish_tx(tx, result, "failed to start key rollover").await
@@ -149,7 +149,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
 pub(crate) async fn promote_zsks_by_zone_id(
     cx: &Context,
     zone_id: ZoneId,
-) -> Result<Option<String>, ServiceError> {
+) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
     let result = async {
         let Some(mut signed) =
@@ -186,7 +186,7 @@ pub(crate) async fn promote_zsks_by_zone_id(
             &ChangeSubject::system(),
         )
         .await?;
-        Ok(Some(signed.zone.name.as_str().to_string()))
+        Ok(Some(signed.zone.name.clone()))
     }
     .await;
     transaction::finish_tx(tx, result, "failed to advance key rollover").await
@@ -199,7 +199,7 @@ pub(crate) async fn promote_zsks_by_zone_id(
 pub(crate) async fn promote_sep_keys_by_zone_id(
     cx: &Context,
     zone_id: ZoneId,
-) -> Result<Option<String>, ServiceError> {
+) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
     let result = async {
         let Some(mut signed) =
@@ -255,7 +255,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             &ChangeSubject::system(),
         )
         .await?;
-        Ok(Some(signed.zone.name.as_str().to_string()))
+        Ok(Some(signed.zone.name.clone()))
     }
     .await;
     transaction::finish_tx(tx, result, "failed to advance key rollover").await
@@ -293,7 +293,7 @@ fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<DnssecKeyId>
 pub(crate) async fn prune_retired_keys_by_zone_id(
     cx: &Context,
     zone_id: ZoneId,
-) -> Result<Option<String>, ServiceError> {
+) -> Result<Option<ZoneName>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to remove retired keys").await?;
     let result = async {
         let Some(mut signed) =
@@ -327,7 +327,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
             &ChangeSubject::system(),
         )
         .await?;
-        Ok(Some(signed.zone.name.as_str().to_string()))
+        Ok(Some(signed.zone.name.clone()))
     }
     .await;
     transaction::finish_tx(tx, result, "failed to remove retired keys").await

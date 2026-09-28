@@ -49,14 +49,15 @@ pub(crate) async fn handle_ixfr(
 
     // The zone and the grant are decided on one locked row; the journal
     // reads that follow use its id, so the delta is that zone's.
-    let zone =
-        match zone::authorize_transfer_by_name(cx, zone_name_str, identity.key.as_ref()).await? {
-            TransferAccess::Granted(zone) => zone,
-            TransferAccess::NotAuth => {
-                return Err(XfrError::NotAuth(zone_name_str.to_string()));
-            }
-            TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
-        };
+    let zone_name = zone::normalize_name(zone_name_str)?;
+    let zone = match zone::authorize_transfer_by_name(cx, &zone_name, identity.key.as_ref()).await?
+    {
+        TransferAccess::Granted(zone) => zone,
+        TransferAccess::NotAuth => {
+            return Err(XfrError::NotAuth(zone_name_str.to_string()));
+        }
+        TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
+    };
 
     let current_serial = zone.serial;
 
@@ -101,7 +102,7 @@ pub(crate) async fn handle_ixfr(
     // not bytes: summing lengths would read the rows this decides whether to read.
     let delta_rows =
         zone::count_changes_between_serials(cx, zone.id, client_serial, current_serial).await?;
-    if delta_rows >= zone::count_transfer_records(cx, zone.name.as_str()).await? {
+    if delta_rows >= zone::count_transfer_records(cx, &zone.name).await? {
         log::info!(
             "IXFR: Delta from serial {} to {} is no smaller than the zone, falling back to AXFR",
             client_serial,

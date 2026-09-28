@@ -1,3 +1,4 @@
+use bindizr_core::dns::name::ZoneName;
 use sqlx::{Pool, Sqlite};
 
 use crate::{
@@ -64,7 +65,7 @@ pub(crate) async fn list_by_client_addr_with_zone(
 pub(crate) async fn get_by_client_addr_and_zone_name_with_zone(
     pool: &Pool<Sqlite>,
     client_addr: &str,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<Option<TransferWithZone>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 

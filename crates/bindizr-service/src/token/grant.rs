@@ -4,7 +4,10 @@
 
 use std::collections::HashMap;
 
-use bindizr_core::model::{api_token::TokenId, token_grant::TokenGrantId, zone::ZoneId};
+use bindizr_core::{
+    dns::name::ZoneName,
+    model::{api_token::TokenId, token_grant::TokenGrantId, zone::ZoneId},
+};
 use bindizr_db::zone::ZoneFilter;
 use chrono::Utc;
 
@@ -29,7 +32,7 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     token_name: &str,
-    zone_name: &str,
+    zone_name: &ZoneName,
     record_name_pattern: Option<&str>,
     record_types: Option<&str>,
     can_write: bool,
@@ -133,7 +136,7 @@ pub async fn list_self(
 pub async fn list_by_zone(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     page: PageFilter,
 ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
     caller.authorize_global("manage token grants")?;
@@ -192,7 +195,7 @@ pub async fn revoke_by_token_and_zone(
     cx: &Context,
     caller: &Caller,
     token_name: &str,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<u64, ServiceError> {
     caller.authorize_global("manage token grants")?;
 

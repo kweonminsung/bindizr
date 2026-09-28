@@ -1,5 +1,5 @@
 use bindizr_core::{
-    dns::{Serial, Ttl, message, message::Rtype, name::ZoneName, tsig::TransferSigner},
+    dns::{Serial, Ttl, message, message::Rtype, tsig::TransferSigner},
     model::zone::{Zone, ZoneId},
 };
 use bindizr_service::zone;
@@ -15,7 +15,7 @@ pub(crate) async fn generate_catalog_zone(
 ) -> Result<(Zone, Vec<String>), XfrError> {
     let cx = dns_cx.daemon();
     let config = cx.config();
-    let catalog_zone_name = config.dns.catalog_zone_name.as_str();
+    let catalog_zone_name = &config.dns.catalog_zone_name;
     log::info!("Generating catalog zone: {}", catalog_zone_name);
 
     let all_zones = zone::list(cx).await?;
@@ -41,7 +41,7 @@ pub(crate) async fn generate_catalog_zone(
 
     let catalog_zone = Zone {
         id: ZoneId::from(0),
-        name: ZoneName::from_row(catalog_zone_name),
+        name: catalog_zone_name.clone(),
         mname: "invalid".to_string(),
         rname: "invalid".to_string(),
         default_ttl: Ttl::from_secs(3600),

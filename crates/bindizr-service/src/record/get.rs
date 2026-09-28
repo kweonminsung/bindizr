@@ -18,7 +18,7 @@ use crate::{
         GetRecordResponse, GetRecordsFilter, PaginatedResponse, ZoneView, normalize_page_limit,
         parse_setting,
     },
-    zone::{self, validation::normalize_zone_name},
+    zone::{self, validation::normalize_name},
 };
 
 /// Which plane a `type` filter names: a user record type, or a derived
@@ -67,7 +67,7 @@ pub async fn list_with_zone_by_filter(
     let zone_name = filter
         .zone_name
         .as_deref()
-        .map(normalize_zone_name)
+        .map(normalize_name)
         .transpose()?;
     let limit = Some(normalize_page_limit(filter.limit)?);
     let offset = filter.offset;
@@ -78,7 +78,7 @@ pub async fn list_with_zone_by_filter(
     if let Some(name) = zone_name.as_ref()
         && scope_token_id.is_none()
     {
-        zone::lookup_by_name(cx, name.as_str()).await?;
+        zone::lookup_by_name(cx, name).await?;
     }
 
     let name = build_record_name_filter(filter.name, zone_name.as_ref());
@@ -101,7 +101,6 @@ pub async fn list_with_zone_by_filter(
         && filter.min_priority.is_none()
         && filter.max_priority.is_none();
 
-    let zone_name = zone_name.map(|name| name.to_string());
     let record_filter = RecordFilter {
         zone_name: zone_name.clone(),
         name: name.clone(),

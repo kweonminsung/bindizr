@@ -1,5 +1,6 @@
 use bindizr_core::dns::{
     Serial, Ttl,
+    name::ZoneName,
     zonefile::{ParsedZoneFile, ZoneFileValue},
 };
 
@@ -29,7 +30,7 @@ fn a_rendered_transfer_keeps_one_soa_for_the_zone_to_be_created_from() {
 
     let parsed = ParsedZoneFile::parse(
         &render_zone_file(&records),
-        "example.com",
+        &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(300).unwrap(),
     );
 
@@ -51,7 +52,7 @@ fn a_type_the_render_cannot_store_is_left_for_skip_unsupported() {
 
     let parsed = ParsedZoneFile::parse(
         &render_zone_file(&records),
-        "example.com",
+        &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(300).unwrap(),
     );
 
@@ -87,7 +88,7 @@ fn a_rendered_transfer_parses_back_into_the_names_it_carried() {
 
     let parsed = ParsedZoneFile::parse(
         &render_zone_file(&records),
-        "example.com",
+        &ZoneName::parse("example.com").unwrap(),
         Ttl::try_from(300).unwrap(),
     );
 

@@ -1,4 +1,4 @@
-use bindizr_core::model::zone_version::VersionScope;
+use bindizr_core::{dns::name::ZoneName, model::zone_version::VersionScope};
 use bindizr_db::{LockLevel, record::RecordFilter};
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 pub async fn delete(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     run: Run,
 ) -> Result<DeleteZoneResponse, ServiceError> {
     caller.authorize_global("delete zones")?;
@@ -31,7 +31,7 @@ pub async fn delete(
         let records = db::record::count_by_filter(
             cx.db(),
             RecordFilter {
-                zone_name: Some(zone.name.to_string()),
+                zone_name: Some(zone.name.clone()),
                 ..RecordFilter::default()
             },
         )

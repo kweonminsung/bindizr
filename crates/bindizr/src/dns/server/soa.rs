@@ -120,25 +120,26 @@ async fn handle_soa_request(
         return Ok((builder.build()?, SoaResult::Ok));
     }
 
-    let zone =
-        match zone::authorize_transfer_by_name(cx, zone_name_str, identity.key.as_ref()).await? {
-            TransferAccess::Granted(zone) => zone,
-            TransferAccess::NotAuth => {
-                return signed_error(query, Rcode::NOTAUTH, identity.signer.as_mut())
-                    .map(|response| (response, SoaResult::NotAuth));
-            }
-            TransferAccess::Refused(reason) => {
-                log::warn!(
-                    "Refused SOA query for {:?} from {}: {}",
-                    zone_name_str,
-                    client_ip,
-                    reason
-                );
-                return TransferRefusal::refused(reason, identity.signer)
-                    .into_response(query)
-                    .map(|response| (response, SoaResult::Refused));
-            }
-        };
+    let zone_name = zone::normalize_name(zone_name_str)?;
+    let zone = match zone::authorize_transfer_by_name(cx, &zone_name, identity.key.as_ref()).await?
+    {
+        TransferAccess::Granted(zone) => zone,
+        TransferAccess::NotAuth => {
+            return signed_error(query, Rcode::NOTAUTH, identity.signer.as_mut())
+                .map(|response| (response, SoaResult::NotAuth));
+        }
+        TransferAccess::Refused(reason) => {
+            log::warn!(
+                "Refused SOA query for {:?} from {}: {}",
+                zone_name_str,
+                client_ip,
+                reason
+            );
+            return TransferRefusal::refused(reason, identity.signer)
+                .into_response(query)
+                .map(|response| (response, SoaResult::Refused));
+        }
+    };
 
     log::info!(
         "SOA response: zone {} serial={}",

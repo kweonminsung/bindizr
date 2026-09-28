@@ -15,6 +15,7 @@ use bindizr_service::{
         GetRecordsFilter, PaginatedResponse, RecordResponse, RecordWriteResponse, Run,
         UpdateRecordRequest,
     },
+    zone,
 };
 
 use crate::{
@@ -245,7 +246,7 @@ pub(crate) async fn create_records_bulk(
     let response = record::create_bulk(
         &cx,
         &caller,
-        &body.zone_name,
+        &zone::normalize_name(&body.zone_name)?,
         &body.records,
         Run::from_dry_run(body.dry_run),
     )

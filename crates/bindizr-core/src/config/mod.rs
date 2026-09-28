@@ -8,6 +8,8 @@ use std::{env, fmt, net::IpAddr, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::dns::name::ZoneName;
+
 /// Why the configuration could not be loaded or does not describe a runnable
 /// process. Each message names the setting an operator would fix.
 #[derive(Debug, Error)]
@@ -103,10 +105,10 @@ fn default_nsupdate_tsig_required() -> bool {
 }
 
 /// Return the default catalog zone name.
-fn default_catalog_zone_name() -> String {
+fn default_catalog_zone_name() -> ZoneName {
     // RFC 9432, Section 3 leaves the name to the operator; this one says which
     // primary a secondary is holding the catalog of.
-    "catalog.bindizr".to_string()
+    ZoneName::from_row("catalog.bindizr")
 }
 
 /// Return the default API authentication setting.
@@ -202,7 +204,7 @@ pub struct DnsConfig {
     /// secondary holds one zone per name, so two primaries feeding the same
     /// secondary need two names.
     #[serde(default = "default_catalog_zone_name")]
-    pub catalog_zone_name: String,
+    pub catalog_zone_name: ZoneName,
     /// Days of zone history to keep (0 = unlimited): the IXFR journal and the
     /// versions rollback can reach. A secondary asking for a pruned serial
     /// falls back to AXFR.
@@ -619,22 +621,13 @@ impl DnsConfig {
     /// serves. Case-insensitive per RFC 4343; callers pass client-cased query
     /// names as-is.
     pub fn is_catalog_zone(&self, zone_name: &str) -> bool {
-        zone_name.eq_ignore_ascii_case(&self.catalog_zone_name)
+        zone_name.eq_ignore_ascii_case(self.catalog_zone_name.as_str())
     }
 
-    /// Validate the DNS configuration fields, leaving the catalog zone name
-    /// canonical.
-    fn validate(&mut self) -> Result<(), ConfigError> {
+    /// Validate the DNS configuration fields.
+    fn validate(&self) -> Result<(), ConfigError> {
         if self.listen_port == 0 {
             return Err(ConfigError::PortZero { section: "dns" });
-        }
-        // The name is served as a zone and spelled into every secondary's
-        // configuration, so an unusable one must not reach startup. Parsing is
-        // also what canonicalizes it: the FQDN `catalog.prod.` would otherwise
-        // match no query name, which carries no root dot.
-        match crate::dns::name::ZoneName::parse(&self.catalog_zone_name) {
-            Ok(name) => self.catalog_zone_name = name.to_string(),
-            Err(e) => return Err(ConfigError::CatalogZoneName(e)),
         }
         Ok(())
     }

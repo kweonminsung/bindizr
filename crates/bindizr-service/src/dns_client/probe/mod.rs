@@ -10,6 +10,7 @@ use std::{
 use bindizr_core::dns::{
     Serial,
     message::{Name, Opcode, Rtype},
+    name::ZoneName,
     query::{build_question, extract_soa_serial},
 };
 use thiserror::Error;
@@ -55,7 +56,7 @@ impl From<ProbeError> for ServiceError {
 /// empty list.
 pub async fn probe_secondaries(
     cx: &Context,
-    zone_name: &str,
+    zone_name: &ZoneName,
     expected_serial: Option<Serial>,
 ) -> Result<Vec<SecondaryStatusResponse>, ServiceError> {
     let secondaries = secondary::list_enabled(cx).await?;
@@ -69,7 +70,7 @@ pub async fn probe_secondaries(
     // own; the transfer lookup that needs the context follows on this one.
     let mut tasks = Vec::new();
     for secondary in secondaries {
-        let zone_name = zone_name.to_string();
+        let zone_name = zone_name.clone();
         tasks.push((
             secondary.address.clone(),
             tokio::spawn(async move {
@@ -101,7 +102,7 @@ pub async fn probe_secondaries(
 /// `expected_serial`.
 pub async fn probe_secondary(
     cx: &Context,
-    zone_name: &str,
+    zone_name: &ZoneName,
     secondary: &Secondary,
     expected_serial: Option<Serial>,
 ) -> Result<SecondaryStatusResponse, ServiceError> {
@@ -114,13 +115,13 @@ pub async fn probe_secondary(
 /// addresses. Owns nothing of the daemon's state, so it can run on a task of
 /// its own; the addresses come back because they key the transfer rows.
 async fn probe_addresses(
-    zone_name: &str,
+    zone_name: &ZoneName,
     secondary: &Secondary,
     timeout: Duration,
     expected_serial: Option<Serial>,
 ) -> Result<(SecondaryStatusResponse, Vec<IpAddr>), ProbeError> {
-    let qname =
-        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| ProbeError::ZoneName(Box::new(e)))?;
+    let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
+        .map_err(|e| ProbeError::ZoneName(Box::new(e)))?;
 
     let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
         Ok(addrs) => addrs,
@@ -142,7 +143,7 @@ async fn probe_addresses(
 /// serves now; a secondary that did not resolve keys no transfer row.
 async fn with_last_transfer(
     cx: &Context,
-    zone_name: &str,
+    zone_name: &ZoneName,
     mut probe: SecondaryStatusResponse,
     clients: &[IpAddr],
 ) -> SecondaryStatusResponse {
@@ -164,11 +165,11 @@ async fn with_last_transfer(
 /// listener during health checks).
 pub async fn probe_server(
     server_addr: SocketAddr,
-    zone_name: &str,
+    zone_name: &ZoneName,
     timeout: Duration,
 ) -> Result<Serial, ProbeError> {
-    let qname =
-        Name::<Vec<u8>>::from_str(zone_name).map_err(|e| ProbeError::ZoneName(Box::new(e)))?;
+    let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
+        .map_err(|e| ProbeError::ZoneName(Box::new(e)))?;
     probe_one(&qname, server_addr, timeout).await
 }
 

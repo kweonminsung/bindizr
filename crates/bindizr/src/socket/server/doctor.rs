@@ -99,7 +99,7 @@ pub(crate) async fn check_installation(
     let response = DaemonDoctorResponse {
         database,
         dns_server,
-        catalog_zone_name: config.dns.catalog_zone_name.clone(),
+        catalog_zone_name: config.dns.catalog_zone_name.to_string(),
         catalog_serial,
         secondaries,
         notifies,

@@ -1,4 +1,4 @@
-use bindizr_core::dns::Serial;
+use bindizr_core::dns::{Serial, name::ZoneName};
 use sqlx::{Postgres, Transaction};
 
 use crate::error::DatabaseError;
@@ -7,7 +7,7 @@ use crate::error::DatabaseError;
 /// transaction.
 pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, Postgres>,
-    name: &str,
+    name: &ZoneName,
     digest: &str,
     base_serial: Serial,
 ) -> Result<Serial, DatabaseError> {

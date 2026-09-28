@@ -1,7 +1,10 @@
 //! Importing and exporting raw key material in BIND key-file form. Reached
 //! only over the daemon socket: private keys never transit the HTTP API.
 
-use bindizr_core::dns::dnssec::{SigningPass, import_key};
+use bindizr_core::dns::{
+    dnssec::{SigningPass, import_key},
+    name::ZoneName,
+};
 use chrono::Utc;
 
 use super::status::build_status_tx;
@@ -29,7 +32,7 @@ use crate::{
 pub async fn export_keys(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<ExportDnssecKeysResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
@@ -70,7 +73,7 @@ pub async fn export_keys(
 pub async fn import_keys(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     request: ImportDnssecKeyRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
@@ -186,6 +189,6 @@ pub async fn import_keys(
     log::info!("event=dnssec_import_keys zone={}", response.zone_name);
 
     // Announce the imported keys only after their signed records are committed.
-    crate::notify::notify_after_update(cx, &response.zone_name).await;
+    crate::notify::notify_after_update(cx, zone_name).await;
     Ok(response)
 }

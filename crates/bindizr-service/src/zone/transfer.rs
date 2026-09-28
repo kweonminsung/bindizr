@@ -1,6 +1,7 @@
 //! What a zone transfer may read: the enabled zone the request named, granted
 //! to the key that signed it, decided on the locked row it will serve.
 
+use bindizr_core::dns::name::ZoneName;
 use bindizr_db::LockLevel;
 
 use crate::{
@@ -46,7 +47,7 @@ pub struct TransferContent {
 /// this transaction share-locks, with the grants locked beside it.
 pub async fn authorize_transfer_by_name(
     cx: &Context,
-    zone_name: &str,
+    zone_name: &ZoneName,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<Zone>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to authorize the transfer").await?;
@@ -59,7 +60,7 @@ pub async fn authorize_transfer_by_name(
 /// signatures, and the grant all describe one row.
 pub async fn authorize_transfer_content_by_name(
     cx: &Context,
-    zone_name: &str,
+    zone_name: &ZoneName,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<TransferContent>, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "failed to load transfer content").await?;
@@ -86,7 +87,7 @@ pub async fn authorize_transfer_content_by_name(
 /// that must cover it whole.
 async fn authorize_transfer_tx(
     tx: &mut Transaction<'_>,
-    zone_name: &str,
+    zone_name: &ZoneName,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<Zone>, ServiceError> {
     let Some(zone) = super::find_served_by_name_tx(tx, zone_name, LockLevel::Shared).await? else {

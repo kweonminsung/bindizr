@@ -4,6 +4,7 @@
 
 pub mod queue;
 
+use bindizr_core::dns::name::ZoneName;
 use thiserror::Error;
 
 use crate::{Context, dns_client::notify::NotifyZoneError, error::ServiceError};
@@ -12,7 +13,7 @@ use crate::{Context, dns_client::notify::NotifyZoneError, error::ServiceError};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotifyTarget<'a> {
     All,
-    Zone(&'a str),
+    Zone(&'a ZoneName),
 }
 
 /// Why a NOTIFY round did not reach every secondary.
@@ -51,9 +52,7 @@ pub async fn send_notify(cx: &Context, target: NotifyTarget<'_>) -> Result<(), N
         let zones = crate::zone::list(cx).await?;
         let mut failures = Vec::new();
         for zone in zones {
-            if let Err(e) =
-                crate::dns_client::notify::send_zone_notify(cx, zone.name.as_str()).await
-            {
+            if let Err(e) = crate::dns_client::notify::send_zone_notify(cx, &zone.name).await {
                 log::warn!("Failed to send NOTIFY for zone {}: {}", zone.name, e);
                 failures.push((zone.name.to_string(), e));
             }
@@ -70,7 +69,7 @@ pub async fn send_notify(cx: &Context, target: NotifyTarget<'_>) -> Result<(), N
 /// NOTIFY the secondaries after a zone update: queued when `dns.notify.batch_ms`
 /// sets a window, otherwise sent inline before the write is answered. The write
 /// has committed, so a failure is logged rather than reported.
-pub(crate) async fn notify_after_update(cx: &Context, zone_name: &str) {
+pub(crate) async fn notify_after_update(cx: &Context, zone_name: &ZoneName) {
     if cx.config().dns.notify.batch_ms > 0 && cx.enqueue_notify(NotifyTarget::Zone(zone_name)) {
         return;
     }

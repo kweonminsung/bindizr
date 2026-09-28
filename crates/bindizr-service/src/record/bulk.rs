@@ -177,7 +177,7 @@ pub(crate) async fn delete_with_changes_tx(
 pub async fn create_bulk(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     items: &[RecordItem],
     run: Run,
 ) -> Result<BulkRecordsResponse, ServiceError> {
@@ -373,7 +373,7 @@ pub async fn create_bulk(
 
     let t = Instant::now();
     if !run.is_dry_run() {
-        crate::notify::notify_after_update(cx, zone_name.as_str()).await;
+        crate::notify::notify_after_update(cx, &zone_name).await;
     }
     let notify_ms = elapsed_ms(t);
 

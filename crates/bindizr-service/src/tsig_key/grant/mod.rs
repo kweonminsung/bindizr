@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use bindizr_core::{
-    dns::name::OwnerName,
+    dns::name::{OwnerName, ZoneName},
     model::{tsig_grant::TsigGrantId, tsig_key::TsigKeyId, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
@@ -33,7 +33,7 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     key_name: &str,
-    zone_name: &str,
+    zone_name: &ZoneName,
     record_name_pattern: Option<&str>,
     record_types: Option<&str>,
     can_write: bool,
@@ -120,7 +120,7 @@ pub async fn list_by_key(
 pub async fn list_by_zone(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     page: PageFilter,
 ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
@@ -196,7 +196,7 @@ pub async fn revoke_by_key_and_zone(
     cx: &Context,
     caller: &Caller,
     key_name: &str,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<u64, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 

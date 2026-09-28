@@ -81,7 +81,7 @@ pub(crate) async fn get_zone_status(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = zone::get_status(&cx, &caller, &params.name).await?;
+    let status = zone::get_status(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -118,7 +118,7 @@ pub(crate) async fn export_zone(
     let zone_file = zone::export(
         &cx,
         &caller,
-        &params.name,
+        &zone::normalize_name(&params.name)?,
         ZoneView::from_signed(query.signed.unwrap_or(false)),
     )
     .await?;
@@ -159,7 +159,7 @@ pub(crate) async fn list_zone_versions(
     let response = zone::list_versions(
         &cx,
         &caller,
-        &params.name,
+        &zone::normalize_name(&params.name)?,
         query.limit.or(Some(DEFAULT_PAGE_LIMIT)),
         query.offset,
         VersionScope::from_include_signer_serials(query.include_signer_serials),
@@ -191,7 +191,13 @@ pub(crate) async fn get_zone_version(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneVersionParams>,
 ) -> Result<Response, ApiError> {
-    let response = zone::get_version(&cx, &caller, &params.name, params.serial).await?;
+    let response = zone::get_version(
+        &cx,
+        &caller,
+        &zone::normalize_name(&params.name)?,
+        params.serial,
+    )
+    .await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -226,7 +232,7 @@ pub(crate) async fn rollback_zone(
     let response = zone::rollback(
         &cx,
         &caller,
-        &params.name,
+        &zone::normalize_name(&params.name)?,
         params.serial,
         Run::from_dry_run(query.dry_run),
     )
@@ -282,7 +288,14 @@ pub(crate) async fn diff_zone_versions(
     Path(params): Path<NameParams>,
     Query(query): Query<VersionDiffQuery>,
 ) -> Result<Response, ApiError> {
-    let diff = zone::diff_versions(&cx, &caller, &params.name, query.from, query.to).await?;
+    let diff = zone::diff_versions(
+        &cx,
+        &caller,
+        &zone::normalize_name(&params.name)?,
+        query.from,
+        query.to,
+    )
+    .await?;
     Ok((StatusCode::OK, Json(diff)).into_response())
 }
 
@@ -332,7 +345,7 @@ pub(crate) async fn get_zone(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let zone = zone::get_by_name(&cx, &caller, &params.name).await?;
+    let zone = zone::get_by_name(&cx, &caller, &zone::normalize_name(&params.name)?).await?;
     Ok((
         StatusCode::OK,
         Json(ZoneResponse {
@@ -403,7 +416,7 @@ pub(crate) async fn update_zone(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let response = zone::update(&cx, &caller, &params.name, &body).await?;
+    let response = zone::update(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -435,7 +448,7 @@ pub(crate) async fn delete_zone(
     let response = zone::delete(
         &cx,
         &caller,
-        &params.name,
+        &zone::normalize_name(&params.name)?,
         Run::from_dry_run(preview.dry_run),
     )
     .await?;
@@ -471,7 +484,8 @@ pub(crate) async fn import_zone(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<ImportZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let response = record::import_zone(&cx, &caller, &params.name, &body).await?;
+    let response =
+        record::import_zone(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
     // A rejected file is a failed request, so a generic client does not read it
     // as an import; the body stays the same so the errors survive the status.
     let status = if response.was_rejected() {

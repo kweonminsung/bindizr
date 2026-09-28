@@ -3,6 +3,7 @@
 //! is the one convenience outside that rule.
 
 use super::{Config, ConfigError, DatabaseType};
+use crate::dns::name::ZoneName;
 
 impl Config {
     /// Apply the `BINDIZR_*` environment variables to the loaded configuration.
@@ -64,7 +65,8 @@ impl Config {
             self.dns.listen_port = parse_env_value("BINDIZR_DNS_LISTEN_PORT", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_CATALOG_ZONE_NAME") {
-            self.dns.catalog_zone_name = value;
+            self.dns.catalog_zone_name =
+                ZoneName::parse(&value).map_err(ConfigError::CatalogZoneName)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED") {
             self.dns.nsupdate_tsig_required =

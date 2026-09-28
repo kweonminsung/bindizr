@@ -19,7 +19,7 @@ pub async fn notify(
     match target {
         // The virtual catalog zone has no row: nothing to bump, and no
         // zone grant can cover it, so only a global caller may notify it.
-        NotifyTarget::Zone(name) if cx.config().dns.is_catalog_zone(name) => {
+        NotifyTarget::Zone(name) if cx.config().dns.is_catalog_zone(name.as_str()) => {
             caller.authorize_global("send NOTIFY for the catalog zone")?;
             if serial == NotifySerial::Bump {
                 log::info!("Skipping forced serial increment for virtual catalog zone");

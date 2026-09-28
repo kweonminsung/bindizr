@@ -169,12 +169,11 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
     let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
 
     let apply_result: Result<(bool, Zone, Serial), DynamicUpdateError> = async {
-        let zone =
-            zone::find_served_by_name_tx(&mut tx, update.zone_name.as_str(), LockLevel::Exclusive)
-                .await?
-                .ok_or_else(|| {
-                    DynamicUpdateError::NotZone(format!("zone '{}' not found", update.zone_name))
-                })?;
+        let zone = zone::find_served_by_name_tx(&mut tx, &update.zone_name, LockLevel::Exclusive)
+            .await?
+            .ok_or_else(|| {
+                DynamicUpdateError::NotZone(format!("zone '{}' not found", update.zone_name))
+            })?;
 
         authorize_key_tx(
             &mut tx,
@@ -225,7 +224,7 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
 
         // Queue through the service like every other mutation path, so
         // `dns.notify.batch_ms` governs RFC 2136 writes too.
-        crate::notify::notify_after_update(cx, zone.name.as_str()).await;
+        crate::notify::notify_after_update(cx, &zone.name).await;
     }
 
     Ok(changed)
