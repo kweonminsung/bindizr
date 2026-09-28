@@ -19,7 +19,13 @@ pub mod scheduler;
 mod status;
 mod withdraw;
 
-use bindizr_core::dns::dnssec::{SignedViewParams, SigningPass};
+use bindizr_core::{
+    dns::{
+        Serial,
+        dnssec::{SignedViewParams, SigningPass},
+    },
+    model::{dnssec_record::DnssecRecordId, zone::ZoneId},
+};
 use chrono::{Duration, Utc};
 pub use delegation::check_ds;
 pub(crate) use delegation::probe_delegation;
@@ -68,7 +74,7 @@ pub(crate) struct SignedZone {
 pub(crate) async fn sign_zone_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
-    new_serial: i32,
+    new_serial: Serial,
 ) -> Result<(), ServiceError> {
     let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
@@ -88,7 +94,7 @@ async fn resign_zone_tx(
     signed: &SignedZone,
     pass: SigningPass,
     subject: &ChangeSubject,
-) -> Result<Option<i32>, ServiceError> {
+) -> Result<Option<Serial>, ServiceError> {
     let new_serial = crate::serial::generate_serial(Some(signed.zone.serial))?;
     if !apply_signed_view_tx(
         tx,
@@ -161,7 +167,7 @@ async fn get_signed_zone_tx(
 /// zone was deleted or unsigned since its id was listed.
 async fn find_signed_zone_by_id_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Option<SignedZone>, ServiceError> {
     let Some(zone) = db::zone::get_tx(tx, zone_id, lock_level).await? else {
@@ -182,7 +188,7 @@ async fn apply_signed_view_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     policy: &DnssecPolicy,
-    new_serial: i32,
+    new_serial: Serial,
     keys: &[DnssecKey],
     pass: SigningPass,
 ) -> Result<bool, ServiceError> {
@@ -270,7 +276,7 @@ async fn apply_signed_view_tx(
 
     // The derived rows and their IXFR journal commit in the caller's transaction.
     db::zone_change::create_many_tx(tx, &changes).await?;
-    let removed_ids: Vec<i32> = diff.removed.iter().map(|row| row.id).collect();
+    let removed_ids: Vec<DnssecRecordId> = diff.removed.iter().map(|row| row.id).collect();
     db::dnssec_record::delete_many_tx(tx, &removed_ids).await?;
     db::dnssec_record::create_many_tx(tx, &diff.added).await?;
     Ok(true)
@@ -278,7 +284,10 @@ async fn apply_signed_view_tx(
 
 #[cfg(test)]
 mod tests {
-    use bindizr_core::model::{dnssec_key::DnssecAlgorithm, dnssec_policy::DnssecDenial};
+    use bindizr_core::model::{
+        dnssec_key::DnssecAlgorithm,
+        dnssec_policy::{DnssecDenial, PolicyId},
+    };
     use chrono::Utc;
 
     use super::DnssecPolicy;
@@ -286,7 +295,7 @@ mod tests {
     /// Build a policy fixture with the requested signature timing.
     fn policy(signature_validity_days: i32, signature_refresh_days: i32) -> DnssecPolicy {
         DnssecPolicy {
-            id: 1,
+            id: PolicyId::from(1),
             name: "default".to_string(),
             algorithm: DnssecAlgorithm::EcdsaP256Sha256,
             denial: DnssecDenial::Nsec,

@@ -1,3 +1,4 @@
+use bindizr_core::model::{api_token::TokenId, dnssec_record::DnssecRecordId, zone::ZoneId};
 use chrono::{DateTime, Utc};
 
 use crate::{
@@ -26,7 +27,7 @@ pub struct DnssecRecordFilter {
     /// Restrict to zones granted to this token, joined against
     /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
-    pub scope_token_id: Option<i32>,
+    pub scope_token_id: Option<TokenId>,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }
@@ -47,7 +48,7 @@ pub async fn create_many_tx(
 /// List derived DNSSEC records for a zone in the current transaction.
 pub async fn list_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Vec<DnssecRecord>, DatabaseError> {
     match &mut tx.0 {
@@ -63,7 +64,10 @@ pub async fn list_tx(
 
 /// Delete many derived records in as few statements as the backend's bind
 /// limit allows.
-pub async fn delete_many_tx(tx: &mut Transaction<'_>, ids: &[i32]) -> Result<(), DatabaseError> {
+pub async fn delete_many_tx(
+    tx: &mut Transaction<'_>,
+    ids: &[DnssecRecordId],
+) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::dnssec_record::delete_many_tx(tx, ids).await,
         TransactionKind::Postgres(tx) => postgres::dnssec_record::delete_many_tx(tx, ids).await,
@@ -74,7 +78,7 @@ pub async fn delete_many_tx(tx: &mut Transaction<'_>, ids: &[i32]) -> Result<(),
 /// Delete all derived DNSSEC records for a zone in the current transaction.
 pub async fn delete_by_zone_id_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::dnssec_record::delete_by_zone_id_tx(tx, zone_id).await,
@@ -101,7 +105,7 @@ pub async fn count_zone_ids(db: &Db) -> Result<u64, DatabaseError> {
 pub async fn list_zone_ids_expiring_within_refresh(
     db: &Db,
     cutoff: DateTime<Utc>,
-) -> Result<Vec<i32>, DatabaseError> {
+) -> Result<Vec<ZoneId>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
             mysql::dnssec_record::list_zone_ids_expiring_within_refresh(pool, cutoff).await

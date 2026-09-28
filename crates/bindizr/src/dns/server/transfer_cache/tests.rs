@@ -1,8 +1,11 @@
 //! Entries eviction and the record accounting it evicts on.
 
 use bindizr_core::{
-    dns::name::OwnerName,
-    model::record::{Record, RecordType},
+    dns::{Serial, Ttl, name::OwnerName},
+    model::{
+        record::{Record, RecordId, RecordType},
+        zone::ZoneId,
+    },
 };
 use chrono::Utc;
 
@@ -14,14 +17,14 @@ const MAX_RECORDS: usize = 500_000;
 fn zone_content(records: usize) -> CachedTransferContent {
     let records = (0..records)
         .map(|i| Record {
-            id: i as i32,
+            id: RecordId::from(i as i32),
             name: OwnerName::from_row("www"),
             record_type: RecordType::A,
             value: "192.0.2.1".to_string(),
-            ttl: 3600,
+            ttl: Ttl::try_from(3600).unwrap(),
             priority: None,
             created_at: Utc::now(),
-            zone_id: 1,
+            zone_id: ZoneId::from(1),
         })
         .collect();
     CachedTransferContent {
@@ -34,9 +37,14 @@ fn zone_content(records: usize) -> CachedTransferContent {
 #[test]
 fn a_zone_larger_than_the_budget_is_served_uncached() {
     let mut entries = Entries::default();
-    entries.store(1, 1, zone_content(MAX_RECORDS + 1), MAX_RECORDS);
+    entries.store(
+        ZoneId::from(1),
+        Serial::from(1),
+        zone_content(MAX_RECORDS + 1),
+        MAX_RECORDS,
+    );
 
-    assert!(entries.find(1, 1).is_none());
+    assert!(entries.find(ZoneId::from(1), Serial::from(1)).is_none());
     assert_eq!(entries.records, 0);
 }
 
@@ -44,11 +52,21 @@ fn a_zone_larger_than_the_budget_is_served_uncached() {
 #[test]
 fn a_zone_that_grows_past_the_budget_releases_its_old_entry() {
     let mut entries = Entries::default();
-    entries.store(1, 1, zone_content(MAX_RECORDS / 2), MAX_RECORDS);
-    entries.store(1, 2, zone_content(MAX_RECORDS + 1), MAX_RECORDS);
+    entries.store(
+        ZoneId::from(1),
+        Serial::from(1),
+        zone_content(MAX_RECORDS / 2),
+        MAX_RECORDS,
+    );
+    entries.store(
+        ZoneId::from(1),
+        Serial::from(2),
+        zone_content(MAX_RECORDS + 1),
+        MAX_RECORDS,
+    );
 
-    assert!(entries.find(1, 1).is_none());
-    assert!(entries.find(1, 2).is_none());
+    assert!(entries.find(ZoneId::from(1), Serial::from(1)).is_none());
+    assert!(entries.find(ZoneId::from(1), Serial::from(2)).is_none());
     assert_eq!(entries.records, 0);
 }
 
@@ -57,11 +75,21 @@ fn a_zone_that_grows_past_the_budget_releases_its_old_entry() {
 fn a_second_large_zone_evicts_the_first_to_fit() {
     let mut entries = Entries::default();
     // A cap on zones would have held both, at 120% of the budget.
-    entries.store(1, 1, zone_content(MAX_RECORDS * 3 / 5), MAX_RECORDS);
-    entries.store(2, 1, zone_content(MAX_RECORDS * 3 / 5), MAX_RECORDS);
+    entries.store(
+        ZoneId::from(1),
+        Serial::from(1),
+        zone_content(MAX_RECORDS * 3 / 5),
+        MAX_RECORDS,
+    );
+    entries.store(
+        ZoneId::from(2),
+        Serial::from(1),
+        zone_content(MAX_RECORDS * 3 / 5),
+        MAX_RECORDS,
+    );
 
-    assert!(entries.find(1, 1).is_none());
-    assert!(entries.find(2, 1).is_some());
+    assert!(entries.find(ZoneId::from(1), Serial::from(1)).is_none());
+    assert!(entries.find(ZoneId::from(2), Serial::from(1)).is_some());
     assert!(entries.records <= MAX_RECORDS);
 }
 
@@ -69,16 +97,31 @@ fn a_second_large_zone_evicts_the_first_to_fit() {
 #[test]
 fn eviction_drops_the_least_recently_used_zone() {
     let mut entries = Entries::default();
-    entries.store(1, 1, zone_content(MAX_RECORDS * 2 / 5), MAX_RECORDS);
-    entries.store(2, 1, zone_content(MAX_RECORDS * 2 / 5), MAX_RECORDS);
-    assert!(entries.find(1, 1).is_some());
+    entries.store(
+        ZoneId::from(1),
+        Serial::from(1),
+        zone_content(MAX_RECORDS * 2 / 5),
+        MAX_RECORDS,
+    );
+    entries.store(
+        ZoneId::from(2),
+        Serial::from(1),
+        zone_content(MAX_RECORDS * 2 / 5),
+        MAX_RECORDS,
+    );
+    assert!(entries.find(ZoneId::from(1), Serial::from(1)).is_some());
 
     // Fits only after one of the two is evicted, and zone 1 was just read.
-    entries.store(3, 1, zone_content(MAX_RECORDS / 2), MAX_RECORDS);
+    entries.store(
+        ZoneId::from(3),
+        Serial::from(1),
+        zone_content(MAX_RECORDS / 2),
+        MAX_RECORDS,
+    );
 
-    assert!(entries.find(2, 1).is_none());
-    assert!(entries.find(1, 1).is_some());
-    assert!(entries.find(3, 1).is_some());
+    assert!(entries.find(ZoneId::from(2), Serial::from(1)).is_none());
+    assert!(entries.find(ZoneId::from(1), Serial::from(1)).is_some());
+    assert!(entries.find(ZoneId::from(3), Serial::from(1)).is_some());
 }
 
 /// Verify that restoring a zone replaces its records rather than adding them.
@@ -88,24 +131,32 @@ fn restoring_a_zone_replaces_its_records_rather_than_adding_them() {
     let content = zone_content(4);
     let records = content.record_count();
 
-    entries.store(1, 1, content.clone(), MAX_RECORDS);
-    entries.store(1, 2, content, MAX_RECORDS);
+    entries.store(
+        ZoneId::from(1),
+        Serial::from(1),
+        content.clone(),
+        MAX_RECORDS,
+    );
+    entries.store(ZoneId::from(1), Serial::from(2), content, MAX_RECORDS);
 
     assert_eq!(entries.records, records);
-    assert!(entries.find(1, 1).is_none());
-    assert!(entries.find(1, 2).is_some());
+    assert!(entries.find(ZoneId::from(1), Serial::from(1)).is_none());
+    assert!(entries.find(ZoneId::from(1), Serial::from(2)).is_some());
 }
 
 /// Verify that a lowered budget reaches zones already cached.
 #[test]
 fn a_lowered_budget_reaches_zones_already_cached() {
     let mut entries = Entries::default();
-    entries.store(1, 1, zone_content(3), 10);
-    entries.store(2, 1, zone_content(3), 10);
+    entries.store(ZoneId::from(1), Serial::from(1), zone_content(3), 10);
+    entries.store(ZoneId::from(2), Serial::from(1), zone_content(3), 10);
     assert_eq!(entries.records, 6);
 
     assert_eq!(entries.trim_to(3), 1);
     assert_eq!(entries.records, 3);
-    assert!(entries.find(1, 1).is_none(), "the older zone went first");
-    assert!(entries.find(2, 1).is_some());
+    assert!(
+        entries.find(ZoneId::from(1), Serial::from(1)).is_none(),
+        "the older zone went first"
+    );
+    assert!(entries.find(ZoneId::from(2), Serial::from(1)).is_some());
 }

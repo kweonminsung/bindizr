@@ -1,4 +1,4 @@
-use bindizr_core::outln;
+use bindizr_core::{model::token_grant::TokenGrantId, outln};
 use bindizr_service::types::{
     CreateGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
     GetTokenResponse, MessageResponse, PageFilter, PaginatedResponse, TokenGrantResponse,
@@ -223,9 +223,10 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             output,
             ..
         } => {
-            let res =
-                client::send_command::<MessageResponse>(DaemonCommand::DeleteTokenGrant { id })
-                    .await?;
+            let res = client::send_command::<MessageResponse>(DaemonCommand::DeleteTokenGrant {
+                id: TokenGrantId::from(id),
+            })
+            .await?;
             match output {
                 OutputFormat::Table => outln!("{}", res.message),
                 _ => print_payload(&res.data, output)?,

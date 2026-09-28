@@ -1,6 +1,12 @@
 use bindizr_core::{
-    dns::name::{OwnerName, ZoneName},
-    model::{dnssec_record::DnssecRecordType, record::RecordType},
+    dns::{
+        Ttl,
+        name::{OwnerName, ZoneName},
+    },
+    model::{
+        dnssec_record::DnssecRecordType,
+        record::{RecordId, RecordType},
+    },
 };
 use chrono::Utc;
 
@@ -14,14 +20,14 @@ fn zone_name() -> ZoneName {
 /// Build a record fixture with the requested fields.
 fn record(id: i32, name: &str, value: &str) -> Record {
     Record {
-        id,
+        id: RecordId::from(id),
         name: OwnerName::parse_in_zone(name, &zone_name()).unwrap(),
         record_type: RecordType::A,
         value: value.to_string(),
-        ttl: 300,
+        ttl: Ttl::from_secs(300),
         priority: None,
         created_at: Utc::now(),
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
     }
 }
 
@@ -34,14 +40,14 @@ fn change(
     value: Option<&str>,
 ) -> ZoneChange {
     ZoneChange {
-        zone_id: 1,
-        serial,
+        zone_id: ZoneId::from(1),
+        serial: Serial::try_from(serial).unwrap(),
         operation,
         record_name: OwnerName::parse_in_zone(name, &zone_name()).unwrap(),
         record_type,
         record_value: value.map(str::to_string),
         record_rdata: None,
-        record_ttl: 300,
+        record_ttl: Ttl::from_secs(300),
         record_priority: None,
         derived: false,
     }
@@ -86,7 +92,7 @@ fn undoing_a_delete_restores_the_row_the_journal_kept() {
     let restored = undo_changes(Vec::new(), &changes);
 
     assert_eq!(values(&restored), ["192.0.2.9"]);
-    assert_eq!(restored[0].ttl, 300);
+    assert_eq!(restored[0].ttl, Ttl::from_secs(300));
 }
 
 /// Verify that only one of two identical records comes out.

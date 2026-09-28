@@ -1,3 +1,4 @@
+use bindizr_core::model::{dnssec_record::DnssecRecordId, zone::ZoneId};
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Pool, Postgres, Transaction};
 
@@ -58,7 +59,7 @@ pub(crate) async fn create_many_tx(
 /// List derived DNSSEC records for a zone in the current transaction.
 pub(crate) async fn list_tx(
     tx: &mut Transaction<'_, Postgres>,
-    zone_id: i32,
+    zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Vec<DnssecRecord>, DatabaseError> {
     let records = sqlx::query_as::<_, DnssecRecord>(AssertSqlSafe(format!(
@@ -81,7 +82,7 @@ pub(crate) async fn list_tx(
 /// Delete the derived DNSSEC records with the supplied IDs in the current transaction.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Postgres>,
-    ids: &[i32],
+    ids: &[DnssecRecordId],
 ) -> Result<(), DatabaseError> {
     if ids.is_empty() {
         return Ok(());
@@ -96,7 +97,7 @@ pub(crate) async fn delete_many_tx(
 /// Delete all derived DNSSEC records for a zone in the current transaction.
 pub(crate) async fn delete_by_zone_id_tx(
     tx: &mut Transaction<'_, Postgres>,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM dnssec_records WHERE zone_id = $1")
         .bind(zone_id)
@@ -121,7 +122,7 @@ pub(crate) async fn count_zone_ids(pool: &Pool<Postgres>) -> Result<u64, Databas
 pub(crate) async fn list_zone_ids_expiring_within_refresh(
     pool: &Pool<Postgres>,
     cutoff: DateTime<Utc>,
-) -> Result<Vec<i32>, DatabaseError> {
+) -> Result<Vec<ZoneId>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     // The per-policy threshold is no constant, so nothing can seek the
@@ -136,7 +137,7 @@ pub(crate) async fn list_zone_ids_expiring_within_refresh(
     };
     let bound = refresh_bound(cutoff, max_refresh_days);
 
-    let zone_ids = sqlx::query_scalar::<_, i32>(
+    let zone_ids = sqlx::query_scalar::<_, ZoneId>(
         r#"
         SELECT DISTINCT r.zone_id
         FROM dnssec_records r

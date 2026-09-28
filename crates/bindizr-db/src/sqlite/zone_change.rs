@@ -1,3 +1,4 @@
+use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
@@ -47,9 +48,9 @@ pub(crate) async fn create_many_tx(
 /// List journal entries in the interval `(from_serial, to_serial]`.
 pub(crate) async fn list_between_serials(
     pool: &Pool<Sqlite>,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
 ) -> Result<Vec<ZoneChange>, DatabaseError> {
     sqlx::query_as::<_, ZoneChange>(
         r#"
@@ -70,9 +71,9 @@ pub(crate) async fn list_between_serials(
 /// Count journal entries in the interval `(from_serial, to_serial]`.
 pub(crate) async fn count_between_serials(
     pool: &Pool<Sqlite>,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
 ) -> Result<u64, DatabaseError> {
     let count = sqlx::query_scalar::<_, i64>(
         r#"
@@ -94,9 +95,9 @@ pub(crate) async fn count_between_serials(
 /// transaction.
 pub(crate) async fn list_between_serials_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
     _lock_level: LockLevel,
 ) -> Result<Vec<ZoneChange>, DatabaseError> {
     sqlx::query_as::<_, ZoneChange>(
@@ -118,7 +119,7 @@ pub(crate) async fn list_between_serials_tx(
 /// Prune one zone's journal rows older than `cutoff` in the current transaction.
 pub(crate) async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: i32,
+    zone_id: ZoneId,
     cutoff: chrono::DateTime<chrono::Utc>,
 ) -> Result<u64, DatabaseError> {
     // Delete whole serials only: everything up to the highest serial with

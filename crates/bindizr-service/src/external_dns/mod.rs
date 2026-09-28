@@ -12,6 +12,7 @@ mod tests;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use apply::apply_changes;
+use bindizr_core::dns::Ttl;
 use bindizr_db::{record::RecordFilter, zone::ZoneFilter};
 
 use crate::{
@@ -95,7 +96,7 @@ pub async fn list_records(
 ) -> Result<Vec<ExternalDnsRecord>, ServiceError> {
     // One zone's rows of a name and type share a TTL, but an overlapping
     // parent and child zone may not, so each record set splits by TTL.
-    let mut grouped: BTreeMap<RecordSetKey, BTreeMap<i32, Vec<String>>> = BTreeMap::new();
+    let mut grouped: BTreeMap<RecordSetKey, BTreeMap<Ttl, Vec<String>>> = BTreeMap::new();
     let mut offset = 0u64;
 
     loop {
@@ -148,7 +149,7 @@ pub async fn list_records(
                 ExternalDnsRecord {
                     name: key.name.clone(),
                     record_type: key.record_type.clone(),
-                    ttl: Some(ttl),
+                    ttl: Some(i32::from(ttl)),
                     values,
                 }
             })

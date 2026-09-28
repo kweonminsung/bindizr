@@ -1,4 +1,10 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::{
+    dns::{
+        Ttl,
+        name::{OwnerName, ZoneName},
+    },
+    model::record::RecordId,
+};
 use bindizr_db::LockLevel;
 
 use super::validation::{
@@ -22,7 +28,7 @@ use crate::{
 
 /// How an update names the one record it changes.
 enum RecordSelector<'a> {
-    Id(i32),
+    Id(RecordId),
     /// Several records at the name are an error: an update must not pick one
     /// of them on the caller's behalf.
     Name {
@@ -37,7 +43,7 @@ struct ResolvedRecordUpdate {
     owner_name: OwnerName,
     record_type: RecordType,
     encoded_value: String,
-    ttl: i32,
+    ttl: Ttl,
     priority: Option<i32>,
 }
 
@@ -77,10 +83,7 @@ fn resolve_update(
             None => existing.value.clone(),
         };
         let ttl = match request.ttl {
-            Some(ttl) => {
-                validate_record_ttl(ttl)?;
-                ttl
-            }
+            Some(ttl) => validate_record_ttl(ttl)?,
             None => existing.ttl,
         };
         // An omitted name keeps the stored owner, which needs no reparse.
@@ -104,7 +107,7 @@ fn resolve_update(
 pub async fn update(
     cx: &Context,
     caller: &Caller,
-    record_id: i32,
+    record_id: RecordId,
     request: &UpdateRecordRequest,
 ) -> Result<RecordWriteResponse, ServiceError> {
     update_locked(

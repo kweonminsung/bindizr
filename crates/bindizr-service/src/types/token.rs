@@ -1,5 +1,6 @@
 //! API token payloads.
 
+use bindizr_core::model::api_token::TokenId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -29,8 +30,8 @@ pub struct CreateTokenRequest {
 /// API representation of an API token; never carries the secret.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetTokenResponse {
-    #[schema(example = 1)]
-    pub id: i32,
+    #[schema(example = 1, value_type = i32)]
+    pub id: TokenId,
     #[schema(example = "external-dns")]
     pub name: String,
     pub description: Option<String>,

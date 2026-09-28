@@ -1,4 +1,7 @@
-use bindizr_core::dns::zonefile::{ParsedZoneFile, ZoneFileValue};
+use bindizr_core::dns::{
+    Serial, Ttl,
+    zonefile::{ParsedZoneFile, ZoneFileValue},
+};
 
 use super::*;
 
@@ -24,10 +27,14 @@ fn a_rendered_transfer_keeps_one_soa_for_the_zone_to_be_created_from() {
         transfer_record("example.com.", Rtype::SOA, SOA),
     ];
 
-    let parsed = ParsedZoneFile::parse(&render_zone_file(&records), "example.com", 300);
+    let parsed = ParsedZoneFile::parse(
+        &render_zone_file(&records),
+        "example.com",
+        Ttl::try_from(300).unwrap(),
+    );
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
-    assert_eq!(parsed.soa.expect("the opening SOA").serial, 7);
+    assert_eq!(parsed.soa.expect("the opening SOA").serial, Serial::from(7));
     // The SOA is the zone's own, never one of its records.
     assert_eq!(parsed.records.len(), 1);
 }
@@ -42,7 +49,11 @@ fn a_type_the_render_cannot_store_is_left_for_skip_unsupported() {
         transfer_record("example.com.", Rtype::HINFO, r#""rfc" "8482""#),
     ];
 
-    let parsed = ParsedZoneFile::parse(&render_zone_file(&records), "example.com", 300);
+    let parsed = ParsedZoneFile::parse(
+        &render_zone_file(&records),
+        "example.com",
+        Ttl::try_from(300).unwrap(),
+    );
 
     assert_eq!(parsed.records.len(), 1);
     assert_eq!(parsed.unsupported.len(), 1, "{:?}", parsed.unsupported);
@@ -74,7 +85,11 @@ fn a_rendered_transfer_parses_back_into_the_names_it_carried() {
         rdata: rdata.to_string(),
     });
 
-    let parsed = ParsedZoneFile::parse(&render_zone_file(&records), "example.com", 300);
+    let parsed = ParsedZoneFile::parse(
+        &render_zone_file(&records),
+        "example.com",
+        Ttl::try_from(300).unwrap(),
+    );
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
     assert!(parsed.unsupported.is_empty(), "{:?}", parsed.unsupported);

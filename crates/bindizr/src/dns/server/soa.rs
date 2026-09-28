@@ -116,10 +116,7 @@ async fn handle_soa_request(
         );
         let (catalog_zone, _) = catalog::generate_catalog_zone(dns_cx).await?;
         let mut builder = build(identity.signer);
-        builder.add_catalog_soa(
-            &catalog_zone,
-            bindizr_core::dns::serial_to_u32(catalog_zone.serial)?,
-        )?;
+        builder.add_catalog_soa(&catalog_zone, catalog_zone.serial)?;
         return Ok((builder.build()?, SoaResult::Ok));
     }
 
@@ -150,7 +147,7 @@ async fn handle_soa_request(
     );
 
     let mut builder = build(identity.signer);
-    builder.add_soa(&zone, bindizr_core::dns::serial_to_u32(zone.serial)?)?;
+    builder.add_soa(&zone, zone.serial)?;
 
     Ok((builder.build()?, SoaResult::Ok))
 }

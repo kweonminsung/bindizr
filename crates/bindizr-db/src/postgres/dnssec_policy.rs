@@ -1,3 +1,4 @@
+use bindizr_core::model::dnssec_policy::PolicyId;
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
@@ -29,7 +30,7 @@ pub(crate) async fn create(
     .fetch_one(&mut *conn)
     .await?;
 
-    policy.id = result.get::<i32, _>(0);
+    policy.id = PolicyId::from(result.get::<i32, _>(0));
     policy.created_at = now;
     Ok(policy)
 }
@@ -37,7 +38,7 @@ pub(crate) async fn create(
 /// Find a DNSSEC policy by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Postgres>,
-    id: i32,
+    id: PolicyId,
     lock_level: LockLevel,
 ) -> Result<Option<DnssecPolicy>, DatabaseError> {
     let policy = sqlx::query_as::<_, DnssecPolicy>(AssertSqlSafe(format!(
@@ -121,7 +122,7 @@ pub(crate) async fn update_tx(
 }
 
 /// Delete a DNSSEC policy by ID.
-pub(crate) async fn delete(pool: &Pool<Postgres>, id: i32) -> Result<(), DatabaseError> {
+pub(crate) async fn delete(pool: &Pool<Postgres>, id: PolicyId) -> Result<(), DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     sqlx::query("DELETE FROM dnssec_policies WHERE id = $1")

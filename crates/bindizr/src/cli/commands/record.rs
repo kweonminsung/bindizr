@@ -1,4 +1,4 @@
-use bindizr_core::{out, outln};
+use bindizr_core::{model::record::RecordId, out, outln};
 use bindizr_service::types::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
     DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, PaginatedResponse, Pagination,
@@ -421,8 +421,10 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             output,
             ..
         } => {
-            let response =
-                client::send_command::<RecordResponse>(DaemonCommand::GetRecord { id }).await?;
+            let response = client::send_command::<RecordResponse>(DaemonCommand::GetRecord {
+                id: RecordId::from(id),
+            })
+            .await?;
             print_response(&response.data, output, |response| {
                 vec![RecordRow::whole(&response.record)]
             })?;
@@ -484,7 +486,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let response =
                 client::send_command::<RecordWriteResponse>(DaemonCommand::UpdateRecord {
-                    id,
+                    id: RecordId::from(id),
                     request: UpdateRecordRequest {
                         dry_run,
                         name: new_name,
@@ -542,7 +544,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
         } => {
             let response =
                 client::send_command::<DeleteRecordsResponse>(DaemonCommand::DeleteRecord {
-                    id,
+                    id: RecordId::from(id),
                     run: Run::from_dry_run(dry_run),
                 })
                 .await?;

@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use bindizr_core::model::{api_token::TokenId, token_grant::TokenGrantId, zone::ZoneId};
 use bindizr_db::zone::ZoneFilter;
 use chrono::Utc;
 
@@ -50,7 +51,7 @@ pub async fn create(
     let grant = db::token_grant::create(
         cx.db(),
         TokenGrant {
-            id: 0,
+            id: TokenGrantId::UNWRITTEN,
             zone_id: zone.id,
             api_token_id: token.id,
             record_name_pattern,
@@ -100,7 +101,7 @@ pub async fn list_self(
     let grants = db::token_grant::list_by_token_id(cx.db(), token.id).await?;
 
     // Any token reaches this, so read only its granted zones.
-    let zone_names: HashMap<i32, String> = db::zone::list_by_filter(
+    let zone_names: HashMap<ZoneId, String> = db::zone::list_by_filter(
         cx.db(),
         ZoneFilter {
             scope_token_id: Some(token.id),
@@ -140,7 +141,7 @@ pub async fn list_by_zone(
     let zone = zone::lookup_by_name(cx, zone_name).await?;
     let grants = db::token_grant::list_by_zone_id(cx.db(), zone.id).await?;
 
-    let token_names: HashMap<i32, String> = db::api_token::list_all(cx.db())
+    let token_names: HashMap<TokenId, String> = db::api_token::list_all(cx.db())
         .await?
         .into_iter()
         .map(|token| (token.id, token.name))
@@ -171,7 +172,7 @@ pub async fn revoke(
     cx: &Context,
     caller: &Caller,
     token_name: &str,
-    grant_id: i32,
+    grant_id: TokenGrantId,
 ) -> Result<(), ServiceError> {
     caller.authorize_global("manage token grants")?;
 
@@ -205,7 +206,7 @@ pub async fn revoke_by_token_and_zone(
 pub async fn revoke_by_id(
     cx: &Context,
     caller: &Caller,
-    grant_id: i32,
+    grant_id: TokenGrantId,
 ) -> Result<(), ServiceError> {
     caller.authorize_global("manage token grants")?;
 

@@ -1,3 +1,4 @@
+use bindizr_core::dns::Serial;
 use sqlx::{Sqlite, Transaction};
 
 use crate::error::DatabaseError;
@@ -8,8 +9,8 @@ pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, Sqlite>,
     name: &str,
     digest: &str,
-    base_serial: i32,
-) -> Result<i32, DatabaseError> {
+    base_serial: Serial,
+) -> Result<Serial, DatabaseError> {
     // Advance the catalog serial only when the digest changes, kept
     // monotonic, so secondaries re-transfer the catalog zone only on real changes.
     sqlx::query(
@@ -31,7 +32,7 @@ pub(crate) async fn upsert_tx(
     .execute(&mut **tx)
     .await?;
 
-    sqlx::query_scalar::<_, i32>(
+    sqlx::query_scalar::<_, Serial>(
         r#"
         SELECT serial
         FROM catalog_zones

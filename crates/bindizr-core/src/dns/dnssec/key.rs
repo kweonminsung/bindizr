@@ -5,9 +5,9 @@ use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 use crate::{
-    dns::LibraryError,
+    dns::{LibraryError, Ttl},
     model::{
-        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
+        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
         zone::Zone,
     },
 };
@@ -43,7 +43,7 @@ pub fn generate_key(
         .map_err(|e| GenerateKeyError(Box::new(e)))?;
 
     Ok(DnssecKey {
-        id: 0,
+        id: DnssecKeyId::UNWRITTEN,
         zone_id: zone.id,
         role,
         algorithm,
@@ -53,7 +53,7 @@ pub fn generate_key(
         state,
         state_changed_at: now,
         eligible_at,
-        max_signed_ttl: 0,
+        max_signed_ttl: Ttl::from_secs(0),
         created_at: now,
     })
 }

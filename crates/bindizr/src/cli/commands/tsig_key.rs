@@ -1,4 +1,4 @@
-use bindizr_core::{errln, outln};
+use bindizr_core::{errln, model::tsig_grant::TsigGrantId, outln};
 use bindizr_service::types::{
     CreateGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
     MessageResponse, PageFilter, PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
@@ -248,9 +248,10 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             output,
             ..
         } => {
-            let res =
-                client::send_command::<MessageResponse>(DaemonCommand::DeleteTsigGrant { id })
-                    .await?;
+            let res = client::send_command::<MessageResponse>(DaemonCommand::DeleteTsigGrant {
+                id: TsigGrantId::from(id),
+            })
+            .await?;
             match output {
                 OutputFormat::Table => outln!("{}", res.message),
                 _ => print_payload(&res.data, output)?,

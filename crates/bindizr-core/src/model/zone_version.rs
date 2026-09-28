@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
 
+use crate::{
+    dns::{Serial, Ttl},
+    model::zone::ZoneId,
+};
+
 /// Which of a zone's versions a listing covers: every serial, or only
 /// those a user change produced, since a signer-only serial (a re-sign, a
 /// rollover) holds nothing a rollback could restore.
@@ -24,21 +29,26 @@ impl VersionScope {
     }
 }
 
+id_newtype!(
+    /// The id of a zone version row.
+    ZoneVersionId
+);
+
 /// Point-in-time version of a zone's SOA fields at a given serial.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ZoneVersion {
-    pub id: i32,
-    pub zone_id: i32,
-    pub serial: i32,
+    pub id: ZoneVersionId,
+    pub zone_id: ZoneId,
+    pub serial: Serial,
     pub mname: String,
     /// Stored in SOA mailbox encoded form, unlike `Zone.rname` which holds the
     /// admin email.
     pub rname: String,
-    pub default_ttl: i32,
+    pub default_ttl: Ttl,
     pub refresh: i32,
     pub retry: i32,
     pub expire: i32,
-    pub minimum_ttl: i32,
+    pub minimum_ttl: Ttl,
     /// Which plane asked for this version.
     #[sqlx(try_from = "String")]
     pub change_source: ChangeSource,

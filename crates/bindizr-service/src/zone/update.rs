@@ -1,4 +1,4 @@
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::dns::{Serial, name::OwnerName};
 use bindizr_db::LockLevel;
 
 use crate::{
@@ -26,7 +26,7 @@ struct AppliedZoneUpdate {
     /// Whether the update changed what the catalog publishes: its members are
     /// the enabled zones, listed by name.
     catalog_changed: bool,
-    new_serial: i32,
+    new_serial: Serial,
 }
 
 /// DEL(old)+ADD(new) apex SOA changes for an in-place zone row update, so IXFR
@@ -34,7 +34,7 @@ struct AppliedZoneUpdate {
 pub(crate) fn soa_replacement_changes(
     old_zone: &Zone,
     new_zone: &Zone,
-    new_serial: i32,
+    new_serial: Serial,
 ) -> Result<Vec<ZoneChange>, ServiceError> {
     let change = |operation: ChangeOperation, zone: &Zone| -> Result<ZoneChange, ServiceError> {
         Ok(ZoneChange {
@@ -96,7 +96,11 @@ pub async fn update(
                     .rname
                     .clone()
                     .unwrap_or_else(|| existing.rname.clone()),
-                default_ttl: Some(request.default_ttl.unwrap_or(existing.default_ttl)),
+                default_ttl: Some(
+                    request
+                        .default_ttl
+                        .unwrap_or(i32::from(existing.default_ttl)),
+                ),
                 serial: None,
                 // Omitted timers fall back to the existing zone in normalize_soa_timers.
                 refresh: request.refresh,

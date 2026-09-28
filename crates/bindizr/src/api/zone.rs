@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::model::zone_version::VersionScope;
+use bindizr_core::{dns::Serial, model::zone_version::VersionScope};
 use bindizr_service::{
     Context, record,
     types::{
@@ -247,14 +247,14 @@ pub(crate) struct VersionListQuery {
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ZoneVersionParams {
     name: String,
-    serial: u32,
+    serial: Serial,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct VersionDiffQuery {
-    from: u32,
-    to: Option<u32>,
+    from: Serial,
+    to: Option<Serial>,
 }
 
 /// Diff the records at two of a zone's serials.

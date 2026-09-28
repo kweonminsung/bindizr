@@ -1,3 +1,7 @@
+use bindizr_core::{
+    dns::Ttl,
+    model::{dnssec_key::DnssecKeyId, zone::ZoneId},
+};
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
@@ -34,7 +38,7 @@ pub(crate) async fn create_tx(
     .fetch_one(&mut **tx)
     .await?;
 
-    key.id = result.get::<i32, _>(0);
+    key.id = DnssecKeyId::from(result.get::<i32, _>(0));
     key.created_at = now;
     Ok(key)
 }
@@ -42,7 +46,7 @@ pub(crate) async fn create_tx(
 /// List DNSSEC keys for a zone in the current transaction.
 pub(crate) async fn list_tx(
     tx: &mut Transaction<'_, Postgres>,
-    zone_id: i32,
+    zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Vec<DnssecKey>, DatabaseError> {
     let keys = sqlx::query_as::<_, DnssecKey>(AssertSqlSafe(format!(
@@ -92,10 +96,10 @@ pub(crate) async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
     role: DnssecKeyRole,
     state: DnssecKeyState,
     cutoff: DateTime<Utc>,
-) -> Result<Vec<i32>, DatabaseError> {
+) -> Result<Vec<ZoneId>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
-    let zone_ids = sqlx::query_scalar::<_, i32>(
+    let zone_ids = sqlx::query_scalar::<_, ZoneId>(
         r#"
         SELECT DISTINCT k.zone_id
         FROM dnssec_keys k
@@ -134,7 +138,7 @@ pub(crate) async fn count_by_state(
 /// Update a key's lifecycle state and transition deadlines in the current transaction.
 pub(crate) async fn update_state_tx(
     tx: &mut Transaction<'_, Postgres>,
-    id: i32,
+    id: DnssecKeyId,
     state: DnssecKeyState,
     changed_at: DateTime<Utc>,
     eligible_at: DateTime<Utc>,
@@ -155,8 +159,8 @@ pub(crate) async fn update_state_tx(
 /// Update the maximum TTL signed by a DNSSEC key in the current transaction.
 pub(crate) async fn update_max_signed_ttl_tx(
     tx: &mut Transaction<'_, Postgres>,
-    id: i32,
-    max_signed_ttl: i32,
+    id: DnssecKeyId,
+    max_signed_ttl: Ttl,
 ) -> Result<(), DatabaseError> {
     sqlx::query("UPDATE dnssec_keys SET max_signed_ttl = $1 WHERE id = $2")
         .bind(max_signed_ttl)
@@ -170,7 +174,7 @@ pub(crate) async fn update_max_signed_ttl_tx(
 /// Delete a DNSSEC key by ID in the current transaction.
 pub(crate) async fn delete_tx(
     tx: &mut Transaction<'_, Postgres>,
-    id: i32,
+    id: DnssecKeyId,
 ) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM dnssec_keys WHERE id = $1")
         .bind(id)
@@ -183,7 +187,7 @@ pub(crate) async fn delete_tx(
 /// Delete all DNSSEC keys for a zone in the current transaction.
 pub(crate) async fn delete_by_zone_id_tx(
     tx: &mut Transaction<'_, Postgres>,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM dnssec_keys WHERE zone_id = $1")
         .bind(zone_id)

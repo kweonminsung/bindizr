@@ -71,7 +71,7 @@ pub(crate) async fn handle_axfr(
     let mut messages_sent = 0usize;
 
     // The opening SOA identifies the serial of this content snapshot.
-    let serial = bindizr_core::dns::serial_to_u32(zone.serial)?;
+    let serial = zone.serial;
     crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,
         stream,

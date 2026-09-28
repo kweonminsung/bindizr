@@ -1,3 +1,5 @@
+use bindizr_core::dns::Serial;
+
 use crate::{Context, db, error::ServiceError, transaction};
 
 /// Refuse to start while a stored zone holds the configured catalog zone
@@ -19,8 +21,8 @@ pub async fn advance_catalog_serial(
     cx: &Context,
     name: &str,
     digest: &str,
-    base_serial: i32,
-) -> Result<i32, ServiceError> {
+    base_serial: Serial,
+) -> Result<Serial, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "Failed to update catalog state").await?;
 
     let apply_result = db::catalog_zone::upsert_tx(&mut tx, name, digest, base_serial)

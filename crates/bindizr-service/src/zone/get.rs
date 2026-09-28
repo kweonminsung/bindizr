@@ -1,4 +1,4 @@
-use bindizr_core::dns::serial_to_i32;
+use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use bindizr_db::{
     LockLevel, dnssec_record::DnssecRecordFilter, record::RecordFilter, zone::ZoneFilter,
 };
@@ -45,9 +45,9 @@ pub(crate) async fn find_by_name_tx(
 /// Count journal rows in `(from_serial, to_serial]` for the IXFR size estimate.
 pub async fn count_changes_between_serials(
     cx: &Context,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
 ) -> Result<u64, ServiceError> {
     Ok(db::zone_change::count_between_serials(cx.db(), zone_id, from_serial, to_serial).await?)
 }
@@ -55,9 +55,9 @@ pub async fn count_changes_between_serials(
 /// Journal rows in `(from_serial, to_serial]`, ordered by serial then row id.
 pub async fn list_changes_between_serials(
     cx: &Context,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
 ) -> Result<Vec<ZoneChange>, ServiceError> {
     Ok(db::zone_change::list_between_serials(cx.db(), zone_id, from_serial, to_serial).await?)
 }
@@ -113,21 +113,9 @@ pub async fn list_by_filter(
         default_ttl: filter.default_ttl,
         min_default_ttl: filter.min_default_ttl,
         max_default_ttl: filter.max_default_ttl,
-        serial: filter
-            .serial
-            .map(serial_to_i32)
-            .transpose()
-            .map_err(ServiceError::invalid_input)?,
-        min_serial: filter
-            .min_serial
-            .map(serial_to_i32)
-            .transpose()
-            .map_err(ServiceError::invalid_input)?,
-        max_serial: filter
-            .max_serial
-            .map(serial_to_i32)
-            .transpose()
-            .map_err(ServiceError::invalid_input)?,
+        serial: filter.serial,
+        min_serial: filter.min_serial,
+        max_serial: filter.max_serial,
         created_after: filter.created_after,
         created_before: filter.created_before,
         signed: filter.signed,

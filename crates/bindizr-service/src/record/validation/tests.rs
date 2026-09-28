@@ -1,6 +1,10 @@
-use bindizr_core::dns::{
-    name::{OwnerName, ZoneName},
-    record::TxtRecordValue,
+use bindizr_core::{
+    dns::{
+        Ttl,
+        name::{OwnerName, ZoneName},
+        record::TxtRecordValue,
+    },
+    model::{record::RecordId, zone::ZoneId},
 };
 use chrono::Utc;
 
@@ -44,7 +48,7 @@ fn validate_add(
         &OwnerName::from_row(stored_name),
         record_type,
         value,
-        ttl,
+        Ttl::try_from(ttl).unwrap(),
         priority,
         None,
     )
@@ -229,13 +233,13 @@ fn test_record(
     priority: Option<i32>,
 ) -> Record {
     Record {
-        id,
+        id: RecordId::from(id),
         name: OwnerName::from_row(name),
         record_type,
         value: value.to_string(),
-        ttl: RRSET_TTL,
+        ttl: Ttl::try_from(RRSET_TTL).unwrap(),
         priority,
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
         created_at: Utc::now(),
     }
 }

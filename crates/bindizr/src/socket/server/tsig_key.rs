@@ -1,4 +1,4 @@
-use bindizr_core::model::tsig_key::TsigAlgorithm;
+use bindizr_core::model::{tsig_grant::TsigGrantId, tsig_key::TsigAlgorithm};
 use bindizr_service::{
     Context,
     authorization::Caller,
@@ -128,7 +128,7 @@ pub(crate) async fn list_zone_tsig_grants(
 /// Delete the requested TSIG grant.
 pub(crate) async fn delete_tsig_grant(
     cx: &Context,
-    id: i32,
+    id: TsigGrantId,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     grant::revoke_by_id(cx, &Caller::Global, id).await?;
     let message = "TSIG grant revoked successfully".to_string();

@@ -1,4 +1,7 @@
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::{
+    dns::name::OwnerName,
+    model::{record::RecordId, zone::ZoneId},
+};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
@@ -55,7 +58,7 @@ pub(crate) async fn create_many_tx(
         let first = last - chunk.len() as i32 + 1;
         for (offset, r) in chunk.iter().enumerate() {
             let mut rec = r.clone();
-            rec.id = first + offset as i32;
+            rec.id = RecordId::from(first + offset as i32);
             rec.created_at = now;
             out.push(rec);
         }
@@ -64,7 +67,10 @@ pub(crate) async fn create_many_tx(
 }
 
 /// Find a record by ID.
-pub(crate) async fn get(pool: &Pool<Sqlite>, id: i32) -> Result<Option<Record>, DatabaseError> {
+pub(crate) async fn get(
+    pool: &Pool<Sqlite>,
+    id: RecordId,
+) -> Result<Option<Record>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
@@ -79,7 +85,7 @@ pub(crate) async fn get(pool: &Pool<Sqlite>, id: i32) -> Result<Option<Record>, 
 /// Find a record with its zone metadata.
 pub(crate) async fn get_with_zone(
     pool: &Pool<Sqlite>,
-    id: i32,
+    id: RecordId,
 ) -> Result<Option<RecordWithZone>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
@@ -102,7 +108,7 @@ pub(crate) async fn get_with_zone(
 /// Find a record by ID in the current transaction.
 pub(crate) async fn get_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    id: i32,
+    id: RecordId,
     _lock_level: LockLevel,
 ) -> Result<Option<Record>, DatabaseError> {
     let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = ?")
@@ -116,7 +122,7 @@ pub(crate) async fn get_tx(
 /// List records for a zone in the current transaction.
 pub(crate) async fn list_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: i32,
+    zone_id: ZoneId,
     _lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
     let records = sqlx::query_as::<_, Record>(
@@ -132,7 +138,7 @@ pub(crate) async fn list_tx(
 /// List records at an owner name in a zone in the current transaction.
 pub(crate) async fn list_by_name_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: i32,
+    zone_id: ZoneId,
     name: &OwnerName,
     _lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
@@ -152,7 +158,7 @@ pub(crate) async fn list_by_name_tx(
 /// Find an owner with a DS record but no NS delegation in the current transaction.
 pub(crate) async fn get_ds_name_without_ns_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<Option<String>, DatabaseError> {
     let name = sqlx::query_scalar::<_, String>(
         "SELECT d.name FROM records d WHERE d.zone_id = ? AND d.record_type = 'DS' AND NOT EXISTS (SELECT 1 FROM records n WHERE n.zone_id = ? AND n.name = d.name AND n.record_type = 'NS') LIMIT 1",
@@ -168,7 +174,7 @@ pub(crate) async fn get_ds_name_without_ns_tx(
 /// List records at the requested owner names in a zone in the current transaction.
 pub(crate) async fn list_by_names_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: i32,
+    zone_id: ZoneId,
     names: &[OwnerName],
     _lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
@@ -411,7 +417,7 @@ pub(crate) async fn update_tx(
 /// Delete the records with the supplied IDs in the current transaction.
 pub(crate) async fn delete_many_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    ids: &[i32],
+    ids: &[RecordId],
 ) -> Result<(), DatabaseError> {
     if ids.is_empty() {
         return Ok(());

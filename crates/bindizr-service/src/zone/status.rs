@@ -1,7 +1,5 @@
 //! A zone's serial next to what each enabled secondary is serving.
 
-use bindizr_core::dns::serial_to_u32;
-
 use crate::{
     Context, authorization::Caller, dns_client::probe, error::ServiceError,
     types::ZoneStatusResponse,
@@ -18,7 +16,7 @@ pub async fn get_status(
     // ahead for a moment, the drift a read-only path accepts.
     let zone = super::get_by_name(cx, caller, zone_name).await?;
 
-    let serial = serial_to_u32(zone.serial).map_err(ServiceError::internal)?;
+    let serial = zone.serial;
     let secondaries = probe::probe_secondaries(cx, zone.name.as_str(), Some(serial)).await?;
 
     Ok(ZoneStatusResponse {

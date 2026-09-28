@@ -1,3 +1,5 @@
+use bindizr_core::model::{secondary::SecondaryId, tsig_key::TsigKeyId};
+
 use crate::{
     Backend, Db, LockLevel, Transaction, error::DatabaseError, model::secondary::Secondary, mysql,
     postgres, sqlite, tx::TransactionKind,
@@ -70,7 +72,10 @@ pub async fn update_tx(
 
 /// Secondaries whose NOTIFY the key signs: the in-use check before a key
 /// delete.
-pub async fn count_by_notify_tsig_key_id(db: &Db, tsig_key_id: i32) -> Result<u64, DatabaseError> {
+pub async fn count_by_notify_tsig_key_id(
+    db: &Db,
+    tsig_key_id: TsigKeyId,
+) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
             mysql::secondary::count_by_notify_tsig_key_id(pool, tsig_key_id).await
@@ -85,7 +90,7 @@ pub async fn count_by_notify_tsig_key_id(db: &Db, tsig_key_id: i32) -> Result<u6
 }
 
 /// Delete a secondary by ID.
-pub async fn delete(db: &Db, id: i32) -> Result<(), DatabaseError> {
+pub async fn delete(db: &Db, id: SecondaryId) -> Result<(), DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::secondary::delete(pool, id).await,
         Backend::Postgres(pool) => postgres::secondary::delete(pool, id).await,

@@ -1,3 +1,5 @@
+use bindizr_core::model::{tsig_grant::TsigGrantId, tsig_key::TsigKeyId, zone::ZoneId};
+
 use crate::{
     Backend, Db, LockLevel, Transaction, error::DatabaseError, model::tsig_grant::TsigGrant, mysql,
     postgres, sqlite, tx::TransactionKind,
@@ -13,7 +15,7 @@ pub async fn create(db: &Db, grant: TsigGrant) -> Result<TsigGrant, DatabaseErro
 }
 
 /// Find a TSIG grant by ID.
-pub async fn get(db: &Db, id: i32) -> Result<Option<TsigGrant>, DatabaseError> {
+pub async fn get(db: &Db, id: TsigGrantId) -> Result<Option<TsigGrant>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::tsig_grant::get(pool, id).await,
         Backend::Postgres(pool) => postgres::tsig_grant::get(pool, id).await,
@@ -22,7 +24,7 @@ pub async fn get(db: &Db, id: i32) -> Result<Option<TsigGrant>, DatabaseError> {
 }
 
 /// List TSIG grants for a zone.
-pub async fn list_by_zone_id(db: &Db, zone_id: i32) -> Result<Vec<TsigGrant>, DatabaseError> {
+pub async fn list_by_zone_id(db: &Db, zone_id: ZoneId) -> Result<Vec<TsigGrant>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::tsig_grant::list_by_zone_id(pool, zone_id).await,
         Backend::Postgres(pool) => postgres::tsig_grant::list_by_zone_id(pool, zone_id).await,
@@ -31,7 +33,10 @@ pub async fn list_by_zone_id(db: &Db, zone_id: i32) -> Result<Vec<TsigGrant>, Da
 }
 
 /// List TSIG grants for a TSIG key.
-pub async fn list_by_key_id(db: &Db, tsig_key_id: i32) -> Result<Vec<TsigGrant>, DatabaseError> {
+pub async fn list_by_key_id(
+    db: &Db,
+    tsig_key_id: TsigKeyId,
+) -> Result<Vec<TsigGrant>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::tsig_grant::list_by_key_id(pool, tsig_key_id).await,
         Backend::Postgres(pool) => postgres::tsig_grant::list_by_key_id(pool, tsig_key_id).await,
@@ -43,8 +48,8 @@ pub async fn list_by_key_id(db: &Db, tsig_key_id: i32) -> Result<Vec<TsigGrant>,
 /// authorization inside the update transaction.
 pub async fn list_by_zone_id_and_key_id_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
-    tsig_key_id: i32,
+    zone_id: ZoneId,
+    tsig_key_id: TsigKeyId,
     lock_level: LockLevel,
 ) -> Result<Vec<TsigGrant>, DatabaseError> {
     match &mut tx.0 {
@@ -69,7 +74,7 @@ pub async fn list_by_zone_id_and_key_id_tx(
 }
 
 /// Count TSIG grants for a TSIG key.
-pub async fn count_by_key_id(db: &Db, tsig_key_id: i32) -> Result<u64, DatabaseError> {
+pub async fn count_by_key_id(db: &Db, tsig_key_id: TsigKeyId) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::tsig_grant::count_by_key_id(pool, tsig_key_id).await,
         Backend::Postgres(pool) => postgres::tsig_grant::count_by_key_id(pool, tsig_key_id).await,
@@ -78,7 +83,7 @@ pub async fn count_by_key_id(db: &Db, tsig_key_id: i32) -> Result<u64, DatabaseE
 }
 
 /// Delete a TSIG grant by ID.
-pub async fn delete(db: &Db, id: i32) -> Result<(), DatabaseError> {
+pub async fn delete(db: &Db, id: TsigGrantId) -> Result<(), DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::tsig_grant::delete(pool, id).await,
         Backend::Postgres(pool) => postgres::tsig_grant::delete(pool, id).await,
@@ -90,8 +95,8 @@ pub async fn delete(db: &Db, id: i32) -> Result<(), DatabaseError> {
 /// rows went. One statement, so a revocation never lands half-applied.
 pub async fn delete_by_key_id_and_zone_id(
     db: &Db,
-    tsig_key_id: i32,
-    zone_id: i32,
+    tsig_key_id: TsigKeyId,
+    zone_id: ZoneId,
 ) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {

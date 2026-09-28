@@ -1,3 +1,4 @@
+use bindizr_core::model::token_grant::TokenGrantId;
 use bindizr_service::{
     Context,
     authorization::Caller,
@@ -112,7 +113,7 @@ pub(crate) async fn list_zone_token_grants(
 /// Delete the requested token grant.
 pub(crate) async fn delete_token_grant(
     cx: &Context,
-    id: i32,
+    id: TokenGrantId,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     grant::revoke_by_id(cx, &Caller::Global, id).await?;
     let message = "Token grant revoked successfully".to_string();

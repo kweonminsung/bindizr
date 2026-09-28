@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
+use crate::{dns::Ttl, model::zone::ZoneId};
+
 /// A DNSSEC key column or parameter outside the values bindizr signs with.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseDnssecKeyError {
@@ -254,12 +256,17 @@ impl TryFrom<String> for DnssecKeyState {
     }
 }
 
+id_newtype!(
+    /// The id of a DNSSEC key row.
+    DnssecKeyId
+);
+
 /// A zone's DNSSEC signing key; key rows mark a signed zone. Private material
 /// is exported only through the daemon socket, never the HTTP API.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecKey {
-    pub id: i32,
-    pub zone_id: i32,
+    pub id: DnssecKeyId,
+    pub zone_id: ZoneId,
     #[sqlx(try_from = "String")]
     pub role: DnssecKeyRole,
     #[sqlx(try_from = "i32")]
@@ -280,7 +287,7 @@ pub struct DnssecKey {
     pub eligible_at: DateTime<Utc>,
     /// Largest TTL among the record sets this key has signed, so retirement knows
     /// how long resolvers can keep validating with it.
-    pub max_signed_ttl: i32,
+    pub max_signed_ttl: Ttl,
     pub created_at: DateTime<Utc>,
 }
 
@@ -325,7 +332,7 @@ impl DnssecKey {
     /// cached for their record set's TTL, and — for a key a DS names — the parent's
     /// DS record set, cached for the TTL the confirming probe saw.
     pub fn retirement_interval_secs(&self, parent_ds_ttl: Option<u32>) -> i64 {
-        let signatures = i64::from(self.max_signed_ttl);
+        let signatures = i64::from(self.max_signed_ttl.as_secs());
         if !self.role.is_sep() {
             return signatures;
         }

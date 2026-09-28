@@ -2,7 +2,7 @@
 
 use domain::{
     base::{
-        Ttl,
+        Ttl as WireTtl,
         iana::{Class, Rtype},
     },
     rdata::ZoneRecordData,
@@ -10,7 +10,7 @@ use domain::{
 };
 
 use crate::{
-    dns::{name::to_fqdn_lowercase, record::NaptrRecordValue},
+    dns::{Serial, Ttl, name::to_fqdn_lowercase, record::NaptrRecordValue},
     model::record::RecordType,
 };
 
@@ -30,7 +30,7 @@ pub struct ZoneFileRecord {
     pub owner_fqdn: String,
     pub record_type: RecordType,
     pub value: ZoneFileValue,
-    pub ttl: i32,
+    pub ttl: Ttl,
     pub priority: Option<i32>,
 }
 
@@ -40,11 +40,11 @@ pub struct ZoneFileRecord {
 pub struct ZoneFileSoa {
     pub mname: String,
     pub rname: String,
-    pub serial: u32,
+    pub serial: Serial,
     pub refresh: i32,
     pub retry: i32,
     pub expire: i32,
-    pub minimum_ttl: i32,
+    pub minimum_ttl: Ttl,
 }
 
 /// What a zone file yielded: its usable records, and what it could not use.
@@ -66,7 +66,7 @@ impl ParsedZoneFile {
     /// against the origin, missing TTLs fall back to `default_ttl`, and the SOA
     /// is kept apart in `soa` rather than stored (the zone's SOA comes from its
     /// own fields).
-    pub fn parse(content: &str, zone_name: &str, default_ttl: i32) -> Self {
+    pub fn parse(content: &str, zone_name: &str, default_ttl: Ttl) -> Self {
         let origin_fqdn = to_fqdn_lowercase(zone_name);
 
         // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and
@@ -133,10 +133,10 @@ impl ParsedZoneFile {
                         },
                     };
 
-                    // Stored as i32; reject TTLs that would wrap negative (like the
-                    // JSON and nsupdate paths) instead of silently corrupting them.
+                    // Reject TTLs past the stored range (like the JSON and
+                    // nsupdate paths) instead of silently corrupting them.
                     let ttl_secs = record.ttl().as_secs();
-                    if ttl_secs > i32::MAX as u32 {
+                    let Ok(ttl) = Ttl::try_from(ttl_secs) else {
                         errors.push(format!(
                             "TTL {} for '{}' exceeds the maximum of {}",
                             ttl_secs,
@@ -144,8 +144,7 @@ impl ParsedZoneFile {
                             i32::MAX
                         ));
                         continue;
-                    }
-                    let ttl = ttl_secs as i32;
+                    };
 
                     let (value, priority) = match record.data() {
                         // Rendered from the parsed fields: `domain` appends the
@@ -250,17 +249,17 @@ fn to_zone_file_soa(record: &ScannedRecord) -> Option<ZoneFileSoa> {
     let ZoneRecordData::Soa(soa) = record.data() else {
         return None;
     };
-    let secs = |value: Ttl| i32::try_from(value.as_secs()).ok();
+    let secs = |value: WireTtl| i32::try_from(value.as_secs()).ok();
     Some(ZoneFileSoa {
         mname: soa.mname().to_string(),
         // The mailbox is rendered in its SOA form (`admin.example.com.`); the
         // service turns it back into an address.
         rname: soa.rname().to_string(),
-        serial: soa.serial().into_int(),
+        serial: Serial::from(soa.serial().into_int()),
         refresh: secs(soa.refresh())?,
         retry: secs(soa.retry())?,
         expire: secs(soa.expire())?,
-        minimum_ttl: secs(soa.minimum())?,
+        minimum_ttl: Ttl::try_from(soa.minimum().as_secs()).ok()?,
     })
 }
 

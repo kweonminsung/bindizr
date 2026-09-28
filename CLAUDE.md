@@ -63,27 +63,6 @@ cargo +nightly fmt                                         # format (needs night
 - `bindizr-e2e` — end-to-end API/CLI/DNS tests. Its `[[bin]]` targets exist
   only so `env!("CARGO_BIN_EXE_…")` resolves inside the test package.
 
-## Restructuring — the phases still open
-
-The rules in this file describe the target shape (see *Rust idioms*); the
-code reaches it in the phases below, each one branch and one PR off `main`,
-in order, with the full suite green at each — however large the diff. A
-phase is never split to shrink its diff, only where the tree would not
-build otherwise. The HTTP API, the CLI, and the DNS behaviour — error codes
-and messages included — change in none of them, so the e2e suite is the
-regression gate throughout; the daemon socket is no contract, since the
-CLI and the daemon share one binary. Until a phase lands, the code
-it names still has the old shape: new code follows the rule, a module is
-converted whole and never half, and an example in a rule that names the new
-shape is the target, not a claim about the tree. Delete a phase's entry
-when it lands, and this section when all have.
-
-1. **Newtypes.** `Serial` and `Ttl` replace the `i32` row / `u32` wire
-   pairs and `serial_to_u32` / `serial_to_i32`; `ZoneId`, `RecordId`,
-   `TokenId`, `TsigKeyId`, `DnssecKeyId`, `PolicyId`, `SecondaryId` replace
-   the bare `i32` keys — `list_by_zone_id_and_key_id_tx(tx, key_id,
-   zone_id)` compiles today.
-
 ## Design rules
 
 ### Rust idioms — a module is the namespace, an enum the closed set, a type the error
@@ -195,9 +174,15 @@ each rule says which spelling is this project's.
   `Option<&str>` that spells an enum (`role`, `algorithm`) is parsed to
   that enum by the front end — parse at the boundary, pass the type. A
   policy *name* stays a string: it names a row, not a variant. A number
-  with a meaning of its own is a
-  newtype: `Serial`, with the `i32` row form and the `u32` wire form as
-  its conversions rather than free `serial_to_u32` helpers.
+  with a meaning of its own is a newtype: `Serial` and `Ttl` in
+  `bindizr_core::dns`, each with its `i32` row form and `u32` wire form as
+  `From`/`TryFrom` conversions and its own sqlx encoding, and an entity's
+  row id beside its row (`ZoneId`, `RecordId`, `TokenId`, …, one
+  `id_newtype!` each), so `list_by_zone_id_and_key_id_tx(tx, key_id,
+  zone_id)` no longer compiles. A payload keeps its wire schema through
+  `#[schema(value_type = …)]`; a request's raw `i32`/`u32` field is
+  validated into the newtype by the service (`validate_record_ttl`,
+  `validate_initial_serial`).
 - **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type
   derives `Debug`; `Clone` unless it owns a resource; `PartialEq, Eq` when
   its fields allow; `Copy` for a fieldless enum or a small plain struct;

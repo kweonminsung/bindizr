@@ -2,10 +2,19 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::dns::{
-    name::{OwnerName, ZoneName},
-    record::Rdata,
+use crate::{
+    dns::{
+        Ttl,
+        name::{OwnerName, ZoneName},
+        record::Rdata,
+    },
+    model::zone::ZoneId,
 };
+
+id_newtype!(
+    /// The id of a derived DNSSEC record row.
+    DnssecRecordId
+);
 
 /// One record of a zone's derived DNSSEC plane (the signed view): the DNSKEY,
 /// NSEC, and RRSIG rows the signer generates. These are system-owned and never
@@ -13,15 +22,15 @@ use crate::dns::{
 /// only behind its `signed` flag.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecRecord {
-    pub id: i32,
-    pub zone_id: i32,
+    pub id: DnssecRecordId,
+    pub zone_id: ZoneId,
     #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "i32")]
     pub record_type: DnssecRecordType,
     /// RRSIG rows: the covered record type; NULL otherwise.
     pub covered_record_type: Option<i32>,
-    pub ttl: i32,
+    pub ttl: Ttl,
     pub rdata: Rdata,
     /// RRSIG rows: signature expiration, driving the re-signing schedule.
     pub expires_at: Option<DateTime<Utc>>,
@@ -37,7 +46,7 @@ pub struct DnssecRecord {
 pub struct DnssecRecordKey {
     name: OwnerName,
     record_type: DnssecRecordType,
-    ttl: i32,
+    ttl: Ttl,
     rdata: Rdata,
 }
 
@@ -61,9 +70,9 @@ pub struct DnssecRecordWithZone {
     pub name: OwnerName,
     #[sqlx(try_from = "i32")]
     pub record_type: DnssecRecordType,
-    pub ttl: i32,
+    pub ttl: Ttl,
     pub rdata: Rdata,
-    pub zone_id: i32,
+    pub zone_id: ZoneId,
     #[sqlx(try_from = "String")]
     pub zone_name: ZoneName,
 }

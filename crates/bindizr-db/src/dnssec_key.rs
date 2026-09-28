@@ -1,3 +1,7 @@
+use bindizr_core::{
+    dns::Ttl,
+    model::{dnssec_key::DnssecKeyId, zone::ZoneId},
+};
 use chrono::{DateTime, Utc};
 
 use crate::{
@@ -23,7 +27,7 @@ pub async fn create_tx(
 /// List DNSSEC keys for a zone in the current transaction.
 pub async fn list_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Vec<DnssecKey>, DatabaseError> {
     match &mut tx.0 {
@@ -63,7 +67,7 @@ pub async fn list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
     role: DnssecKeyRole,
     state: DnssecKeyState,
     cutoff: DateTime<Utc>,
-) -> Result<Vec<i32>, DatabaseError> {
+) -> Result<Vec<ZoneId>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
             mysql::dnssec_key::list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
@@ -98,7 +102,7 @@ pub async fn count_by_state(db: &Db, state: DnssecKeyState) -> Result<u64, Datab
 /// Update a key's lifecycle state and transition deadlines in the current transaction.
 pub async fn update_state_tx(
     tx: &mut Transaction<'_>,
-    id: i32,
+    id: DnssecKeyId,
     state: DnssecKeyState,
     changed_at: DateTime<Utc>,
     eligible_at: DateTime<Utc>,
@@ -119,8 +123,8 @@ pub async fn update_state_tx(
 /// Update the maximum TTL signed by a DNSSEC key in the current transaction.
 pub async fn update_max_signed_ttl_tx(
     tx: &mut Transaction<'_>,
-    id: i32,
-    max_signed_ttl: i32,
+    id: DnssecKeyId,
+    max_signed_ttl: Ttl,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
@@ -136,7 +140,7 @@ pub async fn update_max_signed_ttl_tx(
 }
 
 /// Delete a DNSSEC key by ID in the current transaction.
-pub async fn delete_tx(tx: &mut Transaction<'_>, id: i32) -> Result<(), DatabaseError> {
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: DnssecKeyId) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::dnssec_key::delete_tx(tx, id).await,
         TransactionKind::Postgres(tx) => postgres::dnssec_key::delete_tx(tx, id).await,
@@ -147,7 +151,7 @@ pub async fn delete_tx(tx: &mut Transaction<'_>, id: i32) -> Result<(), Database
 /// Delete all DNSSEC keys for a zone in the current transaction.
 pub async fn delete_by_zone_id_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::dnssec_key::delete_by_zone_id_tx(tx, zone_id).await,

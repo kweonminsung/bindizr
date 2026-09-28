@@ -1,4 +1,7 @@
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::{
+    dns::name::OwnerName,
+    model::{api_token::TokenId, record::RecordId, zone::ZoneId},
+};
 
 use crate::{
     Backend, Db, LockLevel, Transaction,
@@ -29,7 +32,7 @@ pub struct RecordFilter {
     /// Restrict to zones granted to this token, joined against
     /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
-    pub scope_token_id: Option<i32>,
+    pub scope_token_id: Option<TokenId>,
     pub sort: RecordSort,
     pub order: SortOrder,
     pub limit: Option<u32>,
@@ -50,7 +53,7 @@ pub async fn create_many_tx(
 }
 
 /// Find a record by ID.
-pub async fn get(db: &Db, id: i32) -> Result<Option<Record>, DatabaseError> {
+pub async fn get(db: &Db, id: RecordId) -> Result<Option<Record>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::record::get(pool, id).await,
         Backend::Postgres(pool) => postgres::record::get(pool, id).await,
@@ -59,7 +62,7 @@ pub async fn get(db: &Db, id: i32) -> Result<Option<Record>, DatabaseError> {
 }
 
 /// Find a record with its zone metadata.
-pub async fn get_with_zone(db: &Db, id: i32) -> Result<Option<RecordWithZone>, DatabaseError> {
+pub async fn get_with_zone(db: &Db, id: RecordId) -> Result<Option<RecordWithZone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::record::get_with_zone(pool, id).await,
         Backend::Postgres(pool) => postgres::record::get_with_zone(pool, id).await,
@@ -70,7 +73,7 @@ pub async fn get_with_zone(db: &Db, id: i32) -> Result<Option<RecordWithZone>, D
 /// Find a record by ID in the current transaction.
 pub async fn get_tx(
     tx: &mut Transaction<'_>,
-    id: i32,
+    id: RecordId,
     lock_level: LockLevel,
 ) -> Result<Option<Record>, DatabaseError> {
     match &mut tx.0 {
@@ -83,7 +86,7 @@ pub async fn get_tx(
 /// List records for a zone in the current transaction.
 pub async fn list_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
     match &mut tx.0 {
@@ -96,7 +99,7 @@ pub async fn list_tx(
 /// List records at an owner name in a zone in the current transaction.
 pub async fn list_by_name_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
     name: &OwnerName,
     lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
@@ -119,7 +122,7 @@ pub async fn list_by_name_tx(
 /// keep it on `idx_records_zone_type`.
 pub async fn get_ds_name_without_ns_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<Option<String>, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::record::get_ds_name_without_ns_tx(tx, zone_id).await,
@@ -134,7 +137,7 @@ pub async fn get_ds_name_without_ns_tx(
 /// by bulk insert to fetch only the rows that could conflict with the batch.
 pub async fn list_by_names_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
     names: &[OwnerName],
     lock_level: LockLevel,
 ) -> Result<Vec<Record>, DatabaseError> {
@@ -182,7 +185,10 @@ pub async fn update_tx(tx: &mut Transaction<'_>, record: Record) -> Result<Recor
 }
 
 /// Delete many records in as few statements as the backend's bind limit allows.
-pub async fn delete_many_tx(tx: &mut Transaction<'_>, ids: &[i32]) -> Result<(), DatabaseError> {
+pub async fn delete_many_tx(
+    tx: &mut Transaction<'_>,
+    ids: &[RecordId],
+) -> Result<(), DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => mysql::record::delete_many_tx(tx, ids).await,
         TransactionKind::Postgres(tx) => postgres::record::delete_many_tx(tx, ids).await,

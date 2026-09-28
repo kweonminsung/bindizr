@@ -6,8 +6,15 @@ use crate::{
     model::{
         grant_pattern::{MATCH_ANY, matches_name, matches_types},
         record::RecordType,
+        tsig_key::TsigKeyId,
+        zone::ZoneId,
     },
 };
+
+id_newtype!(
+    /// The id of a TSIG grant row.
+    TsigGrantId
+);
 
 /// Grants one TSIG key rights over part of one zone, in the spirit of BIND's
 /// `update-policy` and `allow-transfer`. Global keys bypass grants and hold no
@@ -18,9 +25,9 @@ use crate::{
 /// comma-separated list of type mnemonics.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TsigGrant {
-    pub id: i32,
-    pub zone_id: i32,
-    pub tsig_key_id: i32,
+    pub id: TsigGrantId,
+    pub zone_id: ZoneId,
+    pub tsig_key_id: TsigKeyId,
     pub record_name_pattern: String,
     pub record_types: String,
     /// Whether the grant permits updates. Transfers require an unrestricted

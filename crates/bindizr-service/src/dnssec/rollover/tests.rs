@@ -1,4 +1,7 @@
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::{
+    dns::{Serial, Ttl, name::ZoneName},
+    model::{dnssec_policy::PolicyId, zone::ZoneId},
+};
 
 use super::*;
 use crate::{
@@ -9,17 +12,17 @@ use crate::{
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 3600,
-        serial: 5,
+        default_ttl: Ttl::from_secs(3600),
+        serial: Serial::from(5),
         refresh: 300,
         retry: 60,
         expire: 3600000,
-        minimum_ttl: 900,
-        dnssec_policy_id: Some(1),
+        minimum_ttl: Ttl::from_secs(900),
+        dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: None,
         enabled: true,
         description: None,
@@ -30,7 +33,7 @@ fn zone() -> Zone {
 /// Build the policy the test zone signs under.
 fn policy() -> DnssecPolicy {
     DnssecPolicy {
-        id: 1,
+        id: PolicyId::from(1),
         name: "default".to_string(),
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
         denial: DnssecDenial::Nsec,
@@ -56,8 +59,8 @@ fn signed(keys: &[DnssecKey]) -> SignedZone {
 fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible_in: i64) -> DnssecKey {
     let now = Utc::now();
     DnssecKey {
-        id,
-        zone_id: 1,
+        id: DnssecKeyId::from(id),
+        zone_id: ZoneId::from(1),
         role,
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
         key_tag: id,
@@ -66,7 +69,7 @@ fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible_in: i64) ->
         state,
         state_changed_at: now,
         eligible_at: now + Duration::hours(eligible_in),
-        max_signed_ttl: 300,
+        max_signed_ttl: Ttl::try_from(300).unwrap(),
         created_at: now,
     }
 }
@@ -81,7 +84,7 @@ fn a_published_sep_key_past_its_hold_down_is_promotable() {
 
     assert_eq!(
         promotable_sep_key_ids(&signed(&keys), Holddown::Wait).unwrap(),
-        [2]
+        [DnssecKeyId::from(2)]
     );
 }
 
@@ -135,7 +138,7 @@ fn skipping_the_hold_down_promotes_anyway() {
 
     assert_eq!(
         promotable_sep_key_ids(&signed(&keys), Holddown::Skip).unwrap(),
-        [2]
+        [DnssecKeyId::from(2)]
     );
 }
 
@@ -158,7 +161,7 @@ fn the_latest_deadline_among_the_published_keys_gates_them_all() {
 #[test]
 fn a_retiring_key_waits_out_the_signatures_it_made() {
     let mut zsk = key(1, DnssecKeyRole::Zsk, DnssecKeyState::Active, 0);
-    zsk.max_signed_ttl = 900;
+    zsk.max_signed_ttl = Ttl::try_from(900).unwrap();
 
     // A ZSK has no DS at the parent, so only its signatures hold it back.
     assert_eq!(zsk.retirement_interval_secs(Some(86_400)), 900);
@@ -170,15 +173,15 @@ fn a_retiring_sep_key_also_waits_out_the_parents_ds() {
     // Resolvers that cached the parent's DS record set before the replacement was
     // added hold it for its TTL, and it names only the key being removed.
     let mut csk = key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, 0);
-    csk.max_signed_ttl = 900;
+    csk.max_signed_ttl = Ttl::try_from(900).unwrap();
 
     assert_eq!(csk.retirement_interval_secs(Some(86_400)), 86_400);
 
     // A zone signed with a longer TTL than the parent's outlasts it.
-    csk.max_signed_ttl = 604_800;
+    csk.max_signed_ttl = Ttl::try_from(604_800).unwrap();
     assert_eq!(csk.retirement_interval_secs(Some(86_400)), 604_800);
 
     // Nothing observed the parent, so only the signatures are known.
-    csk.max_signed_ttl = 900;
+    csk.max_signed_ttl = Ttl::try_from(900).unwrap();
     assert_eq!(csk.retirement_interval_secs(None), 900);
 }

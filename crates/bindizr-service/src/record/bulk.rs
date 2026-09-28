@@ -1,6 +1,12 @@
 use std::{collections::HashMap, time::Instant};
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::{
+    dns::{
+        Serial, Ttl,
+        name::{OwnerName, ZoneName},
+    },
+    model::{record::RecordId, zone::ZoneId},
+};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
@@ -44,7 +50,7 @@ pub(crate) struct PreparedRecord {
     pub(crate) owner_name: String,
     pub(crate) record_type: RecordType,
     pub(crate) value: String,
-    pub(crate) ttl: Option<i32>,
+    pub(crate) ttl: Option<Ttl>,
     pub(crate) priority: Option<i32>,
 }
 
@@ -57,9 +63,7 @@ pub(crate) fn parse_record_request(
     priority: Option<i32>,
 ) -> Result<PreparedRecord, ServiceError> {
     let record_type = parse_record_type(record_type)?;
-    if let Some(ttl) = ttl {
-        validate_record_ttl(ttl)?;
-    }
+    let ttl = ttl.map(validate_record_ttl).transpose()?;
     let priority = record_type.stored_priority(priority);
     let value = value
         .to_encoded_value(&record_type, priority)
@@ -78,8 +82,8 @@ pub(crate) fn parse_record_request(
 /// already validated the rows.
 pub(crate) async fn create_with_changes_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
-    new_serial: i32,
+    zone_id: ZoneId,
+    new_serial: Serial,
     records: &[Record],
 ) -> Result<Vec<Record>, ServiceError> {
     if records.is_empty() {
@@ -110,7 +114,7 @@ pub(crate) async fn create_with_changes_tx(
 /// caller has already validated the row.
 pub(crate) async fn update_with_changes_tx(
     tx: &mut Transaction<'_>,
-    new_serial: i32,
+    new_serial: Serial,
     existing: &Record,
     updated: Record,
 ) -> Result<Record, ServiceError> {
@@ -138,15 +142,15 @@ pub(crate) async fn update_with_changes_tx(
 /// Delete records with their DEL zone changes for IXFR.
 pub(crate) async fn delete_with_changes_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
-    new_serial: i32,
+    zone_id: ZoneId,
+    new_serial: Serial,
     records: &[Record],
 ) -> Result<(), ServiceError> {
     if records.is_empty() {
         return Ok(());
     }
 
-    let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
+    let ids: Vec<RecordId> = records.iter().map(|r| r.id).collect();
     db::record::delete_many_tx(tx, &ids).await?;
     let changes: Vec<ZoneChange> = records
         .iter()
@@ -299,7 +303,7 @@ pub async fn create_bulk(
             )?;
 
             let record = Record {
-                id: 0,
+                id: RecordId::UNWRITTEN,
                 name: owner_name,
                 record_type: prepared_record.record_type,
                 value: prepared_record.value.clone(),

@@ -7,7 +7,7 @@ mod send;
 use std::{collections::HashMap, net::IpAddr};
 
 use bindizr_core::{
-    dns::{message, message::Rtype},
+    dns::{Serial, message, message::Rtype},
     model::{transfer::TransferKind, zone_version::ZoneVersion},
 };
 use bindizr_service::{
@@ -58,10 +58,10 @@ pub(crate) async fn handle_ixfr(
             TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
         };
 
-    let current_serial = bindizr_core::dns::serial_to_u32(zone.serial)?;
+    let current_serial = zone.serial;
 
     let client_serial = match query.client_serial {
-        Some(s) => s,
+        Some(s) => Serial::from(s),
         None => {
             log::warn!("IXFR: No client serial provided, falling back to AXFR");
             return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity)
@@ -71,9 +71,7 @@ pub(crate) async fn handle_ixfr(
 
     if client_serial == current_serial {
         log::info!("IXFR: Client is up-to-date (serial={})", current_serial);
-        let current_soa = match zone::find_version_by_serial(cx, zone.id, current_serial as i32)
-            .await?
-        {
+        let current_soa = match zone::find_version_by_serial(cx, zone.id, current_serial).await? {
             Some(version) => version,
             None => {
                 log::warn!("IXFR: Missing SOA version, falling back to AXFR");
@@ -88,7 +86,7 @@ pub(crate) async fn handle_ixfr(
     // bindizr's serials stop at i32::MAX and never wrap, so mod-2^32 ordering
     // could only matter for a client holding a larger serial from a previous
     // primary, which needs a reload there rather than an IXFR.
-    if client_serial > current_serial {
+    if client_serial > Serial::from(current_serial.as_u32()) {
         log::warn!(
             "IXFR: Client serial {} > current serial {}, falling back to AXFR",
             client_serial,
@@ -101,13 +99,8 @@ pub(crate) async fn handle_ixfr(
     // incremental one stops being smaller; counting first also keeps a
     // long-absent secondary from pulling its whole absence into memory. Rows,
     // not bytes: summing lengths would read the rows this decides whether to read.
-    let delta_rows = zone::count_changes_between_serials(
-        cx,
-        zone.id,
-        client_serial as i32,
-        current_serial as i32,
-    )
-    .await?;
+    let delta_rows =
+        zone::count_changes_between_serials(cx, zone.id, client_serial, current_serial).await?;
     if delta_rows >= zone::count_transfer_records(cx, zone.name.as_str()).await? {
         log::info!(
             "IXFR: Delta from serial {} to {} is no smaller than the zone, falling back to AXFR",
@@ -118,13 +111,8 @@ pub(crate) async fn handle_ixfr(
     }
 
     // Pair journal steps with their SOA versions to prove the delta has no gaps.
-    let changes = zone::list_changes_between_serials(
-        cx,
-        zone.id,
-        client_serial as i32,
-        current_serial as i32,
-    )
-    .await?;
+    let changes =
+        zone::list_changes_between_serials(cx, zone.id, client_serial, current_serial).await?;
 
     if changes.is_empty() {
         log::warn!(
@@ -135,30 +123,20 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity).await;
     }
 
-    let mut journal_serials: Vec<u32> = changes
-        .iter()
-        .map(|c| bindizr_core::dns::serial_to_u32(c.serial))
-        .collect::<Result<_, _>>()?;
+    let mut journal_serials: Vec<Serial> = changes.iter().map(|c| c.serial).collect();
     journal_serials.sort_unstable();
     journal_serials.dedup();
 
-    let mut versions_by_serial: HashMap<u32, ZoneVersion> = HashMap::new();
+    let mut versions_by_serial: HashMap<Serial, ZoneVersion> = HashMap::new();
     versions_by_serial.reserve(journal_serials.len() + 1);
 
-    for version in zone::list_versions_in_serial_range(
-        cx,
-        zone.id,
-        client_serial as i32,
-        current_serial as i32,
-    )
-    .await?
+    for version in
+        zone::list_versions_in_serial_range(cx, zone.id, client_serial, current_serial).await?
     {
-        if let Ok(serial) = bindizr_core::dns::serial_to_u32(version.serial) {
-            versions_by_serial.insert(serial, version);
-        }
+        versions_by_serial.insert(version.serial, version);
     }
 
-    let version_serials: Vec<u32> = versions_by_serial.keys().copied().collect();
+    let version_serials: Vec<Serial> = versions_by_serial.keys().copied().collect();
     if let Err(gap) = delta_gap(
         client_serial,
         current_serial,

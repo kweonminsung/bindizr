@@ -3,7 +3,7 @@
 
 mod version;
 
-use bindizr_core::{errln, out, outln};
+use bindizr_core::{dns::Serial, errln, out, outln};
 use bindizr_service::types::{
     CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetTokenGrantResponse,
     GetTsigGrantResponse, GetZoneResponse, GetZonesFilter, ImportMode as ServiceImportMode,
@@ -390,7 +390,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     mname,
                     rname,
                     default_ttl,
-                    serial,
+                    serial: serial.map(Serial::from),
                     description,
                     refresh,
                     retry,
@@ -435,9 +435,9 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                     default_ttl,
                     min_default_ttl,
                     max_default_ttl,
-                    serial,
-                    min_serial,
-                    max_serial,
+                    serial: serial.map(Serial::from),
+                    min_serial: min_serial.map(Serial::from),
+                    max_serial: max_serial.map(Serial::from),
                     created_after,
                     created_before,
                     signed: signed.then_some(true),

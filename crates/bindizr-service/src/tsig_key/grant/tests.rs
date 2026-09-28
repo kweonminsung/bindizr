@@ -5,9 +5,9 @@ use super::*;
 /// Build a grant fixture with the requested name and type filters.
 fn grant(pattern: &str, types: &str) -> TsigGrant {
     TsigGrant {
-        id: 0,
-        zone_id: 1,
-        tsig_key_id: 1,
+        id: TsigGrantId::from(0),
+        zone_id: ZoneId::from(1),
+        tsig_key_id: TsigKeyId::from(1),
         record_name_pattern: pattern.to_string(),
         record_types: types.to_string(),
         can_write: true,

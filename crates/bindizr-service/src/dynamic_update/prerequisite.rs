@@ -140,6 +140,10 @@ fn has_record_set(owner: &OwnerName, record_type: &RecordType, records: &[Record
 
 #[cfg(test)]
 mod tests {
+    use bindizr_core::{
+        dns::Ttl,
+        model::{record::RecordId, zone::ZoneId},
+    };
     use chrono::Utc;
 
     use super::*;
@@ -147,13 +151,13 @@ mod tests {
     /// Build a stored A record fixture with the given value.
     fn a_record(value: &str) -> Record {
         Record {
-            id: 0,
+            id: RecordId::from(0),
             name: OwnerName::from_row("check"),
             record_type: RecordType::A,
             value: value.to_string(),
-            ttl: 300,
+            ttl: Ttl::from_secs(300),
             priority: None,
-            zone_id: 1,
+            zone_id: ZoneId::from(1),
             created_at: Utc::now(),
         }
     }

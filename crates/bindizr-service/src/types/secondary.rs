@@ -3,8 +3,11 @@
 use std::collections::HashMap;
 
 use bindizr_core::{
-    dns::serial_to_u32,
-    model::transfer::{TransferKind, TransferResult, TransferWithZone},
+    dns::Serial,
+    model::{
+        secondary::SecondaryId,
+        transfer::{TransferKind, TransferResult, TransferWithZone},
+    },
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -49,8 +52,8 @@ pub struct UpdateSecondaryRequest {
 /// API representation of a secondary.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetSecondaryResponse {
-    #[schema(example = 1)]
-    pub id: i32,
+    #[schema(example = 1, value_type = i32)]
+    pub id: SecondaryId,
     #[schema(example = "ns2")]
     pub name: String,
     #[schema(example = "ns2.example.net:53")]
@@ -108,8 +111,8 @@ pub struct SecondaryCheckResponse {
     pub catalog_zone_name: String,
     /// The serial Bindizr's own listener serves the catalog zone at; absent
     /// with `listener_error`, and `catalog` is then `reachable` at best.
-    #[schema(example = 42)]
-    pub catalog_serial: Option<u32>,
+    #[schema(example = 42, value_type = Option<u32>)]
+    pub catalog_serial: Option<Serial>,
     pub listener_error: Option<String>,
     /// The secondary's catalog probe, classified against `catalog_serial`.
     pub catalog: SecondaryStatusResponse,
@@ -135,8 +138,8 @@ pub struct TransferResponse {
     #[schema(example = true)]
     pub incremental: bool,
     /// The serial the answer reached; absent when nothing was transferred.
-    #[schema(example = 42)]
-    pub serial: Option<u32>,
+    #[schema(example = 42, value_type = Option<u32>)]
+    pub serial: Option<Serial>,
     pub at: DateTime<Utc>,
     /// Why the transfer was refused or failed.
     pub error: Option<String>,
@@ -151,9 +154,7 @@ impl From<&TransferWithZone> for TransferResponse {
             kind: transfer.kind,
             result: transfer.result,
             incremental: transfer.incremental,
-            serial: transfer
-                .serial
-                .and_then(|serial| serial_to_u32(serial).ok()),
+            serial: transfer.serial,
             at: transfer.served_at,
             error: transfer.error.clone(),
         }

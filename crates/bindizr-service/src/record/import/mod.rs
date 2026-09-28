@@ -6,10 +6,14 @@ use std::{
     time::Instant,
 };
 
-use bindizr_core::dns::{
-    address::is_address_target,
-    name::{OwnerName, ZoneName},
-    zonefile::{ParsedZoneFile, ZoneFileValue},
+use bindizr_core::{
+    dns::{
+        Ttl,
+        address::is_address_target,
+        name::{OwnerName, ZoneName},
+        zonefile::{ParsedZoneFile, ZoneFileValue},
+    },
+    model::{record::RecordId, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -134,7 +138,7 @@ async fn reconcile_zone_file(
             // Created in this transaction, so a dry run rolls it back with
             // the records and an apply commits both at once.
             (None, true) => {
-                let soa = ParsedZoneFile::parse(content, zone_name, 0)
+                let soa = ParsedZoneFile::parse(content, zone_name, Ttl::from_secs(0))
                     .soa
                     .ok_or_else(|| {
                         ServiceError::invalid_input(
@@ -275,7 +279,7 @@ async fn reconcile_zone_file(
         })?;
         timings.load_existing_ms = elapsed_ms(t);
 
-        let effective_ttl = |ttl: Option<i32>| ttl.unwrap_or(zone.default_ttl);
+        let effective_ttl = |ttl: Option<Ttl>| ttl.unwrap_or(zone.default_ttl);
 
         let t = Instant::now();
         let plan = compute_import_plan(mode, &zone, &existing_records, &desired);
@@ -285,7 +289,7 @@ async fn reconcile_zone_file(
         // violations are caught without writing anything. Simulated records
         // are indexed by name so each check scans only same-name candidates.
         let t = Instant::now();
-        let del_ids: HashSet<i32> = plan.dels.iter().chain(&plan.ttl_dels).map(|d| d.id).collect();
+        let del_ids: HashSet<RecordId> = plan.dels.iter().chain(&plan.ttl_dels).map(|d| d.id).collect();
         let mut simulated_by_name: HashMap<OwnerName, Vec<Record>> =
             HashMap::with_capacity(existing_records.len());
         for e in existing_records.iter() {
@@ -312,13 +316,13 @@ async fn reconcile_zone_file(
                 // In-memory comparison only; the negative id keeps the
                 // placeholder distinct from persisted rows.
                 Ok(()) => records_at_name.push(Record {
-                    id: -1,
+                    id: RecordId::from(-1),
                     name: add.stored_name.clone(),
                     record_type: add.prepared.record_type,
                     value: add.prepared.value.clone(),
                     ttl: effective_ttl(add.prepared.ttl),
                     priority: add.prepared.priority,
-                    zone_id: 0,
+                    zone_id: ZoneId::UNWRITTEN,
                     created_at: Utc::now(),
                 }),
                 Err(e) => {
@@ -377,7 +381,7 @@ async fn reconcile_zone_file(
             let to_insert: Vec<Record> = plan.adds
                 .iter()
                 .map(|add| Record {
-                    id: 0,
+                    id: RecordId::UNWRITTEN,
                     name: add.stored_name.clone(),
                     record_type: add.prepared.record_type,
                     value: add.prepared.value.clone(),

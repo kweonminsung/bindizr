@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::{dns::name::OwnerName, model::record::RecordId};
 use bindizr_db::LockLevel;
 
 use super::validation::{normalize_record_owner_name, parse_record_type};
@@ -22,7 +22,7 @@ use crate::{
 pub async fn delete(
     cx: &Context,
     caller: &Caller,
-    record_id: i32,
+    record_id: RecordId,
     run: Run,
 ) -> Result<DeleteRecordsResponse, ServiceError> {
     // Resolve zone_id with a non-locking read so the tx locks zone before
@@ -230,7 +230,7 @@ pub async fn delete_matching(
             .cloned()
             .map(RecordData::from)
             .collect();
-        let removed: HashSet<i32> = matched.iter().map(|record| record.id).collect();
+        let removed: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
         let after: Vec<RecordData> = records_at_name
             .iter()
             .filter(|record| !removed.contains(&record.id))

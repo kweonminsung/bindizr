@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::model::tsig_key::TsigAlgorithm;
+use bindizr_core::model::{tsig_grant::TsigGrantId, tsig_key::TsigAlgorithm};
 use bindizr_service::{
     Context,
     error::ServiceError,
@@ -269,7 +269,7 @@ pub(crate) async fn delete_tsig_grant(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameIdParams>,
 ) -> Result<Response, ApiError> {
-    grant::revoke(&cx, &caller, &params.name, params.id).await?;
+    grant::revoke(&cx, &caller, &params.name, TsigGrantId::from(params.id)).await?;
     let response = MessageResponse {
         message: "TSIG grant revoked successfully".to_string(),
     };

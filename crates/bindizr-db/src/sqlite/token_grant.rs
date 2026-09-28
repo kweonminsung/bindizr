@@ -1,3 +1,4 @@
+use bindizr_core::model::{api_token::TokenId, token_grant::TokenGrantId, zone::ZoneId};
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, Transaction};
 
@@ -26,13 +27,16 @@ pub(crate) async fn create(
     .execute(&mut *conn)
     .await?;
 
-    grant.id = result.last_insert_rowid() as i32;
+    grant.id = TokenGrantId::from(result.last_insert_rowid() as i32);
     grant.created_at = now;
     Ok(grant)
 }
 
 /// Find a token grant by ID.
-pub(crate) async fn get(pool: &Pool<Sqlite>, id: i32) -> Result<Option<TokenGrant>, DatabaseError> {
+pub(crate) async fn get(
+    pool: &Pool<Sqlite>,
+    id: TokenGrantId,
+) -> Result<Option<TokenGrant>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     let grant = sqlx::query_as::<_, TokenGrant>(
@@ -48,7 +52,7 @@ pub(crate) async fn get(pool: &Pool<Sqlite>, id: i32) -> Result<Option<TokenGran
 /// List token grants for a zone.
 pub(crate) async fn list_by_zone_id(
     pool: &Pool<Sqlite>,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<Vec<TokenGrant>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
@@ -65,8 +69,8 @@ pub(crate) async fn list_by_zone_id(
 /// List token grants for an API token in a zone in the current transaction.
 pub(crate) async fn list_by_zone_id_and_token_id_tx(
     tx: &mut Transaction<'_, Sqlite>,
-    zone_id: i32,
-    api_token_id: i32,
+    zone_id: ZoneId,
+    api_token_id: TokenId,
     _lock_level: LockLevel,
 ) -> Result<Vec<TokenGrant>, DatabaseError> {
     let grants = sqlx::query_as::<_, TokenGrant>(
@@ -83,7 +87,7 @@ pub(crate) async fn list_by_zone_id_and_token_id_tx(
 /// List token grants for an API token.
 pub(crate) async fn list_by_token_id(
     pool: &Pool<Sqlite>,
-    api_token_id: i32,
+    api_token_id: TokenId,
 ) -> Result<Vec<TokenGrant>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
@@ -98,7 +102,7 @@ pub(crate) async fn list_by_token_id(
 }
 
 /// Delete a token grant by ID.
-pub(crate) async fn delete(pool: &Pool<Sqlite>, id: i32) -> Result<(), DatabaseError> {
+pub(crate) async fn delete(pool: &Pool<Sqlite>, id: TokenGrantId) -> Result<(), DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     sqlx::query("DELETE FROM token_grants WHERE id = ?")
@@ -112,8 +116,8 @@ pub(crate) async fn delete(pool: &Pool<Sqlite>, id: i32) -> Result<(), DatabaseE
 /// Delete every grant a token holds in one zone, returning how many rows went.
 pub(crate) async fn delete_by_token_id_and_zone_id(
     pool: &Pool<Sqlite>,
-    api_token_id: i32,
-    zone_id: i32,
+    api_token_id: TokenId,
+    zone_id: ZoneId,
 ) -> Result<u64, DatabaseError> {
     let mut conn = pool.acquire().await?;
 

@@ -3,7 +3,10 @@
 
 use bindizr_core::{
     dns::dnssec::SigningPass,
-    model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
+    model::{
+        dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
+        zone::ZoneId,
+    },
 };
 use chrono::{DateTime, Duration, Utc};
 
@@ -31,7 +34,7 @@ pub(crate) struct PruneSummary {
 /// or a missing SOA.
 pub(crate) async fn prune_zone_history_by_zone_id(
     cx: &Context,
-    zone_id: i32,
+    zone_id: ZoneId,
     cutoff: DateTime<Utc>,
 ) -> Result<PruneSummary, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to prune zone history").await?;
@@ -63,7 +66,7 @@ pub(crate) async fn prune_zone_history_by_zone_id(
 /// (zone deleted or unsigned meanwhile, or a concurrent mutation re-signed it).
 pub(crate) async fn resign_zone_by_zone_id(
     cx: &Context,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<Option<String>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
     let result = async {
@@ -95,7 +98,7 @@ pub(crate) async fn resign_zone_by_zone_id(
 /// transaction. `None` when the state moved on concurrently.
 pub(crate) async fn start_zsk_rollover_by_zone_id(
     cx: &Context,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<Option<String>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
     let result = async {
@@ -145,7 +148,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
 /// transaction. `None` when the state moved on concurrently.
 pub(crate) async fn promote_zsks_by_zone_id(
     cx: &Context,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<Option<String>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
     let result = async {
@@ -156,7 +159,7 @@ pub(crate) async fn promote_zsks_by_zone_id(
         };
 
         let now = Utc::now();
-        let due: Vec<i32> = signed
+        let due: Vec<DnssecKeyId> = signed
             .keys
             .iter()
             .filter(|key| {
@@ -195,7 +198,7 @@ pub(crate) async fn promote_zsks_by_zone_id(
 /// failures.
 pub(crate) async fn promote_sep_keys_by_zone_id(
     cx: &Context,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<Option<String>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
     let result = async {
@@ -262,7 +265,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
 /// either another key of that algorithm still signs zone data, or the whole
 /// algorithm is leaving at once (RFC 6840, Section 5.11 keeps an algorithm's
 /// DNSKEYs and its signatures together).
-fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<i32> {
+fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<DnssecKeyId> {
     keys.iter()
         .filter(|key| {
             if key.state != DnssecKeyState::Retired || key.eligible_at > now {
@@ -289,7 +292,7 @@ fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<i32> {
 /// `None` when nothing was removable, or when removing would leave no key.
 pub(crate) async fn prune_retired_keys_by_zone_id(
     cx: &Context,
-    zone_id: i32,
+    zone_id: ZoneId,
 ) -> Result<Option<String>, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to remove retired keys").await?;
     let result = async {

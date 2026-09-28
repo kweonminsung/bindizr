@@ -1,6 +1,6 @@
 //! The `zone version` subcommands: list, show, diff, and rollback.
 
-use bindizr_core::{model::zone_version::VersionScope, out, outln};
+use bindizr_core::{dns::Serial, model::zone_version::VersionScope, out, outln};
 use bindizr_service::types::{
     PaginatedResponse, RollbackZoneResponse, Run, VersionDetailResponse, VersionDiffResponse,
     ZoneVersionResponse,
@@ -136,7 +136,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             let response =
                 client::send_command::<VersionDetailResponse>(DaemonCommand::GetZoneVersion {
                     name,
-                    serial,
+                    serial: Serial::from(serial),
                 })
                 .await?;
             let detail = &response.data;
@@ -157,8 +157,8 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             let response =
                 client::send_command::<VersionDiffResponse>(DaemonCommand::DiffZoneVersions {
                     name,
-                    from_serial,
-                    to_serial,
+                    from_serial: Serial::from(from_serial),
+                    to_serial: to_serial.map(Serial::from),
                 })
                 .await?;
             match output {
@@ -175,7 +175,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
             let response =
                 client::send_command::<RollbackZoneResponse>(DaemonCommand::RollbackZone {
                     name,
-                    serial,
+                    serial: Serial::from(serial),
                     run: Run::from_dry_run(dry_run),
                 })
                 .await?;

@@ -1,7 +1,7 @@
 //! Manages TSIG credentials shared by update and transfer authentication.
 
 use base64::Engine;
-use bindizr_core::dns::name::parse_lookup_name;
+use bindizr_core::{dns::name::parse_lookup_name, model::tsig_key::TsigKeyId};
 use chrono::Utc;
 use rand::RngExt;
 
@@ -46,7 +46,7 @@ pub async fn create(
     db::tsig_key::create(
         cx.db(),
         TsigKey {
-            id: 0,
+            id: TsigKeyId::UNWRITTEN,
             name: name.clone(),
             algorithm,
             secret,

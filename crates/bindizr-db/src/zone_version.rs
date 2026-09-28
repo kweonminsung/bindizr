@@ -1,3 +1,4 @@
+use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use chrono::{DateTime, Utc};
 
 use crate::{
@@ -23,8 +24,8 @@ pub async fn upsert_tx(
 /// Find a zone version by zone ID and serial.
 pub async fn get_by_serial(
     db: &Db,
-    zone_id: i32,
-    serial: i32,
+    zone_id: ZoneId,
+    serial: Serial,
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::zone_version::get_by_serial(pool, zone_id, serial).await,
@@ -39,9 +40,9 @@ pub async fn get_by_serial(
 /// an IXFR needs both endpoint SOAs, unlike the journal's half-open range.
 pub async fn list_in_serial_range(
     db: &Db,
-    zone_id: i32,
-    from_serial: i32,
-    to_serial: i32,
+    zone_id: ZoneId,
+    from_serial: Serial,
+    to_serial: Serial,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
@@ -61,7 +62,7 @@ pub async fn list_in_serial_range(
 /// paginated; the current serial is always listed.
 pub async fn list(
     db: &Db,
-    zone_id: i32,
+    zone_id: ZoneId,
     scope: VersionScope,
     limit: u32,
     offset: u64,
@@ -80,7 +81,7 @@ pub async fn list(
 }
 
 /// Count the versions of a zone that `scope` covers.
-pub async fn count(db: &Db, zone_id: i32, scope: VersionScope) -> Result<u64, DatabaseError> {
+pub async fn count(db: &Db, zone_id: ZoneId, scope: VersionScope) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::zone_version::count(pool, zone_id, scope).await,
         Backend::Postgres(pool) => postgres::zone_version::count(pool, zone_id, scope).await,
@@ -91,8 +92,8 @@ pub async fn count(db: &Db, zone_id: i32, scope: VersionScope) -> Result<u64, Da
 /// Read a zone version by serial consistently with mutations in the current transaction.
 pub async fn get_by_serial_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
-    serial: i32,
+    zone_id: ZoneId,
+    serial: Serial,
     lock_level: LockLevel,
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     match &mut tx.0 {
@@ -112,7 +113,7 @@ pub async fn get_by_serial_tx(
 /// newest (the IXFR up-to-date response reads it). Returns rows deleted.
 pub async fn prune_by_zone_id_older_than_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
+    zone_id: ZoneId,
     cutoff: DateTime<Utc>,
 ) -> Result<u64, DatabaseError> {
     match &mut tx.0 {

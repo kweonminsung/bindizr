@@ -2,6 +2,7 @@
 //! Partial updates lock the policy row; creates and deletes rely on constraints.
 //! Zone signing consumes these policies in `dnssec`.
 
+use bindizr_core::model::dnssec_policy::PolicyId;
 use chrono::Utc;
 
 use crate::{
@@ -72,7 +73,7 @@ pub async fn create(
     db::dnssec_policy::create(
         cx.db(),
         DnssecPolicy {
-            id: 0,
+            id: PolicyId::UNWRITTEN,
             name: name.clone(),
             algorithm,
             denial,

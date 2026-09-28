@@ -2,10 +2,11 @@ use sqlx::FromRow;
 use thiserror::Error;
 
 use crate::{
-    dns::{name::OwnerName, record::Rdata},
+    dns::{Serial, Ttl, name::OwnerName, record::Rdata},
     model::{
         dnssec_record::{DnssecRecordType, ParseDnssecRecordTypeError},
         record::RecordType,
+        zone::ZoneId,
     },
 };
 
@@ -15,8 +16,8 @@ use crate::{
 /// `derived`; a CHECK constraint enforces it on the row.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ZoneChange {
-    pub zone_id: i32,
-    pub serial: i32,
+    pub zone_id: ZoneId,
+    pub serial: Serial,
     #[sqlx(try_from = "String")]
     pub operation: ChangeOperation,
     #[sqlx(try_from = "String")]
@@ -28,7 +29,7 @@ pub struct ZoneChange {
     /// Derived rows: the exact wire RDATA the signer produced — signatures
     /// cover these bytes, so IXFR must emit them unre-encoded.
     pub record_rdata: Option<Rdata>,
-    pub record_ttl: i32,
+    pub record_ttl: Ttl,
     pub record_priority: Option<i32>,
     /// Signer-generated DNSSEC change (RRSIG/NSEC/DNSKEY). IXFR emits these
     /// like any change; history reconstruction and diffs skip them — the

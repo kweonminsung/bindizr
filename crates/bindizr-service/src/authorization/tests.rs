@@ -1,6 +1,12 @@
 use std::sync::Arc;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::{
+    dns::{
+        Serial, Ttl,
+        name::{OwnerName, ZoneName},
+    },
+    model::{api_token::TokenId, token_grant::TokenGrantId, zone::ZoneId},
+};
 use chrono::Utc;
 
 use super::{Caller, RecordWrite, authorize_with_grants};
@@ -12,16 +18,16 @@ use crate::{
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::from_row("example.com"),
         mname: "ns1.example.com".to_string(),
         rname: "hostmaster@example.com".to_string(),
-        default_ttl: 3600,
-        serial: 1,
+        default_ttl: Ttl::from_secs(3600),
+        serial: Serial::from(1),
         refresh: 7200,
         retry: 3600,
         expire: 604800,
-        minimum_ttl: 86400,
+        minimum_ttl: Ttl::from_secs(86400),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -33,9 +39,9 @@ fn test_zone() -> Zone {
 /// Build a grant fixture with the requested name and type filters.
 fn grant(pattern: &str, types: &str) -> TokenGrant {
     TokenGrant {
-        id: 1,
-        zone_id: 1,
-        api_token_id: 3,
+        id: TokenGrantId::from(1),
+        zone_id: ZoneId::from(1),
+        api_token_id: TokenId::from(3),
         record_name_pattern: pattern.to_string(),
         record_types: types.to_string(),
         can_write: true,
@@ -65,7 +71,7 @@ fn authorize_global_rejects_scoped_tokens() {
     assert!(Caller::Global.authorize_global("create zones").is_ok());
 
     let scoped = Caller::Token {
-        id: 3,
+        id: TokenId::from(3),
         name: "scoped".into(),
         grants: Arc::from(vec![]),
     };
@@ -149,7 +155,7 @@ fn authorize_rejects_a_read_only_grant() {
 /// Build a scoped caller with the supplied token grants.
 fn token(grants: Vec<TokenGrant>) -> Caller {
     Caller::Token {
-        id: 3,
+        id: TokenId::from(3),
         name: "scoped".into(),
         grants: Arc::from(grants),
     }
@@ -157,7 +163,7 @@ fn token(grants: Vec<TokenGrant>) -> Caller {
 
 /// Check whether the test caller may read the requested record.
 fn visible(caller: &Caller, name: &str, record_type: Option<&RecordType>) -> bool {
-    caller.sees_record(1, &OwnerName::from_row(name), record_type)
+    caller.sees_record(ZoneId::from(1), &OwnerName::from_row(name), record_type)
 }
 
 /// Verify that `sees_record` narrows reads the way writes are narrowed.

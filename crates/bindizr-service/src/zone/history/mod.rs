@@ -6,8 +6,8 @@ mod reconstruction;
 use std::collections::{HashMap, HashSet};
 
 use bindizr_core::{
-    dns::{name::OwnerName, record::SoaMailbox, serial_to_i32, serial_to_u32},
-    model::zone_version::VersionScope,
+    dns::{Serial, name::OwnerName, record::SoaMailbox},
+    model::{record::RecordId, zone_version::VersionScope},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -38,7 +38,7 @@ use crate::{
 async fn validate_serial_diffable_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
-    serial: i32,
+    serial: Serial,
 ) -> Result<(), ServiceError> {
     if serial == zone.serial {
         return Ok(());
@@ -89,9 +89,8 @@ pub async fn get_version(
     cx: &Context,
     caller: &Caller,
     zone_name: &str,
-    serial: u32,
+    serial: Serial,
 ) -> Result<VersionDetailResponse, ServiceError> {
-    let serial = serial_to_i32(serial).map_err(ServiceError::invalid_input)?;
     let mut tx = transaction::begin_read_tx(cx, "Failed to load version").await?;
 
     let result = async {
@@ -127,14 +126,11 @@ pub async fn diff_versions(
     cx: &Context,
     caller: &Caller,
     zone_name: &str,
-    from_serial: u32,
-    to_serial: Option<u32>,
+    from_serial: Serial,
+    to_serial: Option<Serial>,
 ) -> Result<VersionDiffResponse, ServiceError> {
-    let from = serial_to_i32(from_serial).map_err(ServiceError::invalid_input)?;
-    let to = to_serial
-        .map(serial_to_i32)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?;
+    let from = from_serial;
+    let to = to_serial;
     let mut tx = transaction::begin_read_tx(cx, "Failed to diff versions").await?;
 
     let result = async {
@@ -151,7 +147,7 @@ pub async fn diff_versions(
 
         Ok::<_, ServiceError>(VersionDiffResponse {
             from_serial,
-            to_serial: serial_to_u32(to).map_err(ServiceError::internal)?,
+            to_serial: to,
             diff: build_record_diff(&zone, &from_records, &to_records),
         })
     }
@@ -168,11 +164,11 @@ pub async fn rollback(
     cx: &Context,
     caller: &Caller,
     zone_name: &str,
-    target_serial: u32,
+    target_serial: Serial,
     run: Run,
 ) -> Result<RollbackZoneResponse, ServiceError> {
     caller.authorize_global("roll back zones")?;
-    let target = serial_to_i32(target_serial).map_err(ServiceError::invalid_input)?;
+    let target = target_serial;
 
     let lookup_name = normalize_zone_name(zone_name)?;
     let mut tx = transaction::begin_tx(cx, "Failed to roll back zone").await?;
@@ -181,7 +177,7 @@ pub async fn rollback(
         let zone =
             super::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Exclusive).await?;
 
-        if target < 1 || target >= zone.serial {
+        if target.as_u32() < 1 || target >= zone.serial {
             return Err(ServiceError::invalid_input(format!(
                 "target serial {} must be less than the current serial {}",
                 target, zone.serial
@@ -193,7 +189,6 @@ pub async fn rollback(
                 .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
 
         let new_serial = generate_serial(Some(zone.serial))?;
-        let new_serial_wire = serial_to_u32(new_serial).map_err(ServiceError::internal)?;
         // SOA metadata comes back from the version; identity and creation
         // time are not part of one and stay.
         let rname = SoaMailbox::from_encoded(&version.rname)
@@ -255,7 +250,7 @@ pub async fn rollback(
         }
         to_add.extend(target_by_key.into_values().flatten());
 
-        let deleted_ids: HashSet<i32> = dels.iter().map(|del| del.id).collect();
+        let deleted_ids: HashSet<RecordId> = dels.iter().map(|del| del.id).collect();
 
         // Validate the adds in-memory against the records left after the deletes
         // (mirrors the import reconcile).
@@ -285,7 +280,7 @@ pub async fn rollback(
                 None,
             )?;
             let record = Record {
-                id: 0,
+                id: RecordId::UNWRITTEN,
                 name: target.name.clone(),
                 record_type: target.record_type,
                 value: target.value.clone(),
@@ -312,7 +307,7 @@ pub async fn rollback(
                     applied: false,
                     dry_run: true,
                     target_serial,
-                    new_serial: new_serial_wire,
+                    new_serial,
                     summary,
                 },
                 zone.name.clone(),
@@ -347,7 +342,7 @@ pub async fn rollback(
                 applied: true,
                 dry_run: false,
                 target_serial,
-                new_serial: new_serial_wire,
+                new_serial,
                 summary,
             },
             zone.name.clone(),

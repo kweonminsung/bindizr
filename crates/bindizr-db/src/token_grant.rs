@@ -1,3 +1,5 @@
+use bindizr_core::model::{api_token::TokenId, token_grant::TokenGrantId, zone::ZoneId};
+
 use crate::{
     Backend, Db, LockLevel, Transaction, error::DatabaseError, model::token_grant::TokenGrant,
     mysql, postgres, sqlite, tx::TransactionKind,
@@ -13,7 +15,7 @@ pub async fn create(db: &Db, grant: TokenGrant) -> Result<TokenGrant, DatabaseEr
 }
 
 /// Find a token grant by ID.
-pub async fn get(db: &Db, id: i32) -> Result<Option<TokenGrant>, DatabaseError> {
+pub async fn get(db: &Db, id: TokenGrantId) -> Result<Option<TokenGrant>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::token_grant::get(pool, id).await,
         Backend::Postgres(pool) => postgres::token_grant::get(pool, id).await,
@@ -22,7 +24,7 @@ pub async fn get(db: &Db, id: i32) -> Result<Option<TokenGrant>, DatabaseError> 
 }
 
 /// List token grants for a zone.
-pub async fn list_by_zone_id(db: &Db, zone_id: i32) -> Result<Vec<TokenGrant>, DatabaseError> {
+pub async fn list_by_zone_id(db: &Db, zone_id: ZoneId) -> Result<Vec<TokenGrant>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::token_grant::list_by_zone_id(pool, zone_id).await,
         Backend::Postgres(pool) => postgres::token_grant::list_by_zone_id(pool, zone_id).await,
@@ -34,8 +36,8 @@ pub async fn list_by_zone_id(db: &Db, zone_id: i32) -> Result<Vec<TokenGrant>, D
 /// authorization inside the caller's transaction.
 pub async fn list_by_zone_id_and_token_id_tx(
     tx: &mut Transaction<'_>,
-    zone_id: i32,
-    api_token_id: i32,
+    zone_id: ZoneId,
+    api_token_id: TokenId,
     lock_level: LockLevel,
 ) -> Result<Vec<TokenGrant>, DatabaseError> {
     match &mut tx.0 {
@@ -73,7 +75,7 @@ pub async fn list_by_zone_id_and_token_id_tx(
 /// NOTIFY.
 pub async fn list_by_token_id(
     db: &Db,
-    api_token_id: i32,
+    api_token_id: TokenId,
 ) -> Result<Vec<TokenGrant>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::token_grant::list_by_token_id(pool, api_token_id).await,
@@ -85,7 +87,7 @@ pub async fn list_by_token_id(
 }
 
 /// Delete a token grant by ID.
-pub async fn delete(db: &Db, id: i32) -> Result<(), DatabaseError> {
+pub async fn delete(db: &Db, id: TokenGrantId) -> Result<(), DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::token_grant::delete(pool, id).await,
         Backend::Postgres(pool) => postgres::token_grant::delete(pool, id).await,
@@ -97,8 +99,8 @@ pub async fn delete(db: &Db, id: i32) -> Result<(), DatabaseError> {
 /// went. One statement, so a revocation never lands half-applied.
 pub async fn delete_by_token_id_and_zone_id(
     db: &Db,
-    api_token_id: i32,
-    zone_id: i32,
+    api_token_id: TokenId,
+    zone_id: ZoneId,
 ) -> Result<u64, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {

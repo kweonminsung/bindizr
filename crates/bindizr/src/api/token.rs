@@ -7,6 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
+use bindizr_core::model::token_grant::TokenGrantId;
 use bindizr_service::{
     Context,
     token::{self, grant},
@@ -282,7 +283,7 @@ pub(crate) async fn delete_token_grant(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameIdParams>,
 ) -> Result<Response, ApiError> {
-    grant::revoke(&cx, &caller, &params.name, params.id).await?;
+    grant::revoke(&cx, &caller, &params.name, TokenGrantId::from(params.id)).await?;
     let response = MessageResponse {
         message: "Token grant revoked successfully".to_string(),
     };

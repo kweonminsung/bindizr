@@ -1,4 +1,5 @@
 use bindizr_core::dns::{
+    Ttl,
     name::{ZoneName, has_whitespace_or_control},
     record::SoaMailbox,
 };
@@ -19,7 +20,7 @@ pub(crate) struct NormalizedCreateZoneRequest {
     pub(crate) name: ZoneName,
     pub(crate) mname: String,
     pub(crate) rname: String,
-    pub(crate) ttl: i32,
+    pub(crate) ttl: Ttl,
     pub(crate) description: Option<String>,
 }
 
@@ -194,7 +195,7 @@ pub(crate) struct ResolvedSoaTimers {
     pub(crate) refresh: i32,
     pub(crate) retry: i32,
     pub(crate) expire: i32,
-    pub(crate) minimum_ttl: i32,
+    pub(crate) minimum_ttl: Ttl,
 }
 
 /// Validate client-supplied SOA timers, using `fallback` for omitted fields
@@ -207,10 +208,11 @@ pub(crate) fn normalize_soa_timers(
         refresh: normalize_soa_interval(request.refresh, fallback.refresh, "refresh")?,
         retry: normalize_soa_interval(request.retry, fallback.retry, "retry")?,
         expire: normalize_soa_interval(request.expire, fallback.expire, "expire")?,
-        minimum_ttl: normalize_soa_interval(
+        minimum_ttl: Ttl::try_from(normalize_soa_interval(
             request.minimum_ttl,
-            fallback.minimum_ttl,
+            i32::from(fallback.minimum_ttl),
             "minimum_ttl",
-        )?,
+        )?)
+        .map_err(ServiceError::invalid_zone_field)?,
     })
 }

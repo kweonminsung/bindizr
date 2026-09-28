@@ -1,6 +1,10 @@
 use bindizr_core::{
-    dns::{dnssec::generate_key, name::ZoneName, query::DsRecord},
-    model::dnssec_key::{DnssecAlgorithm, DnssecKeyRole},
+    dns::{Serial, Ttl, dnssec::generate_key, name::ZoneName, query::DsRecord},
+    model::{
+        dnssec_key::{DnssecAlgorithm, DnssecKeyRole},
+        dnssec_policy::PolicyId,
+        zone::ZoneId,
+    },
 };
 
 use super::*;
@@ -9,17 +13,17 @@ use crate::types::DsState;
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 300,
-        serial: 5,
+        default_ttl: Ttl::from_secs(300),
+        serial: Serial::from(5),
         refresh: 300,
         retry: 60,
         expire: 3600000,
-        minimum_ttl: 900,
-        dnssec_policy_id: Some(1),
+        minimum_ttl: Ttl::from_secs(900),
+        dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: Some("192.0.2.1,192.0.2.2".to_string()),
         enabled: true,
         description: None,

@@ -1,3 +1,4 @@
+use bindizr_core::model::tsig_key::TsigKeyId;
 use chrono::Utc;
 use sqlx::{Pool, Sqlite};
 
@@ -25,13 +26,16 @@ pub(crate) async fn create(
     .execute(&mut *conn)
     .await?;
 
-    key.id = result.last_insert_rowid() as i32;
+    key.id = TsigKeyId::from(result.last_insert_rowid() as i32);
     key.created_at = now;
     Ok(key)
 }
 
 /// Find a TSIG key by ID.
-pub(crate) async fn get(pool: &Pool<Sqlite>, id: i32) -> Result<Option<TsigKey>, DatabaseError> {
+pub(crate) async fn get(
+    pool: &Pool<Sqlite>,
+    id: TsigKeyId,
+) -> Result<Option<TsigKey>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     let key = sqlx::query_as::<_, TsigKey>(
@@ -75,7 +79,7 @@ pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<TsigKey>, Databa
 }
 
 /// Delete a TSIG key by ID.
-pub(crate) async fn delete(pool: &Pool<Sqlite>, id: i32) -> Result<(), DatabaseError> {
+pub(crate) async fn delete(pool: &Pool<Sqlite>, id: TsigKeyId) -> Result<(), DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     sqlx::query("DELETE FROM tsig_keys WHERE id = ?")

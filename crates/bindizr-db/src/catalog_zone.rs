@@ -1,3 +1,5 @@
+use bindizr_core::dns::Serial;
+
 use crate::{Transaction, error::DatabaseError, mysql, postgres, sqlite, tx::TransactionKind};
 
 /// The serial advances only when `digest` changed; returns the serial in
@@ -6,8 +8,8 @@ pub async fn upsert_tx(
     tx: &mut Transaction<'_>,
     name: &str,
     digest: &str,
-    base_serial: i32,
-) -> Result<i32, DatabaseError> {
+    base_serial: Serial,
+) -> Result<Serial, DatabaseError> {
     match &mut tx.0 {
         TransactionKind::MySql(tx) => {
             mysql::catalog_zone::upsert_tx(tx, name, digest, base_serial).await

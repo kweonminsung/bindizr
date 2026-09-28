@@ -24,7 +24,7 @@ use thiserror::Error;
 use super::WireName;
 use crate::{
     dns::{
-        LibraryError,
+        ConvertTtlError, LibraryError, Serial, Ttl,
         dnssec::{KeyRdataError, WireNameError},
         name::{OwnerName, ParseNameError, ZoneName},
         record::{EncodeRdataError, Rdata},
@@ -33,7 +33,8 @@ use crate::{
         dnssec_key::DnssecKey,
         dnssec_policy::DnssecDenial,
         dnssec_record::{
-            DnssecRecord, DnssecRecordKey, DnssecRecordType, ParseDnssecRecordTypeError,
+            DnssecRecord, DnssecRecordId, DnssecRecordKey, DnssecRecordType,
+            ParseDnssecRecordTypeError,
         },
         record::Record,
         zone::Zone,
@@ -47,6 +48,8 @@ type SignRecord = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
 pub enum SignZoneError {
     #[error("zone has keys but no usable signer for the key records or the zone data")]
     NoUsableSigner,
+    #[error(transparent)]
+    Ttl(#[from] ConvertTtlError),
     #[error("derived owner '{owner}' is not inside zone '{zone}': {source}")]
     OwnerOutsideZone {
         owner: String,
@@ -97,7 +100,7 @@ pub enum SigningPass {
 #[derive(Debug, Clone, Copy)]
 pub struct SignedViewParams<'a> {
     pub zone: &'a Zone,
-    pub new_serial: i32,
+    pub new_serial: Serial,
     pub records: &'a [Record],
     pub keys: &'a [DnssecKey],
     /// The stored derived plane, the reuse source and diff baseline.
@@ -169,12 +172,12 @@ impl SignedViewParams<'_> {
         // and the denial chain. User records and the SOA stay in their own planes.
         for record in input.iter().filter(|record| is_key_rtype(record.rtype())) {
             new_rows.push(DnssecRecord {
-                id: 0,
+                id: DnssecRecordId::UNWRITTEN,
                 zone_id: zone.id,
                 name: OwnerName::apex(),
                 record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
-                ttl: record.ttl().as_secs() as i32,
+                ttl: Ttl::try_from(record.ttl().as_secs())?,
                 rdata: to_rdata(record.data()),
                 expires_at: None,
                 record_set_digest: None,
@@ -182,12 +185,12 @@ impl SignedViewParams<'_> {
         }
         for record in &denial_records {
             new_rows.push(DnssecRecord {
-                id: 0,
+                id: DnssecRecordId::UNWRITTEN,
                 zone_id: zone.id,
                 name: parse_derived_owner(record.owner(), &zone.name)?,
                 record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
-                ttl: record.ttl().as_secs() as i32,
+                ttl: Ttl::try_from(record.ttl().as_secs())?,
                 rdata: to_rdata(record.data()),
                 expires_at: None,
                 record_set_digest: None,
@@ -284,12 +287,12 @@ impl SignedViewParams<'_> {
                     for signer in record_set_signers {
                         let rrsig = signer.sign_rrset(record_set, self.inception, expiration)?;
                         new_rows.push(DnssecRecord {
-                            id: 0,
+                            id: DnssecRecordId::UNWRITTEN,
                             zone_id: zone.id,
                             name: owner.clone(),
                             record_type: DnssecRecordType::Rrsig,
                             covered_record_type: Some(covered),
-                            ttl: rrsig.ttl().as_secs() as i32,
+                            ttl: Ttl::try_from(rrsig.ttl().as_secs())?,
                             rdata: to_rdata(rrsig.data()),
                             expires_at: Some(expiration),
                             record_set_digest: Some(digest.clone()),
@@ -368,7 +371,7 @@ fn record_set_digest(signers: &[&Signer<'_>], record_set: &[&SignRecord]) -> Str
     for signer in signers {
         // Key tags are 16 bits and can collide across a rollover; the row id
         // pins the actual signing key so a stale signature cannot be reused.
-        hasher.update(signer.key.id.to_be_bytes());
+        hasher.update(i32::from(signer.key.id).to_be_bytes());
         hasher.update(signer.key_tag.to_be_bytes());
         hasher.update([signer.algorithm]);
     }

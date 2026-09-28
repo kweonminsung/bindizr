@@ -9,7 +9,7 @@ use crate::{
         name::{OwnerName, ZoneName},
     },
     model::{
-        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
+        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
         dnssec_policy::DnssecDenial,
         dnssec_record::{DnssecRecord, DnssecRecordType},
         record::{Record, RecordType},
@@ -28,7 +28,7 @@ fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) ->
         fixed_now(),
     )
     .unwrap();
-    key.id = id;
+    key.id = DnssecKeyId::from(id);
     key
 }
 
@@ -57,7 +57,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
     let now = fixed_now();
     SignedViewParams {
         zone: args.zone,
-        new_serial: args.new_serial,
+        new_serial: Serial::try_from(args.new_serial).unwrap(),
         records: args.records,
         keys: args.keys,
         prev: args.prev,
@@ -86,7 +86,7 @@ fn to_stored(records: &[DnssecRecord]) -> Vec<DnssecRecord> {
         .iter()
         .enumerate()
         .map(|(index, row)| DnssecRecord {
-            id: index as i32 + 1,
+            id: DnssecRecordId::from(index as i32 + 1),
             ..row.clone()
         })
         .collect()

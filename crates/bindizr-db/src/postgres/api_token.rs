@@ -1,3 +1,4 @@
+use bindizr_core::model::api_token::TokenId;
 use chrono::Utc;
 use sqlx::{Pool, Postgres, Row};
 
@@ -27,7 +28,7 @@ pub(crate) async fn create(
     .fetch_one(&mut *conn)
     .await?;
 
-    token.id = result.get::<i32, _>(0);
+    token.id = TokenId::from(result.get::<i32, _>(0));
     token.created_at = now;
 
     Ok(token)
@@ -108,7 +109,7 @@ pub(crate) async fn update(
 }
 
 /// Delete an API token by ID.
-pub(crate) async fn delete(pool: &Pool<Postgres>, id: i32) -> Result<(), DatabaseError> {
+pub(crate) async fn delete(pool: &Pool<Postgres>, id: TokenId) -> Result<(), DatabaseError> {
     let mut conn = pool.acquire().await?;
 
     sqlx::query("DELETE FROM api_tokens WHERE id = $1")

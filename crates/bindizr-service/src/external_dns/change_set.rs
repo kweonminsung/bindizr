@@ -3,7 +3,13 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::{
+    dns::{
+        Ttl,
+        name::{OwnerName, ZoneName},
+    },
+    model::record::RecordId,
+};
 use chrono::Utc;
 
 use super::policy::{authoritative_zone, normalize_lookup_name};
@@ -27,7 +33,7 @@ pub(crate) struct RecordSetOp {
     pub(crate) name: String,
     pub(crate) record_type: RecordType,
     /// Adds only; `None` resolves to the zone TTL at apply time.
-    pub(crate) ttl: Option<i32>,
+    pub(crate) ttl: Option<Ttl>,
     pub(crate) values: Vec<String>,
 }
 
@@ -43,7 +49,7 @@ pub(crate) struct PendingOp {
 pub(crate) struct ZoneRecordSetOp {
     pub(crate) name: OwnerName,
     pub(crate) record_type: RecordType,
-    pub(crate) ttl: Option<i32>,
+    pub(crate) ttl: Option<Ttl>,
     pub(crate) values: Vec<String>,
 }
 
@@ -72,13 +78,10 @@ fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceE
 }
 
 /// ExternalDNS sends TTL 0 for "not configured"; both resolve to the zone TTL.
-fn normalize_ttl(ttl: Option<i32>) -> Result<Option<i32>, ServiceError> {
+fn normalize_ttl(ttl: Option<i32>) -> Result<Option<Ttl>, ServiceError> {
     match ttl {
         Some(0) | None => Ok(None),
-        Some(ttl) => {
-            validate_record_ttl(ttl)?;
-            Ok(Some(ttl))
-        }
+        Some(ttl) => Ok(Some(validate_record_ttl(ttl)?)),
     }
 }
 
@@ -156,7 +159,7 @@ pub(crate) fn adjust_record_set(
     Ok(ExternalDnsRecord {
         name: record.name.clone(),
         record_type: record_type.to_string(),
-        ttl,
+        ttl: ttl.map(i32::from),
         values,
     })
 }
@@ -284,7 +287,7 @@ impl ZoneOps {
                 }
 
                 creates.push(Record {
-                    id: 0,
+                    id: RecordId::UNWRITTEN,
                     name: add.name.clone(),
                     record_type: add.record_type,
                     value: value.clone(),

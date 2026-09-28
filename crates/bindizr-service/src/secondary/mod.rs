@@ -8,10 +8,13 @@ use std::{
     time::Duration,
 };
 
-use bindizr_core::dns::{
-    address::{AddressTarget, DEFAULT_DNS_PORT, is_address_target, loopback_if_unspecified},
-    name::has_whitespace_or_control,
-    tsig::TsigSigningKey,
+use bindizr_core::{
+    dns::{
+        address::{AddressTarget, DEFAULT_DNS_PORT, is_address_target, loopback_if_unspecified},
+        name::has_whitespace_or_control,
+        tsig::TsigSigningKey,
+    },
+    model::{secondary::SecondaryId, tsig_key::TsigKeyId},
 };
 use chrono::Utc;
 
@@ -68,7 +71,7 @@ pub async fn create(
     let secondary = db::secondary::create(
         cx.db(),
         Secondary {
-            id: 0,
+            id: SecondaryId::UNWRITTEN,
             name: name.clone(),
             address: address.clone(),
             enabled: true,
@@ -104,7 +107,7 @@ pub async fn list(
 
     let secondaries = db::secondary::list_all(cx.db()).await?;
     // One statement names every key rather than one per secondary.
-    let key_names: HashMap<i32, String> = db::tsig_key::list_all(cx.db())
+    let key_names: HashMap<TsigKeyId, String> = db::tsig_key::list_all(cx.db())
         .await?
         .into_iter()
         .map(|key| (key.id, key.name))

@@ -2,7 +2,10 @@
 //! promote it once the parent DS is confirmed. ZSK promotion, which needs no
 //! parent interaction, is the scheduler's.
 
-use bindizr_core::dns::dnssec::{SigningPass, generate_key};
+use bindizr_core::{
+    dns::dnssec::{SigningPass, generate_key},
+    model::dnssec_key::DnssecKeyId,
+};
 use chrono::{Duration, Utc};
 
 use super::status::build_status_tx;
@@ -234,7 +237,7 @@ pub(crate) async fn publish_replacement_key_tx(
     algorithm: DnssecAlgorithm,
 ) -> Result<DnssecKey, ServiceError> {
     let now = Utc::now();
-    let publish_wait = Duration::seconds(i64::from(zone.default_ttl));
+    let publish_wait = Duration::seconds(i64::from(zone.default_ttl.as_secs()));
     let new_key = generate_key(
         zone,
         algorithm,
@@ -253,7 +256,7 @@ pub(crate) async fn promote_published_keys_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     keys: Vec<DnssecKey>,
-    promoted: &[i32],
+    promoted: &[DnssecKeyId],
     parent_ds_ttl: Option<u32>,
 ) -> Result<Vec<DnssecKey>, ServiceError> {
     let now = Utc::now();
@@ -304,7 +307,7 @@ pub(crate) async fn promote_published_keys_tx(
 pub(crate) fn promotable_sep_key_ids(
     signed: &SignedZone,
     holddown: Holddown,
-) -> Result<Vec<i32>, ServiceError> {
+) -> Result<Vec<DnssecKeyId>, ServiceError> {
     if !signed
         .keys
         .iter()
@@ -315,7 +318,7 @@ pub(crate) fn promotable_sep_key_ids(
         ));
     }
     // ZSKs have no parent DS to confirm; their own step promotes them.
-    let ds_published: Vec<i32> = signed
+    let ds_published: Vec<DnssecKeyId> = signed
         .keys
         .iter()
         .filter(|key| key.awaits_parent_ds())

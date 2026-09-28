@@ -7,8 +7,14 @@ use std::{
 };
 
 use bindizr_core::{
+    dns::Serial,
     metrics::Metrics,
-    model::{dnssec_record::DnssecRecord, record::Record, tsig_key::TsigKey, zone::Zone},
+    model::{
+        dnssec_record::DnssecRecord,
+        record::Record,
+        tsig_key::TsigKey,
+        zone::{Zone, ZoneId},
+    },
 };
 use bindizr_service::{
     Context,
@@ -42,7 +48,7 @@ impl CachedTransferContent {
 /// and what the budget and the LRU order read.
 #[derive(Debug, Clone)]
 struct CachedTransfer {
-    serial: i32,
+    serial: Serial,
     content: CachedTransferContent,
     records: usize,
     /// Logical clock value at last hit; drives LRU eviction.
@@ -61,7 +67,7 @@ pub(crate) struct TransferCache {
 /// the eviction rules are unit-tested as they are.
 #[derive(Debug, Default)]
 struct Entries {
-    zones: HashMap<i32, CachedTransfer>,
+    zones: HashMap<ZoneId, CachedTransfer>,
     records: usize,
     /// The logical clock recency is measured on; advanced under the lock.
     clock: u64,
@@ -90,8 +96,8 @@ impl TransferCache {
         &self,
         metrics: &Metrics,
         max_records: usize,
-        zone_id: i32,
-        serial: i32,
+        zone_id: ZoneId,
+        serial: Serial,
     ) -> Option<CachedTransferContent> {
         let mut entries = self.locked();
         let evicted = entries.trim_to(max_records);
@@ -109,8 +115,8 @@ impl TransferCache {
         &self,
         metrics: &Metrics,
         max_records: usize,
-        zone_id: i32,
-        serial: i32,
+        zone_id: ZoneId,
+        serial: Serial,
         content: CachedTransferContent,
     ) {
         let mut entries = self.locked();
@@ -216,7 +222,7 @@ impl Entries {
     }
 
     /// Find cached zone content matching the requested serial.
-    fn find(&mut self, zone_id: i32, serial: i32) -> Option<CachedTransferContent> {
+    fn find(&mut self, zone_id: ZoneId, serial: Serial) -> Option<CachedTransferContent> {
         let now = self.tick();
         let entry = self
             .zones
@@ -229,8 +235,8 @@ impl Entries {
     /// Store a zone within the record budget and return the number of evictions.
     fn store(
         &mut self,
-        zone_id: i32,
-        serial: i32,
+        zone_id: ZoneId,
+        serial: Serial,
         content: CachedTransferContent,
         max_records: usize,
     ) -> usize {
@@ -273,7 +279,7 @@ impl Entries {
     }
 
     /// Remove a cached zone and subtract its records from the retained count.
-    fn remove(&mut self, zone_id: i32) {
+    fn remove(&mut self, zone_id: ZoneId) {
         if let Some(removed) = self.zones.remove(&zone_id) {
             self.records -= removed.records;
         }

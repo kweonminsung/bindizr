@@ -1,3 +1,4 @@
+use bindizr_core::model::record::RecordId;
 use bindizr_service::{
     Context,
     authorization::Caller,
@@ -15,7 +16,7 @@ use crate::socket::types::DaemonResponse;
 /// Return the requested record.
 pub(crate) async fn get_record(
     cx: &Context,
-    id: i32,
+    id: RecordId,
 ) -> Result<DaemonResponse<RecordResponse>, ServiceError> {
     let record = record::get_with_zone(cx, &Caller::Global, id).await?;
     Ok(DaemonResponse {
@@ -57,7 +58,7 @@ pub(crate) async fn create_record(
 /// Update the requested record.
 pub(crate) async fn update_record(
     cx: &Context,
-    id: i32,
+    id: RecordId,
     request: &UpdateRecordRequest,
 ) -> Result<DaemonResponse<RecordWriteResponse>, ServiceError> {
     let response = record::update(cx, &Caller::Global, id, request).await?;
@@ -121,7 +122,7 @@ pub(crate) async fn create_records_bulk(
 /// /records/{id}` answers with, so `--output json` prints the same one.
 pub(crate) async fn delete_record(
     cx: &Context,
-    id: i32,
+    id: RecordId,
     run: Run,
 ) -> Result<DaemonResponse<DeleteRecordsResponse>, ServiceError> {
     let response = record::delete(cx, &Caller::Global, id, run).await?;

@@ -8,6 +8,7 @@ use std::{
 };
 
 use bindizr_core::dns::{
+    Serial,
     message::{Name, Opcode, Rtype},
     query::{build_question, extract_soa_serial},
 };
@@ -55,7 +56,7 @@ impl From<ProbeError> for ServiceError {
 pub async fn probe_secondaries(
     cx: &Context,
     zone_name: &str,
-    expected_serial: Option<u32>,
+    expected_serial: Option<Serial>,
 ) -> Result<Vec<SecondaryStatusResponse>, ServiceError> {
     let secondaries = secondary::list_enabled(cx).await?;
     if secondaries.is_empty() {
@@ -102,7 +103,7 @@ pub async fn probe_secondary(
     cx: &Context,
     zone_name: &str,
     secondary: &Secondary,
-    expected_serial: Option<u32>,
+    expected_serial: Option<Serial>,
 ) -> Result<SecondaryStatusResponse, ServiceError> {
     let timeout = Duration::from_secs(cx.config().dns.notify.timeout_secs);
     let (probe, clients) = probe_addresses(zone_name, secondary, timeout, expected_serial).await?;
@@ -116,7 +117,7 @@ async fn probe_addresses(
     zone_name: &str,
     secondary: &Secondary,
     timeout: Duration,
-    expected_serial: Option<u32>,
+    expected_serial: Option<Serial>,
 ) -> Result<(SecondaryStatusResponse, Vec<IpAddr>), ProbeError> {
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| ProbeError::ZoneName(Box::new(e)))?;
@@ -165,7 +166,7 @@ pub async fn probe_server(
     server_addr: SocketAddr,
     zone_name: &str,
     timeout: Duration,
-) -> Result<u32, ProbeError> {
+) -> Result<Serial, ProbeError> {
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| ProbeError::ZoneName(Box::new(e)))?;
     probe_one(&qname, server_addr, timeout).await
@@ -180,7 +181,7 @@ async fn probe_entry(
     qname: &Name<Vec<u8>>,
     addrs: Vec<SocketAddr>,
     timeout: Duration,
-    expected_serial: Option<u32>,
+    expected_serial: Option<Serial>,
 ) -> (SecondaryStatusResponse, Vec<IpAddr>) {
     let clients: Vec<IpAddr> = addrs.iter().map(|addr| addr.ip()).collect();
     let mut last = None;
@@ -213,11 +214,15 @@ async fn probe_one(
     qname: &Name<Vec<u8>>,
     server_addr: SocketAddr,
     timeout: Duration,
-) -> Result<u32, ProbeError> {
+) -> Result<Serial, ProbeError> {
     let (query_id, query) = build_question(Opcode::QUERY, false, false, qname, Rtype::SOA);
     let (received, response) =
         super::exchange_over_udp(server_addr, timeout, &query, "SOA probe").await?;
-    Ok(extract_soa_serial(query_id, qname, &response[..received])?)
+    Ok(Serial::from(extract_soa_serial(
+        query_id,
+        qname,
+        &response[..received],
+    )?))
 }
 
 #[cfg(test)]
