@@ -2,10 +2,9 @@
 //! `dns.notify.batch_ms` choice between sending inline and queueing. The
 //! batching worker lives in `queue`.
 
-mod queue;
+pub mod queue;
 
 use bindizr_core::config;
-pub use queue::{initialize_worker, stop_worker};
 
 /// Send a DNS NOTIFY for `zone_name`, or — with `None` — for every zone,
 /// aggregating per-zone failures. Enumerating the zones is this layer's

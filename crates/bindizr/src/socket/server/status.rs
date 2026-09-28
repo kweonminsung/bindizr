@@ -1,24 +1,17 @@
-use std::{net::SocketAddr, process, sync::OnceLock};
+use std::{net::SocketAddr, process};
 
-use bindizr_core::{config, time::unix_time_ms};
+use bindizr_core::config;
 use bindizr_service::{
     error::ServiceError, secondary::SecondaryService, types::MessageResponse, zone::ZoneService,
 };
 
 use crate::{
-    daemon::DB_PROBE_TIMEOUT,
+    daemon::{DB_PROBE_TIMEOUT, started_at},
     socket::{
         server::to_response_data,
         types::{DaemonResponse, DaemonStatusResponse},
     },
 };
-
-static STARTED_AT_MS: OnceLock<u64> = OnceLock::new();
-
-/// Mark the daemon start time; restart detection compares it across execs.
-pub(crate) fn mark_start_time() {
-    let _ = STARTED_AT_MS.set(unix_time_ms());
-}
 
 /// Return the daemon's current status as JSON.
 pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
@@ -49,7 +42,7 @@ pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
     let status = DaemonStatusResponse {
         pid: Some(process::id()),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        started_at_ms: STARTED_AT_MS.get().copied().unwrap_or(0),
+        started_at_ms: started_at().map_or(0, |at| at.timestamp_millis() as u64),
         api_url: format!(
             "{}://{}",
             scheme,

@@ -76,7 +76,7 @@ pub async fn send_notify_to_secondary(
     let key = match SecondaryService::notify_signing_key(secondary).await {
         Ok(key) => key,
         Err(e) => {
-            track_notify(NotifyResult::Error);
+            track_notify(NotifyResult::Failed);
             return Ok(vec![NotifyCheckResponse {
                 address: secondary.address.clone(),
                 error: Some(e.to_string()),
@@ -86,7 +86,7 @@ pub async fn send_notify_to_secondary(
     let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
         Ok(addrs) => addrs,
         Err(e) => {
-            track_notify(NotifyResult::ResolveError);
+            track_notify(NotifyResult::ResolveFailed);
             return Ok(vec![NotifyCheckResponse {
                 address: secondary.address.clone(),
                 error: Some(format!("failed to resolve: {}", e)),
@@ -105,7 +105,7 @@ pub async fn send_notify_to_secondary(
             }
             Err(e) => {
                 log::error!("Failed to send NOTIFY to {}: {}", addr, e);
-                track_notify(NotifyResult::Error);
+                track_notify(NotifyResult::Failed);
                 Err(e)
             }
         };

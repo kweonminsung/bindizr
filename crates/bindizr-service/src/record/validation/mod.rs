@@ -181,7 +181,7 @@ pub(crate) fn validate_record_update_constraints_normalized(
 }
 
 /// What an add resolves to against the records already in the zone.
-pub(crate) enum AddOutcome {
+pub(crate) enum AddResult {
     /// Nothing holds this rdata and every constraint passed.
     New,
     Duplicate,
@@ -190,7 +190,7 @@ pub(crate) enum AddOutcome {
 impl RecordService {
     /// Validate an add against conflicting records loaded within the caller's
     /// transaction, reporting an rdata-identical record as
-    /// [`AddOutcome::Duplicate`] rather than rejecting it — RFC 2136,
+    /// [`AddResult::Duplicate`] rather than rejecting it — RFC 2136,
     /// Section 3.4.2.2 makes it a silent no-op. The API paths call the
     /// validator directly, where the same case stays a conflict.
     pub(crate) async fn validate_add_tx(
@@ -201,7 +201,7 @@ impl RecordService {
         value: &str,
         ttl: i32,
         priority: Option<i32>,
-    ) -> Result<AddOutcome, ServiceError> {
+    ) -> Result<AddResult, ServiceError> {
         // Only records sharing the owner name can conflict, so load just those
         // instead of the whole zone.
         let records_at_name = RepositoryService::list_records_by_name_tx(
@@ -217,7 +217,7 @@ impl RecordService {
         })?;
 
         if has_matching_rdata(records_at_name.iter(), record_type, value, priority) {
-            return Ok(AddOutcome::Duplicate);
+            return Ok(AddResult::Duplicate);
         }
 
         validate_record_add_constraints_normalized(
@@ -230,7 +230,7 @@ impl RecordService {
             None,
         )?;
 
-        Ok(AddOutcome::New)
+        Ok(AddResult::New)
     }
 }
 

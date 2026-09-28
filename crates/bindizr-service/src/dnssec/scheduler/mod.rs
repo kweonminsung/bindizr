@@ -28,7 +28,7 @@ static SCHEDULER: OnceLock<watch::Sender<u64>> = OnceLock::new();
 /// Start the periodic scheduler, or hand a reloaded period to the one already
 /// running. A zero `dns.scheduler_interval_secs` leaves this instance without
 /// one until a reload names a period.
-pub fn initialize_scheduler() {
+pub fn initialize() {
     let interval_secs = bindizr_config().dns.scheduler_interval_secs;
     if let Some(running) = SCHEDULER.get() {
         // An unchanged reload must not pull the next pass forward.
@@ -285,7 +285,7 @@ async fn run_scheduler_pass() {
     }
 
     track_dnssec_scheduler(if failed {
-        SchedulerResult::Error
+        SchedulerResult::Failed
     } else {
         SchedulerResult::Ok
     });

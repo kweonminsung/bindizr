@@ -7,6 +7,7 @@ mod dnssec_withdrawal_repository_impl;
 mod record_repository_impl;
 mod secondary_repository_impl;
 mod token_grant_repository_impl;
+mod transfer_repository_impl;
 mod tsig_grant_repository_impl;
 mod tsig_key_repository_impl;
 mod zone_change_repository_impl;
@@ -22,6 +23,7 @@ pub(crate) use dnssec_withdrawal_repository_impl::SqliteDnssecWithdrawalReposito
 pub(crate) use record_repository_impl::SqliteRecordRepository;
 pub(crate) use secondary_repository_impl::SqliteSecondaryRepository;
 pub(crate) use token_grant_repository_impl::SqliteTokenGrantRepository;
+pub(crate) use transfer_repository_impl::SqliteTransferRepository;
 pub(crate) use tsig_grant_repository_impl::SqliteTsigGrantRepository;
 pub(crate) use tsig_key_repository_impl::SqliteTsigKeyRepository;
 pub(crate) use zone_change_repository_impl::SqliteZoneChangeRepository;

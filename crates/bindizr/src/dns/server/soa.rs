@@ -34,10 +34,10 @@ pub(crate) async fn handle_tcp_soa(
 ) -> Result<(), XfrError> {
     let (response, outcome) = handle_soa_request(query, client_addr.ip(), query_data)
         .await
-        .inspect_err(|_| track_soa(SoaResult::Error))?;
+        .inspect_err(|_| track_soa(SoaResult::Failed))?;
     wire::write_tcp_message(stream, &response)
         .await
-        .inspect_err(|_| track_soa(SoaResult::Error))?;
+        .inspect_err(|_| track_soa(SoaResult::Failed))?;
     track_soa(outcome);
     Ok(())
 }
@@ -51,11 +51,11 @@ pub(crate) async fn handle_udp_soa(
 ) -> Result<(), XfrError> {
     let (response, outcome) = handle_soa_request(query, client_addr.ip(), query_data)
         .await
-        .inspect_err(|_| track_soa(SoaResult::Error))?;
+        .inspect_err(|_| track_soa(SoaResult::Failed))?;
     socket
         .send_to(&response, client_addr)
         .await
-        .inspect_err(|_| track_soa(SoaResult::Error))?;
+        .inspect_err(|_| track_soa(SoaResult::Failed))?;
     track_soa(outcome);
     Ok(())
 }
@@ -121,7 +121,7 @@ async fn handle_soa_request(
         .await?
     {
         TransferAccess::Granted(zone) => zone,
-        TransferAccess::NotZone => {
+        TransferAccess::NotAuth => {
             return signed_error(query, Rcode::NOTAUTH, identity.signer.as_mut())
                 .map(|response| (response, SoaResult::NotAuth));
         }

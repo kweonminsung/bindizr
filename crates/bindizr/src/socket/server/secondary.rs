@@ -9,7 +9,7 @@ use crate::{
     params::NameParams,
     socket::{
         server::{parse_params, to_response_data},
-        types::{DaemonResponse, UpdateSecondaryParams},
+        types::{DaemonResponse, ListSecondaryTransfersParams, UpdateSecondaryParams},
     },
 };
 
@@ -100,5 +100,22 @@ pub(crate) async fn check_secondary(
     Ok(DaemonResponse {
         message,
         data: to_response_data(check)?,
+    })
+}
+
+/// The transfers Bindizr served one secondary.
+pub(crate) async fn list_secondary_transfers(
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
+    let params: ListSecondaryTransfersParams = parse_params(data)?;
+    let transfers =
+        SecondaryService::list_transfers(&Caller::Global, &params.name, params.filter).await?;
+    Ok(DaemonResponse {
+        message: format!(
+            "{} transfer(s) served to secondary '{}'",
+            transfers.transfers.len(),
+            params.name
+        ),
+        data: to_response_data(transfers)?,
     })
 }

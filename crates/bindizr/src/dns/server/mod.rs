@@ -18,7 +18,9 @@ use auth::{TransferRefusal, authenticate_transfer, signed_error};
 use bindizr_core::{
     dns::message::{Rcode, Rtype},
     metrics::{XfrResult, track_xfr},
+    model::transfer::TransferKind,
 };
+use bindizr_service::transfer::TransferService;
 use tokio::net::TcpStream;
 
 use crate::dns::{error::XfrError, wire};
@@ -51,6 +53,15 @@ pub(crate) async fn handle_tcp_xfr(
                 client_ip,
                 refusal.reason
             );
+            // Saved against the client too, so `secondary transfers` can say why
+            // a secondary got nothing.
+            TransferService::save_refused(
+                client_ip,
+                &query.zone_name,
+                TransferKind::from_qtype(query.qtype),
+                refusal.reason.clone(),
+            )
+            .await;
             // RFC 5936, Section 2.2.1: refuse with an RCODE, not a dropped
             // connection.
             let response = refusal.into_response(query)?;
@@ -88,7 +99,7 @@ pub(crate) async fn handle_tcp_xfr(
             track_result(XfrResult::Ok);
             Ok(())
         }
-        Err(XfrError::ZoneNotFound(_)) => {
+        Err(XfrError::NotAuth(_)) => {
             track_result(XfrResult::NotAuth);
             let response = signed_error(query, Rcode::NOTAUTH, identity.signer.as_mut())?;
             wire::write_tcp_message(stream, &response).await?;
@@ -97,13 +108,27 @@ pub(crate) async fn handle_tcp_xfr(
         Err(XfrError::Refused(reason)) => {
             track_result(XfrResult::Refused);
             log::warn!("Refused XFR TCP query from {}: {}", client_ip, reason);
+            TransferService::save_refused(
+                client_ip,
+                &query.zone_name,
+                TransferKind::from_qtype(query.qtype),
+                reason.clone(),
+            )
+            .await;
             let response =
                 TransferRefusal::refused(reason, identity.signer.take()).into_response(query)?;
             wire::write_tcp_message(stream, &response).await?;
             Ok(())
         }
         Err(err) => {
-            track_result(XfrResult::Error);
+            track_result(XfrResult::Failed);
+            TransferService::save_failed(
+                client_ip,
+                &query.zone_name,
+                TransferKind::from_qtype(query.qtype),
+                err.to_string(),
+            )
+            .await;
             Err(err)
         }
     }

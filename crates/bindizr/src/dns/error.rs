@@ -4,8 +4,9 @@ use thiserror::Error;
 /// Errors produced while handling zone transfers, NOTIFY, and DNS wire I/O.
 #[derive(Debug, Error)]
 pub(crate) enum XfrError {
-    #[error("Zone not found: {0}")]
-    ZoneNotFound(String),
+    /// No enabled zone carries the name: answered NOTAUTH.
+    #[error("Not authoritative for zone: {0}")]
+    NotAuth(String),
 
     /// The key that signed the request holds no grant over the zone whole.
     #[error("Transfer refused: {0}")]

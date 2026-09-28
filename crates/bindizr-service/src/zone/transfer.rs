@@ -17,7 +17,7 @@ use crate::{
 pub enum TransferAccess<T> {
     Granted(T),
     /// No enabled zone carries the name: NOTAUTH.
-    NotZone,
+    NotAuth,
     /// The key holds no grant over the whole zone: REFUSED, signed by it.
     Refused(String),
 }
@@ -27,7 +27,7 @@ impl<T> TransferAccess<T> {
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> TransferAccess<U> {
         match self {
             TransferAccess::Granted(value) => TransferAccess::Granted(f(value)),
-            TransferAccess::NotZone => TransferAccess::NotZone,
+            TransferAccess::NotAuth => TransferAccess::NotAuth,
             TransferAccess::Refused(reason) => TransferAccess::Refused(reason),
         }
     }
@@ -64,7 +64,7 @@ impl ZoneService {
         let result = async {
             let zone = match Self::authorize_transfer_tx(&mut tx, zone_name, key).await? {
                 TransferAccess::Granted(zone) => zone,
-                TransferAccess::NotZone => return Ok(TransferAccess::NotZone),
+                TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
                 TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
             };
             let records =
@@ -91,7 +91,7 @@ impl ZoneService {
     ) -> Result<TransferAccess<Zone>, ServiceError> {
         let Some(zone) = Self::find_served_by_name_tx(tx, zone_name, LockLevel::Shared).await?
         else {
-            return Ok(TransferAccess::NotZone);
+            return Ok(TransferAccess::NotAuth);
         };
         if let Some(key) = key
             && !TsigGrantService::authorize_whole_zone_tx(tx, &zone, key).await?

@@ -20,6 +20,7 @@ use super::model::{
     record::{Record, RecordType, RecordWithZone},
     secondary::Secondary,
     token_grant::TokenGrant,
+    transfer::{Transfer, TransferWithZone},
     tsig_grant::TsigGrant,
     tsig_key::TsigKey,
     zone::Zone,
@@ -265,6 +266,25 @@ pub trait SecondaryRepository: Send + Sync {
 
     /// Delete a secondary by ID.
     async fn delete(&self, id: i32) -> Result<(), DatabaseError>;
+}
+
+#[async_trait]
+pub trait TransferRepository: Send + Sync {
+    /// Insert the transfer, or replace the row for its client address and zone.
+    async fn upsert(&self, transfer: Transfer) -> Result<(), DatabaseError>;
+
+    /// The transfers served to a client address, newest first, with zone names.
+    async fn list_by_client_addr_with_zone(
+        &self,
+        client_addr: &str,
+    ) -> Result<Vec<TransferWithZone>, DatabaseError>;
+
+    /// The transfer of one zone served to a client address.
+    async fn get_by_client_addr_and_zone_name_with_zone(
+        &self,
+        client_addr: &str,
+        zone_name: &str,
+    ) -> Result<Option<TransferWithZone>, DatabaseError>;
 }
 
 #[async_trait]
@@ -801,6 +821,21 @@ impl DatabasePool {
             ),
             DatabasePool::SQLite(sqlite_pool) => {
                 Box::new(sqlite::SqliteSecondaryRepository::new(sqlite_pool.clone()))
+            }
+        }
+    }
+
+    /// The transfer repository for this pool's backend.
+    pub(crate) fn transfer_repository(&self) -> Box<dyn TransferRepository> {
+        match self {
+            DatabasePool::MySQL(mysql_pool) => {
+                Box::new(mysql::MySqlTransferRepository::new(mysql_pool.clone()))
+            }
+            DatabasePool::PostgreSQL(postgres_pool) => Box::new(
+                postgres::PostgresTransferRepository::new(postgres_pool.clone()),
+            ),
+            DatabasePool::SQLite(sqlite_pool) => {
+                Box::new(sqlite::SqliteTransferRepository::new(sqlite_pool.clone()))
             }
         }
     }

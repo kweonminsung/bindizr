@@ -7,8 +7,8 @@ use crate::database::{
     get_api_token_repository, get_catalog_zone_repository, get_dnssec_key_repository,
     get_dnssec_policy_repository, get_dnssec_record_repository, get_dnssec_withdrawal_repository,
     get_record_repository, get_secondary_repository, get_token_grant_repository,
-    get_tsig_grant_repository, get_tsig_key_repository, get_zone_change_repository,
-    get_zone_repository, get_zone_version_repository,
+    get_transfer_repository, get_tsig_grant_repository, get_tsig_key_repository,
+    get_zone_change_repository, get_zone_repository, get_zone_version_repository,
     model::{
         api_token::ApiToken,
         dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
@@ -17,6 +17,7 @@ use crate::database::{
         record::{Record, RecordWithZone},
         secondary::Secondary,
         token_grant::TokenGrant,
+        transfer::{Transfer, TransferWithZone},
         tsig_grant::TsigGrant,
         tsig_key::TsigKey,
         zone::Zone,
@@ -997,6 +998,35 @@ impl RepositoryService {
             .delete(id)
             .await
             .map_err(|e| ServiceError::internal(format!("failed to delete secondary: {}", e)))
+    }
+
+    /// Insert a transfer, or replace the row for its client address and zone.
+    pub(crate) async fn upsert_transfer(transfer: Transfer) -> Result<(), ServiceError> {
+        get_transfer_repository()
+            .upsert(transfer)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to record transfer: {}", e)))
+    }
+
+    /// The transfers served to a client address, newest first, with zone names.
+    pub(crate) async fn list_transfers_by_client_addr_with_zone(
+        client_addr: &str,
+    ) -> Result<Vec<TransferWithZone>, ServiceError> {
+        get_transfer_repository()
+            .list_by_client_addr_with_zone(client_addr)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load transfers: {}", e)))
+    }
+
+    /// The transfer of one zone served to a client address.
+    pub(crate) async fn get_transfer_by_client_addr_and_zone_name_with_zone(
+        client_addr: &str,
+        zone_name: &str,
+    ) -> Result<Option<TransferWithZone>, ServiceError> {
+        get_transfer_repository()
+            .get_by_client_addr_and_zone_name_with_zone(client_addr, zone_name)
+            .await
+            .map_err(|e| ServiceError::internal(format!("failed to load transfer: {}", e)))
     }
 
     /// Insert a TSIG key.

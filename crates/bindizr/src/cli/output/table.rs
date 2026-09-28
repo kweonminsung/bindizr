@@ -1,68 +1,23 @@
 //! Table rows for CLI output, each built from the typed daemon response so
-//! the column set is all this module decides.
+//! the column set is all this module decides; the cells come from `display`.
 
-use bindizr_core::time::unix_time_ms;
 use bindizr_service::types::{
     CreatedTokenResponse, DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse,
     GetSecondaryResponse, GetTokenGrantResponse, GetTokenResponse, GetTsigGrantResponse,
-    GetTsigKeyResponse, GetZoneResponse, ImportZoneResponse, RecordValueRequest,
-    RollbackZoneResponse, SecondaryStatusResponse, TsigKeyResponse, VersionRecordResponse,
+    GetTsigKeyResponse, GetZoneResponse, ImportZoneResponse, RollbackZoneResponse,
+    SecondaryStatusResponse, TransferResponse, TsigKeyResponse, VersionRecordResponse,
     ZoneStatusResponse, ZoneVersionResponse,
 };
 use tabled::Tabled;
 
-/// Format an optional integer for table output.
-fn display_option_i32(opt: &Option<i32>) -> String {
-    match opt {
-        Some(val) => val.to_string(),
-        None => "-".to_string(),
-    }
-}
-
-/// Render a boolean as yes or no.
-fn display_yes_no(value: bool) -> String {
-    if value { "yes" } else { "no" }.to_string()
-}
-
-/// Format optional text for table output.
-fn display_option_text(opt: &Option<String>) -> String {
-    opt.clone().unwrap_or_else(|| "-".to_string())
-}
-
-/// The longest value a listing cell shows: one DKIM key would otherwise widen
-/// the column for every row. `record get` and `-o json` carry the whole value.
-const MAX_CELL_CHARS: usize = 48;
-
-/// Format a timestamp for table output; `-o json` carries the full precision.
-fn display_time(at: chrono::DateTime<chrono::Utc>) -> String {
-    at.format("%Y-%m-%dT%H:%M:%SZ").to_string()
-}
-
-/// Format an optional timestamp for table output.
-fn display_option_time(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
-    opt.map_or_else(|| "-".to_string(), display_time)
-}
-
-/// A record value as one listing cell.
-fn display_record_value(value: &RecordValueRequest) -> String {
-    truncate_cell(&value.to_text())
-}
-
-/// Shorten an over-long cell, marking that it was cut. Counted in characters,
-/// so a multi-byte value is not split.
-fn truncate_cell(text: &str) -> String {
-    let mut chars = text.chars();
-    let head: String = chars.by_ref().take(MAX_CELL_CHARS).collect();
-    if chars.next().is_none() {
-        head
-    } else {
-        format!("{}…", head)
-    }
-}
+use super::display::{
+    MISSING_CELL, display_option, display_option_time, display_record_value, display_time,
+    display_transfer, display_transfer_kind, display_yes_no,
+};
 
 #[derive(Debug, Tabled)]
 pub(crate) struct ZoneRow {
-    #[tabled(rename = "ID", display = "display_option_i32")]
+    #[tabled(rename = "ID", display = "display_option")]
     pub(crate) id: Option<i32>,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
@@ -102,15 +57,15 @@ impl From<&GetZoneResponse> for ZoneRow {
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: zone.minimum_ttl,
-            served: display_yes_no(zone.enabled),
-            description: display_option_text(&zone.description),
+            served: display_yes_no(&zone.enabled),
+            description: display_option(&zone.description),
         }
     }
 }
 
 #[derive(Debug, Tabled)]
 pub(crate) struct RecordRow {
-    #[tabled(rename = "ID", display = "display_option_i32")]
+    #[tabled(rename = "ID", display = "display_option")]
     pub(crate) id: Option<i32>,
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
@@ -120,7 +75,7 @@ pub(crate) struct RecordRow {
     pub(crate) value: String,
     #[tabled(rename = "TTL")]
     pub(crate) ttl: i32,
-    #[tabled(rename = "PRIORITY", display = "display_option_i32")]
+    #[tabled(rename = "PRIORITY", display = "display_option")]
     pub(crate) priority: Option<i32>,
     #[tabled(rename = "ZONE-ID")]
     pub(crate) zone_id: i32,
@@ -228,7 +183,7 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
             validity: format!("{}d", policy.signature_validity_days),
             refresh: format!("{}d", policy.signature_refresh_days),
             zsk_lifetime: if policy.zsk_lifetime_days == 0 {
-                "-".to_string()
+                MISSING_CELL.to_string()
             } else {
                 format!("{}d", policy.zsk_lifetime_days)
             },
@@ -260,8 +215,8 @@ impl From<&GetSecondaryResponse> for SecondaryRow {
             id: secondary.id,
             name: secondary.name.clone(),
             address: secondary.address.clone(),
-            enabled: display_yes_no(secondary.enabled),
-            notify_key_name: display_option_text(&secondary.notify_key_name),
+            enabled: display_yes_no(&secondary.enabled),
+            notify_key_name: display_option(&secondary.notify_key_name),
             created_at: display_time(secondary.created_at),
         }
     }
@@ -306,7 +261,7 @@ impl From<&ZoneVersionResponse> for VersionRow {
             expire: version.expire,
             minimum_ttl: version.minimum_ttl,
             change_source: version.change_source.to_string(),
-            changed_by: display_option_text(&version.changed_by),
+            changed_by: display_option(&version.changed_by),
             created_at: display_time(version.created_at),
         }
     }
@@ -323,7 +278,7 @@ pub(crate) struct VersionRecordRow {
     pub(crate) value: String,
     #[tabled(rename = "TTL")]
     pub(crate) ttl: i32,
-    #[tabled(rename = "PRIORITY", display = "display_option_i32")]
+    #[tabled(rename = "PRIORITY", display = "display_option")]
     pub(crate) priority: Option<i32>,
 }
 
@@ -346,9 +301,9 @@ pub(crate) struct RollbackSummaryRow {
     pub(crate) target_serial: u32,
     #[tabled(rename = "NEW-SERIAL")]
     pub(crate) new_serial: u32,
-    #[tabled(rename = "APPLIED")]
+    #[tabled(rename = "APPLIED", display = "display_yes_no")]
     pub(crate) applied: bool,
-    #[tabled(rename = "DRY-RUN")]
+    #[tabled(rename = "DRY-RUN", display = "display_yes_no")]
     pub(crate) dry_run: bool,
     #[tabled(rename = "ADDED")]
     pub(crate) added: u64,
@@ -386,6 +341,8 @@ pub(crate) struct SecondaryStatusRow {
     pub(crate) visible_serial: String,
     #[tabled(rename = "LAG")]
     pub(crate) lag: String,
+    #[tabled(rename = "LAST-TRANSFER")]
+    pub(crate) last_transfer: String,
 }
 
 impl SecondaryStatusRow {
@@ -410,13 +367,15 @@ impl SecondaryStatusRow {
         SecondaryStatusRow {
             address: secondary.address.clone(),
             status: detail,
-            visible_serial: secondary
-                .visible_serial
-                .map_or_else(|| "-".to_string(), |serial| serial.to_string()),
+            visible_serial: display_option(&secondary.visible_serial),
             lag: secondary.visible_serial.map_or_else(
-                || "-".to_string(),
+                || MISSING_CELL.to_string(),
                 |serial| (i64::from(zone_serial) - i64::from(serial)).to_string(),
             ),
+            last_transfer: secondary
+                .last_transfer
+                .as_ref()
+                .map_or_else(|| MISSING_CELL.to_string(), display_transfer),
         }
     }
 }
@@ -424,9 +383,9 @@ impl SecondaryStatusRow {
 #[derive(Debug, Tabled)]
 pub(crate) struct ImportSummaryRow {
     /// The counts describe the plan, which a rejected file never applies.
-    #[tabled(rename = "APPLIED")]
+    #[tabled(rename = "APPLIED", display = "display_yes_no")]
     pub(crate) applied: bool,
-    #[tabled(rename = "DRY-RUN")]
+    #[tabled(rename = "DRY-RUN", display = "display_yes_no")]
     pub(crate) dry_run: bool,
     #[tabled(rename = "PARSED")]
     pub(crate) parsed: u64,
@@ -486,9 +445,9 @@ impl From<&GetTokenResponse> for TokenRow {
         TokenRow {
             id: token.id,
             name: token.name.clone(),
-            token: display_option_text(&None),
-            global: display_yes_no(token.global),
-            description: display_option_text(&token.description),
+            token: MISSING_CELL.to_string(),
+            global: display_yes_no(&token.global),
+            description: display_option(&token.description),
             created_at: display_time(token.created_at),
             expires_at: token
                 .expires_at
@@ -533,8 +492,8 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
             id: key.id,
             name: key.name.clone(),
             algorithm: key.algorithm.clone(),
-            secret: display_option_text(&None),
-            global: display_yes_no(key.global),
+            secret: MISSING_CELL.to_string(),
+            global: display_yes_no(&key.global),
             created_at: display_time(key.created_at),
         }
     }
@@ -626,24 +585,34 @@ impl From<&GetTsigGrantResponse> for TsigGrantRow {
     }
 }
 
-/// The time since `started_at_ms` in days, hours, minutes, and seconds. The
-/// start time is stamped once every front end is up, so an unset one means the
-/// daemon is still starting.
-pub(crate) fn display_uptime(started_at_ms: u64) -> String {
-    if started_at_ms == 0 {
-        return "starting".to_string();
-    }
-    let secs = unix_time_ms().saturating_sub(started_at_ms) / 1000;
-    let (days, hours, minutes, seconds) = (
-        secs / 86_400,
-        secs % 86_400 / 3_600,
-        secs % 3_600 / 60,
-        secs % 60,
-    );
-    match (days, hours, minutes) {
-        (0, 0, 0) => format!("{}s", seconds),
-        (0, 0, _) => format!("{}m {}s", minutes, seconds),
-        (0, _, _) => format!("{}h {}m", hours, minutes),
-        _ => format!("{}d {}h", days, hours),
+/// One transfer Bindizr served a secondary, as `secondary transfers` lists
+/// it.
+#[derive(Debug, Tabled)]
+pub(crate) struct TransferRow {
+    #[tabled(rename = "ZONE")]
+    pub(crate) zone_name: String,
+    #[tabled(rename = "TRANSFER")]
+    pub(crate) transfer: String,
+    #[tabled(rename = "SERIAL")]
+    pub(crate) serial: String,
+    #[tabled(rename = "ADDRESS")]
+    pub(crate) address: String,
+    #[tabled(rename = "AT")]
+    pub(crate) at: String,
+    #[tabled(rename = "ERROR")]
+    pub(crate) error: String,
+}
+
+impl From<&TransferResponse> for TransferRow {
+    /// Build a table row from one served transfer.
+    fn from(transfer: &TransferResponse) -> Self {
+        TransferRow {
+            zone_name: transfer.zone_name.clone(),
+            transfer: display_transfer_kind(transfer),
+            serial: display_option(&transfer.serial),
+            address: transfer.address.clone(),
+            at: display_time(transfer.at),
+            error: display_option(&transfer.error),
+        }
     }
 }

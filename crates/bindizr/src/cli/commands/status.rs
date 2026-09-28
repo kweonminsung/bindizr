@@ -22,7 +22,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
             outln!("Status: {}", color::green("Running"));
             let pid = match status.pid {
                 Some(pid) => pid.to_string(),
-                None => "Unknown".to_string(),
+                None => "unknown".to_string(),
             };
             outln!("PID: {}", pid);
             outln!("Version: {}", status.version);

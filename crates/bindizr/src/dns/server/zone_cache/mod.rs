@@ -74,7 +74,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
 
     let zone = match ZoneService::authorize_transfer_by_name(zone_name, key).await? {
         TransferAccess::Granted(zone) => zone,
-        TransferAccess::NotZone => return Ok(TransferAccess::NotZone),
+        TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
     };
     if let Some(content) = find_cached_content(zone.id, zone.serial) {

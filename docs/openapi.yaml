@@ -1334,6 +1334,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /secondaries/{name}/transfers:
+    get:
+      tags:
+      - Secondary
+      summary: List a secondary's transfers
+      description: 'The transfers Bindizr served the secondary''s addresses, newest first, with how each zone was last served: AXFR, IXFR as a delta or as the whole zone, or refused and why. Bindizr keeps the latest transfer per zone and address, so each zone appears once.'
+      operationId: list_secondary_transfers
+      parameters:
+      - name: name
+        in: path
+        description: The name of the secondary.
+        required: true
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: At most this many transfers, newest first; 1000 when omitted.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: zone_name
+        in: query
+        description: Only the transfers of this zone.
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The transfers served
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondaryTransfersResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: A global API token is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Secondary not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /tokens:
     get:
       tags:
@@ -4884,8 +4944,13 @@ components:
       - status
       properties:
         status:
-          type: string
-          example: healthy
+          $ref: '#/components/schemas/HealthStatus'
+    HealthStatus:
+      type: string
+      description: 'Whether the API can serve requests: its database answered a probe.'
+      enum:
+      - healthy
+      - unhealthy
     ImportMode:
       type: string
       description: How parsed records are reconciled with the records already in the zone.
@@ -5798,6 +5863,7 @@ components:
       - catalog_zone_name
       - catalog
       - notifies
+      - transfers
       properties:
         addresses:
           type: array
@@ -5838,6 +5904,9 @@ components:
           - 'null'
         secondary:
           $ref: '#/components/schemas/GetSecondaryResponse'
+        transfers:
+          $ref: '#/components/schemas/TransferSummary'
+          description: How Bindizr served the secondary's transfers.
     SecondaryResponse:
       type: object
       description: A secondary wrapped in a response envelope.
@@ -5871,6 +5940,11 @@ components:
           type:
           - string
           - 'null'
+        last_transfer:
+          oneOf:
+          - $ref: '#/components/schemas/TransferResponse'
+            description: The latest transfer of this zone Bindizr served the address.
+          - type: 'null'
         status:
           $ref: '#/components/schemas/SecondaryStatus'
         visible_serial:
@@ -5880,6 +5954,44 @@ components:
           format: int32
           example: 42
           minimum: 0
+    SecondaryTransferSummary:
+      type: object
+      description: One secondary's transfer summary, as `doctor` reports it.
+      required:
+      - secondary_name
+      - address
+      - summary
+      properties:
+        address:
+          type: string
+          example: ns2.example.net:53
+        secondary_name:
+          type: string
+          example: ns2
+        summary:
+          $ref: '#/components/schemas/TransferSummary'
+    SecondaryTransfersResponse:
+      type: object
+      description: The transfers Bindizr served one secondary.
+      required:
+      - secondary_name
+      - address
+      - summary
+      - transfers
+      properties:
+        address:
+          type: string
+          example: ns2.example.net:53
+        secondary_name:
+          type: string
+          example: ns2
+        summary:
+          $ref: '#/components/schemas/TransferSummary'
+        transfers:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransferResponse'
+          description: Newest first, at most the requested `limit`.
     TokenGrantResponse:
       type: object
       description: A single token grant wrapped in a response envelope.
@@ -5896,6 +6008,109 @@ components:
       properties:
         token:
           $ref: '#/components/schemas/GetTokenResponse'
+    TransferKind:
+      type: string
+      description: Which transfer a client asked for.
+      enum:
+      - axfr
+      - ixfr
+    TransferResponse:
+      type: object
+      description: One transfer Bindizr answered, or refused, for a secondary's address.
+      required:
+      - address
+      - zone_name
+      - kind
+      - result
+      - incremental
+      - at
+      properties:
+        address:
+          type: string
+          description: The client address the transfer was served to.
+          example: 10.0.0.14
+        at:
+          type: string
+          format: date-time
+        error:
+          type:
+          - string
+          - 'null'
+          description: Why the transfer was refused or failed.
+        incremental:
+          type: boolean
+          description: |-
+            Whether the answer was a delta; an IXFR the journal could not serve
+            went out as the whole zone.
+          example: true
+        kind:
+          $ref: '#/components/schemas/TransferKind'
+        result:
+          $ref: '#/components/schemas/TransferResult'
+          description: Answered, refused, or allowed and then broken off by a failure.
+        serial:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: The serial the answer reached; absent when nothing was transferred.
+          example: 42
+          minimum: 0
+        zone_name:
+          type: string
+          example: example.com
+    TransferResult:
+      type: string
+      description: |-
+        How a transfer request turned out: answered, refused by the ACL or the
+        key's grant, or allowed and then broken off by a failure.
+      enum:
+      - ok
+      - refused
+      - failed
+    TransferSummary:
+      type: object
+      description: How the zones a secondary asked for were last served, counted by zone.
+      required:
+      - zones
+      - axfr
+      - ixfr_full
+      - ixfr_delta
+      - refused
+      - failed
+      properties:
+        axfr:
+          type: integer
+          format: int64
+          example: 1
+          minimum: 0
+        failed:
+          type: integer
+          format: int64
+          description: Allowed, then broken off by a failure.
+          example: 0
+          minimum: 0
+        ixfr_delta:
+          type: integer
+          format: int64
+          example: 11
+          minimum: 0
+        ixfr_full:
+          type: integer
+          format: int64
+          description: IXFR asked for and the whole zone sent.
+          example: 0
+          minimum: 0
+        refused:
+          type: integer
+          format: int64
+          example: 0
+          minimum: 0
+        zones:
+          type: integer
+          format: int64
+          example: 12
+          minimum: 0
     TsigGrantResponse:
       type: object
       description: A single TSIG grant wrapped in a response envelope.

@@ -2,11 +2,12 @@
 //! stop, and re-executing itself on restart. The CLI only decides when to
 //! start it.
 
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 
-use bindizr_core::{config, logger};
+use bindizr_core::{config, logger, metrics::metrics};
 use bindizr_db as database;
 use bindizr_service as service;
+use chrono::{DateTime, Utc};
 use tokio::{
     signal::unix::{SignalKind, signal},
     task::{JoinError, JoinHandle, JoinSet},
@@ -24,7 +25,15 @@ pub(crate) const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Re-exec path captured at startup: after a package upgrade /proc/self/exe
 /// reads as a "(deleted)" path, while this path points at the replacement.
-static DAEMON_EXE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+static DAEMON_EXE: OnceLock<std::path::PathBuf> = OnceLock::new();
+
+/// When every front end came up, fixed once by `bootstrap`.
+static STARTED_AT: OnceLock<DateTime<Utc>> = OnceLock::new();
+
+/// The moment the daemon began serving, absent while it is still starting.
+pub(crate) fn started_at() -> Option<DateTime<Utc>> {
+    STARTED_AT.get().copied()
+}
 
 /// The front ends the daemon supervises, each yielding the name it is reported
 /// under and how it ended. `join_next` removes a finished task, so the
@@ -48,7 +57,7 @@ pub(crate) fn reload_config() -> Result<Vec<String>, String> {
 
     // A no-op unless this instance had no scheduler, which a zero interval
     // leaves it without.
-    service::dnssec::initialize_scheduler();
+    service::dnssec::scheduler::initialize();
     Ok(changed)
 }
 
@@ -64,8 +73,6 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     logger::initialize();
     // Reported after the logger exists, so it carries the configured format.
     log::info!("Configuration loaded from {}", config_path);
-    // Touch the metrics registry so bindizr_started_at_seconds reflects process start.
-    bindizr_core::metrics::metrics();
 
     // Binding this first is what refuses a second daemon: otherwise the loser
     // reports the conflict as a taken DNS port, after opening the database and
@@ -73,7 +80,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     let (socket_path, socket_listener) = socket::server::bind().await?;
     log::info!("Daemon socket server listening on {}", socket_path);
 
-    let notify_task = service::notify::initialize_worker();
+    let notify_task = service::notify::queue::initialize();
 
     let config = config::bindizr_config();
     database::initialize().await.map_err(|e| e.to_string())?;
@@ -94,7 +101,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
         }
     }
 
-    service::dnssec::initialize_scheduler();
+    service::dnssec::scheduler::initialize();
 
     let shutdown = Shutdown::new();
     let (dns_tcp_task, dns_udp_task) = dns::initialize(&shutdown).await?;
@@ -112,8 +119,10 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     watch(&mut servers, "DNS UDP server", dns_udp_task);
 
     // Every front end is serving now, so the start time is what `bindizr
-    // restart` waits for before it reports the daemon back up.
-    socket::server::status::mark_start_time();
+    // restart` waits for before it reports the daemon back up; the gauge
+    // publishes the same moment.
+    let started = *STARTED_AT.get_or_init(Utc::now);
+    metrics().started_at_seconds.set(started.timestamp() as f64);
     log::info!("Bindizr is running.");
 
     let mut terminate = signal(SignalKind::terminate())
@@ -127,11 +136,11 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
             result = tokio::signal::ctrl_c() => {
                 result.map_err(|e| format!("Failed to listen for shutdown signal: {}", e))?;
                 log::info!("Interrupt received, shutting down...");
-                break Outcome::Stop;
+                break RunResult::Stop;
             }
             _ = terminate.recv() => {
                 log::info!("SIGTERM received, shutting down...");
-                break Outcome::Stop;
+                break RunResult::Stop;
             }
             _ = hangup.recv() => {
                 match reload_config() {
@@ -146,7 +155,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
                 continue;
             }
             Some(Ok((name, result))) = servers.join_next() => {
-                break Outcome::server_stopped(name, result);
+                break RunResult::server_stopped(name, result);
             }
             control = control_rx.recv() => control,
         };
@@ -154,11 +163,11 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
         match control {
             Some(socket::server::control::DaemonControl::Restart) => {
                 log::info!("Restart requested, re-executing bindizr...");
-                break Outcome::Restart;
+                break RunResult::Restart;
             }
             _ => {
                 log::info!("Shutdown requested, exiting gracefully...");
-                break Outcome::Stop;
+                break RunResult::Stop;
             }
         }
     };
@@ -167,26 +176,26 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     socket::server::remove_socket_file(&socket_path).await;
 
     match outcome {
-        Outcome::Stop => Ok(()),
-        Outcome::Failed(e) => Err(CliError::from(e)),
+        RunResult::Stop => Ok(()),
+        RunResult::Failed(e) => Err(CliError::from(e)),
         // exec replaces this image, so it returns only on failure, and by
         // then nothing is listening: the failure ends the process.
-        Outcome::Restart => Err(CliError::from(reexec())),
+        RunResult::Restart => Err(CliError::from(reexec())),
     }
 }
 
 /// Why the lifecycle loop ended.
-enum Outcome {
+enum RunResult {
     Stop,
     Restart,
     Failed(String),
 }
 
-impl Outcome {
-    /// The outcome of a server that stopped on its own, so the exit says what
+impl RunResult {
+    /// The result of a server that stopped on its own, so the exit says what
     /// failed.
     fn server_stopped(name: &str, result: Result<(), tokio::task::JoinError>) -> Self {
-        Outcome::Failed(match result {
+        RunResult::Failed(match result {
             Ok(()) => format!("The {} stopped", name),
             Err(e) => format!("The {} failed: {}", name, e),
         })
@@ -205,7 +214,7 @@ async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_task: Option<Jo
         while servers.join_next().await.is_some() {}
 
         // The worker outlives the front ends: an in-flight write still enqueues.
-        service::notify::stop_worker();
+        service::notify::queue::stop();
         // Not a front end: it may be absent, and its exit never ends the daemon.
         if let Some(notify_task) = notify_task {
             let _ = notify_task.await;

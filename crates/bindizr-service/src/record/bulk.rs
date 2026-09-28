@@ -1,9 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
-use bindizr_core::{
-    dns::name::{OwnerName, ZoneName},
-    time::elapsed_ms,
-};
+use bindizr_core::dns::name::{OwnerName, ZoneName};
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
 
@@ -24,6 +21,7 @@ use crate::{
     },
     repository::RepositoryService,
     serial::generate_serial,
+    time::elapsed_ms,
     ttl::validate_record_ttl,
     types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
     zone::{ZoneService, diff::build_record_diff},

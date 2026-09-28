@@ -2,7 +2,11 @@
 //! transfer ACL, and the serial probes, so a server that hears a change is
 //! also the one allowed to pull it.
 
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{
+    collections::HashMap,
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 
 use bindizr_core::{
     config::bindizr_config,
@@ -22,10 +26,12 @@ use crate::{
     model::{secondary::Secondary, tsig_key::TsigKey},
     repository::RepositoryService,
     text::{MAX_COLUMN_TEXT_LEN, normalize_identifier},
+    transfer::TransferService,
     tsig_key::TsigKeyService,
     types::{
-        GetSecondaryResponse, PageFilter, PaginatedResponse, SecondaryCheckResponse,
-        UpdateSecondaryRequest,
+        GetSecondaryResponse, GetSecondaryTransfersFilter, PageFilter, PaginatedResponse,
+        SecondaryCheckResponse, SecondaryTransfersResponse, TransferResponse, TransferSummary,
+        UpdateSecondaryRequest, normalize_page_limit,
     },
 };
 
@@ -223,6 +229,7 @@ impl SecondaryService {
         let notifies = notify::send_notify_to_secondary(&catalog_zone, &secondary)
             .await
             .map_err(ServiceError::internal)?;
+        let transfers = Self::transfer_summary(&secondary).await?;
 
         Ok(SecondaryCheckResponse {
             secondary: Self::to_response(secondary).await?,
@@ -233,7 +240,57 @@ impl SecondaryService {
             listener_error,
             catalog,
             notifies,
+            transfers,
         })
+    }
+
+    /// The transfers Bindizr served `name`, newest first, with how each zone
+    /// was last served.
+    pub async fn list_transfers(
+        caller: &Caller,
+        name: &str,
+        filter: GetSecondaryTransfersFilter,
+    ) -> Result<SecondaryTransfersResponse, ServiceError> {
+        caller.authorize_global("manage secondaries")?;
+        let secondary = Self::lookup_by_name(name).await?;
+        let limit = normalize_page_limit(filter.limit)? as usize;
+
+        let served =
+            TransferService::list_by_clients(&Self::resolved_ips(&secondary).await).await?;
+        let summary = TransferSummary::from_transfers(&served);
+        let transfers = served
+            .iter()
+            .filter(|transfer| {
+                filter
+                    .zone_name
+                    .as_deref()
+                    .is_none_or(|zone| transfer.zone_name.eq_ignore_ascii_case(zone))
+            })
+            .take(limit)
+            .map(TransferResponse::from_transfer)
+            .collect();
+        Ok(SecondaryTransfersResponse {
+            secondary_name: secondary.name,
+            address: secondary.address,
+            summary,
+            transfers,
+        })
+    }
+
+    /// How Bindizr served `secondary`, for the check and doctor.
+    pub async fn transfer_summary(secondary: &Secondary) -> Result<TransferSummary, ServiceError> {
+        let served = TransferService::list_by_clients(&Self::resolved_ips(secondary).await).await?;
+        Ok(TransferSummary::from_transfers(&served))
+    }
+
+    /// The addresses the secondary resolves to now, which key the transfer
+    /// rows; none when it does not resolve.
+    async fn resolved_ips(secondary: &Secondary) -> Vec<IpAddr> {
+        let timeout = Duration::from_secs(bindizr_config().dns.notify.timeout_secs);
+        match resolve_address_entry(&secondary.address, timeout).await {
+            Ok(addrs) => addrs.iter().map(|addr| addr.ip()).collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Delete a secondary by name.

@@ -42,7 +42,10 @@ cargo +nightly fmt                                         # format (needs night
   bulk, zone-file import, tokens, serial bumping, RFC 2136 apply), plus the
   outbound DNS clients its flows drive (`dns_client/`: NOTIFY fan-out, SOA
   probing, parent-DS probing, inbound AXFR) — the wire format stays core's.
-- `bindizr` — the binary: the daemon runtime (`daemon.rs`) and every front end
+  `transfer` records what the DNS server served each client, in the
+  database, so a secondary's transfers read back across restarts.
+- `bindizr` — the binary: the daemon runtime (`daemon/`: `bootstrap` brings
+  the process up, `lifecycle` serves it) and every front end
   it serves — HTTP API (axum), CLI (clap), Unix-socket daemon IPC, and the DNS
   **server** (`dns/`: TCP/UDP listeners, AXFR/IXFR/catalog/NOTIFY serving,
   nsupdate dispatch). The protocol itself lives in core, outbound clients in
@@ -84,8 +87,13 @@ cargo +nightly fmt                                         # format (needs night
   `<entity>_name` (`zone_name`, `token_name`, `notify_key_name`,
   `policy_name`), a serial is `u32`, a key tag `u16`, a count `u64` named
   `added`/`deleted`/`unchanged` (a diff says `removed`), a fixed set of
-  values is an enum with a schema (`SecondaryStatus`, `RecordChange`,
-  `DnssecKeyState`), and a response's `Option` is emitted as `null`, never
+  values is an enum with a schema — `*Result` for how one attempt turned
+  out (`TransferResult`, the metrics `XfrResult`), `*Status` for what a
+  check finds (`SecondaryStatus`, `DoctorCheckStatus`, `HealthStatus`),
+  `*State` for where a thing stands in its lifecycle (`DnssecKeyState`,
+  `DsState`) — whose failure variant is `Failed` and never `Error` or
+  `Fail`, so that `error` stays the text beside it, and a response's
+  `Option` is emitted as `null`, never
   skipped, so clients read one shape. One entity travels in an envelope
   keyed by its name (`{"zone": …}`); a report (status, check, diff, import,
   rollback, the DNSSEC status) travels bare. A listing's query parameters
@@ -186,6 +194,24 @@ function is the body of `main`, so deciding to stop is its call. Everywhere
 else, including `bindizr-core` and `bindizr-db`, report the failure and let it
 propagate: a library that exits takes that decision away from whoever embedded
 it, and the e2e suite runs both binaries in-process.
+
+### Process-wide state — installed in order, or created on first use
+
+Process-wide state is one of two kinds, and each has one shape. What the
+daemon brings up in dependency order — the configuration, the logger, the
+database pool, the NOTIFY queue, the DNSSEC scheduler, the listeners, the
+control channel — is one module each, installed by that module's
+`initialize` (with `stop` beside it when the daemon must drain it), called
+once from `bootstrap` and handing back whatever the daemon must hold: a
+handle it watches, a receiver it awaits, the path it reports. The daemon
+socket is the one split — `bind` first, so a second daemon is refused before
+anything else starts, then `serve`. What depends on nothing outside the
+process — the metrics registry, the transfer and ACL caches, color
+detection — is created on first use behind a `OnceLock` by its accessor and
+has no `initialize`; nothing is called merely to touch it. The daemon's own
+start is a fact it records, not a service it brings up: `bootstrap` fixes
+it once every front end serves and sets the started-at gauge in the same
+breath, and `daemon::started_at` is what reports it (the `status` uptime).
 
 ### `--output` renders a result, so a command that is its output has none
 
@@ -294,6 +320,12 @@ equality selector the name must carry as `_by_state`.
 - A record mutation that also writes IXFR journal rows says so in the name:
   `*_with_changes_tx`. Preconditions (e.g. "caller already validated the
   rows") belong in the doc comment, not the name.
+- A history row — kept so what happened can be read back later — is written
+  by `save_*` (`save_version_tx`; `TransferService::save_ok`,
+  `save_refused`, and `save_failed`, named by the result `XfrResult`
+  counts). `track_*` is a
+  metrics counter, and `record` is never a verb: it is the noun of
+  *Vocabulary*.
 - Adjacent layers never reuse one name for different semantics (e.g. a raw
   row delete in the facade vs. a delete-plus-journal-log in the service).
 
@@ -404,6 +436,21 @@ grep -rnE '"[^"]*(RRset|resource record|record set)[^"]*"' crates/*/src
 grep -rnoE "\b[A-Za-z0-9_]*[Rr]r(set|s)?\b" crates --include='*.rs' \
   | grep -vE "Rrsig|rrsig|err$|stderr|Err$|formerr|Rrset$|NxRrset|YxRrset|sign_rrset|[yn]xrrset"
 ```
+
+### Presentation — a value spells itself once
+
+A fixed-set value has two spellings and no more. `as_str` is the storage and
+API form, the one serde's `rename_all` also produces, and is what a row or a
+metric label binds. `Display` is the presentation form, the one a person
+reads in a table cell or a message, and every front end writes the value
+with `{}` rather than spelling a variant itself. The two coincide unless the
+presentation is a DNS mnemonic (`NSEC3`, `AXFR`), a human phrase
+(`in sync`), or a notation (`RecordChange`'s `+`/`-`/`~`); a type whose
+`Display` nobody reads has none. The CLI's free `display_<thing>` helpers in
+`cli/output` render only what no type of ours can own — an `Option` (`-`), a
+`bool` (`yes`/`no`), a timestamp, a duration, a truncated cell, and one cell
+assembled from several fields — and every command reuses them rather than
+formatting inline.
 
 ## Code style
 

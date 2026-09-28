@@ -5,6 +5,8 @@ use bindizr_service::{
     authorization::Caller,
     dns_client::{notify, probe},
     error::ServiceError,
+    secondary::SecondaryService,
+    types::SecondaryTransferSummary,
     zone::ZoneService,
 };
 
@@ -32,11 +34,11 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
             ),
         },
         Ok(Err(e)) => DoctorCheck {
-            status: DoctorCheckStatus::Fail,
+            status: DoctorCheckStatus::Failed,
             message: format!("Database not reachable: {}", e),
         },
         Err(_) => DoctorCheck {
-            status: DoctorCheckStatus::Fail,
+            status: DoctorCheckStatus::Failed,
             message: format!(
                 "Database not reachable: timed out after {} seconds",
                 DB_PROBE_TIMEOUT.as_secs()
@@ -65,7 +67,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
             ),
             Err(e) => (
                 DoctorCheck {
-                    status: DoctorCheckStatus::Fail,
+                    status: DoctorCheckStatus::Failed,
                     message: format!("DNS server not reachable: {}: {}", dns_addr, e),
                 },
                 None,
@@ -74,8 +76,8 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
 
     // The secondaries are rows: a database that did not answer is not asked
     // for them again.
-    let (secondaries, notifies) = if database.status == DoctorCheckStatus::Fail {
-        (Vec::new(), Vec::new())
+    let (secondaries, notifies, transfers) = if database.status == DoctorCheckStatus::Failed {
+        (Vec::new(), Vec::new(), Vec::new())
     } else {
         // Capture secondary serials before the NOTIFY check can trigger a refresh.
         let secondaries = probe::probe_secondaries(&config.dns.catalog_zone_name, catalog_serial)
@@ -85,7 +87,15 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         let notifies = notify::send_notify_to_secondaries(&config.dns.catalog_zone_name)
             .await
             .map_err(ServiceError::internal)?;
-        (secondaries, notifies)
+        let mut transfers = Vec::new();
+        for secondary in SecondaryService::list_enabled().await? {
+            transfers.push(SecondaryTransferSummary {
+                summary: SecondaryService::transfer_summary(&secondary).await?,
+                secondary_name: secondary.name,
+                address: secondary.address,
+            });
+        }
+        (secondaries, notifies, transfers)
     };
 
     let response = DaemonDoctorResponse {
@@ -95,6 +105,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         catalog_serial,
         secondaries,
         notifies,
+        transfers,
     };
 
     Ok(DaemonResponse {

@@ -6,7 +6,7 @@ mod import;
 mod update;
 mod validation;
 
-pub(crate) use validation::{AddOutcome, validate_record_name_in_zone};
+pub(crate) use validation::{AddResult, validate_record_name_in_zone};
 
 use crate::{
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},

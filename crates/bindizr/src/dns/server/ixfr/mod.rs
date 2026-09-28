@@ -9,9 +9,12 @@ use std::{collections::HashMap, net::IpAddr};
 use bindizr_core::{
     config::bindizr_config,
     dns::{message, message::Rtype},
-    model::zone_version::ZoneVersion,
+    model::{transfer::TransferKind, zone_version::ZoneVersion},
 };
-use bindizr_service::zone::{TransferAccess, ZoneService};
+use bindizr_service::{
+    transfer::TransferService,
+    zone::{TransferAccess, ZoneService},
+};
 use tokio::net::TcpStream;
 
 use self::{
@@ -49,8 +52,8 @@ pub(crate) async fn handle_ixfr(
         .await?
     {
         TransferAccess::Granted(zone) => zone,
-        TransferAccess::NotZone => {
-            return Err(XfrError::ZoneNotFound(zone_name_str.to_string()));
+        TransferAccess::NotAuth => {
+            return Err(XfrError::NotAuth(zone_name_str.to_string()));
         }
         TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
     };
@@ -206,6 +209,7 @@ pub(crate) async fn handle_ixfr(
     }
 
     log::info!("IXFR completed for zone {}", zone_name_str);
+    TransferService::save_ok(client_ip, zone.id, TransferKind::Ixfr, true, current_serial).await;
 
     Ok(())
 }

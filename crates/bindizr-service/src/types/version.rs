@@ -127,6 +127,17 @@ pub enum RecordChange {
     Changed,
 }
 
+impl std::fmt::Display for RecordChange {
+    /// Write the change as its diff mark.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RecordChange::Added => "+",
+            RecordChange::Removed => "-",
+            RecordChange::Changed => "~",
+        })
+    }
+}
+
 /// The records of one name and type that differ, with those present on
 /// each side. `from` is empty for `added`, `to` for `removed`.
 #[derive(Serialize, Deserialize, Debug, ToSchema)]

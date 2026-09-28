@@ -49,7 +49,7 @@ impl Report {
     /// Record a failed diagnostic check.
     pub(crate) fn fail(&mut self, message: impl fmt::Display) {
         self.push(DoctorCheck {
-            status: DoctorCheckStatus::Fail,
+            status: DoctorCheckStatus::Failed,
             message: message.to_string(),
         });
     }
@@ -64,14 +64,15 @@ impl Report {
 
     /// Store one check, counting a failure and printing it now in table form.
     pub(crate) fn push(&mut self, check: DoctorCheck) {
-        if check.status == DoctorCheckStatus::Fail {
+        if check.status == DoctorCheckStatus::Failed {
             self.failures += 1;
         }
         if self.format == OutputFormat::Table {
+            let text = check.status.to_string();
             let label = match check.status {
-                DoctorCheckStatus::Ok => color::green("OK"),
-                DoctorCheckStatus::Fail => color::red("FAIL"),
-                DoctorCheckStatus::Skip => color::yellow("SKIP"),
+                DoctorCheckStatus::Ok => color::green(&text),
+                DoctorCheckStatus::Failed => color::red(&text),
+                DoctorCheckStatus::Skip => color::yellow(&text),
             };
             outln!("[{}] {}", label, check.message);
         }

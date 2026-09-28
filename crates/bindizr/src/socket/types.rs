@@ -1,8 +1,8 @@
 use bindizr_service::types::{
-    CreateGrantRequest, EnableDnssecRequest, ImportDnssecKeyRequest, ImportZoneRequest,
-    NotifyCheckResponse, PageFilter, RolloverDnssecRequest, SecondaryStatusResponse,
-    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
-    UpdateSecondaryRequest, UpdateZoneRequest,
+    CreateGrantRequest, EnableDnssecRequest, GetSecondaryTransfersFilter, ImportDnssecKeyRequest,
+    ImportZoneRequest, NotifyCheckResponse, PageFilter, RolloverDnssecRequest,
+    SecondaryStatusResponse, SecondaryTransferSummary, UpdateDnssecPolicyRequest,
+    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +22,7 @@ pub(crate) enum DaemonCommandKind {
     UpdateSecondary,
     DeleteSecondary,
     CheckSecondary,
+    ListSecondaryTransfers,
     CreateTsigKey,
     ListTsigKeys,
     GetTsigKey,
@@ -124,6 +125,15 @@ pub(crate) struct UpdateSecondaryParams {
     pub(crate) name: String,
     #[serde(flatten)]
     pub(crate) request: UpdateSecondaryRequest,
+}
+
+/// Parameters of a secondary's transfer listing.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ListSecondaryTransfersParams {
+    pub(crate) name: String,
+    #[serde(flatten)]
+    pub(crate) filter: GetSecondaryTransfersFilter,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -349,6 +359,8 @@ pub(crate) struct DaemonDoctorResponse {
     pub(crate) catalog_serial: Option<u32>,
     pub(crate) secondaries: Vec<SecondaryStatusResponse>,
     pub(crate) notifies: Vec<NotifyCheckResponse>,
+    /// How Bindizr served each enabled secondary.
+    pub(crate) transfers: Vec<SecondaryTransferSummary>,
 }
 
 /// One check's outcome.
@@ -356,8 +368,19 @@ pub(crate) struct DaemonDoctorResponse {
 #[serde(rename_all = "lowercase")]
 pub(crate) enum DoctorCheckStatus {
     Ok,
-    Fail,
+    Failed,
     Skip,
+}
+
+impl std::fmt::Display for DoctorCheckStatus {
+    /// Write the status as the doctor's report labels it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            DoctorCheckStatus::Ok => "OK",
+            DoctorCheckStatus::Failed => "FAILED",
+            DoctorCheckStatus::Skip => "SKIP",
+        })
+    }
 }
 
 /// One installation check, worded as `doctor` reports it.

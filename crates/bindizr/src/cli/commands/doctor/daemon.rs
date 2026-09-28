@@ -13,7 +13,7 @@ use tokio::{
 
 use super::Report;
 use crate::{
-    cli::output::parse_payload,
+    cli::output::{display_transfer_summary, parse_payload},
     socket::{
         client,
         types::{DaemonCommandKind, DaemonDoctorResponse, DaemonStatusResponse, DoctorCheckStatus},
@@ -143,7 +143,7 @@ pub(crate) async fn check_services(report: &mut Report) {
         }
     };
 
-    let database_failed = doctor.database.status == DoctorCheckStatus::Fail;
+    let database_failed = doctor.database.status == DoctorCheckStatus::Failed;
     report.push(doctor.database);
     report.push(doctor.dns_server);
 
@@ -161,21 +161,19 @@ pub(crate) async fn check_services(report: &mut Report) {
     for secondary in &doctor.secondaries {
         let serial = secondary.visible_serial.unwrap_or_default();
         match secondary.status {
-            SecondaryStatus::InSync => report.ok(format!(
-                "Secondary in sync: {} (catalog zone {} at serial {})",
-                secondary.address, catalog_zone, serial
-            )),
-            SecondaryStatus::Reachable => report.ok(format!(
-                "Secondary reachable: {} (catalog zone {} at serial {})",
-                secondary.address, catalog_zone, serial
+            SecondaryStatus::InSync | SecondaryStatus::Reachable => report.ok(format!(
+                "Secondary {}: {} (catalog zone {} at serial {})",
+                secondary.status, secondary.address, catalog_zone, serial
             )),
             SecondaryStatus::Unreachable => report.fail(format!(
-                "Secondary unreachable: {} ({})",
+                "Secondary {}: {} ({})",
+                secondary.status,
                 secondary.address,
                 secondary.error.as_deref().unwrap_or("unknown error")
             )),
-            _ => report.fail(format!(
-                "Secondary out of sync: {} (catalog zone {} at serial {}; bindizr serves {})",
+            SecondaryStatus::Lagging | SecondaryStatus::Ahead => report.fail(format!(
+                "Secondary {}: {} (catalog zone {} at serial {}; bindizr serves {})",
+                secondary.status,
                 secondary.address,
                 catalog_zone,
                 serial,
@@ -188,6 +186,20 @@ pub(crate) async fn check_services(report: &mut Report) {
         match &notify.error {
             None => report.ok(format!("NOTIFY accepted: {}", notify.address)),
             Some(e) => report.fail(format!("NOTIFY rejected: {} ({})", notify.address, e)),
+        }
+    }
+
+    // What Bindizr served each secondary is information, not a verdict.
+    for transfer in &doctor.transfers {
+        let line = format!(
+            "Transfers to {}: {}",
+            transfer.address,
+            display_transfer_summary(&transfer.summary)
+        );
+        if transfer.summary.zones == 0 {
+            report.skip(line);
+        } else {
+            report.ok(line);
         }
     }
 }

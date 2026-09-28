@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
+use super::secondary::TransferResponse;
 use crate::{error::ServiceError, model::zone::Zone, serial::validate_initial_serial};
 
 /// API representation of a zone.
@@ -306,23 +307,16 @@ pub enum SecondaryStatus {
     Unreachable,
 }
 
-impl SecondaryStatus {
-    /// The status as the API spells it.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            SecondaryStatus::InSync => "in_sync",
+impl std::fmt::Display for SecondaryStatus {
+    /// Write the status as a person reads it; serde spells the API form.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            SecondaryStatus::InSync => "in sync",
             SecondaryStatus::Lagging => "lagging",
             SecondaryStatus::Ahead => "ahead",
             SecondaryStatus::Reachable => "reachable",
             SecondaryStatus::Unreachable => "unreachable",
-        }
-    }
-}
-
-impl std::fmt::Display for SecondaryStatus {
-    /// Write the status as the API spells it.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+        })
     }
 }
 
@@ -336,6 +330,8 @@ pub struct SecondaryStatusResponse {
     #[schema(example = 42)]
     pub visible_serial: Option<u32>,
     pub error: Option<String>,
+    /// The latest transfer of this zone Bindizr served the address.
+    pub last_transfer: Option<TransferResponse>,
 }
 
 impl SecondaryStatusResponse {
@@ -362,6 +358,7 @@ impl SecondaryStatusResponse {
                     status,
                     visible_serial: Some(visible),
                     error: None,
+                    last_transfer: None,
                 }
             }
             Err(error) => SecondaryStatusResponse {
@@ -369,6 +366,7 @@ impl SecondaryStatusResponse {
                 status: SecondaryStatus::Unreachable,
                 visible_serial: None,
                 error: Some(error),
+                last_transfer: None,
             },
         }
     }

@@ -309,3 +309,94 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
         wait_for_any_dns_record(*port, &zone_name, CDS).await;
     }
 }
+
+/// Verify that the transfers Bindizr served a secondary, and the refusals
+/// before it was registered, are read back per zone and beside the zone's
+/// status.
+#[tokio::test]
+#[serial]
+async fn the_transfers_served_a_secondary_are_read_back() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // Refused while unregistered; rows key by address, so registering it
+    // afterwards reveals the refusal.
+    let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
+    assert_eq!(outcome.refusal(), Rcode::REFUSED);
+    app.create_secondary("loopback", "127.0.0.1").await;
+
+    let (status, body) = app
+        .send_request(Method::GET, "/secondaries/loopback/transfers", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["summary"]["zones"], 1, "{body}");
+    assert_eq!(body["summary"]["refused"], 1, "{body}");
+    assert_eq!(body["transfers"][0]["zone_name"], zone_name);
+    assert_eq!(body["transfers"][0]["kind"], "axfr");
+    assert_eq!(body["transfers"][0]["result"], "refused");
+    assert!(body["transfers"][0]["serial"].is_null(), "{body}");
+    assert!(!body["transfers"][0]["error"].is_null(), "{body}");
+
+    let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
+    assert!(outcome.records() >= 3);
+
+    let (status, body) = app
+        .send_request(Method::GET, "/secondaries/loopback/transfers", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["summary"]["zones"], 1, "{body}");
+    assert_eq!(body["summary"]["axfr"], 1, "{body}");
+    assert_eq!(body["summary"]["refused"], 0, "{body}");
+    assert_eq!(body["summary"]["failed"], 0, "{body}");
+    assert_eq!(body["transfers"][0]["kind"], "axfr");
+    assert_eq!(body["transfers"][0]["result"], "ok");
+    assert_eq!(body["transfers"][0]["incremental"], false);
+    assert_eq!(body["transfers"][0]["serial"], zone["serial"], "{body}");
+    assert!(body["transfers"][0]["error"].is_null(), "{body}");
+    assert_eq!(body["transfers"][0]["address"], "127.0.0.1");
+
+    // A zone filter for another zone leaves the summary and empties the list.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            "/secondaries/loopback/transfers?zone_name=other.example",
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["summary"]["zones"], 1, "{body}");
+    assert_eq!(
+        body["transfers"].as_array().map(Vec::len),
+        Some(0),
+        "{body}"
+    );
+
+    // The zone's status carries the same transfer beside the probe, which
+    // finds nothing listening on the registered address.
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}/status"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["secondaries"][0]["last_transfer"]["kind"], "axfr",
+        "{body}"
+    );
+    assert_eq!(
+        body["secondaries"][0]["last_transfer"]["serial"], zone["serial"],
+        "{body}"
+    );
+
+    let listed = app
+        .run_cli_success(&["secondary", "transfers", "loopback"])
+        .await;
+    assert!(
+        listed.contains(zone_name) && listed.contains("AXFR") && listed.contains("1 zones:"),
+        "{listed}"
+    );
+    // The check fails, since nothing answers on the registered address, but
+    // still reports the transfers.
+    let checked = app.run_cli(&["secondary", "check", "loopback"]).await;
+    let stdout = String::from_utf8_lossy(&checked.stdout);
+    assert!(stdout.contains("Transfers: 1 zones:"), "{stdout}");
+}

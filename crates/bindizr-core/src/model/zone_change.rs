@@ -49,13 +49,6 @@ impl ChangeOperation {
     }
 }
 
-impl std::fmt::Display for ChangeOperation {
-    /// Write the change operation in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 impl std::str::FromStr for ChangeOperation {
     type Err = String;
 
