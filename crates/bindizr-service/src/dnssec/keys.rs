@@ -6,8 +6,10 @@ use chrono::Utc;
 
 use super::status::build_status_tx;
 use crate::{
+    Context,
     authorization::Caller,
-    database::repository::LockLevel,
+    db,
+    db::LockLevel,
     dnssec::SignedZone,
     dnssec_policy::normalize_policy_name,
     error::ServiceError,
@@ -16,7 +18,7 @@ use crate::{
         dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME,
         zone::Zone,
     },
-    repository,
+    transaction,
     types::{
         DnssecKeyMaterial, DnssecStatusResponse, ExportDnssecKeysResponse, ImportDnssecKeyRequest,
     },
@@ -25,6 +27,7 @@ use crate::{
 
 /// The zone's keys as BIND file contents (`K*.key` / `K*.private`).
 pub async fn export_keys(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
 ) -> Result<ExportDnssecKeysResponse, ServiceError> {
@@ -32,7 +35,7 @@ pub async fn export_keys(
 
     // One locked transaction: a rename cannot split the rendered name
     // from the keys.
-    let mut tx = repository::begin_read_tx("failed to export DNSSEC keys").await?;
+    let mut tx = transaction::begin_read_tx(cx, "failed to export DNSSEC keys").await?;
     let result = async {
         let SignedZone { zone, keys, .. } =
             super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
@@ -57,7 +60,7 @@ pub async fn export_keys(
         })
     }
     .await;
-    repository::finish_tx(tx, result, "failed to export DNSSEC keys").await
+    transaction::finish_tx(tx, result, "failed to export DNSSEC keys").await
 }
 
 /// Import BIND key pairs into an unsigned zone and sign it under the chosen policy.
@@ -65,6 +68,7 @@ pub async fn export_keys(
 /// The set needs an active CSK or active KSK and ZSK keys; published and retired
 /// rollover keys may accompany them.
 pub async fn import_keys(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
     request: ImportDnssecKeyRequest,
@@ -80,19 +84,18 @@ pub async fn import_keys(
             .unwrap_or(DEFAULT_DNSSEC_POLICY_NAME),
     )?;
 
-    let mut tx = repository::begin_tx("failed to import DNSSEC keys").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to import DNSSEC keys").await?;
     let result = async {
         let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        if !repository::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None)
+        if !db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::None)
             .await?
             .is_empty()
         {
             return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
         }
-        let policy =
-            repository::get_dnssec_policy_by_name_tx(&mut tx, &policy_name, LockLevel::Shared)
-                .await?
-                .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
+        let policy = db::dnssec_policy::get_by_name_tx(&mut tx, &policy_name, LockLevel::Shared)
+            .await?
+            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
 
         let now = Utc::now();
         let mut keys: Vec<DnssecKey> = Vec::with_capacity(request.keys.len());
@@ -144,10 +147,10 @@ pub async fn import_keys(
         }
 
         // Store the validated key set and its first signed view together.
-        repository::update_zone_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id)).await?;
+        db::zone::update_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id)).await?;
         let mut stored = Vec::with_capacity(keys.len());
         for key in keys {
-            stored.push(repository::create_dnssec_key_tx(&mut tx, key).await?);
+            stored.push(db::dnssec_key::create_tx(&mut tx, key).await?);
         }
         let signed = SignedZone {
             zone: Zone {
@@ -158,9 +161,10 @@ pub async fn import_keys(
             keys: stored,
         };
 
-        let new_serial = super::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
-            .await?
-            .unwrap_or(signed.zone.serial);
+        let new_serial =
+            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
+                .await?
+                .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,
@@ -172,11 +176,11 @@ pub async fn import_keys(
         .await
     }
     .await;
-    let response = repository::finish_tx(tx, result, "failed to import DNSSEC keys").await?;
+    let response = transaction::finish_tx(tx, result, "failed to import DNSSEC keys").await?;
 
     log::info!("event=dnssec_import_keys zone={}", response.zone_name);
 
     // Announce the imported keys only after their signed records are committed.
-    crate::notify::notify_after_update(&response.zone_name).await;
+    crate::notify::notify_after_update(cx, &response.zone_name).await;
     Ok(response)
 }

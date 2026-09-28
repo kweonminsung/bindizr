@@ -3,29 +3,16 @@ mod environment;
 #[cfg(test)]
 mod tests;
 
-use std::{
-    env, fmt,
-    net::IpAddr,
-    path::PathBuf,
-    sync::{Arc, OnceLock, RwLock},
-};
+use std::{env, fmt, net::IpAddr, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
-/// Swappable so `reload` can replace it; readers take a snapshot, so a
-/// request decides on one version throughout even if a reload lands mid-way.
-static BINDIZR_CONFIG: RwLock<Option<Arc<BindizrConfig>>> = RwLock::new(None);
-
-/// The file `reload` re-reads. Fixed at startup: a reload changes settings,
-/// never which file they come from.
-static CONFIG_PATH: OnceLock<String> = OnceLock::new();
-
 /// Top-level bindizr configuration.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct BindizrConfig {
+pub struct Config {
     pub api: ApiConfig,
     pub database: DatabaseConfig,
     pub dns: DnsConfig,
@@ -400,53 +387,6 @@ impl std::str::FromStr for LogLevel {
     }
 }
 
-/// Load configuration from `conf_file_path` (or the default path / env var),
-/// apply environment overrides, and store it as the global config, returning
-/// the file it came from: the logger is installed from what this loads, so
-/// only the caller can report it in the configured format.
-pub fn initialize(conf_file_path: Option<&str>) -> Result<String, String> {
-    let conf_file_path = resolve_config_path(conf_file_path);
-
-    let bindizr_config = load_config_file(&conf_file_path)?;
-    let mut stored = BINDIZR_CONFIG.write().map_err(|_| POISONED)?;
-    if stored.is_some() {
-        return Err("Bindizr configuration is already initialized".to_string());
-    }
-    let _ = CONFIG_PATH.set(conf_file_path.clone());
-    *stored = Some(Arc::new(bindizr_config));
-
-    Ok(conf_file_path)
-}
-
-const POISONED: &str = "Bindizr configuration lock is poisoned";
-
-/// Re-read the configuration file and replace the stored one, returning the
-/// settings that changed. Settings a running process cannot adopt are refused
-/// rather than stored, so the configuration always describes the process.
-pub fn reload() -> Result<Vec<String>, String> {
-    let path = CONFIG_PATH
-        .get()
-        .ok_or("Bindizr configuration is not initialized")?;
-    let next = load_config_file(path)?;
-
-    let mut stored = BINDIZR_CONFIG.write().map_err(|_| POISONED)?;
-    let current = stored
-        .as_ref()
-        .ok_or("Bindizr configuration is not initialized")?;
-
-    let fixed = current.fixed_settings_changed(&next);
-    if !fixed.is_empty() {
-        return Err(format!(
-            "these settings are fixed while bindizr runs, so nothing was reloaded: {}",
-            fixed.join(", ")
-        ));
-    }
-
-    let changed = current.changed_settings(&next);
-    *stored = Some(Arc::new(next));
-    Ok(changed)
-}
-
 /// Resolve the config file path: explicit argument, then `BINDIZR_CONFIG_PATH`,
 /// then the default path.
 pub fn resolve_config_path(conf_file_path: Option<&str>) -> String {
@@ -464,28 +404,28 @@ fn resolve_config_path_with_env(
         .unwrap_or_else(|| BINDIZR_CONF_PATH.to_string())
 }
 
-/// Load and validate `conf_file_path`, applying environment overrides, without
-/// storing the result or exiting on failure.
-pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
-    if !PathBuf::from(conf_file_path).exists() {
-        return Err(format!("Bindizr config does not exist: {}", conf_file_path));
+impl Config {
+    /// Load and validate the file at `conf_file_path`, applying environment
+    /// overrides. The value is the caller's to hold; nothing is stored.
+    pub fn load(conf_file_path: &str) -> Result<Config, String> {
+        if !PathBuf::from(conf_file_path).exists() {
+            return Err(format!("Bindizr config does not exist: {}", conf_file_path));
+        }
+
+        let text = std::fs::read_to_string(conf_file_path).map_err(|e| {
+            format!(
+                "Failed to read the configuration file '{}': {}",
+                conf_file_path, e
+            )
+        })?;
+        // A parse or validation failure names no file, and the path may be a
+        // default the caller never spelled.
+        Config::from_toml(&text, |name| env::var(name).ok())
+            .map_err(|e| format!("{} (in {})", e, conf_file_path))
     }
 
-    let text = std::fs::read_to_string(conf_file_path).map_err(|e| {
-        format!(
-            "Failed to read the configuration file '{}': {}",
-            conf_file_path, e
-        )
-    })?;
-    // A parse or validation failure names no file, and the path may be a
-    // default the caller never spelled.
-    BindizrConfig::from_toml(&text, |name| env::var(name).ok())
-        .map_err(|e| format!("{} (in {})", e, conf_file_path))
-}
-
-impl BindizrConfig {
     /// The settings a reload actually changed, for the line that reports it.
-    fn changed_settings(&self, next: &BindizrConfig) -> Vec<String> {
+    pub fn changed_settings(&self, next: &Config) -> Vec<String> {
         let mut changed = Vec::new();
         if self.dns != next.dns {
             changed.push("dns".to_string());
@@ -498,7 +438,7 @@ impl BindizrConfig {
 
     /// Settings bound to something built at startup — a listening socket, the
     /// HTTP router, the database pool — which a reload cannot rebuild.
-    fn fixed_settings_changed(&self, next: &BindizrConfig) -> Vec<String> {
+    pub fn fixed_settings_changed(&self, next: &Config) -> Vec<String> {
         let mut fixed = Vec::new();
         if self.api != next.api {
             fixed.push("api".to_string());
@@ -625,15 +565,4 @@ impl DnsConfig {
         }
         Ok(())
     }
-}
-
-/// A snapshot of the global configuration; panics if [`initialize`] has not
-/// run. A reload is invisible to a snapshot already taken, so hold one for
-/// as long as a single decision takes and no longer.
-pub fn bindizr_config() -> Arc<BindizrConfig> {
-    BINDIZR_CONFIG
-        .read()
-        .expect(POISONED)
-        .clone()
-        .expect("Configuration not initialized")
 }

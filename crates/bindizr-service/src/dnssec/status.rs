@@ -6,15 +6,17 @@ use chrono::{DateTime, Duration, Utc};
 
 use super::parent_ns_addrs::parent_ns_addr_entries;
 use crate::{
+    Context, Transaction,
     authorization::Caller,
-    database::repository::LockLevel,
+    db,
+    db::LockLevel,
     error::ServiceError,
     model::{
         dnssec_key::{DnssecKey, DnssecKeyState},
         dnssec_policy::DnssecPolicy,
         zone::Zone,
     },
-    repository::{self, RepositoryTx},
+    transaction,
     types::{DnssecDsInfo, DnssecKeyInfo, DnssecStatusResponse, GetDnssecPolicyResponse},
     zone,
 };
@@ -22,6 +24,7 @@ use crate::{
 /// DNSSEC signing state of a zone; `enabled: false` with no policy and
 /// empty key and DS lists for an unsigned zone.
 pub async fn get_status(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
 ) -> Result<DnssecStatusResponse, ServiceError> {
@@ -29,49 +32,52 @@ pub async fn get_status(
 
     // The DS records are derived from the apex name and the keys, so they
     // are read together under the zone lock.
-    let mut tx = repository::begin_read_tx("failed to read DNSSEC status").await?;
+    let mut tx = transaction::begin_read_tx(cx, "failed to read DNSSEC status").await?;
     let result = async {
         let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-        let keys = repository::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
+        let keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::None).await?;
         let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
         build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
     }
     .await;
-    repository::finish_tx(tx, result, "failed to read DNSSEC status").await
+    transaction::finish_tx(tx, result, "failed to read DNSSEC status").await
 }
 
 /// Zones serving a signed view, for the unauthenticated metrics endpoint.
-pub async fn count_signed_zones() -> Result<u64, ServiceError> {
-    repository::count_dnssec_record_zone_ids().await
+pub async fn count_signed_zones(cx: &Context) -> Result<u64, ServiceError> {
+    Ok(db::dnssec_record::count_zone_ids(cx.db()).await?)
 }
 
 /// Keys in `state` across every zone, for the metrics endpoint.
-pub async fn count_keys_by_state(state: DnssecKeyState) -> Result<u64, ServiceError> {
-    repository::count_dnssec_keys_by_state(state).await
+pub async fn count_keys_by_state(cx: &Context, state: DnssecKeyState) -> Result<u64, ServiceError> {
+    Ok(db::dnssec_key::count_by_state(cx.db(), state).await?)
 }
 
 /// Count signatures inside their policy's re-sign window across every
 /// zone.
-pub async fn count_rrsigs_expiring_within_refresh(now: DateTime<Utc>) -> Result<u64, ServiceError> {
-    repository::count_rrsig_dnssec_records_expiring_within_refresh(now).await
+pub async fn count_rrsigs_expiring_within_refresh(
+    cx: &Context,
+    now: DateTime<Utc>,
+) -> Result<u64, ServiceError> {
+    Ok(db::dnssec_record::count_expiring_within_refresh(cx.db(), now).await?)
 }
 
 /// Signatures already past their expiration across every zone; any at all
 /// mean resolvers are failing part of one right now.
-pub async fn count_rrsigs_expired(now: DateTime<Utc>) -> Result<u64, ServiceError> {
-    repository::count_rrsig_dnssec_records_expired_before(now).await
+pub async fn count_rrsigs_expired(cx: &Context, now: DateTime<Utc>) -> Result<u64, ServiceError> {
+    Ok(db::dnssec_record::count_expired_before(cx.db(), now).await?)
 }
 
 /// Assemble the zone's status on the caller's transaction: the earliest
 /// signature expiry and any pending withdrawal join the rows already loaded.
 pub(crate) async fn build_status_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     policy: Option<&DnssecPolicy>,
     keys: &[DnssecKey],
     serial: i32,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    let derived = repository::list_dnssec_records_tx(tx, zone.id, LockLevel::None).await?;
+    let derived = db::dnssec_record::list_tx(tx, zone.id, LockLevel::None).await?;
     let earliest_signature_expires_at = derived.iter().filter_map(|row| row.expires_at).min();
 
     // Only RRSIG rows carry an expiration, so counting those counts signatures.
@@ -90,9 +96,7 @@ pub(crate) async fn build_status_tx(
             expires - Duration::days(i64::from(policy.signature_refresh_days))
         });
 
-    let withdrawing = repository::get_dnssec_withdrawal_tx(tx, zone.id)
-        .await?
-        .is_some();
+    let withdrawing = db::dnssec_withdrawal::get_tx(tx, zone.id).await?.is_some();
 
     // The parent needs DS records only for the SEP keys the zone still wants
     // delegated trust for.

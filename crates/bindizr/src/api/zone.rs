@@ -1,12 +1,14 @@
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
-    extract::DefaultBodyLimit,
+    extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
 };
 use bindizr_service::{
-    record,
+    Context, record,
     types::{
         CreateZoneRequest, DEFAULT_PAGE_LIMIT, DeleteZoneResponse, ErrorResponse, GetZoneResponse,
         GetZonesFilter, ImportZoneRequest, ImportZoneResponse, PaginatedResponse,
@@ -28,7 +30,7 @@ use crate::{
 };
 
 /// Build the zone API routes.
-pub(crate) fn routes() -> Router {
+pub(crate) fn routes() -> Router<Arc<Context>> {
     Router::new()
         .route("/zones", routing::get(list_zones))
         .route("/zones/{name}", routing::get(get_zone))
@@ -74,10 +76,11 @@ pub(crate) fn routes() -> Router {
         )
 )]
 pub(crate) async fn get_zone_status(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = zone::get_status(&caller, &params.name).await?;
+    let status = zone::get_status(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -106,11 +109,12 @@ pub(crate) struct ExportZoneQuery {
         )
 )]
 pub(crate) async fn export_zone(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(query): Query<ExportZoneQuery>,
 ) -> Result<Response, ApiError> {
-    let zone_file = zone::export(&caller, &params.name, query.signed.unwrap_or(false)).await?;
+    let zone_file = zone::export(&cx, &caller, &params.name, query.signed.unwrap_or(false)).await?;
     Ok((
         StatusCode::OK,
         [("content-type", "text/plain; charset=utf-8")],
@@ -140,11 +144,13 @@ pub(crate) async fn export_zone(
         )
 )]
 pub(crate) async fn list_zone_versions(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(query): Query<VersionListQuery>,
 ) -> Result<Response, ApiError> {
     let response = zone::list_versions(
+        &cx,
         &caller,
         &params.name,
         query.limit.or(Some(DEFAULT_PAGE_LIMIT)),
@@ -174,10 +180,11 @@ pub(crate) async fn list_zone_versions(
         )
 )]
 pub(crate) async fn get_zone_version(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneVersionParams>,
 ) -> Result<Response, ApiError> {
-    let response = zone::get_version(&caller, &params.name, params.serial).await?;
+    let response = zone::get_version(&cx, &caller, &params.name, params.serial).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -204,11 +211,12 @@ pub(crate) async fn get_zone_version(
         )
 )]
 pub(crate) async fn rollback_zone(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<ZoneVersionParams>,
     Query(query): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    let response = zone::rollback(&caller, &params.name, params.serial, query.dry_run).await?;
+    let response = zone::rollback(&cx, &caller, &params.name, params.serial, query.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -255,11 +263,12 @@ pub(crate) struct VersionDiffQuery {
         )
 )]
 pub(crate) async fn diff_zone_versions(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(query): Query<VersionDiffQuery>,
 ) -> Result<Response, ApiError> {
-    let diff = zone::diff_versions(&caller, &params.name, query.from, query.to).await?;
+    let diff = zone::diff_versions(&cx, &caller, &params.name, query.from, query.to).await?;
     Ok((StatusCode::OK, Json(diff)).into_response())
 }
 
@@ -278,11 +287,12 @@ pub(crate) async fn diff_zone_versions(
         )
 )]
 pub(crate) async fn list_zones(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Query(mut query): Query<GetZonesFilter>,
 ) -> Result<Response, ApiError> {
     query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = zone::list_by_filter(&caller, query).await?;
+    let response = zone::list_by_filter(&cx, &caller, query).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -304,10 +314,11 @@ pub(crate) async fn list_zones(
         )
 )]
 pub(crate) async fn get_zone(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let zone = zone::get_by_name(&caller, &params.name).await?;
+    let zone = zone::get_by_name(&cx, &caller, &params.name).await?;
     Ok((
         StatusCode::OK,
         Json(ZoneResponse {
@@ -336,10 +347,11 @@ pub(crate) async fn get_zone(
         )
 )]
 pub(crate) async fn create_zone(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let response = zone::create(&caller, &body).await?;
+    let response = zone::create(&cx, &caller, &body).await?;
     // 201 says a resource now exists; a preview created nothing.
     let status = if response.applied {
         StatusCode::CREATED
@@ -372,11 +384,12 @@ pub(crate) async fn create_zone(
         )
 )]
 pub(crate) async fn update_zone(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let response = zone::update(&caller, &params.name, &body).await?;
+    let response = zone::update(&cx, &caller, &params.name, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -400,11 +413,12 @@ pub(crate) async fn update_zone(
         )
 )]
 pub(crate) async fn delete_zone(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    let response = zone::delete(&caller, &params.name, preview.dry_run).await?;
+    let response = zone::delete(&cx, &caller, &params.name, preview.dry_run).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -432,11 +446,12 @@ pub(crate) async fn delete_zone(
         )
 )]
 pub(crate) async fn import_zone(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<ImportZoneRequest>,
 ) -> Result<Response, ApiError> {
-    let response = record::import_zone(&caller, &params.name, &body).await?;
+    let response = record::import_zone(&cx, &caller, &params.name, &body).await?;
     // A rejected file is a failed request, so a generic client does not read it
     // as an import; the body stays the same so the errors survive the status.
     let status = if response.was_rejected() {

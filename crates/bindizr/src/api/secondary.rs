@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
 };
 use bindizr_service::{
-    secondary,
+    Context, secondary,
     types::{
         CreateSecondaryRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetSecondaryResponse,
         GetSecondaryTransfersFilter, MessageResponse, PageFilter, PaginatedResponse,
@@ -24,7 +27,7 @@ use crate::{
 };
 
 /// Build the secondary API routes.
-pub(crate) fn routes() -> Router {
+pub(crate) fn routes() -> Router<Arc<Context>> {
     Router::new()
         .route("/secondaries", routing::get(list_secondaries))
         .route("/secondaries", routing::post(create_secondary))
@@ -54,11 +57,12 @@ pub(crate) fn routes() -> Router {
         )
 )]
 pub(crate) async fn list_secondaries(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = secondary::list(&caller, page).await?;
+    let response = secondary::list(&cx, &caller, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -81,10 +85,12 @@ pub(crate) async fn list_secondaries(
         )
 )]
 pub(crate) async fn create_secondary(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
     let secondary = secondary::create(
+        &cx,
         &caller,
         &body.name,
         &body.address,
@@ -113,10 +119,11 @@ pub(crate) async fn create_secondary(
         )
 )]
 pub(crate) async fn get_secondary(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let secondary = secondary::get(&caller, &params.name).await?;
+    let secondary = secondary::get(&cx, &caller, &params.name).await?;
     let response = SecondaryResponse { secondary };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -144,11 +151,12 @@ pub(crate) async fn get_secondary(
         )
 )]
 pub(crate) async fn update_secondary(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
-    let secondary = secondary::update(&caller, &params.name, body).await?;
+    let secondary = secondary::update(&cx, &caller, &params.name, body).await?;
     let response = SecondaryResponse { secondary };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -172,10 +180,11 @@ pub(crate) async fn update_secondary(
         )
 )]
 pub(crate) async fn delete_secondary(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    secondary::delete(&caller, &params.name).await?;
+    secondary::delete(&cx, &caller, &params.name).await?;
     let response = MessageResponse {
         message: "Secondary deleted successfully".to_string(),
     };
@@ -201,10 +210,11 @@ pub(crate) async fn delete_secondary(
         )
 )]
 pub(crate) async fn check_secondary(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let check = secondary::check(&caller, &params.name).await?;
+    let check = secondary::check(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(check)).into_response())
 }
 
@@ -228,10 +238,11 @@ pub(crate) async fn check_secondary(
     )
 )]
 pub(crate) async fn list_secondary_transfers(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(query): Query<GetSecondaryTransfersFilter>,
 ) -> Result<Response, ApiError> {
-    let transfers = secondary::list_transfers(&caller, &params.name, query).await?;
+    let transfers = secondary::list_transfers(&cx, &caller, &params.name, query).await?;
     Ok((StatusCode::OK, Json(transfers)).into_response())
 }

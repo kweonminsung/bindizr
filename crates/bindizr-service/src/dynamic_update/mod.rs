@@ -2,7 +2,7 @@
 //! Prerequisite evaluation, per-key authorization, and the transactional apply
 //! live here; the DNS front end owns the message format, TSIG, and rdata.
 
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 
 mod prerequisite;
 #[cfg(test)]
@@ -13,7 +13,7 @@ use chrono::Utc;
 use prerequisite::evaluate_prerequisites_tx;
 
 use crate::{
-    RepositoryTx, dnssec,
+    Context, Transaction, db, dnssec,
     error::ServiceError,
     model::{
         record::{Record, RecordType},
@@ -21,8 +21,8 @@ use crate::{
         zone::Zone,
     },
     record::{self, AddResult},
-    repository,
     serial::generate_serial,
+    transaction,
     tsig_key::grant::{authorize_prerequisite, authorize_update},
     zone::{self, version::ChangeSubject},
 };
@@ -50,6 +50,14 @@ impl From<ServiceError> for DynamicUpdateError {
         } else {
             DynamicUpdateError::Internal(err.to_string())
         }
+    }
+}
+
+/// A database failure is a backend fault, classified through the service error.
+impl From<bindizr_db::error::DatabaseError> for DynamicUpdateError {
+    /// Map a database failure to SERVFAIL.
+    fn from(err: bindizr_db::error::DatabaseError) -> Self {
+        DynamicUpdateError::from(ServiceError::from(err))
     }
 }
 
@@ -140,8 +148,8 @@ pub struct DynamicUpdate {
 /// Apply an update as one transaction, reporting whether it changed
 /// anything. On a change the zone serial advances once and a NOTIFY is
 /// sent after commit.
-pub async fn apply(update: DynamicUpdate) -> Result<bool, DynamicUpdateError> {
-    let mut tx = repository::begin_tx("failed to begin NSUPDATE transaction").await?;
+pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicUpdateError> {
+    let mut tx = transaction::begin_tx(cx, "failed to begin NSUPDATE transaction").await?;
 
     let apply_result: Result<(bool, Zone, i32), DynamicUpdateError> = async {
         let zone =
@@ -175,6 +183,7 @@ pub async fn apply(update: DynamicUpdate) -> Result<bool, DynamicUpdateError> {
             // Bump the serial and version it so secondaries detect the change via
             // SOA/NOTIFY and can serve it as an IXFR delta.
             zone::advance_serial_tx(
+                cx,
                 &mut tx,
                 &zone,
                 new_serial,
@@ -188,7 +197,7 @@ pub async fn apply(update: DynamicUpdate) -> Result<bool, DynamicUpdateError> {
     .await;
 
     let (changed, zone, new_serial) =
-        repository::finish_tx(tx, apply_result, "failed to commit NSUPDATE transaction").await?;
+        transaction::finish_tx(tx, apply_result, "failed to commit NSUPDATE transaction").await?;
 
     if changed {
         log::info!(
@@ -199,7 +208,7 @@ pub async fn apply(update: DynamicUpdate) -> Result<bool, DynamicUpdateError> {
 
         // Queue through the service like every other mutation path, so
         // `dns.notify.batch_ms` governs RFC 2136 writes too.
-        crate::notify::notify_after_update(zone.name.as_str()).await;
+        crate::notify::notify_after_update(cx, zone.name.as_str()).await;
     }
 
     Ok(changed)
@@ -210,7 +219,7 @@ pub async fn apply(update: DynamicUpdate) -> Result<bool, DynamicUpdateError> {
 /// is `None` for an accepted unsigned request, which skips authorization
 /// entirely.
 async fn authorize_key_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     key: Option<&TsigKey>,
     prerequisites: &[Prerequisite],
@@ -224,13 +233,9 @@ async fn authorize_key_tx(
 
     // Share-lock the grants so a concurrent revocation waits for this
     // transaction instead of racing it.
-    let grants = repository::list_tsig_grants_by_zone_id_and_key_id_tx(
-        tx,
-        zone.id,
-        key.id,
-        LockLevel::Shared,
-    )
-    .await?;
+    let grants =
+        db::tsig_grant::list_by_zone_id_and_key_id_tx(tx, zone.id, key.id, LockLevel::Shared)
+            .await?;
 
     if grants.is_empty() {
         return Err(DynamicUpdateError::Refused(format!(
@@ -280,7 +285,7 @@ async fn authorize_key_tx(
 
 /// Apply one authorized dynamic update operation in the current transaction.
 async fn apply_op_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     op: &UpdateOp,
     new_serial: i32,
@@ -364,7 +369,7 @@ async fn apply_op_tx(
 /// Delete every record at `name` matching the given type and (optionally)
 /// rdata. `record_type` is `None` for a whole-name delete.
 async fn delete_matching_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     name: &str,
     record_type: Option<&RecordType>,
@@ -375,7 +380,7 @@ async fn delete_matching_tx(
     let owner = parse_update_owner(name, &zone.name)?;
     // Only records at the owner name can match, so lock just those.
     let owner_records =
-        repository::list_records_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive).await?;
+        db::record::list_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive).await?;
 
     let matched: Vec<Record> = owner_records
         .iter()

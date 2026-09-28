@@ -1,15 +1,16 @@
 use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, labels_to_presentation};
-use bindizr_db::repository::{DnssecRecordFilter, RecordFilter};
+use bindizr_db::{dnssec_record::DnssecRecordFilter, record::RecordFilter};
 
 use super::ListedRecord;
 use crate::{
+    Context,
     authorization::Caller,
+    db,
     error::ServiceError,
     model::{
         dnssec_record::DnssecRecordType,
         record::{RecordType, RecordWithZone},
     },
-    repository,
     types::{
         GetRecordResponse, GetRecordsFilter, PaginatedResponse, normalize_page_limit, parse_setting,
     },
@@ -41,8 +42,8 @@ fn parse_type_filter(value: Option<&str>, signed: bool) -> Result<TypeFilter, Se
 }
 
 /// Every record, for the unauthenticated metrics endpoint.
-pub async fn count_all() -> Result<u64, ServiceError> {
-    repository::count_records_by_filter(RecordFilter::default()).await
+pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
+    Ok(db::record::count_by_filter(cx.db(), RecordFilter::default()).await?)
 }
 
 /// List records with their zone name matching `filter`, restricted to what
@@ -52,6 +53,7 @@ pub async fn count_all() -> Result<u64, ServiceError> {
 /// searches reach their names, value filters are refused, and priority filters
 /// exclude the derived plane.
 pub async fn list_with_zone_by_filter(
+    cx: &Context,
     caller: &Caller,
     filter: GetRecordsFilter,
 ) -> Result<PaginatedResponse<GetRecordResponse>, ServiceError> {
@@ -70,7 +72,7 @@ pub async fn list_with_zone_by_filter(
     if let Some(name) = zone_name.as_ref()
         && scope_token_id.is_none()
     {
-        zone::lookup_by_name(name.as_str()).await?;
+        zone::lookup_by_name(cx, name.as_str()).await?;
     }
 
     let name = build_record_name_filter(filter.name, zone_name.as_ref());
@@ -132,12 +134,12 @@ pub async fn list_with_zone_by_filter(
     };
 
     let user_total = if user_plane {
-        repository::count_records_by_filter(record_filter.clone()).await?
+        db::record::count_by_filter(cx.db(), record_filter.clone()).await?
     } else {
         0
     };
     let derived_total = if derived_plane {
-        repository::count_dnssec_records_by_filter(derived_filter.clone()).await?
+        db::dnssec_record::count_by_filter(cx.db(), derived_filter.clone()).await?
     } else {
         0
     };
@@ -146,7 +148,7 @@ pub async fn list_with_zone_by_filter(
     let mut items: Vec<ListedRecord> = Vec::new();
     if user_plane && start < user_total {
         items.extend(
-            repository::list_records_by_filter_with_zone(record_filter)
+            db::record::list_by_filter_with_zone(cx.db(), record_filter)
                 .await?
                 .into_iter()
                 .map(ListedRecord::User),
@@ -157,11 +159,14 @@ pub async fn list_with_zone_by_filter(
     let remaining = limit.map(|limit| limit.saturating_sub(items.len() as u32));
     if derived_plane && remaining != Some(0) {
         items.extend(
-            repository::list_dnssec_records_by_filter_with_zone(DnssecRecordFilter {
-                limit: remaining,
-                offset: Some(start.saturating_sub(user_total)),
-                ..derived_filter
-            })
+            db::dnssec_record::list_by_filter_with_zone(
+                cx.db(),
+                DnssecRecordFilter {
+                    limit: remaining,
+                    offset: Some(start.saturating_sub(user_total)),
+                    ..derived_filter
+                },
+            )
             .await?
             .into_iter()
             .map(ListedRecord::Derived),
@@ -180,10 +185,11 @@ pub async fn list_with_zone_by_filter(
 /// Fetch a record with its zone name by id. A record the caller's grants
 /// do not reach reads as `NotFound`, so ids cannot be probed.
 pub async fn get_with_zone(
+    cx: &Context,
     caller: &Caller,
     record_id: i32,
 ) -> Result<RecordWithZone, ServiceError> {
-    let record = match repository::get_record_with_zone(record_id).await {
+    let record = match db::record::get_with_zone(cx.db(), record_id).await {
         Ok(Some(record)) => record,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(e) => {

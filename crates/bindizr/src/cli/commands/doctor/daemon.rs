@@ -4,7 +4,7 @@
 use std::{net::SocketAddr, time::Duration};
 
 use axum::http::StatusCode;
-use bindizr_core::{config::BindizrConfig, dns::address::loopback_if_unspecified};
+use bindizr_core::{config::Config, dns::address::loopback_if_unspecified};
 use bindizr_service::types::SecondaryStatus;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -46,7 +46,7 @@ pub(crate) async fn check_running(report: &mut Report) -> bool {
 }
 
 /// Check API reachability at the daemon's configured address.
-pub(crate) async fn check_api(config: &BindizrConfig, report: &mut Report) {
+pub(crate) async fn check_api(config: &Config, report: &mut Report) {
     let addr = SocketAddr::new(
         loopback_if_unspecified(config.api.listen_addr),
         config.api.listen_port,

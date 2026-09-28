@@ -1,6 +1,5 @@
-//! Process-wide Prometheus registry shared by the HTTP API and DNS layers.
-
-use std::sync::OnceLock;
+//! The daemon's Prometheus registry, held by its `Context` and shared by the
+//! HTTP API and DNS layers.
 
 use prometheus::{
     Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
@@ -39,13 +38,6 @@ pub struct Metrics {
     pub started_at_seconds: Gauge,
 }
 
-static METRICS: OnceLock<Metrics> = OnceLock::new();
-
-/// Global registry, created on first use.
-pub fn metrics() -> &'static Metrics {
-    METRICS.get_or_init(Metrics::new)
-}
-
 /// Register a shared clone of a metric collector.
 fn register<C: Collector + Clone + 'static>(registry: &Registry, collector: &C) {
     registry
@@ -53,9 +45,16 @@ fn register<C: Collector + Clone + 'static>(registry: &Registry, collector: &C) 
         .expect("metric registered twice");
 }
 
+impl Default for Metrics {
+    /// A registry with every collector registered, as `new` builds it.
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Metrics {
     /// Create and register the daemon's metric collectors.
-    fn new() -> Self {
+    pub fn new() -> Self {
         let registry = Registry::new();
 
         let build_info = IntGaugeVec::new(
@@ -354,20 +353,6 @@ impl XfrResult {
     }
 }
 
-/// A zone transfer's outcome, by query type. Non-transfer types are not
-/// counted here, so the caller may pass whatever it was asked for.
-pub fn track_xfr(qtype: Rtype, result: XfrResult) {
-    let xfr_type = match qtype {
-        Rtype::AXFR => "axfr",
-        Rtype::IXFR => "ixfr",
-        _ => return,
-    };
-    metrics()
-        .xfr_total
-        .with_label_values(&[xfr_type, result.label()])
-        .inc();
-}
-
 pub enum SoaResult {
     Ok,
     Refused,
@@ -387,15 +372,6 @@ impl SoaResult {
             Self::Failed => "failed",
         }
     }
-}
-
-/// Secondaries poll SOA on their refresh timer, so this is the question
-/// bindizr answers most; the result says whether they are getting a serial.
-pub fn track_soa(result: SoaResult) {
-    metrics()
-        .soa_queries_total
-        .with_label_values(&[result.label()])
-        .inc();
 }
 
 pub enum NsupdateResult {
@@ -443,14 +419,6 @@ impl NsupdateResult {
     }
 }
 
-/// Increment the counter for a dynamic update result.
-pub fn track_nsupdate(result: NsupdateResult) {
-    metrics()
-        .nsupdate_requests_total
-        .with_label_values(&[result.label()])
-        .inc();
-}
-
 pub enum NotifyResult {
     Ok,
     Failed,
@@ -470,33 +438,6 @@ impl NotifyResult {
             Self::ResolveFailed => "resolve_failed",
         }
     }
-}
-
-/// Record a NOTIFY delivery result.
-pub fn track_notify(result: NotifyResult) {
-    metrics()
-        .notify_sent_total
-        .with_label_values(&[result.label()])
-        .inc();
-}
-
-/// Count pruned journal and version rows separately so differences expose gaps that break IXFR
-/// history.
-pub fn track_pruned_rows(journal_rows: u64, version_rows: u64) {
-    let metrics = metrics();
-    metrics
-        .pruned_rows_total
-        .with_label_values(&["journal"])
-        .inc_by(journal_rows);
-    metrics
-        .pruned_rows_total
-        .with_label_values(&["version"])
-        .inc_by(version_rows);
-}
-
-/// Increment the serial-advance counter before commit; rollbacks can therefore overcount advances.
-pub fn track_serial_bump() {
-    metrics().zone_serial_bumps_total.inc();
 }
 
 pub enum SchedulerResult {
@@ -519,39 +460,86 @@ impl SchedulerResult {
     }
 }
 
-/// Increment the counter for a DNSSEC scheduler pass result.
-pub fn track_dnssec_scheduler(result: SchedulerResult) {
-    metrics()
-        .dnssec_scheduler_runs_total
-        .with_label_values(&[result.label()])
-        .inc();
-}
+impl Metrics {
+    /// A zone transfer's outcome, by query type. Non-transfer types are not
+    /// counted here, so the caller may pass whatever it was asked for.
+    pub fn track_xfr(&self, qtype: Rtype, result: XfrResult) {
+        let xfr_type = match qtype {
+            Rtype::AXFR => "axfr",
+            Rtype::IXFR => "ixfr",
+            _ => return,
+        };
+        self.xfr_total
+            .with_label_values(&[xfr_type, result.label()])
+            .inc();
+    }
 
-/// The pool's occupancy at scrape time.
-pub fn track_db_pool(connections: u32, idle: u32, max: u32) {
-    let metrics = metrics();
-    metrics
-        .db_connections
-        .with_label_values(&["idle"])
-        .set(i64::from(idle));
-    metrics
-        .db_connections
-        .with_label_values(&["in_use"])
-        .set(i64::from(connections.saturating_sub(idle)));
-    metrics.db_connections_max.set(i64::from(max));
-}
+    /// Secondaries poll SOA on their refresh timer, so this is the question
+    /// bindizr answers most; the result says whether they are getting a serial.
+    pub fn track_soa(&self, result: SoaResult) {
+        self.soa_queries_total
+            .with_label_values(&[result.label()])
+            .inc();
+    }
 
-/// Record a zone-cache hit or miss.
-pub fn track_zone_cache_lookup(hit: bool) {
-    metrics()
-        .zone_cache_lookups_total
-        .with_label_values(&[if hit { "hit" } else { "miss" }])
-        .inc();
-}
+    /// Increment the counter for a dynamic update result.
+    pub fn track_nsupdate(&self, result: NsupdateResult) {
+        self.nsupdate_requests_total
+            .with_label_values(&[result.label()])
+            .inc();
+    }
 
-/// What the cache holds after a store, and what it dropped to fit.
-pub fn track_zone_cache_store(records: usize, evicted: usize) {
-    let metrics = metrics();
-    metrics.zone_cache_records.set(records as i64);
-    metrics.zone_cache_evictions_total.inc_by(evicted as u64);
+    /// Record a NOTIFY delivery result.
+    pub fn track_notify(&self, result: NotifyResult) {
+        self.notify_sent_total
+            .with_label_values(&[result.label()])
+            .inc();
+    }
+
+    /// Count pruned journal and version rows separately so differences expose gaps that break IXFR
+    /// history.
+    pub fn track_pruned_rows(&self, journal_rows: u64, version_rows: u64) {
+        self.pruned_rows_total
+            .with_label_values(&["journal"])
+            .inc_by(journal_rows);
+        self.pruned_rows_total
+            .with_label_values(&["version"])
+            .inc_by(version_rows);
+    }
+
+    /// Increment the serial-advance counter before commit; rollbacks can therefore overcount advances.
+    pub fn track_serial_bump(&self) {
+        self.zone_serial_bumps_total.inc();
+    }
+
+    /// Increment the counter for a DNSSEC scheduler pass result.
+    pub fn track_dnssec_scheduler(&self, result: SchedulerResult) {
+        self.dnssec_scheduler_runs_total
+            .with_label_values(&[result.label()])
+            .inc();
+    }
+
+    /// The pool's occupancy at scrape time.
+    pub fn track_db_pool(&self, connections: u32, idle: u32, max: u32) {
+        self.db_connections
+            .with_label_values(&["idle"])
+            .set(i64::from(idle));
+        self.db_connections
+            .with_label_values(&["in_use"])
+            .set(i64::from(connections.saturating_sub(idle)));
+        self.db_connections_max.set(i64::from(max));
+    }
+
+    /// Record a zone-cache hit or miss.
+    pub fn track_zone_cache_lookup(&self, hit: bool) {
+        self.zone_cache_lookups_total
+            .with_label_values(&[if hit { "hit" } else { "miss" }])
+            .inc();
+    }
+
+    /// What the cache holds after a store, and what it dropped to fit.
+    pub fn track_zone_cache_store(&self, records: usize, evicted: usize) {
+        self.zone_cache_records.set(records as i64);
+        self.zone_cache_evictions_total.inc_by(evicted as u64);
+    }
 }

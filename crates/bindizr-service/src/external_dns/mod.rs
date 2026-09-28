@@ -12,14 +12,15 @@ mod tests;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use apply::apply_changes;
-use bindizr_db::repository::{RecordFilter, ZoneFilter};
+use bindizr_db::{record::RecordFilter, zone::ZoneFilter};
 
 use crate::{
+    Context,
     authorization::Caller,
+    db,
     error::ServiceError,
     grant_pattern::pattern_domain,
     model::record::RecordSetKey,
-    repository,
     types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecord},
 };
 
@@ -48,11 +49,17 @@ pub fn adjust_records(
 /// contributes that subtree, not its zone, so ExternalDNS plans inside what
 /// the apply accepts rather than failing the whole sync on the first record
 /// outside it.
-pub async fn list_managed_domains(caller: &Caller) -> Result<Vec<String>, ServiceError> {
-    let zones = repository::list_zones_by_filter(ZoneFilter {
-        scope_token_id: caller.scope_token_id(),
-        ..ZoneFilter::default()
-    })
+pub async fn list_managed_domains(
+    cx: &Context,
+    caller: &Caller,
+) -> Result<Vec<String>, ServiceError> {
+    let zones = db::zone::list_by_filter(
+        cx.db(),
+        ZoneFilter {
+            scope_token_id: caller.scope_token_id(),
+            ..ZoneFilter::default()
+        },
+    )
     .await?;
 
     let Some(grants) = caller.grants() else {
@@ -82,7 +89,10 @@ pub async fn list_managed_domains(caller: &Caller) -> Result<Vec<String>, Servic
 /// Records of every zone the caller may manage, restricted to the
 /// ExternalDNS-supported record types: one per name and type, with absolute
 /// owner names and sorted presentation-form values.
-pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecord>, ServiceError> {
+pub async fn list_records(
+    cx: &Context,
+    caller: &Caller,
+) -> Result<Vec<ExternalDnsRecord>, ServiceError> {
     // One zone's rows of a name and type share a TTL, but an overlapping
     // parent and child zone may not, so each record set splits by TTL.
     let mut grouped: BTreeMap<RecordSetKey, BTreeMap<i32, Vec<String>>> = BTreeMap::new();
@@ -91,12 +101,15 @@ pub async fn list_records(caller: &Caller) -> Result<Vec<ExternalDnsRecord>, Ser
     loop {
         // Folded as they arrive, so the rows never sit beside the group
         // they build. The query's name-and-id order is total, so pages tile.
-        let rows = repository::list_records_by_filter_with_zone(RecordFilter {
-            scope_token_id: caller.scope_token_id(),
-            limit: Some(RECORD_READ_PAGE),
-            offset: Some(offset),
-            ..RecordFilter::default()
-        })
+        let rows = db::record::list_by_filter_with_zone(
+            cx.db(),
+            RecordFilter {
+                scope_token_id: caller.scope_token_id(),
+                limit: Some(RECORD_READ_PAGE),
+                offset: Some(offset),
+                ..RecordFilter::default()
+            },
+        )
         .await?;
         let read = rows.len();
 

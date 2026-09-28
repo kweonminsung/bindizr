@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
 };
 use bindizr_service::{
-    dnssec,
+    Context, dnssec,
     types::{
         DnssecStatusResponse, EnableDnssecRequest, ErrorResponse, MessageResponse,
         RolloverDnssecRequest, UpdateDnssecSettingsRequest,
@@ -23,7 +26,7 @@ use crate::{
 };
 
 /// Build the DNSSEC API routes.
-pub(crate) fn routes() -> Router {
+pub(crate) fn routes() -> Router<Arc<Context>> {
     Router::new()
         .route("/zones/{name}/dnssec", routing::get(get_dnssec_status))
         .route("/zones/{name}/dnssec", routing::post(enable_dnssec))
@@ -67,10 +70,11 @@ pub(crate) fn routes() -> Router {
         )
 )]
 pub(crate) async fn get_dnssec_status(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::get_status(&caller, &params.name).await?;
+    let status = dnssec::get_status(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -97,11 +101,13 @@ pub(crate) async fn get_dnssec_status(
         )
 )]
 pub(crate) async fn enable_dnssec(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<EnableDnssecRequest>,
 ) -> Result<Response, ApiError> {
     let status = dnssec::enable(
+        &cx,
         &caller,
         &params.name,
         body.policy_name.as_deref(),
@@ -138,11 +144,18 @@ pub(crate) struct DisableDnssecQuery {
         )
 )]
 pub(crate) async fn disable_dnssec(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(query): Query<DisableDnssecQuery>,
 ) -> Result<Response, ApiError> {
-    dnssec::disable(&caller, &params.name, query.skip_ds_check.unwrap_or(false)).await?;
+    dnssec::disable(
+        &cx,
+        &caller,
+        &params.name,
+        query.skip_ds_check.unwrap_or(false),
+    )
+    .await?;
     let response = MessageResponse {
         message: "DNSSEC disabled successfully".to_string(),
     };
@@ -169,10 +182,11 @@ pub(crate) async fn disable_dnssec(
         )
 )]
 pub(crate) async fn sign_zone(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    dnssec::sign(&caller, &params.name).await?;
+    dnssec::sign(&cx, &caller, &params.name).await?;
     let response = MessageResponse {
         message: "Zone signed successfully".to_string(),
     };
@@ -202,11 +216,12 @@ pub(crate) async fn sign_zone(
         )
 )]
 pub(crate) async fn start_dnssec_rollover(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<RolloverDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::start_rollover(&caller, &params.name, body.role.as_deref()).await?;
+    let status = dnssec::start_rollover(&cx, &caller, &params.name, body.role.as_deref()).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -240,11 +255,13 @@ pub(crate) struct DsSeenQuery {
         )
 )]
 pub(crate) async fn ds_seen_dnssec_rollover(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(query): Query<DsSeenQuery>,
 ) -> Result<Response, ApiError> {
     let status = dnssec::advance_rollover(
+        &cx,
         &caller,
         &params.name,
         query.skip_ds_check.unwrap_or(false),
@@ -275,10 +292,11 @@ pub(crate) async fn ds_seen_dnssec_rollover(
         )
 )]
 pub(crate) async fn withdraw_dnssec(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::withdraw(&caller, &params.name).await?;
+    let status = dnssec::withdraw(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -303,10 +321,11 @@ pub(crate) async fn withdraw_dnssec(
         )
 )]
 pub(crate) async fn cancel_dnssec_withdrawal(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::cancel_withdrawal(&caller, &params.name).await?;
+    let status = dnssec::cancel_withdrawal(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -330,10 +349,11 @@ pub(crate) async fn cancel_dnssec_withdrawal(
         )
 )]
 pub(crate) async fn check_dnssec_ds(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::check_ds(&caller, &params.name).await?;
+    let status = dnssec::check_ds(&cx, &caller, &params.name).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -360,11 +380,13 @@ pub(crate) async fn check_dnssec_ds(
         )
 )]
 pub(crate) async fn update_dnssec_settings(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateDnssecSettingsRequest>,
 ) -> Result<Response, ApiError> {
     let status = dnssec::update_settings(
+        &cx,
         &caller,
         &params.name,
         body.policy_name.as_deref(),

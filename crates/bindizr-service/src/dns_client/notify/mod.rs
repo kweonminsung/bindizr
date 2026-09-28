@@ -1,23 +1,22 @@
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 use bindizr_core::{
-    config,
     dns::{
         message::{Name, Opcode, Rtype},
         query::{question_builder, validate_notify_response},
         tsig::{TsigSigningKey, sign_request, verify_response},
     },
-    metrics::{NotifyResult, track_notify},
+    metrics::NotifyResult,
 };
 
-use crate::{model::secondary::Secondary, secondary, types::NotifyCheckResponse};
+use crate::{Context, model::secondary::Secondary, secondary, types::NotifyCheckResponse};
 
 /// Sends DNS NOTIFY to every enabled secondary for one zone. Which
 /// zones to notify is the caller's decision.
-pub(crate) async fn send_zone_notify(zone_name: &str) -> Result<(), String> {
+pub(crate) async fn send_zone_notify(cx: &Context, zone_name: &str) -> Result<(), String> {
     log::info!("Sending NOTIFY for zone: {}", zone_name);
 
-    let reports = send_notify_to_secondaries(zone_name).await?;
+    let reports = send_notify_to_secondaries(cx, zone_name).await?;
     if reports.is_empty() {
         log::info!("No enabled secondaries");
         return Ok(());
@@ -47,13 +46,16 @@ pub(crate) async fn send_zone_notify(zone_name: &str) -> Result<(), String> {
 /// Send NOTIFY for a zone to every enabled secondary, one outcome per
 /// address; none yields an empty list.
 pub async fn send_notify_to_secondaries(
+    cx: &Context,
     zone_name: &str,
 ) -> Result<Vec<NotifyCheckResponse>, String> {
-    let secondaries = secondary::list_enabled().await.map_err(|e| e.to_string())?;
+    let secondaries = secondary::list_enabled(cx)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let mut reports = Vec::new();
     for secondary in &secondaries {
-        reports.extend(send_notify_to_secondary(zone_name, secondary).await?);
+        reports.extend(send_notify_to_secondary(cx, zone_name, secondary).await?);
     }
     Ok(reports)
 }
@@ -61,20 +63,21 @@ pub async fn send_notify_to_secondaries(
 /// Send NOTIFY for a zone to every resolved address of one secondary, signed
 /// with its NOTIFY key when it has one; one outcome per address.
 pub async fn send_notify_to_secondary(
+    cx: &Context,
     zone_name: &str,
     secondary: &Secondary,
 ) -> Result<Vec<NotifyCheckResponse>, String> {
-    let dns_config = &config::bindizr_config().dns;
+    let dns_config = &cx.config().dns;
     let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
     let retries = dns_config.notify.retries;
 
     let qname =
         Name::<Vec<u8>>::from_str(zone_name).map_err(|e| format!("Invalid zone name: {}", e))?;
 
-    let key = match secondary::notify_signing_key(secondary).await {
+    let key = match secondary::notify_signing_key(cx, secondary).await {
         Ok(key) => key,
         Err(e) => {
-            track_notify(NotifyResult::Failed);
+            cx.metrics().track_notify(NotifyResult::Failed);
             return Ok(vec![NotifyCheckResponse {
                 address: secondary.address.clone(),
                 error: Some(e.to_string()),
@@ -84,7 +87,7 @@ pub async fn send_notify_to_secondary(
     let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
         Ok(addrs) => addrs,
         Err(e) => {
-            track_notify(NotifyResult::ResolveFailed);
+            cx.metrics().track_notify(NotifyResult::ResolveFailed);
             return Ok(vec![NotifyCheckResponse {
                 address: secondary.address.clone(),
                 error: Some(format!("failed to resolve: {}", e)),
@@ -98,12 +101,12 @@ pub async fn send_notify_to_secondary(
         {
             Ok(()) => {
                 log::info!("NOTIFY sent successfully to {}", addr);
-                track_notify(NotifyResult::Ok);
+                cx.metrics().track_notify(NotifyResult::Ok);
                 Ok(())
             }
             Err(e) => {
                 log::error!("Failed to send NOTIFY to {}: {}", addr, e);
-                track_notify(NotifyResult::Failed);
+                cx.metrics().track_notify(NotifyResult::Failed);
                 Err(e)
             }
         };

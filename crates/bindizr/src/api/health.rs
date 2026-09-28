@@ -1,5 +1,8 @@
-use axum::{Json, http::StatusCode, response::IntoResponse};
+use std::sync::Arc;
+
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use bindizr_service::{
+    Context,
     types::{HealthResponse, HealthStatus},
     zone,
 };
@@ -20,8 +23,8 @@ use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
             (status = 503, description = "Service unhealthy", body = HealthResponse)
         )
 )]
-pub(crate) async fn handle_health() -> impl IntoResponse {
-    match tokio::time::timeout(DB_PROBE_TIMEOUT, zone::ping()).await {
+pub(crate) async fn handle_health(State(cx): State<Arc<Context>>) -> impl IntoResponse {
+    match tokio::time::timeout(DB_PROBE_TIMEOUT, zone::ping(&cx)).await {
         Ok(Ok(())) => (
             StatusCode::OK,
             Json(HealthResponse {

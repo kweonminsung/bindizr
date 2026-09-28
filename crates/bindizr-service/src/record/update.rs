@@ -1,19 +1,20 @@
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 
 use super::validation::{
     normalize_record_owner_name, parse_record_type, validate_record_update_constraints_normalized,
 };
 use crate::{
+    Context,
     authorization::{Caller, RecordWrite},
-    dnssec,
+    db, dnssec,
     error::{ErrorCode, ServiceError},
     model::{
         record::{Record, RecordData, RecordType},
         zone::Zone,
     },
-    repository,
     serial::generate_serial,
+    transaction,
     ttl::validate_record_ttl,
     types::{GetRecordResponse, RecordDiff, RecordWriteResponse, UpdateRecordRequest},
     zone::{self, diff::build_record_diff, validation::normalize_zone_name},
@@ -101,11 +102,13 @@ fn resolve_update(
 /// the transaction, against the row loaded there. The caller is
 /// authorized there too.
 pub async fn update(
+    cx: &Context,
     caller: &Caller,
     record_id: i32,
     request: &UpdateRecordRequest,
 ) -> Result<RecordWriteResponse, ServiceError> {
     update_locked(
+        cx,
         caller,
         RecordSelector::Id(record_id),
         request.dry_run,
@@ -117,12 +120,14 @@ pub async fn update(
 /// Update the one record at `name` in `zone_name`. The match is resolved
 /// under the zone lock, so the row written is the row that was counted.
 pub async fn update_by_name(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
     name: &str,
     request: &UpdateRecordRequest,
 ) -> Result<RecordWriteResponse, ServiceError> {
     update_locked(
+        cx,
         caller,
         RecordSelector::Name { zone_name, name },
         request.dry_run,
@@ -133,6 +138,7 @@ pub async fn update_by_name(
 /// Load the record inside the transaction, resolve the update against it,
 /// then write it, bumping the zone serial and recording DEL+ADD IXFR changes.
 async fn update_locked(
+    cx: &Context,
     caller: &Caller,
     selector: RecordSelector<'_>,
     dry_run: bool,
@@ -142,7 +148,7 @@ async fn update_locked(
     // (the create/bulk/import order); the reverse can deadlock. The name
     // form already names its zone and needs no pre-read.
     let zone_id = match selector {
-        RecordSelector::Id(record_id) => match repository::get_record(record_id).await {
+        RecordSelector::Id(record_id) => match db::record::get(cx.db(), record_id).await {
             Ok(Some(record)) => Some(record.zone_id),
             Ok(None) => return Err(ServiceError::record_not_found(record_id)),
             Err(e) => {
@@ -153,30 +159,28 @@ async fn update_locked(
         RecordSelector::Name { .. } => None,
     };
 
-    let mut tx = repository::begin_tx("Failed to update record").await?;
+    let mut tx = transaction::begin_tx(cx, "Failed to update record").await?;
 
     let apply_result = async {
         let (zone, existing_record) = match selector {
             RecordSelector::Id(record_id) => {
                 let zone_id = zone_id.expect("the id form pre-reads its zone_id");
-                let zone =
-                    match repository::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
-                        Ok(Some(zone)) => zone,
-                        Ok(None) => {
-                            return Err(ServiceError::new(
-                                ErrorCode::ZoneNotFound,
-                                format!("Zone with id '{}' not found", zone_id),
-                            ));
-                        }
-                        Err(e) => {
-                            log::error!("Failed to fetch zone: {}", e);
-                            return Err(ServiceError::internal("Failed to fetch zone"));
-                        }
-                    };
+                let zone = match db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
+                    Ok(Some(zone)) => zone,
+                    Ok(None) => {
+                        return Err(ServiceError::new(
+                            ErrorCode::ZoneNotFound,
+                            format!("Zone with id '{}' not found", zone_id),
+                        ));
+                    }
+                    Err(e) => {
+                        log::error!("Failed to fetch zone: {}", e);
+                        return Err(ServiceError::internal("Failed to fetch zone"));
+                    }
+                };
 
                 let existing_record =
-                    match repository::get_record_tx(&mut tx, record_id, LockLevel::Exclusive).await
-                    {
+                    match db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
                         Ok(Some(record)) if record.zone_id == zone.id => record,
                         Ok(Some(_)) | Ok(None) => {
                             return Err(ServiceError::record_not_found(record_id));
@@ -212,18 +216,14 @@ async fn update_locked(
 
                 // Count only what the caller can see, so the count never
                 // reports rows their grants do not reach.
-                let mut matched: Vec<Record> = repository::list_records_by_name_tx(
-                    &mut tx,
-                    zone.id,
-                    &owner,
-                    LockLevel::Exclusive,
-                )
-                .await?
-                .into_iter()
-                .filter(|record| {
-                    caller.sees_record(zone.id, &record.name, Some(&record.record_type))
-                })
-                .collect();
+                let mut matched: Vec<Record> =
+                    db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)
+                        .await?
+                        .into_iter()
+                        .filter(|record| {
+                            caller.sees_record(zone.id, &record.name, Some(&record.record_type))
+                        })
+                        .collect();
 
                 match matched.len() {
                     1 => (zone, matched.remove(0)),
@@ -261,7 +261,7 @@ async fn update_locked(
             .await?;
         // Only records sharing the new owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name = match repository::list_records_by_name_tx(
+        let records_at_name = match db::record::list_by_name_tx(
             &mut tx,
             zone.id,
             &resolved.owner_name,
@@ -300,7 +300,7 @@ async fn update_locked(
         let mut framed = records_at_name.clone();
         if candidate.name != existing_record.name {
             framed.extend(
-                repository::list_records_by_name_tx(
+                db::record::list_by_name_tx(
                     &mut tx,
                     zone.id,
                     &existing_record.name,
@@ -335,14 +335,14 @@ async fn update_locked(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
 
         Ok::<(Record, ZoneName, RecordDiff), ServiceError>((updated_record, zone_name, diff))
     }
     .await;
 
     let (updated_record, zone_name, diff) =
-        repository::finish_tx(tx, apply_result, "Failed to update record").await?;
+        transaction::finish_tx(tx, apply_result, "Failed to update record").await?;
 
     log::info!(
         "event=record_update zone={} name={} type={} ttl={} priority={} record_id={}",
@@ -358,7 +358,7 @@ async fn update_locked(
 
     // Request secondary transfers only after the replacement is committed.
     if !dry_run {
-        crate::notify::notify_after_update(zone_name.as_str()).await;
+        crate::notify::notify_after_update(cx, zone_name.as_str()).await;
     }
 
     Ok(RecordWriteResponse {

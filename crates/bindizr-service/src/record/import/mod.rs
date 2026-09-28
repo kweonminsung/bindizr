@@ -6,15 +6,12 @@ use std::{
     time::Instant,
 };
 
-use bindizr_core::{
-    config::bindizr_config,
-    dns::{
-        address::is_address_target,
-        name::{OwnerName, ZoneName},
-        zonefile::{ParsedZoneFile, ZoneFileValue},
-    },
+use bindizr_core::dns::{
+    address::is_address_target,
+    name::{OwnerName, ZoneName},
+    zonefile::{ParsedZoneFile, ZoneFileValue},
 };
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 use chrono::Utc;
 use plan::{DesiredRecord, compute_import_plan};
 
@@ -23,13 +20,14 @@ use super::{
     validation::{normalize_record_owner_name, validate_record_add_constraints_normalized},
 };
 use crate::{
+    Context,
     authorization::Caller,
-    dnssec,
+    db, dnssec,
     error::ServiceError,
     model::record::{Record, RecordType},
-    repository,
     serial::generate_serial,
     time::elapsed_ms,
+    transaction,
     types::{
         CreateZoneRequest, ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse,
         RecordDiff, RecordValueRequest,
@@ -65,6 +63,7 @@ struct ImportTimings {
 /// serial is incremented once and a single NOTIFY is sent. If any record
 /// fails validation nothing is applied and the errors are returned.
 pub async fn import_zone(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
     request: &ImportZoneRequest,
@@ -84,7 +83,7 @@ pub async fn import_zone(
             // mistyped name cannot start a transfer. With `create` there is
             // no zone yet, and the transfer itself refuses an unknown one.
             if !request.create {
-                zone::lookup_by_name(zone_name).await?;
+                zone::lookup_by_name(cx, zone_name).await?;
             }
             let content = crate::dns_client::axfr::fetch_zone_file(server, zone_name)
                 .await
@@ -103,6 +102,7 @@ pub async fn import_zone(
         }
     };
     reconcile_zone_file(
+        cx,
         zone_name,
         &content,
         request.mode,
@@ -117,6 +117,7 @@ pub async fn import_zone(
 /// Preview or apply a zone-file reconciliation in its own transaction,
 /// creating the zone from the file's SOA when `create_as` says to.
 async fn reconcile_zone_file(
+    cx: &Context,
     zone_name: &str,
     content: &str,
     mode: ImportMode,
@@ -129,7 +130,7 @@ async fn reconcile_zone_file(
 
     let mut timings = ImportTimings::default();
 
-    let mut tx = repository::begin_tx("Failed to import zone file").await?;
+    let mut tx = transaction::begin_tx(cx, "Failed to import zone file").await?;
 
     let apply_result: Result<AppliedImport, ServiceError> = async {
         let t = Instant::now();
@@ -151,6 +152,7 @@ async fn reconcile_zone_file(
                     })?;
                 created = true;
                 zone::create_tx(
+                    cx,
                     &mut tx,
                     caller,
                     &CreateZoneRequest::from_zone_file_soa(zone_name, &soa)?,
@@ -264,7 +266,7 @@ async fn reconcile_zone_file(
                     desired.iter().map(|d| d.stored_name.clone()).collect();
                 names.sort();
                 names.dedup();
-                repository::list_records_by_names_tx(
+                db::record::list_by_names_tx(
                     &mut tx,
                     zone.id,
                     &names,
@@ -273,7 +275,7 @@ async fn reconcile_zone_file(
                 .await
             }
             ImportMode::Replace | ImportMode::Upsert => {
-                repository::list_records_tx(&mut tx, zone.id, LockLevel::Exclusive).await
+                db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await
             }
         }
         .map_err(|e| {
@@ -403,7 +405,7 @@ async fn reconcile_zone_file(
             let t = Instant::now();
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the import.
-            zone::advance_serial_tx(&mut tx, &zone, new_serial, subject).await?;
+            zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, subject).await?;
             timings.serial_ms = elapsed_ms(t);
         }
 
@@ -437,9 +439,9 @@ async fn reconcile_zone_file(
         changed,
         created,
     } = if discard {
-        repository::discard_tx(tx, apply_result).await?
+        transaction::discard_tx(tx, apply_result).await?
     } else {
-        repository::finish_tx(tx, apply_result, "Failed to import zone file").await?
+        transaction::finish_tx(tx, apply_result, "Failed to import zone file").await?
     };
 
     log::info!(
@@ -458,13 +460,13 @@ async fn reconcile_zone_file(
     let t = Instant::now();
     // The catalog goes first: a secondary that has not seen the new member
     // there cannot act on the zone's own NOTIFY below.
-    let config = bindizr_config();
+    let config = cx.config();
     if created {
-        crate::notify::notify_after_update(&config.dns.catalog_zone_name).await;
+        crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }
     // Notify after commit only when the import changed the served zone.
     if changed {
-        crate::notify::notify_after_update(zone_name.as_str()).await;
+        crate::notify::notify_after_update(cx, zone_name.as_str()).await;
     }
     let notify_ms = elapsed_ms(t);
 

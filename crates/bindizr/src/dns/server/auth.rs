@@ -6,7 +6,6 @@
 use std::net::IpAddr;
 
 use bindizr_core::{
-    config::bindizr_config,
     dns::{
         message::{ParsedQuery, Rcode},
         tsig::{
@@ -18,7 +17,7 @@ use bindizr_core::{
 use bindizr_service::tsig_key;
 
 use super::acl;
-use crate::dns::error::XfrError;
+use crate::dns::{error::XfrError, server::DnsContext};
 
 /// The error response a request is owed, signed when a key was accepted: once
 /// a key is in play the answer carries it, error or not (RFC 8945, Section 5.3).
@@ -74,14 +73,16 @@ pub(crate) struct TransferIdentity {
 /// admit an unsigned one by the address ACL. The catalog zone is virtual and
 /// holds no grants, so only the ACL or a global key reaches it.
 pub(crate) async fn authenticate_transfer(
+    dns_cx: &DnsContext,
     query_data: &[u8],
     client_ip: IpAddr,
     zone_name: &str,
 ) -> Result<TransferIdentity, TransferRefusal> {
+    let cx = dns_cx.daemon();
     let key_name = match request_signature(query_data) {
         RequestSignature::Key(key_name) => key_name,
         RequestSignature::Absent => {
-            return match acl::is_client_allowed(client_ip).await {
+            return match acl::is_client_allowed(dns_cx, client_ip).await {
                 Ok(true) => Ok(TransferIdentity {
                     key: None,
                     signer: None,
@@ -108,7 +109,7 @@ pub(crate) async fn authenticate_transfer(
 
     // An unknown key still runs validation: the empty key store makes it
     // produce the BADKEY error response.
-    let key = tsig_key::find_by_wire_name(&key_name)
+    let key = tsig_key::find_by_wire_name(cx, &key_name)
         .await
         .map_err(|e| TransferRefusal::refused(format!("failed to load TSIG key: {}", e), None))?;
     let domain_key = key
@@ -119,7 +120,7 @@ pub(crate) async fn authenticate_transfer(
     let signer = verify_tsig_sequence(query_data, domain_key).map_err(TransferRefusal::from)?;
 
     let key = key.expect("verification succeeded, so the key is known");
-    if bindizr_config().dns.is_catalog_zone(zone_name) && !key.is_global {
+    if cx.config().dns.is_catalog_zone(zone_name) && !key.is_global {
         return Err(TransferRefusal::refused(
             format!(
                 "TSIG key '{}' is not granted zone '{}' whole",

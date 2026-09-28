@@ -17,12 +17,12 @@ mod token;
 mod tsig_key;
 mod zone;
 
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{extract::FromRequestParts, http::request::Parts};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
-use bindizr_core::{config, config::TlsFiles, model::api_token::ApiToken};
-use bindizr_service::{authorization::Caller, error::ServiceError};
+use bindizr_core::{config::TlsFiles, model::api_token::ApiToken};
+use bindizr_service::{Context, authorization::Caller, error::ServiceError};
 use error::ApiError;
 use tokio::{net::TcpListener, task::JoinHandle};
 
@@ -78,8 +78,11 @@ const TLS_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 /// Bind the HTTP API listener and spawn the server in the background, over TLS
 /// when `api.tls_cert_file` and `api.tls_key_file` name a pair. The returned
 /// handle finishes once `shutdown` fires and in-flight requests are answered.
-pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, CliError> {
-    let bindizr_config = config::bindizr_config();
+pub(crate) async fn initialize(
+    cx: Arc<Context>,
+    shutdown: &Shutdown,
+) -> Result<JoinHandle<()>, CliError> {
+    let bindizr_config = cx.config();
     let addr = SocketAddr::from((
         bindizr_config.api.listen_addr,
         bindizr_config.api.listen_port,
@@ -99,7 +102,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, Cl
         log::info!("HTTP API server listening on http://{}", addr);
         let stop = shutdown.waiter();
         return Ok(tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, router::routes())
+            if let Err(e) = axum::serve(listener, router::routes(cx))
                 .with_graceful_shutdown(stop)
                 .await
             {
@@ -139,7 +142,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, Cl
     Ok(tokio::spawn(async move {
         if let Err(e) = server
             .handle(handle)
-            .serve(router::routes().into_make_service())
+            .serve(router::routes(cx).into_make_service())
             .await
         {
             log::error!("API server error: {:?}", e);

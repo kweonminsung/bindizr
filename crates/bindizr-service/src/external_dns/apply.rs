@@ -2,16 +2,18 @@
 //! set itself is computed in `change_set`.
 
 use bindizr_core::dns::name::OwnerName;
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 
 use super::change_set::{group_ops_by_zone, parse_changes_request};
 use crate::{
+    Context,
     authorization::{Caller, RecordWrite},
-    dnssec,
+    db, dnssec,
     error::ServiceError,
-    record, repository,
+    record,
     serial::generate_serial,
     time::elapsed_ms,
+    transaction,
     types::{ExternalDnsChangesRequest, ExternalDnsChangesResponse},
     zone,
 };
@@ -20,6 +22,7 @@ use crate::{
 /// together or none do. Only zones with a remaining delta advance their
 /// serial (once per request) and record IXFR history.
 pub async fn apply_changes(
+    cx: &Context,
     caller: &Caller,
     request: &ExternalDnsChangesRequest,
 ) -> Result<ExternalDnsChangesResponse, ServiceError> {
@@ -37,12 +40,12 @@ pub async fn apply_changes(
         });
     }
 
-    let mut tx = repository::begin_tx("Failed to apply ExternalDNS changes").await?;
+    let mut tx = transaction::begin_tx(cx, "Failed to apply ExternalDNS changes").await?;
 
     let apply_result = async {
         // Resolve authoritative zones from committed state inside the tx;
         // the residual race with concurrent zone creation is accepted.
-        let zones = repository::list_zones_tx(&mut tx, LockLevel::None).await?;
+        let zones = db::zone::list_all_tx(&mut tx, LockLevel::None).await?;
         let zone_ops = group_ops_by_zone(caller, &zones, ops)?;
 
         let mut changed_zones = Vec::new();
@@ -52,10 +55,9 @@ pub async fn apply_changes(
         // BTreeMap iteration locks zones in name order, so concurrent
         // multi-zone requests cannot deadlock on row locks.
         for (zone_name, ops) in &zone_ops {
-            let zone =
-                repository::get_zone_by_name_tx(&mut tx, zone_name.as_str(), LockLevel::Exclusive)
-                    .await?
-                    .ok_or_else(|| ServiceError::zone_not_found(zone_name.as_str()))?;
+            let zone = db::zone::get_by_name_tx(&mut tx, zone_name.as_str(), LockLevel::Exclusive)
+                .await?
+                .ok_or_else(|| ServiceError::zone_not_found(zone_name.as_str()))?;
 
             // Authorize the requested operations before idempotent pairs cancel;
             // a no-op must not bypass grants or reveal existing records.
@@ -82,13 +84,9 @@ pub async fn apply_changes(
                 .collect();
             names.sort();
             names.dedup();
-            let records_at_names = repository::list_records_by_names_tx(
-                &mut tx,
-                zone.id,
-                &names,
-                LockLevel::Exclusive,
-            )
-            .await?;
+            let records_at_names =
+                db::record::list_by_names_tx(&mut tx, zone.id, &names, LockLevel::Exclusive)
+                    .await?;
 
             let change_set = ops.compute_change_set(&zone, &records_at_names)?;
             if change_set.deletes.is_empty() && change_set.creates.is_empty() {
@@ -103,7 +101,8 @@ pub async fn apply_changes(
                 .await?;
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the change
-            zone::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject()).await?;
+            zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject())
+                .await?;
 
             deleted += change_set.deletes.len() as u64;
             added += change_set.creates.len() as u64;
@@ -115,11 +114,11 @@ pub async fn apply_changes(
     .await;
 
     let (changed_zones, added, deleted) =
-        repository::finish_tx(tx, apply_result, "Failed to apply ExternalDNS changes").await?;
+        transaction::finish_tx(tx, apply_result, "Failed to apply ExternalDNS changes").await?;
 
     // Every affected zone must commit before any secondary is asked to transfer.
     for zone_name in &changed_zones {
-        crate::notify::notify_after_update(zone_name).await;
+        crate::notify::notify_after_update(cx, zone_name).await;
     }
 
     log::info!(

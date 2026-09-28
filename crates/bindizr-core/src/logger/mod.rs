@@ -23,7 +23,7 @@ fn log_level() -> Level {
 }
 
 /// Simple `log` implementation that writes to stderr.
-struct Logger;
+pub struct Logger;
 
 impl log::Log for Logger {
     /// Check whether a log record meets the current threshold.
@@ -82,25 +82,23 @@ impl From<config::LogLevel> for Level {
     }
 }
 
-/// Install the global logger using the configured log level and format.
-pub fn initialize() {
-    let config = config::bindizr_config();
-    set_format(config.logging.format);
-    initialize_with_level(config.logging.level);
-}
+impl Logger {
+    /// Install the process's logger behind the `log` facade, which allows one
+    /// per process: the level and format are read per record, so a reload
+    /// changes them with `set_level` and `set_format` rather than a second
+    /// install.
+    pub fn init(logging: &config::LoggingConfig) {
+        let log_level = Level::from(logging.level);
 
-/// Install the global logger at an explicit level, for binaries that do not
-/// load the bindizr configuration file (e.g. the ExternalDNS adapter).
-pub fn initialize_with_level(level: config::LogLevel) {
-    let log_level = Level::from(level);
+        set_format(logging.format);
+        if let Err(e) = log::set_boxed_logger(Box::new(Logger)) {
+            crate::errln!("Failed to set logger: {}", e);
+            return;
+        }
+        set_level(logging.level);
 
-    if let Err(e) = log::set_boxed_logger(Box::new(Logger)) {
-        crate::errln!("Failed to set logger: {}", e);
-        return;
+        log::info!("Console logging level: {}", log_level);
     }
-    set_level(level);
-
-    log::info!("Console logging level: {}", log_level);
 }
 
 /// Change the level of the installed logger, for a configuration reload.

@@ -1,4 +1,4 @@
-use bindizr_core::{config, config::BindizrConfig, outln};
+use bindizr_core::{config, config::Config, outln};
 use bindizr_service::types::MessageResponse;
 use clap::Subcommand;
 
@@ -77,7 +77,7 @@ fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliEr
         outln!("Checking configuration file: {}", path);
     }
 
-    config::load_config_file(&path).map_err(CliError::configuration)?;
+    Config::load(&path).map_err(CliError::configuration)?;
 
     let message = format!("Configuration file '{}' is valid", path);
     match output {
@@ -129,7 +129,7 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
 }
 
 /// Print configuration values grouped by section.
-fn print_config(config: &BindizrConfig) {
+fn print_config(config: &Config) {
     print_section("api");
     print_value("listen_addr", config.api.listen_addr);
     print_value("listen_port", config.api.listen_port);

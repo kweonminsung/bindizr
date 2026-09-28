@@ -13,7 +13,7 @@ use axum::{
 use bindizr_core::metrics::TEXT_CONTENT_TYPE;
 
 use crate::{
-    metrics::metrics,
+    metrics::AdapterMetrics,
     upstream::{UpstreamClient, UpstreamError},
     wire::{
         Changes, DomainFilter, Endpoint, MEDIA_TYPE, build_adjusted_endpoints, to_bindizr_records,
@@ -23,6 +23,7 @@ use crate::{
 /// State shared by both routers: the bindizr client every handler forwards to.
 pub(crate) struct AppState {
     pub(crate) upstream: UpstreamClient,
+    pub(crate) metrics: AdapterMetrics,
 }
 
 /// Whole-plan and whole-desired-set POSTs outgrow axum's 2 MiB default on
@@ -41,7 +42,10 @@ pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {
         .route("/", routing::get(negotiate))
         .route("/records", routing::get(list_records).post(apply_changes))
         .route("/adjustendpoints", routing::post(adjust_endpoints))
-        .route_layer(middleware::from_fn(track_webhook_metrics))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            track_webhook_metrics,
+        ))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state)
 }
@@ -126,7 +130,7 @@ fn result_label(response: &Response) -> &'static str {
     }
 }
 
-/// The endpoint label a route reports under (`metrics()` pre-registers these).
+/// The endpoint label a route reports under (`AdapterMetrics::new` pre-registers these).
 /// HEAD serves through `routing::get`; an unrouted method 405s, so `None`.
 fn endpoint_label(method: &Method, route: &str) -> Option<&'static str> {
     match (method.as_str(), route) {
@@ -139,7 +143,11 @@ fn endpoint_label(method: &Method, route: &str) -> Option<&'static str> {
 }
 
 /// Record request count and latency for the matched webhook route.
-async fn track_webhook_metrics(request: Request, next: Next) -> Response {
+async fn track_webhook_metrics(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Response {
     let route = request
         .extensions()
         .get::<MatchedPath>()
@@ -151,11 +159,13 @@ async fn track_webhook_metrics(request: Request, next: Next) -> Response {
     let response = next.run(request).await;
 
     if let Some(endpoint) = endpoint {
-        metrics()
+        state
+            .metrics
             .requests_total
             .with_label_values(&[endpoint, result_label(&response)])
             .inc();
-        metrics()
+        state
+            .metrics
             .request_duration_seconds
             .with_label_values(&[endpoint])
             .observe(started.elapsed().as_secs_f64());
@@ -307,11 +317,11 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
 }
 
 /// `GET /metrics` — adapter-local Prometheus metrics.
-async fn handle_metrics() -> Response {
+async fn handle_metrics(State(state): State<Arc<AppState>>) -> Response {
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, TEXT_CONTENT_TYPE)],
-        metrics().encode(),
+        state.metrics.encode(),
     )
         .into_response()
 }

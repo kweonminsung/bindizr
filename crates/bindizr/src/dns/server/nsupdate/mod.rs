@@ -11,19 +11,22 @@ use bindizr_core::{
         message::Rcode,
         nsupdate::{DEFAULT_FUDGE, build_response},
     },
-    metrics::{NsupdateResult, track_nsupdate},
+    metrics::NsupdateResult,
 };
 use tokio::net::{TcpStream, UdpSocket};
 
+use crate::dns::server::DnsContext;
+
 /// Apply a dynamic update received over TCP and send its response.
 pub(crate) async fn handle_tcp_nsupdate(
+    dns_cx: &DnsContext,
     stream: &mut TcpStream,
     query_data: &[u8],
     client_addr: SocketAddr,
 ) -> Result<(), String> {
     log::info!("NSUPDATE TCP request from {}", client_addr);
 
-    let response = handle_nsupdate_request(query_data, client_addr)
+    let response = handle_nsupdate_request(dns_cx, query_data, client_addr)
         .await
         .ok_or_else(|| "Failed to build NSUPDATE TCP response".to_string())?;
 
@@ -34,13 +37,14 @@ pub(crate) async fn handle_tcp_nsupdate(
 
 /// Apply a dynamic update received over UDP and return its response.
 pub(crate) async fn handle_udp_nsupdate(
+    dns_cx: &DnsContext,
     socket: &UdpSocket,
     query_data: &[u8],
     client_addr: SocketAddr,
 ) -> Result<(), String> {
     log::info!("NSUPDATE UDP request from {}", client_addr);
 
-    let response = match handle_nsupdate_request(query_data, client_addr).await {
+    let response = match handle_nsupdate_request(dns_cx, query_data, client_addr).await {
         Some(resp) => resp,
         None => {
             log::warn!("Ignored malformed NSUPDATE packet from {}", client_addr);
@@ -58,12 +62,18 @@ pub(crate) async fn handle_udp_nsupdate(
 
 /// Process an UPDATE request and return the complete wire response, or `None`
 /// for a message too malformed to answer.
-async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> Option<Vec<u8>> {
+async fn handle_nsupdate_request(
+    dns_cx: &DnsContext,
+    query_data: &[u8],
+    client_addr: SocketAddr,
+) -> Option<Vec<u8>> {
+    let cx = dns_cx.daemon();
     let parsed = match bindizr_core::dns::nsupdate::parser::UpdateRequest::parse(query_data) {
         Ok(req) => req,
         Err(e) => {
             log::warn!("NSUPDATE parse error from {}: {}", client_addr, e);
-            track_nsupdate(NsupdateResult::Rcode(Rcode::FORMERR));
+            cx.metrics()
+                .track_nsupdate(NsupdateResult::Rcode(Rcode::FORMERR));
             return build_response(query_data, Rcode::FORMERR, None, DEFAULT_FUDGE);
         }
     };
@@ -73,7 +83,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         .tsig
         .as_ref()
         .map_or(DEFAULT_FUDGE, |tsig| tsig.fudge);
-    let (result, signer) = update::apply_update(parsed, query_data).await;
+    let (result, signer) = update::apply_update(dns_cx, parsed, query_data).await;
 
     let rcode = match result {
         Ok(changed) => {
@@ -88,7 +98,7 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         // request's TSIG record (RFC 8945, Sections 5.2–5.3).
         Err(update::UpdateError::TsigFailed { msg, response }) => {
             log::warn!("NSUPDATE notauth from {}: {}", client_addr, msg);
-            track_nsupdate(NsupdateResult::TsigFailed);
+            cx.metrics().track_nsupdate(NsupdateResult::TsigFailed);
             return Some(response);
         }
         Err(update::UpdateError::Refused(msg)) => {
@@ -121,6 +131,6 @@ async fn handle_nsupdate_request(query_data: &[u8], client_addr: SocketAddr) -> 
         }
     };
 
-    track_nsupdate(NsupdateResult::Rcode(rcode));
+    cx.metrics().track_nsupdate(NsupdateResult::Rcode(rcode));
     build_response(query_data, rcode, signer, fudge)
 }

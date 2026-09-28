@@ -1,10 +1,14 @@
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
 };
 use bindizr_service::{
+    Context,
     types::{ErrorResponse, MessageResponse, build_notify_message},
     zone,
 };
@@ -19,7 +23,7 @@ use crate::{
 };
 
 /// Build the notify API routes.
-pub(crate) fn routes() -> Router {
+pub(crate) fn routes() -> Router<Arc<Context>> {
     Router::new()
         .route("/notify", routing::post(notify_all_zones))
         .route("/zones/{name}/notify", routing::post(notify_zone))
@@ -48,11 +52,12 @@ pub(crate) struct NotifyQuery {
         )
 )]
 pub(crate) async fn notify_all_zones(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Query(query): Query<NotifyQuery>,
 ) -> Result<Response, ApiError> {
     let bump_serial = query.bump_serial.unwrap_or(false);
-    zone::notify(&caller, None, bump_serial).await?;
+    zone::notify(&cx, &caller, None, bump_serial).await?;
 
     let response = MessageResponse {
         message: build_notify_message(None, bump_serial),
@@ -79,12 +84,13 @@ pub(crate) async fn notify_all_zones(
         )
 )]
 pub(crate) async fn notify_zone(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(query): Query<NotifyQuery>,
 ) -> Result<Response, ApiError> {
     let bump_serial = query.bump_serial.unwrap_or(false);
-    zone::notify(&caller, Some(&params.name), bump_serial).await?;
+    zone::notify(&cx, &caller, Some(&params.name), bump_serial).await?;
 
     let response = MessageResponse {
         message: build_notify_message(Some(&params.name), bump_serial),

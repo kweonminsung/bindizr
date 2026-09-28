@@ -3,13 +3,15 @@
 use std::fmt::Write as _;
 
 use bindizr_core::dns::name::to_fqdn;
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 
 use crate::{
+    Context,
     authorization::Caller,
+    db,
     error::ServiceError,
     model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
-    repository,
+    transaction,
 };
 
 /// Render a zone and its records as a BIND master file (RFC 1035). The
@@ -18,20 +20,21 @@ use crate::{
 /// appends the derived DNSSEC records as an inspection artifact, not an
 /// import input.
 pub async fn export(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
     signed: bool,
 ) -> Result<String, ServiceError> {
     // Read the zone and records in one locked transaction so the export is a
     // single consistent view, not stale SOA metadata with newer records.
-    let mut tx = repository::begin_read_tx("Failed to export zone").await?;
+    let mut tx = transaction::begin_read_tx(cx, "Failed to export zone").await?;
     let load_result = async {
         let zone =
             super::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
         caller.authorize_zone_unrestricted(&zone)?;
-        let records = repository::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
+        let records = db::record::list_tx(&mut tx, zone.id, LockLevel::None).await?;
         let derived = if signed {
-            repository::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None).await?
+            db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::None).await?
         } else {
             Vec::new()
         };
@@ -39,7 +42,7 @@ pub async fn export(
     }
     .await;
     let (zone, mut records, mut derived) =
-        repository::finish_tx(tx, load_result, "Failed to export zone").await?;
+        transaction::finish_tx(tx, load_result, "Failed to export zone").await?;
 
     let origin = zone.name.to_fqdn();
     let mut out = String::new();

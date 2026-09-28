@@ -1,15 +1,19 @@
+use std::sync::Arc;
+
 use axum::{
     body::Body,
+    extract::State,
     http::{Request, StatusCode, header::AUTHORIZATION},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use bindizr_service::{authorization::Caller, error::ServiceError};
+use bindizr_service::{Context, authorization::Caller, error::ServiceError};
 
 use crate::api::{AuthenticatedToken, error::ApiError};
 
 /// Validate the request's Bearer token, rejecting unauthorized requests.
 pub(crate) async fn auth_middleware(
+    State(cx): State<Arc<Context>>,
     mut req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
@@ -31,7 +35,7 @@ pub(crate) async fn auth_middleware(
 
     let token = &auth_str[7..];
 
-    match Caller::authenticate(token).await {
+    match Caller::authenticate(&cx, token).await {
         Ok((caller, token)) => {
             req.extensions_mut().insert(caller);
             req.extensions_mut().insert(AuthenticatedToken(token));

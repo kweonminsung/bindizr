@@ -3,7 +3,6 @@
 //! rdata parsing. Everything that touches zone data lives in the service.
 
 use bindizr_core::{
-    config,
     dns::{
         message::{Class, Rtype},
         name::ZoneName,
@@ -16,6 +15,8 @@ use bindizr_service::{
     dynamic_update::{self, DynamicUpdate, DynamicUpdateError, Prerequisite, UpdateOp},
     tsig_key,
 };
+
+use crate::dns::server::DnsContext;
 
 #[derive(Debug)]
 pub(crate) enum UpdateError {
@@ -76,6 +77,7 @@ impl From<DynamicUpdateError> for UpdateError {
 /// returned signer is `Some` once the request's TSIG was validated, so the
 /// response — success or failure — can be signed.
 pub(crate) async fn apply_update(
+    dns_cx: &DnsContext,
     request: UpdateRequest,
     query_data: &[u8],
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
@@ -94,7 +96,7 @@ pub(crate) async fn apply_update(
 
         // Authenticate before anything zone-specific: keys are zone-independent,
         // and this lets even NOTZONE/REFUSED responses be signed.
-        let key = authenticate_request(&request, query_data, &mut signer).await?;
+        let key = authenticate_request(dns_cx, &request, query_data, &mut signer).await?;
 
         let update = DynamicUpdate {
             zone_name,
@@ -111,7 +113,7 @@ pub(crate) async fn apply_update(
                 .collect::<Result<_, _>>()?,
         };
 
-        let changed = dynamic_update::apply(update).await?;
+        let changed = dynamic_update::apply(dns_cx.daemon(), update).await?;
         Ok(changed)
     }
     .await;
@@ -123,17 +125,19 @@ pub(crate) async fn apply_update(
 /// accepted because `dns.nsupdate_tsig_required` is off (not recommended in
 /// production); signed requests are always verified.
 async fn authenticate_request(
+    dns_cx: &DnsContext,
     request: &UpdateRequest,
     query_data: &[u8],
     signer: &mut Option<ResponseSigner>,
 ) -> Result<Option<TsigKey>, UpdateError> {
+    let cx = dns_cx.daemon();
     let tsig = match &request.tsig {
         Some(tsig) => tsig,
         None => {
             // An unsigned update carries no identity, so this admits every
             // client that reaches the listener — the same trade
             // `api.authentication_required = false` makes for the API.
-            if !config::bindizr_config().dns.nsupdate_tsig_required {
+            if !cx.config().dns.nsupdate_tsig_required {
                 return Ok(None);
             }
             return Err(UpdateError::Refused(
@@ -142,7 +146,7 @@ async fn authenticate_request(
         }
     };
 
-    let key = tsig_key::find_by_wire_name(&tsig.name)
+    let key = tsig_key::find_by_wire_name(cx, &tsig.name)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?;
 

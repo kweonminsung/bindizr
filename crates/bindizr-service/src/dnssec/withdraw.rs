@@ -3,22 +3,23 @@
 
 use super::status::build_status_tx;
 use crate::{
-    authorization::Caller, database::repository::LockLevel, error::ServiceError, repository,
+    Context, authorization::Caller, db, db::LockLevel, error::ServiceError, transaction,
     types::DnssecStatusResponse,
 };
 
 /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
 /// parent to drop the zone's DS: the first step of going insecure.
 pub async fn withdraw(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
-    let mut tx = repository::begin_tx("failed to withdraw the parent DS").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to withdraw the parent DS").await?;
     let result = async {
         let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        if repository::get_dnssec_withdrawal_tx(&mut tx, signed.zone.id)
+        if db::dnssec_withdrawal::get_tx(&mut tx, signed.zone.id)
             .await?
             .is_some()
         {
@@ -26,11 +27,12 @@ pub async fn withdraw(
                 "the DS withdrawal is already published",
             ));
         }
-        repository::create_dnssec_withdrawal_tx(&mut tx, signed.zone.id).await?;
+        db::dnssec_withdrawal::create_tx(&mut tx, signed.zone.id).await?;
 
-        let new_serial = super::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
-            .await?
-            .unwrap_or(signed.zone.serial);
+        let new_serial =
+            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
+                .await?
+                .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,
@@ -42,35 +44,37 @@ pub async fn withdraw(
         .await
     }
     .await;
-    let response = repository::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
+    let response = transaction::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
 
     log::info!("event=dnssec_withdraw zone={}", response.zone_name);
-    crate::notify::notify_after_update(&response.zone_name).await;
+    crate::notify::notify_after_update(cx, &response.zone_name).await;
     Ok(response)
 }
 
 /// Take back a published DS withdrawal: the per-key CDS/CDNSKEY set
 /// returns on the next signing pass.
 pub async fn cancel_withdrawal(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
-    let mut tx = repository::begin_tx("failed to cancel the DS withdrawal").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to cancel the DS withdrawal").await?;
     let result = async {
         let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        if repository::get_dnssec_withdrawal_tx(&mut tx, signed.zone.id)
+        if db::dnssec_withdrawal::get_tx(&mut tx, signed.zone.id)
             .await?
             .is_none()
         {
             return Err(ServiceError::invalid_input("no DS withdrawal is published"));
         }
-        repository::delete_dnssec_withdrawal_tx(&mut tx, signed.zone.id).await?;
+        db::dnssec_withdrawal::delete_tx(&mut tx, signed.zone.id).await?;
 
-        let new_serial = super::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
-            .await?
-            .unwrap_or(signed.zone.serial);
+        let new_serial =
+            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
+                .await?
+                .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,
@@ -82,9 +86,9 @@ pub async fn cancel_withdrawal(
         .await
     }
     .await;
-    let response = repository::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
+    let response = transaction::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
 
     log::info!("event=dnssec_withdraw_cancel zone={}", response.zone_name);
-    crate::notify::notify_after_update(&response.zone_name).await;
+    crate::notify::notify_after_update(cx, &response.zone_name).await;
     Ok(response)
 }

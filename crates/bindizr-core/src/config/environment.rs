@@ -4,9 +4,9 @@
 
 use std::fmt;
 
-use super::{BindizrConfig, DatabaseType};
+use super::{Config, DatabaseType};
 
-impl BindizrConfig {
+impl Config {
     /// Apply the `BINDIZR_*` environment variables to the loaded configuration.
     pub(crate) fn apply_env_overrides(
         &mut self,

@@ -7,8 +7,10 @@ use chrono::{Duration, Utc};
 
 use super::status::build_status_tx;
 use crate::{
+    Context, Transaction,
     authorization::Caller,
-    database::repository::LockLevel,
+    db,
+    db::LockLevel,
     dnssec::SignedZone,
     error::ServiceError,
     model::{
@@ -16,20 +18,21 @@ use crate::{
         dnssec_policy::DnssecPolicy,
         zone::Zone,
     },
-    repository::{self, RepositoryTx},
+    transaction,
     types::{DnssecDelegationKeyInfo, DnssecStatusResponse},
 };
 
 /// Start a key rollover: pre-publish a same-algorithm replacement for
 /// the CSK, or for the `role` named in a split-key zone.
 pub async fn start_rollover(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
     role: Option<&str>,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
-    let mut tx = repository::begin_tx("failed to start key rollover").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
     let result = async {
         // Select a role only after ruling out an existing rollover under the zone lock.
         let mut signed =
@@ -79,9 +82,10 @@ pub async fn start_rollover(
             publish_replacement_key_tx(&mut tx, &signed.zone, template, template.algorithm).await?;
         signed.keys.push(new_key);
 
-        let new_serial = super::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
-            .await?
-            .unwrap_or(signed.zone.serial);
+        let new_serial =
+            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
+                .await?
+                .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,
@@ -93,12 +97,12 @@ pub async fn start_rollover(
         .await
     }
     .await;
-    let response = repository::finish_tx(tx, result, "failed to start key rollover").await?;
+    let response = transaction::finish_tx(tx, result, "failed to start key rollover").await?;
 
     log::info!("event=dnssec_rollover_start zone={}", response.zone_name);
 
     // Announce the pre-published key after the signed view commits.
-    crate::notify::notify_after_update(&response.zone_name).await;
+    crate::notify::notify_after_update(cx, &response.zone_name).await;
     Ok(response)
 }
 
@@ -106,7 +110,7 @@ pub async fn start_rollover(
 /// double-signing the zone through the transition (RFC 6840, Section
 /// 5.11). Returns the key set with the replacements appended.
 pub(crate) async fn start_algorithm_rollover_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     policy: &DnssecPolicy,
     keys: Vec<DnssecKey>,
@@ -133,6 +137,7 @@ pub(crate) async fn start_algorithm_rollover_tx(
 /// `skip_ds_check` takes the DS on the operator's word, `skip_holddown`
 /// waives the wait.
 pub async fn advance_rollover(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
     skip_ds_check: bool,
@@ -140,7 +145,7 @@ pub async fn advance_rollover(
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
-    let mut tx = repository::begin_tx("failed to advance key rollover").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
     let result = async {
         let mut signed =
             super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
@@ -149,7 +154,7 @@ pub async fn advance_rollover(
         // cache it — the wait the key it replaces must outlive.
         let mut parent_ds_ttl = None;
         if !skip_ds_check {
-            let delegation = super::probe_delegation(&signed).await?;
+            let delegation = super::probe_delegation(cx, &signed).await?;
             parent_ds_ttl = delegation.ds_ttl;
             let unconfirmed: Vec<&DnssecDelegationKeyInfo> = delegation
                 .keys
@@ -179,9 +184,10 @@ pub async fn advance_rollover(
             promote_published_keys_tx(&mut tx, &signed.zone, signed.keys, &awaiting, parent_ds_ttl)
                 .await?;
 
-        let new_serial = super::resign_zone_tx(&mut tx, &signed, false, &caller.change_subject())
-            .await?
-            .unwrap_or(signed.zone.serial);
+        let new_serial =
+            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
+                .await?
+                .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,
@@ -193,7 +199,7 @@ pub async fn advance_rollover(
         .await
     }
     .await;
-    let response = repository::finish_tx(tx, result, "failed to advance key rollover").await?;
+    let response = transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
 
     if skip_ds_check {
         log::warn!(
@@ -208,14 +214,14 @@ pub async fn advance_rollover(
         );
     }
     log::info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
-    crate::notify::notify_after_update(&response.zone_name).await;
+    crate::notify::notify_after_update(cx, &response.zone_name).await;
     Ok(response)
 }
 
 /// Publish a replacement for `template` with `algorithm`. Promotion waits
 /// for the DNSKEY TTL; algorithm rollovers may require signing before then.
 pub(crate) async fn publish_replacement_key_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     template: &DnssecKey,
     algorithm: DnssecAlgorithm,
@@ -231,13 +237,13 @@ pub(crate) async fn publish_replacement_key_tx(
         now + publish_wait,
     )
     .map_err(ServiceError::dnssec_signing_failed)?;
-    repository::create_dnssec_key_tx(tx, new_key).await
+    Ok(db::dnssec_key::create_tx(tx, new_key).await?)
 }
 
 /// Promote the published keys named by `promoted` — drawn from this
 /// transaction's key list — and retire the active keys of the same roles.
 pub(crate) async fn promote_published_keys_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     keys: Vec<DnssecKey>,
     promoted: &[i32],
@@ -261,21 +267,14 @@ pub(crate) async fn promote_published_keys_tx(
     let mut updated = Vec::with_capacity(keys.len());
     for mut key in keys {
         if promoted.contains(&key.id) {
-            repository::update_dnssec_key_state_tx(tx, key.id, DnssecKeyState::Active, now, now)
-                .await?;
+            db::dnssec_key::update_state_tx(tx, key.id, DnssecKeyState::Active, now, now).await?;
             key.state = DnssecKeyState::Active;
             key.state_changed_at = now;
             key.eligible_at = now;
         } else if key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role) {
             let eligible_at = now + Duration::seconds(retire_wait);
-            repository::update_dnssec_key_state_tx(
-                tx,
-                key.id,
-                DnssecKeyState::Retired,
-                now,
-                eligible_at,
-            )
-            .await?;
+            db::dnssec_key::update_state_tx(tx, key.id, DnssecKeyState::Retired, now, eligible_at)
+                .await?;
             key.state = DnssecKeyState::Retired;
             key.state_changed_at = now;
             key.eligible_at = eligible_at;

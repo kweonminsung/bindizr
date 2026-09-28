@@ -7,7 +7,7 @@ mod offline;
 
 use std::fmt;
 
-use bindizr_core::{config, config::BindizrConfig, outln};
+use bindizr_core::{config, config::Config, outln};
 use serde::Serialize;
 
 use crate::{
@@ -97,7 +97,7 @@ pub(crate) async fn handle_command(
     };
 
     let path = config::resolve_config_path(config_file.as_deref());
-    let file_config = match config::load_config_file(&path) {
+    let file_config = match Config::load(&path) {
         Ok(config) => {
             report.ok(format!("Config valid: {}", path));
             Some(config)
@@ -110,7 +110,7 @@ pub(crate) async fn handle_command(
     if daemon::check_running(&mut report).await {
         let daemon_config = client::send_control_command(DaemonCommandKind::Config)
             .await
-            .and_then(|response| Ok(parse_payload::<BindizrConfig>(&response.data)?));
+            .and_then(|response| Ok(parse_payload::<Config>(&response.data)?));
         match daemon_config {
             Ok(config) => daemon::check_api(&config, &mut report).await,
             Err(e) => report.fail(format!("Daemon config not readable: {}", e.message)),

@@ -1,14 +1,12 @@
 use chrono::Utc;
 
 use crate::{
-    RepositoryTx,
+    Context, Transaction, db,
     error::ServiceError,
-    metrics::track_serial_bump,
     model::{
         zone::Zone,
         zone_version::{ChangeSource, ZoneVersion},
     },
-    repository,
 };
 
 /// Who a zone version is recorded as the work of; the scheduler and an
@@ -40,28 +38,29 @@ impl ChangeSubject {
 /// Advance the zone serial so IXFR consumers detect the change, and
 /// version it in the same transaction.
 pub(crate) async fn advance_serial_tx(
-    tx: &mut RepositoryTx<'_>,
+    cx: &Context,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     new_serial: i32,
     subject: &ChangeSubject,
 ) -> Result<(), ServiceError> {
-    repository::update_zone_serial_tx(tx, zone.id, new_serial)
+    db::zone::update_serial_tx(tx, zone.id, new_serial)
         .await
         .map_err(|e| {
             log::error!("Failed to update zone serial: {}", e);
             ServiceError::internal("Failed to update zone serial")
         })?;
 
-    save_version_tx(tx, zone, new_serial, subject).await
+    save_version_tx(cx, tx, zone, new_serial, subject).await
 }
 
 /// Reject DS records without an NS delegation at the same owner: a DS identifies a child
 /// zone's key (RFC 4034, Section 5).
 async fn validate_delegations_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone_id: i32,
 ) -> Result<(), ServiceError> {
-    let orphaned = repository::get_ds_name_without_ns_tx(tx, zone_id).await?;
+    let orphaned = db::record::get_ds_name_without_ns_tx(tx, zone_id).await?;
     if let Some(name) = orphaned.as_deref() {
         let name = if name.is_empty() { "@" } else { name };
         return Err(ServiceError::record_conflict(format!(
@@ -76,13 +75,14 @@ async fn validate_delegations_tx(
 /// Every mutation path ends here, so the cross-row invariants are
 /// checked once, against the final state, order-independently.
 pub(crate) async fn save_version_tx(
-    tx: &mut RepositoryTx<'_>,
+    cx: &Context,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     serial: i32,
     subject: &ChangeSubject,
 ) -> Result<(), ServiceError> {
     validate_delegations_tx(tx, zone.id).await?;
-    repository::upsert_zone_version_tx(
+    db::zone_version::upsert_tx(
         tx,
         ZoneVersion {
             id: 0,
@@ -110,24 +110,26 @@ pub(crate) async fn save_version_tx(
     })?;
 
     // Every serial-advancing path funnels through this version write.
-    track_serial_bump();
+    cx.metrics().track_serial_bump();
 
     Ok(())
 }
 
 /// Fetch the SOA version recorded for a zone at the given serial, if any.
 pub async fn find_version_by_serial(
+    cx: &Context,
     zone_id: i32,
     serial: i32,
 ) -> Result<Option<ZoneVersion>, ServiceError> {
-    repository::get_zone_version_by_serial(zone_id, serial).await
+    Ok(db::zone_version::get_by_serial(cx.db(), zone_id, serial).await?)
 }
 
 /// Fetch every SOA version for a zone with serial in `[from_serial, to_serial]`.
 pub async fn list_versions_in_serial_range(
+    cx: &Context,
     zone_id: i32,
     from_serial: i32,
     to_serial: i32,
 ) -> Result<Vec<ZoneVersion>, ServiceError> {
-    repository::list_zone_versions_in_serial_range(zone_id, from_serial, to_serial).await
+    Ok(db::zone_version::list_in_serial_range(cx.db(), zone_id, from_serial, to_serial).await?)
 }

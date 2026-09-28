@@ -4,9 +4,11 @@ use chrono::{DateTime, Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
-use super::{error::ServiceError, repository};
+use super::error::ServiceError;
 use crate::{
+    Context,
     authorization::Caller,
+    db,
     model::api_token::ApiToken,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
     types::{GetTokenResponse, PageFilter, PaginatedResponse},
@@ -24,6 +26,7 @@ pub(crate) fn hash_token(token: &str) -> String {
 
 /// Create an API token; the secret comes back beside it, shown this once.
 pub async fn create(
+    cx: &Context,
     caller: &Caller,
     name: &str,
     description: Option<&str>,
@@ -37,7 +40,7 @@ pub async fn create(
     let expires_at = normalize_expires_at(expires_in_days)?;
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
-    if repository::get_api_token_by_name(&name).await?.is_some() {
+    if db::api_token::get_by_name(cx.db(), &name).await?.is_some() {
         return Err(ServiceError::token_conflict(&name));
     }
 
@@ -49,29 +52,42 @@ pub async fn create(
 
     let token_hash = hash_token(&raw_token);
 
-    let created = repository::create_api_token(ApiToken {
-        id: 0,
-        name,
-        token: token_hash,
-        description,
-        is_global,
-        expires_at,
-        created_at: Utc::now(),
-        last_used_at: None,
-    })
-    .await?;
+    let created = db::api_token::create(
+        cx.db(),
+        ApiToken {
+            id: 0,
+            name: name.clone(),
+            token: token_hash,
+            description,
+            is_global,
+            expires_at,
+            created_at: Utc::now(),
+            last_used_at: None,
+        },
+    )
+    .await
+    .map_err(|e| {
+        // A create that raced past the pre-check trips UNIQUE(name); the
+        // backstop reads as the same conflict.
+        if e.is_unique_violation() {
+            ServiceError::token_conflict(&name)
+        } else {
+            e.into()
+        }
+    })?;
 
     Ok((created, raw_token))
 }
 
 /// List all API tokens.
 pub async fn list(
+    cx: &Context,
     caller: &Caller,
     page: PageFilter,
 ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
     caller.authorize_global("manage API tokens")?;
 
-    let tokens = repository::list_api_tokens().await?;
+    let tokens = db::api_token::list_all(cx.db()).await?;
     PaginatedResponse::from_collection(
         tokens.iter().map(GetTokenResponse::from_token).collect(),
         page.limit,
@@ -80,23 +96,23 @@ pub async fn list(
 }
 
 /// The number of API tokens, read for the daemon's startup hint.
-pub async fn count_all() -> Result<u64, ServiceError> {
-    Ok(repository::list_api_tokens().await?.len() as u64)
+pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
+    Ok(db::api_token::list_all(cx.db()).await?.len() as u64)
 }
 
 /// Delete the API token with the given name, returning `NotFound` if it
 /// is absent.
-pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
+pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
     caller.authorize_global("manage API tokens")?;
 
-    let token = lookup_by_name(name).await?;
+    let token = lookup_by_name(cx, name).await?;
 
-    repository::delete_api_token(token.id).await
+    Ok(db::api_token::delete(cx.db(), token.id).await?)
 }
 
 /// Load an API token by name or return a not-found error.
-pub(crate) async fn lookup_by_name(name: &str) -> Result<ApiToken, ServiceError> {
-    repository::get_api_token_by_name(&normalize_token_name(name)?)
+pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceError> {
+    db::api_token::get_by_name(cx.db(), &normalize_token_name(name)?)
         .await?
         .ok_or_else(|| ServiceError::token_not_found(name))
 }

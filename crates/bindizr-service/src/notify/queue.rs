@@ -1,13 +1,12 @@
 //! The NOTIFY queue behind `dns.notify.batch_ms`: committed writes enqueue a
 //! NOTIFY here and return, and the worker batches a burst into one NOTIFY per
-//! zone.
+//! zone. The sender lives in the `Context`; the worker holds an `Arc` of it.
 
-use std::{collections::HashSet, sync::OnceLock, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use bindizr_core::config;
 use tokio::{
     sync::{
-        mpsc::{UnboundedSender, unbounded_channel},
+        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
         watch,
     },
     task::JoinHandle,
@@ -15,30 +14,50 @@ use tokio::{
 };
 
 use super::send_notify;
+use crate::Context;
 
 /// A queued propagation job: send NOTIFY for one zone, or for all zones (`None`).
 #[derive(Debug)]
-struct NotifyJob {
+pub struct NotifyJob {
     zone_name: Option<String>,
 }
 
-static NOTIFY_QUEUE: OnceLock<UnboundedSender<NotifyJob>> = OnceLock::new();
-
-/// Set when the daemon asks the worker to flush what it holds and finish.
-static NOTIFY_STOP: OnceLock<watch::Sender<bool>> = OnceLock::new();
-
-/// Spawn the background worker that drains queued NOTIFYs, handing back its
-/// task so the daemon can wait for it. First call wins; later calls are
-/// no-ops. Without it, writes fall back to sending inline.
-pub fn initialize() -> Option<JoinHandle<()>> {
-    let (tx, mut rx) = unbounded_channel::<NotifyJob>();
-    if NOTIFY_QUEUE.set(tx).is_err() {
-        return None;
+impl NotifyJob {
+    /// A job for one zone, or for every zone with `None`.
+    pub(crate) fn new(zone_name: Option<&str>) -> Self {
+        NotifyJob {
+            zone_name: zone_name.map(str::to_string),
+        }
     }
-    let (stop_tx, mut stop) = watch::channel(false);
-    let _ = NOTIFY_STOP.set(stop_tx);
+}
 
-    Some(tokio::spawn(async move {
+/// The job channel: the sender goes into the `Context`, the receiver to
+/// [`spawn`].
+pub fn channel() -> (UnboundedSender<NotifyJob>, UnboundedReceiver<NotifyJob>) {
+    unbounded_channel()
+}
+
+/// The running worker, as the daemon holds it: `stop` asks it to flush what
+/// it holds and finish, handing back the task to wait for.
+pub struct NotifyWorker {
+    task: JoinHandle<()>,
+    stop: watch::Sender<bool>,
+}
+
+impl NotifyWorker {
+    /// Ask the worker to send what it holds and finish; await the returned
+    /// task for that to be done.
+    pub fn stop(self) -> JoinHandle<()> {
+        let _ = self.stop.send(true);
+        self.task
+    }
+}
+
+/// Spawn the background worker that drains queued NOTIFYs.
+pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWorker {
+    let (stop_tx, mut stop) = watch::channel(false);
+
+    let task = tokio::spawn(async move {
         // Block for the first job, then batch everything that arrives within
         // the configured window into a single NOTIFY per zone.
         loop {
@@ -52,7 +71,7 @@ pub fn initialize() -> Option<JoinHandle<()>> {
             let mut batch = NotifyBatch::default();
             batch.add(first);
 
-            let window = Duration::from_millis(config::bindizr_config().dns.notify.batch_ms);
+            let window = Duration::from_millis(cx.config().dns.notify.batch_ms);
             if !window.is_zero() {
                 let deadline = Instant::now() + window;
                 loop {
@@ -73,7 +92,7 @@ pub fn initialize() -> Option<JoinHandle<()>> {
                 batch.add(job);
             }
 
-            batch.flush().await;
+            batch.flush(&cx).await;
         }
 
         // Refuse new jobs before flushing: an enqueue racing this shutdown
@@ -88,14 +107,12 @@ pub fn initialize() -> Option<JoinHandle<()>> {
         while let Some(job) = rx.recv().await {
             last.add(job);
         }
-        last.flush().await;
-    }))
-}
+        last.flush(&cx).await;
+    });
 
-/// Ask the worker to send what it holds and finish.
-pub fn stop() {
-    if let Some(stop) = NOTIFY_STOP.get() {
-        let _ = stop.send(true);
+    NotifyWorker {
+        task,
+        stop: stop_tx,
     }
 }
 
@@ -119,34 +136,21 @@ impl NotifyBatch {
     }
 
     /// Drain the pending batch and send notifications for its zones.
-    async fn flush(self) {
+    async fn flush(self, cx: &Context) {
         if !self.all_zones && self.zones.is_empty() {
             return;
         }
         if self.all_zones {
             // Notifying all zones covers every per-zone entry in this batch.
-            if let Err(e) = send_notify(None).await {
+            if let Err(e) = send_notify(cx, None).await {
                 log::warn!("queued notify: NOTIFY failed for zone <all>: {}", e);
             }
             return;
         }
         for zone in self.zones {
-            if let Err(e) = send_notify(Some(&zone)).await {
+            if let Err(e) = send_notify(cx, Some(&zone)).await {
                 log::warn!("queued notify: NOTIFY failed for zone {}: {}", zone, e);
             }
         }
-    }
-}
-
-/// Queue a NOTIFY for later delivery. Returns `false` if the worker was never
-/// started, so the caller can fall back to sending inline.
-pub(crate) fn enqueue_notify(zone_name: Option<&str>) -> bool {
-    match NOTIFY_QUEUE.get() {
-        Some(tx) => tx
-            .send(NotifyJob {
-                zone_name: zone_name.map(str::to_string),
-            })
-            .is_ok(),
-        None => false,
     }
 }
