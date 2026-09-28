@@ -25,17 +25,14 @@ pub async fn create(
     cx: &Context,
     caller: &Caller,
     name: &str,
-    algorithm: Option<&str>,
+    algorithm: Option<TsigAlgorithm>,
     secret: Option<&str>,
     is_global: bool,
 ) -> Result<TsigKey, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
     let name = normalize_key_name(name)?;
-    let algorithm = match algorithm {
-        None => TsigAlgorithm::default(),
-        Some(raw) => raw.parse().map_err(ServiceError::invalid_input)?,
-    };
+    let algorithm = algorithm.unwrap_or_default();
     let secret = match secret {
         Some(secret) => normalize_secret(secret)?,
         None => generate_secret(),
@@ -79,7 +76,7 @@ pub async fn list(
 
     let keys = db::tsig_key::list_all(cx.db()).await?;
     PaginatedResponse::from_collection(
-        keys.iter().map(GetTsigKeyResponse::from_key).collect(),
+        keys.iter().map(GetTsigKeyResponse::from).collect(),
         page.limit,
         page.offset,
     )

@@ -16,7 +16,7 @@ use super::version::RecordDiff;
 use crate::model::record::{Record, RecordType, RecordWithZone};
 
 /// A request value that has no record-row form.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub(crate) enum EncodeRecordValueError {
     #[error("array value is only supported for TXT records")]
     SegmentsNotTxt,
@@ -25,11 +25,11 @@ pub(crate) enum EncodeRecordValueError {
 }
 
 /// A record value as sent by the client: a single string or TXT segments.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(untagged)]
 pub enum RecordValueRequest {
     #[schema(example = "192.168.1.100")]
-    String(String),
+    Text(String),
     #[schema(example = json!(["hello", "world"]))]
     Segments(Vec<String>),
 }
@@ -39,7 +39,7 @@ impl RecordValueRequest {
     /// encode.
     pub fn to_text(&self) -> String {
         match self {
-            RecordValueRequest::String(value) => value.clone(),
+            RecordValueRequest::Text(value) => value.clone(),
             RecordValueRequest::Segments(segments) => segments.concat(),
         }
     }
@@ -52,16 +52,14 @@ impl RecordValueRequest {
         priority: Option<i32>,
     ) -> Result<String, EncodeRecordValueError> {
         match (record_type, self) {
-            (RecordType::TXT, RecordValueRequest::String(value)) => {
+            (RecordType::Txt, RecordValueRequest::Text(value)) => {
                 Ok(TxtRecordValue::from_string(value).to_presentation())
             }
-            (RecordType::TXT, RecordValueRequest::Segments(segments)) => Ok(
+            (RecordType::Txt, RecordValueRequest::Segments(segments)) => Ok(
                 TxtRecordValue::from_segments(segments.iter().map(String::as_str))
                     .map(|parsed| parsed.to_presentation())?,
             ),
-            (_, RecordValueRequest::String(value)) => {
-                Ok(record_type.encoded_value(value, priority)?)
-            }
+            (_, RecordValueRequest::Text(value)) => Ok(record_type.encoded_value(value, priority)?),
             (_, RecordValueRequest::Segments(_)) => Err(EncodeRecordValueError::SegmentsNotTxt),
         }
     }
@@ -70,18 +68,18 @@ impl RecordValueRequest {
 /// A stored value as the record APIs display it: TXT decoded to string/segments,
 /// other types rendered with trailing-dot FQDNs. Priority stays a separate field.
 pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> RecordValueRequest {
-    if *record_type != RecordType::TXT {
-        return RecordValueRequest::String(record_type.display_value(value));
+    if *record_type != RecordType::Txt {
+        return RecordValueRequest::Text(record_type.display_value(value));
     }
     match TxtRecordValue::from_presentation(value).and_then(|rdata| rdata.to_content()) {
-        Some(TxtContent::Single(value)) => RecordValueRequest::String(value),
+        Some(TxtContent::Single(value)) => RecordValueRequest::Text(value),
         Some(TxtContent::Segments(segments)) => RecordValueRequest::Segments(segments),
-        None => RecordValueRequest::String(value.to_string()),
+        None => RecordValueRequest::Text(value.to_string()),
     }
 }
 
 /// Request body for creating a record in a named zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateRecordRequest {
     #[schema(example = "sub")]
@@ -107,7 +105,7 @@ pub struct CreateRecordRequest {
 
 /// A record's data fields for a bulk insertion; the zone comes from the
 /// request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordItem {
     #[schema(example = "sub")]
@@ -126,7 +124,7 @@ pub struct RecordItem {
 }
 
 /// Request body for bulk-inserting records into a zone.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateBulkRecordsRequest {
     #[schema(example = "example.com")]
@@ -140,7 +138,7 @@ pub struct CreateBulkRecordsRequest {
 /// Request body for updating a record; an omitted field keeps the current
 /// value, merged inside the update transaction. `value` is required when
 /// `type` changes.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateRecordRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -169,7 +167,7 @@ pub struct UpdateRecordRequest {
 /// down to one record, as RFC 2136, Section 2.5.2 spells the same three forms.
 /// `zone_name` and `name` are both required: without a name this would be a
 /// second, quieter way to empty a zone, which `DELETE /zones/{name}` owns.
-#[derive(Clone, Debug, Deserialize, Serialize, IntoParams, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteRecordsFilter {
@@ -201,7 +199,7 @@ pub struct DeleteRecordsFilter {
 /// What a conditional delete removed, or would have. Matching nothing is not
 /// an error: the zone already reads the way the request asked for, so the
 /// serial does not move and no NOTIFY goes out.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DeleteRecordsResponse {
     /// Whether this call wrote; a filter that matched nothing still ran, and
     /// says so with `deleted: 0`.
@@ -217,7 +215,7 @@ pub struct DeleteRecordsResponse {
 }
 
 /// Query filters and pagination for listing records.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema, IntoParams)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct GetRecordsFilter {
@@ -282,7 +280,7 @@ pub struct GetRecordsFilter {
 /// API representation of a record. `name` is the owner's absolute name with
 /// its trailing dot, as name-valued rdata is rendered; `zone_name` is the
 /// zone's bare name, the spelling `/zones/{name}` takes.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetRecordResponse {
     /// Absent on the derived DNSSEC rows of a signed listing, which are not
     /// addressable records.
@@ -319,22 +317,24 @@ impl GetRecordResponse {
             zone_name: zone_name.to_string(),
         }
     }
+}
 
+impl From<&RecordWithZone> for GetRecordResponse {
     /// Build a record response using the record and its zone metadata.
-    pub fn from_record_with_zone(record: &RecordWithZone) -> Self {
+    fn from(record: &RecordWithZone) -> Self {
         Self::from_record_and_zone_name(&record.record(), &record.zone_name)
     }
 }
 
 /// A single record wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct RecordResponse {
     pub record: GetRecordResponse,
 }
 
 /// What a record write left behind, in the shape every previewable operation
 /// answers with: whether it wrote, and the change as a record diff.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct RecordWriteResponse {
     /// Whether this call wrote; a dry run answers `false`.
     #[schema(example = true)]
@@ -349,7 +349,7 @@ pub struct RecordWriteResponse {
 /// Response for a bulk insert: the count added and the created records. On a
 /// dry run `records` holds the validated would-be records (with placeholder
 /// IDs) and nothing is added.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct BulkRecordsResponse {
     #[schema(example = true)]
     pub applied: bool,

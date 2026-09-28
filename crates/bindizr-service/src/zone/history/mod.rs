@@ -5,7 +5,10 @@ mod reconstruction;
 
 use std::collections::{HashMap, HashSet};
 
-use bindizr_core::dns::{name::OwnerName, record::SoaMailbox, serial_to_i32, serial_to_u32};
+use bindizr_core::{
+    dns::{name::OwnerName, record::SoaMailbox, serial_to_i32, serial_to_u32},
+    model::zone_version::VersionScope,
+};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 use reconstruction::{list_records_at_serial_tx, reconstruct_records_at_serial_tx};
@@ -26,7 +29,7 @@ use crate::{
     serial::generate_serial,
     transaction,
     types::{
-        PaginatedResponse, RollbackSummary, RollbackZoneResponse, VersionDetailResponse,
+        PaginatedResponse, RollbackSummary, RollbackZoneResponse, Run, VersionDetailResponse,
         VersionDiffResponse, VersionRecordResponse, ZoneVersionResponse, normalize_page_limit,
     },
 };
@@ -40,38 +43,36 @@ async fn validate_serial_diffable_tx(
     if serial == zone.serial {
         return Ok(());
     }
-    db::zone_version::get_by_serial_tx(tx, zone.id, serial, LockLevel::None)
+    db::zone_version::get_by_serial_tx(tx, zone.id, serial, LockLevel::Unlocked)
         .await?
         .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
     Ok(())
 }
 
-/// List a zone's versions, newest serial first. Unless
-/// `include_signer_serials`, signer-only serials (DNSSEC re-signs,
-/// rollovers) are skipped: they hold nothing rollback could restore.
+/// List the versions `scope` covers, newest serial first.
 pub async fn list_versions(
     cx: &Context,
     caller: &Caller,
     zone_name: &str,
     limit: Option<u32>,
     offset: Option<u64>,
-    include_signer_serials: bool,
+    scope: VersionScope,
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
     let zone = super::get_by_name(cx, caller, zone_name).await?;
 
-    let total = db::zone_version::count(cx.db(), zone.id, !include_signer_serials).await?;
+    let total = db::zone_version::count(cx.db(), zone.id, scope).await?;
     let effective_limit = normalize_page_limit(limit)?;
     let versions = db::zone_version::list(
         cx.db(),
         zone.id,
-        !include_signer_serials,
+        scope,
         effective_limit,
         offset.unwrap_or(0),
     )
     .await?;
     let items = versions
         .iter()
-        .map(ZoneVersionResponse::from_version)
+        .map(ZoneVersionResponse::try_from)
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(PaginatedResponse::from_page(
@@ -97,9 +98,10 @@ pub async fn get_version(
         let zone =
             super::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
         caller.authorize_zone_unrestricted(&zone)?;
-        let version = db::zone_version::get_by_serial_tx(&mut tx, zone.id, serial, LockLevel::None)
-            .await?
-            .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
+        let version =
+            db::zone_version::get_by_serial_tx(&mut tx, zone.id, serial, LockLevel::Unlocked)
+                .await?
+                .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
 
         let records = list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?;
 
@@ -110,7 +112,7 @@ pub async fn get_version(
     let (zone, version, records) =
         transaction::finish_tx(tx, result, "Failed to load version").await?;
     Ok(VersionDetailResponse {
-        version: ZoneVersionResponse::from_version(&version)?,
+        version: ZoneVersionResponse::try_from(&version)?,
         records: records
             .iter()
             .map(|record| VersionRecordResponse::from_record_and_zone_name(record, &zone.name))
@@ -167,7 +169,7 @@ pub async fn rollback(
     caller: &Caller,
     zone_name: &str,
     target_serial: u32,
-    dry_run: bool,
+    run: Run,
 ) -> Result<RollbackZoneResponse, ServiceError> {
     caller.authorize_global("roll back zones")?;
     let target = serial_to_i32(target_serial).map_err(ServiceError::invalid_input)?;
@@ -185,9 +187,10 @@ pub async fn rollback(
                 target, zone.serial
             )));
         }
-        let version = db::zone_version::get_by_serial_tx(&mut tx, zone.id, target, LockLevel::None)
-            .await?
-            .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
+        let version =
+            db::zone_version::get_by_serial_tx(&mut tx, zone.id, target, LockLevel::Unlocked)
+                .await?
+                .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
 
         let new_serial = generate_serial(Some(zone.serial))?;
         let new_serial_wire = serial_to_u32(new_serial).map_err(ServiceError::internal)?;
@@ -284,7 +287,7 @@ pub async fn rollback(
             let record = Record {
                 id: 0,
                 name: target.name.clone(),
-                record_type: target.record_type.clone(),
+                record_type: target.record_type,
                 value: target.value.clone(),
                 ttl: target.ttl,
                 priority: target.priority,
@@ -303,7 +306,7 @@ pub async fn rollback(
         };
 
         // A preview stops after reconstruction and validation, before restoring rows.
-        if dry_run {
+        if run.is_dry_run() {
             return Ok((
                 RollbackZoneResponse {
                     applied: false,

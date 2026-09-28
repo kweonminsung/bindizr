@@ -6,6 +6,7 @@ use super::{
     value::{MAX_RECORD_RDATA, parse_quoted_string, parse_u8_record_field},
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaaRecordValue<'a> {
     flags: u8,
     tag: &'a str,

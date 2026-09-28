@@ -77,7 +77,7 @@ impl Record {
     pub fn match_key(&self) -> RecordKey {
         RecordKey {
             name: self.name.clone(),
-            record_type: self.record_type.clone(),
+            record_type: self.record_type,
             rdata: self
                 .record_type
                 .canonical_value(&self.value, self.priority)
@@ -97,7 +97,7 @@ pub struct RecordSetKey {
 /// A record without its row identity: what a [`Record`] carries besides its
 /// id, zone, and creation time. The form of a record rebuilt from the journal
 /// and of the sets a diff compares, neither of which has a row.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordData {
     pub name: OwnerName,
     pub record_type: RecordType,
@@ -124,7 +124,7 @@ impl RecordData {
     pub fn match_key(&self) -> RecordKey {
         RecordKey {
             name: self.name.clone(),
-            record_type: self.record_type.clone(),
+            record_type: self.record_type,
             rdata: self
                 .record_type
                 .canonical_value(&self.value, self.priority)
@@ -171,7 +171,7 @@ impl RecordWithZone {
         Record {
             id: self.id,
             name: self.name.clone(),
-            record_type: self.record_type.clone(),
+            record_type: self.record_type,
             value: self.value.clone(),
             ttl: self.ttl,
             priority: self.priority,
@@ -182,22 +182,22 @@ impl RecordWithZone {
 }
 
 /// The record types bindizr stores.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RecordType {
     A,
-    AAAA,
-    CAA,
-    CNAME,
-    DNAME,
-    DS,
-    MX,
-    NAPTR,
-    TXT,
-    NS,
-    SRV,
-    PTR,
-    SSHFP,
-    TLSA,
+    Aaaa,
+    Caa,
+    Cname,
+    Dname,
+    Ds,
+    Mx,
+    Naptr,
+    Txt,
+    Ns,
+    Srv,
+    Ptr,
+    Sshfp,
+    Tlsa,
 }
 
 impl std::fmt::Display for RecordType {
@@ -263,19 +263,19 @@ impl std::str::FromStr for RecordType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "A" => Ok(RecordType::A),
-            "AAAA" => Ok(RecordType::AAAA),
-            "CAA" => Ok(RecordType::CAA),
-            "CNAME" => Ok(RecordType::CNAME),
-            "DNAME" => Ok(RecordType::DNAME),
-            "DS" => Ok(RecordType::DS),
-            "MX" => Ok(RecordType::MX),
-            "NAPTR" => Ok(RecordType::NAPTR),
-            "TXT" => Ok(RecordType::TXT),
-            "NS" => Ok(RecordType::NS),
-            "SRV" => Ok(RecordType::SRV),
-            "PTR" => Ok(RecordType::PTR),
-            "SSHFP" => Ok(RecordType::SSHFP),
-            "TLSA" => Ok(RecordType::TLSA),
+            "AAAA" => Ok(RecordType::Aaaa),
+            "CAA" => Ok(RecordType::Caa),
+            "CNAME" => Ok(RecordType::Cname),
+            "DNAME" => Ok(RecordType::Dname),
+            "DS" => Ok(RecordType::Ds),
+            "MX" => Ok(RecordType::Mx),
+            "NAPTR" => Ok(RecordType::Naptr),
+            "TXT" => Ok(RecordType::Txt),
+            "NS" => Ok(RecordType::Ns),
+            "SRV" => Ok(RecordType::Srv),
+            "PTR" => Ok(RecordType::Ptr),
+            "SSHFP" => Ok(RecordType::Sshfp),
+            "TLSA" => Ok(RecordType::Tlsa),
             _ => Err(ParseRecordTypeError::Unknown(s.to_string())),
         }
     }
@@ -289,19 +289,19 @@ impl TryFrom<Rtype> for RecordType {
     fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
         match rtype {
             Rtype::A => Ok(RecordType::A),
-            Rtype::NS => Ok(RecordType::NS),
-            Rtype::CNAME => Ok(RecordType::CNAME),
-            Rtype::DNAME => Ok(RecordType::DNAME),
-            Rtype::PTR => Ok(RecordType::PTR),
-            Rtype::CAA => Ok(RecordType::CAA),
-            Rtype::DS => Ok(RecordType::DS),
-            Rtype::SSHFP => Ok(RecordType::SSHFP),
-            Rtype::TLSA => Ok(RecordType::TLSA),
-            Rtype::MX => Ok(RecordType::MX),
-            Rtype::NAPTR => Ok(RecordType::NAPTR),
-            Rtype::TXT => Ok(RecordType::TXT),
-            Rtype::AAAA => Ok(RecordType::AAAA),
-            Rtype::SRV => Ok(RecordType::SRV),
+            Rtype::NS => Ok(RecordType::Ns),
+            Rtype::CNAME => Ok(RecordType::Cname),
+            Rtype::DNAME => Ok(RecordType::Dname),
+            Rtype::PTR => Ok(RecordType::Ptr),
+            Rtype::CAA => Ok(RecordType::Caa),
+            Rtype::DS => Ok(RecordType::Ds),
+            Rtype::SSHFP => Ok(RecordType::Sshfp),
+            Rtype::TLSA => Ok(RecordType::Tlsa),
+            Rtype::MX => Ok(RecordType::Mx),
+            Rtype::NAPTR => Ok(RecordType::Naptr),
+            Rtype::TXT => Ok(RecordType::Txt),
+            Rtype::AAAA => Ok(RecordType::Aaaa),
+            Rtype::SRV => Ok(RecordType::Srv),
             _ => Err(ParseRecordTypeError::Unsupported(rtype)),
         }
     }
@@ -312,19 +312,19 @@ impl RecordType {
     pub fn as_str(&self) -> &'static str {
         match self {
             RecordType::A => "A",
-            RecordType::AAAA => "AAAA",
-            RecordType::CAA => "CAA",
-            RecordType::CNAME => "CNAME",
-            RecordType::DNAME => "DNAME",
-            RecordType::DS => "DS",
-            RecordType::MX => "MX",
-            RecordType::NAPTR => "NAPTR",
-            RecordType::TXT => "TXT",
-            RecordType::NS => "NS",
-            RecordType::SRV => "SRV",
-            RecordType::PTR => "PTR",
-            RecordType::SSHFP => "SSHFP",
-            RecordType::TLSA => "TLSA",
+            RecordType::Aaaa => "AAAA",
+            RecordType::Caa => "CAA",
+            RecordType::Cname => "CNAME",
+            RecordType::Dname => "DNAME",
+            RecordType::Ds => "DS",
+            RecordType::Mx => "MX",
+            RecordType::Naptr => "NAPTR",
+            RecordType::Txt => "TXT",
+            RecordType::Ns => "NS",
+            RecordType::Srv => "SRV",
+            RecordType::Ptr => "PTR",
+            RecordType::Sshfp => "SSHFP",
+            RecordType::Tlsa => "TLSA",
         }
     }
 
@@ -332,19 +332,19 @@ impl RecordType {
     pub fn wire_type(&self) -> u16 {
         match self {
             RecordType::A => 1,
-            RecordType::NS => 2,
-            RecordType::CNAME => 5,
-            RecordType::DNAME => 39,
-            RecordType::DS => 43,
-            RecordType::PTR => 12,
-            RecordType::MX => 15,
-            RecordType::NAPTR => 35,
-            RecordType::TXT => 16,
-            RecordType::AAAA => 28,
-            RecordType::SRV => 33,
-            RecordType::SSHFP => 44,
-            RecordType::TLSA => 52,
-            RecordType::CAA => 257,
+            RecordType::Ns => 2,
+            RecordType::Cname => 5,
+            RecordType::Dname => 39,
+            RecordType::Ds => 43,
+            RecordType::Ptr => 12,
+            RecordType::Mx => 15,
+            RecordType::Naptr => 35,
+            RecordType::Txt => 16,
+            RecordType::Aaaa => 28,
+            RecordType::Srv => 33,
+            RecordType::Sshfp => 44,
+            RecordType::Tlsa => 52,
+            RecordType::Caa => 257,
         }
     }
 
@@ -355,32 +355,30 @@ impl RecordType {
         priority: Option<i32>,
     ) -> Result<(), ParseRecordValueError> {
         // Only MX and SRV encode a priority
-        if priority.is_some() && !matches!(self, RecordType::MX | RecordType::SRV) {
-            return Err(ParseRecordValueError::PriorityNotTaken {
-                record_type: self.clone(),
-            });
+        if priority.is_some() && !matches!(self, RecordType::Mx | RecordType::Srv) {
+            return Err(ParseRecordValueError::PriorityNotTaken { record_type: *self });
         }
 
         match self {
             RecordType::A => ARecordValue::parse(value).map(|_| ()),
-            RecordType::AAAA => AaaaRecordValue::parse(value).map(|_| ()),
-            RecordType::CAA => CaaRecordValue::parse(value)?.validate(),
-            RecordType::CNAME => CnameRecordValue::parse(value).map(|_| ()),
-            RecordType::DNAME => DnameRecordValue::parse(value).map(|_| ()),
-            RecordType::DS => DsRecordValue::parse(value)?.validate(),
-            RecordType::MX => MxRecordValue::parse(value, priority)?.validate(),
-            RecordType::NAPTR => NaptrRecordValue::parse(value)?.validate(),
+            RecordType::Aaaa => AaaaRecordValue::parse(value).map(|_| ()),
+            RecordType::Caa => CaaRecordValue::parse(value)?.validate(),
+            RecordType::Cname => CnameRecordValue::parse(value).map(|_| ()),
+            RecordType::Dname => DnameRecordValue::parse(value).map(|_| ()),
+            RecordType::Ds => DsRecordValue::parse(value)?.validate(),
+            RecordType::Mx => MxRecordValue::parse(value, priority)?.validate(),
+            RecordType::Naptr => NaptrRecordValue::parse(value)?.validate(),
             // Stored TXT is always the presentation form.
-            RecordType::TXT => TxtRecordValue::from_presentation(value)
+            RecordType::Txt => TxtRecordValue::from_presentation(value)
                 .ok_or_else(|| ParseRecordValueError::StoredTxtNotPresentation {
                     value: value.to_string(),
                 })?
                 .validate(),
-            RecordType::NS => NsRecordValue::parse(value).map(|_| ()),
-            RecordType::SRV => SrvRecordValue::parse(value, priority)?.validate(),
-            RecordType::PTR => PtrRecordValue::parse(value).map(|_| ()),
-            RecordType::SSHFP => SshfpRecordValue::parse(value)?.validate(),
-            RecordType::TLSA => TlsaRecordValue::parse(value)?.validate(),
+            RecordType::Ns => NsRecordValue::parse(value).map(|_| ()),
+            RecordType::Srv => SrvRecordValue::parse(value, priority)?.validate(),
+            RecordType::Ptr => PtrRecordValue::parse(value).map(|_| ()),
+            RecordType::Sshfp => SshfpRecordValue::parse(value)?.validate(),
+            RecordType::Tlsa => TlsaRecordValue::parse(value)?.validate(),
         }
     }
 
@@ -400,7 +398,7 @@ impl RecordType {
     /// the default serving applies; other types pass through to be rejected.
     pub fn stored_priority(&self, priority: Option<i32>) -> Option<i32> {
         match self {
-            RecordType::MX | RecordType::SRV => {
+            RecordType::Mx | RecordType::Srv => {
                 Some(priority.unwrap_or(i32::from(DEFAULT_PRIORITY)))
             }
             _ => priority,
@@ -417,36 +415,36 @@ impl RecordType {
             RecordType::A => ARecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::AAAA => AaaaRecordValue::parse(value)
+            RecordType::Aaaa => AaaaRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::CAA => CaaRecordValue::parse(value)
+            RecordType::Caa => CaaRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::CNAME | RecordType::DNAME | RecordType::NS | RecordType::PTR => {
+            RecordType::Cname | RecordType::Dname | RecordType::Ns | RecordType::Ptr => {
                 Cow::Owned(to_fqdn_lowercase(value))
             }
-            RecordType::DS => DsRecordValue::parse(value)
+            RecordType::Ds => DsRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::MX => MxRecordValue::parse(value, fallback_priority)
+            RecordType::Mx => MxRecordValue::parse(value, fallback_priority)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::NAPTR => NaptrRecordValue::parse(value)
+            RecordType::Naptr => NaptrRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
             // Parsed like every other type, so the content a caller typed and
             // the presentation form the row holds compare equal.
-            RecordType::TXT => TxtRecordValue::parse(value)
+            RecordType::Txt => TxtRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.to_presentation()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::SRV => SrvRecordValue::parse(value, fallback_priority)
+            RecordType::Srv => SrvRecordValue::parse(value, fallback_priority)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::SSHFP => SshfpRecordValue::parse(value)
+            RecordType::Sshfp => SshfpRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
-            RecordType::TLSA => TlsaRecordValue::parse(value)
+            RecordType::Tlsa => TlsaRecordValue::parse(value)
                 .map(|parsed| Cow::Owned(parsed.canonical()))
                 .unwrap_or(Cow::Borrowed(value)),
         }
@@ -464,43 +462,43 @@ impl RecordType {
         let trimmed = value.trim();
         match self {
             RecordType::A => ARecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::AAAA => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::CAA => {
+            RecordType::Aaaa => AaaaRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::Caa => {
                 let parsed = CaaRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            RecordType::CNAME => CnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::DNAME => DnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::DS => {
+            RecordType::Cname => CnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::Dname => DnameRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::Ds => {
                 let parsed = DsRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            RecordType::MX => {
+            RecordType::Mx => {
                 let parsed = MxRecordValue::parse(trimmed, priority)?;
                 parsed.validate()?;
                 Ok(parsed.to_stored())
             }
-            RecordType::NAPTR => {
+            RecordType::Naptr => {
                 let parsed = NaptrRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            RecordType::TXT => TxtRecordValue::parse(value).map(|parsed| parsed.to_presentation()),
-            RecordType::NS => NsRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::SRV => {
+            RecordType::Txt => TxtRecordValue::parse(value).map(|parsed| parsed.to_presentation()),
+            RecordType::Ns => NsRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::Srv => {
                 let parsed = SrvRecordValue::parse(trimmed, priority)?;
                 parsed.validate()?;
                 Ok(parsed.to_stored())
             }
-            RecordType::PTR => PtrRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
-            RecordType::SSHFP => {
+            RecordType::Ptr => PtrRecordValue::parse(trimmed).map(|parsed| parsed.canonical()),
+            RecordType::Sshfp => {
                 let parsed = SshfpRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
             }
-            RecordType::TLSA => {
+            RecordType::Tlsa => {
                 let parsed = TlsaRecordValue::parse(trimmed)?;
                 parsed.validate()?;
                 Ok(parsed.canonical())
@@ -510,7 +508,7 @@ impl RecordType {
 
     /// Format a stored value of this record type for display.
     pub fn display_value(&self, value: &str) -> String {
-        if *self == RecordType::TXT {
+        if *self == RecordType::Txt {
             return match TxtRecordValue::from_presentation(value)
                 .and_then(|rdata| rdata.to_content())
             {
@@ -521,8 +519,8 @@ impl RecordType {
         }
 
         match self {
-            RecordType::MX => display_last_name_field(value, 1),
-            RecordType::SRV => display_last_name_field(value, 3),
+            RecordType::Mx => display_last_name_field(value, 1),
+            RecordType::Srv => display_last_name_field(value, 3),
             _ if self.is_name_like() => to_fqdn_lowercase(value),
             _ => value.to_string(),
         }
@@ -538,8 +536,8 @@ impl RecordType {
     /// their presentation form, and other types use their display form.
     pub fn presentation_rdata(&self, value: &str, priority: Option<i32>) -> String {
         match self {
-            RecordType::TXT => value.to_string(),
-            RecordType::MX | RecordType::SRV => {
+            RecordType::Txt => value.to_string(),
+            RecordType::Mx | RecordType::Srv => {
                 format!(
                     "{} {}",
                     priority.unwrap_or(i32::from(DEFAULT_PRIORITY)),
@@ -587,12 +585,12 @@ fn to_display_text(text: &str) -> String {
 /// set, which is why it is rendered from here rather than spelled out per
 /// backend.
 pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
-    RecordType::CNAME,
-    RecordType::DNAME,
-    RecordType::NS,
-    RecordType::PTR,
-    RecordType::MX,
-    RecordType::SRV,
+    RecordType::Cname,
+    RecordType::Dname,
+    RecordType::Ns,
+    RecordType::Ptr,
+    RecordType::Mx,
+    RecordType::Srv,
 ];
 
 /// Record types the ExternalDNS provider manages. The API server and the
@@ -600,9 +598,9 @@ pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
 /// than being spelled out in each.
 pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
     RecordType::A,
-    RecordType::AAAA,
-    RecordType::CNAME,
-    RecordType::TXT,
+    RecordType::Aaaa,
+    RecordType::Cname,
+    RecordType::Txt,
 ];
 
 /// Render the trailing domain-name field of a stored record value.

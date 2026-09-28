@@ -2,21 +2,14 @@
 
 use bindizr_core::outln;
 use bindizr_service::types::{
-    ExportDnssecKeysResponse, ImportDnssecKeyPair, ImportDnssecKeyRequest,
+    DnssecStatusResponse, ExportDnssecKeysResponse, ImportDnssecKeyPair, ImportDnssecKeyRequest,
 };
 use clap::Subcommand;
 
 use super::print_status;
 use crate::{
-    cli::{
-        error::CliError,
-        output::{OutputFormat, parse_payload},
-    },
-    params::NameParams,
-    socket::{
-        client,
-        types::{DaemonCommandKind, ImportZoneDnssecKeysParams},
-    },
+    cli::{error::CliError, output::OutputFormat},
+    socket::{client, types::DaemonCommand},
 };
 
 /// Subcommands for moving raw key material in and out of bindizr.
@@ -77,10 +70,11 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
     match subcommand {
         DnssecKeysCommand::Export { name } => {
             let response =
-                client::send_command(DaemonCommandKind::ExportDnssecKeys, NameParams { name })
-                    .await?;
-            let exported: ExportDnssecKeysResponse = parse_payload(&response.data)?;
-            print_key_material(&exported);
+                client::send_command::<ExportDnssecKeysResponse>(DaemonCommand::ExportDnssecKeys {
+                    name,
+                })
+                .await?;
+            print_key_material(&response.data);
         }
         DnssecKeysCommand::Import {
             name,
@@ -108,21 +102,18 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
                     private_key,
                 });
             }
-            let response = client::send_command(
-                DaemonCommandKind::ImportDnssecKeys,
-                ImportZoneDnssecKeysParams {
+            let response =
+                client::send_command::<DnssecStatusResponse>(DaemonCommand::ImportDnssecKeys {
                     zone_name: name,
                     request: ImportDnssecKeyRequest {
                         keys,
                         policy_name: policy,
                     },
-                },
-            )
-            .await?;
+                })
+                .await?;
             print_status(&response.data, output)?;
         }
     }
-
     Ok(())
 }
 

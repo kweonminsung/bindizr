@@ -16,7 +16,7 @@ pub enum LockLevel {
     Shared,
     /// No row lock: either an existing lock protects these rows, or the caller
     /// accepts changes between reads.
-    None,
+    Unlocked,
 }
 
 impl LockLevel {
@@ -27,15 +27,17 @@ impl LockLevel {
         match self {
             LockLevel::Exclusive => " FOR UPDATE",
             LockLevel::Shared => " FOR SHARE",
-            LockLevel::None => "",
+            LockLevel::Unlocked => "",
         }
     }
 }
 
 /// A database transaction on whichever backend the `Db` connected to. A root
 /// `_tx` function matches it to hand the backend its own `sqlx::Transaction`.
+#[derive(Debug)]
 pub struct Transaction<'a>(pub(crate) TransactionKind<'a>);
 
+#[derive(Debug)]
 pub(crate) enum TransactionKind<'a> {
     MySql(sqlx::Transaction<'a, MySql>),
     Postgres(sqlx::Transaction<'a, Postgres>),

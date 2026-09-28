@@ -11,7 +11,7 @@ use crate::dns::{
 /// NSEC, and RRSIG rows the signer generates. These are system-owned and never
 /// user data — the record API cannot create or modify them, and lists them
 /// only behind its `signed` flag.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecRecord {
     pub id: i32,
     pub zone_id: i32,
@@ -55,7 +55,7 @@ impl DnssecRecord {
 
 /// A derived record joined with its zone name, as the signed records listing
 /// returns it.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecRecordWithZone {
     #[sqlx(try_from = "String")]
     pub name: OwnerName,

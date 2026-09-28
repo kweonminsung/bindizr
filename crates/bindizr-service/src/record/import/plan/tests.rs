@@ -84,7 +84,7 @@ fn replace_deletes_every_row_the_file_does_not_name() {
     let rows = [
         existing(1, "keep", RecordType::A, "192.0.2.1", 300),
         existing(2, "drop", RecordType::A, "192.0.2.9", 300),
-        existing(3, "drop", RecordType::TXT, "\"x\"", 300),
+        existing(3, "drop", RecordType::Txt, "\"x\"", 300),
     ];
     let want = [desired("keep", RecordType::A, "192.0.2.1", None)];
 
@@ -102,7 +102,7 @@ fn upsert_leaves_names_and_types_the_file_is_silent_about() {
     // business.
     let rows = [
         existing(1, "www", RecordType::A, "192.0.2.9", 300),
-        existing(2, "www", RecordType::TXT, "\"x\"", 300),
+        existing(2, "www", RecordType::Txt, "\"x\"", 300),
         existing(3, "other", RecordType::A, "192.0.2.8", 300),
     ];
     let want = [desired("www", RecordType::A, "192.0.2.1", None)];
@@ -160,13 +160,13 @@ fn a_value_the_file_spells_differently_is_the_same_record() {
     let rows = [existing(
         1,
         "alias",
-        RecordType::CNAME,
+        RecordType::Cname,
         "target.example.com.",
         300,
     )];
     let want = [desired(
         "alias",
-        RecordType::CNAME,
+        RecordType::Cname,
         "Target.Example.COM",
         None,
     )];

@@ -32,7 +32,7 @@ impl DnsMessageBuilder {
                     .clone()
                     .ok_or(EncodeMessageError::MissingRdata)?;
                 self.add_raw_rdata(
-                    change.record_name.to_wire(zone_name),
+                    change.record_name.to_wire_name(zone_name)?,
                     record_type.wire_type(),
                     change.record_ttl as u32,
                     rdata,
@@ -61,7 +61,7 @@ impl DnsMessageBuilder {
     pub fn add_soa(&mut self, zone: &Zone, serial: u32) -> Result<(), EncodeMessageError> {
         let rdata = zone.soa_rdata(serial)?;
         self.add_raw_rdata(
-            zone.name.to_wire(),
+            zone.name.to_wire_name()?,
             SOA_WIRE_TYPE,
             zone.default_ttl as u32,
             rdata,
@@ -81,7 +81,7 @@ impl DnsMessageBuilder {
         }
         .to_rdata()?;
         self.add_raw_rdata(
-            zone.name.to_wire(),
+            zone.name.to_wire_name()?,
             SOA_WIRE_TYPE,
             zone.default_ttl as u32,
             rdata,
@@ -134,7 +134,7 @@ impl DnsMessageBuilder {
         self.add_text_rdata(
             &owner_name,
             zone.default_ttl as u32,
-            &RecordType::NS,
+            &RecordType::Ns,
             "invalid",
             None,
         )
@@ -147,7 +147,7 @@ impl DnsMessageBuilder {
         self.add_text_rdata(
             &version_name,
             zone.default_ttl as u32,
-            &RecordType::TXT,
+            &RecordType::Txt,
             &TxtRecordValue::from_string("2").to_presentation(),
             None,
         )
@@ -165,7 +165,7 @@ impl DnsMessageBuilder {
         self.add_text_rdata(
             &ptr_name,
             zone.default_ttl as u32,
-            &RecordType::PTR,
+            &RecordType::Ptr,
             &ptr_target,
             None,
         )
@@ -200,7 +200,12 @@ impl DnsMessageBuilder {
     ) -> Result<(), EncodeMessageError> {
         let EncodedRdata { record_type, rdata } =
             EncodedRdata::from_columns(record_type, value, priority)?;
-        self.add_raw_rdata(name.to_wire(zone_name), record_type, ttl as u32, rdata)
+        self.add_raw_rdata(
+            name.to_wire_name(zone_name)?,
+            record_type,
+            ttl as u32,
+            rdata,
+        )
     }
 
     /// Adds a derived DNSSEC record; its RDATA is stored in wire form.
@@ -210,7 +215,7 @@ impl DnsMessageBuilder {
         zone_name: &ZoneName,
     ) -> Result<(), EncodeMessageError> {
         self.add_raw_rdata(
-            record.name.to_wire(zone_name),
+            record.name.to_wire_name(zone_name)?,
             record.record_type.wire_type(),
             record.ttl as u32,
             record.rdata.clone(),

@@ -23,7 +23,11 @@ const USER_CHANGES_FILTER: &str = r#"
                   )
               )"#;
 
-use crate::{LockLevel, error::DatabaseError, model::zone_version::ZoneVersion};
+use crate::{
+    LockLevel,
+    error::DatabaseError,
+    model::zone_version::{VersionScope, ZoneVersion},
+};
 
 /// Insert or update a zone version in the current transaction.
 pub(crate) async fn upsert_tx(
@@ -61,7 +65,7 @@ pub(crate) async fn upsert_tx(
     .execute(&mut **tx)
     .await?;
 
-    get_by_serial_tx(tx, version.zone_id, version.serial, LockLevel::None)
+    get_by_serial_tx(tx, version.zone_id, version.serial, LockLevel::Unlocked)
         .await?
         .ok_or_else(|| DatabaseError::QueryFailed(sqlx::Error::RowNotFound))
 }
@@ -112,14 +116,13 @@ pub(crate) async fn list_in_serial_range(
 pub(crate) async fn list(
     pool: &Pool<MySql>,
     zone_id: i32,
-    user_changes_only: bool,
+    scope: VersionScope,
     limit: u32,
     offset: u64,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
-    let filter = if user_changes_only {
-        USER_CHANGES_FILTER
-    } else {
-        ""
+    let filter = match scope {
+        VersionScope::UserChanges => USER_CHANGES_FILTER,
+        VersionScope::All => "",
     };
     let mut query = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
         r#"
@@ -131,7 +134,7 @@ pub(crate) async fn list(
         "#
     )))
     .bind(zone_id);
-    if user_changes_only {
+    if scope == VersionScope::UserChanges {
         query = query.bind(zone_id);
     }
     query
@@ -146,18 +149,17 @@ pub(crate) async fn list(
 pub(crate) async fn count(
     pool: &Pool<MySql>,
     zone_id: i32,
-    user_changes_only: bool,
+    scope: VersionScope,
 ) -> Result<u64, DatabaseError> {
-    let filter = if user_changes_only {
-        USER_CHANGES_FILTER
-    } else {
-        ""
+    let filter = match scope {
+        VersionScope::UserChanges => USER_CHANGES_FILTER,
+        VersionScope::All => "",
     };
     let mut query = sqlx::query_scalar(AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM zone_versions WHERE zone_id = ?{filter}"
     )))
     .bind(zone_id);
-    if user_changes_only {
+    if scope == VersionScope::UserChanges {
         query = query.bind(zone_id);
     }
     let count: i64 = query.fetch_one(pool).await?;

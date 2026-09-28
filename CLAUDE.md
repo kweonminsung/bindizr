@@ -71,23 +71,14 @@ in order, with the full suite green at each — however large the diff. A
 phase is never split to shrink its diff, only where the tree would not
 build otherwise. The HTTP API, the CLI, and the DNS behaviour — error codes
 and messages included — change in none of them, so the e2e suite is the
-regression gate throughout; only phase 1 touches the daemon socket, which
-the CLI and the daemon share in one binary. Until a phase lands, the code
+regression gate throughout; the daemon socket is no contract, since the
+CLI and the daemon share one binary. Until a phase lands, the code
 it names still has the old shape: new code follows the rule, a module is
 converted whole and never half, and an example in a rule that names the new
 shape is the target, not a claim about the tree. Delete a phase's entry
 when it lands, and this section when all have.
 
-1. **Shapes.** The socket's `DaemonCommandKind` + `serde_json::Value` +
-   `*Params` become one data-carrying `DaemonCommand`, and
-   `DaemonResponse { message, data: Value }` a `DaemonResponse<T>`. The
-   `bool` and `Option<&str>` selectors *Rust idioms* lists become enums,
-   parsed at the front end. `from_zone`, `from_token`, `from_key`,
-   `from_grant`, `from_policy`, `from_transfer(s)` and
-   `from_record_with_zone` become `From` impls and `from_version` a
-   `TryFrom`; `IntoOwner` goes, its callers writing `?`. Every type gains
-   the derives *Common traits* lists.
-2. **Newtypes.** `Serial` and `Ttl` replace the `i32` row / `u32` wire
+1. **Newtypes.** `Serial` and `Ttl` replace the `i32` row / `u32` wire
    pairs and `serial_to_u32` / `serial_to_i32`; `ZoneId`, `RecordId`,
    `TokenId`, `TsigKeyId`, `DnssecKeyId`, `PolicyId`, `SecondaryId` replace
    the bare `i32` keys — `list_by_zone_id_and_key_id_tx(tx, key_id,
@@ -191,15 +182,20 @@ each rule says which spelling is this project's.
   builder (`C-BUILDER`).
 - **An argument carries its meaning in its type** (`C-CUSTOM-TYPE`,
   `C-NEWTYPE`). A `bool` parameter states a fact the field is named by
-  (`enabled: bool` being written); a `bool` that selects what the function
-  does — `dry_run`, `force`, `skip_ds_check`, `signed`, `incremental`,
-  `user_changes_only` — is a two-variant enum named for the choice, so
-  `zone::delete(&caller, &name, Run::DryRun)` reads without the signature,
-  and several such choices on one call are one struct of named fields. An
-  `Option<&str>` that means "all" when `None` is an enum with an `All`
-  variant; an `Option<&str>` that spells an enum (`role`, `algorithm`,
-  `policy`) is parsed to that enum by the front end — parse at the
-  boundary, pass the type. A number with a meaning of its own is a
+  (`enabled: bool` being written, `incremental: bool` stored on the
+  transfer row); a `bool` that selects what the function does is a
+  two-variant enum named for the choice — `Run::DryRun`, `ZoneView::Signed`,
+  `DsCheck::Skip`, `Holddown::Skip`, `NotifySerial::Bump`,
+  `VersionScope::All`, `SigningPass::Full` — so `zone::delete(&cx, &caller,
+  &name, Run::DryRun)` reads without the signature, and several such
+  choices on one call are one struct of named fields. The front end that
+  parses the flag builds the enum (`Run::from_dry_run(dry_run)`) and the
+  socket carries it as such. An `Option<&str>` that means "all" when
+  `None` is an enum with an `All` variant (`NotifyTarget::All`); an
+  `Option<&str>` that spells an enum (`role`, `algorithm`) is parsed to
+  that enum by the front end — parse at the boundary, pass the type. A
+  policy *name* stays a string: it names a row, not a variant. A number
+  with a meaning of its own is a
   newtype: `Serial`, with the `i32` row form and the `u32` wire form as
   its conversions rather than free `serial_to_u32` helpers.
 - **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type
@@ -207,7 +203,8 @@ each rule says which spelling is this project's.
   its fields allow; `Copy` for a fieldless enum or a small plain struct;
   `Hash` and `Ord` when it keys a map or sorts; `Default` when the empty
   value means something (a filter); `Serialize` / `Deserialize` on every
-  payload and row. A fixed set keeps `as_str` and `Display` as
+  payload — a row carries neither, since nothing serializes one and two
+  hold secrets. A fixed set keeps `as_str` and `Display` as
   *Presentation* says.
 - **Casing is RFC 430** (`C-CASE`): an acronym is one word — `MySql`,
   `Postgres`, `Sqlite`, `Tsig`, `Dnssec` — and no lint is allowed away to

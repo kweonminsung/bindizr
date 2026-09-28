@@ -9,6 +9,7 @@ use super::{
 };
 use crate::dns::name::{encode_name, to_fqdn_lowercase};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NaptrRecordValue<'a> {
     order: u16,
     preference: u16,

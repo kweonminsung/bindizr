@@ -182,7 +182,7 @@ fn to_record_value_preserves_txt_character_string_boundaries() {
     let (_, second_value, _) = second.to_record_value(&second.rdata).unwrap();
 
     assert_ne!(first_value, second_value);
-    assert!(!RecordType::TXT.values_equal(&first_value, None, &second_value, None));
+    assert!(!RecordType::Txt.values_equal(&first_value, None, &second_value, None));
 }
 
 /// Verify that `to_record_value` follows compression pointer in name RDATA.
@@ -205,7 +205,7 @@ fn to_record_value_follows_compression_pointer_in_name_rdata() {
     };
 
     let (record_type, value, priority) = record.to_record_value(&message).unwrap();
-    assert_eq!(record_type, RecordType::CNAME);
+    assert_eq!(record_type, RecordType::Cname);
     assert_eq!(value, "example.com.");
     assert_eq!(priority, None);
 }
@@ -266,7 +266,7 @@ fn to_record_value_splits_srv_priority_into_its_own_column() {
 
     let (record_type, value, priority) = record.to_record_value(&rdata).unwrap();
 
-    assert_eq!(record_type, RecordType::SRV);
+    assert_eq!(record_type, RecordType::Srv);
     // The wire encoder reads back this 3-field form with the priority column.
     assert_eq!(value, "20 5060 sip.example.com.");
     assert_eq!(priority, Some(10));

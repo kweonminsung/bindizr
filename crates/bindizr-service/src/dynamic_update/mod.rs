@@ -30,7 +30,7 @@ use crate::{
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
 /// response code.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum DynamicUpdateError {
     #[error("{0}")]
     Refused(String),
@@ -71,6 +71,7 @@ impl From<bindizr_db::error::DatabaseError> for DynamicUpdateError {
 
 /// A condition the zone must satisfy before any update is applied
 /// (RFC 2136, Section 2.4). Owner names are absolute, as they arrive on the wire.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Prerequisite {
     /// CLASS ANY, TYPE ANY: the owner name must exist.
     NameInUse { name: String },
@@ -98,7 +99,8 @@ pub enum Prerequisite {
 }
 
 /// One update to apply (RFC 2136, Section 2.5). Owner names are absolute.
-pub enum UpdateOp {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateOperation {
     /// CLASS IN: add the record.
     AddRecord {
         name: String,
@@ -123,34 +125,35 @@ pub enum UpdateOp {
     },
 }
 
-impl UpdateOp {
+impl UpdateOperation {
     /// Return the owner name targeted by this update operation.
     fn name(&self) -> &str {
         match self {
-            UpdateOp::AddRecord { name, .. }
-            | UpdateOp::DeleteRecordSet { name, .. }
-            | UpdateOp::DeleteRecord { name, .. } => name,
+            UpdateOperation::AddRecord { name, .. }
+            | UpdateOperation::DeleteRecordSet { name, .. }
+            | UpdateOperation::DeleteRecord { name, .. } => name,
         }
     }
 
     /// The type this update touches; `None` for a whole-name delete.
     fn record_type(&self) -> Option<&RecordType> {
         match self {
-            UpdateOp::AddRecord { record_type, .. }
-            | UpdateOp::DeleteRecord { record_type, .. } => Some(record_type),
-            UpdateOp::DeleteRecordSet { record_type, .. } => record_type.as_ref(),
+            UpdateOperation::AddRecord { record_type, .. }
+            | UpdateOperation::DeleteRecord { record_type, .. } => Some(record_type),
+            UpdateOperation::DeleteRecordSet { record_type, .. } => record_type.as_ref(),
         }
     }
 }
 
 /// A decoded UPDATE message: the zone it targets, the key that signed it, and
 /// the sections to evaluate and apply.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynamicUpdate {
     pub zone_name: ZoneName,
     /// The verified signing key, or `None` for a request accepted unsigned.
     pub key: Option<TsigKey>,
     pub prerequisites: Vec<Prerequisite>,
-    pub updates: Vec<UpdateOp>,
+    pub updates: Vec<UpdateOperation>,
 }
 
 /// Apply an update as one transaction, reporting whether it changed
@@ -231,7 +234,7 @@ async fn authorize_key_tx(
     zone: &Zone,
     key: Option<&TsigKey>,
     prerequisites: &[Prerequisite],
-    updates: &[UpdateOp],
+    updates: &[UpdateOperation],
 ) -> Result<(), DynamicUpdateError> {
     let key = match key {
         None => return Ok(()),
@@ -295,11 +298,11 @@ async fn authorize_key_tx(
 async fn apply_op_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
-    op: &UpdateOp,
+    op: &UpdateOperation,
     new_serial: i32,
 ) -> Result<bool, DynamicUpdateError> {
     match op {
-        UpdateOp::AddRecord {
+        UpdateOperation::AddRecord {
             name,
             record_type,
             value,
@@ -310,7 +313,7 @@ async fn apply_op_tx(
 
             // Row-encode so nsupdate stores the same spelling as the other write
             // paths; TXT arrives already encoded from the wire rdata.
-            let value = if *record_type == RecordType::TXT {
+            let value = if *record_type == RecordType::Txt {
                 value.to_string()
             } else {
                 record_type.encoded_value(value, *priority).map_err(|e| {
@@ -342,7 +345,7 @@ async fn apply_op_tx(
                     value,
                     ttl: *ttl,
                     priority: record_type.stored_priority(*priority),
-                    record_type: record_type.clone(),
+                    record_type: *record_type,
                     zone_id: zone.id,
                     created_at: Utc::now(),
                 }],
@@ -351,10 +354,10 @@ async fn apply_op_tx(
 
             Ok(true)
         }
-        UpdateOp::DeleteRecordSet { name, record_type } => {
+        UpdateOperation::DeleteRecordSet { name, record_type } => {
             delete_matching_tx(tx, zone, name, record_type.as_ref(), None, None, new_serial).await
         }
-        UpdateOp::DeleteRecord {
+        UpdateOperation::DeleteRecord {
             name,
             record_type,
             value,

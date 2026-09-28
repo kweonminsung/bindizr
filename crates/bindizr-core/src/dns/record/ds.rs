@@ -9,6 +9,7 @@ use super::{
     },
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DsRecordValue {
     key_tag: u16,
     algorithm: u8,

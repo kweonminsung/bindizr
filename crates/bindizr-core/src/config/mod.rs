@@ -137,18 +137,19 @@ pub struct DatabaseConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
-    Mysql,
+    MySql,
     Sqlite,
-    Postgresql,
+    #[serde(rename = "postgresql")]
+    Postgres,
 }
 
 impl fmt::Display for DatabaseType {
     /// Write the database type in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
-            DatabaseType::Mysql => "mysql",
+            DatabaseType::MySql => "mysql",
             DatabaseType::Sqlite => "sqlite",
-            DatabaseType::Postgresql => "postgresql",
+            DatabaseType::Postgres => "postgresql",
         };
         write!(f, "{}", value)
     }
@@ -160,9 +161,9 @@ impl std::str::FromStr for DatabaseType {
     /// Parse a database type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "mysql" => Ok(DatabaseType::Mysql),
+            "mysql" => Ok(DatabaseType::MySql),
             "sqlite" => Ok(DatabaseType::Sqlite),
-            "postgresql" => Ok(DatabaseType::Postgresql),
+            "postgresql" => Ok(DatabaseType::Postgres),
             _ => Err(ConfigError::UnknownValue {
                 expected: "mysql, postgresql, or sqlite",
             }),
@@ -553,16 +554,16 @@ impl DatabaseConfig {
     /// Validate the database configuration fields.
     fn validate(&self) -> Result<(), ConfigError> {
         match self.database_type {
-            DatabaseType::Mysql if self.mysql.url.trim().is_empty() => {
+            DatabaseType::MySql if self.mysql.url.trim().is_empty() => {
                 Err(ConfigError::EmptyDatabaseLocation {
                     key: "database.mysql.url",
-                    database_type: DatabaseType::Mysql,
+                    database_type: DatabaseType::MySql,
                 })
             }
-            DatabaseType::Postgresql if self.postgresql.url.trim().is_empty() => {
+            DatabaseType::Postgres if self.postgresql.url.trim().is_empty() => {
                 Err(ConfigError::EmptyDatabaseLocation {
                     key: "database.postgresql.url",
-                    database_type: DatabaseType::Postgresql,
+                    database_type: DatabaseType::Postgres,
                 })
             }
             DatabaseType::Sqlite if self.sqlite.file_path.trim().is_empty() => {
@@ -577,6 +578,7 @@ impl DatabaseConfig {
 }
 
 /// The certificate and key files the API serves HTTPS with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TlsFiles<'a> {
     pub cert_file: &'a str,
     pub key_file: &'a str,

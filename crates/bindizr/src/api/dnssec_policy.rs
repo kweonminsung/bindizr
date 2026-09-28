@@ -91,7 +91,7 @@ pub(crate) async fn create_dnssec_policy(
 ) -> Result<Response, ApiError> {
     let policy = dnssec_policy::create(&cx, &caller, body).await?;
     let response = DnssecPolicyResponse {
-        dnssec_policy: GetDnssecPolicyResponse::from_policy(&policy),
+        dnssec_policy: GetDnssecPolicyResponse::from(&policy),
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
@@ -120,7 +120,7 @@ pub(crate) async fn get_dnssec_policy(
 ) -> Result<Response, ApiError> {
     let policy = dnssec_policy::get(&cx, &caller, &params.name).await?;
     let response = DnssecPolicyResponse {
-        dnssec_policy: GetDnssecPolicyResponse::from_policy(&policy),
+        dnssec_policy: GetDnssecPolicyResponse::from(&policy),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -154,7 +154,7 @@ pub(crate) async fn update_dnssec_policy(
 ) -> Result<Response, ApiError> {
     let policy = dnssec_policy::update(&cx, &caller, &params.name, body).await?;
     let response = DnssecPolicyResponse {
-        dnssec_policy: GetDnssecPolicyResponse::from_policy(&policy),
+        dnssec_policy: GetDnssecPolicyResponse::from(&policy),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

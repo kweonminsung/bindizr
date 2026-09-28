@@ -2,6 +2,7 @@ use std::net::Ipv6Addr;
 
 use super::ParseRecordValueError;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AaaaRecordValue(Ipv6Addr);
 
 impl AaaaRecordValue {

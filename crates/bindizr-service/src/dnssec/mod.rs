@@ -19,7 +19,7 @@ pub mod scheduler;
 mod status;
 mod withdraw;
 
-use bindizr_core::dns::dnssec::SignedViewParams;
+use bindizr_core::dns::dnssec::{SignedViewParams, SigningPass};
 use chrono::{Duration, Utc};
 pub use delegation::check_ds;
 pub(crate) use delegation::probe_delegation;
@@ -54,6 +54,7 @@ const SIGNATURE_INCEPTION_OFFSET_SECS: i64 = 3600;
 
 /// A signed zone as its operations load it: the row, the policy it signs
 /// under, and its keys.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SignedZone {
     pub(crate) zone: Zone,
     pub(crate) policy: DnssecPolicy,
@@ -69,12 +70,12 @@ pub(crate) async fn sign_zone_tx(
     zone: &Zone,
     new_serial: i32,
 ) -> Result<(), ServiceError> {
-    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::None).await?;
+    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Ok(());
     }
     let policy = get_zone_policy_tx(tx, zone).await?;
-    apply_signed_view_tx(tx, zone, &policy, new_serial, &keys, false).await?;
+    apply_signed_view_tx(tx, zone, &policy, new_serial, &keys, SigningPass::Refresh).await?;
     Ok(())
 }
 
@@ -85,7 +86,7 @@ async fn resign_zone_tx(
     cx: &Context,
     tx: &mut Transaction<'_>,
     signed: &SignedZone,
-    force: bool,
+    pass: SigningPass,
     subject: &ChangeSubject,
 ) -> Result<Option<i32>, ServiceError> {
     let new_serial = crate::serial::generate_serial(Some(signed.zone.serial))?;
@@ -95,7 +96,7 @@ async fn resign_zone_tx(
         &signed.policy,
         new_serial,
         &signed.keys,
-        force,
+        pass,
     )
     .await?
     {
@@ -115,7 +116,7 @@ async fn find_zone_policy_tx(
     let Some(policy_id) = zone.dnssec_policy_id else {
         return Ok(None);
     };
-    db::dnssec_policy::get_tx(tx, policy_id, LockLevel::None)
+    db::dnssec_policy::get_tx(tx, policy_id, LockLevel::Unlocked)
         .await?
         .map(Some)
         .ok_or_else(|| {
@@ -148,7 +149,7 @@ async fn get_signed_zone_tx(
     lock_level: LockLevel,
 ) -> Result<SignedZone, ServiceError> {
     let zone = zone::get_by_name_tx(tx, zone_name, lock_level).await?;
-    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::None).await?;
+    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
     }
@@ -166,7 +167,7 @@ async fn find_signed_zone_by_id_tx(
     let Some(zone) = db::zone::get_tx(tx, zone_id, lock_level).await? else {
         return Ok(None);
     };
-    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::None).await?;
+    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Ok(None);
     }
@@ -176,18 +177,18 @@ async fn find_signed_zone_by_id_tx(
 
 /// Apply the signed DNSSEC view and journal its changes under the held zone lock.
 ///
-/// Returns whether anything changed; `force` regenerates stored signatures.
+/// Returns whether anything changed.
 async fn apply_signed_view_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
     policy: &DnssecPolicy,
     new_serial: i32,
     keys: &[DnssecKey],
-    force: bool,
+    pass: SigningPass,
 ) -> Result<bool, ServiceError> {
     // Read both planes under the zone lock so the diff uses one consistent state.
-    let records = db::record::list_tx(tx, zone.id, LockLevel::None).await?;
-    let prev = db::dnssec_record::list_tx(tx, zone.id, LockLevel::None).await?;
+    let records = db::record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let prev = db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
 
     let withdraw_parent_ds = db::dnssec_withdrawal::get_tx(tx, zone.id).await?.is_some();
 
@@ -204,7 +205,7 @@ async fn apply_signed_view_tx(
         expiration: now + Duration::seconds(policy.signature_validity_secs()),
         expiration_jitter_secs: policy.expiration_jitter_secs(),
         refresh_secs: policy.signature_refresh_secs(),
-        force,
+        pass,
         withdraw_parent_ds,
     }
     .compute()
@@ -242,7 +243,7 @@ async fn apply_signed_view_tx(
         changes.push(ZoneChange {
             zone_id: zone.id,
             serial: new_serial,
-            operation: ChangeOperation::Del,
+            operation: ChangeOperation::Delete,
             record_name: row.name.clone(),
             record_type: JournalRecordType::Derived(row.record_type),
             record_value: None,

@@ -11,7 +11,7 @@ use crate::{
 
 /// Error surfaced to the CLI user: the daemon's message plus, when the daemon
 /// sent a machine-readable code, an actionable hint derived from it.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}")]
 pub(crate) struct CliError {
     pub(crate) code: Option<ErrorCode>,
@@ -20,7 +20,7 @@ pub(crate) struct CliError {
 }
 
 /// The kinds of failure that exit differently.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Failure {
     /// The request was rejected, by the daemon or before it was sent.
     Request,

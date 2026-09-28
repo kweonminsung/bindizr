@@ -14,7 +14,10 @@ use chrono::{DateTime, Utc};
 use thiserror::Error;
 use tokio::sync::{mpsc::UnboundedSender, watch};
 
-use crate::{error::ServiceError, notify::queue::NotifyJob};
+use crate::{
+    error::ServiceError,
+    notify::{NotifyTarget, queue::NotifyJob},
+};
 
 /// Why a reload left the configuration as it was.
 #[derive(Debug, Error)]
@@ -44,6 +47,7 @@ impl From<ReloadConfigError> for ServiceError {
 /// What every service function takes first. The workers that need it back
 /// (the NOTIFY queue, the scheduler) are spawned after it with an `Arc` of
 /// their own; only their senders live here.
+#[derive(Debug)]
 pub struct Context {
     /// Swapped whole by `reload_config`; a reader takes a snapshot, so one
     /// request decides on one version even if a reload lands mid-way.
@@ -149,8 +153,8 @@ impl Context {
 
     /// Queue a NOTIFY for later delivery. `false` once the worker has stopped,
     /// so the caller can fall back to sending inline.
-    pub(crate) fn enqueue_notify(&self, zone_name: Option<&str>) -> bool {
-        self.notify_jobs.send(NotifyJob::new(zone_name)).is_ok()
+    pub(crate) fn enqueue_notify(&self, target: NotifyTarget<'_>) -> bool {
+        self.notify_jobs.send(NotifyJob::new(target)).is_ok()
     }
 
     /// Hand the scheduler its period after a reload; an unchanged value is

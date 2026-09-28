@@ -256,7 +256,7 @@ impl TryFrom<String> for DnssecKeyState {
 
 /// A zone's DNSSEC signing key; key rows mark a signed zone. Private material
 /// is exported only through the daemon socket, never the HTTP API.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecKey {
     pub id: i32,
     pub zone_id: i32,

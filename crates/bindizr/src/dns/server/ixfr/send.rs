@@ -123,7 +123,7 @@ pub(crate) async fn send_ixfr_response(
 
             for change in serial_changes
                 .iter()
-                .filter(|c| c.operation == ChangeOperation::Del)
+                .filter(|c| c.operation == ChangeOperation::Delete)
             {
                 crate::dns::wire::add_answer_and_flush_if_needed(
                     &mut builder,

@@ -40,7 +40,7 @@ where
 }
 
 /// The query window of a listing that takes no other filter.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema, IntoParams)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
 #[serde(deny_unknown_fields)]
 pub struct PageFilter {
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
@@ -51,7 +51,7 @@ pub struct PageFilter {
 }
 
 /// A page of items together with its pagination metadata.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
     pub pagination: Pagination,
@@ -100,7 +100,7 @@ impl<T> PaginatedResponse<T> {
 }
 
 /// Pagination window and total count for a list response.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct Pagination {
     #[schema(example = 50)]
     pub limit: u32,

@@ -15,15 +15,16 @@ use crate::{
 };
 
 /// A record's value as the zone file spells it.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ZoneFileValue {
     /// Presentation-form rdata, for every type but TXT.
     Rdata(String),
     /// A TXT record's character-strings, already checked for UTF-8.
-    CharacterStrings(Vec<String>),
+    Segments(Vec<String>),
 }
 
 /// One record from a BIND zone file.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZoneFileRecord {
     /// Absolute owner name (e.g. `www.example.com.`).
     pub owner_fqdn: String,
@@ -35,6 +36,7 @@ pub struct ZoneFileRecord {
 
 /// The zone fields a file's SOA carries, for creating a zone from it. The
 /// record itself is never stored: a zone's SOA is built from its own columns.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZoneFileSoa {
     pub mname: String,
     pub rname: String,
@@ -46,6 +48,7 @@ pub struct ZoneFileSoa {
 }
 
 /// What a zone file yielded: its usable records, and what it could not use.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedZoneFile {
     pub records: Vec<ZoneFileRecord>,
     /// The apex SOA's fields, when the file carried one.
@@ -186,7 +189,7 @@ impl ParsedZoneFile {
                                 ));
                                 continue;
                             }
-                            (ZoneFileValue::CharacterStrings(segments), None)
+                            (ZoneFileValue::Segments(segments), None)
                         }
                         other => {
                             let raw = other.to_string();
@@ -194,7 +197,7 @@ impl ParsedZoneFile {
                             // priority column like the JSON API; both forms
                             // canonicalize equal.
                             match record_type {
-                                RecordType::MX | RecordType::SRV => {
+                                RecordType::Mx | RecordType::Srv => {
                                     let mut fields = raw.split_whitespace();
                                     match fields.next().and_then(|p| p.parse::<i32>().ok()) {
                                         Some(prio) => {

@@ -1,7 +1,10 @@
 //! What one scheduler step does to one zone: the transaction each scan's
 //! zone ids are handed to, and the journal retention that runs beside them.
 
-use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
+use bindizr_core::{
+    dns::dnssec::SigningPass,
+    model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
+};
 use chrono::{DateTime, Duration, Utc};
 
 use crate::{
@@ -10,10 +13,12 @@ use crate::{
     dnssec::{self, rollover::promotable_sep_key_ids},
     error::ServiceError,
     transaction,
+    types::Holddown,
     zone::version::ChangeSubject,
 };
 
 /// Rows one prune removed from a zone's history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PruneSummary {
     pub(crate) journal_rows: u64,
     pub(crate) version_rows: u64,
@@ -68,9 +73,15 @@ pub(crate) async fn resign_zone_by_zone_id(
             return Ok(None);
         };
 
-        if dnssec::resign_zone_tx(cx, &mut tx, &signed, false, &ChangeSubject::system())
-            .await?
-            .is_none()
+        if dnssec::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &ChangeSubject::system(),
+        )
+        .await?
+        .is_none()
         {
             return Ok(None);
         }
@@ -116,7 +127,14 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
             dnssec::publish_replacement_key_tx(&mut tx, &signed.zone, template, template.algorithm)
                 .await?;
         signed.keys.push(new_key);
-        dnssec::resign_zone_tx(cx, &mut tx, &signed, false, &ChangeSubject::system()).await?;
+        dnssec::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &ChangeSubject::system(),
+        )
+        .await?;
         Ok(Some(signed.zone.name.as_str().to_string()))
     }
     .await;
@@ -157,7 +175,14 @@ pub(crate) async fn promote_zsks_by_zone_id(
             dnssec::promote_published_keys_tx(&mut tx, &signed.zone, signed.keys, &due, None)
                 .await?;
 
-        dnssec::resign_zone_tx(cx, &mut tx, &signed, false, &ChangeSubject::system()).await?;
+        dnssec::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &ChangeSubject::system(),
+        )
+        .await?;
         Ok(Some(signed.zone.name.as_str().to_string()))
     }
     .await;
@@ -180,7 +205,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             return Ok(None);
         };
         // The same rule `ds-seen` applies, minus the errors it reports.
-        let Ok(awaiting) = promotable_sep_key_ids(&signed, false) else {
+        let Ok(awaiting) = promotable_sep_key_ids(&signed, Holddown::Wait) else {
             return Ok(None);
         };
         let delegation = match dnssec::probe_delegation(cx, &signed).await {
@@ -219,7 +244,14 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             delegation.ds_ttl,
         )
         .await?;
-        dnssec::resign_zone_tx(cx, &mut tx, &signed, false, &ChangeSubject::system()).await?;
+        dnssec::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &ChangeSubject::system(),
+        )
+        .await?;
         Ok(Some(signed.zone.name.as_str().to_string()))
     }
     .await;
@@ -284,7 +316,14 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         }
         signed.keys = remaining;
 
-        dnssec::resign_zone_tx(cx, &mut tx, &signed, false, &ChangeSubject::system()).await?;
+        dnssec::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &ChangeSubject::system(),
+        )
+        .await?;
         Ok(Some(signed.zone.name.as_str().to_string()))
     }
     .await;

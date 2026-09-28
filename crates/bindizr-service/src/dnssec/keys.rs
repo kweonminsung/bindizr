@@ -1,7 +1,7 @@
 //! Importing and exporting raw key material in BIND key-file form. Reached
 //! only over the daemon socket: private keys never transit the HTTP API.
 
-use bindizr_core::dns::dnssec::import_key;
+use bindizr_core::dns::dnssec::{SigningPass, import_key};
 use chrono::Utc;
 
 use super::status::build_status_tx;
@@ -87,7 +87,7 @@ pub async fn import_keys(
     let mut tx = transaction::begin_tx(cx, "failed to import DNSSEC keys").await?;
     let result = async {
         let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        if !db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::None)
+        if !db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked)
             .await?
             .is_empty()
         {
@@ -161,10 +161,15 @@ pub async fn import_keys(
             keys: stored,
         };
 
-        let new_serial =
-            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
-                .await?
-                .unwrap_or(signed.zone.serial);
+        let new_serial = super::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &caller.change_subject(),
+        )
+        .await?
+        .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,

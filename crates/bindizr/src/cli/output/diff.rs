@@ -14,7 +14,7 @@ fn rdata(diff_value: &RecordDiffValue, record_type: &str) -> String {
     match record_type {
         "TXT" => {
             let segments: &[String] = match &diff_value.value {
-                RecordValueRequest::String(value) => std::slice::from_ref(value),
+                RecordValueRequest::Text(value) => std::slice::from_ref(value),
                 RecordValueRequest::Segments(segments) => segments,
             };
             segments

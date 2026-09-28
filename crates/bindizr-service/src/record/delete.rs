@@ -12,7 +12,7 @@ use crate::{
     model::record::{Record, RecordData},
     serial::generate_serial,
     transaction,
-    types::{DeleteRecordsFilter, DeleteRecordsResponse, GetRecordResponse},
+    types::{DeleteRecordsFilter, DeleteRecordsResponse, GetRecordResponse, Run},
     zone::{self, diff::build_record_diff, validation::normalize_zone_name},
 };
 
@@ -23,7 +23,7 @@ pub async fn delete(
     cx: &Context,
     caller: &Caller,
     record_id: i32,
-    dry_run: bool,
+    run: Run,
 ) -> Result<DeleteRecordsResponse, ServiceError> {
     // Resolve zone_id with a non-locking read so the tx locks zone before
     // record (the create/bulk/import order); the reverse can deadlock.
@@ -108,8 +108,8 @@ pub async fn delete(
             .collect();
 
         let response = DeleteRecordsResponse {
-            applied: !dry_run,
-            dry_run,
+            applied: !run.is_dry_run(),
+            dry_run: run.is_dry_run(),
             deleted: 1,
             records: vec![GetRecordResponse::from_record_and_zone_name(
                 &existing_record,
@@ -117,7 +117,7 @@ pub async fn delete(
             )],
             diff: build_record_diff(&zone, &before, &after),
         };
-        if dry_run {
+        if run.is_dry_run() {
             return Ok(response);
         }
 

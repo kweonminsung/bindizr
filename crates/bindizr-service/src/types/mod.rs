@@ -20,11 +20,11 @@ mod tsig;
 mod version;
 mod zone;
 
-pub use common::{ErrorResponse, HealthResponse, HealthStatus, MessageResponse};
+pub use common::{ErrorResponse, HealthResponse, HealthStatus, MessageResponse, Run};
 pub use dnssec::{
     DnssecDelegationInfo, DnssecDelegationKeyInfo, DnssecDsInfo, DnssecKeyInfo, DnssecKeyMaterial,
-    DnssecStatusResponse, DsState, EnableDnssecRequest, ExportDnssecKeysResponse,
-    ImportDnssecKeyPair, ImportDnssecKeyRequest, RolloverDnssecRequest,
+    DnssecStatusResponse, DsCheck, DsState, EnableDnssecRequest, ExportDnssecKeysResponse,
+    Holddown, ImportDnssecKeyPair, ImportDnssecKeyRequest, RolloverDnssecRequest,
     UpdateDnssecSettingsRequest,
 };
 pub use dnssec_policy::{
@@ -64,6 +64,6 @@ pub use version::{
 };
 pub use zone::{
     CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-    SecondaryStatus, SecondaryStatusResponse, UpdateZoneRequest, ZoneResponse, ZoneStatusResponse,
-    ZoneWriteResponse, build_notify_message,
+    NotifySerial, SecondaryStatus, SecondaryStatusResponse, UpdateZoneRequest, ZoneResponse,
+    ZoneStatusResponse, ZoneView, ZoneWriteResponse, build_notify_message,
 };

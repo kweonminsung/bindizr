@@ -20,7 +20,9 @@ use crate::{
     time::elapsed_ms,
     transaction,
     ttl::validate_record_ttl,
-    types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
+    types::{
+        BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest, Run,
+    },
     zone::{self, diff::build_record_diff},
 };
 
@@ -37,6 +39,7 @@ struct BulkTimings {
 
 /// A record whose type and value are parsed and ready to insert. The owner name
 /// is kept raw so the constraint validator can normalize it against the zone.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PreparedRecord {
     pub(crate) owner_name: String,
     pub(crate) record_type: RecordType,
@@ -91,7 +94,7 @@ pub(crate) async fn create_with_changes_tx(
             serial: new_serial,
             operation: ChangeOperation::Add,
             record_name: record.name.clone(),
-            record_type: JournalRecordType::User(record.record_type.clone()),
+            record_type: JournalRecordType::User(record.record_type),
             record_value: Some(record.value.clone()),
             record_rdata: None,
             record_ttl: record.ttl,
@@ -117,7 +120,7 @@ pub(crate) async fn update_with_changes_tx(
         serial: new_serial,
         operation,
         record_name: record.name.clone(),
-        record_type: JournalRecordType::User(record.record_type.clone()),
+        record_type: JournalRecordType::User(record.record_type),
         record_value: Some(record.value.clone()),
         record_rdata: None,
         record_ttl: record.ttl,
@@ -125,7 +128,7 @@ pub(crate) async fn update_with_changes_tx(
         derived: false,
     };
     let changes = [
-        change(ChangeOperation::Del, existing),
+        change(ChangeOperation::Delete, existing),
         change(ChangeOperation::Add, &updated),
     ];
     db::zone_change::create_many_tx(tx, &changes).await?;
@@ -150,9 +153,9 @@ pub(crate) async fn delete_with_changes_tx(
         .map(|record| ZoneChange {
             zone_id,
             serial: new_serial,
-            operation: ChangeOperation::Del,
+            operation: ChangeOperation::Delete,
             record_name: record.name.clone(),
-            record_type: JournalRecordType::User(record.record_type.clone()),
+            record_type: JournalRecordType::User(record.record_type),
             record_value: Some(record.value.clone()),
             record_rdata: None,
             record_ttl: record.ttl,
@@ -172,7 +175,7 @@ pub async fn create_bulk(
     caller: &Caller,
     zone_name: &str,
     items: &[RecordItem],
-    dry_run: bool,
+    run: Run,
 ) -> Result<BulkRecordsResponse, ServiceError> {
     if items.is_empty() {
         return Err(ServiceError::invalid_input(
@@ -255,7 +258,7 @@ pub async fn create_bulk(
 
         // The diff is only shown on a dry-run preview, so keep the `before`
         // copy (and pay for building the diff) off the apply hot path.
-        let before_records = if dry_run {
+        let before_records = if run.is_dry_run() {
             existing_records.clone()
         } else {
             Vec::new()
@@ -298,7 +301,7 @@ pub async fn create_bulk(
             let record = Record {
                 id: 0,
                 name: owner_name,
-                record_type: prepared_record.record_type.clone(),
+                record_type: prepared_record.record_type,
                 value: prepared_record.value.clone(),
                 ttl,
                 priority: prepared_record.priority,
@@ -310,13 +313,13 @@ pub async fn create_bulk(
         }
         timings.build_records_ms = elapsed_ms(t);
 
-        if dry_run {
+        if run.is_dry_run() {
             // Mirror `validate_delegations_tx` against the simulated final
             // state: an insert-only batch can only violate it at names it
             // touches, and those are all indexed here.
             for (name, rows) in &records_by_name {
-                if rows.iter().any(|r| r.record_type == RecordType::DS)
-                    && !rows.iter().any(|r| r.record_type == RecordType::NS)
+                if rows.iter().any(|r| r.record_type == RecordType::Ds)
+                    && !rows.iter().any(|r| r.record_type == RecordType::Ns)
                 {
                     return Err(ServiceError::record_conflict(format!(
                         "DS records at '{}' require delegation NS records at the same name",
@@ -361,11 +364,11 @@ pub async fn create_bulk(
         "event=record_bulk_create zone={} count={} dry_run={}",
         zone_name,
         created_records.len(),
-        dry_run
+        run.is_dry_run()
     );
 
     let t = Instant::now();
-    if !dry_run {
+    if !run.is_dry_run() {
         crate::notify::notify_after_update(cx, zone_name.as_str()).await;
     }
     let notify_ms = elapsed_ms(t);
@@ -394,9 +397,9 @@ pub async fn create_bulk(
         .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone_name))
         .collect();
     Ok(BulkRecordsResponse {
-        applied: !dry_run,
-        dry_run,
-        added: if dry_run {
+        applied: !run.is_dry_run(),
+        dry_run: run.is_dry_run(),
+        added: if run.is_dry_run() {
             0
         } else {
             created_records.len() as u64

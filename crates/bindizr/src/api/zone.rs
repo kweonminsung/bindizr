@@ -7,13 +7,14 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
+use bindizr_core::model::zone_version::VersionScope;
 use bindizr_service::{
     Context, record,
     types::{
         CreateZoneRequest, DEFAULT_PAGE_LIMIT, DeleteZoneResponse, ErrorResponse, GetZoneResponse,
         GetZonesFilter, ImportZoneRequest, ImportZoneResponse, PaginatedResponse,
-        RollbackZoneResponse, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
-        ZoneResponse, ZoneStatusResponse, ZoneVersionResponse, ZoneWriteResponse,
+        RollbackZoneResponse, Run, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
+        ZoneResponse, ZoneStatusResponse, ZoneVersionResponse, ZoneView, ZoneWriteResponse,
     },
     zone,
 };
@@ -84,7 +85,7 @@ pub(crate) async fn get_zone_status(
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExportZoneQuery {
     signed: Option<bool>,
@@ -114,7 +115,13 @@ pub(crate) async fn export_zone(
     Path(params): Path<NameParams>,
     Query(query): Query<ExportZoneQuery>,
 ) -> Result<Response, ApiError> {
-    let zone_file = zone::export(&cx, &caller, &params.name, query.signed.unwrap_or(false)).await?;
+    let zone_file = zone::export(
+        &cx,
+        &caller,
+        &params.name,
+        ZoneView::from_signed(query.signed.unwrap_or(false)),
+    )
+    .await?;
     Ok((
         StatusCode::OK,
         [("content-type", "text/plain; charset=utf-8")],
@@ -155,7 +162,7 @@ pub(crate) async fn list_zone_versions(
         &params.name,
         query.limit.or(Some(DEFAULT_PAGE_LIMIT)),
         query.offset,
-        query.include_signer_serials,
+        VersionScope::from_include_signer_serials(query.include_signer_serials),
     )
     .await?;
     Ok((StatusCode::OK, Json(response)).into_response())
@@ -216,11 +223,18 @@ pub(crate) async fn rollback_zone(
     Path(params): Path<ZoneVersionParams>,
     Query(query): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    let response = zone::rollback(&cx, &caller, &params.name, params.serial, query.dry_run).await?;
+    let response = zone::rollback(
+        &cx,
+        &caller,
+        &params.name,
+        params.serial,
+        Run::from_dry_run(query.dry_run),
+    )
+    .await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct VersionListQuery {
     limit: Option<u32>,
@@ -230,13 +244,13 @@ pub(crate) struct VersionListQuery {
 }
 
 /// One of a zone's versions, by name and serial.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ZoneVersionParams {
     name: String,
     serial: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct VersionDiffQuery {
     from: u32,
@@ -322,7 +336,7 @@ pub(crate) async fn get_zone(
     Ok((
         StatusCode::OK,
         Json(ZoneResponse {
-            zone: GetZoneResponse::from_zone(&zone),
+            zone: GetZoneResponse::from(&zone),
         }),
     )
         .into_response())
@@ -418,7 +432,13 @@ pub(crate) async fn delete_zone(
     Path(params): Path<NameParams>,
     Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    let response = zone::delete(&cx, &caller, &params.name, preview.dry_run).await?;
+    let response = zone::delete(
+        &cx,
+        &caller,
+        &params.name,
+        Run::from_dry_run(preview.dry_run),
+    )
+    .await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 

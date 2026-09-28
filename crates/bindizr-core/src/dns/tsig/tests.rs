@@ -124,7 +124,7 @@ fn extract_response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Ve
 /// Extract the DNS response from a TSIG verification failure.
 fn extract_failed_response(err: TsigError) -> Vec<u8> {
     match err {
-        TsigError::Failed { response, .. } => response,
+        TsigError::Rejected { response, .. } => response,
         other => panic!("expected TsigFailed, got {:?}", other),
     }
 }

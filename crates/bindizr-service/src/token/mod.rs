@@ -89,7 +89,7 @@ pub async fn list(
 
     let tokens = db::api_token::list_all(cx.db()).await?;
     PaginatedResponse::from_collection(
-        tokens.iter().map(GetTokenResponse::from_token).collect(),
+        tokens.iter().map(GetTokenResponse::from).collect(),
         page.limit,
         page.offset,
     )

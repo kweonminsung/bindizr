@@ -9,7 +9,8 @@ use axum::{
 };
 use bindizr_service::{
     Context,
-    types::{ErrorResponse, MessageResponse, build_notify_message},
+    notify::NotifyTarget,
+    types::{ErrorResponse, MessageResponse, NotifySerial, build_notify_message},
     zone,
 };
 use serde::Deserialize;
@@ -29,7 +30,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         .route("/zones/{name}/notify", routing::post(notify_zone))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NotifyQuery {
     bump_serial: Option<bool>,
@@ -56,11 +57,10 @@ pub(crate) async fn notify_all_zones(
     RequestCaller(caller): RequestCaller,
     Query(query): Query<NotifyQuery>,
 ) -> Result<Response, ApiError> {
-    let bump_serial = query.bump_serial.unwrap_or(false);
-    zone::notify(&cx, &caller, None, bump_serial).await?;
-
+    let serial = NotifySerial::from_bump_serial(query.bump_serial.unwrap_or(false));
+    zone::notify(&cx, &caller, NotifyTarget::All, serial).await?;
     let response = MessageResponse {
-        message: build_notify_message(None, bump_serial),
+        message: build_notify_message(NotifyTarget::All, serial),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -89,11 +89,11 @@ pub(crate) async fn notify_zone(
     Path(params): Path<NameParams>,
     Query(query): Query<NotifyQuery>,
 ) -> Result<Response, ApiError> {
-    let bump_serial = query.bump_serial.unwrap_or(false);
-    zone::notify(&cx, &caller, Some(&params.name), bump_serial).await?;
-
+    let serial = NotifySerial::from_bump_serial(query.bump_serial.unwrap_or(false));
+    let target = NotifyTarget::Zone(&params.name);
+    zone::notify(&cx, &caller, target, serial).await?;
     let response = MessageResponse {
-        message: build_notify_message(Some(&params.name), bump_serial),
+        message: build_notify_message(target, serial),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

@@ -79,7 +79,10 @@ fn a_published_sep_key_past_its_hold_down_is_promotable() {
         key(2, DnssecKeyRole::Csk, DnssecKeyState::Published, -1),
     ];
 
-    assert_eq!(promotable_sep_key_ids(&signed(&keys), false).unwrap(), [2]);
+    assert_eq!(
+        promotable_sep_key_ids(&signed(&keys), Holddown::Wait).unwrap(),
+        [2]
+    );
 }
 
 /// Verify that nothing published means no rollover to confirm.
@@ -87,7 +90,7 @@ fn a_published_sep_key_past_its_hold_down_is_promotable() {
 fn nothing_published_means_no_rollover_to_confirm() {
     let keys = [key(1, DnssecKeyRole::Csk, DnssecKeyState::Active, -1)];
 
-    let error = promotable_sep_key_ids(&signed(&keys), false).unwrap_err();
+    let error = promotable_sep_key_ids(&signed(&keys), Holddown::Wait).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::DnssecNoRolloverInProgress);
 }
@@ -102,7 +105,7 @@ fn a_zsk_rollover_has_no_parent_ds_to_confirm() {
         key(2, DnssecKeyRole::Zsk, DnssecKeyState::Published, -1),
     ];
 
-    let error = promotable_sep_key_ids(&signed(&keys), false).unwrap_err();
+    let error = promotable_sep_key_ids(&signed(&keys), Holddown::Wait).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::InvalidInput);
     assert!(error.to_string().contains("ZSK"), "{}", error);
@@ -116,7 +119,7 @@ fn a_hold_down_still_running_names_the_time_to_retry() {
         key(2, DnssecKeyRole::Ksk, DnssecKeyState::Published, 1),
     ];
 
-    let error = promotable_sep_key_ids(&signed(&keys), false).unwrap_err();
+    let error = promotable_sep_key_ids(&signed(&keys), Holddown::Wait).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::InvalidInput);
     assert!(error.to_string().contains("retry after"), "{}", error);
@@ -130,7 +133,10 @@ fn skipping_the_hold_down_promotes_anyway() {
         key(2, DnssecKeyRole::Ksk, DnssecKeyState::Published, 1),
     ];
 
-    assert_eq!(promotable_sep_key_ids(&signed(&keys), true).unwrap(), [2]);
+    assert_eq!(
+        promotable_sep_key_ids(&signed(&keys), Holddown::Skip).unwrap(),
+        [2]
+    );
 }
 
 /// Verify that the latest deadline among the published keys gates them all.
@@ -143,7 +149,7 @@ fn the_latest_deadline_among_the_published_keys_gates_them_all() {
         key(2, DnssecKeyRole::Ksk, DnssecKeyState::Published, 1),
     ];
 
-    let error = promotable_sep_key_ids(&signed(&keys), false).unwrap_err();
+    let error = promotable_sep_key_ids(&signed(&keys), Holddown::Wait).unwrap_err();
 
     assert_eq!(error.code(), ErrorCode::InvalidInput);
 }

@@ -15,7 +15,7 @@ use super::display::{
     display_transfer, display_transfer_kind, display_yes_no,
 };
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct ZoneRow {
     #[tabled(rename = "ID", display = "display_option")]
     pub(crate) id: Option<i32>,
@@ -63,7 +63,7 @@ impl From<&GetZoneResponse> for ZoneRow {
     }
 }
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct RecordRow {
     #[tabled(rename = "ID", display = "display_option")]
     pub(crate) id: Option<i32>,
@@ -110,7 +110,7 @@ impl RecordRow {
     }
 }
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct DnssecKeyRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
@@ -149,7 +149,7 @@ impl From<&DnssecKeyInfo> for DnssecKeyRow {
     }
 }
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct DnssecPolicyRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
@@ -192,7 +192,7 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
     }
 }
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct SecondaryRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
@@ -222,7 +222,7 @@ impl From<&GetSecondaryResponse> for SecondaryRow {
     }
 }
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct VersionRow {
     #[tabled(rename = "SERIAL")]
     pub(crate) serial: u32,
@@ -268,7 +268,7 @@ impl From<&ZoneVersionResponse> for VersionRow {
 }
 
 /// Table row for records reconstructed at a version serial (no database id).
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct VersionRecordRow {
     #[tabled(rename = "NAME")]
     pub(crate) name: String,
@@ -295,7 +295,7 @@ impl From<&VersionRecordResponse> for VersionRecordRow {
     }
 }
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct RollbackSummaryRow {
     #[tabled(rename = "TARGET-SERIAL")]
     pub(crate) target_serial: u32,
@@ -331,7 +331,7 @@ impl From<&RollbackZoneResponse> for RollbackSummaryRow {
     }
 }
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct SecondaryStatusRow {
     #[tabled(rename = "ADDRESS")]
     pub(crate) address: String,
@@ -380,7 +380,7 @@ impl SecondaryStatusRow {
     }
 }
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct ImportSummaryRow {
     /// The counts describe the plan, which a rejected file never applies.
     #[tabled(rename = "APPLIED", display = "display_yes_no")]
@@ -419,7 +419,7 @@ impl From<&ImportZoneResponse> for ImportSummaryRow {
 }
 
 /// TOKEN is filled only from a create response, the one time the secret is shown.
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct TokenRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
@@ -469,7 +469,7 @@ impl From<&CreatedTokenResponse> for TokenRow {
 }
 
 /// SECRET is filled from the create and get responses; a listing carries none.
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct TsigKeyRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
@@ -509,7 +509,7 @@ impl From<&TsigKeyResponse> for TsigKeyRow {
     }
 }
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct TokenGrantRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
@@ -547,7 +547,7 @@ impl From<&GetTokenGrantResponse> for TokenGrantRow {
     }
 }
 
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct TsigGrantRow {
     #[tabled(rename = "ID")]
     pub(crate) id: i32,
@@ -587,7 +587,7 @@ impl From<&GetTsigGrantResponse> for TsigGrantRow {
 
 /// One transfer Bindizr served a secondary, as `secondary transfers` lists
 /// it.
-#[derive(Debug, Tabled)]
+#[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct TransferRow {
     #[tabled(rename = "ZONE")]
     pub(crate) zone_name: String,

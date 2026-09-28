@@ -1,14 +1,12 @@
 use std::time::Duration;
 
-use bindizr_service::{error::ServiceError, types::MessageResponse};
+use bindizr_service::types::MessageResponse;
 use tokio::sync::mpsc;
 
-use crate::socket::{
-    server::{SocketContext, to_response_data},
-    types::DaemonResponse,
-};
+use crate::socket::{server::SocketContext, types::DaemonResponse};
 
 /// Daemon lifecycle transitions requestable over the control socket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DaemonControl {
     Shutdown,
     Restart,
@@ -21,23 +19,23 @@ pub(crate) fn channel() -> (mpsc::Sender<DaemonControl>, mpsc::Receiver<DaemonCo
 }
 
 /// Request daemon shutdown and acknowledge the control request.
-pub(crate) fn shutdown(socket_cx: &SocketContext) -> Result<DaemonResponse, ServiceError> {
+pub(crate) fn shutdown(socket_cx: &SocketContext) -> DaemonResponse<MessageResponse> {
     send_control(socket_cx, DaemonControl::Shutdown);
     let message = "Bindizr is shutting down".to_string();
-    Ok(DaemonResponse {
+    DaemonResponse {
         message: message.clone(),
-        data: to_response_data(MessageResponse { message })?,
-    })
+        data: MessageResponse { message },
+    }
 }
 
 /// Request daemon restart and acknowledge the control request.
-pub(crate) fn restart(socket_cx: &SocketContext) -> Result<DaemonResponse, ServiceError> {
+pub(crate) fn restart(socket_cx: &SocketContext) -> DaemonResponse<MessageResponse> {
     send_control(socket_cx, DaemonControl::Restart);
     let message = "Bindizr is restarting".to_string();
-    Ok(DaemonResponse {
+    DaemonResponse {
         message: message.clone(),
-        data: to_response_data(MessageResponse { message })?,
-    })
+        data: MessageResponse { message },
+    }
 }
 
 /// Deliver the transition after a short delay so the command response reaches

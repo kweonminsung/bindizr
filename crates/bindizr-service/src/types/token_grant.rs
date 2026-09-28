@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 use crate::model::token_grant::TokenGrantWithNames;
 
 /// API representation of a token grant.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetTokenGrantResponse {
     #[schema(example = 1)]
     pub id: i32,
@@ -24,9 +24,9 @@ pub struct GetTokenGrantResponse {
     pub created_at: DateTime<Utc>,
 }
 
-impl GetTokenGrantResponse {
+impl From<&TokenGrantWithNames> for GetTokenGrantResponse {
     /// Build a token-grant response with its token and zone names.
-    pub fn from_grant(grant: &TokenGrantWithNames) -> Self {
+    fn from(grant: &TokenGrantWithNames) -> Self {
         GetTokenGrantResponse {
             id: grant.grant.id,
             token_name: grant.api_token_name.clone(),
@@ -40,7 +40,7 @@ impl GetTokenGrantResponse {
 }
 
 /// A single token grant wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct TokenGrantResponse {
     pub token_grant: GetTokenGrantResponse,
 }

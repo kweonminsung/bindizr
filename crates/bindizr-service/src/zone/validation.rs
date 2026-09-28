@@ -14,6 +14,7 @@ use crate::{
 const MAX_EMAIL_LEN: usize = 254;
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NormalizedCreateZoneRequest {
     pub(crate) name: ZoneName,
     pub(crate) mname: String,
@@ -188,7 +189,7 @@ fn is_valid_email_local_char(c: char) -> bool {
 
 /// Resolved SOA timing fields. Used both as the fallback source (zone defaults on
 /// create, the existing zone's values on update) and as the validated output.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ResolvedSoaTimers {
     pub(crate) refresh: i32,
     pub(crate) retry: i32,

@@ -22,13 +22,13 @@ pub(crate) async fn reconstruct_records_at_serial_tx(
     target_serial: i32,
     current_serial: i32,
 ) -> Result<Vec<RecordData>, ServiceError> {
-    let records = db::record::list_tx(tx, zone_id, LockLevel::None).await?;
+    let records = db::record::list_tx(tx, zone_id, LockLevel::Unlocked).await?;
     let changes = db::zone_change::list_between_serials_tx(
         tx,
         zone_id,
         target_serial,
         current_serial,
-        LockLevel::None,
+        LockLevel::Unlocked,
     )
     .await?;
 
@@ -65,7 +65,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
         };
         let record = RecordData {
             name: change.record_name.clone(),
-            record_type: record_type.clone(),
+            record_type: *record_type,
             value: record_value.to_string(),
             ttl: change.record_ttl,
             priority: change.record_priority,
@@ -83,7 +83,7 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
                     change.record_type
                 ),
             },
-            ChangeOperation::Del => {
+            ChangeOperation::Delete => {
                 // The recorded row existed before this serial; restore it.
                 state.entry(key).or_default().push(record);
             }
@@ -104,7 +104,7 @@ pub(crate) async fn list_records_at_serial_tx(
     current_serial: i32,
 ) -> Result<Vec<RecordData>, ServiceError> {
     if serial == current_serial {
-        let mut records: Vec<RecordData> = db::record::list_tx(tx, zone_id, LockLevel::None)
+        let mut records: Vec<RecordData> = db::record::list_tx(tx, zone_id, LockLevel::Unlocked)
             .await?
             .into_iter()
             .map(RecordData::from)

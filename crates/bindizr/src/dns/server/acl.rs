@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bindizr_core::dns::address::{DEFAULT_DNS_PORT, ParsedAddress};
+use bindizr_core::dns::address::{AddressTarget, DEFAULT_DNS_PORT};
 use bindizr_service::{dns_client::resolve_address_entry, error::ServiceError, secondary};
 
 use super::DnsContext;
@@ -56,9 +56,9 @@ impl SecondaryAcl {
         let entries = addresses
             .into_iter()
             .map(
-                |address| match ParsedAddress::parse(address, DEFAULT_DNS_PORT) {
-                    ParsedAddress::SocketAddr(addr) => SecondaryAclEntry::Ip(addr.ip()),
-                    ParsedAddress::HostPort(host_port) => SecondaryAclEntry::HostPort(host_port),
+                |address| match AddressTarget::parse(address, DEFAULT_DNS_PORT) {
+                    AddressTarget::Socket(addr) => SecondaryAclEntry::Ip(addr.ip()),
+                    AddressTarget::HostPort(host_port) => SecondaryAclEntry::HostPort(host_port),
                 },
             )
             .collect();
@@ -72,6 +72,7 @@ enum SecondaryAclEntry {
     HostPort(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct CachedAddrs {
     addrs: Vec<IpAddr>,
     expires_at: Instant,
@@ -79,6 +80,7 @@ struct CachedAddrs {
 
 /// The hostnames the ACL resolved lately, so a transfer request waits on the
 /// resolver once per window rather than once per query.
+#[derive(Debug)]
 pub(crate) struct ResolvedAddrs {
     cache: Mutex<HashMap<String, CachedAddrs>>,
 }

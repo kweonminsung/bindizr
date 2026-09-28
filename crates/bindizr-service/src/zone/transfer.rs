@@ -13,6 +13,7 @@ use crate::{
 
 /// The outcome of asking to transfer a zone: what may be read, or the answer
 /// the DNS plane owes instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransferAccess<T> {
     Granted(T),
     /// No enabled zone carries the name: NOTAUTH.
@@ -33,6 +34,7 @@ impl<T> TransferAccess<T> {
 }
 
 /// A zone with both record planes, as a full transfer serves them.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferContent {
     pub zone: Zone,
     pub records: Vec<Record>,
@@ -67,8 +69,9 @@ pub async fn authorize_transfer_content_by_name(
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
-        let records = db::record::list_tx(&mut tx, zone.id, LockLevel::None).await?;
-        let dnssec_records = db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::None).await?;
+        let records = db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let dnssec_records =
+            db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         Ok(TransferAccess::Granted(TransferContent {
             zone,
             records,

@@ -2,7 +2,7 @@
 //! promote it once the parent DS is confirmed. ZSK promotion, which needs no
 //! parent interaction, is the scheduler's.
 
-use bindizr_core::dns::dnssec::generate_key;
+use bindizr_core::dns::dnssec::{SigningPass, generate_key};
 use chrono::{Duration, Utc};
 
 use super::status::build_status_tx;
@@ -19,7 +19,7 @@ use crate::{
         zone::Zone,
     },
     transaction,
-    types::{DnssecDelegationKeyInfo, DnssecStatusResponse},
+    types::{DnssecDelegationKeyInfo, DnssecStatusResponse, DsCheck, Holddown},
 };
 
 /// Start a key rollover: pre-publish a same-algorithm replacement for
@@ -28,7 +28,7 @@ pub async fn start_rollover(
     cx: &Context,
     caller: &Caller,
     zone_name: &str,
-    role: Option<&str>,
+    role: Option<DnssecKeyRole>,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
@@ -48,17 +48,14 @@ pub async fn start_rollover(
         }
 
         let target_role = match role {
-            Some(name) => {
-                let parsed = name
-                    .parse::<DnssecKeyRole>()
-                    .map_err(ServiceError::invalid_input)?;
-                if !signed.keys.iter().any(|key| key.role == parsed) {
+            Some(role) => {
+                if !signed.keys.iter().any(|key| key.role == role) {
                     return Err(ServiceError::invalid_input(format!(
                         "zone '{}' has no {} key to roll",
-                        signed.zone.name, parsed
+                        signed.zone.name, role
                     )));
                 }
-                parsed
+                role
             }
             None => {
                 if signed.keys.iter().all(|key| key.role == DnssecKeyRole::Csk) {
@@ -82,10 +79,15 @@ pub async fn start_rollover(
             publish_replacement_key_tx(&mut tx, &signed.zone, template, template.algorithm).await?;
         signed.keys.push(new_key);
 
-        let new_serial =
-            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
-                .await?
-                .unwrap_or(signed.zone.serial);
+        let new_serial = super::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &caller.change_subject(),
+        )
+        .await?
+        .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,
@@ -134,14 +136,14 @@ pub(crate) async fn start_algorithm_rollover_tx(
 
 /// Promote the pre-published SEP key(s) and retire the keys they replace
 /// once the parent serves their DS and the hold-down has passed;
-/// `skip_ds_check` takes the DS on the operator's word, `skip_holddown`
-/// waives the wait.
+/// `ds_check` may take the DS on the operator's word, `holddown` may waive
+/// the wait.
 pub async fn advance_rollover(
     cx: &Context,
     caller: &Caller,
     zone_name: &str,
-    skip_ds_check: bool,
-    skip_holddown: bool,
+    ds_check: DsCheck,
+    holddown: Holddown,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
@@ -149,11 +151,11 @@ pub async fn advance_rollover(
     let result = async {
         let mut signed =
             super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        let awaiting = promotable_sep_key_ids(&signed, skip_holddown)?;
+        let awaiting = promotable_sep_key_ids(&signed, holddown)?;
         // The answer that confirms the DS also says how long resolvers
         // cache it — the wait the key it replaces must outlive.
         let mut parent_ds_ttl = None;
-        if !skip_ds_check {
+        if ds_check == DsCheck::Probe {
             let delegation = super::probe_delegation(cx, &signed).await?;
             parent_ds_ttl = delegation.ds_ttl;
             let unconfirmed: Vec<&DnssecDelegationKeyInfo> = delegation
@@ -184,10 +186,15 @@ pub async fn advance_rollover(
             promote_published_keys_tx(&mut tx, &signed.zone, signed.keys, &awaiting, parent_ds_ttl)
                 .await?;
 
-        let new_serial =
-            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
-                .await?
-                .unwrap_or(signed.zone.serial);
+        let new_serial = super::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &caller.change_subject(),
+        )
+        .await?
+        .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,
@@ -201,13 +208,13 @@ pub async fn advance_rollover(
     .await;
     let response = transaction::finish_tx(tx, result, "failed to advance key rollover").await?;
 
-    if skip_ds_check {
+    if ds_check == DsCheck::Skip {
         log::warn!(
             "event=dnssec_rollover_ds_seen_ds_check_skipped zone={}",
             response.zone_name
         );
     }
-    if skip_holddown {
+    if holddown == Holddown::Skip {
         log::warn!(
             "event=dnssec_rollover_ds_seen_holddown_skipped zone={}",
             response.zone_name
@@ -292,11 +299,11 @@ pub(crate) async fn promote_published_keys_tx(
 
 /// The pre-published SEP keys a promotion may take; an error when no
 /// rollover is in progress, it replaces only the ZSK, or (unless
-/// `skip_holddown`) a wait runs. `ds-seen` reports those errors; the
+/// `holddown` is skipped) a wait runs. `ds-seen` reports those errors; the
 /// scheduler reads them as nothing to do.
 pub(crate) fn promotable_sep_key_ids(
     signed: &SignedZone,
-    skip_holddown: bool,
+    holddown: Holddown,
 ) -> Result<Vec<i32>, ServiceError> {
     if !signed
         .keys
@@ -330,7 +337,7 @@ pub(crate) fn promotable_sep_key_ids(
         .map(|key| key.eligible_at)
         .max()
         .expect("ds_published names at least one key");
-    if !skip_holddown && promotable_at > Utc::now() {
+    if holddown == Holddown::Wait && promotable_at > Utc::now() {
         return Err(ServiceError::invalid_input(format!(
             "the replacement key must stay published so resolvers holding the previous \
              DNSKEY records can learn it; retry after {}, or skip the hold-down and accept \

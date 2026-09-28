@@ -30,6 +30,7 @@ pub fn is_response(message: &[u8]) -> bool {
 }
 
 /// A DNS query parsed once at the listener and handed to every handler.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedQuery {
     pub qname: Name<Vec<u8>>,
     /// Presentation form of `qname` without the trailing dot.

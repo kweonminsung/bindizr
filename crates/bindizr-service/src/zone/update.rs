@@ -13,7 +13,7 @@ use crate::{
     record::validate_record_name_in_zone,
     serial::generate_serial,
     transaction,
-    types::{CreateZoneRequest, GetZoneResponse, UpdateZoneRequest, ZoneWriteResponse},
+    types::{CreateZoneRequest, GetZoneResponse, Run, UpdateZoneRequest, ZoneWriteResponse},
     zone::{
         validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
         version::ChangeSubject,
@@ -55,7 +55,7 @@ pub(crate) fn soa_replacement_changes(
     };
 
     Ok(vec![
-        change(ChangeOperation::Del, old_zone)?,
+        change(ChangeOperation::Delete, old_zone)?,
         change(ChangeOperation::Add, new_zone)?,
     ])
 }
@@ -80,7 +80,7 @@ pub async fn update(
         zone_name,
         &caller.change_subject(),
         request.enabled,
-        request.dry_run,
+        Run::from_dry_run(request.dry_run),
         |existing| {
             CreateZoneRequest {
                 dry_run: false,
@@ -114,7 +114,7 @@ pub async fn update(
     Ok(ZoneWriteResponse {
         applied: !request.dry_run,
         dry_run: request.dry_run,
-        zone: GetZoneResponse::from_zone(&updated_zone),
+        zone: GetZoneResponse::from(&updated_zone),
     })
 }
 
@@ -125,7 +125,7 @@ async fn update_locked(
     zone_name: &str,
     subject: &ChangeSubject,
     enabled: Option<bool>,
-    dry_run: bool,
+    run: Run,
     build: impl FnOnce(&Zone) -> CreateZoneRequest,
 ) -> Result<Zone, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "Failed to update zone").await?;
@@ -142,7 +142,7 @@ async fn update_locked(
         // A longer zone name lengthens every record's wire name, so the
         // records must still fit under it or the zone stops transferring.
         if validated.name != existing_zone.name {
-            let records = db::record::list_tx(&mut tx, zone_id, LockLevel::None).await?;
+            let records = db::record::list_tx(&mut tx, zone_id, LockLevel::Unlocked).await?;
             for record in &records {
                 validate_record_name_in_zone(&record.name, &validated.name)?;
             }
@@ -199,7 +199,7 @@ async fn update_locked(
         };
 
         // The change is validated, so a dry run stops here.
-        if dry_run {
+        if run.is_dry_run() {
             return Ok(AppliedZoneUpdate {
                 new_serial: candidate.serial,
                 zone: candidate,
@@ -257,13 +257,13 @@ async fn update_locked(
     );
 
     // Announce the zone's new serial after its data and version have committed.
-    if !dry_run {
+    if !run.is_dry_run() {
         crate::notify::notify_after_update(cx, updated_zone.name.as_str()).await;
     }
 
     // Renaming or toggling a zone also changes the catalog seen by secondaries.
     let config = cx.config();
-    if !dry_run && catalog_changed {
+    if !run.is_dry_run() && catalog_changed {
         crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }
 

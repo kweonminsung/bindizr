@@ -11,6 +11,7 @@ use crate::dns::message::{Rcode, Rtype};
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
 
+#[derive(Debug)]
 pub struct Metrics {
     registry: Registry,
     pub database_up: IntGauge,
@@ -323,6 +324,7 @@ impl Metrics {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XfrResult {
     Ok,
     Refused,
@@ -353,6 +355,7 @@ impl XfrResult {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SoaResult {
     Ok,
     Refused,
@@ -374,6 +377,7 @@ impl SoaResult {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NsupdateResult {
     /// A TSIG failure answers with its own NOTAUTH, so it is kept apart from
     /// the NOTAUTH an update refused on its merits gets.
@@ -419,6 +423,7 @@ impl NsupdateResult {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotifyResult {
     Ok,
     Failed,
@@ -440,22 +445,23 @@ impl NotifyResult {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerResult {
     Ok,
     Failed,
     /// The pass unwound; the scheduler itself survived.
-    Panic,
+    Panicked,
 }
 
 impl SchedulerResult {
-    const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::Panic];
+    const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::Panicked];
 
     /// The metric label value of this scheduler result.
     fn label(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Failed => "failed",
-            Self::Panic => "panic",
+            Self::Panicked => "panic",
         }
     }
 }

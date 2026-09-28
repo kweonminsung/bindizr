@@ -52,8 +52,8 @@ impl Config {
         // continues to use its file path.
         if let Some(value) = get_env("BINDIZR_DATABASE_URL") {
             match self.database.database_type {
-                DatabaseType::Mysql => self.database.mysql.url = value,
-                DatabaseType::Postgresql => self.database.postgresql.url = value,
+                DatabaseType::MySql => self.database.mysql.url = value,
+                DatabaseType::Postgres => self.database.postgresql.url = value,
                 DatabaseType::Sqlite => {}
             }
         }

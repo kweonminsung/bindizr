@@ -45,6 +45,7 @@ pub enum Caller {
 
 /// One record-plane write to authorize: the owner name relative to the zone
 /// (stored form) and its type. `None` types only match unrestricted grants.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordWrite<'a> {
     pub(crate) relative_name: OwnerName,
     pub(crate) record_type: Option<&'a RecordType>,

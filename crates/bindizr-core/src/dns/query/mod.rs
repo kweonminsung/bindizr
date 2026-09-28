@@ -179,7 +179,7 @@ fn parse_response(query_id: u16, response: &[u8]) -> Result<Message<&[u8]>, Read
 }
 
 /// One answer record from a zone-transfer response, in presentation form.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferRecord {
     /// Owner name as an absolute presentation name (trailing dot).
     pub name: String,

@@ -51,10 +51,10 @@ pub enum TsigError {
     #[error("TSIG record not found during validation")]
     RecordMissing,
     #[error("failed to build TSIG error response ({rcode})")]
-    ErrorResponse { rcode: TsigRcode },
+    BuildResponse { rcode: TsigRcode },
     /// Validation failed; carries the complete NOTAUTH response to send.
     #[error("TSIG validation failed: {rcode}")]
-    Failed { rcode: TsigRcode, response: Vec<u8> },
+    Rejected { rcode: TsigRcode, response: Vec<u8> },
 }
 
 /// Signing an outbound request failed.
@@ -195,6 +195,7 @@ fn verify<T>(
 }
 
 /// How a request presents itself for authorization.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequestSignature {
     /// No TSIG record: the address decides, as it did before keys existed.
     Absent,
@@ -253,11 +254,11 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
     };
 
     match response {
-        Some(response) => TsigError::Failed {
+        Some(response) => TsigError::Rejected {
             rcode: error,
             response,
         },
-        None => TsigError::ErrorResponse { rcode: error },
+        None => TsigError::BuildResponse { rcode: error },
     }
 }
 

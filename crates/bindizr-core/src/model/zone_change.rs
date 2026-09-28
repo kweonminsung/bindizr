@@ -13,7 +13,7 @@ use crate::{
 ///
 /// Exactly one of `record_value` and `record_rdata` is set, matching
 /// `derived`; a CHECK constraint enforces it on the row.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ZoneChange {
     pub zone_id: i32,
     pub serial: i32,
@@ -47,7 +47,7 @@ pub struct ParseChangeOperationError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeOperation {
     Add,
-    Del,
+    Delete,
 }
 
 impl ChangeOperation {
@@ -55,7 +55,7 @@ impl ChangeOperation {
     pub fn as_str(self) -> &'static str {
         match self {
             ChangeOperation::Add => "ADD",
-            ChangeOperation::Del => "DEL",
+            ChangeOperation::Delete => "DEL",
         }
     }
 }
@@ -67,7 +67,7 @@ impl std::str::FromStr for ChangeOperation {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "ADD" => Ok(ChangeOperation::Add),
-            "DEL" => Ok(ChangeOperation::Del),
+            "DEL" => Ok(ChangeOperation::Delete),
             other => Err(ParseChangeOperationError {
                 value: other.to_string(),
             }),

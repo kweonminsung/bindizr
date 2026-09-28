@@ -142,7 +142,7 @@ pub async fn list_by_filter(
 
     let total = db::zone::count_by_filter(cx.db(), zone_filter.clone()).await?;
     let zones = db::zone::list_by_filter(cx.db(), zone_filter).await?;
-    let items = zones.iter().map(GetZoneResponse::from_zone).collect();
+    let items = zones.iter().map(GetZoneResponse::from).collect();
     Ok(PaginatedResponse::from_page(items, limit, offset, total))
 }
 

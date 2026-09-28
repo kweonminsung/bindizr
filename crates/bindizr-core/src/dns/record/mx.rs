@@ -4,6 +4,7 @@ use super::{
 };
 use crate::dns::name::{encode_name, to_fqdn_lowercase};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MxRecordValue<'a> {
     priority: u16,
     target: &'a str,
@@ -32,7 +33,7 @@ impl<'a> MxRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 1035, Section 3.3.9).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
+    pub(crate) fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = self.priority.to_be_bytes().to_vec();
         rdata.extend_from_slice(&encode_name(self.target)?);
         Rdata::new(rdata)

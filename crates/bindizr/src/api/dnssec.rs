@@ -7,11 +7,13 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
+use bindizr_core::model::dnssec_key::DnssecKeyRole;
 use bindizr_service::{
     Context, dnssec,
+    error::ServiceError,
     types::{
-        DnssecStatusResponse, EnableDnssecRequest, ErrorResponse, MessageResponse,
-        RolloverDnssecRequest, UpdateDnssecSettingsRequest,
+        DnssecStatusResponse, DsCheck, EnableDnssecRequest, ErrorResponse, Holddown,
+        MessageResponse, RolloverDnssecRequest, UpdateDnssecSettingsRequest,
     },
 };
 use serde::Deserialize;
@@ -117,7 +119,7 @@ pub(crate) async fn enable_dnssec(
     Ok((StatusCode::CREATED, Json(status)).into_response())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DisableDnssecQuery {
     skip_ds_check: Option<bool>,
@@ -153,7 +155,7 @@ pub(crate) async fn disable_dnssec(
         &cx,
         &caller,
         &params.name,
-        query.skip_ds_check.unwrap_or(false),
+        DsCheck::from_skip_ds_check(query.skip_ds_check.unwrap_or(false)),
     )
     .await?;
     let response = MessageResponse {
@@ -221,11 +223,17 @@ pub(crate) async fn start_dnssec_rollover(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<RolloverDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::start_rollover(&cx, &caller, &params.name, body.role.as_deref()).await?;
+    let role = body
+        .role
+        .as_deref()
+        .map(str::parse::<DnssecKeyRole>)
+        .transpose()
+        .map_err(ServiceError::invalid_input)?;
+    let status = dnssec::start_rollover(&cx, &caller, &params.name, role).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DsSeenQuery {
     skip_ds_check: Option<bool>,
@@ -264,8 +272,8 @@ pub(crate) async fn ds_seen_dnssec_rollover(
         &cx,
         &caller,
         &params.name,
-        query.skip_ds_check.unwrap_or(false),
-        query.skip_holddown.unwrap_or(false),
+        DsCheck::from_skip_ds_check(query.skip_ds_check.unwrap_or(false)),
+        Holddown::from_skip_holddown(query.skip_holddown.unwrap_or(false)),
     )
     .await?;
     Ok((StatusCode::OK, Json(status)).into_response())

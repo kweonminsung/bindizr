@@ -23,6 +23,7 @@ fn log_level() -> Level {
 }
 
 /// Simple `log` implementation that writes to stderr.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Logger;
 
 impl log::Log for Logger {

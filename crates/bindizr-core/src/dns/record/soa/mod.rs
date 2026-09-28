@@ -23,6 +23,7 @@ pub enum ParseMailboxError {
 
 /// An SOA value as its wire fields (RFC 1035, Section 3.3.13); `rname` is the
 /// mailbox presentation form, not an email address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SoaRecordValue<'a> {
     pub mname: &'a str,
     pub rname: &'a str,
@@ -35,7 +36,7 @@ pub struct SoaRecordValue<'a> {
 
 impl<'a> SoaRecordValue<'a> {
     /// Encode the SOA value into wire-format record data.
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
+    pub(crate) fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = encode_name(self.mname)?;
         rdata.extend_from_slice(&encode_name(self.rname)?);
         for field in [

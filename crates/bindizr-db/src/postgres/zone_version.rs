@@ -23,7 +23,11 @@ const USER_CHANGES_FILTER: &str = r#"
                   )
               )"#;
 
-use crate::{LockLevel, error::DatabaseError, model::zone_version::ZoneVersion};
+use crate::{
+    LockLevel,
+    error::DatabaseError,
+    model::zone_version::{VersionScope, ZoneVersion},
+};
 
 /// Insert or update a zone version in the current transaction.
 pub(crate) async fn upsert_tx(
@@ -111,14 +115,13 @@ pub(crate) async fn list_in_serial_range(
 pub(crate) async fn list(
     pool: &Pool<Postgres>,
     zone_id: i32,
-    user_changes_only: bool,
+    scope: VersionScope,
     limit: u32,
     offset: u64,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
-    let filter = if user_changes_only {
-        USER_CHANGES_FILTER
-    } else {
-        ""
+    let filter = match scope {
+        VersionScope::UserChanges => USER_CHANGES_FILTER,
+        VersionScope::All => "",
     };
     sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
         r#"
@@ -141,12 +144,11 @@ pub(crate) async fn list(
 pub(crate) async fn count(
     pool: &Pool<Postgres>,
     zone_id: i32,
-    user_changes_only: bool,
+    scope: VersionScope,
 ) -> Result<u64, DatabaseError> {
-    let filter = if user_changes_only {
-        USER_CHANGES_FILTER
-    } else {
-        ""
+    let filter = match scope {
+        VersionScope::UserChanges => USER_CHANGES_FILTER,
+        VersionScope::All => "",
     };
     let count: i64 = sqlx::query_scalar(AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM zone_versions WHERE zone_id = $1{filter}"

@@ -16,6 +16,7 @@ use crate::{
 
 /// A record the import wants present, with its owner name already normalized so
 /// it can be compared against existing records.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesiredRecord {
     pub(crate) prepared: PreparedRecord,
     pub(crate) stored_name: OwnerName,
@@ -31,6 +32,7 @@ impl DesiredRecord {
 }
 
 /// What an import will change, decided before anything is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ImportPlan<'a> {
     pub(crate) dels: Vec<Record>,
     /// Reinserted through `adds`; kept apart so the summary counts them as updates.
@@ -153,7 +155,7 @@ impl ImportPlan<'_> {
             .collect();
         after.extend(self.adds.iter().map(|add| RecordData {
             name: add.stored_name.clone(),
-            record_type: add.prepared.record_type.clone(),
+            record_type: add.prepared.record_type,
             value: add.prepared.value.clone(),
             ttl: add.prepared.ttl.unwrap_or(zone.default_ttl),
             priority: add.prepared.priority,

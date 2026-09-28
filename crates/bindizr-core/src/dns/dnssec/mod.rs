@@ -11,7 +11,7 @@ use domain::base::{Name, iana::Rtype};
 pub use key::{GenerateKeyError, generate_key};
 pub use key_file::{ImportKeyError, import_key};
 pub use rdata::{DS_DIGEST_TYPES, KeyRdataError};
-pub use signed_view::{SignZoneError, SignedViewDiff, SignedViewParams};
+pub use signed_view::{SignZoneError, SignedViewDiff, SignedViewParams, SigningPass};
 use thiserror::Error;
 
 use crate::{
@@ -35,16 +35,14 @@ pub enum WireNameError {
 pub type WireName = Name<Vec<u8>>;
 
 /// A typed name's wire bytes into the domain form.
-pub(crate) fn to_wire_name(
-    wire: Result<Vec<u8>, ParseNameError>,
-) -> Result<WireName, WireNameError> {
-    Name::from_octets(wire?).map_err(|e| WireNameError::Octets(Box::new(e)))
+fn to_wire_name(wire: Vec<u8>) -> Result<WireName, WireNameError> {
+    Name::from_octets(wire).map_err(|e| WireNameError::Octets(Box::new(e)))
 }
 
 impl ZoneName {
     /// The zone apex in the domain form the DNSSEC machinery takes.
     pub fn to_wire_name(&self) -> Result<WireName, WireNameError> {
-        to_wire_name(self.to_wire())
+        to_wire_name(self.to_wire()?)
     }
 }
 
@@ -52,7 +50,7 @@ impl OwnerName {
     /// The owner, absolute within `zone_name`, in the domain form the DNSSEC
     /// machinery takes.
     pub fn to_wire_name(&self, zone_name: &ZoneName) -> Result<WireName, WireNameError> {
-        to_wire_name(self.to_wire(zone_name))
+        to_wire_name(self.to_wire(zone_name)?)
     }
 }
 

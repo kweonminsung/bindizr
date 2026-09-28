@@ -1,6 +1,7 @@
 use super::{ParseRecordValueError, value::validate_domain_record_value};
 use crate::dns::name::to_fqdn_lowercase;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PtrRecordValue<'a> {
     target: &'a str,
 }

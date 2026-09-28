@@ -15,14 +15,14 @@ use bindizr_core::{
     },
 };
 use bindizr_service::{
-    dynamic_update::{self, DynamicUpdate, DynamicUpdateError, Prerequisite, UpdateOp},
+    dynamic_update::{self, DynamicUpdate, DynamicUpdateError, Prerequisite, UpdateOperation},
     tsig_key,
 };
 use thiserror::Error;
 
 use crate::dns::server::DnsContext;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub(crate) enum UpdateError {
     #[error("{0}")]
     Refused(String),
@@ -66,7 +66,7 @@ impl From<TsigError> for UpdateError {
     fn from(err: TsigError) -> Self {
         match err {
             TsigError::Malformed(_) => UpdateError::Refused(err.to_string()),
-            TsigError::Failed { rcode, response } => UpdateError::TsigFailed {
+            TsigError::Rejected { rcode, response } => UpdateError::TsigFailed {
                 msg: format!("TSIG validation failed: {}", rcode),
                 response,
             },
@@ -236,7 +236,7 @@ fn decode_prerequisite(
 }
 
 /// Convert one wire update record into a validated service operation.
-fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, UpdateError> {
+fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOperation, UpdateError> {
     let name = record.name.clone();
     match record.class {
         Class::IN => {
@@ -248,7 +248,7 @@ fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, U
                     i32::MAX
                 )));
             }
-            Ok(UpdateOp::AddRecord {
+            Ok(UpdateOperation::AddRecord {
                 name,
                 record_type,
                 value,
@@ -258,7 +258,7 @@ fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, U
         }
         Class::ANY => {
             validate_delete_shape(record, true)?;
-            Ok(UpdateOp::DeleteRecordSet {
+            Ok(UpdateOperation::DeleteRecordSet {
                 name,
                 record_type: (record.record_type != Rtype::ANY)
                     .then(|| RecordType::try_from(record.record_type))
@@ -268,7 +268,7 @@ fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, U
         Class::NONE => {
             validate_delete_shape(record, false)?;
             let (record_type, value, priority) = record.to_record_value(query_data)?;
-            Ok(UpdateOp::DeleteRecord {
+            Ok(UpdateOperation::DeleteRecord {
                 name,
                 record_type,
                 value,

@@ -1,6 +1,8 @@
 //! The RFC 8078 DS withdrawal: publishing the delete CDS/CDNSKEY pair that
 //! asks a CDS-consuming parent to drop the zone's DS, and taking it back.
 
+use bindizr_core::dns::dnssec::SigningPass;
+
 use super::status::build_status_tx;
 use crate::{
     Context, authorization::Caller, db, db::LockLevel, error::ServiceError, transaction,
@@ -29,10 +31,15 @@ pub async fn withdraw(
         }
         db::dnssec_withdrawal::create_tx(&mut tx, signed.zone.id).await?;
 
-        let new_serial =
-            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
-                .await?
-                .unwrap_or(signed.zone.serial);
+        let new_serial = super::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &caller.change_subject(),
+        )
+        .await?
+        .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,
@@ -71,10 +78,15 @@ pub async fn cancel_withdrawal(
         }
         db::dnssec_withdrawal::delete_tx(&mut tx, signed.zone.id).await?;
 
-        let new_serial =
-            super::resign_zone_tx(cx, &mut tx, &signed, false, &caller.change_subject())
-                .await?
-                .unwrap_or(signed.zone.serial);
+        let new_serial = super::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &caller.change_subject(),
+        )
+        .await?
+        .unwrap_or(signed.zone.serial);
 
         build_status_tx(
             &mut tx,

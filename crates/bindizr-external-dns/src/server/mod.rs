@@ -21,6 +21,7 @@ use crate::{
 };
 
 /// State shared by both routers: the bindizr client every handler forwards to.
+#[derive(Debug)]
 pub(crate) struct AppState {
     pub(crate) upstream: UpstreamClient,
     pub(crate) metrics: AdapterMetrics,
@@ -69,7 +70,7 @@ impl IntoResponse for UpstreamError {
     /// the zone is genuinely not the adapter's to write.
     fn into_response(self) -> Response {
         match self {
-            UpstreamError::Status {
+            UpstreamError::Rejected {
                 status: 401,
                 message,
             } => (
@@ -77,12 +78,12 @@ impl IntoResponse for UpstreamError {
                 format!("bindizr rejected the adapter's token: {}", message),
             )
                 .into_response(),
-            UpstreamError::Status { status, message } if status < 500 => (
+            UpstreamError::Rejected { status, message } if status < 500 => (
                 StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST),
                 message,
             )
                 .into_response(),
-            UpstreamError::Status { status, .. } => (
+            UpstreamError::Rejected { status, .. } => (
                 StatusCode::BAD_GATEWAY,
                 format!("bindizr responded with status {}", status),
             )
@@ -302,7 +303,7 @@ async fn adjust_endpoints(State(state): State<Arc<AppState>>, body: String) -> R
 async fn handle_health(State(state): State<Arc<AppState>>) -> Response {
     match state.upstream.probe_health().await {
         Ok(()) => (StatusCode::OK, "ok").into_response(),
-        Err(UpstreamError::Status { status, message }) => (
+        Err(UpstreamError::Rejected { status, message }) => (
             StatusCode::SERVICE_UNAVAILABLE,
             format!("bindizr answered {}: {}", status, message),
         )
