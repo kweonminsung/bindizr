@@ -7,6 +7,7 @@ mod dnssec_withdrawal_repository_impl;
 mod record_repository_impl;
 mod secondary_repository_impl;
 mod token_grant_repository_impl;
+mod transfer_repository_impl;
 mod tsig_grant_repository_impl;
 mod tsig_key_repository_impl;
 mod zone_change_repository_impl;
@@ -22,6 +23,7 @@ pub(crate) use dnssec_withdrawal_repository_impl::PostgresDnssecWithdrawalReposi
 pub(crate) use record_repository_impl::PostgresRecordRepository;
 pub(crate) use secondary_repository_impl::PostgresSecondaryRepository;
 pub(crate) use token_grant_repository_impl::PostgresTokenGrantRepository;
+pub(crate) use transfer_repository_impl::PostgresTransferRepository;
 pub(crate) use tsig_grant_repository_impl::PostgresTsigGrantRepository;
 pub(crate) use tsig_key_repository_impl::PostgresTsigKeyRepository;
 pub(crate) use zone_change_repository_impl::PostgresZoneChangeRepository;

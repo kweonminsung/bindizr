@@ -36,9 +36,8 @@ pub(crate) enum DatabaseType {
     SQLite,
 }
 
-/// Build the global database pool from configuration; the daemon calls this
-/// once. Returns whether this startup created the schema, which is what tells
-/// a first install from a restart.
+/// Build the global database pool from configuration and set up the schema;
+/// the daemon calls this once.
 pub async fn initialize() -> Result<(), DatabaseError> {
     let bindizr_config = config::bindizr_config();
 
@@ -365,6 +364,11 @@ pub fn get_dnssec_policy_repository() -> Box<dyn repository::DnssecPolicyReposit
 /// Return the initialized secondary repository.
 pub fn get_secondary_repository() -> Box<dyn repository::SecondaryRepository> {
     pool().secondary_repository()
+}
+
+/// Return the initialized transfer repository.
+pub fn get_transfer_repository() -> Box<dyn repository::TransferRepository> {
+    pool().transfer_repository()
 }
 
 /// Return the initialized TSIG key repository.

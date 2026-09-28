@@ -20,7 +20,7 @@ mod tsig;
 mod version;
 mod zone;
 
-pub use common::{ErrorResponse, HealthResponse, MessageResponse};
+pub use common::{ErrorResponse, HealthResponse, HealthStatus, MessageResponse};
 pub use dnssec::{
     DnssecDelegationInfo, DnssecDelegationKeyInfo, DnssecDsInfo, DnssecKeyInfo, DnssecKeyMaterial,
     DnssecStatusResponse, DsState, EnableDnssecRequest, ExportDnssecKeysResponse,
@@ -47,8 +47,9 @@ pub use record::{
     RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
 };
 pub use secondary::{
-    CreateSecondaryRequest, GetSecondaryResponse, NotifyCheckResponse, SecondaryCheckResponse,
-    SecondaryResponse, UpdateSecondaryRequest,
+    CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, NotifyCheckResponse,
+    SecondaryCheckResponse, SecondaryResponse, SecondaryTransferSummary,
+    SecondaryTransfersResponse, TransferResponse, TransferSummary, UpdateSecondaryRequest,
 };
 pub use token::{CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenResponse};
 pub use token_grant::{GetTokenGrantResponse, TokenGrantResponse};

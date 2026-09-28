@@ -148,6 +148,22 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS transfers (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            client_addr VARCHAR(45) COLLATE utf8mb4_bin NOT NULL,
+            zone_id INT NOT NULL,
+            kind VARCHAR(4) NOT NULL,
+            result VARCHAR(7) NOT NULL,
+            incremental BOOLEAN NOT NULL,
+            serial INT NULL,
+            served_at DATETIME NOT NULL,
+            error TEXT NULL,
+            UNIQUE KEY uq_transfers_client_zone (client_addr, zone_id),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
+            INDEX idx_transfers_zone (zone_id)
+        );
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS tsig_grants (
             id INT PRIMARY KEY AUTO_INCREMENT,
             zone_id INT NOT NULL,

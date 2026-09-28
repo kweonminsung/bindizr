@@ -1,7 +1,11 @@
 //! Client-side SOA probing of the enabled secondaries, each answer classified
 //! against the serial Bindizr serves.
 
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{
+    net::{IpAddr, SocketAddr},
+    str::FromStr,
+    time::Duration,
+};
 
 use bindizr_core::{
     config,
@@ -12,7 +16,10 @@ use bindizr_core::{
 };
 
 use crate::{
-    model::secondary::Secondary, secondary::SecondaryService, types::SecondaryStatusResponse,
+    model::secondary::Secondary,
+    secondary::SecondaryService,
+    transfer::TransferService,
+    types::{SecondaryStatusResponse, TransferResponse},
 };
 
 /// Query every enabled secondary for the zone's SOA serial in parallel and
@@ -78,7 +85,7 @@ pub async fn probe_secondary(
             ));
         }
     };
-    Ok(probe_entry(&qname, addrs, timeout, expected_serial).await)
+    Ok(probe_entry(zone_name, &qname, addrs, timeout, expected_serial).await)
 }
 
 /// Query one explicit server for the zone's SOA serial (e.g. bindizr's own
@@ -98,20 +105,23 @@ pub async fn probe_server(
 /// resolved address, so probing only the first would contradict what
 /// propagates — commonly an unusable IPv6 ahead of a working IPv4.
 async fn probe_entry(
+    zone_name: &str,
     qname: &Name<Vec<u8>>,
     addrs: Vec<SocketAddr>,
     timeout: Duration,
     expected_serial: Option<u32>,
 ) -> SecondaryStatusResponse {
+    let clients: Vec<IpAddr> = addrs.iter().map(|addr| addr.ip()).collect();
     let mut last = None;
     for addr in addrs {
         match probe_one(qname, addr, timeout).await {
             Ok(serial) => {
-                return SecondaryStatusResponse::from_probe(
+                last = Some(SecondaryStatusResponse::from_probe(
                     addr.to_string(),
                     expected_serial,
                     Ok(serial),
-                );
+                ));
+                break;
             }
             Err(e) => {
                 last = Some(SecondaryStatusResponse::from_probe(
@@ -123,7 +133,18 @@ async fn probe_entry(
         }
     }
 
-    last.expect("resolve_address_entry never yields an empty Ok")
+    let mut probe = last.expect("resolve_address_entry never yields an empty Ok");
+    // What Bindizr last sent the secondary for the zone, beside what it
+    // serves now.
+    probe.last_transfer =
+        match TransferService::find_by_clients_and_zone_name(&clients, zone_name).await {
+            Ok(transfer) => transfer.as_ref().map(TransferResponse::from_transfer),
+            Err(e) => {
+                log::warn!("Failed to read the transfers of {}: {}", zone_name, e);
+                None
+            }
+        };
+    probe
 }
 
 /// Query one secondary server for its SOA status.

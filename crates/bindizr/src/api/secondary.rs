@@ -8,7 +8,8 @@ use bindizr_service::{
     secondary::SecondaryService,
     types::{
         CreateSecondaryRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetSecondaryResponse,
-        MessageResponse, PageFilter, PaginatedResponse, SecondaryCheckResponse, SecondaryResponse,
+        GetSecondaryTransfersFilter, MessageResponse, PageFilter, PaginatedResponse,
+        SecondaryCheckResponse, SecondaryResponse, SecondaryTransfersResponse,
         UpdateSecondaryRequest,
     },
 };
@@ -34,6 +35,10 @@ impl SecondaryApi {
             .route("/secondaries/{name}", routing::put(update_secondary))
             .route("/secondaries/{name}", routing::delete(delete_secondary))
             .route("/secondaries/{name}/check", routing::post(check_secondary))
+            .route(
+                "/secondaries/{name}/transfers",
+                routing::get(list_secondary_transfers),
+            )
     }
 }
 
@@ -205,4 +210,32 @@ pub(crate) async fn check_secondary(
 ) -> Result<Response, ApiError> {
     let check = SecondaryService::check(&caller, &params.name).await?;
     Ok((StatusCode::OK, Json(check)).into_response())
+}
+
+/// The transfers Bindizr served a secondary.
+#[utoipa::path(
+    get,
+    path = "/secondaries/{name}/transfers",
+    tag = "Secondary",
+    summary = "List a secondary's transfers",
+    description = "The transfers Bindizr served the secondary's addresses, newest first, with how each zone was last served: AXFR, IXFR as a delta or as the whole zone, or refused and why. Bindizr keeps the latest transfer per zone and address, so each zone appears once.",
+    params(
+        ("name" = String, Path, description = "The name of the secondary."),
+        GetSecondaryTransfersFilter
+    ),
+    responses(
+        (status = 200, description = "The transfers served", body = SecondaryTransfersResponse),
+        (status = 400, description = "Invalid query parameters", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "A global API token is required", body = ErrorResponse),
+        (status = 404, description = "Secondary not found", body = ErrorResponse)
+    )
+)]
+pub(crate) async fn list_secondary_transfers(
+    RequestCaller(caller): RequestCaller,
+    Path(params): Path<NameParams>,
+    Query(query): Query<GetSecondaryTransfersFilter>,
+) -> Result<Response, ApiError> {
+    let transfers = SecondaryService::list_transfers(&caller, &params.name, query).await?;
+    Ok((StatusCode::OK, Json(transfers)).into_response())
 }

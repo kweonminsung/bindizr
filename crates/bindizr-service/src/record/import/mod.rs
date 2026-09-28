@@ -13,7 +13,6 @@ use bindizr_core::{
         name::{OwnerName, ZoneName},
         zonefile::{ParsedZoneFile, ZoneFileValue},
     },
-    time::elapsed_ms,
 };
 use bindizr_db::repository::LockLevel;
 use chrono::Utc;
@@ -31,6 +30,7 @@ use crate::{
     model::record::{Record, RecordType},
     repository::RepositoryService,
     serial::generate_serial,
+    time::elapsed_ms,
     types::{
         CreateZoneRequest, ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse,
         RecordDiff, RecordValueRequest,

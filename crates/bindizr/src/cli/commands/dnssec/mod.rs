@@ -13,7 +13,8 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            DnssecKeyRow, DnssecPolicyRow, OutputFormat, parse_payload, print_payload, print_table,
+            DnssecKeyRow, DnssecPolicyRow, OutputFormat, display_time, parse_payload,
+            print_payload, print_table,
         },
     },
     params::NameParams,
@@ -414,22 +415,16 @@ fn print_status(data: &serde_json::Value, output: OutputFormat) -> Result<(), St
                 }
             );
             if let Some(eligible_at) = key.eligible_at {
-                line.push_str(&format!(
-                    ", promotable from {}",
-                    eligible_at.format("%Y-%m-%d %H:%M:%S")
-                ));
+                line.push_str(&format!(", promotable from {}", display_time(eligible_at)));
             }
             outln!("{}", line);
         }
     }
     if let Some(expires_at) = status.earliest_signature_expires_at {
-        outln!(
-            "Earliest signature expiry: {}",
-            expires_at.format("%Y-%m-%d %H:%M:%S")
-        );
+        outln!("Earliest signature expiry: {}", display_time(expires_at));
     }
     if let Some(resign_at) = status.next_resign_at {
-        outln!("Next re-signing: {}", resign_at.format("%Y-%m-%d %H:%M:%S"));
+        outln!("Next re-signing: {}", display_time(resign_at));
     }
     if status.expired_signatures == 0 {
         outln!("Signatures: {}", status.signatures);

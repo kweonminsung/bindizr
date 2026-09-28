@@ -1,5 +1,8 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
-use bindizr_service::{types::HealthResponse, zone::ZoneService};
+use bindizr_service::{
+    types::{HealthResponse, HealthStatus},
+    zone::ZoneService,
+};
 
 use crate::daemon::DB_PROBE_TIMEOUT;
 
@@ -22,13 +25,13 @@ pub(crate) async fn handle_health() -> impl IntoResponse {
         Ok(Ok(())) => (
             StatusCode::OK,
             Json(HealthResponse {
-                status: "healthy".to_string(),
+                status: HealthStatus::Healthy,
             }),
         ),
         _ => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(HealthResponse {
-                status: "unhealthy".to_string(),
+                status: HealthStatus::Unhealthy,
             }),
         ),
     }

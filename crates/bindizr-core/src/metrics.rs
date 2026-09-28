@@ -7,10 +7,7 @@ use prometheus::{
     Registry, TextEncoder, core::Collector,
 };
 
-use crate::{
-    dns::message::{Rcode, Rtype},
-    time::unix_time_ms,
-};
+use crate::dns::message::{Rcode, Rtype};
 
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
@@ -38,12 +35,13 @@ pub struct Metrics {
     zone_cache_lookups_total: IntCounterVec,
     zone_cache_evictions_total: IntCounter,
     zone_cache_records: IntGauge,
+    /// Set by the daemon once every front end serves.
+    pub started_at_seconds: Gauge,
 }
 
 static METRICS: OnceLock<Metrics> = OnceLock::new();
 
-/// Global registry. First touched at daemon startup so
-/// `bindizr_started_at_seconds` reflects process start.
+/// Global registry, created on first use.
 pub fn metrics() -> &'static Metrics {
     METRICS.get_or_init(Metrics::new)
 }
@@ -75,10 +73,9 @@ impl Metrics {
 
         let started_at_seconds = Gauge::new(
             "bindizr_started_at_seconds",
-            "Unix time the process started.",
+            "Unix time the daemon began serving.",
         )
         .expect("valid metric definition");
-        started_at_seconds.set(unix_time_ms() as f64 / 1000.0);
         register(&registry, &started_at_seconds);
 
         let database_up = IntGauge::new(
@@ -294,6 +291,7 @@ impl Metrics {
 
         Self {
             registry,
+            started_at_seconds,
             database_up,
             db_connections,
             db_connections_max,
@@ -332,7 +330,7 @@ pub enum XfrResult {
     NotAuth,
     /// Answered over UDP with TC set; the transfer follows over TCP.
     Truncated,
-    Error,
+    Failed,
 }
 
 impl XfrResult {
@@ -341,7 +339,7 @@ impl XfrResult {
         Self::Refused,
         Self::NotAuth,
         Self::Truncated,
-        Self::Error,
+        Self::Failed,
     ];
 
     /// The metric label value of this xfr result.
@@ -351,7 +349,7 @@ impl XfrResult {
             Self::Refused => "refused",
             Self::NotAuth => "notauth",
             Self::Truncated => "truncated",
-            Self::Error => "error",
+            Self::Failed => "failed",
         }
     }
 }
@@ -374,11 +372,11 @@ pub enum SoaResult {
     Ok,
     Refused,
     NotAuth,
-    Error,
+    Failed,
 }
 
 impl SoaResult {
-    const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Error];
+    const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Failed];
 
     /// The metric label value of this SOA result.
     fn label(&self) -> &'static str {
@@ -386,7 +384,7 @@ impl SoaResult {
             Self::Ok => "ok",
             Self::Refused => "refused",
             Self::NotAuth => "notauth",
-            Self::Error => "error",
+            Self::Failed => "failed",
         }
     }
 }
@@ -455,21 +453,21 @@ pub fn track_nsupdate(result: NsupdateResult) {
 
 pub enum NotifyResult {
     Ok,
-    Error,
+    Failed,
     /// Nothing was sent, so it is kept apart from the send failures it would
     /// otherwise inflate.
-    ResolveError,
+    ResolveFailed,
 }
 
 impl NotifyResult {
-    const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::ResolveError];
+    const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::ResolveFailed];
 
     /// The metric label value of this notify result.
     fn label(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
-            Self::Error => "error",
-            Self::ResolveError => "resolve_error",
+            Self::Failed => "failed",
+            Self::ResolveFailed => "resolve_failed",
         }
     }
 }
@@ -503,19 +501,19 @@ pub fn track_serial_bump() {
 
 pub enum SchedulerResult {
     Ok,
-    Error,
+    Failed,
     /// The pass unwound; the scheduler itself survived.
     Panic,
 }
 
 impl SchedulerResult {
-    const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::Panic];
+    const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::Panic];
 
     /// The metric label value of this scheduler result.
     fn label(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
-            Self::Error => "error",
+            Self::Failed => "failed",
             Self::Panic => "panic",
         }
     }

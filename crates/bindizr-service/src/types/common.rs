@@ -12,11 +12,18 @@ pub struct MessageResponse {
     pub message: String,
 }
 
+/// Whether the API can serve requests: its database answered a probe.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum HealthStatus {
+    Healthy,
+    Unhealthy,
+}
+
 /// Health probe response.
 #[derive(Serialize, Debug, ToSchema)]
 pub struct HealthResponse {
-    #[schema(example = "healthy")]
-    pub status: String,
+    pub status: HealthStatus,
 }
 
 /// Generic error response: a plain description plus a machine-readable code.

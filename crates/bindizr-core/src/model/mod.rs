@@ -8,6 +8,7 @@ pub mod grant_pattern;
 pub mod record;
 pub mod secondary;
 pub mod token_grant;
+pub mod transfer;
 pub mod tsig_grant;
 pub mod tsig_key;
 pub mod zone;

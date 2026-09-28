@@ -15,13 +15,12 @@ mod keys;
 mod lifecycle;
 mod parent_ns_addrs;
 mod rollover;
-mod scheduler;
+pub mod scheduler;
 mod status;
 mod withdraw;
 
 use bindizr_core::dns::dnssec::SignedViewParams;
 use chrono::{Duration, Utc};
-pub use scheduler::initialize_scheduler;
 
 use crate::{
     database::repository::LockLevel,

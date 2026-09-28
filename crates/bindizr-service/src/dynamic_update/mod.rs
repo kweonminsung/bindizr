@@ -21,7 +21,7 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    record::{AddOutcome, RecordService},
+    record::{AddResult, RecordService},
     repository::RepositoryService,
     serial::generate_serial,
     tsig_key::grant::{authorize_prerequisite, authorize_update},
@@ -332,7 +332,7 @@ async fn apply_op_tx(
 
             // RFC 2136, Section 3.4.2.2: an rdata-identical add is a silent no-op. The
             // TTL-replace clause is not implemented; record set TTLs change via the API.
-            if matches!(outcome, AddOutcome::Duplicate) {
+            if matches!(outcome, AddResult::Duplicate) {
                 return Ok(false);
             }
 
