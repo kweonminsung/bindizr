@@ -26,7 +26,7 @@ pub async fn create(
     // Parent/child zones are allowed; only the same normalized zone name is rejected.
     // Names are stored normalized, so an exact lookup is enough to detect a collision.
     let name = normalize_create_zone_request(cx, create_zone_request)?.name;
-    match db::zone::get_by_name(cx.db(), name.as_str()).await {
+    match db::zone::get_by_name(cx.db(), &name).await {
         Ok(Some(_)) => {
             log::error!("Zone with name {} already exists", name);
             return Err(ServiceError::zone_conflict(format!(

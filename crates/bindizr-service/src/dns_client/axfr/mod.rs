@@ -5,7 +5,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 use bindizr_core::dns::{
     message::{Name, Opcode, Rtype, encode_tcp_message},
-    name::{decode_name_labels, to_fqdn},
+    name::{ZoneName, decode_name_labels, to_fqdn},
     query::{TransferRecord, build_question, extract_transfer_records},
 };
 use thiserror::Error;
@@ -69,7 +69,7 @@ pub(crate) enum TransferZoneError {
 /// for the import parser.
 pub(crate) async fn fetch_zone_file(
     server: &str,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<String, TransferZoneError> {
     let records = transfer_zone(server, zone_name).await?;
     Ok(render_zone_file(&records))
@@ -85,9 +85,9 @@ const TRANSFER_TIMEOUT: Duration = Duration::from_secs(30);
 /// return its records, the delimiting SOAs included (RFC 5936, Section 2.2).
 async fn transfer_zone(
     server: &str,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<Vec<TransferRecord>, TransferZoneError> {
-    let qname = Name::<Vec<u8>>::from_str(zone_name)
+    let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
         .map_err(|e| TransferZoneError::ZoneName(Box::new(e)))?;
 
     let deadline = tokio::time::Instant::now() + TRANSFER_TIMEOUT;

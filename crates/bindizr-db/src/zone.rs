@@ -1,5 +1,5 @@
 use bindizr_core::{
-    dns::Serial,
+    dns::{Serial, name::ZoneName},
     model::{api_token::TokenId, dnssec_policy::PolicyId, zone::ZoneId},
 };
 use chrono::{DateTime, Utc};
@@ -68,7 +68,7 @@ pub async fn get_tx(
 }
 
 /// Find a zone by name.
-pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<Zone>, DatabaseError> {
+pub async fn get_by_name(db: &Db, name: &ZoneName) -> Result<Option<Zone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::zone::get_by_name(pool, name).await,
         Backend::Postgres(pool) => postgres::zone::get_by_name(pool, name).await,
@@ -79,7 +79,7 @@ pub async fn get_by_name(db: &Db, name: &str) -> Result<Option<Zone>, DatabaseEr
 /// Find a zone by name in the current transaction.
 pub async fn get_by_name_tx(
     tx: &mut Transaction<'_>,
-    name: &str,
+    name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, DatabaseError> {
     match &mut tx.0 {

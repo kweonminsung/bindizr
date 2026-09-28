@@ -3,7 +3,10 @@
 //! parent interaction, is the scheduler's.
 
 use bindizr_core::{
-    dns::dnssec::{SigningPass, generate_key},
+    dns::{
+        dnssec::{SigningPass, generate_key},
+        name::ZoneName,
+    },
     model::dnssec_key::DnssecKeyId,
 };
 use chrono::{Duration, Utc};
@@ -30,7 +33,7 @@ use crate::{
 pub async fn start_rollover(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     role: Option<DnssecKeyRole>,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
@@ -107,7 +110,7 @@ pub async fn start_rollover(
     log::info!("event=dnssec_rollover_start zone={}", response.zone_name);
 
     // Announce the pre-published key after the signed view commits.
-    crate::notify::notify_after_update(cx, &response.zone_name).await;
+    crate::notify::notify_after_update(cx, zone_name).await;
     Ok(response)
 }
 
@@ -144,7 +147,7 @@ pub(crate) async fn start_algorithm_rollover_tx(
 pub async fn advance_rollover(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     ds_check: DsCheck,
     holddown: Holddown,
 ) -> Result<DnssecStatusResponse, ServiceError> {
@@ -224,7 +227,7 @@ pub async fn advance_rollover(
         );
     }
     log::info!("event=dnssec_rollover_ds_seen zone={}", response.zone_name);
-    crate::notify::notify_after_update(cx, &response.zone_name).await;
+    crate::notify::notify_after_update(cx, zone_name).await;
     Ok(response)
 }
 

@@ -3,6 +3,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 use bindizr_core::{
     dns::{
         message::{Name, Opcode, Rtype},
+        name::ZoneName,
         query::{question_builder, validate_notify_response},
         tsig::{TsigSigningKey, sign_request, verify_response},
     },
@@ -44,7 +45,10 @@ pub enum NotifyZoneError {
 
 /// Sends DNS NOTIFY to every enabled secondary for one zone. Which
 /// zones to notify is the caller's decision.
-pub(crate) async fn send_zone_notify(cx: &Context, zone_name: &str) -> Result<(), NotifyZoneError> {
+pub(crate) async fn send_zone_notify(
+    cx: &Context,
+    zone_name: &ZoneName,
+) -> Result<(), NotifyZoneError> {
     log::info!("Sending NOTIFY for zone: {}", zone_name);
 
     let reports = send_notify_to_secondaries(cx, zone_name).await?;
@@ -71,7 +75,7 @@ pub(crate) async fn send_zone_notify(cx: &Context, zone_name: &str) -> Result<()
 /// address; none yields an empty list.
 pub async fn send_notify_to_secondaries(
     cx: &Context,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
     let secondaries = secondary::list_enabled(cx).await?;
 
@@ -86,7 +90,7 @@ pub async fn send_notify_to_secondaries(
 /// with its NOTIFY key when it has one; one outcome per address.
 pub async fn send_notify_to_secondary(
     cx: &Context,
-    zone_name: &str,
+    zone_name: &ZoneName,
     secondary: &Secondary,
 ) -> Result<Vec<NotifyCheckResponse>, ServiceError> {
     let dns_config = &cx.config().dns;
@@ -94,7 +98,7 @@ pub async fn send_notify_to_secondary(
     let retries = dns_config.notify.retries;
     // The zone name is a stored row, so one that does not parse is the
     // server's fault.
-    let qname = Name::<Vec<u8>>::from_str(zone_name)
+    let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
         .map_err(|e| ServiceError::internal(format!("invalid zone name: {}", e)))?;
 
     let key = match secondary::notify_signing_key(cx, secondary).await {

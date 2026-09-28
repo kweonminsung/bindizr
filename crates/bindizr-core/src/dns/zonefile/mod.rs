@@ -7,7 +7,11 @@ use domain::{
 };
 
 use crate::{
-    dns::{Serial, Ttl, name::to_fqdn_lowercase, record::NaptrRecordValue},
+    dns::{
+        Serial, Ttl,
+        name::{ZoneName, to_fqdn_lowercase},
+        record::NaptrRecordValue,
+    },
     model::record::RecordType,
 };
 
@@ -63,8 +67,8 @@ impl ParsedZoneFile {
     /// against the origin, missing TTLs fall back to `default_ttl`, and the SOA
     /// is kept apart in `soa` rather than stored (the zone's SOA comes from its
     /// own fields).
-    pub fn parse(content: &str, zone_name: &str, default_ttl: Ttl) -> Self {
-        let origin_fqdn = to_fqdn_lowercase(zone_name);
+    pub fn parse(content: &str, zone_name: &ZoneName, default_ttl: Ttl) -> Self {
+        let origin_fqdn = zone_name.to_fqdn();
 
         // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and
         // TTLs. PRELUDE_LINES counts them.

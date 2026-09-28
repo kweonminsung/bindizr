@@ -90,7 +90,7 @@ pub(crate) async fn notify_zone(
     Query(query): Query<NotifyQuery>,
 ) -> Result<Response, ApiError> {
     let serial = NotifySerial::from_bump_serial(query.bump_serial.unwrap_or(false));
-    let target = NotifyTarget::Zone(&params.name);
+    let target = NotifyTarget::Zone(&zone::normalize_name(&params.name)?);
     zone::notify(&cx, &caller, target, serial).await?;
     let response = MessageResponse {
         message: build_notify_message(target, serial),

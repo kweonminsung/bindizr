@@ -1,7 +1,7 @@
 //! Assembling the status a signed zone reports: its policy, key inventory,
 //! and the DS records the parent needs.
 
-use bindizr_core::dns::Serial;
+use bindizr_core::dns::{Serial, name::ZoneName};
 use chrono::{DateTime, Duration, Utc};
 
 use super::parent_ns_addrs::parent_ns_addr_entries;
@@ -26,7 +26,7 @@ use crate::{
 pub async fn get_status(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 

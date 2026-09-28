@@ -1,4 +1,4 @@
-use bindizr_core::dns::Serial;
+use bindizr_core::dns::{Serial, name::ZoneName};
 
 use crate::{Transaction, error::DatabaseError, mysql, postgres, sqlite, tx::TransactionKind};
 
@@ -6,7 +6,7 @@ use crate::{Transaction, error::DatabaseError, mysql, postgres, sqlite, tx::Tran
 /// effect after the upsert.
 pub async fn upsert_tx(
     tx: &mut Transaction<'_>,
-    name: &str,
+    name: &ZoneName,
     digest: &str,
     base_serial: Serial,
 ) -> Result<Serial, DatabaseError> {

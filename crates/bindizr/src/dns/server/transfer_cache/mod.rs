@@ -7,7 +7,7 @@ use std::{
 };
 
 use bindizr_core::{
-    dns::Serial,
+    dns::{Serial, name::ZoneName},
     metrics::Metrics,
     model::{
         dnssec_record::DnssecRecord,
@@ -131,7 +131,7 @@ impl TransferCache {
 /// that row's serial.
 pub(crate) async fn authorize_transfer_content_by_name(
     dns_cx: &DnsContext,
-    zone_name: &str,
+    zone_name: &ZoneName,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
     let cx = dns_cx.daemon();
@@ -172,7 +172,7 @@ pub(crate) async fn authorize_transfer_content_by_name(
 /// them, straight from the service.
 async fn fetch_transfer_content(
     dns_cx: &Context,
-    zone_name: &str,
+    zone_name: &ZoneName,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<(Zone, CachedTransferContent)>, ServiceError> {
     Ok(

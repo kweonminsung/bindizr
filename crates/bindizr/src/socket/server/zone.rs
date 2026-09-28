@@ -20,7 +20,7 @@ pub(crate) async fn get_zone(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<ZoneResponse>, ServiceError> {
-    let zone = zone::get_by_name(cx, &Caller::Global, name).await?;
+    let zone = zone::get_by_name(cx, &Caller::Global, &zone::normalize_name(name)?).await?;
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
         data: ZoneResponse {
@@ -63,7 +63,13 @@ pub(crate) async fn update_zone(
     zone_name: &str,
     request: &UpdateZoneRequest,
 ) -> Result<DaemonResponse<ZoneWriteResponse>, ServiceError> {
-    let response = zone::update(cx, &Caller::Global, zone_name, request).await?;
+    let response = zone::update(
+        cx,
+        &Caller::Global,
+        &zone::normalize_name(zone_name)?,
+        request,
+    )
+    .await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Zone would be updated".to_string()
@@ -80,7 +86,13 @@ pub(crate) async fn import_zone(
     zone_name: &str,
     request: &ImportZoneRequest,
 ) -> Result<DaemonResponse<ImportZoneResponse>, ServiceError> {
-    let response = record::import_zone(cx, &Caller::Global, zone_name, request).await?;
+    let response = record::import_zone(
+        cx,
+        &Caller::Global,
+        &zone::normalize_name(zone_name)?,
+        request,
+    )
+    .await?;
     let message = if !response.errors.is_empty() {
         format!(
             "Import validation failed with {} error(s); nothing applied",
@@ -103,7 +115,7 @@ pub(crate) async fn export_zone(
     name: &str,
     view: ZoneView,
 ) -> Result<DaemonResponse<ExportZoneFileResponse>, ServiceError> {
-    let zone_file = zone::export(cx, &Caller::Global, name, view).await?;
+    let zone_file = zone::export(cx, &Caller::Global, &zone::normalize_name(name)?, view).await?;
     Ok(DaemonResponse {
         message: "Zone exported successfully".to_string(),
         data: ExportZoneFileResponse { zone_file },
@@ -118,7 +130,15 @@ pub(crate) async fn list_zone_versions(
     offset: Option<u64>,
     scope: VersionScope,
 ) -> Result<DaemonResponse<PaginatedResponse<ZoneVersionResponse>>, ServiceError> {
-    let response = zone::list_versions(cx, &Caller::Global, name, limit, offset, scope).await?;
+    let response = zone::list_versions(
+        cx,
+        &Caller::Global,
+        &zone::normalize_name(name)?,
+        limit,
+        offset,
+        scope,
+    )
+    .await?;
     Ok(DaemonResponse {
         message: "Versions retrieved successfully".to_string(),
         data: response,
@@ -131,7 +151,8 @@ pub(crate) async fn get_zone_version(
     name: &str,
     serial: Serial,
 ) -> Result<DaemonResponse<VersionDetailResponse>, ServiceError> {
-    let response = zone::get_version(cx, &Caller::Global, name, serial).await?;
+    let response =
+        zone::get_version(cx, &Caller::Global, &zone::normalize_name(name)?, serial).await?;
     Ok(DaemonResponse {
         message: format!("Version '{}' retrieved successfully", serial),
         data: response,
@@ -145,7 +166,14 @@ pub(crate) async fn diff_zone_versions(
     from_serial: Serial,
     to_serial: Option<Serial>,
 ) -> Result<DaemonResponse<VersionDiffResponse>, ServiceError> {
-    let response = zone::diff_versions(cx, &Caller::Global, name, from_serial, to_serial).await?;
+    let response = zone::diff_versions(
+        cx,
+        &Caller::Global,
+        &zone::normalize_name(name)?,
+        from_serial,
+        to_serial,
+    )
+    .await?;
     Ok(DaemonResponse {
         message: format!(
             "Serial {} -> {}: +{} -{} ~{}",
@@ -166,7 +194,14 @@ pub(crate) async fn rollback_zone(
     serial: Serial,
     run: Run,
 ) -> Result<DaemonResponse<RollbackZoneResponse>, ServiceError> {
-    let response = zone::rollback(cx, &Caller::Global, name, serial, run).await?;
+    let response = zone::rollback(
+        cx,
+        &Caller::Global,
+        &zone::normalize_name(name)?,
+        serial,
+        run,
+    )
+    .await?;
     let message = if response.dry_run {
         format!(
             "Dry run: rollback to serial {} would add {} and delete {} record(s); nothing applied",
@@ -189,7 +224,7 @@ pub(crate) async fn get_zone_status(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<ZoneStatusResponse>, ServiceError> {
-    let response = zone::get_status(cx, &Caller::Global, name).await?;
+    let response = zone::get_status(cx, &Caller::Global, &zone::normalize_name(name)?).await?;
     let in_sync = response
         .secondaries
         .iter()
@@ -217,7 +252,7 @@ pub(crate) async fn delete_zone(
     name: &str,
     run: Run,
 ) -> Result<DaemonResponse<DeleteZoneResponse>, ServiceError> {
-    let response = zone::delete(cx, &Caller::Global, name, run).await?;
+    let response = zone::delete(cx, &Caller::Global, &zone::normalize_name(name)?, run).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!(

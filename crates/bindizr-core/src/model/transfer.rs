@@ -6,7 +6,7 @@ use sqlx::FromRow;
 use thiserror::Error;
 
 use crate::{
-    dns::{Serial, message::Rtype},
+    dns::{Serial, message::Rtype, name::ZoneName},
     model::zone::ZoneId,
 };
 
@@ -164,5 +164,6 @@ pub struct TransferWithZone {
     pub serial: Option<Serial>,
     pub served_at: DateTime<Utc>,
     pub error: Option<String>,
-    pub zone_name: String,
+    #[sqlx(try_from = "String")]
+    pub zone_name: ZoneName,
 }

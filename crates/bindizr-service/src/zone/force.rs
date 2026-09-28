@@ -1,3 +1,4 @@
+use bindizr_core::dns::name::ZoneName;
 use bindizr_db::LockLevel;
 
 use crate::{
@@ -24,8 +25,7 @@ pub(crate) async fn force_increment_serial(
                 // Bump each zone in its own transaction so the new serial
                 // derives from the current row and a concurrent edit to other
                 // fields is not clobbered.
-                bumped_zones
-                    .push(force_increment_serial_by_name(cx, zone.name.as_str(), subject).await?);
+                bumped_zones.push(force_increment_serial_by_name(cx, &zone.name, subject).await?);
             }
 
             Ok(bumped_zones)
@@ -36,7 +36,7 @@ pub(crate) async fn force_increment_serial(
 /// Advance a named zone's serial and save its signed version atomically.
 async fn force_increment_serial_by_name(
     cx: &Context,
-    zone_name: &str,
+    zone_name: &ZoneName,
     subject: &ChangeSubject,
 ) -> Result<Zone, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "Failed to force increment zone serial").await?;

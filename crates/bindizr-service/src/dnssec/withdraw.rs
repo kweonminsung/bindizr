@@ -1,7 +1,7 @@
 //! The RFC 8078 DS withdrawal: publishing the delete CDS/CDNSKEY pair that
 //! asks a CDS-consuming parent to drop the zone's DS, and taking it back.
 
-use bindizr_core::dns::dnssec::SigningPass;
+use bindizr_core::dns::{dnssec::SigningPass, name::ZoneName};
 
 use super::status::build_status_tx;
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
 pub async fn withdraw(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
@@ -54,7 +54,7 @@ pub async fn withdraw(
     let response = transaction::finish_tx(tx, result, "failed to withdraw the parent DS").await?;
 
     log::info!("event=dnssec_withdraw zone={}", response.zone_name);
-    crate::notify::notify_after_update(cx, &response.zone_name).await;
+    crate::notify::notify_after_update(cx, zone_name).await;
     Ok(response)
 }
 
@@ -63,7 +63,7 @@ pub async fn withdraw(
 pub async fn cancel_withdrawal(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
@@ -101,6 +101,6 @@ pub async fn cancel_withdrawal(
     let response = transaction::finish_tx(tx, result, "failed to cancel the DS withdrawal").await?;
 
     log::info!("event=dnssec_withdraw_cancel zone={}", response.zone_name);
-    crate::notify::notify_after_update(cx, &response.zone_name).await;
+    crate::notify::notify_after_update(cx, zone_name).await;
     Ok(response)
 }

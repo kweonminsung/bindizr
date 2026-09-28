@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use bindizr_core::{dns::name::OwnerName, model::record::RecordId};
+use bindizr_core::{
+    dns::name::{OwnerName, ZoneName},
+    model::record::RecordId,
+};
 use bindizr_db::LockLevel;
 
 use super::validation::{normalize_record_owner_name, parse_record_type};
@@ -13,7 +16,7 @@ use crate::{
     serial::generate_serial,
     transaction,
     types::{DeleteRecordsFilter, DeleteRecordsResponse, GetRecordResponse, Run},
-    zone::{self, diff::build_record_diff, validation::normalize_zone_name},
+    zone::{self, diff::build_record_diff, validation::normalize_name},
 };
 
 /// Delete a record by id, bumping the zone serial and recording a DEL
@@ -40,7 +43,7 @@ pub async fn delete(
 
     let mut tx = transaction::begin_tx(cx, "Failed to delete record").await?;
 
-    let apply_result: Result<DeleteRecordsResponse, ServiceError> = async {
+    let apply_result: Result<(DeleteRecordsResponse, ZoneName), ServiceError> = async {
         let zone = match db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
@@ -118,7 +121,7 @@ pub async fn delete(
             diff: build_record_diff(&zone, &before, &after),
         };
         if run.is_dry_run() {
-            return Ok(response);
+            return Ok((response, zone.name));
         }
 
         let new_serial = generate_serial(Some(zone.serial))?;
@@ -143,17 +146,16 @@ pub async fn delete(
             existing_record.value,
             existing_record.id
         );
-        Ok(response)
+        Ok((response, zone.name))
     }
     .await;
 
-    let response = transaction::finish_tx(tx, apply_result, "Failed to delete record").await?;
+    let (response, zone_name) =
+        transaction::finish_tx(tx, apply_result, "Failed to delete record").await?;
 
     // Announce only a committed deletion, never a preview.
-    if response.applied
-        && let Some(zone_name) = response.records.first().map(|record| &record.zone_name)
-    {
-        crate::notify::notify_after_update(cx, zone_name).await;
+    if response.applied {
+        crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(response)
@@ -166,7 +168,7 @@ pub async fn delete_matching(
     caller: &Caller,
     filter: &DeleteRecordsFilter,
 ) -> Result<DeleteRecordsResponse, ServiceError> {
-    let zone_name = normalize_zone_name(&filter.zone_name)?;
+    let zone_name = normalize_name(&filter.zone_name)?;
     let record_type = filter
         .record_type
         .as_deref()
@@ -192,8 +194,7 @@ pub async fn delete_matching(
     let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
         let zone =
-            zone::get_visible_by_name_tx(&mut tx, caller, zone_name.as_str(), LockLevel::Exclusive)
-                .await?;
+            zone::get_visible_by_name_tx(&mut tx, caller, &zone_name, LockLevel::Exclusive).await?;
         let owner = normalize_record_owner_name(&filter.name, &zone.name)?;
 
         // Authorize the request, not the rows it matches: an answer that
@@ -277,7 +278,7 @@ pub async fn delete_matching(
     // Announce only a committed deletion, never a preview or an empty
     // match — which applies, but writes nothing and leaves the serial.
     if response.applied && response.deleted > 0 {
-        crate::notify::notify_after_update(cx, zone_name.as_str()).await;
+        crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(response)

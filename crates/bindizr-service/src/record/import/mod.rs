@@ -69,7 +69,7 @@ struct ImportTimings {
 pub async fn import_zone(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     request: &ImportZoneRequest,
 ) -> Result<ImportZoneResponse, ServiceError> {
     caller.authorize_global("import zone files")?;
@@ -114,7 +114,7 @@ pub async fn import_zone(
 async fn reconcile_zone_file(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     content: &str,
     request: &ImportZoneRequest,
 ) -> Result<ImportZoneResponse, ServiceError> {
@@ -160,7 +160,7 @@ async fn reconcile_zone_file(
 
         let t = Instant::now();
         // Relative owners and omitted TTLs must use the zone this transaction locked.
-        let parsed = ParsedZoneFile::parse(content, zone.name.as_str(), zone.default_ttl);
+        let parsed = ParsedZoneFile::parse(content, &zone.name, zone.default_ttl);
         timings.parse_ms = elapsed_ms(t);
         let mut errors = parsed.errors;
         let mut skipped = 0usize;
@@ -461,7 +461,7 @@ async fn reconcile_zone_file(
     }
     // Notify after commit only when the import changed the served zone.
     if changed {
-        crate::notify::notify_after_update(cx, zone_name.as_str()).await;
+        crate::notify::notify_after_update(cx, &zone_name).await;
     }
     let notify_ms = elapsed_ms(t);
 

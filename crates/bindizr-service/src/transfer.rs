@@ -5,7 +5,7 @@
 use std::net::IpAddr;
 
 use bindizr_core::{
-    dns::Serial,
+    dns::{Serial, name::ZoneName},
     model::{
         transfer::{Transfer, TransferKind, TransferResult, TransferWithZone},
         zone::ZoneId,
@@ -77,7 +77,10 @@ async fn save_unserved(
     result: TransferResult,
     error: String,
 ) {
-    let zone = match db::zone::get_by_name(cx.db(), zone_name).await {
+    let Ok(zone_name) = ZoneName::parse(zone_name) else {
+        return;
+    };
+    let zone = match db::zone::get_by_name(cx.db(), &zone_name).await {
         Ok(Some(zone)) => zone,
         Ok(None) => return,
         Err(e) => {
@@ -123,7 +126,7 @@ pub(crate) async fn list_by_clients(
 pub(crate) async fn find_by_clients_and_zone_name(
     cx: &Context,
     clients: &[IpAddr],
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<Option<TransferWithZone>, ServiceError> {
     let mut latest: Option<TransferWithZone> = None;
     for client in clients {

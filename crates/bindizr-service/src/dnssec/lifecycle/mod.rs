@@ -1,7 +1,10 @@
 //! Turning signing on and off, moving a zone between policies, and the
 //! operator's force re-sign.
 
-use bindizr_core::dns::dnssec::{SigningPass, generate_key};
+use bindizr_core::dns::{
+    dnssec::{SigningPass, generate_key},
+    name::ZoneName,
+};
 use chrono::Utc;
 
 use super::{parent_ns_addrs::normalize_parent_ns_addrs, status::build_status_tx};
@@ -55,7 +58,7 @@ fn validate_policy_move(
 pub async fn enable(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     policy: Option<&str>,
     parent_ns_addrs: &[String],
 ) -> Result<DnssecStatusResponse, ServiceError> {
@@ -136,7 +139,7 @@ pub async fn enable(
     log::info!("event=dnssec_enable zone={}", response.zone_name);
 
     // Secondaries can fetch the signed view only after the transaction commits.
-    crate::notify::notify_after_update(cx, &response.zone_name).await;
+    crate::notify::notify_after_update(cx, zone_name).await;
     Ok(response)
 }
 
@@ -146,7 +149,7 @@ pub async fn enable(
 pub async fn update_settings(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     policy: Option<&str>,
     parent_ns_addrs: Option<&[String]>,
 ) -> Result<DnssecStatusResponse, ServiceError> {
@@ -241,7 +244,7 @@ pub async fn update_settings(
     log::info!("event=dnssec_update_settings zone={}", response.zone_name);
     // Only a policy move changes zone data; parent nameservers are not served.
     if policy_name.is_some() {
-        crate::notify::notify_after_update(cx, &response.zone_name).await;
+        crate::notify::notify_after_update(cx, zone_name).await;
     }
     Ok(response)
 }
@@ -252,7 +255,7 @@ pub async fn update_settings(
 pub async fn disable(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     ds_check: DsCheck,
 ) -> Result<(), ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
@@ -305,7 +308,7 @@ pub async fn disable(
         )
         .await?;
 
-        Ok(signed.zone.name.as_str().to_string())
+        Ok(signed.zone.name.clone())
     }
     .await;
     let zone_name = transaction::finish_tx(tx, result, "failed to disable DNSSEC").await?;
@@ -320,7 +323,7 @@ pub async fn disable(
 
 /// Re-sign a zone from scratch, discarding stored signatures (recovery
 /// hatch when stored state is doubted).
-pub async fn sign(cx: &Context, caller: &Caller, zone_name: &str) -> Result<(), ServiceError> {
+pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result<(), ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
@@ -334,7 +337,7 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &str) -> Result<(), 
             &caller.change_subject(),
         )
         .await?;
-        Ok(signed.zone.name.as_str().to_string())
+        Ok(signed.zone.name.clone())
     }
     .await;
     let zone_name = transaction::finish_tx(tx, result, "failed to sign zone").await?;

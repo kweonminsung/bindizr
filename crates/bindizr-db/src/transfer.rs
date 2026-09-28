@@ -1,3 +1,5 @@
+use bindizr_core::dns::name::ZoneName;
+
 use crate::{
     Backend, Db,
     error::DatabaseError,
@@ -36,7 +38,7 @@ pub async fn list_by_client_addr_with_zone(
 pub async fn get_by_client_addr_and_zone_name_with_zone(
     db: &Db,
     client_addr: &str,
-    zone_name: &str,
+    zone_name: &ZoneName,
 ) -> Result<Option<TransferWithZone>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {

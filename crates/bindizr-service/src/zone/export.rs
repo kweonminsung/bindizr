@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use bindizr_core::dns::name::to_fqdn;
+use bindizr_core::dns::name::{ZoneName, to_fqdn};
 use bindizr_db::LockLevel;
 
 use crate::{
@@ -23,7 +23,7 @@ use crate::{
 pub async fn export(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     view: ZoneView,
 ) -> Result<String, ServiceError> {
     // Read the zone and records in one locked transaction so the export is a

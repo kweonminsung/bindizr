@@ -35,5 +35,6 @@ pub use transfer::{
     TransferAccess, TransferContent, authorize_transfer_by_name, authorize_transfer_content_by_name,
 };
 pub use update::update;
+pub use validation::normalize_name;
 pub(crate) use version::{advance_serial_tx, save_version_tx};
 pub use version::{find_version_by_serial, list_versions_in_serial_range};

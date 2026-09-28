@@ -257,7 +257,7 @@ pub async fn check(
         secondary: to_response(cx, secondary).await?,
         addresses,
         resolve_error,
-        catalog_zone_name: catalog_zone,
+        catalog_zone_name: catalog_zone.to_string(),
         catalog_serial,
         listener_error,
         catalog,
@@ -286,7 +286,7 @@ pub async fn list_transfers(
             filter
                 .zone_name
                 .as_deref()
-                .is_none_or(|zone| transfer.zone_name.eq_ignore_ascii_case(zone))
+                .is_none_or(|zone| transfer.zone_name.as_str().eq_ignore_ascii_case(zone))
         })
         .take(limit)
         .map(TransferResponse::from)

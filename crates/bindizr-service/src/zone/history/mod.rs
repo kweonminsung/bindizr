@@ -6,16 +6,18 @@ mod rewind;
 use std::collections::{HashMap, HashSet};
 
 use bindizr_core::{
-    dns::{Serial, name::OwnerName, record::SoaMailbox},
+    dns::{
+        Serial,
+        name::{OwnerName, ZoneName},
+        record::SoaMailbox,
+    },
     model::{record::RecordId, zone_version::VersionScope},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
 use rewind::{list_records_at_serial_tx, rewind_records_to_serial_tx};
 
-use super::{
-    diff::build_record_diff, update::soa_replacement_changes, validation::normalize_zone_name,
-};
+use super::{diff::build_record_diff, update::soa_replacement_changes};
 use crate::{
     Context, Transaction,
     authorization::Caller,
@@ -53,7 +55,7 @@ async fn validate_serial_diffable_tx(
 pub async fn list_versions(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     limit: Option<u32>,
     offset: Option<u64>,
     scope: VersionScope,
@@ -87,7 +89,7 @@ pub async fn list_versions(
 pub async fn get_version(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     serial: Serial,
 ) -> Result<VersionDetailResponse, ServiceError> {
     let mut tx = transaction::begin_read_tx(cx, "Failed to load version").await?;
@@ -124,7 +126,7 @@ pub async fn get_version(
 pub async fn diff_versions(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     from_serial: Serial,
     to_serial: Option<Serial>,
 ) -> Result<VersionDiffResponse, ServiceError> {
@@ -162,19 +164,17 @@ pub async fn diff_versions(
 pub async fn rollback(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     target_serial: Serial,
     run: Run,
 ) -> Result<RollbackZoneResponse, ServiceError> {
     caller.authorize_global("roll back zones")?;
     let target = target_serial;
 
-    let lookup_name = normalize_zone_name(zone_name)?;
     let mut tx = transaction::begin_tx(cx, "Failed to roll back zone").await?;
 
     let apply_result = async {
-        let zone =
-            super::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Exclusive).await?;
+        let zone = super::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
         if target.as_u32() < 1 || target >= zone.serial {
             return Err(ServiceError::invalid_input(format!(
@@ -363,7 +363,7 @@ pub async fn rollback(
             response.summary.added,
             response.summary.deleted
         );
-        crate::notify::notify_after_update(cx, zone_name.as_str()).await;
+        crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(response)

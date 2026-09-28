@@ -23,6 +23,7 @@ use bindizr_core::{
     dns::{
         Serial,
         dnssec::{SignedViewParams, SigningPass},
+        name::ZoneName,
     },
     model::{dnssec_record::DnssecRecordId, zone::ZoneId},
 };
@@ -151,7 +152,7 @@ async fn get_zone_policy_tx(
 /// signing keys; a zone with no keys reads as not DNSSEC-enabled.
 async fn get_signed_zone_tx(
     tx: &mut Transaction<'_>,
-    zone_name: &str,
+    zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<SignedZone, ServiceError> {
     let zone = zone::get_by_name_tx(tx, zone_name, lock_level).await?;

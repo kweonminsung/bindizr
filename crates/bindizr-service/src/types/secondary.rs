@@ -150,7 +150,7 @@ impl From<&TransferWithZone> for TransferResponse {
     fn from(transfer: &TransferWithZone) -> Self {
         TransferResponse {
             address: transfer.client_addr.clone(),
-            zone_name: transfer.zone_name.clone(),
+            zone_name: transfer.zone_name.to_string(),
             kind: transfer.kind,
             result: transfer.result,
             incremental: transfer.incremental,

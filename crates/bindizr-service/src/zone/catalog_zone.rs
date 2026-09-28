@@ -1,4 +1,4 @@
-use bindizr_core::dns::Serial;
+use bindizr_core::dns::{Serial, name::ZoneName};
 
 use crate::{Context, db, error::ServiceError, transaction};
 
@@ -19,7 +19,7 @@ pub async fn validate_catalog_zone_name(cx: &Context) -> Result<(), ServiceError
 /// a no-op otherwise.
 pub async fn advance_catalog_serial(
     cx: &Context,
-    name: &str,
+    name: &ZoneName,
     digest: &str,
     base_serial: Serial,
 ) -> Result<Serial, ServiceError> {

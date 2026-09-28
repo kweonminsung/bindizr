@@ -29,7 +29,7 @@ pub(crate) fn normalize_create_zone_request(
     cx: &Context,
     request: &CreateZoneRequest,
 ) -> Result<NormalizedCreateZoneRequest, ServiceError> {
-    let zone_name = normalize_zone_name(&request.name)?;
+    let zone_name = normalize_name(&request.name)?;
     reject_catalog_zone_name(cx, &zone_name)?;
     let mname = normalize_domain_name(&request.mname, "mname")?.to_string();
     let rname = normalize_email(&request.rname)?;
@@ -71,7 +71,9 @@ pub(crate) fn reject_catalog_zone_name(cx: &Context, name: &ZoneName) -> Result<
     Ok(())
 }
 
-pub(crate) fn normalize_zone_name(value: &str) -> Result<ZoneName, ServiceError> {
+/// Parse a zone name as a request spells it, refusing the root and a
+/// wildcard. Every front end parses here before it calls the service.
+pub fn normalize_name(value: &str) -> Result<ZoneName, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed == "." {

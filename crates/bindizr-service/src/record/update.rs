@@ -23,7 +23,7 @@ use crate::{
     transaction,
     ttl::validate_record_ttl,
     types::{GetRecordResponse, RecordDiff, RecordWriteResponse, Run, UpdateRecordRequest},
-    zone::{self, diff::build_record_diff, validation::normalize_zone_name},
+    zone::{self, diff::build_record_diff},
 };
 
 /// How an update names the one record it changes.
@@ -32,7 +32,7 @@ enum RecordSelector<'a> {
     /// Several records at the name are an error: an update must not pick one
     /// of them on the caller's behalf.
     Name {
-        zone_name: &'a str,
+        zone_name: &'a ZoneName,
         name: &'a str,
     },
 }
@@ -125,7 +125,7 @@ pub async fn update(
 pub async fn update_by_name(
     cx: &Context,
     caller: &Caller,
-    zone_name: &str,
+    zone_name: &ZoneName,
     name: &str,
     request: &UpdateRecordRequest,
 ) -> Result<RecordWriteResponse, ServiceError> {
@@ -207,14 +207,9 @@ async fn update_locked(
                 (zone, existing_record)
             }
             RecordSelector::Name { zone_name, name } => {
-                let zone_name = normalize_zone_name(zone_name)?;
-                let zone = zone::get_visible_by_name_tx(
-                    &mut tx,
-                    caller,
-                    zone_name.as_str(),
-                    LockLevel::Exclusive,
-                )
-                .await?;
+                let zone =
+                    zone::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive)
+                        .await?;
                 let owner = normalize_record_owner_name(name, &zone.name)?;
 
                 // Count only what the caller can see, so the count never
@@ -361,7 +356,7 @@ async fn update_locked(
 
     // Request secondary transfers only after the replacement is committed.
     if !run.is_dry_run() {
-        crate::notify::notify_after_update(cx, zone_name.as_str()).await;
+        crate::notify::notify_after_update(cx, &zone_name).await;
     }
 
     Ok(RecordWriteResponse {

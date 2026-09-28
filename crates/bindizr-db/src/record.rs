@@ -1,5 +1,5 @@
 use bindizr_core::{
-    dns::name::OwnerName,
+    dns::name::{OwnerName, ZoneName},
     model::{api_token::TokenId, record::RecordId, zone::ZoneId},
 };
 
@@ -18,7 +18,7 @@ pub struct RecordFilter {
     /// Matched through a subquery on `zones.name`, so the filter still lands
     /// on `records.zone_id` and keeps the listing on `idx_records_zone_name`
     /// while resolving the name as of the query rather than an earlier read.
-    pub zone_name: Option<String>,
+    pub zone_name: Option<ZoneName>,
     pub name: Option<String>,
     pub record_type: Option<RecordType>,
     pub value: Option<String>,

@@ -1,6 +1,9 @@
 use super::ConfigError;
-use crate::config::{
-    BINDIZR_CONF_PATH, Config, DatabaseType, LogFormat, LogLevel, resolve_config_path_with_env,
+use crate::{
+    config::{
+        BINDIZR_CONF_PATH, Config, DatabaseType, LogFormat, LogLevel, resolve_config_path_with_env,
+    },
+    dns::name::ZoneName,
 };
 
 /// Deviations from the base config TOML; the default renders a minimal valid
@@ -110,7 +113,7 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.notify.timeout_secs, 3);
     assert_eq!(parsed.dns.transfer_cache.max_records, 500_000);
     assert!(parsed.dns.nsupdate_tsig_required);
-    assert_eq!(parsed.dns.catalog_zone_name, "catalog.bindizr");
+    assert_eq!(parsed.dns.catalog_zone_name.as_str(), "catalog.bindizr");
     assert_eq!(parsed.dns.zone_history_retention_days, 365);
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
     assert_eq!(parsed.logging.format, LogFormat::Text);
@@ -241,7 +244,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     );
     assert_eq!(overridden.dns.listen_addr.to_string(), "127.0.0.2");
     assert_eq!(overridden.dns.listen_port, 5353);
-    assert_eq!(overridden.dns.catalog_zone_name, "catalog.staging");
+    assert_eq!(overridden.dns.catalog_zone_name.as_str(), "catalog.staging");
     assert!(!overridden.dns.nsupdate_tsig_required);
     assert_eq!(overridden.dns.notify.batch_ms, 50);
     assert_eq!(overridden.dns.notify.retries, 7);
@@ -363,7 +366,7 @@ fn a_reload_refuses_what_a_running_process_cannot_adopt() {
     );
 
     let mut catalog_renamed = current.clone();
-    catalog_renamed.dns.catalog_zone_name = "catalog.other".to_string();
+    catalog_renamed.dns.catalog_zone_name = ZoneName::from_row("catalog.other");
     assert_eq!(
         current.fixed_settings_changed(&catalog_renamed),
         ["dns.catalog_zone_name"]
@@ -380,8 +383,11 @@ fn from_toml_rejects_an_unusable_catalog_zone_name() {
         ..Default::default()
     })
     .unwrap_err();
+    // The TOML error points at the line, so the setting and the reason are
+    // both named.
+    let message = error.to_string();
     assert!(
-        error.to_string().contains("dns.catalog_zone_name"),
+        message.contains("catalog_zone_name") && message.contains("whitespace"),
         "unexpected error: {error}"
     );
 }
@@ -416,7 +422,7 @@ fn catalog_zone_name_is_canonicalized_on_load() {
         })
         .unwrap();
 
-        assert_eq!(parsed.dns.catalog_zone_name, "catalog.prod");
+        assert_eq!(parsed.dns.catalog_zone_name.as_str(), "catalog.prod");
         assert!(parsed.dns.is_catalog_zone("catalog.prod"));
     }
 }
@@ -433,4 +439,22 @@ fn a_reload_takes_the_settings_read_per_use() {
     assert!(current.fixed_settings_changed(&next).is_empty());
     assert_eq!(current.changed_settings(&next), ["dns", "logging"]);
     assert!(current.changed_settings(&current).is_empty());
+}
+
+/// Verify that the catalog zone name override is parsed like the file's value.
+#[test]
+fn apply_env_overrides_rejects_an_unusable_catalog_zone_name() {
+    let mut config = parse_config(&TestConfigToml::default()).unwrap();
+
+    let error = config
+        .apply_env_overrides(|name| match name {
+            "BINDIZR_DNS_CATALOG_ZONE_NAME" => Some("catalog bindizr".to_string()),
+            _ => None,
+        })
+        .unwrap_err();
+
+    assert!(
+        matches!(error, ConfigError::CatalogZoneName(_)),
+        "unexpected error: {error}"
+    );
 }

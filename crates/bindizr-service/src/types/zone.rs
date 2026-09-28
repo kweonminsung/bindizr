@@ -1,7 +1,7 @@
 //! Zone request, patch, filter, and response payloads.
 
 use bindizr_core::{
-    dns::{Serial, Ttl, record::SoaMailbox, zonefile::ZoneFileSoa},
+    dns::{Serial, Ttl, name::ZoneName, record::SoaMailbox, zonefile::ZoneFileSoa},
     model::zone::ZoneId,
 };
 use chrono::{DateTime, Utc};
@@ -144,7 +144,7 @@ impl CreateZoneRequest {
     /// so secondaries holding the old primary's serial accept the transfer;
     /// one past bindizr's ceiling starts fresh instead.
     pub(crate) fn from_zone_file_soa(
-        zone_name: &str,
+        zone_name: &ZoneName,
         soa: &ZoneFileSoa,
     ) -> Result<Self, ServiceError> {
         let rname = SoaMailbox::from_encoded(soa.rname.trim_end_matches('.'))

@@ -8,6 +8,7 @@ use bindizr_service::{
         CreateGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
         GetTokenResponse, MessageResponse, PageFilter, PaginatedResponse, TokenGrantResponse,
     },
+    zone,
 };
 
 use crate::socket::types::DaemonResponse;
@@ -70,7 +71,7 @@ pub(crate) async fn create_token_grant(
         cx,
         &Caller::Global,
         token_name,
-        &request.zone_name,
+        &zone::normalize_name(&request.zone_name)?,
         request.record_name_pattern.as_deref(),
         request.record_types.as_deref(),
         request.can_write,
@@ -103,7 +104,8 @@ pub(crate) async fn list_zone_token_grants(
     zone_name: &str,
     page: PageFilter,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTokenGrantResponse>>, ServiceError> {
-    let response = grant::list_by_zone(cx, &Caller::Global, zone_name, page).await?;
+    let response =
+        grant::list_by_zone(cx, &Caller::Global, &zone::normalize_name(zone_name)?, page).await?;
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
         data: response,
@@ -129,8 +131,13 @@ pub(crate) async fn delete_token_grants_by_token_and_zone(
     token_name: &str,
     zone_name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    let revoked =
-        grant::revoke_by_token_and_zone(cx, &Caller::Global, token_name, zone_name).await?;
+    let revoked = grant::revoke_by_token_and_zone(
+        cx,
+        &Caller::Global,
+        token_name,
+        &zone::normalize_name(zone_name)?,
+    )
+    .await?;
     let message = format!("{} token grant(s) revoked successfully", revoked);
     Ok(DaemonResponse {
         message: message.clone(),

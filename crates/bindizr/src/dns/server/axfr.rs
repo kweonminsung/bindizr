@@ -4,7 +4,10 @@ use bindizr_core::{
     dns::{message, message::Rtype},
     model::transfer::TransferKind,
 };
-use bindizr_service::{transfer, zone::TransferAccess};
+use bindizr_service::{
+    transfer,
+    zone::{self, TransferAccess},
+};
 use tokio::net::TcpStream;
 
 use super::{auth::TransferIdentity, catalog, transfer_cache};
@@ -42,9 +45,10 @@ pub(crate) async fn handle_axfr(
         .await;
     }
 
+    let zone_name = zone::normalize_name(zone_name_str)?;
     let (zone, content) = match transfer_cache::authorize_transfer_content_by_name(
         dns_cx,
-        zone_name_str,
+        &zone_name,
         identity.key.as_ref(),
     )
     .await?
