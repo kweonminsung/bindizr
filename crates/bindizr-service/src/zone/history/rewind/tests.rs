@@ -31,7 +31,7 @@ fn record(id: i32, name: &str, value: &str) -> Record {
     }
 }
 
-/// Build a journal entry for a history reconstruction test.
+/// Build a journal entry for a rewind test.
 fn change(
     serial: i32,
     operation: ChangeOperation,
@@ -58,7 +58,7 @@ fn user(record_type: RecordType) -> JournalRecordType {
     JournalRecordType::User(record_type)
 }
 
-/// Collect reconstructed record values for comparison.
+/// Collect rewound record values for comparison.
 fn values(records: &[RecordData]) -> Vec<&str> {
     records.iter().map(|r| r.value.as_str()).collect()
 }
@@ -157,7 +157,7 @@ fn a_record_added_and_deleted_inside_the_window_leaves_nothing() {
 #[test]
 fn derived_and_soa_rows_are_not_user_data_to_restore() {
     // Rollback re-signs the derived plane, and the SOA lives in the version
-    // row, so neither belongs in the reconstructed records.
+    // row, so neither belongs in the rewound records.
     let changes = [
         change(
             5,

@@ -13,8 +13,8 @@ use bindizr_core::{
 };
 use bindizr_db::{Db, error::DatabaseError};
 use bindizr_service::{
-    self as service, Context, context::ReloadConfigError, dnssec::scheduler, error::ServiceError,
-    notify::queue,
+    Context, context::ReloadConfigError, dnssec::scheduler, error::ServiceError, notify::queue,
+    token, zone,
 };
 use chrono::Utc;
 use thiserror::Error;
@@ -149,12 +149,12 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     ));
     let notify_worker = queue::spawn(cx.clone(), notify_rx);
 
-    service::zone::validate_catalog_zone_name(&cx).await?;
+    zone::validate_catalog_zone_name(&cx).await?;
 
     // Authentication with no token answers 401 to everything, which reads as a
     // broken deployment rather than one nobody has been let into yet.
     if authentication_required {
-        match service::token::count_all(&cx).await {
+        match token::count_all(&cx).await {
             Ok(0) => log::warn!(
                 "API authentication is on and no API tokens exist; create one with `bindizr token create admin --global`"
             ),

@@ -275,7 +275,7 @@ impl From<&ZoneVersionResponse> for VersionRow {
     }
 }
 
-/// Table row for records reconstructed at a version serial (no database id).
+/// Table row for records rewound to a version serial (no database id).
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct VersionRecordRow {
     #[tabled(rename = "NAME")]

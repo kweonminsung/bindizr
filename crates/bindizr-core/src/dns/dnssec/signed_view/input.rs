@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use domain::{
     base::{
-        Record as WireRecord, Ttl, UnknownRecordData,
+        Ttl, UnknownRecordData,
         iana::{Class, Rtype},
         name::FlattenInto,
     },
@@ -19,7 +19,7 @@ use domain::{
     rdata::ZoneRecordData,
 };
 
-use super::{SignRecord, SignZoneError, SignedViewParams, Signer, WireName, to_rdata};
+use super::{SignRecord, SignZoneError, SignedViewParams, Signer, WireName, WireRecord, to_rdata};
 use crate::{dns::record::EncodedRdata, model::dnssec_policy::DnssecDenial};
 
 impl SignedViewParams<'_> {
@@ -176,7 +176,7 @@ pub(crate) fn denial_records(
 ) -> Result<Vec<SignRecord>, SignZoneError> {
     /// Wrap a denial record's data in the signing record type.
     fn into_sign_record<D>(
-        record: WireRecord<WireName, D>,
+        record: WireRecord<D>,
         wrap: impl FnOnce(D) -> ZoneRecordData<Vec<u8>, WireName>,
     ) -> SignRecord {
         let class = record.class();

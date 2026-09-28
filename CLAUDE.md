@@ -700,6 +700,17 @@ Specifically avoid:
 Cite RFC sections as `RFC 2181, Section 5.2` (`Sections 5.2–5.3` for a range),
 never the `§` glyph.
 
+### Imports never rename
+
+A `use` never renames: `use domain::base::Record as WireRecord` hides which
+name a body reads. A foreign name that collides with one of ours is reached
+through its parent module (`inplace::Error`, `domain::base::Ttl`) or, when
+the crate uses it in many places, through a `type` alias declared once
+beside its kin (`WireName`, `WireRecord` in `dns::dnssec`); a module is
+imported as itself (`use bindizr_service::{token, zone}`), never `self as
+service`. The one rename is `as _`, for a trait imported only for its
+methods (`use std::fmt::Write as _`).
+
 ### Workspace lints
 
 `[workspace.lints]` in the root `Cargo.toml` is the one place lint levels are

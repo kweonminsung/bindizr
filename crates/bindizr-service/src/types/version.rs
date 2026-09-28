@@ -72,7 +72,7 @@ impl TryFrom<&ZoneVersion> for ZoneVersionResponse {
     }
 }
 
-/// A record reconstructed from the zone's journal, named as the record
+/// A record rewound from the zone's journal, named as the record
 /// listing names it; unlike stored records it has no database id.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct VersionRecordResponse {
@@ -103,7 +103,7 @@ impl VersionRecordResponse {
     }
 }
 
-/// One version plus the reconstructed records at that serial.
+/// One version plus the records rewound to that serial.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct VersionDetailResponse {
     pub version: ZoneVersionResponse,

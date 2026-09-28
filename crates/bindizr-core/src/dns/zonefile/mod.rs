@@ -1,12 +1,9 @@
 //! Reading BIND master-file text into records the record API can accept.
 
 use domain::{
-    base::{
-        Ttl as WireTtl,
-        iana::{Class, Rtype},
-    },
+    base::iana::{Class, Rtype},
     rdata::ZoneRecordData,
-    zonefile::inplace::{Entry, Error as ZoneFileError, ScannedRecord, Zonefile},
+    zonefile::inplace::{self, Entry, ScannedRecord, Zonefile},
 };
 
 use crate::{
@@ -249,7 +246,7 @@ fn to_zone_file_soa(record: &ScannedRecord) -> Option<ZoneFileSoa> {
     let ZoneRecordData::Soa(soa) = record.data() else {
         return None;
     };
-    let secs = |value: WireTtl| i32::try_from(value.as_secs()).ok();
+    let secs = |value: domain::base::Ttl| i32::try_from(value.as_secs()).ok();
     Some(ZoneFileSoa {
         mname: soa.mname().to_string(),
         // The mailbox is rendered in its SOA form (`admin.example.com.`); the
@@ -268,7 +265,7 @@ const PRELUDE_LINES: usize = 2;
 
 /// Restate a parser error in the submitted text's line numbering. `Error` keeps
 /// its position private, so its `{line}:{col}: {reason}` rendering is all there is.
-fn to_input_line_message(err: &ZoneFileError) -> String {
+fn to_input_line_message(err: &inplace::Error) -> String {
     let message = err.to_string();
     match message.split_once(':') {
         Some((line, rest)) => match line.parse::<usize>() {
