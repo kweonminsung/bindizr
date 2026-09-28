@@ -3,21 +3,20 @@
 //! and must equal the zone's record set there (Section 3.2.3).
 
 use bindizr_core::dns::name::OwnerName;
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 
 use super::{DynamicUpdateError, Prerequisite, parse_update_owner};
 use crate::{
-    RepositoryTx,
+    Transaction, db,
     model::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    repository,
 };
 
 /// Evaluate UPDATE prerequisites against the locked zone contents.
 pub(crate) async fn evaluate_prerequisites_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     prerequisites: &[Prerequisite],
 ) -> Result<(), DynamicUpdateError> {
@@ -25,7 +24,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
         return Ok(());
     }
 
-    let zone_records = repository::list_records_tx(tx, zone.id, LockLevel::Exclusive).await?;
+    let zone_records = db::record::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
     let mut record_sets: Vec<WantedRecordSet<'_>> = Vec::new();
     for prerequisite in prerequisites {

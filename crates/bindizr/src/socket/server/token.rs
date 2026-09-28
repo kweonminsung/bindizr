@@ -1,4 +1,5 @@
 use bindizr_service::{
+    Context,
     authorization::Caller,
     error::ServiceError,
     token::{self, grant},
@@ -20,10 +21,14 @@ use crate::{
 };
 
 /// Create token from the control request.
-pub(crate) async fn create_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn create_token(
+    cx: &Context,
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
     let request: CreateTokenRequest = parse_params(data)?;
 
     let (token, secret) = token::create(
+        cx,
         &Caller::Global,
         &request.name,
         request.description.as_deref(),
@@ -43,10 +48,13 @@ pub(crate) async fn create_token(data: &serde_json::Value) -> Result<DaemonRespo
 }
 
 /// List the requested tokens.
-pub(crate) async fn list_tokens(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn list_tokens(
+    cx: &Context,
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
     let page: PageFilter = parse_params(data)?;
 
-    let response = token::list(&Caller::Global, page).await?;
+    let response = token::list(cx, &Caller::Global, page).await?;
 
     Ok(DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
@@ -55,10 +63,13 @@ pub(crate) async fn list_tokens(data: &serde_json::Value) -> Result<DaemonRespon
 }
 
 /// Delete the requested token.
-pub(crate) async fn delete_token(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn delete_token(
+    cx: &Context,
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
     let params: NameParams = parse_params(data)?;
 
-    token::delete(&Caller::Global, &params.name).await?;
+    token::delete(cx, &Caller::Global, &params.name).await?;
 
     let message = format!("Token '{}' deleted successfully", params.name);
     let response = DaemonResponse {
@@ -70,11 +81,13 @@ pub(crate) async fn delete_token(data: &serde_json::Value) -> Result<DaemonRespo
 
 /// Create token grant from the control request.
 pub(crate) async fn create_token_grant(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: CreateTokenGrantParams = parse_params(data)?;
 
     let grant = grant::create(
+        cx,
         &Caller::Global,
         &params.token_name,
         &params.request.zone_name,
@@ -94,11 +107,12 @@ pub(crate) async fn create_token_grant(
 
 /// List the requested token grants for an API token.
 pub(crate) async fn list_token_grants(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ListGrantsParams = parse_params(data)?;
 
-    let response = grant::list_by_token(&Caller::Global, &params.name, params.page).await?;
+    let response = grant::list_by_token(cx, &Caller::Global, &params.name, params.page).await?;
 
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
@@ -108,11 +122,12 @@ pub(crate) async fn list_token_grants(
 
 /// List the requested token grants for a zone.
 pub(crate) async fn list_zone_token_grants(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: ListGrantsParams = parse_params(data)?;
 
-    let response = grant::list_by_zone(&Caller::Global, &params.name, params.page).await?;
+    let response = grant::list_by_zone(cx, &Caller::Global, &params.name, params.page).await?;
 
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
@@ -122,11 +137,12 @@ pub(crate) async fn list_zone_token_grants(
 
 /// Delete the requested token grant.
 pub(crate) async fn delete_token_grant(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: IdParams = parse_params(data)?;
 
-    grant::revoke_by_id(&Caller::Global, params.id).await?;
+    grant::revoke_by_id(cx, &Caller::Global, params.id).await?;
 
     let message = "Token grant revoked successfully".to_string();
     Ok(DaemonResponse {
@@ -137,12 +153,13 @@ pub(crate) async fn delete_token_grant(
 
 /// Revoke every grant the requested token holds in the requested zone.
 pub(crate) async fn delete_token_grants_by_token_and_zone(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DeleteTokenGrantsByTokenAndZoneParams = parse_params(data)?;
 
     let revoked =
-        grant::revoke_by_token_and_zone(&Caller::Global, &params.token_name, &params.zone_name)
+        grant::revoke_by_token_and_zone(cx, &Caller::Global, &params.token_name, &params.zone_name)
             .await?;
 
     let message = format!("{} token grant(s) revoked successfully", revoked);

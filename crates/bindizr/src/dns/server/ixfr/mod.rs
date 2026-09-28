@@ -7,7 +7,6 @@ mod send;
 use std::{collections::HashMap, net::IpAddr};
 
 use bindizr_core::{
-    config::bindizr_config,
     dns::{message, message::Rtype},
     model::{transfer::TransferKind, zone_version::ZoneVersion},
 };
@@ -22,15 +21,17 @@ use self::{
     send::{IxfrSendError, send_ixfr_response, send_soa_response},
 };
 use super::{auth::TransferIdentity, axfr};
-use crate::dns::error::XfrError;
+use crate::dns::{error::XfrError, server::DnsContext};
 
 /// Answer an IXFR request using journal changes or an AXFR fallback.
 pub(crate) async fn handle_ixfr(
+    dns_cx: &DnsContext,
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     client_ip: IpAddr,
     identity: &mut TransferIdentity,
 ) -> Result<(), XfrError> {
+    let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
 
     log::info!(
@@ -41,20 +42,21 @@ pub(crate) async fn handle_ixfr(
     );
 
     // Choose a full transfer or an SOA-only reply before loading incremental history.
-    if bindizr_config().dns.is_catalog_zone(zone_name_str) {
+    if cx.config().dns.is_catalog_zone(zone_name_str) {
         log::info!("IXFR: Catalog zone requested, falling back to AXFR");
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, identity).await;
+        return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity).await;
     }
 
     // The zone and the grant are decided on one locked row; the journal
     // reads that follow use its id, so the delta is that zone's.
-    let zone = match zone::authorize_transfer_by_name(zone_name_str, identity.key.as_ref()).await? {
-        TransferAccess::Granted(zone) => zone,
-        TransferAccess::NotAuth => {
-            return Err(XfrError::NotAuth(zone_name_str.to_string()));
-        }
-        TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
-    };
+    let zone =
+        match zone::authorize_transfer_by_name(cx, zone_name_str, identity.key.as_ref()).await? {
+            TransferAccess::Granted(zone) => zone,
+            TransferAccess::NotAuth => {
+                return Err(XfrError::NotAuth(zone_name_str.to_string()));
+            }
+            TransferAccess::Refused(reason) => return Err(XfrError::Refused(reason)),
+        };
 
     let current_serial = bindizr_core::dns::serial_to_u32(zone.serial)?;
 
@@ -62,18 +64,21 @@ pub(crate) async fn handle_ixfr(
         Some(s) => s,
         None => {
             log::warn!("IXFR: No client serial provided, falling back to AXFR");
-            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, identity).await;
+            return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity)
+                .await;
         }
     };
 
     if client_serial == current_serial {
         log::info!("IXFR: Client is up-to-date (serial={})", current_serial);
-        let current_soa = match zone::find_version_by_serial(zone.id, current_serial as i32).await?
+        let current_soa = match zone::find_version_by_serial(cx, zone.id, current_serial as i32)
+            .await?
         {
             Some(version) => version,
             None => {
                 log::warn!("IXFR: Missing SOA version, falling back to AXFR");
-                return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, identity).await;
+                return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity)
+                    .await;
             }
         };
         return send_soa_response(stream, query, &current_soa, identity.signer.take()).await;
@@ -89,29 +94,37 @@ pub(crate) async fn handle_ixfr(
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, identity).await;
+        return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity).await;
     }
 
     // RFC 1995, Section 2 lets a server answer with a full transfer once the
     // incremental one stops being smaller; counting first also keeps a
     // long-absent secondary from pulling its whole absence into memory. Rows,
     // not bytes: summing lengths would read the rows this decides whether to read.
-    let delta_rows =
-        zone::count_changes_between_serials(zone.id, client_serial as i32, current_serial as i32)
-            .await?;
-    if delta_rows >= zone::count_transfer_records(zone.name.as_str()).await? {
+    let delta_rows = zone::count_changes_between_serials(
+        cx,
+        zone.id,
+        client_serial as i32,
+        current_serial as i32,
+    )
+    .await?;
+    if delta_rows >= zone::count_transfer_records(cx, zone.name.as_str()).await? {
         log::info!(
             "IXFR: Delta from serial {} to {} is no smaller than the zone, falling back to AXFR",
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, identity).await;
+        return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity).await;
     }
 
     // Pair journal steps with their SOA versions to prove the delta has no gaps.
-    let changes =
-        zone::list_changes_between_serials(zone.id, client_serial as i32, current_serial as i32)
-            .await?;
+    let changes = zone::list_changes_between_serials(
+        cx,
+        zone.id,
+        client_serial as i32,
+        current_serial as i32,
+    )
+    .await?;
 
     if changes.is_empty() {
         log::warn!(
@@ -119,7 +132,7 @@ pub(crate) async fn handle_ixfr(
             client_serial,
             current_serial
         );
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, identity).await;
+        return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity).await;
     }
 
     let mut journal_serials: Vec<u32> = changes
@@ -132,9 +145,13 @@ pub(crate) async fn handle_ixfr(
     let mut versions_by_serial: HashMap<u32, ZoneVersion> = HashMap::new();
     versions_by_serial.reserve(journal_serials.len() + 1);
 
-    for version in
-        zone::list_versions_in_serial_range(zone.id, client_serial as i32, current_serial as i32)
-            .await?
+    for version in zone::list_versions_in_serial_range(
+        cx,
+        zone.id,
+        client_serial as i32,
+        current_serial as i32,
+    )
+    .await?
     {
         if let Ok(serial) = bindizr_core::dns::serial_to_u32(version.serial) {
             versions_by_serial.insert(serial, version);
@@ -149,7 +166,7 @@ pub(crate) async fn handle_ixfr(
         &version_serials,
     ) {
         log::warn!("IXFR: {}, falling back to AXFR", gap);
-        return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, identity).await;
+        return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity).await;
     }
 
     log::info!(
@@ -184,7 +201,8 @@ pub(crate) async fn handle_ixfr(
                 error
             );
             identity.signer = signer_back.map(|s| *s);
-            return axfr::handle_axfr(stream, query, client_ip, Rtype::IXFR, identity).await;
+            return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity)
+                .await;
         }
         // Bytes already sent; a fallback AXFR would corrupt the partial IXFR.
         Err(IxfrSendError::Partial(err)) => {
@@ -197,7 +215,15 @@ pub(crate) async fn handle_ixfr(
     }
 
     log::info!("IXFR completed for zone {}", zone_name_str);
-    transfer::save_ok(client_ip, zone.id, TransferKind::Ixfr, true, current_serial).await;
+    transfer::save_ok(
+        cx,
+        client_ip,
+        zone.id,
+        TransferKind::Ixfr,
+        true,
+        current_serial,
+    )
+    .await;
 
     Ok(())
 }

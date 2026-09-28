@@ -198,6 +198,15 @@ impl fmt::Display for ServiceError {
 
 impl std::error::Error for ServiceError {}
 
+/// A database failure the service did not classify is internal; the sites
+/// that read a UNIQUE or FK violation as a conflict do so where they call.
+impl From<bindizr_db::error::DatabaseError> for ServiceError {
+    /// Wrap a database error as an internal service error.
+    fn from(err: bindizr_db::error::DatabaseError) -> Self {
+        ServiceError::internal(format!("database error: {}", err))
+    }
+}
+
 impl ServiceError {
     /// Build a service error from its code and message.
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {

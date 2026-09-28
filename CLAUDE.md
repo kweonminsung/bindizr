@@ -71,42 +71,14 @@ in order, with the full suite green at each — however large the diff. A
 phase is never split to shrink its diff, only where the tree would not
 build otherwise. The HTTP API, the CLI, and the DNS behaviour — error codes
 and messages included — change in none of them, so the e2e suite is the
-regression gate throughout; only phase 3 touches the daemon socket, which
+regression gate throughout; only phase 2 touches the daemon socket, which
 the CLI and the daemon share in one binary. Until a phase lands, the code
 it names still has the old shape: new code follows the rule, a module is
 converted whole and never half, and an example in a rule that names the new
 shape is the target, not a claim about the tree. Delete a phase's entry
 when it lands, and this section when all have.
 
-1. **State is a value.** Every `static` but the two *State is a value*
-   names goes. `Config::load` replaces `config::initialize` and the
-   `RwLock<Option<Arc<_>>>` behind `bindizr_config()`. `Db::connect`
-   replaces `bindizr_db::initialize` and `pool()`, and with it the fifteen
-   `#[async_trait]` repository traits, their 45 backend impls with a
-   `new(pool)` each, the fifteen `get_<entity>_repository()` factories and
-   the fifteen `DatabasePool::<entity>_repository()` matches become one
-   root function per query (`bindizr_db::zone::get_by_name(&db, name)`)
-   that matches the backend and calls the same-named function in
-   `mysql/zone.rs`, `postgres/zone.rs`, `sqlite/zone.rs`, each taking an
-   `Executor` of its own database; the SQL stays as it is. `RepositoryTx`
-   becomes `Transaction`, matched instead of downcast; the
-   `bindizr_db::DatabaseType` mirror of `config::DatabaseType` goes;
-   `MySQL` / `PostgreSQL` / `SQLite` become `MySql` / `Postgres` /
-   `Sqlite`, `clippy::upper_case_acronyms` leaves the lint table, and
-   `async-trait` leaves `Cargo.toml`. `Metrics::new` replaces `metrics()`
-   (in `bindizr-external-dns` too), the NOTIFY queue and the scheduler
-   become channel-plus-worker pairs, `started_at` a `Context` field, the
-   zone and ACL caches fields of the DNS server, the control channel a
-   field of the socket server. `bootstrap` builds `bindizr_service::Context`
-   from them; every service function gains `cx: &Context` first, every
-   axum handler `State<Arc<Context>>`, every task an `Arc<Context>`. The
-   facade in `bindizr-service/src/repository.rs` is deleted — a service
-   function writes `bindizr_db::zone::get_by_name(cx.db(), name).await?`
-   over `impl From<DatabaseError> for ServiceError` (to `Internal`, until
-   phase 3 refines it), the seven sites that read a UNIQUE violation as a
-   conflict do so where they call, and `finish_tx` / `discard_tx` move to
-   `bindizr-service/src/transaction.rs`.
-2. **Errors are types.** `DatabaseError` keeps its `sqlx::Error` as
+1. **Errors are types.** `DatabaseError` keeps its `sqlx::Error` as
    `#[source]`. `ServiceError { code, message }` becomes an enum of its
    `ErrorCode`s with `code()` and `Display`, `ErrorCode` staying the wire
    projection; `http_status` moves to `api/error.rs`, and
@@ -116,7 +88,7 @@ when it lands, and this section when all have.
    and transfer errors of `dns_client`, `Config::load`'s — and
    `From<String>` for `CliError`, `XfrError` and `UpdateError` goes with
    them.
-3. **Shapes.** The socket's `DaemonCommandKind` + `serde_json::Value` +
+2. **Shapes.** The socket's `DaemonCommandKind` + `serde_json::Value` +
    `*Params` become one data-carrying `DaemonCommand`, and
    `DaemonResponse { message, data: Value }` a `DaemonResponse<T>`. The
    `bool` and `Option<&str>` selectors *Rust idioms* lists become enums,
@@ -125,7 +97,7 @@ when it lands, and this section when all have.
    `from_record_with_zone` become `From` impls and `from_version` a
    `TryFrom`; `IntoOwner` goes, its callers writing `?`. Every type gains
    the derives *Common traits* lists.
-4. **Newtypes.** `Serial` and `Ttl` replace the `i32` row / `u32` wire
+3. **Newtypes.** `Serial` and `Ttl` replace the `i32` row / `u32` wire
    pairs and `serial_to_u32` / `serial_to_i32`; `ZoneId`, `RecordId`,
    `TokenId`, `TsigKeyId`, `DnssecKeyId`, `PolicyId`, `SecondaryId` replace
    the bare `i32` keys — `list_by_zone_id_and_key_id_tx(tx, key_id,
@@ -409,8 +381,12 @@ field only the service crate reads), the metrics (`Metrics::new`), and the
 senders of the NOTIFY queue and the DNSSEC scheduler — whose channels are
 created before the `Context` and whose workers are spawned after it with an
 `Arc<Context>` of their own, since they need the database it holds. What
-one front end owns lives in that front end's struct, not in the `Context`:
-the DNS server's zone and ACL caches, the socket server's control channel.
+one front end owns lives in that front end's context, not in the daemon's:
+`DnsContext` adds the transfer and ACL caches, `SocketContext` the control
+channel. A handler takes its front end's context first, named for it
+(`dns_cx`, `socket_cx`), and binds the daemon's from it where it needs one
+(`let cx = dns_cx.daemon();`), so `cx` always names the daemon's `Context`;
+the HTTP API, owning nothing of its own, takes that `Context` itself.
 The daemon's own start is a fact the `Context` records once every front end
 serves (`cx.started_at`, a `OnceLock` field set in the same breath as the
 started-at gauge) and the `status` uptime reads. Every piece is a
@@ -461,11 +437,12 @@ if it is a value being written it is just an argument; if it is a condition
 it folds into the verb (`upsert`) or the doc comment.
 
 The first parameter is the connection: `&Db` for a statement on the pool,
-`&mut Transaction<'_>` for `_tx`. A backend function takes an `Executor`
-of its database (`impl SqliteExecutor<'_>`) and is written once when the
-SQL is the same on the pool and in a transaction; a root pair
-(`get_by_name` / `get_by_name_tx`) exists only where the service needs
-both, and the `_tx` form alone where it needs the lock (`LockLevel`).
+`&mut Transaction<'_>` for `_tx`. The backend function beneath takes its own
+`&Pool<Sqlite>` or `&mut sqlx::Transaction<'_, Sqlite>`, so every backend
+carries the same set of functions and a missing one fails the root's
+`match`; a root pair (`get_by_name` / `get_by_name_tx`) exists only where
+the service needs both, and the `_tx` form alone where it needs the lock
+(`LockLevel`).
 
 **Verbs are a closed set — do not invent others:**
 

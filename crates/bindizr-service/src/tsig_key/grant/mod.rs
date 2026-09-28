@@ -4,13 +4,14 @@
 use std::collections::HashMap;
 
 use bindizr_core::dns::name::OwnerName;
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use crate::{
-    RepositoryTx,
+    Context, Transaction,
     authorization::Caller,
-    error::ServiceError,
+    db,
+    error::{ErrorCode, ServiceError},
     grant_pattern::{normalize_pattern, normalize_types},
     model::{
         record::RecordType,
@@ -18,7 +19,6 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    repository,
     types::{GetTsigGrantResponse, PageFilter, PaginatedResponse},
     zone,
 };
@@ -27,6 +27,7 @@ use crate::{
 /// record name pattern and/or record types, and to transfers alone. Global
 /// keys are rejected: they already cover every zone and never carry grants.
 pub async fn create(
+    cx: &Context,
     caller: &Caller,
     key_name: &str,
     zone_name: &str,
@@ -36,28 +37,40 @@ pub async fn create(
 ) -> Result<TsigGrantWithNames, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let key = super::lookup_by_name(key_name).await?;
+    let key = super::lookup_by_name(cx, key_name).await?;
     if key.is_global {
         return Err(ServiceError::invalid_input(format!(
             "TSIG key '{}' is global and already covers every zone; it cannot be granted one",
             key.name
         )));
     }
-    let zone = zone::lookup_by_name(zone_name).await?;
+    let zone = zone::lookup_by_name(cx, zone_name).await?;
 
     let record_name_pattern = normalize_pattern(record_name_pattern)?;
     let record_types = normalize_types(record_types)?;
 
-    let grant = repository::create_tsig_grant(TsigGrant {
-        id: 0,
-        zone_id: zone.id,
-        tsig_key_id: key.id,
-        record_name_pattern,
-        record_types,
-        can_write,
-        created_at: Utc::now(),
-    })
-    .await?;
+    let grant = db::tsig_grant::create(
+        cx.db(),
+        TsigGrant {
+            id: 0,
+            zone_id: zone.id,
+            tsig_key_id: key.id,
+            record_name_pattern,
+            record_types,
+            can_write,
+            created_at: Utc::now(),
+        },
+    )
+    .await
+    .map_err(|e| {
+        // The zone or key can go between the lookups above and this insert;
+        // the FK reports it.
+        if e.is_foreign_key_violation() {
+            ServiceError::new(ErrorCode::ZoneNotFound, "Zone or TSIG key no longer exists")
+        } else {
+            e.into()
+        }
+    })?;
 
     Ok(TsigGrantWithNames {
         grant,
@@ -68,16 +81,17 @@ pub async fn create(
 
 /// Every grant of `key_name`, with the zone each covers.
 pub async fn list_by_key(
+    cx: &Context,
     caller: &Caller,
     key_name: &str,
     page: PageFilter,
 ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let key = super::lookup_by_name(key_name).await?;
-    let grants = repository::list_tsig_grants_by_key_id(key.id).await?;
+    let key = super::lookup_by_name(cx, key_name).await?;
+    let grants = db::tsig_grant::list_by_key_id(cx.db(), key.id).await?;
 
-    let zone_names: HashMap<i32, String> = repository::list_zones()
+    let zone_names: HashMap<i32, String> = db::zone::list_all(cx.db())
         .await?
         .into_iter()
         .map(|zone| (zone.id, zone.name.to_string()))
@@ -101,16 +115,17 @@ pub async fn list_by_key(
 
 /// Every grant that applies to `zone_name`, with the key each belongs to.
 pub async fn list_by_zone(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
     page: PageFilter,
 ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let zone = zone::lookup_by_name(zone_name).await?;
-    let grants = repository::list_tsig_grants_by_zone_id(zone.id).await?;
+    let zone = zone::lookup_by_name(cx, zone_name).await?;
+    let grants = db::tsig_grant::list_by_zone_id(cx.db(), zone.id).await?;
 
-    let key_names: HashMap<i32, String> = repository::list_tsig_keys()
+    let key_names: HashMap<i32, String> = db::tsig_key::list_all(cx.db())
         .await?
         .into_iter()
         .map(|key| (key.id, key.name))
@@ -139,62 +154,68 @@ pub async fn list_by_zone(
 /// scoped one needs a grant over the whole zone, read-only or not. The
 /// grants are share-locked so a revocation waits for the read they gate.
 pub(crate) async fn authorize_whole_zone_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     key: &TsigKey,
 ) -> Result<bool, ServiceError> {
     if key.is_global {
         return Ok(true);
     }
-    let grants = repository::list_tsig_grants_by_zone_id_and_key_id_tx(
-        tx,
-        zone.id,
-        key.id,
-        LockLevel::Shared,
-    )
-    .await?;
+    let grants =
+        db::tsig_grant::list_by_zone_id_and_key_id_tx(tx, zone.id, key.id, LockLevel::Shared)
+            .await?;
     Ok(covers_whole_zone(&grants))
 }
 
 /// Revoke one of `key_name`'s grants by id. An id that belongs to another
 /// key reads as not found.
-pub async fn revoke(caller: &Caller, key_name: &str, grant_id: i32) -> Result<(), ServiceError> {
+pub async fn revoke(
+    cx: &Context,
+    caller: &Caller,
+    key_name: &str,
+    grant_id: i32,
+) -> Result<(), ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let key = super::lookup_by_name(key_name).await?;
-    let grant = repository::get_tsig_grant(grant_id)
+    let key = super::lookup_by_name(cx, key_name).await?;
+    let grant = db::tsig_grant::get(cx.db(), grant_id)
         .await?
         .filter(|grant| grant.tsig_key_id == key.id)
         .ok_or_else(|| ServiceError::tsig_grant_not_found(grant_id))?;
 
-    repository::delete_tsig_grant(grant.id).await
+    Ok(db::tsig_grant::delete(cx.db(), grant.id).await?)
 }
 
 /// Revoke every grant `key_name` holds in `zone_name`, returning how many
 /// went. Matching none is not an error: the rights already read the way
 /// the request asked for.
 pub async fn revoke_by_key_and_zone(
+    cx: &Context,
     caller: &Caller,
     key_name: &str,
     zone_name: &str,
 ) -> Result<u64, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let key = super::lookup_by_name(key_name).await?;
-    let zone = zone::lookup_by_name(zone_name).await?;
+    let key = super::lookup_by_name(cx, key_name).await?;
+    let zone = zone::lookup_by_name(cx, zone_name).await?;
 
-    repository::delete_tsig_grants_by_key_id_and_zone_id(key.id, zone.id).await
+    Ok(db::tsig_grant::delete_by_key_id_and_zone_id(cx.db(), key.id, zone.id).await?)
 }
 
 /// Revoke a grant by its id, which identifies the row on its own.
-pub async fn revoke_by_id(caller: &Caller, grant_id: i32) -> Result<(), ServiceError> {
+pub async fn revoke_by_id(
+    cx: &Context,
+    caller: &Caller,
+    grant_id: i32,
+) -> Result<(), ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let grant = repository::get_tsig_grant(grant_id)
+    let grant = db::tsig_grant::get(cx.db(), grant_id)
         .await?
         .ok_or_else(|| ServiceError::tsig_grant_not_found(grant_id))?;
 
-    repository::delete_tsig_grant(grant.id).await
+    Ok(db::tsig_grant::delete(cx.db(), grant.id).await?)
 }
 
 /// Whether any grant authorizes an update of `record_type` at the relative

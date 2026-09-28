@@ -1,17 +1,18 @@
-use bindizr_core::{config::bindizr_config, dns::name::OwnerName};
-use bindizr_db::repository::LockLevel;
+use bindizr_core::dns::name::OwnerName;
+use bindizr_db::LockLevel;
 
 use crate::{
+    Context,
     authorization::Caller,
-    dnssec,
-    error::{ErrorCode, ServiceError},
+    db, dnssec,
+    error::ServiceError,
     model::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
     record::validate_record_name_in_zone,
-    repository,
     serial::generate_serial,
+    transaction,
     types::{CreateZoneRequest, GetZoneResponse, UpdateZoneRequest, ZoneWriteResponse},
     zone::{
         validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
@@ -62,6 +63,7 @@ pub(crate) fn soa_replacement_changes(
 /// Omitted fields keep the stored zone's value; the merge runs inside the
 /// transaction, against the locked row.
 pub async fn update(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
     request: &UpdateZoneRequest,
@@ -74,6 +76,7 @@ pub async fn update(
         ));
     }
     let updated_zone = update_locked(
+        cx,
         zone_name,
         &caller.change_subject(),
         request.enabled,
@@ -118,13 +121,14 @@ pub async fn update(
 /// Lock the zone, build the effective request against it, then apply:
 /// bump the serial and record SOA/NS changes for IXFR.
 async fn update_locked(
+    cx: &Context,
     zone_name: &str,
     subject: &ChangeSubject,
     enabled: Option<bool>,
     dry_run: bool,
     build: impl FnOnce(&Zone) -> CreateZoneRequest,
 ) -> Result<Zone, ServiceError> {
-    let mut tx = repository::begin_tx("Failed to update zone").await?;
+    let mut tx = transaction::begin_tx(cx, "Failed to update zone").await?;
 
     let apply_result: Result<AppliedZoneUpdate, ServiceError> = async {
         // Lock the zone row so the serial computed below stays ahead of
@@ -133,12 +137,12 @@ async fn update_locked(
         let zone_id = existing_zone.id;
 
         let request = build(&existing_zone);
-        let validated = normalize_create_zone_request(&request)?;
+        let validated = normalize_create_zone_request(cx, &request)?;
 
         // A longer zone name lengthens every record's wire name, so the
         // records must still fit under it or the zone stops transferring.
         if validated.name != existing_zone.name {
-            let records = repository::list_records_tx(&mut tx, zone_id, LockLevel::None).await?;
+            let records = db::record::list_tx(&mut tx, zone_id, LockLevel::None).await?;
             for record in &records {
                 validate_record_name_in_zone(&record.name, &validated.name)?;
             }
@@ -158,7 +162,7 @@ async fn update_locked(
         // deadlocks); renames that race past it hit the UNIQUE(name)
         // backstop, which maps to the same conflict error.
         if validated.name != existing_zone.name {
-            match repository::get_zone_by_name(validated.name.as_str()).await {
+            match db::zone::get_by_name(cx.db(), validated.name.as_str()).await {
                 Ok(Some(zone)) if zone.id != zone_id => {
                     log::error!("Zone with name {} already exists", validated.name);
                     return Err(ServiceError::zone_conflict(format!(
@@ -203,24 +207,23 @@ async fn update_locked(
             });
         }
 
-        let updated_zone = repository::update_zone_tx(&mut tx, candidate)
-            .await
-            .map_err(|e| {
+        let name = candidate.name.clone();
+        let updated_zone = db::zone::update_tx(&mut tx, candidate).await.map_err(|e| {
+            // A rename that raced past the pre-check above trips
+            // UNIQUE(name); the backstop reads as the same conflict.
+            if e.is_unique_violation() {
+                ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
+            } else {
                 log::error!("Failed to update zone: {}", e);
-                // Keep the conflict mapped from the UNIQUE(name) backstop; it
-                // covers renames that raced past the pre-check above.
-                if e.code == ErrorCode::ZoneConflict {
-                    e
-                } else {
-                    ServiceError::internal("Failed to update zone")
-                }
-            })?;
+                ServiceError::internal("Failed to update zone")
+            }
+        })?;
 
         // Journal the SOA and signature changes under the zone update's serial,
         // then save the version that future IXFR and rollback reads will use.
         let changes = soa_replacement_changes(&existing_zone, &updated_zone, new_serial)?;
 
-        repository::create_zone_changes_tx(&mut tx, &changes)
+        db::zone_change::create_many_tx(&mut tx, &changes)
             .await
             .map_err(|e| {
                 log::error!("Failed to create zone changes: {}", e);
@@ -228,7 +231,7 @@ async fn update_locked(
             })?;
 
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(&mut tx, &updated_zone, new_serial, subject).await?;
+        super::save_version_tx(cx, &mut tx, &updated_zone, new_serial, subject).await?;
 
         Ok(AppliedZoneUpdate {
             catalog_changed: existing_zone.name != updated_zone.name
@@ -243,7 +246,7 @@ async fn update_locked(
         zone: updated_zone,
         catalog_changed,
         new_serial,
-    } = repository::finish_tx(tx, apply_result, "Failed to update zone").await?;
+    } = transaction::finish_tx(tx, apply_result, "Failed to update zone").await?;
 
     log::info!(
         "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",
@@ -255,13 +258,13 @@ async fn update_locked(
 
     // Announce the zone's new serial after its data and version have committed.
     if !dry_run {
-        crate::notify::notify_after_update(updated_zone.name.as_str()).await;
+        crate::notify::notify_after_update(cx, updated_zone.name.as_str()).await;
     }
 
     // Renaming or toggling a zone also changes the catalog seen by secondaries.
-    let config = bindizr_config();
+    let config = cx.config();
     if !dry_run && catalog_changed {
-        crate::notify::notify_after_update(&config.dns.catalog_zone_name).await;
+        crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }
 
     Ok(updated_zone)

@@ -1,24 +1,24 @@
 use std::{collections::HashMap, time::Instant};
 
 use bindizr_core::dns::name::{OwnerName, ZoneName};
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::validation::{
     normalize_record_owner_name, parse_record_type, validate_record_add_constraints_normalized,
 };
 use crate::{
-    RepositoryTx,
+    Context, Transaction,
     authorization::{Caller, RecordWrite},
-    dnssec,
+    db, dnssec,
     error::ServiceError,
     model::{
         record::{Record, RecordData, RecordType},
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    repository,
     serial::generate_serial,
     time::elapsed_ms,
+    transaction,
     ttl::validate_record_ttl,
     types::{BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest},
     zone::{self, diff::build_record_diff},
@@ -74,7 +74,7 @@ pub(crate) fn parse_record_request(
 /// Insert records with their ADD zone changes for IXFR. The caller has
 /// already validated the rows.
 pub(crate) async fn create_with_changes_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone_id: i32,
     new_serial: i32,
     records: &[Record],
@@ -83,7 +83,7 @@ pub(crate) async fn create_with_changes_tx(
         return Ok(Vec::new());
     }
 
-    let created_records = repository::create_records_tx(tx, records).await?;
+    let created_records = db::record::create_many_tx(tx, records).await?;
     let changes: Vec<ZoneChange> = created_records
         .iter()
         .map(|record| ZoneChange {
@@ -99,19 +99,19 @@ pub(crate) async fn create_with_changes_tx(
             derived: false,
         })
         .collect();
-    repository::create_zone_changes_tx(tx, &changes).await?;
+    db::zone_change::create_many_tx(tx, &changes).await?;
     Ok(created_records)
 }
 
 /// Update one record with its DEL(old)+ADD(new) zone changes for IXFR. The
 /// caller has already validated the row.
 pub(crate) async fn update_with_changes_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     new_serial: i32,
     existing: &Record,
     updated: Record,
 ) -> Result<Record, ServiceError> {
-    let updated = repository::update_record_tx(tx, updated).await?;
+    let updated = db::record::update_tx(tx, updated).await?;
     let change = |operation, record: &Record| ZoneChange {
         zone_id: record.zone_id,
         serial: new_serial,
@@ -128,13 +128,13 @@ pub(crate) async fn update_with_changes_tx(
         change(ChangeOperation::Del, existing),
         change(ChangeOperation::Add, &updated),
     ];
-    repository::create_zone_changes_tx(tx, &changes).await?;
+    db::zone_change::create_many_tx(tx, &changes).await?;
     Ok(updated)
 }
 
 /// Delete records with their DEL zone changes for IXFR.
 pub(crate) async fn delete_with_changes_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone_id: i32,
     new_serial: i32,
     records: &[Record],
@@ -144,7 +144,7 @@ pub(crate) async fn delete_with_changes_tx(
     }
 
     let ids: Vec<i32> = records.iter().map(|r| r.id).collect();
-    repository::delete_records_tx(tx, &ids).await?;
+    db::record::delete_many_tx(tx, &ids).await?;
     let changes: Vec<ZoneChange> = records
         .iter()
         .map(|record| ZoneChange {
@@ -160,7 +160,7 @@ pub(crate) async fn delete_with_changes_tx(
             derived: false,
         })
         .collect();
-    repository::create_zone_changes_tx(tx, &changes).await?;
+    db::zone_change::create_many_tx(tx, &changes).await?;
     Ok(())
 }
 /// Insert many records into a zone in one transaction — one serial bump,
@@ -168,6 +168,7 @@ pub(crate) async fn delete_with_changes_tx(
 /// the same way, writes nothing, and answers with the would-be records.
 /// `caller` is authorized against the zone this tx locked.
 pub async fn create_bulk(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
     items: &[RecordItem],
@@ -199,7 +200,7 @@ pub async fn create_bulk(
 
     let mut timings = BulkTimings::default();
 
-    let mut tx = repository::begin_tx("Failed to create records").await?;
+    let mut tx = transaction::begin_tx(cx, "Failed to create records").await?;
 
     let apply_result = async {
         let t = Instant::now();
@@ -232,7 +233,7 @@ pub async fn create_bulk(
         batch_names.sort();
         batch_names.dedup();
 
-        let existing_records = match repository::list_records_by_names_tx(
+        let existing_records = match db::record::list_by_names_tx(
             &mut tx,
             zone.id,
             &batch_names,
@@ -342,7 +343,7 @@ pub async fn create_bulk(
         let t = Instant::now();
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the batch.
-        zone::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
         timings.serial_ms = elapsed_ms(t);
 
         Ok::<(Vec<Record>, ZoneName, RecordDiff), ServiceError>((
@@ -354,7 +355,7 @@ pub async fn create_bulk(
     .await;
 
     let (created_records, zone_name, diff) =
-        repository::finish_tx(tx, apply_result, "Failed to create records").await?;
+        transaction::finish_tx(tx, apply_result, "Failed to create records").await?;
 
     log::info!(
         "event=record_bulk_create zone={} count={} dry_run={}",
@@ -365,7 +366,7 @@ pub async fn create_bulk(
 
     let t = Instant::now();
     if !dry_run {
-        crate::notify::notify_after_update(zone_name.as_str()).await;
+        crate::notify::notify_after_update(cx, zone_name.as_str()).await;
     }
     let notify_ms = elapsed_ms(t);
 

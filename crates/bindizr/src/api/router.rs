@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
 use axum::{
     Extension, Json, Router,
     http::{StatusCode, header::CONTENT_TYPE},
     response::IntoResponse,
     routing,
 };
-use bindizr_core::config;
 use bindizr_service::{
+    Context,
     authorization::Caller,
     error::{ErrorCode, ServiceError},
     types::MessageResponse,
@@ -18,9 +20,11 @@ use super::{
     secondary, token, tsig_key, zone,
 };
 
-/// Build the full axum router with auth, CORS, and the optional route groups.
-pub(crate) fn routes() -> Router {
-    let api_config = &config::bindizr_config().api;
+/// Build the full axum router with auth, CORS, and the optional route groups,
+/// every handler reading the daemon's state through `State`.
+pub(crate) fn routes(cx: Arc<Context>) -> Router {
+    let config = cx.config();
+    let api_config = &config.api;
 
     let mut api_router = Router::new()
         .merge(zone::routes())
@@ -39,7 +43,8 @@ pub(crate) fn routes() -> Router {
     }
 
     if api_config.authentication_required {
-        api_router = api_router.layer(axum::middleware::from_fn(
+        api_router = api_router.layer(axum::middleware::from_fn_with_state(
+            cx.clone(),
             super::middleware::auth::auth_middleware,
         ));
     } else {
@@ -76,14 +81,15 @@ pub(crate) fn routes() -> Router {
 
     // Layered after the fallback so every route, including 404s, is measured.
     if api_config.metrics_enabled {
-        router = router.layer(axum::middleware::from_fn(
+        router = router.layer(axum::middleware::from_fn_with_state(
+            cx.clone(),
             super::middleware::metrics::track_http_metrics,
         ));
     }
 
     router = router.layer(CorsLayer::permissive());
 
-    router
+    router.with_state(cx)
 }
 
 /// Return the API's running-status message.

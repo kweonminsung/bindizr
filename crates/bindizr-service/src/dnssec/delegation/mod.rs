@@ -5,8 +5,9 @@ use chrono::Utc;
 
 use super::status::build_status_tx;
 use crate::{
+    Context,
     authorization::Caller,
-    database::repository::LockLevel,
+    db::LockLevel,
     dns_client::ds::{ParentDs, probe_parent_ds},
     dnssec::SignedZone,
     error::ServiceError,
@@ -14,20 +15,21 @@ use crate::{
         dnssec_key::{DnssecKey, DnssecKeyState},
         zone::Zone,
     },
-    repository,
+    transaction,
     types::{DnssecDelegationInfo, DnssecDelegationKeyInfo, DnssecStatusResponse, DsState},
 };
 
 /// Ask the zone's parent whether it serves the zone's DS, reporting the
 /// answer with the zone's status.
 pub async fn check_ds(
+    cx: &Context,
     caller: &Caller,
     zone_name: &str,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
 
-    let mut tx = repository::begin_read_tx("failed to check the parent DS").await?;
-    let result = async {
+    let mut tx = transaction::begin_read_tx(cx, "failed to check the parent DS").await?;
+    let result: Result<_, ServiceError> = async {
         let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         let status = build_status_tx(
             &mut tx,
@@ -41,19 +43,20 @@ pub async fn check_ds(
     }
     .await;
     let (signed, mut status) =
-        repository::finish_tx(tx, result, "failed to check the parent DS").await?;
+        transaction::finish_tx(tx, result, "failed to check the parent DS").await?;
     // Read-only, so the wait stays outside the transaction; the keys are
     // the ones the status describes.
-    status.delegation = Some(probe_delegation(&signed).await?);
+    status.delegation = Some(probe_delegation(cx, &signed).await?);
     Ok(status)
 }
 
 /// The parent's answer about the zone's DS, matched against the zone's
 /// SEP keys, or the unverified error a refusal reports.
 pub(crate) async fn probe_delegation(
+    cx: &Context,
     signed: &SignedZone,
 ) -> Result<DnssecDelegationInfo, ServiceError> {
-    let parent = probe_parent_ds(&signed.zone)
+    let parent = probe_parent_ds(cx, &signed.zone)
         .await
         .map_err(|e| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), e))?;
 

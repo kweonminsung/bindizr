@@ -5,15 +5,15 @@ use bindizr_core::dns::{
     name::{OwnerName, ParseNameError, ZoneName},
     record::MxRecordValue,
 };
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 
 use crate::{
+    Transaction, db,
     error::ServiceError,
     model::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    repository::{self, RepositoryTx},
 };
 
 /// Parse a supported record type from request text.
@@ -192,7 +192,7 @@ pub(crate) enum AddResult {
 /// Section 3.4.2.2 makes it a silent no-op. The API paths call the
 /// validator directly, where the same case stays a conflict.
 pub(crate) async fn validate_add_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     owner_name: &OwnerName,
     record_type: &RecordType,
@@ -203,7 +203,7 @@ pub(crate) async fn validate_add_tx(
     // Only records sharing the owner name can conflict, so load just those
     // instead of the whole zone.
     let records_at_name =
-        repository::list_records_by_name_tx(tx, zone.id, owner_name, LockLevel::Exclusive)
+        db::record::list_by_name_tx(tx, zone.id, owner_name, LockLevel::Exclusive)
             .await
             .map_err(|e| {
                 log::error!("Failed to load records: {}", e);

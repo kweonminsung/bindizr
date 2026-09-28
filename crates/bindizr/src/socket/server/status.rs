@@ -1,10 +1,9 @@
 use std::{net::SocketAddr, process};
 
-use bindizr_core::config;
-use bindizr_service::{error::ServiceError, secondary, types::MessageResponse, zone};
+use bindizr_service::{Context, error::ServiceError, secondary, types::MessageResponse, zone};
 
 use crate::{
-    daemon::{db_probe::DB_PROBE_TIMEOUT, started_at::started_at},
+    daemon::db_probe::DB_PROBE_TIMEOUT,
     socket::{
         server::to_response_data,
         types::{DaemonResponse, DaemonStatusResponse},
@@ -12,11 +11,11 @@ use crate::{
 };
 
 /// Return the daemon's current status as JSON.
-pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
-    let config = config::bindizr_config();
+pub(crate) async fn handle_status(cx: &Context) -> Result<DaemonResponse, ServiceError> {
+    let config = cx.config();
     let counts = async {
-        let zones = zone::count_all().await?;
-        let secondaries = secondary::list_enabled().await?.len();
+        let zones = zone::count_all(cx).await?;
+        let secondaries = secondary::list_enabled(cx).await?.len();
         Ok::<_, ServiceError>((zones, secondaries))
     };
     let (zones, secondaries, database_error) =
@@ -40,7 +39,7 @@ pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
     let status = DaemonStatusResponse {
         pid: Some(process::id()),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        started_at_ms: started_at().map_or(0, |at| at.timestamp_millis() as u64),
+        started_at_ms: cx.started_at().map_or(0, |at| at.timestamp_millis() as u64),
         api_url: format!(
             "{}://{}",
             scheme,
@@ -62,8 +61,8 @@ pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
 }
 
 /// Reload the daemon configuration and return the result.
-pub(crate) fn reload_config() -> Result<DaemonResponse, ServiceError> {
-    let changed = crate::daemon::reload_config().map_err(ServiceError::invalid_input)?;
+pub(crate) fn reload_config(cx: &Context) -> Result<DaemonResponse, ServiceError> {
+    let changed = crate::daemon::reload_config(cx).map_err(ServiceError::invalid_input)?;
 
     let message = if changed.is_empty() {
         "Configuration reloaded; nothing changed".to_string()
@@ -78,9 +77,9 @@ pub(crate) fn reload_config() -> Result<DaemonResponse, ServiceError> {
 }
 
 /// Return the daemon's effective configuration as JSON.
-pub(crate) fn config() -> Result<DaemonResponse, ServiceError> {
+pub(crate) fn config(cx: &Context) -> Result<DaemonResponse, ServiceError> {
     Ok(DaemonResponse {
         message: "Configuration retrieved successfully".to_string(),
-        data: to_response_data(config::bindizr_config())?,
+        data: to_response_data(cx.config())?,
     })
 }

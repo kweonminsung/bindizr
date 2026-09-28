@@ -1,9 +1,12 @@
-use std::{sync::OnceLock, time::Duration};
+use std::time::Duration;
 
 use bindizr_service::{error::ServiceError, types::MessageResponse};
 use tokio::sync::mpsc;
 
-use crate::socket::{server::to_response_data, types::DaemonResponse};
+use crate::socket::{
+    server::{SocketContext, to_response_data},
+    types::DaemonResponse,
+};
 
 /// Daemon lifecycle transitions requestable over the control socket.
 pub(crate) enum DaemonControl {
@@ -11,18 +14,15 @@ pub(crate) enum DaemonControl {
     Restart,
 }
 
-static CONTROL_TX: OnceLock<mpsc::Sender<DaemonControl>> = OnceLock::new();
-
-/// Create the control channel; the daemon main loop awaits the receiver.
-pub(crate) fn initialize() -> mpsc::Receiver<DaemonControl> {
-    let (tx, rx) = mpsc::channel(1);
-    let _ = CONTROL_TX.set(tx);
-    rx
+/// The control channel: the sender lives in the socket server, the daemon's
+/// lifecycle loop awaits the receiver.
+pub(crate) fn channel() -> (mpsc::Sender<DaemonControl>, mpsc::Receiver<DaemonControl>) {
+    mpsc::channel(1)
 }
 
 /// Request daemon shutdown and acknowledge the control request.
-pub(crate) fn shutdown() -> Result<DaemonResponse, ServiceError> {
-    send_control(DaemonControl::Shutdown)?;
+pub(crate) fn shutdown(socket_cx: &SocketContext) -> Result<DaemonResponse, ServiceError> {
+    send_control(socket_cx, DaemonControl::Shutdown);
     let message = "Bindizr is shutting down".to_string();
     Ok(DaemonResponse {
         message: message.clone(),
@@ -31,8 +31,8 @@ pub(crate) fn shutdown() -> Result<DaemonResponse, ServiceError> {
 }
 
 /// Request daemon restart and acknowledge the control request.
-pub(crate) fn restart() -> Result<DaemonResponse, ServiceError> {
-    send_control(DaemonControl::Restart)?;
+pub(crate) fn restart(socket_cx: &SocketContext) -> Result<DaemonResponse, ServiceError> {
+    send_control(socket_cx, DaemonControl::Restart);
     let message = "Bindizr is restarting".to_string();
     Ok(DaemonResponse {
         message: message.clone(),
@@ -42,16 +42,11 @@ pub(crate) fn restart() -> Result<DaemonResponse, ServiceError> {
 
 /// Deliver the transition after a short delay so the command response reaches
 /// the client before the daemon tears down.
-fn send_control(control: DaemonControl) -> Result<(), ServiceError> {
-    let tx = CONTROL_TX
-        .get()
-        .ok_or_else(|| ServiceError::internal("Daemon control channel is not initialized"))?
-        .clone();
+fn send_control(socket_cx: &SocketContext, control: DaemonControl) {
+    let tx = socket_cx.control().clone();
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(100)).await;
         let _ = tx.send(control).await;
     });
-
-    Ok(())
 }

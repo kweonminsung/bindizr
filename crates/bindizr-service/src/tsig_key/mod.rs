@@ -6,10 +6,11 @@ use chrono::Utc;
 use rand::RngExt;
 
 use crate::{
+    Context,
     authorization::Caller,
+    db,
     error::{ErrorCode, ServiceError},
     model::tsig_key::{TsigAlgorithm, TsigKey},
-    repository,
     text::MAX_COLUMN_TEXT_LEN,
     types::{GetTsigKeyResponse, PageFilter, PaginatedResponse},
 };
@@ -21,6 +22,7 @@ const GENERATED_SECRET_LEN: usize = 32;
 /// Create a TSIG key. When `secret` is omitted a random one is generated;
 /// when provided it must be valid, non-empty base64 (an imported key).
 pub async fn create(
+    cx: &Context,
     caller: &Caller,
     name: &str,
     algorithm: Option<&str>,
@@ -40,29 +42,42 @@ pub async fn create(
     };
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
-    if repository::get_tsig_key_by_name(&name).await?.is_some() {
+    if db::tsig_key::get_by_name(cx.db(), &name).await?.is_some() {
         return Err(ServiceError::tsig_key_conflict(&name));
     }
 
-    repository::create_tsig_key(TsigKey {
-        id: 0,
-        name,
-        algorithm,
-        secret,
-        is_global,
-        created_at: Utc::now(),
-    })
+    db::tsig_key::create(
+        cx.db(),
+        TsigKey {
+            id: 0,
+            name: name.clone(),
+            algorithm,
+            secret,
+            is_global,
+            created_at: Utc::now(),
+        },
+    )
     .await
+    .map_err(|e| {
+        // A create that raced past the pre-check trips UNIQUE(name); the
+        // backstop reads as the same conflict.
+        if e.is_unique_violation() {
+            ServiceError::tsig_key_conflict(&name)
+        } else {
+            e.into()
+        }
+    })
 }
 
 /// List all TSIG keys.
 pub async fn list(
+    cx: &Context,
     caller: &Caller,
     page: PageFilter,
 ) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let keys = repository::list_tsig_keys().await?;
+    let keys = db::tsig_key::list_all(cx.db()).await?;
     PaginatedResponse::from_collection(
         keys.iter().map(GetTsigKeyResponse::from_key).collect(),
         page.limit,
@@ -71,43 +86,43 @@ pub async fn list(
 }
 
 /// Fetch one TSIG key by name, including its secret.
-pub async fn get(caller: &Caller, name: &str) -> Result<TsigKey, ServiceError> {
+pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<TsigKey, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    lookup_by_name(name).await
+    lookup_by_name(cx, name).await
 }
 
 /// Fetch one TSIG key by name. This is the unchecked lookup for
 /// service-internal use; front ends go through [`get`].
-pub(crate) async fn lookup_by_name(name: &str) -> Result<TsigKey, ServiceError> {
+pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<TsigKey, ServiceError> {
     let name = normalize_key_name(name)?;
-    repository::get_tsig_key_by_name(&name)
+    db::tsig_key::get_by_name(cx.db(), &name)
         .await?
         .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
 }
 
 /// Look up the key an incoming TSIG record names. Authentication precedes
 /// any zone transaction, so this is a plain read.
-pub async fn find_by_wire_name(name: &str) -> Result<Option<TsigKey>, ServiceError> {
+pub async fn find_by_wire_name(cx: &Context, name: &str) -> Result<Option<TsigKey>, ServiceError> {
     // Canonicalize like storage does; an unparseable name matches no key.
     let Ok(name) = normalize_key_name(name) else {
         return Ok(None);
     };
-    repository::get_tsig_key_by_name(&name).await
+    Ok(db::tsig_key::get_by_name(cx.db(), &name).await?)
 }
 
 /// Delete a TSIG key by name; refused while it still holds grants or
 /// signs a secondary's NOTIFY.
-pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
+pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let key = lookup_by_name(name).await?;
+    let key = lookup_by_name(cx, name).await?;
 
-    let grant_count = repository::count_tsig_grants_by_key_id(key.id).await?;
+    let grant_count = db::tsig_grant::count_by_key_id(cx.db(), key.id).await?;
     if grant_count > 0 {
         return Err(ServiceError::tsig_key_in_use(&key.name, grant_count));
     }
-    let secondary_count = repository::count_secondaries_by_notify_tsig_key_id(key.id).await?;
+    let secondary_count = db::secondary::count_by_notify_tsig_key_id(cx.db(), key.id).await?;
     if secondary_count > 0 {
         return Err(ServiceError::new(
             ErrorCode::TsigKeyInUse,
@@ -120,7 +135,18 @@ pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
         ));
     }
 
-    repository::delete_tsig_key(key.id).await
+    db::tsig_key::delete(cx.db(), key.id).await.map_err(|e| {
+        // A grant or secondary that took the key between the counts above and
+        // this delete trips the FK: the same in-use conflict.
+        if e.is_foreign_key_violation() {
+            ServiceError::new(
+                ErrorCode::TsigKeyInUse,
+                "TSIG key is still referenced by zone TSIG grants or secondaries",
+            )
+        } else {
+            e.into()
+        }
+    })
 }
 
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so

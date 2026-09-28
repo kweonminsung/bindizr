@@ -1,4 +1,5 @@
 use bindizr_service::{
+    Context,
     authorization::Caller,
     error::ServiceError,
     record,
@@ -17,10 +18,13 @@ use crate::{
 };
 
 /// Return the requested record.
-pub(crate) async fn get_record(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn get_record(
+    cx: &Context,
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
     let params: IdParams = parse_params(data)?;
 
-    let record = record::get_with_zone(&Caller::Global, params.id).await?;
+    let record = record::get_with_zone(cx, &Caller::Global, params.id).await?;
     Ok(DaemonResponse {
         message: "Record retrieved successfully".to_string(),
         data: to_response_data(RecordResponse {
@@ -30,14 +34,17 @@ pub(crate) async fn get_record(data: &serde_json::Value) -> Result<DaemonRespons
 }
 
 /// Return records matching the request filters.
-pub(crate) async fn list_records(data: &serde_json::Value) -> Result<DaemonResponse, ServiceError> {
+pub(crate) async fn list_records(
+    cx: &Context,
+    data: &serde_json::Value,
+) -> Result<DaemonResponse, ServiceError> {
     let filter: GetRecordsFilter = if data.is_null() {
         GetRecordsFilter::default()
     } else {
         parse_params(data)?
     };
 
-    let response = record::list_with_zone_by_filter(&Caller::Global, filter).await?;
+    let response = record::list_with_zone_by_filter(cx, &Caller::Global, filter).await?;
 
     Ok(DaemonResponse {
         message: "Records retrieved successfully".to_string(),
@@ -47,11 +54,12 @@ pub(crate) async fn list_records(data: &serde_json::Value) -> Result<DaemonRespo
 
 /// Create a record from the control request.
 pub(crate) async fn create_record(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateRecordRequest = parse_params(data)?;
 
-    let response = record::create(&Caller::Global, &request).await?;
+    let response = record::create(cx, &Caller::Global, &request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Record would be created".to_string()
@@ -64,11 +72,12 @@ pub(crate) async fn create_record(
 
 /// Update the requested record.
 pub(crate) async fn update_record(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordParams = parse_params(data)?;
 
-    let response = record::update(&Caller::Global, params.id, &params.request).await?;
+    let response = record::update(cx, &Caller::Global, params.id, &params.request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Record would be updated".to_string()
@@ -81,11 +90,13 @@ pub(crate) async fn update_record(
 
 /// Update the one record at the requested owner name.
 pub(crate) async fn update_record_by_name(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: UpdateRecordByNameParams = parse_params(data)?;
 
     let response = record::update_by_name(
+        cx,
         &Caller::Global,
         &params.zone_name,
         &params.record_name,
@@ -104,11 +115,13 @@ pub(crate) async fn update_record_by_name(
 
 /// Preview or apply the requested batch of new records.
 pub(crate) async fn create_records_bulk(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let request: CreateBulkRecordsRequest = parse_params(data)?;
 
     let response = record::create_bulk(
+        cx,
         &Caller::Global,
         &request.zone_name,
         &request.records,
@@ -132,11 +145,12 @@ pub(crate) async fn create_records_bulk(
 
 /// Delete the requested record.
 pub(crate) async fn delete_record(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let params: DeleteRecordParams = parse_params(data)?;
 
-    let response = record::delete(&Caller::Global, params.id, params.dry_run).await?;
+    let response = record::delete(cx, &Caller::Global, params.id, params.dry_run).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!("Record {} would be deleted", params.id)
@@ -151,10 +165,11 @@ pub(crate) async fn delete_record(
 
 /// Delete records matching the requested owner, type, and value filters.
 pub(crate) async fn delete_records_matching(
+    cx: &Context,
     data: &serde_json::Value,
 ) -> Result<DaemonResponse, ServiceError> {
     let filter: DeleteRecordsFilter = parse_params(data)?;
-    let response = record::delete_matching(&Caller::Global, &filter).await?;
+    let response = record::delete_matching(cx, &Caller::Global, &filter).await?;
 
     Ok(DaemonResponse {
         message: if response.dry_run {

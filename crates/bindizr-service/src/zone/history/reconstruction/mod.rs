@@ -2,29 +2,28 @@
 
 use std::collections::HashMap;
 
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 
 use crate::{
-    RepositoryTx,
+    Transaction, db,
     error::ServiceError,
     model::{
         record::{Record, RecordData, RecordKey},
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    repository,
 };
 
 /// Reverse-apply the zone's journal in `(target_serial, current_serial]`
 /// onto the current records, yielding the records at `target_serial`.
 /// SOA rows are skipped (SOA state is restored from `zone_versions`).
 pub(crate) async fn reconstruct_records_at_serial_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone_id: i32,
     target_serial: i32,
     current_serial: i32,
 ) -> Result<Vec<RecordData>, ServiceError> {
-    let records = repository::list_records_tx(tx, zone_id, LockLevel::None).await?;
-    let changes = repository::list_zone_changes_between_serials_tx(
+    let records = db::record::list_tx(tx, zone_id, LockLevel::None).await?;
+    let changes = db::zone_change::list_between_serials_tx(
         tx,
         zone_id,
         target_serial,
@@ -99,18 +98,17 @@ fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData>
 /// The records at `serial`: the live records when it is the current serial,
 /// otherwise reconstructed from the journal.
 pub(crate) async fn list_records_at_serial_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone_id: i32,
     serial: i32,
     current_serial: i32,
 ) -> Result<Vec<RecordData>, ServiceError> {
     if serial == current_serial {
-        let mut records: Vec<RecordData> =
-            repository::list_records_tx(tx, zone_id, LockLevel::None)
-                .await?
-                .into_iter()
-                .map(RecordData::from)
-                .collect();
+        let mut records: Vec<RecordData> = db::record::list_tx(tx, zone_id, LockLevel::None)
+            .await?
+            .into_iter()
+            .map(RecordData::from)
+            .collect();
         sort_records(&mut records);
         Ok(records)
     } else {

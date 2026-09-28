@@ -1,7 +1,8 @@
 use std::{net::SocketAddr, time::Duration};
 
-use bindizr_core::{config, dns::address::loopback_if_unspecified};
+use bindizr_core::dns::address::loopback_if_unspecified;
 use bindizr_service::{
+    Context,
     authorization::Caller,
     dns_client::{notify, probe},
     error::ServiceError,
@@ -20,11 +21,11 @@ use crate::{
 
 /// The daemon-side installation checks. The catalog zone is the one probed
 /// because it exists before any user zone, so serial comparison always works.
-pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError> {
-    let config = config::bindizr_config();
+pub(crate) async fn check_installation(cx: &Context) -> Result<DaemonResponse, ServiceError> {
+    let config = cx.config();
 
     // Count zones without materializing them; large tables must fit the deadline.
-    let zones_probe = zone::count(&Caller::Global);
+    let zones_probe = zone::count(cx, &Caller::Global);
     let database = match tokio::time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
         Ok(Ok(total)) => DoctorCheck {
             status: DoctorCheckStatus::Ok,
@@ -80,17 +81,18 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         (Vec::new(), Vec::new(), Vec::new())
     } else {
         // Capture secondary serials before the NOTIFY check can trigger a refresh.
-        let secondaries = probe::probe_secondaries(&config.dns.catalog_zone_name, catalog_serial)
-            .await
-            .map_err(ServiceError::internal)?;
+        let secondaries =
+            probe::probe_secondaries(cx, &config.dns.catalog_zone_name, catalog_serial)
+                .await
+                .map_err(ServiceError::internal)?;
         // Actively test NOTIFY delivery; this can prompt secondaries to transfer the catalog.
-        let notifies = notify::send_notify_to_secondaries(&config.dns.catalog_zone_name)
+        let notifies = notify::send_notify_to_secondaries(cx, &config.dns.catalog_zone_name)
             .await
             .map_err(ServiceError::internal)?;
         let mut transfers = Vec::new();
-        for secondary in secondary::list_enabled().await? {
+        for secondary in secondary::list_enabled(cx).await? {
             transfers.push(SecondaryTransferSummary {
-                summary: secondary::transfer_summary(&secondary).await?,
+                summary: secondary::transfer_summary(cx, &secondary).await?,
                 secondary_name: secondary.name,
                 address: secondary.address,
             });

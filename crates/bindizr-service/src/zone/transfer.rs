@@ -1,13 +1,13 @@
 //! What a zone transfer may read: the enabled zone the request named, granted
 //! to the key that signed it, decided on the locked row it will serve.
 
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 
 use crate::{
-    RepositoryTx,
+    Context, Transaction, db,
     error::ServiceError,
     model::{dnssec_record::DnssecRecord, record::Record, tsig_key::TsigKey, zone::Zone},
-    repository,
+    transaction,
     tsig_key::grant,
 };
 
@@ -43,31 +43,32 @@ pub struct TransferContent {
 /// request the address ACL admitted, no grant narrows). Decided on the row
 /// this transaction share-locks, with the grants locked beside it.
 pub async fn authorize_transfer_by_name(
+    cx: &Context,
     zone_name: &str,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<Zone>, ServiceError> {
-    let mut tx = repository::begin_read_tx("failed to authorize the transfer").await?;
+    let mut tx = transaction::begin_read_tx(cx, "failed to authorize the transfer").await?;
     let result = authorize_transfer_tx(&mut tx, zone_name, key).await;
-    repository::finish_tx(tx, result, "failed to authorize the transfer").await
+    transaction::finish_tx(tx, result, "failed to authorize the transfer").await
 }
 
 /// Both record planes of the zone `zone_name` names, read under the share
 /// lock that decides whether `key` may transfer it, so the serial, the
 /// signatures, and the grant all describe one row.
 pub async fn authorize_transfer_content_by_name(
+    cx: &Context,
     zone_name: &str,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<TransferContent>, ServiceError> {
-    let mut tx = repository::begin_read_tx("failed to load transfer content").await?;
+    let mut tx = transaction::begin_read_tx(cx, "failed to load transfer content").await?;
     let result = async {
         let zone = match authorize_transfer_tx(&mut tx, zone_name, key).await? {
             TransferAccess::Granted(zone) => zone,
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
-        let records = repository::list_records_tx(&mut tx, zone.id, LockLevel::None).await?;
-        let dnssec_records =
-            repository::list_dnssec_records_tx(&mut tx, zone.id, LockLevel::None).await?;
+        let records = db::record::list_tx(&mut tx, zone.id, LockLevel::None).await?;
+        let dnssec_records = db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::None).await?;
         Ok(TransferAccess::Granted(TransferContent {
             zone,
             records,
@@ -75,13 +76,13 @@ pub async fn authorize_transfer_content_by_name(
         }))
     }
     .await;
-    repository::finish_tx(tx, result, "failed to load transfer content").await
+    transaction::finish_tx(tx, result, "failed to load transfer content").await
 }
 
 /// Share-lock the enabled zone by name and, for a scoped key, the grants
 /// that must cover it whole.
 async fn authorize_transfer_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone_name: &str,
     key: Option<&TsigKey>,
 ) -> Result<TransferAccess<Zone>, ServiceError> {

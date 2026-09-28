@@ -1,6 +1,5 @@
-//! Adapter-local Prometheus metrics, served on the health listener.
-
-use std::sync::OnceLock;
+//! Adapter-local Prometheus metrics, served on the health listener and held
+//! by the adapter's state.
 
 use prometheus::{HistogramVec, IntCounterVec, Registry, TextEncoder};
 
@@ -11,11 +10,9 @@ pub(crate) struct AdapterMetrics {
     pub(crate) request_duration_seconds: HistogramVec,
 }
 
-static METRICS: OnceLock<AdapterMetrics> = OnceLock::new();
-
-/// Process-wide adapter metrics, created on first use.
-pub(crate) fn metrics() -> &'static AdapterMetrics {
-    METRICS.get_or_init(|| {
+impl AdapterMetrics {
+    /// Create and register the adapter's metric collectors.
+    pub(crate) fn new() -> Self {
         let registry = Registry::new();
 
         let requests_total = IntCounterVec::new(
@@ -64,10 +61,8 @@ pub(crate) fn metrics() -> &'static AdapterMetrics {
             requests_total,
             request_duration_seconds,
         }
-    })
-}
+    }
 
-impl AdapterMetrics {
     /// Render the adapter's metrics in Prometheus text format.
     pub(crate) fn encode(&self) -> String {
         TextEncoder::new()

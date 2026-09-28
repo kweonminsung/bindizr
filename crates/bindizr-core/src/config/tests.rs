@@ -1,6 +1,5 @@
 use crate::config::{
-    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogFormat, LogLevel,
-    resolve_config_path_with_env,
+    BINDIZR_CONF_PATH, Config, DatabaseType, LogFormat, LogLevel, resolve_config_path_with_env,
 };
 
 /// Deviations from the base config TOML; the default renders a minimal valid
@@ -72,8 +71,8 @@ level = "debug"
 }
 
 /// Parse a TOML configuration fixture.
-fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
-    BindizrConfig::from_toml(&toml.render(), |_| None)
+fn parse_config(toml: &TestConfigToml) -> Result<Config, String> {
+    Config::from_toml(&toml.render(), |_| None)
 }
 
 /// Verify that `from_toml` accepts valid config.

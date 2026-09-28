@@ -4,7 +4,6 @@
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 use bindizr_core::{
-    config,
     dns::{
         message::{Name, Rtype},
         name::ZoneName,
@@ -12,6 +11,8 @@ use bindizr_core::{
     },
     model::zone::Zone,
 };
+
+use crate::Context;
 
 /// What the parent zone's servers said about the zone's DS.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,8 +29,8 @@ pub(crate) struct ParentDs {
 /// Ask every parent server for the zone's DS record set. `Err` when the zone
 /// names no parent or any server fails to answer: silence never reads as
 /// absence.
-pub(crate) async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
-    let dns_config = &config::bindizr_config().dns;
+pub(crate) async fn probe_parent_ds(cx: &Context, zone: &Zone) -> Result<ParentDs, String> {
+    let dns_config = &cx.config().dns;
     let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
 
     let raw = zone.parent_ns_addrs.as_deref().ok_or(

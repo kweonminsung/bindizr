@@ -11,7 +11,11 @@ mod wire;
 
 use std::{future::IntoFuture, sync::Arc, time::Duration};
 
-use bindizr_core::{errln, logger};
+use bindizr_core::{
+    config::{LogFormat, LoggingConfig},
+    errln,
+    logger::Logger,
+};
 use clap::Parser;
 use tokio::{
     signal::unix::{SignalKind, signal},
@@ -45,7 +49,10 @@ pub async fn execute() {
         std::process::exit(EXIT_CONFIG);
     });
 
-    logger::initialize_with_level(adapter_config.log_level);
+    Logger::init(&LoggingConfig {
+        level: adapter_config.log_level,
+        format: LogFormat::Text,
+    });
 
     if adapter_config.token.is_none() {
         log::error!(
@@ -64,7 +71,10 @@ pub async fn execute() {
         errln!("Error: {}", e);
         std::process::exit(EXIT_CONFIG);
     });
-    let state = Arc::new(server::AppState { upstream });
+    let state = Arc::new(server::AppState {
+        upstream,
+        metrics: metrics::AdapterMetrics::new(),
+    });
 
     // Bind both endpoints before either server starts accepting requests.
     let webhook_listener = tokio::net::TcpListener::bind(adapter_config.listen_addr)

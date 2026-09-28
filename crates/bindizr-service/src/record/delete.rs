@@ -1,16 +1,17 @@
 use std::collections::HashSet;
 
 use bindizr_core::dns::name::OwnerName;
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 
 use super::validation::{normalize_record_owner_name, parse_record_type};
 use crate::{
+    Context,
     authorization::{Caller, RecordWrite},
-    dnssec,
+    db, dnssec,
     error::{ErrorCode, ServiceError},
     model::record::{Record, RecordData},
-    repository,
     serial::generate_serial,
+    transaction,
     types::{DeleteRecordsFilter, DeleteRecordsResponse, GetRecordResponse},
     zone::{self, diff::build_record_diff, validation::normalize_zone_name},
 };
@@ -19,13 +20,14 @@ use crate::{
 /// change for IXFR. `caller` is authorized against the row this tx locked.
 /// A dry run answers with the filtered delete's preview and writes nothing.
 pub async fn delete(
+    cx: &Context,
     caller: &Caller,
     record_id: i32,
     dry_run: bool,
 ) -> Result<DeleteRecordsResponse, ServiceError> {
     // Resolve zone_id with a non-locking read so the tx locks zone before
     // record (the create/bulk/import order); the reverse can deadlock.
-    let zone_id = match repository::get_record(record_id).await {
+    let zone_id = match db::record::get(cx.db(), record_id).await {
         Ok(Some(record)) => record.zone_id,
         Ok(None) => {
             return Err(ServiceError::record_not_found(record_id));
@@ -36,10 +38,10 @@ pub async fn delete(
         }
     };
 
-    let mut tx = repository::begin_tx("Failed to delete record").await?;
+    let mut tx = transaction::begin_tx(cx, "Failed to delete record").await?;
 
     let apply_result: Result<DeleteRecordsResponse, ServiceError> = async {
-        let zone = match repository::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
+        let zone = match db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err(ServiceError::new(
@@ -54,7 +56,7 @@ pub async fn delete(
         };
 
         let existing_record =
-            match repository::get_record_tx(&mut tx, record_id, LockLevel::Exclusive).await {
+            match db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
                 Ok(Some(record)) if record.zone_id == zone.id => record,
                 Ok(Some(_)) | Ok(None) => {
                     return Err(ServiceError::record_not_found(record_id));
@@ -86,7 +88,7 @@ pub async fn delete(
             .await?;
 
         // The owner's rows frame the diff, as they do for every change.
-        let records_at_name = repository::list_records_by_name_tx(
+        let records_at_name = db::record::list_by_name_tx(
             &mut tx,
             zone.id,
             &existing_record.name,
@@ -131,7 +133,7 @@ pub async fn delete(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
 
         log::info!(
             "event=record_delete zone={} name={} type={} value={} record_id={}",
@@ -145,13 +147,13 @@ pub async fn delete(
     }
     .await;
 
-    let response = repository::finish_tx(tx, apply_result, "Failed to delete record").await?;
+    let response = transaction::finish_tx(tx, apply_result, "Failed to delete record").await?;
 
     // Announce only a committed deletion, never a preview.
     if response.applied
         && let Some(zone_name) = response.records.first().map(|record| &record.zone_name)
     {
-        crate::notify::notify_after_update(zone_name).await;
+        crate::notify::notify_after_update(cx, zone_name).await;
     }
 
     Ok(response)
@@ -160,6 +162,7 @@ pub async fn delete(
 /// would bump the serial once each and serve the half-removed set in
 /// between.
 pub async fn delete_matching(
+    cx: &Context,
     caller: &Caller,
     filter: &DeleteRecordsFilter,
 ) -> Result<DeleteRecordsResponse, ServiceError> {
@@ -184,7 +187,7 @@ pub async fn delete_matching(
         _ => None,
     };
 
-    let mut tx = repository::begin_tx("Failed to delete records").await?;
+    let mut tx = transaction::begin_tx(cx, "Failed to delete records").await?;
 
     let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
@@ -207,8 +210,7 @@ pub async fn delete_matching(
             .await?;
 
         let records_at_name =
-            repository::list_records_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)
-                .await?;
+            db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive).await?;
         let matched: Vec<Record> = records_at_name
             .iter()
             .filter(|record| {
@@ -255,13 +257,13 @@ pub async fn delete_matching(
         super::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Once for the whole set, so IXFR consumers see one step.
-        zone::advance_serial_tx(&mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
 
         Ok((response, owner))
     }
     .await;
 
-    let (response, owner) = repository::finish_tx(tx, result, "Failed to delete records").await?;
+    let (response, owner) = transaction::finish_tx(tx, result, "Failed to delete records").await?;
 
     log::info!(
         "event=record_delete_matching zone={} name={} type={:?} deleted={} applied={}",
@@ -275,7 +277,7 @@ pub async fn delete_matching(
     // Announce only a committed deletion, never a preview or an empty
     // match — which applies, but writes nothing and leaves the serial.
     if response.applied && response.deleted > 0 {
-        crate::notify::notify_after_update(zone_name.as_str()).await;
+        crate::notify::notify_after_update(cx, zone_name.as_str()).await;
     }
 
     Ok(response)

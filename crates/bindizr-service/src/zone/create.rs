@@ -1,13 +1,14 @@
-use bindizr_core::config::bindizr_config;
-use bindizr_db::repository::RepositoryTx;
+use bindizr_db::Transaction;
 use chrono::Utc;
 
 use crate::{
+    Context,
     authorization::Caller,
-    error::{ErrorCode, ServiceError},
+    db,
+    error::ServiceError,
     model::zone::Zone,
-    repository,
     serial::{generate_serial, validate_initial_serial},
+    transaction,
     types::{CreateZoneRequest, GetZoneResponse, ZoneWriteResponse},
     zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
 };
@@ -15,6 +16,7 @@ use crate::{
 /// Create a new zone and NOTIFY the catalog zone. The zone carries its
 /// SOA and no records; its NS records are the caller's to add.
 pub async fn create(
+    cx: &Context,
     caller: &Caller,
     create_zone_request: &CreateZoneRequest,
 ) -> Result<ZoneWriteResponse, ServiceError> {
@@ -22,8 +24,8 @@ pub async fn create(
 
     // Parent/child zones are allowed; only the same normalized zone name is rejected.
     // Names are stored normalized, so an exact lookup is enough to detect a collision.
-    let name = normalize_create_zone_request(create_zone_request)?.name;
-    match repository::get_zone_by_name(name.as_str()).await {
+    let name = normalize_create_zone_request(cx, create_zone_request)?.name;
+    match db::zone::get_by_name(cx.db(), name.as_str()).await {
         Ok(Some(_)) => {
             log::error!("Zone with name {} already exists", name);
             return Err(ServiceError::zone_conflict(format!(
@@ -38,9 +40,9 @@ pub async fn create(
         }
     };
 
-    let mut tx = repository::begin_tx("Failed to create zone").await?;
-    let apply_result = create_tx(&mut tx, caller, create_zone_request).await;
-    let created_zone = repository::finish_tx(tx, apply_result, "Failed to create zone").await?;
+    let mut tx = transaction::begin_tx(cx, "Failed to create zone").await?;
+    let apply_result = create_tx(cx, &mut tx, caller, create_zone_request).await;
+    let created_zone = transaction::finish_tx(tx, apply_result, "Failed to create zone").await?;
 
     log::info!(
         "event=zone_create zone={} mname={} serial={} zone_id={}",
@@ -51,9 +53,9 @@ pub async fn create(
     );
 
     // Send catalog NOTIFY so secondaries pick up the new zone
-    let config = bindizr_config();
+    let config = cx.config();
     if !create_zone_request.dry_run {
-        crate::notify::notify_after_update(&config.dns.catalog_zone_name).await;
+        crate::notify::notify_after_update(cx, &config.dns.catalog_zone_name).await;
     }
 
     Ok(ZoneWriteResponse {
@@ -68,14 +70,15 @@ pub async fn create(
 /// run roll both back. [`create`] adds the duplicate pre-check and the
 /// catalog NOTIFY after commit; here UNIQUE(name) is the whole check.
 pub(crate) async fn create_tx(
-    tx: &mut RepositoryTx<'_>,
+    cx: &Context,
+    tx: &mut Transaction<'_>,
     caller: &Caller,
     create_zone_request: &CreateZoneRequest,
 ) -> Result<Zone, ServiceError> {
     caller.authorize_global("create zones")?;
 
-    let validated = normalize_create_zone_request(create_zone_request)?;
-    let defaults = &bindizr_config().dns.zone_defaults;
+    let validated = normalize_create_zone_request(cx, create_zone_request)?;
+    let defaults = &cx.config().dns.zone_defaults;
     let timers = normalize_soa_timers(
         create_zone_request,
         ResolvedSoaTimers {
@@ -113,20 +116,20 @@ pub(crate) async fn create_tx(
         return Ok(candidate);
     }
 
-    let created_zone = repository::create_zone_tx(tx, candidate)
-        .await
-        .map_err(|e| {
+    let name = candidate.name.clone();
+    let created_zone = db::zone::create_tx(tx, candidate).await.map_err(|e| {
+        // A create that raced past a caller's pre-check trips UNIQUE(name);
+        // the backstop reads as the same conflict.
+        if e.is_unique_violation() {
+            ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
+        } else {
             log::error!("Failed to create zone: {}", e);
-            // Keep the conflict mapped from the UNIQUE(name) backstop; it
-            // covers creates that raced past a caller's pre-check.
-            if e.code == ErrorCode::ZoneConflict {
-                e
-            } else {
-                ServiceError::internal("Failed to create zone")
-            }
-        })?;
+            ServiceError::internal("Failed to create zone")
+        }
+    })?;
 
     super::save_version_tx(
+        cx,
         tx,
         &created_zone,
         created_zone.serial,

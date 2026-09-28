@@ -36,7 +36,8 @@ pub use status::{
 pub use withdraw::{cancel_withdrawal, withdraw};
 
 use crate::{
-    database::repository::LockLevel,
+    Context, Transaction, db,
+    db::LockLevel,
     error::ServiceError,
     model::{
         dnssec_key::DnssecKey,
@@ -44,7 +45,6 @@ use crate::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    repository::{self, RepositoryTx},
     zone::{self, version::ChangeSubject},
 };
 
@@ -65,11 +65,11 @@ pub(crate) struct SignedZone {
 /// unsigned zone. The caller holds the zone row lock and calls this after
 /// its record writes, before `advance_serial_tx`.
 pub(crate) async fn sign_zone_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     new_serial: i32,
 ) -> Result<(), ServiceError> {
-    let keys = repository::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
+    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::None).await?;
     if keys.is_empty() {
         return Ok(());
     }
@@ -82,7 +82,8 @@ pub(crate) async fn sign_zone_tx(
 /// same serial/IXFR mechanics as any record change; `None` (serial kept)
 /// when nothing needed replacing.
 async fn resign_zone_tx(
-    tx: &mut RepositoryTx<'_>,
+    cx: &Context,
+    tx: &mut Transaction<'_>,
     signed: &SignedZone,
     force: bool,
     subject: &ChangeSubject,
@@ -100,7 +101,7 @@ async fn resign_zone_tx(
     {
         return Ok(None);
     }
-    zone::advance_serial_tx(tx, &signed.zone, new_serial, subject).await?;
+    zone::advance_serial_tx(cx, tx, &signed.zone, new_serial, subject).await?;
     Ok(Some(new_serial))
 }
 
@@ -108,13 +109,13 @@ async fn resign_zone_tx(
 /// unlocked: a policy in use cannot be deleted (FK), and its editable
 /// fields are safe to read at any moment.
 async fn find_zone_policy_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
 ) -> Result<Option<DnssecPolicy>, ServiceError> {
     let Some(policy_id) = zone.dnssec_policy_id else {
         return Ok(None);
     };
-    repository::get_dnssec_policy_tx(tx, policy_id, LockLevel::None)
+    db::dnssec_policy::get_tx(tx, policy_id, LockLevel::None)
         .await?
         .map(Some)
         .ok_or_else(|| {
@@ -128,7 +129,7 @@ async fn find_zone_policy_tx(
 /// The policy a signed zone signs under; a signed zone without one is a
 /// broken invariant, never a caller error.
 async fn get_zone_policy_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
 ) -> Result<DnssecPolicy, ServiceError> {
     find_zone_policy_tx(tx, zone).await?.ok_or_else(|| {
@@ -142,12 +143,12 @@ async fn get_zone_policy_tx(
 /// Load the zone (locked at `lock_level`) together with its policy and
 /// signing keys; a zone with no keys reads as not DNSSEC-enabled.
 async fn get_signed_zone_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone_name: &str,
     lock_level: LockLevel,
 ) -> Result<SignedZone, ServiceError> {
     let zone = zone::get_by_name_tx(tx, zone_name, lock_level).await?;
-    let keys = repository::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
+    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::None).await?;
     if keys.is_empty() {
         return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
     }
@@ -158,14 +159,14 @@ async fn get_signed_zone_tx(
 /// The scheduler's form of [`get_signed_zone_tx`]: `None` when the
 /// zone was deleted or unsigned since its id was listed.
 async fn find_signed_zone_by_id_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone_id: i32,
     lock_level: LockLevel,
 ) -> Result<Option<SignedZone>, ServiceError> {
-    let Some(zone) = repository::get_zone_tx(tx, zone_id, lock_level).await? else {
+    let Some(zone) = db::zone::get_tx(tx, zone_id, lock_level).await? else {
         return Ok(None);
     };
-    let keys = repository::list_dnssec_keys_tx(tx, zone.id, LockLevel::None).await?;
+    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::None).await?;
     if keys.is_empty() {
         return Ok(None);
     }
@@ -177,7 +178,7 @@ async fn find_signed_zone_by_id_tx(
 ///
 /// Returns whether anything changed; `force` regenerates stored signatures.
 async fn apply_signed_view_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     policy: &DnssecPolicy,
     new_serial: i32,
@@ -185,12 +186,10 @@ async fn apply_signed_view_tx(
     force: bool,
 ) -> Result<bool, ServiceError> {
     // Read both planes under the zone lock so the diff uses one consistent state.
-    let records = repository::list_records_tx(tx, zone.id, LockLevel::None).await?;
-    let prev = repository::list_dnssec_records_tx(tx, zone.id, LockLevel::None).await?;
+    let records = db::record::list_tx(tx, zone.id, LockLevel::None).await?;
+    let prev = db::dnssec_record::list_tx(tx, zone.id, LockLevel::None).await?;
 
-    let withdraw_parent_ds = repository::get_dnssec_withdrawal_tx(tx, zone.id)
-        .await?
-        .is_some();
+    let withdraw_parent_ds = db::dnssec_withdrawal::get_tx(tx, zone.id).await?.is_some();
 
     let now = Utc::now();
     let diff = SignedViewParams {
@@ -233,7 +232,7 @@ async fn apply_signed_view_tx(
             continue;
         };
         if signed_ttl > key.max_signed_ttl {
-            repository::update_dnssec_key_max_signed_ttl_tx(tx, key.id, signed_ttl).await?;
+            db::dnssec_key::update_max_signed_ttl_tx(tx, key.id, signed_ttl).await?;
         }
     }
 
@@ -269,10 +268,10 @@ async fn apply_signed_view_tx(
     }
 
     // The derived rows and their IXFR journal commit in the caller's transaction.
-    repository::create_zone_changes_tx(tx, &changes).await?;
+    db::zone_change::create_many_tx(tx, &changes).await?;
     let removed_ids: Vec<i32> = diff.removed.iter().map(|row| row.id).collect();
-    repository::delete_dnssec_records_tx(tx, &removed_ids).await?;
-    repository::create_dnssec_records_tx(tx, &diff.added).await?;
+    db::dnssec_record::delete_many_tx(tx, &removed_ids).await?;
+    db::dnssec_record::create_many_tx(tx, &diff.added).await?;
     Ok(true)
 }
 

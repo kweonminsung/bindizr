@@ -1,15 +1,18 @@
-//! The daemon runtime: wiring the process together, serving until asked to
-//! stop, and re-executing itself on restart. The CLI only decides when to
-//! start it.
+//! The daemon runtime: building the `Context` in dependency order, serving
+//! until asked to stop, and re-executing itself on restart. The CLI only
+//! decides when to start it.
 
 pub(crate) mod db_probe;
-pub(crate) mod started_at;
 
-use std::{sync::OnceLock, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use bindizr_core::{config, logger, metrics::metrics};
-use bindizr_db as database;
-use bindizr_service as service;
+use bindizr_core::{
+    config::{self, Config},
+    logger::{self, Logger},
+    metrics::Metrics,
+};
+use bindizr_db::Db;
+use bindizr_service::{self as service, Context, dnssec::scheduler, notify::queue};
 use chrono::Utc;
 use tokio::{
     signal::unix::{SignalKind, signal},
@@ -21,10 +24,6 @@ use crate::{api, cli::error::CliError, dns, shutdown::Shutdown, socket};
 /// How long the servers that can finish on their own get before the daemon
 /// exits anyway.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Re-exec path captured at startup: after a package upgrade /proc/self/exe
-/// reads as a "(deleted)" path, while this path points at the replacement.
-static DAEMON_EXE: OnceLock<std::path::PathBuf> = OnceLock::new();
 
 /// The front ends the daemon supervises, each yielding the name it is reported
 /// under and how it ended. `join_next` removes a finished task, so the
@@ -38,30 +37,31 @@ fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<()>) {
 
 /// Re-read the configuration file and apply what only a running process can:
 /// the settings whose readers captured them at startup.
-pub(crate) fn reload_config() -> Result<Vec<String>, String> {
-    let changed = config::reload()?;
+pub(crate) fn reload_config(cx: &Context) -> Result<Vec<String>, String> {
+    let changed = cx.reload_config()?;
 
     // The installed logger reads its level and format per record, so this is enough.
-    let config = config::bindizr_config();
+    let config = cx.config();
     logger::set_level(config.logging.level);
     logger::set_format(config.logging.format);
 
-    // A no-op unless this instance had no scheduler, which a zero interval
-    // leaves it without.
-    service::dnssec::scheduler::initialize();
+    // The scheduler takes its period from the channel, so a reload that
+    // names one reaches an instance a zero interval left idle.
+    cx.set_scheduler_period(config.dns.scheduler_interval_secs);
     Ok(changed)
 }
 
-/// Start daemon services, handle reload/restart/shutdown requests, and drain on shutdown.
+/// Build the daemon's state in dependency order, serve every front end, handle
+/// reload/restart/shutdown requests, and drain on shutdown.
 pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError> {
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = DAEMON_EXE.set(exe);
-    }
+    // Captured at startup: after a package upgrade /proc/self/exe reads as a
+    // "(deleted)" path, while this path points at the replacement.
+    let daemon_exe = std::env::current_exe().ok();
 
-    // Prepare configuration and background services before accepting requests.
-    let config_path = config::initialize(config_file).map_err(CliError::configuration)?;
+    let config_path = config::resolve_config_path(config_file);
+    let config = Config::load(&config_path).map_err(CliError::configuration)?;
 
-    logger::initialize();
+    Logger::init(&config.logging);
     // Reported after the logger exists, so it carries the configured format.
     log::info!("Configuration loaded from {}", config_path);
 
@@ -71,19 +71,33 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     let (socket_path, socket_listener) = socket::server::bind().await?;
     log::info!("Daemon socket server listening on {}", socket_path);
 
-    let notify_task = service::notify::queue::initialize();
+    let db = Db::connect(&config.database)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    let config = config::bindizr_config();
-    database::initialize().await.map_err(|e| e.to_string())?;
+    // The channels come before the context, which holds their senders; the
+    // workers come after it, since they need the context back.
+    let (notify_tx, notify_rx) = queue::channel();
+    let (period_tx, period_rx) = scheduler::channel(config.dns.scheduler_interval_secs);
+    let authentication_required = config.api.authentication_required;
+    let cx = Arc::new(Context::new(
+        config,
+        config_path,
+        db,
+        Metrics::new(),
+        notify_tx,
+        period_tx,
+    ));
+    let notify_worker = queue::spawn(cx.clone(), notify_rx);
 
-    service::zone::validate_catalog_zone_name()
+    service::zone::validate_catalog_zone_name(&cx)
         .await
         .map_err(|e| e.message)?;
 
     // Authentication with no token answers 401 to everything, which reads as a
     // broken deployment rather than one nobody has been let into yet.
-    if config.api.authentication_required {
-        match service::token::count_all().await {
+    if authentication_required {
+        match service::token::count_all(&cx).await {
             Ok(0) => log::warn!(
                 "API authentication is on and no API tokens exist; create one with `bindizr token create admin --global`"
             ),
@@ -92,14 +106,15 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
         }
     }
 
-    service::dnssec::scheduler::initialize();
+    scheduler::spawn(cx.clone(), period_rx);
 
     let shutdown = Shutdown::new();
-    let (dns_tcp_task, dns_udp_task) = dns::initialize(&shutdown).await?;
+    let (dns_tcp_task, dns_udp_task) = dns::initialize(cx.clone(), &shutdown).await?;
 
-    let mut control_rx = socket::server::control::initialize();
-    let socket_task = socket::server::serve(socket_listener, &shutdown)?;
-    let api_task = api::initialize(&shutdown).await?;
+    let (control_tx, mut control_rx) = socket::server::control::channel();
+    let socket_cx = Arc::new(socket::server::SocketContext::new(cx.clone(), control_tx));
+    let socket_task = socket::server::serve(socket_cx, socket_listener, &shutdown)?;
+    let api_task = api::initialize(cx.clone(), &shutdown).await?;
 
     // A front end that stops on its own ends the daemon: the control socket
     // would otherwise keep answering for a process serving nothing.
@@ -112,9 +127,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     // Every front end is serving now, so the start time is what `bindizr
     // restart` waits for before it reports the daemon back up; the gauge
     // publishes the same moment.
-    let started = Utc::now();
-    started_at::set(started);
-    metrics().started_at_seconds.set(started.timestamp() as f64);
+    cx.set_started_at(Utc::now());
     log::info!("Bindizr is running.");
 
     let mut terminate = signal(SignalKind::terminate())
@@ -135,7 +148,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
                 break RunResult::Stop;
             }
             _ = hangup.recv() => {
-                match reload_config() {
+                match reload_config(&cx) {
                     Ok(changed) if changed.is_empty() => {
                         log::info!("SIGHUP received, nothing changed.")
                     }
@@ -164,7 +177,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
         }
     };
 
-    drain(&shutdown, servers, notify_task).await;
+    drain(&shutdown, servers, notify_worker).await;
     socket::server::remove_socket_file(&socket_path).await;
 
     match outcome {
@@ -172,7 +185,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
         RunResult::Failed(e) => Err(CliError::from(e)),
         // exec replaces this image, so it returns only on failure, and by
         // then nothing is listening: the failure ends the process.
-        RunResult::Restart => Err(CliError::from(reexec())),
+        RunResult::Restart => Err(CliError::from(reexec(daemon_exe))),
     }
 }
 
@@ -199,18 +212,15 @@ impl RunResult {
 ///
 /// In-flight zone transfers are not waited on: they run in tasks of their own,
 /// and a cut transfer is one the secondary discards and retries.
-async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_task: Option<JoinHandle<()>>) {
+async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_worker: queue::NotifyWorker) {
     shutdown.trigger();
 
     let drained = tokio::time::timeout(DRAIN_TIMEOUT, async {
         while servers.join_next().await.is_some() {}
 
         // The worker outlives the front ends: an in-flight write still enqueues.
-        service::notify::queue::stop();
-        // Not a front end: it may be absent, and its exit never ends the daemon.
-        if let Some(notify_task) = notify_task {
-            let _ = notify_task.await;
-        }
+        // Not a front end: its exit never ends the daemon.
+        let _ = notify_worker.stop().await;
     })
     .await;
 
@@ -225,10 +235,10 @@ async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_task: Option<Jo
 /// Re-exec the original command line in place. exec keeps the PID, so
 /// systemd/docker supervision and a foreground terminal stay attached.
 /// Returns only when exec itself fails.
-fn reexec() -> String {
+fn reexec(daemon_exe: Option<PathBuf>) -> String {
     use std::os::unix::process::CommandExt;
 
-    let Some(exe) = DAEMON_EXE.get() else {
+    let Some(exe) = daemon_exe else {
         return "Failed to locate the bindizr executable".to_string();
     };
     let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();

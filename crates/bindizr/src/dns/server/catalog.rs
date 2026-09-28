@@ -1,5 +1,4 @@
 use bindizr_core::{
-    config::bindizr_config,
     dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
     model::zone::Zone,
 };
@@ -8,15 +7,18 @@ use chrono::Utc;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 
-use crate::dns::error::XfrError;
+use crate::dns::{error::XfrError, server::DnsContext};
 
 /// Generates the catalog zone and its member zone list.
-pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
-    let config = bindizr_config();
+pub(crate) async fn generate_catalog_zone(
+    dns_cx: &DnsContext,
+) -> Result<(Zone, Vec<String>), XfrError> {
+    let cx = dns_cx.daemon();
+    let config = cx.config();
     let catalog_zone_name = config.dns.catalog_zone_name.as_str();
     log::info!("Generating catalog zone: {}", catalog_zone_name);
 
-    let all_zones = zone::list().await?;
+    let all_zones = zone::list(cx).await?;
 
     // The catalog zone is not a member of itself.
     let member_zones: Vec<String> = all_zones
@@ -31,7 +33,7 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
     // The catalog zone is virtual (no DB row).
     let digest = catalog_digest(&member_zones);
     let base_serial = all_zones.iter().map(|z| z.serial).max().unwrap_or(1);
-    let serial = zone::advance_catalog_serial(catalog_zone_name, &digest, base_serial).await?;
+    let serial = zone::advance_catalog_serial(cx, catalog_zone_name, &digest, base_serial).await?;
 
     let catalog_zone = Zone {
         id: 0,
@@ -75,6 +77,7 @@ fn catalog_digest(member_zones: &[String]) -> String {
 
 /// Send a catalog zone transfer using the requested question type.
 pub(crate) async fn handle_catalog_axfr(
+    dns_cx: &DnsContext,
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     response_qtype: Rtype,
@@ -82,11 +85,11 @@ pub(crate) async fn handle_catalog_axfr(
 ) -> Result<(), XfrError> {
     log::info!(
         "AXFR request for catalog zone: {}",
-        bindizr_config().dns.catalog_zone_name
+        dns_cx.daemon().config().dns.catalog_zone_name
     );
 
     // Materialize the virtual catalog from the current member zones.
-    let (catalog_zone, member_zones) = generate_catalog_zone().await?;
+    let (catalog_zone, member_zones) = generate_catalog_zone(dns_cx).await?;
 
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
     if let Some(signer) = signer {
