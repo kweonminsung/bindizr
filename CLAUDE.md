@@ -209,9 +209,10 @@ anything else starts, then `serve`. What depends on nothing outside the
 process — the metrics registry, the transfer and ACL caches, color
 detection — is created on first use behind a `OnceLock` by its accessor and
 has no `initialize`; nothing is called merely to touch it. The daemon's own
-start is a fact it records, not a service it brings up: `bootstrap` fixes
-it once every front end serves and sets the started-at gauge in the same
-breath, and `daemon::started_at` is what reports it (the `status` uptime).
+start is a fact it records, not a service it brings up: `bootstrap` sets
+it with `started_at::set` once every front end serves and sets the
+started-at gauge in the same breath, and `started_at::started_at` is what
+reports it (the `status` uptime).
 
 ### `--output` renders a result, so a command that is its output has none
 
@@ -346,8 +347,15 @@ access and mean the same thing in every crate, not just the service — a free
 helper that computes a value never takes `get_`, and a metrics counter is
 `track_`, never `count_`. The `get_<entity>_repository()` factories in
 `bindizr-db` are the one exception: they hand out the data-access object
-itself. `convert_` does not exist: a conversion is `to_`, a parse `parse_`.
-Every other helper starts with one of these verbs:
+itself. The verb says what is read, not where: a stored row is `get`/`list`
+in the facade, the service, and a front end alike; a value the process
+holds — the configuration, the metrics registry, a `OnceLock` fact — is
+read by a noun (`bindizr_config()`, `metrics()`, `started_at()`) and
+written by `set_<field>` (`logger::set_level` on reload, never a second
+`initialize`), or bare `set` in a module holding one fact
+(`started_at::set`). A row is never `set`: it is created, updated, or
+deleted. `convert_` does not exist: a conversion is `to_`, a parse
+`parse_`. Every other helper starts with one of these verbs:
 
 - Conversion: a name says only what the call site cannot see. `to_<form>`
   when the source is evident there — a method's receiver, or the one

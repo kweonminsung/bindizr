@@ -11,7 +11,7 @@ use bindizr_service::{
 };
 
 use crate::{
-    daemon::DB_PROBE_TIMEOUT,
+    daemon::db_probe::DB_PROBE_TIMEOUT,
     socket::{
         server::to_response_data,
         types::{DaemonDoctorResponse, DaemonResponse, DoctorCheck, DoctorCheckStatus},

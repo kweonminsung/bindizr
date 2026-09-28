@@ -6,7 +6,7 @@ use bindizr_service::{
 };
 
 use crate::{
-    daemon::{DB_PROBE_TIMEOUT, started_at},
+    daemon::{db_probe::DB_PROBE_TIMEOUT, started_at::started_at},
     socket::{
         server::to_response_data,
         types::{DaemonResponse, DaemonStatusResponse},

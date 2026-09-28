@@ -4,7 +4,7 @@ use bindizr_service::{
     zone::ZoneService,
 };
 
-use crate::daemon::DB_PROBE_TIMEOUT;
+use crate::daemon::db_probe::DB_PROBE_TIMEOUT;
 
 /// Minimal database round-trip, kept cheap and side-effect free because
 /// probes run frequently.

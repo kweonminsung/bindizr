@@ -2,12 +2,15 @@
 //! stop, and re-executing itself on restart. The CLI only decides when to
 //! start it.
 
+pub(crate) mod db_probe;
+pub(crate) mod started_at;
+
 use std::{sync::OnceLock, time::Duration};
 
 use bindizr_core::{config, logger, metrics::metrics};
 use bindizr_db as database;
 use bindizr_service as service;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use tokio::{
     signal::unix::{SignalKind, signal},
     task::{JoinError, JoinHandle, JoinSet},
@@ -19,21 +22,9 @@ use crate::{api, cli::error::CliError, dns, shutdown::Shutdown, socket};
 /// exits anyway.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// How long a front end waits for the database before answering without it;
-/// a wedged database must not hang a probe, a scrape, `status`, or `doctor`.
-pub(crate) const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
-
 /// Re-exec path captured at startup: after a package upgrade /proc/self/exe
 /// reads as a "(deleted)" path, while this path points at the replacement.
 static DAEMON_EXE: OnceLock<std::path::PathBuf> = OnceLock::new();
-
-/// When every front end came up, fixed once by `bootstrap`.
-static STARTED_AT: OnceLock<DateTime<Utc>> = OnceLock::new();
-
-/// The moment the daemon began serving, absent while it is still starting.
-pub(crate) fn started_at() -> Option<DateTime<Utc>> {
-    STARTED_AT.get().copied()
-}
 
 /// The front ends the daemon supervises, each yielding the name it is reported
 /// under and how it ended. `join_next` removes a finished task, so the
@@ -121,7 +112,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), CliError>
     // Every front end is serving now, so the start time is what `bindizr
     // restart` waits for before it reports the daemon back up; the gauge
     // publishes the same moment.
-    let started = *STARTED_AT.get_or_init(Utc::now);
+    let started = Utc::now();
+    started_at::set(started);
     metrics().started_at_seconds.set(started.timestamp() as f64);
     log::info!("Bindizr is running.");
 
