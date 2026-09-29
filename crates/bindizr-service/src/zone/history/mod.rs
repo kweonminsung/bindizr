@@ -28,7 +28,7 @@ use crate::{
         zone::Zone,
     },
     record::{self, validate_record_add_constraints_normalized, validate_record_name_in_zone},
-    serial::generate_serial,
+    serial::{generate_serial, validate_stored_serial},
     transaction,
     types::{
         PaginatedResponse, RollbackSummary, RollbackZoneResponse, Run, VersionDetailResponse,
@@ -92,6 +92,7 @@ pub async fn get_version(
     zone_name: &ZoneName,
     serial: Serial,
 ) -> Result<VersionDetailResponse, ServiceError> {
+    let serial = validate_stored_serial(serial)?;
     let mut tx = transaction::begin_read_tx(cx, "Failed to load version").await?;
 
     let result = async {
@@ -130,8 +131,8 @@ pub async fn diff_versions(
     from_serial: Serial,
     to_serial: Option<Serial>,
 ) -> Result<VersionDiffResponse, ServiceError> {
-    let from = from_serial;
-    let to = to_serial;
+    let from = validate_stored_serial(from_serial)?;
+    let to = to_serial.map(validate_stored_serial).transpose()?;
     let mut tx = transaction::begin_read_tx(cx, "Failed to diff versions").await?;
 
     let result = async {
@@ -169,7 +170,7 @@ pub async fn rollback(
     run: Run,
 ) -> Result<RollbackZoneResponse, ServiceError> {
     caller.authorize_global("roll back zones")?;
-    let target = target_serial;
+    let target = validate_stored_serial(target_serial)?;
 
     let mut tx = transaction::begin_tx(cx, "Failed to roll back zone").await?;
 

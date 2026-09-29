@@ -1,9 +1,11 @@
 //! Zone transfers as a secondary runs them: unsigned under the address ACL,
 //! and signed under a TSIG key the way `primaries { addr key k; }` does.
 
+use std::time::{Duration, Instant};
+
 use domain::base::iana::Rcode;
 use reqwest::{Method, StatusCode};
-use serde_json::json;
+use serde_json::{Value, json};
 use serial_test::serial;
 
 use crate::common::{
@@ -310,6 +312,24 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
     }
 }
 
+/// Read the loopback secondary's transfers until the summary counts
+/// `expected` under `field`, or give up after a few seconds and hand back
+/// what it says. The daemon saves a transfer after answering it, so a read
+/// right behind the client can still see the row about to be replaced.
+async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let (status, body) = app
+            .send_request(Method::GET, "/secondaries/loopback/transfers", None)
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        if body["summary"][field] == expected || Instant::now() > deadline {
+            return body;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 /// Verify that the transfers Bindizr served a secondary, and the refusals
 /// before it was registered, are read back per zone and beside the zone's
 /// status.
@@ -326,10 +346,7 @@ async fn the_transfers_served_a_secondary_are_read_back() {
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
     app.create_secondary("loopback", "127.0.0.1").await;
 
-    let (status, body) = app
-        .send_request(Method::GET, "/secondaries/loopback/transfers", None)
-        .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    let body = wait_for_transfer_summary(&app, "refused", 1).await;
     assert_eq!(body["summary"]["zones"], 1, "{body}");
     assert_eq!(body["summary"]["refused"], 1, "{body}");
     assert_eq!(body["transfers"][0]["zone_name"], zone_name);
@@ -341,10 +358,7 @@ async fn the_transfers_served_a_secondary_are_read_back() {
     let outcome = axfr(app.dns_port(), zone_name, None).expect("AXFR");
     assert!(outcome.records() >= 3);
 
-    let (status, body) = app
-        .send_request(Method::GET, "/secondaries/loopback/transfers", None)
-        .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    let body = wait_for_transfer_summary(&app, "axfr", 1).await;
     assert_eq!(body["summary"]["zones"], 1, "{body}");
     assert_eq!(body["summary"]["axfr"], 1, "{body}");
     assert_eq!(body["summary"]["refused"], 0, "{body}");

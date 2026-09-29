@@ -35,6 +35,13 @@ pub(crate) fn generate_serial(current_serial: Option<Serial>) -> Result<Serial, 
     }
 }
 
+/// A version serial as a request names it, refused as invalid input past the
+/// stored range, since no row could hold it.
+pub(crate) fn validate_stored_serial(serial: Serial) -> Result<Serial, ServiceError> {
+    i32::try_from(serial).map_err(ServiceError::invalid_input)?;
+    Ok(serial)
+}
+
 /// Validate a client-supplied starting serial.
 pub(crate) fn validate_initial_serial(serial: Serial) -> Result<Serial, ServiceError> {
     if serial > Serial::MAX_STORED {
@@ -65,7 +72,9 @@ pub(crate) fn validate_initial_serial(serial: Serial) -> Result<Serial, ServiceE
 mod tests {
     use bindizr_core::dns::Serial;
 
-    use super::{MAX_INITIAL_SERIAL, generate_serial, validate_initial_serial};
+    use super::{
+        MAX_INITIAL_SERIAL, generate_serial, validate_initial_serial, validate_stored_serial,
+    };
 
     /// Verify that new zone serials start at one.
     #[test]
@@ -112,6 +121,19 @@ mod tests {
                 Serial::from(serial)
             );
         }
+    }
+
+    /// Verify that a version serial is accepted up to the stored ceiling and
+    /// refused as invalid input past it.
+    #[test]
+    fn serials_past_the_stored_range_are_invalid_input() {
+        assert_eq!(
+            validate_stored_serial(Serial::MAX_STORED).unwrap(),
+            Serial::MAX_STORED
+        );
+        let err =
+            validate_stored_serial(Serial::from(Serial::MAX_STORED.as_u32() + 1)).unwrap_err();
+        assert_eq!(err.code(), crate::error::ErrorCode::InvalidInput);
     }
 
     /// Verify that zero, a serial past the headroom, and one past the stored
