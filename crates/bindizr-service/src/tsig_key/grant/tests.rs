@@ -69,13 +69,13 @@ fn authorize_update_requires_name_and_type_match() {
 #[test]
 fn only_a_grant_over_the_whole_zone_covers_a_transfer() {
     // A transfer hands the zone over whole, so no narrowed grant covers it.
-    assert!(!covers_whole_zone(&[grant("*.dyn", "*")]));
-    assert!(!covers_whole_zone(&[grant("*", "A,AAAA")]));
-    assert!(!covers_whole_zone(&[grant("@", "*")]));
+    assert!(!has_whole_zone_grant(&[grant("*.dyn", "*")]));
+    assert!(!has_whole_zone_grant(&[grant("*", "A,AAAA")]));
+    assert!(!has_whole_zone_grant(&[grant("@", "*")]));
 
-    assert!(covers_whole_zone(&[grant("*", "*")]));
+    assert!(has_whole_zone_grant(&[grant("*", "*")]));
     // A key a secondary holds needs no nsupdate rights to pull the zone.
-    assert!(covers_whole_zone(&[read_only_grant("*", "*")]));
+    assert!(has_whole_zone_grant(&[read_only_grant("*", "*")]));
 }
 
 /// Verify that a read only grant authorizes no update.
