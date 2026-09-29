@@ -954,6 +954,23 @@ socket and every test fails with "Bindizr is already running".
 Pages CI rebuilds the hosted API docs when `docs/openapi.yaml` changes on
 `main`.
 
+### Third-party license notice — generated at release, never committed
+
+`about.toml` and `about.hbs` configure cargo-about, which renders the
+licenses of every crate the shipped binaries link into
+`THIRD_PARTY_LICENSES.html`. The release workflows generate it and attach it
+to the GitHub release; it is git-ignored, so regenerate it locally only to
+inspect it:
+
+```sh
+cargo install cargo-about --locked --features cli
+cargo about generate --fail about.hbs -o THIRD_PARTY_LICENSES.html
+```
+
+`accepted` in `about.toml` is the license gate: a crate no listed license
+covers fails the release, and the answer is a decision about that crate, not
+another `accepted` entry.
+
 ### Documentation site
 
 `docs/` is the MkDocs Material source for

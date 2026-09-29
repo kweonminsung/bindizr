@@ -26,7 +26,9 @@ BIND is what the rest of this page installs.
 ## 2. Download Bindizr and install
 
 You can download the latest Bindizr binary from
-[Release](https://github.com/kweonminsung/bindizr/releases/latest).
+[Release](https://github.com/kweonminsung/bindizr/releases/latest). Each
+release also carries `THIRD_PARTY_LICENSES.html`, the licenses of the crates
+the binaries are built from.
 
 To build the binary yourself instead, see [Building from Source](source.md).
 
