@@ -24,7 +24,7 @@ use crate::{
     },
     serial::generate_serial,
     transaction,
-    types::{DnssecStatusResponse, DsCheck},
+    types::{DnssecStatusResponse, DsCheck, EnableDnssecRequest, UpdateDnssecSettingsRequest},
     zone,
 };
 
@@ -52,19 +52,23 @@ fn validate_policy_move(
     Ok(())
 }
 
-/// Enable DNSSEC for a zone under `policy` (the built-in `default` when
-/// omitted): generate its key(s) and sign the whole zone. The parent
+/// Enable DNSSEC for a zone under `policy_name` (the built-in `default`
+/// when omitted): generate its key(s) and sign the whole zone. The parent
 /// nameservers are required, since every later DS check asks them.
 pub async fn enable(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    policy: Option<&str>,
-    parent_ns_addrs: &[String],
+    request: &EnableDnssecRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
-    let policy_name = normalize_policy_name(policy.unwrap_or(DEFAULT_DNSSEC_POLICY_NAME))?;
-    let parent_ns_addrs = normalize_parent_ns_addrs(parent_ns_addrs)?;
+    let policy_name = normalize_policy_name(
+        request
+            .policy_name
+            .as_deref()
+            .unwrap_or(DEFAULT_DNSSEC_POLICY_NAME),
+    )?;
+    let parent_ns_addrs = normalize_parent_ns_addrs(&request.parent_ns_addrs)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to enable DNSSEC").await?;
     let result = async {
@@ -150,17 +154,24 @@ pub async fn update_settings(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    policy: Option<&str>,
-    parent_ns_addrs: Option<&[String]>,
+    request: &UpdateDnssecSettingsRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
-    if policy.is_none() && parent_ns_addrs.is_none() {
+    if request.policy_name.is_none() && request.parent_ns_addrs.is_none() {
         return Err(ServiceError::invalid_input(
             "nothing to update: give a policy, parent nameserver addresses, or both",
         ));
     }
-    let policy_name = policy.map(normalize_policy_name).transpose()?;
-    let parent_ns_addrs = parent_ns_addrs.map(normalize_parent_ns_addrs).transpose()?;
+    let policy_name = request
+        .policy_name
+        .as_deref()
+        .map(normalize_policy_name)
+        .transpose()?;
+    let parent_ns_addrs = request
+        .parent_ns_addrs
+        .as_deref()
+        .map(normalize_parent_ns_addrs)
+        .transpose()?;
 
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC settings").await?;
     let result = async {

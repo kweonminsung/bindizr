@@ -116,7 +116,7 @@ pub(crate) async fn build_status_tx(
                 state: key.state,
                 state_changed_at: key.state_changed_at,
                 eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
-                algorithm: key.algorithm.to_string(),
+                algorithm: key.algorithm,
                 key_tag: key.key_tag,
                 dnskey: format!(
                     "{} 3 {} {}",

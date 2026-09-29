@@ -18,15 +18,7 @@ pub(crate) async fn create_token(
     cx: &Context,
     request: &CreateTokenRequest,
 ) -> Result<DaemonResponse<CreatedTokenResponse>, ServiceError> {
-    let (token, secret) = token::create(
-        cx,
-        &Caller::Global,
-        &request.name,
-        request.description.as_deref(),
-        request.expires_in_days,
-        request.global,
-    )
-    .await?;
+    let (token, secret) = token::create(cx, &Caller::Global, request).await?;
     Ok(DaemonResponse {
         message: "Token created successfully".to_string(),
         data: CreatedTokenResponse {
@@ -67,16 +59,7 @@ pub(crate) async fn create_token_grant(
     token_name: &str,
     request: &CreateGrantRequest,
 ) -> Result<DaemonResponse<TokenGrantResponse>, ServiceError> {
-    let grant = grant::create(
-        cx,
-        &Caller::Global,
-        token_name,
-        &zone::normalize_name(&request.zone_name)?,
-        request.record_name_pattern.as_deref(),
-        request.record_types.as_deref(),
-        request.can_write,
-    )
-    .await?;
+    let grant = grant::create(cx, &Caller::Global, token_name, request).await?;
     Ok(DaemonResponse {
         message: "Token grant created successfully".to_string(),
         data: TokenGrantResponse {

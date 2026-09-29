@@ -1,6 +1,9 @@
 //! DNSSEC policy payloads.
 
-use bindizr_core::model::dnssec_policy::{Days, PolicyId};
+use bindizr_core::model::{
+    dnssec_key::DnssecAlgorithm,
+    dnssec_policy::{Days, PolicyId},
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -65,7 +68,7 @@ pub struct GetDnssecPolicyResponse {
     #[schema(example = "default")]
     pub name: String,
     #[schema(example = "ecdsap256sha256")]
-    pub algorithm: String,
+    pub algorithm: DnssecAlgorithm,
     pub denial: DnssecDenial,
     #[schema(example = false)]
     pub split_keys: bool,
@@ -85,7 +88,7 @@ impl From<&DnssecPolicy> for GetDnssecPolicyResponse {
         GetDnssecPolicyResponse {
             id: policy.id,
             name: policy.name.clone(),
-            algorithm: policy.algorithm.to_string(),
+            algorithm: policy.algorithm,
             denial: policy.denial,
             split_keys: policy.split_keys,
             signature_validity_days: policy.signature_validity_days,

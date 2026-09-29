@@ -89,14 +89,7 @@ pub(crate) async fn create_secondary(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateSecondaryRequest>,
 ) -> Result<Response, ApiError> {
-    let secondary = secondary::create(
-        &cx,
-        &caller,
-        &body.name,
-        &body.address,
-        body.notify_key_name.as_deref(),
-    )
-    .await?;
+    let secondary = secondary::create(&cx, &caller, &body).await?;
     let response = SecondaryResponse { secondary };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }

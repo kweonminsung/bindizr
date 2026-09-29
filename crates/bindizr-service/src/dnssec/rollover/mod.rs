@@ -25,7 +25,9 @@ use crate::{
         zone::Zone,
     },
     transaction,
-    types::{DnssecDelegationKeyInfo, DnssecStatusResponse, DsCheck, Holddown},
+    types::{
+        DnssecDelegationKeyInfo, DnssecStatusResponse, DsCheck, Holddown, RolloverDnssecRequest,
+    },
 };
 
 /// Start a key rollover: pre-publish a same-algorithm replacement for
@@ -34,9 +36,15 @@ pub async fn start_rollover(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    role: Option<DnssecKeyRole>,
+    request: &RolloverDnssecRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
+    let role = request
+        .role
+        .as_deref()
+        .map(str::parse::<DnssecKeyRole>)
+        .transpose()
+        .map_err(ServiceError::invalid_input)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
     let result = async {

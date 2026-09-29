@@ -12,7 +12,7 @@ use crate::{
     db,
     model::api_token::ApiToken,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
-    types::{GetTokenResponse, PageFilter, PaginatedResponse, build_page},
+    types::{CreateTokenRequest, GetTokenResponse, PageFilter, PaginatedResponse, build_page},
 };
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
@@ -27,16 +27,14 @@ pub(crate) fn hash_token(token: &str) -> String {
 pub async fn create(
     cx: &Context,
     caller: &Caller,
-    name: &str,
-    description: Option<&str>,
-    expires_in_days: Option<i64>,
-    is_global: bool,
+    request: &CreateTokenRequest,
 ) -> Result<(ApiToken, String), ServiceError> {
     caller.authorize_global("manage API tokens")?;
 
-    let name = normalize_token_name(name)?;
-    let description = normalize_description(description, ServiceError::invalid_input)?;
-    let expires_at = normalize_expires_at(expires_in_days)?;
+    let name = normalize_token_name(&request.name)?;
+    let description =
+        normalize_description(request.description.as_deref(), ServiceError::invalid_input)?;
+    let expires_at = normalize_expires_at(request.expires_in_days)?;
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
     if db::api_token::get_by_name(cx.db(), &name).await?.is_some() {
@@ -58,7 +56,7 @@ pub async fn create(
             name: name.clone(),
             token: token_hash,
             description,
-            is_global,
+            is_global: request.global,
             expires_at,
             created_at: Utc::now(),
             last_used_at: None,

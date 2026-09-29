@@ -1,4 +1,4 @@
-use bindizr_core::model::{tsig_grant::TsigGrantId, tsig_key::TsigAlgorithm};
+use bindizr_core::model::tsig_grant::TsigGrantId;
 use bindizr_service::{
     Context,
     authorization::Caller,
@@ -18,21 +18,7 @@ pub(crate) async fn create_tsig_key(
     cx: &Context,
     request: &CreateTsigKeyRequest,
 ) -> Result<DaemonResponse<TsigKeyResponse>, ServiceError> {
-    let algorithm = request
-        .algorithm
-        .as_deref()
-        .map(str::parse::<TsigAlgorithm>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?;
-    let key = tsig_key::create(
-        cx,
-        &Caller::Global,
-        &request.name,
-        algorithm,
-        request.secret.as_deref(),
-        request.global,
-    )
-    .await?;
+    let key = tsig_key::create(cx, &Caller::Global, request).await?;
     Ok(DaemonResponse {
         message: "TSIG key created successfully".to_string(),
         data: TsigKeyResponse::from(&key),
@@ -82,16 +68,7 @@ pub(crate) async fn create_tsig_grant(
     key_name: &str,
     request: &CreateGrantRequest,
 ) -> Result<DaemonResponse<TsigGrantResponse>, ServiceError> {
-    let grant = grant::create(
-        cx,
-        &Caller::Global,
-        key_name,
-        &zone::normalize_name(&request.zone_name)?,
-        request.record_name_pattern.as_deref(),
-        request.record_types.as_deref(),
-        request.can_write,
-    )
-    .await?;
+    let grant = grant::create(cx, &Caller::Global, key_name, request).await?;
     Ok(DaemonResponse {
         message: "TSIG grant created successfully".to_string(),
         data: TsigGrantResponse {
