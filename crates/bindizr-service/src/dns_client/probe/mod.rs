@@ -83,7 +83,7 @@ pub async fn probe_secondaries(
     for (address, task) in tasks {
         match task.await {
             Ok(Ok((probe, clients))) => {
-                probes.push(with_last_transfer(cx, zone_name, probe, &clients).await)
+                probes.push(attach_last_transfer(cx, zone_name, probe, &clients).await)
             }
             Ok(Err(e)) => return Err(e.into()),
             Err(e) => probes.push(SecondaryStatusResponse::from_probe(
@@ -108,7 +108,7 @@ pub async fn probe_secondary(
 ) -> Result<SecondaryStatusResponse, ServiceError> {
     let timeout = cx.config().dns.notify.timeout();
     let (probe, clients) = probe_addresses(zone_name, secondary, timeout, expected_serial).await?;
-    Ok(with_last_transfer(cx, zone_name, probe, &clients).await)
+    Ok(attach_last_transfer(cx, zone_name, probe, &clients).await)
 }
 
 /// The network half of a probe: resolve the secondary and query its
@@ -149,7 +149,7 @@ async fn probe_addresses(
 
 /// Attach what Bindizr last sent the secondary for the zone, beside what it
 /// serves now; a secondary that did not resolve keys no transfer row.
-async fn with_last_transfer(
+async fn attach_last_transfer(
     cx: &Context,
     zone_name: &ZoneName,
     mut probe: SecondaryStatusResponse,

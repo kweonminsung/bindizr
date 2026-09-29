@@ -47,7 +47,7 @@ impl OwnerName {
         let zone_labels = zone_name.labels();
 
         // A relative name that happens to end in the zone was already absolute.
-        match strip_zone_suffix(&labels, &zone_labels) {
+        match relative_labels(&labels, &zone_labels) {
             Some(owner) => Ok(Self(owner)),
             None if absolute => Err(ParseNameError::OutsideZone),
             // Relative input grows by the zone it is qualified with, which is
@@ -72,7 +72,7 @@ impl OwnerName {
         }
 
         let (labels, _) = decode_name_labels(trimmed)?;
-        strip_zone_suffix(&labels, zone_name.labels().as_slice())
+        relative_labels(&labels, zone_name.labels().as_slice())
             .map(Self)
             .ok_or(ParseNameError::OutsideZone)
     }
@@ -326,6 +326,6 @@ pub fn is_label_suffix(name: &[String], suffix: &[String]) -> bool {
 
 /// The labels left after removing `zone` from the end of `name`, or `None`
 /// when `name` does not sit inside `zone`.
-fn strip_zone_suffix(name: &[String], zone: &[String]) -> Option<Vec<String>> {
+fn relative_labels(name: &[String], zone: &[String]) -> Option<Vec<String>> {
     is_label_suffix(name, zone).then(|| name[..name.len() - zone.len()].to_vec())
 }

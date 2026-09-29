@@ -167,7 +167,7 @@ pub(crate) async fn authorize_whole_zone_tx(
     let grants =
         db::tsig_grant::list_by_zone_id_and_key_id_tx(tx, zone.id, key.id, LockLevel::Shared)
             .await?;
-    Ok(covers_whole_zone(&grants))
+    Ok(has_whole_zone_grant(&grants))
 }
 
 /// Revoke one of `key_name`'s grants by id. An id that belongs to another
@@ -248,7 +248,7 @@ pub(crate) fn authorize_prerequisite(
 
 /// Whether any grant covers the zone whole. A transfer hands the zone over
 /// whole, so a grant narrowed to part of it authorizes none.
-fn covers_whole_zone(grants: &[TsigGrant]) -> bool {
+fn has_whole_zone_grant(grants: &[TsigGrant]) -> bool {
     grants.iter().any(TsigGrant::is_unrestricted)
 }
 
