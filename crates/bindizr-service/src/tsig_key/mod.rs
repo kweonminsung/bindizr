@@ -12,7 +12,7 @@ use crate::{
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
     text::MAX_COLUMN_TEXT_LEN,
-    types::{GetTsigKeyResponse, PageFilter, PaginatedResponse},
+    types::{GetTsigKeyResponse, PageFilter, PaginatedResponse, build_page},
 };
 
 /// Byte length of generated secrets; matches `tsig-keygen`'s default for
@@ -75,7 +75,7 @@ pub async fn list(
     caller.authorize_global("manage TSIG keys and grants")?;
 
     let keys = db::tsig_key::list_all(cx.db()).await?;
-    PaginatedResponse::from_collection(
+    build_page(
         keys.iter().map(GetTsigKeyResponse::from).collect(),
         page.limit,
         page.offset,

@@ -1,7 +1,7 @@
 //! Zone request, patch, filter, and response payloads.
 
 use bindizr_core::{
-    dns::{Serial, SoaInterval, Ttl, name::ZoneName, record::SoaMailbox, zonefile::ZoneFileSoa},
+    dns::{Serial, SoaInterval, Ttl},
     model::zone::ZoneId,
 };
 use chrono::{DateTime, Utc};
@@ -9,10 +9,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use super::secondary::TransferResponse;
-use crate::{
-    dns_client::probe::ProbeError, error::ServiceError, model::zone::Zone, notify::NotifyTarget,
-    serial::validate_initial_serial,
-};
+use crate::{dns_client::probe::ProbeError, model::zone::Zone, notify::NotifyTarget};
 
 /// Which records a zone reads back as: the user records alone, or with the
 /// derived DNSSEC records bindizr generates.
@@ -137,39 +134,6 @@ pub struct CreateZoneRequest {
     #[serde(default)]
     #[schema(example = false)]
     pub dry_run: bool,
-}
-
-impl CreateZoneRequest {
-    /// Build the request a zone file's SOA describes. The serial carries over
-    /// so secondaries holding the old primary's serial accept the transfer;
-    /// one past bindizr's ceiling starts fresh instead.
-    pub(crate) fn from_zone_file_soa(
-        zone_name: &ZoneName,
-        soa: &ZoneFileSoa,
-    ) -> Result<Self, ServiceError> {
-        let rname = SoaMailbox::from_encoded(soa.rname.trim_end_matches('.'))
-            .to_email()
-            .map_err(|e| {
-                ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", e))
-            })?;
-        Ok(CreateZoneRequest {
-            dry_run: false,
-            name: zone_name.to_string(),
-            mname: soa.mname.clone(),
-            rname,
-            default_ttl: None,
-            // The file's serial only if a zone may start from it, so an
-            // unusable one generates a fresh serial instead of failing.
-            serial: validate_initial_serial(soa.serial)
-                .is_ok()
-                .then_some(soa.serial),
-            refresh: Some(i32::from(soa.refresh)),
-            retry: Some(i32::from(soa.retry)),
-            expire: Some(i32::from(soa.expire)),
-            minimum_ttl: Some(i32::from(soa.minimum_ttl)),
-            description: None,
-        })
-    }
 }
 
 /// Query filters and pagination for listing zones.

@@ -232,16 +232,16 @@ pub(crate) fn group_ops_by_zone(
     Ok(grouped)
 }
 
-impl ZoneOps {
+impl ZoneChangeSet {
     /// Resolve one zone's operations against its current records; idempotent
     /// operations cancel out, so an effect-free request yields an empty set.
-    pub(crate) fn compute_change_set(
-        &self,
+    pub(crate) fn compute(
+        ops: &ZoneOps,
         zone: &Zone,
         existing: &[Record],
-    ) -> Result<ZoneChangeSet, ServiceError> {
+    ) -> Result<Self, ServiceError> {
         let mut deletes: Vec<Record> = Vec::new();
-        for del in &self.dels {
+        for del in &ops.dels {
             for value in &del.values {
                 for row in existing {
                     if row.name == del.name
@@ -256,7 +256,7 @@ impl ZoneOps {
         }
 
         let mut creates: Vec<Record> = Vec::new();
-        for add in &self.adds {
+        for add in &ops.adds {
             let ttl = add.ttl.unwrap_or(zone.default_ttl);
             for value in &add.values {
                 let same_rdata = |record: &Record| {

@@ -4,7 +4,7 @@
 use bindizr_core::dns::name::OwnerName;
 use bindizr_db::LockLevel;
 
-use super::change_set::{group_ops_by_zone, parse_changes_request};
+use super::change_set::{ZoneChangeSet, group_ops_by_zone, parse_changes_request};
 use crate::{
     Context,
     authorization::{Caller, RecordWrite},
@@ -88,7 +88,7 @@ pub async fn apply_changes(
                 db::record::list_by_names_tx(&mut tx, zone.id, &names, LockLevel::Exclusive)
                     .await?;
 
-            let change_set = ops.compute_change_set(&zone, &records_at_names)?;
+            let change_set = ZoneChangeSet::compute(ops, &zone, &records_at_names)?;
             if change_set.deletes.is_empty() && change_set.creates.is_empty() {
                 continue;
             }

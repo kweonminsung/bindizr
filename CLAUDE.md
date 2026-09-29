@@ -816,39 +816,55 @@ asks for the split.
 
 ### Methods and free functions — what a type owns
 
-A type owns a method when the answer comes from that one value: its fields,
-its arguments, and the wire or protocol rule the type embodies — nothing
-read from config, the database, or another domain value of equal
-standing, and no I/O. Such a method is a derivation
-(`rdata.to_presentation(record_type)`), a predicate about the receiver
-(`record.matches(type, value, priority)`, `key.wants_parent_ds()`), or a
-rendering (`Display`); when it can fail it says so with the module's own
-error type or `Option`, never `ServiceError`. It lives beside the type, so
-a core type's method uses only core. Two consequences (`C-METHOD`,
-`C-CTOR`): a protocol rule a wire type embodies is that type's method even
-when one front end is the only one to ask it
-(`UpdateRecord::validate_delete_shape`, RFC 2136, Section 2.5, answered
-with core's `DeleteShapeError`, which the server maps to its RCODE), and a
-front end never re-wraps a method the type already has
-(`ParsedQuery::signed_error_response` takes the optional signer itself). A
-value a module builds from inputs and nothing else, with its own error, is
-made by an associated function of its type (`DnssecKey::generate`,
-`DnssecKey::import`, `ImportPlan::compute`), not by a free `generate_` or
-`compute_` helper.
+An inherent `impl` holds only these kinds of function; a function that is
+none of them is a free function of the flow that needs it. The audit that
+settled the list walked every method in the workspace.
 
-Everything else is a function of the flow that needs it: a rule phrased
-against a layer's error type (`normalize_*`, `validate_*`,
-`generate_serial`), an assembly of several values that returns a standard
-type or a payload (`build_record_diff(zone, …)`, `group_record_sets`,
-`build_notify_message`), anything with I/O or a transaction, and a step
-whose failures are one command's messages (`promotable_sep_key_ids` reports
-the `ds-seen` errors). A payload type in `bindizr_service::types` carries
-only what its wire form defines (`RecordValueRequest::to_text`,
-`to_encoded_value`), never a service rule.
-A receiver that would be a slice, an `Option`, or a foreign type (the
-`domain` crate's aliases, `DateTime`) rules a method out. `Caller`'s
-`authorize_*` methods are the gate of *Who decides what*, not a value's
-property, and keep their `ServiceError`.
+1. **A constructor** (`C-CTOR`): an associated function returning `Self` or
+   `Result<Self, _>` — `new`; `from_<source>` where `From` cannot spell the
+   conversion; `parse` for text; a verb for how the value comes to be
+   (`generate`, `import`, `compute`, `connect`, `load`, `spawn`); the kind
+   alone where the type is an error or a refusal
+   (`ServiceError::zone_not_found`, `TransferRefusal::refused`). A value a
+   module builds from inputs, with the module's own error, is made this way
+   (`DnssecKey::generate`, `ImportPlan::compute`, `ZoneChangeSet::compute`
+   takes the ops as an input), never by a free `generate_` or `compute_`
+   helper. I/O belongs here only when the value is the resource it opens
+   (`Db::connect`) or a `Caller` authenticated from a request.
+2. **A conversion or accessor**: `as_` a free borrow, `to_` an owned
+   derivation, `into_` consuming `self`, and the `From`/`TryFrom`, sqlx,
+   serde and `Display` impls beside them.
+3. **A derivation or predicate about the receiver**: `is_`/`has_`/`matches_`
+   or a verb phrase read as a sentence (`key.wants_parent_ds()`), computed
+   from the fields and plain arguments; a peer of the same type may be an
+   argument (`zone.soa_metadata_differs(&other)`,
+   `key.signs_zone_data(&keys)`, `desired.matches(&record)`).
+4. **A wire or protocol rule the type embodies**, failing with the type's
+   own error (`UpdateRecord::validate_delete_shape`, `OwnerName::to_wire`,
+   `RecordType::validate_value`) — even when one front end is the only
+   caller, which maps the error to its own (`From<DeleteShapeError> for
+   UpdateError`). A front end never re-wraps such a method
+   (`ParsedQuery::signed_error_response` takes the optional signer itself).
+5. **A builder step or a resource's operation**: `&mut self` steps take the
+   values they add (`DnsMessageBuilder::add_record(&record, …)`); a type
+   that owns a connection, a task, or a lock drives it
+   (`Transaction::commit`, `UpstreamClient::send`, `NotifyWorker::stop`).
+6. **The gate**: `Caller`'s `authorize_*` methods, which keep their
+   `ServiceError` as *Who decides what* says.
+
+Not a method, whatever its first parameter: a function that takes
+`&Context`, `&Db`, a `Transaction` or the configuration to reach state that
+is not the receiver's (a queue's `send_batch(cx, batch)`); an assembly of
+several values of equal standing that returns a payload, a standard type or
+a map (`build_record_diff(zone, …)`, `group_record_sets`,
+`build_notify_message`); a service rule on a payload type — a payload's
+constructors only reshape (`from_page`, `from_probe`, `From` impls), so
+the page limit and the zone file's SOA are applied by `build_page` and
+`build_create_zone_request` beside the flows that need them; a step of a
+transaction; anything whose receiver would be a slice, an `Option`, or a
+foreign type (the `domain` crate's aliases, `DateTime`). A method's error
+is its module's own; `ServiceError` appears on a method only in the
+service crate's own structs and the gate.
 
 ### Structs — a named shape that travels
 

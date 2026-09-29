@@ -9,7 +9,8 @@ use chrono::Utc;
 
 use super::{
     change_set::{
-        ZoneOps, adjust_record_set, group_ops_by_zone, parse_changes_request, parse_record_set_op,
+        ZoneChangeSet, ZoneOps, adjust_record_set, group_ops_by_zone, parse_changes_request,
+        parse_record_set_op,
     },
     policy::{authoritative_zone, normalize_lookup_name},
 };
@@ -386,9 +387,7 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &[])
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &[]).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert_eq!(change_set.creates.len(), 1);
@@ -407,9 +406,7 @@ fn change_set_skips_creates_that_already_exist() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -428,9 +425,7 @@ fn change_set_skips_creates_whose_row_differs_only_in_ttl() {
     };
 
     // No TTL on the record set, so it resolves to the zone's 3600 — not the row's 300.
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -451,9 +446,7 @@ fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 1);
     assert_eq!(change_set.deletes[0].id, RecordId::from(10));
@@ -471,9 +464,7 @@ fn change_set_skips_deletes_of_absent_records() {
         deletes: vec![record_set("gone.example.com", "A", None, &["192.0.2.9"])],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &[])
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &[]).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -496,9 +487,7 @@ fn change_set_cancels_unchanged_updates_even_with_reordered_targets() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -521,9 +510,7 @@ fn change_set_replaces_rows_when_update_changes_targets() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(
         change_set.deletes.iter().map(|r| r.id).collect::<Vec<_>>(),
@@ -560,9 +547,7 @@ fn change_set_replaces_whole_record_set_when_ttl_changes() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 2);
     assert_eq!(change_set.creates.len(), 2);
@@ -590,9 +575,7 @@ fn change_set_enforces_cname_exclusivity() {
         deletes: vec![],
     };
 
-    let err = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap_err();
+    let err = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap_err();
     assert_eq!(err.code(), ErrorCode::RecordConflict);
 }
 
@@ -612,9 +595,7 @@ fn change_set_allows_cname_when_conflicting_row_is_deleted_in_same_request() {
         deletes: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 1);
     assert_eq!(change_set.creates.len(), 1);

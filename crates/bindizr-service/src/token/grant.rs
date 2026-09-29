@@ -21,7 +21,7 @@ use crate::{
         api_token::ApiToken,
         token_grant::{TokenGrant, TokenGrantWithNames},
     },
-    types::{GetTokenGrantResponse, PageFilter, PaginatedResponse},
+    types::{GetTokenGrantResponse, PageFilter, PaginatedResponse, build_page},
     zone,
 };
 
@@ -116,7 +116,7 @@ pub async fn list_self(
     .map(|zone| (zone.id, zone.name.to_string()))
     .collect();
 
-    PaginatedResponse::from_collection(
+    build_page(
         grants
             .into_iter()
             .map(|grant| {
@@ -150,7 +150,7 @@ pub async fn list_by_zone(
         .map(|token| (token.id, token.name))
         .collect();
 
-    PaginatedResponse::from_collection(
+    build_page(
         grants
             .into_iter()
             .map(|grant| {

@@ -39,7 +39,7 @@ pub use external_dns::{
 pub use grant::CreateGrantRequest;
 pub use import::{ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse};
 pub use pagination::{DEFAULT_PAGE_LIMIT, PageFilter, PaginatedResponse, Pagination};
-pub(crate) use pagination::{normalize_page_limit, parse_setting};
+pub(crate) use pagination::{build_page, normalize_page_limit, parse_setting};
 pub(crate) use record::build_display_value;
 pub use record::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
