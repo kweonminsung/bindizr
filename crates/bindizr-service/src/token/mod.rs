@@ -3,7 +3,7 @@
 use bindizr_core::model::api_token::TokenId;
 use chrono::{DateTime, Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
-use sha2::{Digest, Sha256};
+use ring::digest::{SHA256, digest};
 
 use super::error::ServiceError;
 use crate::{
@@ -20,9 +20,7 @@ const MAX_EXPIRES_IN_DAYS: i64 = 36_500;
 
 /// Hash an API token for storage and lookup.
 pub(crate) fn hash_token(token: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    hex::encode(hasher.finalize())
+    hex::encode(digest(&SHA256, token.as_bytes()))
 }
 
 /// Create an API token; the secret comes back beside it, shown this once.

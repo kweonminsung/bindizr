@@ -3,8 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::Engine;
 use chrono::Utc;
 use domain::base::iana::{Class, Rtype};
-use hmac::{Hmac, KeyInit, Mac};
-use sha2::{Sha256, Sha384, Sha512};
+use ring::hmac;
 
 use super::*;
 use crate::{dns::nsupdate::parser::tests::minimal_update_with_ztype, model::tsig_key::TsigKeyId};
@@ -47,19 +46,14 @@ pub(crate) fn encode_u48(value: u64) -> [u8; 6] {
 
 /// Sign test message bytes with the selected HMAC algorithm.
 pub(crate) fn hmac_sign(algorithm: TsigAlgorithm, data: &[u8]) -> Vec<u8> {
-    macro_rules! sign_with {
-        ($digest:ty) => {{
-            let mut mac = Hmac::<$digest>::new_from_slice(SECRET).unwrap();
-            mac.update(data);
-            mac.finalize().into_bytes().to_vec()
-        }};
-    }
-
-    match algorithm {
-        TsigAlgorithm::HmacSha256 => sign_with!(Sha256),
-        TsigAlgorithm::HmacSha384 => sign_with!(Sha384),
-        TsigAlgorithm::HmacSha512 => sign_with!(Sha512),
-    }
+    let algorithm = match algorithm {
+        TsigAlgorithm::HmacSha256 => hmac::HMAC_SHA256,
+        TsigAlgorithm::HmacSha384 => hmac::HMAC_SHA384,
+        TsigAlgorithm::HmacSha512 => hmac::HMAC_SHA512,
+    };
+    hmac::sign(&hmac::Key::new(algorithm, SECRET), data)
+        .as_ref()
+        .to_vec()
 }
 
 /// A minimal UPDATE request signed with `update-key`: the MAC covers the

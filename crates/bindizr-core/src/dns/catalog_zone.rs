@@ -1,11 +1,11 @@
-use sha2::{Digest, Sha256};
+use ring::digest::{SHA256, digest};
 
 /// A member zone's unique-id label (RFC 9432, Section 4.1): truncated
 /// SHA-256, so every zone name fits one stable label with negligible collision risk.
 pub(crate) fn zone_name_to_member_id(zone_name: &str) -> String {
     // Case-insensitive per RFC 4343, matching the catalog digest.
-    let digest = Sha256::digest(zone_name.to_ascii_lowercase().as_bytes());
-    hex::encode(&digest[..16])
+    let digest = digest(&SHA256, zone_name.to_ascii_lowercase().as_bytes());
+    hex::encode(&digest.as_ref()[..16])
 }
 
 #[cfg(test)]

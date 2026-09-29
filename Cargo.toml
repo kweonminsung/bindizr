@@ -33,7 +33,7 @@ inefficient_to_string = "warn"
 
 [workspace.dependencies]
 axum = "0.8.9"
-axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+axum-server = { version = "0.8.0", features = ["tls-rustls-no-provider"] }
 base64 = "0.23"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.6.1", features = ["derive"] }
@@ -41,20 +41,21 @@ clap_complete = "4.6.11"
 clap_mangen = "0.3.3"
 toml = "1.0"
 domain = "0.12"
-hmac = "0.13"
 hex = "0.4"
 log = { version = "0.4", features = ["std"] }
 openssl = "0.10"
 prometheus = { version = "0.14", default-features = false }
 rand = "0.10"
 rcgen = "0.14.10"
+# Hashing and HMAC; domain links it for TSIG in any case.
+ring = "0.17"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
+# ring as the TLS provider, so rustls's default aws-lc-rs stays out.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_norway = "0.9"
 serial_test = "4"
-sha1 = "0.11"
-sha2 = "0.11"
 sqlx = { version = "0.9", features = [
     "runtime-tokio",
     "mysql",
@@ -63,12 +64,12 @@ sqlx = { version = "0.9", features = [
     "sqlite",
     "chrono",
 ] }
-tabled = "0.22"
+tabled = { version = "0.22", default-features = false, features = ["derive"] }
 tempfile = "3.27.0"
 thiserror = "2.0.18"
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.7.0", features = ["cors"] }
-utoipa = { version = "6.0", features = ["axum_extras", "chrono", "yaml"] }
+utoipa = { version = "6.0", features = ["axum_extras", "chrono"] }
 
 [profile.dev]
 split-debuginfo = "off"

@@ -16,8 +16,8 @@ use domain::{
     },
     rdata::{Ds, Soa},
 };
+use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
 use serde_json::Value;
-use sha1::{Digest, Sha1};
 
 /// A DS record for the fake parent to serve.
 #[derive(Clone, Debug)]
@@ -81,14 +81,14 @@ impl ServedDs {
         // RFC 4034, Section 5.1.4: the digest covers the wire owner name,
         // then the DNSKEY RDATA.
         let apex = Name::<Vec<u8>>::from_str(zone_name).expect("zone name");
-        let mut hasher = Sha1::new();
+        let mut hasher = Context::new(&SHA1_FOR_LEGACY_USE_ONLY);
         hasher.update(apex.as_slice());
         hasher.update(&rdata);
         Self {
             key_tag,
             algorithm,
             digest_type: 1,
-            digest: hasher.finalize().to_vec(),
+            digest: hasher.finish().as_ref().to_vec(),
             ttl,
         }
     }

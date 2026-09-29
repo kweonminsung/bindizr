@@ -19,7 +19,6 @@ chrono.workspace = true
 log.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
