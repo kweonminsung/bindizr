@@ -24,8 +24,8 @@ accepted = [
 # headers as a dozen near-identical notices.
 max-depth = 1
 
-# Build scripts, tests, and the e2e crate (publish = false) are not shipped.
-ignore-build-dependencies = true
+# Build dependencies stay: openssl-src is the OpenSSL the musl packages link.
+# Tests and the e2e crate (publish = false) are not shipped.
 ignore-dev-dependencies = true
 
 # rustls packages no license text; chrono keeps both of its licenses in one file.
