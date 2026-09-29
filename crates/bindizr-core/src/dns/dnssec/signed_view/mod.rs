@@ -18,7 +18,7 @@ use domain::{
     rdata::{ZoneRecordData, dnssec::Timestamp},
 };
 use input::denial_records;
-use sha2::{Digest, Sha256};
+use ring::digest::{Context, SHA256};
 use thiserror::Error;
 
 use super::{WireName, WireRecord};
@@ -129,12 +129,13 @@ impl SignedViewParams<'_> {
             return self.expiration;
         }
 
-        let mut hasher = Sha256::new();
+        let mut hasher = Context::new(&SHA256);
         hasher.update(owner.as_slice());
-        hasher.update(covered.to_be_bytes());
+        hasher.update(&covered.to_be_bytes());
         // The leading eight digest bytes, read big-endian.
         let slot = hasher
-            .finalize()
+            .finish()
+            .as_ref()
             .iter()
             .take(8)
             .fold(0u64, |slot, byte| (slot << 8) | u64::from(*byte));
@@ -358,10 +359,10 @@ fn record_set_digest(
     signers: &[&Signer<'_>],
     record_set: &[&SignRecord],
 ) -> Result<String, EncodeRdataError> {
-    let mut hasher = Sha256::new();
+    let mut hasher = Context::new(&SHA256);
     hasher.update(record_set[0].owner().as_slice());
-    hasher.update(record_set[0].rtype().to_int().to_be_bytes());
-    hasher.update(record_set[0].ttl().as_secs().to_be_bytes());
+    hasher.update(&record_set[0].rtype().to_int().to_be_bytes());
+    hasher.update(&record_set[0].ttl().as_secs().to_be_bytes());
 
     let mut rdatas: Vec<Rdata> = record_set
         .iter()
@@ -369,17 +370,17 @@ fn record_set_digest(
         .collect::<Result<_, _>>()?;
     rdatas.sort();
     for rdata in rdatas {
-        hasher.update((rdata.as_bytes().len() as u32).to_be_bytes());
+        hasher.update(&(rdata.as_bytes().len() as u32).to_be_bytes());
         hasher.update(rdata.as_bytes());
     }
     for signer in signers {
         // Key tags are 16 bits and can collide across a rollover; the row id
         // pins the actual signing key so a stale signature cannot be reused.
-        hasher.update(i32::from(signer.key.id).to_be_bytes());
-        hasher.update(signer.key_tag.as_u16().to_be_bytes());
-        hasher.update([signer.algorithm]);
+        hasher.update(&i32::from(signer.key.id).to_be_bytes());
+        hasher.update(&signer.key_tag.as_u16().to_be_bytes());
+        hasher.update(&[signer.algorithm]);
     }
-    Ok(hex::encode(hasher.finalize()))
+    Ok(hex::encode(hasher.finish()))
 }
 
 /// Check whether an owner lies below a delegation in this zone.

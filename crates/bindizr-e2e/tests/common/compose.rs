@@ -26,6 +26,7 @@ static COMPOSE_STACK: OnceLock<ComposeStack> = OnceLock::new();
 impl TestApp {
     /// Start a test application using the Docker Compose services.
     pub(crate) async fn start_compose() -> Self {
+        super::install_crypto_provider();
         let compose_stack = COMPOSE_STACK.get_or_init(ComposeStack::start);
         let client = Client::new();
         wait_for_compose_api(&client).await;

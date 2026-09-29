@@ -17,6 +17,7 @@ impl TestApp {
     /// Start with non-default config; always the local runtime, because the
     /// compose stack's config is fixed.
     pub(crate) async fn start_with_options(options: TestAppOptions) -> Self {
+        super::install_crypto_provider();
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("bindizr.sqlite");
         let config_path = temp_dir.path().join("bindizr.conf.toml");

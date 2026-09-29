@@ -33,10 +33,12 @@ clap_complete.workspace = true
 clap_mangen.workspace = true
 hex.workspace = true
 log.workspace = true
+ring.workspace = true
+# For its `ring` feature alone; axum-server builds the config.
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
 tabled.workspace = true
 tokio.workspace = true

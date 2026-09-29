@@ -4,7 +4,7 @@ use bindizr_core::{
 };
 use bindizr_service::zone;
 use chrono::Utc;
-use sha2::{Digest, Sha256};
+use ring::digest::{Context, SHA256};
 use tokio::net::TcpStream;
 
 use crate::dns::{error::XfrError, server::DnsContext};
@@ -70,13 +70,13 @@ fn catalog_digest(member_zones: &[String]) -> String {
     let mut members = member_zones.to_vec();
     members.sort();
 
-    let mut hasher = Sha256::new();
+    let mut hasher = Context::new(&SHA256);
     for member in members {
         hasher.update(member.as_bytes());
         hasher.update(b"\n");
     }
 
-    hex::encode(hasher.finalize())
+    hex::encode(hasher.finish())
 }
 
 /// Send a catalog zone transfer using the requested question type.
