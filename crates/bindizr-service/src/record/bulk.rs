@@ -27,7 +27,8 @@ use crate::{
     transaction,
     ttl::validate_record_ttl,
     types::{
-        BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest, Run,
+        BulkRecordsResponse, CreateBulkRecordsRequest, GetRecordResponse, RecordDiff,
+        RecordValueRequest, Run,
     },
     zone::{self, diff::build_record_diff},
 };
@@ -177,10 +178,11 @@ pub(crate) async fn delete_with_changes_tx(
 pub async fn create_bulk(
     cx: &Context,
     caller: &Caller,
-    zone_name: &ZoneName,
-    items: &[RecordItem],
-    run: Run,
+    request: &CreateBulkRecordsRequest,
 ) -> Result<BulkRecordsResponse, ServiceError> {
+    let zone_name = &zone::normalize_name(&request.zone_name)?;
+    let items = &request.records;
+    let run = Run::from_dry_run(request.dry_run);
     if items.is_empty() {
         return Err(ServiceError::invalid_input(
             "no records provided for bulk insert".to_string(),

@@ -21,7 +21,10 @@ pub enum ParseDnssecKeyError {
 }
 
 /// Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum DnssecAlgorithm {
     /// RSA with SHA-256, algorithm 8 (RFC 5702).
     RsaSha256,

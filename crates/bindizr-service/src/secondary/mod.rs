@@ -28,28 +28,26 @@ use crate::{
     text::{MAX_COLUMN_TEXT_LEN, normalize_identifier},
     transaction, transfer, tsig_key,
     types::{
-        GetSecondaryResponse, GetSecondaryTransfersFilter, PageFilter, PaginatedResponse,
-        SecondaryCheckResponse, SecondaryTransfersResponse, TransferResponse, TransferSummary,
-        UpdateSecondaryRequest, build_page, normalize_page_limit,
+        CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, PageFilter,
+        PaginatedResponse, SecondaryCheckResponse, SecondaryTransfersResponse, TransferResponse,
+        TransferSummary, UpdateSecondaryRequest, build_page, normalize_page_limit,
     },
     zone,
 };
 
 /// Register a secondary by name and `host[:port]` address; with
-/// `notify_key`, NOTIFY to it is signed with that TSIG key.
+/// `notify_key_name`, NOTIFY to it is signed with that TSIG key.
 pub async fn create(
     cx: &Context,
     caller: &Caller,
-    name: &str,
-    address: &str,
-    notify_key: Option<&str>,
+    request: &CreateSecondaryRequest,
 ) -> Result<GetSecondaryResponse, ServiceError> {
     caller.authorize_global("manage secondaries")?;
 
-    let name = normalize_secondary_name(name)?;
-    let address = normalize_secondary_address(address)?;
+    let name = normalize_secondary_name(&request.name)?;
+    let address = normalize_secondary_address(&request.address)?;
     // Unlocked read to learn the FK target; the constraint backstops.
-    let notify_key = match notify_key {
+    let notify_key = match request.notify_key_name.as_deref() {
         Some(key_name) => Some(tsig_key::lookup_by_name(cx, key_name).await?),
         None => None,
     };

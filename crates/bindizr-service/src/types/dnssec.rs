@@ -2,7 +2,7 @@
 
 use bindizr_core::{
     dns::{Serial, dnssec::KeyTag},
-    model::dnssec_key::DnssecKeyId,
+    model::dnssec_key::{DnssecAlgorithm, DnssecKeyId},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -154,7 +154,7 @@ pub struct DnssecKeyInfo {
     /// `retired`; absent for `active`.
     pub eligible_at: Option<DateTime<Utc>>,
     #[schema(example = "ecdsap256sha256")]
-    pub algorithm: String,
+    pub algorithm: DnssecAlgorithm,
     #[schema(example = 34217, value_type = u16)]
     pub key_tag: KeyTag,
     /// Apex DNSKEY RDATA: `<flags> 3 <alg> <public key>`; flags are 256 for

@@ -103,14 +103,7 @@ pub(crate) async fn create_records_bulk(
     cx: &Context,
     request: &CreateBulkRecordsRequest,
 ) -> Result<DaemonResponse<BulkRecordsResponse>, ServiceError> {
-    let response = record::create_bulk(
-        cx,
-        &Caller::Global,
-        &zone::normalize_name(&request.zone_name)?,
-        &request.records,
-        Run::from_dry_run(request.dry_run),
-    )
-    .await?;
+    let response = record::create_bulk(cx, &Caller::Global, request).await?;
     let message = if response.dry_run {
         format!(
             "Dry run: {} record(s) validated; nothing applied",

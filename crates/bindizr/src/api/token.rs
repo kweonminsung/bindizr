@@ -96,15 +96,7 @@ pub(crate) async fn create_token(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTokenRequest>,
 ) -> Result<Response, ApiError> {
-    let (token, secret) = token::create(
-        &cx,
-        &caller,
-        &body.name,
-        body.description.as_deref(),
-        body.expires_in_days,
-        body.global,
-    )
-    .await?;
+    let (token, secret) = token::create(&cx, &caller, &body).await?;
     let response = CreatedTokenResponse {
         token: GetTokenResponse::from(&token),
         secret,
@@ -245,16 +237,7 @@ pub(crate) async fn create_token_grant(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<CreateGrantRequest>,
 ) -> Result<Response, ApiError> {
-    let grant = grant::create(
-        &cx,
-        &caller,
-        &params.name,
-        &zone::normalize_name(&body.zone_name)?,
-        body.record_name_pattern.as_deref(),
-        body.record_types.as_deref(),
-        body.can_write,
-    )
-    .await?;
+    let grant = grant::create(&cx, &caller, &params.name, &body).await?;
     let response = TokenGrantResponse {
         token_grant: GetTokenGrantResponse::from(&grant),
     };

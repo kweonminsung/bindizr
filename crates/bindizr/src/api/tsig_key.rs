@@ -7,10 +7,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::model::{tsig_grant::TsigGrantId, tsig_key::TsigAlgorithm};
+use bindizr_core::model::tsig_grant::TsigGrantId;
 use bindizr_service::{
     Context,
-    error::ServiceError,
     tsig_key::{self, grant},
     types::{
         CreateGrantRequest, CreateTsigKeyRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
@@ -96,21 +95,7 @@ pub(crate) async fn create_tsig_key(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTsigKeyRequest>,
 ) -> Result<Response, ApiError> {
-    let algorithm = body
-        .algorithm
-        .as_deref()
-        .map(str::parse::<TsigAlgorithm>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?;
-    let key = tsig_key::create(
-        &cx,
-        &caller,
-        &body.name,
-        algorithm,
-        body.secret.as_deref(),
-        body.global,
-    )
-    .await?;
+    let key = tsig_key::create(&cx, &caller, &body).await?;
     let response = TsigKeyResponse::from(&key);
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
@@ -231,16 +216,7 @@ pub(crate) async fn create_tsig_grant(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<CreateGrantRequest>,
 ) -> Result<Response, ApiError> {
-    let grant = grant::create(
-        &cx,
-        &caller,
-        &params.name,
-        &zone::normalize_name(&body.zone_name)?,
-        body.record_name_pattern.as_deref(),
-        body.record_types.as_deref(),
-        body.can_write,
-    )
-    .await?;
+    let grant = grant::create(&cx, &caller, &params.name, &body).await?;
     let response = TsigGrantResponse {
         tsig_grant: GetTsigGrantResponse::from(&grant),
     };

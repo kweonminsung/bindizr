@@ -12,7 +12,7 @@ use crate::{
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
     text::MAX_COLUMN_TEXT_LEN,
-    types::{GetTsigKeyResponse, PageFilter, PaginatedResponse, build_page},
+    types::{CreateTsigKeyRequest, GetTsigKeyResponse, PageFilter, PaginatedResponse, build_page},
 };
 
 /// Byte length of generated secrets; matches `tsig-keygen`'s default for
@@ -24,16 +24,19 @@ const GENERATED_SECRET_LEN: usize = 32;
 pub async fn create(
     cx: &Context,
     caller: &Caller,
-    name: &str,
-    algorithm: Option<TsigAlgorithm>,
-    secret: Option<&str>,
-    is_global: bool,
+    request: &CreateTsigKeyRequest,
 ) -> Result<TsigKey, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let name = normalize_key_name(name)?;
-    let algorithm = algorithm.unwrap_or_default();
-    let secret = match secret {
+    let name = normalize_key_name(&request.name)?;
+    let algorithm = request
+        .algorithm
+        .as_deref()
+        .map(str::parse::<TsigAlgorithm>)
+        .transpose()
+        .map_err(ServiceError::invalid_input)?
+        .unwrap_or_default();
+    let secret = match request.secret.as_deref() {
         Some(secret) => normalize_secret(secret)?,
         None => generate_secret(),
     };
@@ -50,7 +53,7 @@ pub async fn create(
             name: name.clone(),
             algorithm,
             secret,
-            is_global,
+            is_global: request.global,
             created_at: Utc::now(),
         },
     )

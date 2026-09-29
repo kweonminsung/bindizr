@@ -10,7 +10,18 @@ pub struct ParseTsigAlgorithmError {
 }
 
 /// TSIG HMAC algorithms for update and transfer authentication (RFC 8945).
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    utoipa::ToSchema,
+)]
+#[serde(rename_all = "kebab-case")]
 pub enum TsigAlgorithm {
     /// The default a key is created with, matching `tsig-keygen`'s.
     #[default]

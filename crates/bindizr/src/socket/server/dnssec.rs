@@ -1,4 +1,3 @@
-use bindizr_core::model::dnssec_key::DnssecKeyRole;
 use bindizr_service::{
     Context,
     authorization::Caller,
@@ -24,8 +23,7 @@ pub(crate) async fn enable_dnssec(
         cx,
         &Caller::Global,
         &zone::normalize_name(zone_name)?,
-        request.policy_name.as_deref(),
-        &request.parent_ns_addrs,
+        request,
     )
     .await?;
     Ok(DaemonResponse {
@@ -85,15 +83,13 @@ pub(crate) async fn start_dnssec_rollover(
     zone_name: &str,
     request: &RolloverDnssecRequest,
 ) -> Result<DaemonResponse<DnssecStatusResponse>, ServiceError> {
-    let role = request
-        .role
-        .as_deref()
-        .map(str::parse::<DnssecKeyRole>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?;
-    let status =
-        dnssec::start_rollover(cx, &Caller::Global, &zone::normalize_name(zone_name)?, role)
-            .await?;
+    let status = dnssec::start_rollover(
+        cx,
+        &Caller::Global,
+        &zone::normalize_name(zone_name)?,
+        request,
+    )
+    .await?;
     Ok(DaemonResponse {
         message: "Key rollover started successfully".to_string(),
         data: status,
@@ -143,8 +139,7 @@ pub(crate) async fn update_dnssec_settings(
         cx,
         &Caller::Global,
         &zone::normalize_name(zone_name)?,
-        request.policy_name.as_deref(),
-        request.parent_ns_addrs.as_deref(),
+        request,
     )
     .await?;
     Ok(DaemonResponse {

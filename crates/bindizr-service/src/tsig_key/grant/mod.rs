@@ -22,21 +22,18 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    types::{GetTsigGrantResponse, PageFilter, PaginatedResponse, build_page},
+    types::{CreateGrantRequest, GetTsigGrantResponse, PageFilter, PaginatedResponse, build_page},
     zone,
 };
 
-/// Grant `key_name` rights in `zone_name`, optionally restricted to a
+/// Grant `key_name` rights in the request's zone, optionally restricted to a
 /// record name pattern and/or record types, and to transfers alone. Global
 /// keys are rejected: they already cover every zone and never carry grants.
 pub async fn create(
     cx: &Context,
     caller: &Caller,
     key_name: &str,
-    zone_name: &ZoneName,
-    record_name_pattern: Option<&str>,
-    record_types: Option<&str>,
-    can_write: bool,
+    request: &CreateGrantRequest,
 ) -> Result<TsigGrantWithNames, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
@@ -47,10 +44,10 @@ pub async fn create(
             key.name
         )));
     }
-    let zone = zone::lookup_by_name(cx, zone_name).await?;
+    let zone = zone::lookup_by_name(cx, &zone::normalize_name(&request.zone_name)?).await?;
 
-    let record_name_pattern = normalize_pattern(record_name_pattern)?;
-    let record_types = normalize_types(record_types)?;
+    let record_name_pattern = normalize_pattern(request.record_name_pattern.as_deref())?;
+    let record_types = normalize_types(request.record_types.as_deref())?;
 
     let grant = db::tsig_grant::create(
         cx.db(),
@@ -60,7 +57,7 @@ pub async fn create(
             tsig_key_id: key.id,
             record_name_pattern,
             record_types,
-            can_write,
+            can_write: request.can_write,
             created_at: Utc::now(),
         },
     )

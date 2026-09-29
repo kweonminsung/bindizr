@@ -17,14 +17,7 @@ pub(crate) async fn create_secondary(
     cx: &Context,
     request: &CreateSecondaryRequest,
 ) -> Result<DaemonResponse<SecondaryResponse>, ServiceError> {
-    let secondary = secondary::create(
-        cx,
-        &Caller::Global,
-        &request.name,
-        &request.address,
-        request.notify_key_name.as_deref(),
-    )
-    .await?;
+    let secondary = secondary::create(cx, &Caller::Global, request).await?;
     Ok(DaemonResponse {
         message: "Secondary registered successfully".to_string(),
         data: SecondaryResponse { secondary },

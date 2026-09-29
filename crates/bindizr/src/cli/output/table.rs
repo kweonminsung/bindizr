@@ -149,7 +149,7 @@ impl From<&DnssecKeyInfo> for DnssecKeyRow {
             state: key.state.to_string(),
             state_changed_at: display_time(key.state_changed_at),
             eligible_at: display_option_time(&key.eligible_at),
-            algorithm: key.algorithm.clone(),
+            algorithm: key.algorithm.to_string(),
             key_tag: key.key_tag,
             dnskey: key.dnskey.clone(),
             created_at: display_time(key.created_at),
@@ -185,7 +185,7 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
         DnssecPolicyRow {
             id: policy.id,
             name: policy.name.clone(),
-            algorithm: policy.algorithm.clone(),
+            algorithm: policy.algorithm.to_string(),
             denial: policy.denial.to_string(),
             keys: if policy.split_keys { "KSK/ZSK" } else { "CSK" }.to_string(),
             validity: format!("{}d", policy.signature_validity_days),
@@ -499,7 +499,7 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
         TsigKeyRow {
             id: key.id,
             name: key.name.clone(),
-            algorithm: key.algorithm.clone(),
+            algorithm: key.algorithm.to_string(),
             secret: MISSING_CELL.to_string(),
             global: display_yes_no(&key.global),
             created_at: display_time(key.created_at),

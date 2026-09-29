@@ -2298,8 +2298,7 @@ paths:
         schema:
           type: integer
           format: int32
-          maximum: 1000
-          minimum: 1
+          minimum: 0
       - name: offset
         in: query
         description: Number of zones to skip.
@@ -4131,6 +4130,16 @@ components:
           minimum: 0
         zone:
           $ref: '#/components/schemas/GetZoneResponse'
+    DnssecAlgorithm:
+      type: string
+      description: Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
+      enum:
+      - rsasha256
+      - rsasha512
+      - ecdsap256sha256
+      - ecdsap384sha384
+      - ed25519
+      - ed448
     DnssecDelegationInfo:
       type: object
       description: What the parent zone's servers answered when asked for the zone's DS.
@@ -4269,8 +4278,7 @@ components:
       - created_at
       properties:
         algorithm:
-          type: string
-          example: ecdsap256sha256
+          $ref: '#/components/schemas/DnssecAlgorithm'
         created_at:
           type: string
           format: date-time
@@ -4626,8 +4634,7 @@ components:
       - created_at
       properties:
         algorithm:
-          type: string
-          example: ecdsap256sha256
+          $ref: '#/components/schemas/DnssecAlgorithm'
         created_at:
           type: string
           format: date-time
@@ -4855,8 +4862,7 @@ components:
       - created_at
       properties:
         algorithm:
-          type: string
-          example: hmac-sha256
+          $ref: '#/components/schemas/TsigAlgorithm'
         created_at:
           type: string
           format: date-time
@@ -5119,8 +5125,7 @@ components:
             - created_at
             properties:
               algorithm:
-                type: string
-                example: ecdsap256sha256
+                $ref: '#/components/schemas/DnssecAlgorithm'
               created_at:
                 type: string
                 format: date-time
@@ -5414,8 +5419,7 @@ components:
             - created_at
             properties:
               algorithm:
-                type: string
-                example: hmac-sha256
+                $ref: '#/components/schemas/TsigAlgorithm'
               created_at:
                 type: string
                 format: date-time
@@ -6016,7 +6020,7 @@ components:
       - ixfr
     TransferResponse:
       type: object
-      description: One transfer Bindizr answered, or refused, for a secondary's address.
+      description: One transfer Bindizr answered, refused, or failed for a secondary's address.
       required:
       - address
       - zone_name
@@ -6111,6 +6115,13 @@ components:
           format: int64
           example: 12
           minimum: 0
+    TsigAlgorithm:
+      type: string
+      description: TSIG HMAC algorithms for update and transfer authentication (RFC 8945).
+      enum:
+      - hmac-sha256
+      - hmac-sha384
+      - hmac-sha512
     TsigGrantResponse:
       type: object
       description: A single TSIG grant wrapped in a response envelope.
@@ -6330,7 +6341,7 @@ components:
       additionalProperties: false
     VersionDetailResponse:
       type: object
-      description: One version plus the reconstructed records at that serial.
+      description: One version plus the records rewound to that serial.
       required:
       - version
       - records
@@ -6364,7 +6375,7 @@ components:
     VersionRecordResponse:
       type: object
       description: |-
-        A record reconstructed from the zone's journal, named as the record
+        A record rewound from the zone's journal, named as the record
         listing names it; unlike stored records it has no database id.
       required:
       - name

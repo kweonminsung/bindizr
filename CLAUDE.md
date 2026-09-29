@@ -178,10 +178,12 @@ each rule says which spelling is this project's.
   choices on one call are one struct of named fields. The front end that
   parses the flag builds the enum (`Run::from_dry_run(dry_run)`) and the
   socket carries it as such. An `Option<&str>` that means "all" when
-  `None` is an enum with an `All` variant (`NotifyTarget::All`); an
-  `Option<&str>` that spells an enum (`role`, `algorithm`) is parsed to
-  that enum by the front end — parse at the boundary, pass the type. A
-  policy *name* stays a string: it names a row, not a variant. A number
+  `None` is an enum with an `All` variant (`NotifyTarget::All`); a request
+  field that spells an enum (`role`, `algorithm`) stays a `String` the
+  service parses (`FromStr`, refused as `INVALID_INPUT` naming the supported
+  values), as it parses a name; a response field that spells one is the
+  enum, so the schema lists its values. A policy *name* stays a string: it
+  names a row, not a variant. A number
   with a meaning of its own is a newtype: `Serial`, `Ttl` and
   `SoaInterval` in `bindizr_core::dns`, `KeyTag` in `dns::dnssec`, the
   policy's `Days`, each with its `i32` row form and its wire or payload
@@ -250,6 +252,12 @@ each rule says which spelling is this project's.
 - **A use case has one home.** When two front ends answer the same question,
   the assembly lives in one place both reach (`zone::get_status`,
   shared by the HTTP API and the daemon socket), not once per transport.
+- **A body is the service's to read.** The front end parses only what
+  reaches it outside a body — a path or query parameter, a flag, the peer it
+  authenticates into a `Caller` — and hands a body over whole, as its
+  payload type: `grant::create(&cx, &caller, &token_name, &request)`, never
+  the request's fields one by one, so both front ends pass the same value
+  and neither parses for the other.
 - **Payload shapes are the service's.** `bindizr_service::types` is the wire
   contract of the HTTP API, the daemon socket, and the CLI alike; response
   types the CLI reads back derive `Deserialize` too. Front ends convert to
