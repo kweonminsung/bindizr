@@ -92,6 +92,31 @@ jobs:
             bindizr-*.rpm
           if-no-files-found: error
 
+  licenses:
+    name: Generate the third-party license notice
+    needs: version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # A crate under a license about.toml does not accept fails here, before
+      # anything is published.
+      - name: Generate the notice
+        run: |
+          cargo install cargo-about --locked --features cli
+          cargo about generate --fail about.hbs -o THIRD_PARTY_LICENSES.html
+
+      - name: Upload the notice
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: licenses
+          path: THIRD_PARTY_LICENSES.html
+          if-no-files-found: error
+
   image:
     name: Build image (${{ matrix.arch }})
     needs: version
@@ -147,9 +172,10 @@ jobs:
 
   manifest:
     name: Push image manifest
-    # The packages come first, so a failed package build leaves Docker Hub
-    # without a version tag for a release that never happened.
-    needs: [version, build, image]
+    # The packages and the notice come first, so a failed build or a rejected
+    # license leaves Docker Hub without a version tag for a release that never
+    # happened.
+    needs: [version, build, licenses, image]
     runs-on: ubuntu-latest
 
     steps:
@@ -183,7 +209,7 @@ jobs:
 
   release:
     name: Create Manual Release
-    needs: [version, build, manifest]
+    needs: [version, build, licenses, manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -199,6 +225,11 @@ jobs:
         with:
           pattern: packages-*
           merge-multiple: true
+
+      - name: Download the notice
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: licenses
 
       - name: Create git tag (if not exists)
         run: |
@@ -221,6 +252,7 @@ jobs:
           files: |
             bindizr_*.deb
             bindizr-*.rpm
+            THIRD_PARTY_LICENSES.html
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

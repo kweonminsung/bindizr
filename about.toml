@@ -1,0 +1,40 @@
+# cargo-about configuration for THIRD_PARTY_LICENSES.html, which the release
+# workflows generate and attach; the file itself is never committed.
+
+# The shipped targets: the musl packages and the glibc image.
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+
+# In order of preference. Nothing copyleft: a crate offering LGPL as an
+# alternative is taken under its permissive option.
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "Unlicense",
+    "CC0-1.0",
+    "MIT-0",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+]
+
+# License files live at a crate's root; scanning deeper reads ring's per-file
+# headers as a dozen near-identical notices.
+max-depth = 1
+
+# Build scripts, tests, and the e2e crate (publish = false) are not shipped.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# rustls packages no license text; chrono keeps both of its licenses in one file.
+workarounds = ["rustls", "chrono"]
+
+[private]
+ignore = true

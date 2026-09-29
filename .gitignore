@@ -10,3 +10,4 @@
 *.rpm
 .cr-release-packages
 .DS_Store
+/THIRD_PARTY_LICENSES.html
