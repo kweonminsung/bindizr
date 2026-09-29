@@ -1,6 +1,9 @@
-use crate::config::{
-    BINDIZR_CONF_PATH, BindizrConfig, DatabaseType, LogFormat, LogLevel,
-    resolve_config_path_with_env,
+use super::ConfigError;
+use crate::{
+    config::{
+        BINDIZR_CONF_PATH, Config, DatabaseType, LogFormat, LogLevel, resolve_config_path_with_env,
+    },
+    dns::{SoaInterval, name::ZoneName},
 };
 
 /// Deviations from the base config TOML; the default renders a minimal valid
@@ -72,8 +75,8 @@ level = "debug"
 }
 
 /// Parse a TOML configuration fixture.
-fn parse_config(toml: &TestConfigToml) -> Result<BindizrConfig, String> {
-    BindizrConfig::from_toml(&toml.render(), |_| None)
+fn parse_config(toml: &TestConfigToml) -> Result<Config, ConfigError> {
+    Config::from_toml(&toml.render(), |_| None)
 }
 
 /// Verify that `from_toml` accepts valid config.
@@ -110,7 +113,7 @@ fn from_toml_defaults_missing_optional_fields() {
     assert_eq!(parsed.dns.notify.timeout_secs, 3);
     assert_eq!(parsed.dns.transfer_cache.max_records, 500_000);
     assert!(parsed.dns.nsupdate_tsig_required);
-    assert_eq!(parsed.dns.catalog_zone_name, "catalog.bindizr");
+    assert_eq!(parsed.dns.catalog_zone_name.as_str(), "catalog.bindizr");
     assert_eq!(parsed.dns.zone_history_retention_days, 365);
     assert_eq!(parsed.dns.scheduler_interval_secs, 3600);
     assert_eq!(parsed.logging.format, LogFormat::Text);
@@ -141,7 +144,11 @@ fn from_toml_rejects_an_unknown_key() {
     })
     .unwrap_err();
 
-    assert!(err.contains("unknown field `listen_prot`"), "{}", err);
+    assert!(
+        err.to_string().contains("unknown field `listen_prot`"),
+        "{}",
+        err
+    );
 }
 
 /// Verify that `from_toml` defaults unselected database sections.
@@ -170,7 +177,7 @@ fn from_toml_rejects_invalid_listen_addr() {
     })
     .unwrap_err();
 
-    assert!(err.contains("Invalid Bindizr configuration"));
+    assert!(err.to_string().contains("Invalid Bindizr configuration"));
 }
 
 /// Verify that `from_toml` rejects empty selected database url.
@@ -182,7 +189,10 @@ fn from_toml_rejects_empty_selected_database_url() {
     })
     .unwrap_err();
 
-    assert!(err.contains("database.mysql.url must not be empty"));
+    assert!(
+        err.to_string()
+            .contains("database.mysql.url must not be empty")
+    );
 }
 
 /// Verify that `apply_env_overrides` replaces config values before validation.
@@ -226,7 +236,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert!(overridden.api.external_dns_enabled);
     assert!(matches!(
         overridden.database.database_type,
-        DatabaseType::Mysql
+        DatabaseType::MySql
     ));
     assert_eq!(
         overridden.database.mysql.url,
@@ -234,7 +244,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     );
     assert_eq!(overridden.dns.listen_addr.to_string(), "127.0.0.2");
     assert_eq!(overridden.dns.listen_port, 5353);
-    assert_eq!(overridden.dns.catalog_zone_name, "catalog.staging");
+    assert_eq!(overridden.dns.catalog_zone_name.as_str(), "catalog.staging");
     assert!(!overridden.dns.nsupdate_tsig_required);
     assert_eq!(overridden.dns.notify.batch_ms, 50);
     assert_eq!(overridden.dns.notify.retries, 7);
@@ -242,7 +252,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.dns.zone_history_retention_days, 0);
     // 0 is the off switch, not a rejected value.
     assert_eq!(overridden.dns.scheduler_interval_secs, 0);
-    assert_eq!(overridden.dns.zone_defaults.ttl, 600);
+    assert_eq!(overridden.dns.zone_defaults.ttl.as_secs(), 600);
     assert!(matches!(overridden.logging.level, LogLevel::Info));
     assert_eq!(overridden.logging.format, LogFormat::Json);
 }
@@ -263,7 +273,10 @@ fn apply_env_overrides_rejects_invalid_values() {
         })
         .unwrap_err();
 
-    assert!(err.contains("Invalid BINDIZR_API_LISTEN_PORT environment variable"));
+    assert!(
+        err.to_string()
+            .contains("Invalid BINDIZR_API_LISTEN_PORT environment variable")
+    );
 }
 
 /// Verify that `resolve_config_path` prefers argument then env then default.
@@ -291,14 +304,22 @@ fn from_toml_rejects_port_zero() {
         ..Default::default()
     })
     .unwrap_err();
-    assert!(err.contains("dns.listen_port must not be 0"), "{}", err);
+    assert!(
+        err.to_string().contains("dns.listen_port must not be 0"),
+        "{}",
+        err
+    );
 
     let err = parse_config(&TestConfigToml {
         api_listen_port: 0,
         ..Default::default()
     })
     .unwrap_err();
-    assert!(err.contains("api.listen_port must not be 0"), "{}", err);
+    assert!(
+        err.to_string().contains("api.listen_port must not be 0"),
+        "{}",
+        err
+    );
 }
 
 /// Verify that `from_toml` rejects listeners sharing a port.
@@ -311,7 +332,11 @@ fn from_toml_rejects_listeners_sharing_a_port() {
     })
     .unwrap_err();
 
-    assert!(err.contains("cannot share port 5353"), "{}", err);
+    assert!(
+        err.to_string().contains("cannot share port 5353"),
+        "{}",
+        err
+    );
 }
 
 /// Verify that a reload refuses what a running process cannot adopt.
@@ -330,7 +355,7 @@ fn a_reload_refuses_what_a_running_process_cannot_adopt() {
     assert_eq!(current.fixed_settings_changed(&auth_toggled), ["api"]);
 
     let mut db_moved = current.clone();
-    db_moved.database.database_type = DatabaseType::Mysql;
+    db_moved.database.database_type = DatabaseType::MySql;
     assert_eq!(current.fixed_settings_changed(&db_moved), ["database"]);
 
     let mut dns_moved = current.clone();
@@ -341,7 +366,7 @@ fn a_reload_refuses_what_a_running_process_cannot_adopt() {
     );
 
     let mut catalog_renamed = current.clone();
-    catalog_renamed.dns.catalog_zone_name = "catalog.other".to_string();
+    catalog_renamed.dns.catalog_zone_name = ZoneName::from_row("catalog.other");
     assert_eq!(
         current.fixed_settings_changed(&catalog_renamed),
         ["dns.catalog_zone_name"]
@@ -358,8 +383,11 @@ fn from_toml_rejects_an_unusable_catalog_zone_name() {
         ..Default::default()
     })
     .unwrap_err();
+    // The TOML error points at the line, so the setting and the reason are
+    // both named.
+    let message = error.to_string();
     assert!(
-        error.contains("dns.catalog_zone_name"),
+        message.contains("catalog_zone_name") && message.contains("whitespace"),
         "unexpected error: {error}"
     );
 }
@@ -394,7 +422,7 @@ fn catalog_zone_name_is_canonicalized_on_load() {
         })
         .unwrap();
 
-        assert_eq!(parsed.dns.catalog_zone_name, "catalog.prod");
+        assert_eq!(parsed.dns.catalog_zone_name.as_str(), "catalog.prod");
         assert!(parsed.dns.is_catalog_zone("catalog.prod"));
     }
 }
@@ -411,4 +439,37 @@ fn a_reload_takes_the_settings_read_per_use() {
     assert!(current.fixed_settings_changed(&next).is_empty());
     assert_eq!(current.changed_settings(&next), ["dns", "logging"]);
     assert!(current.changed_settings(&current).is_empty());
+}
+
+/// Verify that the catalog zone name override is parsed like the file's value.
+#[test]
+fn apply_env_overrides_rejects_an_unusable_catalog_zone_name() {
+    let mut config = parse_config(&TestConfigToml::default()).unwrap();
+
+    let error = config
+        .apply_env_overrides(|name| match name {
+            "BINDIZR_DNS_CATALOG_ZONE_NAME" => Some("catalog bindizr".to_string()),
+            _ => None,
+        })
+        .unwrap_err();
+
+    assert!(
+        matches!(error, ConfigError::CatalogZoneName(_)),
+        "unexpected error: {error}"
+    );
+}
+
+/// Verify that a zero zone default is refused when the configuration loads,
+/// as the same value in a request would be.
+#[test]
+fn dns_validate_rejects_a_zero_zone_default() {
+    let mut parsed = parse_config(&TestConfigToml::default()).unwrap();
+    parsed.dns.zone_defaults.retry = SoaInterval::from_secs(0);
+
+    let error = parsed.dns.validate().unwrap_err();
+
+    assert!(
+        matches!(error, ConfigError::ZoneDefaultZero { field: "retry" }),
+        "unexpected error: {error}"
+    );
 }

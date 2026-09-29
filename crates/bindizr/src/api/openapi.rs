@@ -1,3 +1,4 @@
+use bindizr_core::model::transfer::{TransferKind, TransferResult};
 use bindizr_service::types::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateDnssecPolicyRequest, CreateGrantRequest,
     CreateRecordRequest, CreateSecondaryRequest, CreateTokenRequest, CreateTsigKeyRequest,
@@ -8,16 +9,17 @@ use bindizr_service::types::{
     ExternalDnsChangesResponse, ExternalDnsDomainsResponse, ExternalDnsRecord,
     ExternalDnsRecordUpdate, ExternalDnsRecordsResponse, GetDnssecPolicyResponse,
     GetRecordResponse, GetSecondaryResponse, GetTokenGrantResponse, GetTokenResponse,
-    GetTsigGrantResponse, GetTsigKeyResponse, GetZoneResponse, HealthResponse, ImportMode,
-    ImportSummary, ImportZoneRequest, ImportZoneResponse, MessageResponse, NotifyCheckResponse,
-    PaginatedResponse, Pagination, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue,
-    RecordItem, RecordResponse, RecordValueRequest, RecordWriteResponse, RollbackSummary,
-    RollbackZoneResponse, RolloverDnssecRequest, SecondaryCheckResponse, SecondaryResponse,
-    SecondaryStatusResponse, TokenGrantResponse, TokenResponse, TsigGrantResponse, TsigKeyResponse,
-    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
-    UpdateSecondaryRequest, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
-    VersionRecordResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
-    ZoneWriteResponse,
+    GetTsigGrantResponse, GetTsigKeyResponse, GetZoneResponse, HealthResponse, HealthStatus,
+    ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, MessageResponse,
+    NotifyCheckResponse, PaginatedResponse, Pagination, RecordDiff, RecordDiffEntry,
+    RecordDiffSummary, RecordDiffValue, RecordItem, RecordResponse, RecordValueRequest,
+    RecordWriteResponse, RollbackSummary, RollbackZoneResponse, RolloverDnssecRequest,
+    SecondaryCheckResponse, SecondaryResponse, SecondaryStatusResponse, SecondaryTransferSummary,
+    SecondaryTransfersResponse, TokenGrantResponse, TokenResponse, TransferResponse,
+    TransferSummary, TsigGrantResponse, TsigKeyResponse, UpdateDnssecPolicyRequest,
+    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
+    VersionDetailResponse, VersionDiffResponse, VersionRecordResponse, ZoneResponse,
+    ZoneStatusResponse, ZoneVersionResponse, ZoneWriteResponse,
 };
 use utoipa::{
     Modify, OpenApi,
@@ -25,7 +27,7 @@ use utoipa::{
 };
 
 /// OpenAPI document for the HTTP API, served when `api.openapi_enabled` is on.
-#[derive(OpenApi)]
+#[derive(Debug, OpenApi)]
 #[openapi(
     paths(
         super::health::handle_health,
@@ -56,6 +58,7 @@ use utoipa::{
         super::secondary::update_secondary,
         super::secondary::delete_secondary,
         super::secondary::check_secondary,
+        super::secondary::list_secondary_transfers,
         super::tsig_key::list_tsig_keys,
         super::tsig_key::create_tsig_key,
         super::tsig_key::get_tsig_key,
@@ -131,6 +134,7 @@ use utoipa::{
         GetTokenResponse,
         GetTsigGrantResponse,
         HealthResponse,
+        HealthStatus,
         ImportMode,
         ImportSummary,
         ImportZoneRequest,
@@ -159,6 +163,12 @@ use utoipa::{
         RollbackZoneResponse,
         RolloverDnssecRequest,
         NotifyCheckResponse,
+        TransferKind,
+        TransferResult,
+        TransferResponse,
+        TransferSummary,
+        SecondaryTransfersResponse,
+        SecondaryTransferSummary,
         SecondaryCheckResponse,
         SecondaryResponse,
         SecondaryStatusResponse,

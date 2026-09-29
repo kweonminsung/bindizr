@@ -7,13 +7,43 @@ use std::collections::BTreeMap;
 
 use bindizr_core::model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordType};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// Exact media type external-dns compares the negotiation `Content-Type`
 /// against (byte-for-byte, no media-type parsing).
 pub(crate) const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
+/// Why an endpoint is not one this provider can write; the message becomes a
+/// permanent (4xx) error body.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub(crate) enum ValidateEndpointError {
+    #[error("dnsName must not be empty")]
+    EmptyDnsName,
+    #[error("record type '{record_type}' is not supported (supported: {})", EXTERNAL_DNS_RECORD_TYPES.iter().map(RecordType::as_str).collect::<Vec<_>>().join(", "))]
+    UnsupportedRecordType { record_type: String },
+    #[error("endpoint '{dns_name}' has no targets")]
+    NoTargets { dns_name: String },
+    #[error("endpoint '{dns_name}' has an empty target")]
+    EmptyTarget { dns_name: String },
+    #[error("CNAME endpoint '{dns_name}' must have exactly one target")]
+    CnameTargets { dns_name: String },
+    #[error("setIdentifier is not supported by this provider")]
+    SetIdentifier,
+    #[error("recordTTL {ttl} is out of range")]
+    TtlOutOfRange { ttl: i64 },
+}
+
+/// Why a plan could not become a bindizr change set.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub(crate) enum ConvertChangesError {
+    #[error("updateOld and updateNew must pair up ({old} vs {new} endpoints)")]
+    UnpairedUpdates { old: usize, new: usize },
+    #[error(transparent)]
+    Endpoint(#[from] ValidateEndpointError),
+}
+
 /// JSON shape of external-dns `endpoint.Endpoint` (all fields omitempty).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Endpoint {
     #[serde(default)]
@@ -39,7 +69,7 @@ fn is_ttl_unset(ttl: &i64) -> bool {
 }
 
 /// JSON shape of external-dns `endpoint.ProviderSpecificProperty`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct ProviderSpecificProperty {
     #[serde(default)]
     name: String,
@@ -48,7 +78,7 @@ pub(crate) struct ProviderSpecificProperty {
 }
 
 /// JSON shape of external-dns `plan.Changes` (`POST /records` body).
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Changes {
     #[serde(default)]
@@ -62,7 +92,7 @@ pub(crate) struct Changes {
 }
 
 /// JSON shape of external-dns `endpoint.DomainFilter` (negotiation response).
-#[derive(Debug, Serialize)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct DomainFilter {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) include: Vec<String>,
@@ -70,7 +100,7 @@ pub(crate) struct DomainFilter {
 
 /// One record of the bindizr `/external-dns` API: every value of one name and
 /// type (snake_case, internal shape).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BindizrRecord {
     name: String,
     #[serde(rename = "type")]
@@ -81,7 +111,7 @@ pub(crate) struct BindizrRecord {
 }
 
 /// `POST /external-dns/changes` request body of the bindizr API.
-#[derive(Debug, Serialize)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BindizrChanges {
     creates: Vec<BindizrRecord>,
     updates: Vec<BindizrRecordUpdate>,
@@ -90,7 +120,7 @@ pub(crate) struct BindizrChanges {
 
 /// One update of the bindizr change set: the record as stored and its
 /// replacement, paired positionally from `updateOld` and `updateNew`.
-#[derive(Debug, Serialize)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BindizrRecordUpdate {
     old: BindizrRecord,
     new: BindizrRecord,
@@ -111,28 +141,22 @@ impl Endpoint {
     /// Validate against what the adapter supports, yielding the parsed record
     /// type; the message becomes a permanent (4xx) error body. Mirrors the
     /// server's own validation so a bad plan fails without a round trip.
-    pub(crate) fn validate(&self) -> Result<RecordType, String> {
+    pub(crate) fn validate(&self) -> Result<RecordType, ValidateEndpointError> {
         if self.dns_name.trim().is_empty() {
-            return Err("dnsName must not be empty".to_string());
+            return Err(ValidateEndpointError::EmptyDnsName);
         }
-
         let Some(record_type) = RecordType::parse_external_dns_supported(&self.record_type) else {
-            return Err(format!(
-                "record type '{}' is not supported (supported: {})",
-                self.record_type,
-                EXTERNAL_DNS_RECORD_TYPES
-                    .iter()
-                    .map(RecordType::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
+            return Err(ValidateEndpointError::UnsupportedRecordType {
+                record_type: self.record_type.clone(),
+            });
         };
-
         if self.targets.is_empty() {
-            return Err(format!("endpoint '{}' has no targets", self.dns_name));
+            return Err(ValidateEndpointError::NoTargets {
+                dns_name: self.dns_name.clone(),
+            });
         }
         // Whitespace-only TXT content is valid; for other types it is garbage.
-        let is_txt = record_type == RecordType::TXT;
+        let is_txt = record_type == RecordType::Txt;
         if self.targets.iter().any(|t| {
             if is_txt {
                 t.is_empty()
@@ -140,21 +164,22 @@ impl Endpoint {
                 t.trim().is_empty()
             }
         }) {
-            return Err(format!("endpoint '{}' has an empty target", self.dns_name));
+            return Err(ValidateEndpointError::EmptyTarget {
+                dns_name: self.dns_name.clone(),
+            });
         }
-        if record_type == RecordType::CNAME && self.targets.len() > 1 {
-            return Err(format!(
-                "CNAME endpoint '{}' must have exactly one target",
-                self.dns_name
-            ));
+        if record_type == RecordType::Cname && self.targets.len() > 1 {
+            return Err(ValidateEndpointError::CnameTargets {
+                dns_name: self.dns_name.clone(),
+            });
         }
-
         if !self.set_identifier.is_empty() {
-            return Err("setIdentifier is not supported by this provider".to_string());
+            return Err(ValidateEndpointError::SetIdentifier);
         }
-
-        if self.record_ttl < 0 || self.record_ttl > i32::MAX as i64 {
-            return Err(format!("recordTTL {} is out of range", self.record_ttl));
+        if self.record_ttl < 0 || self.record_ttl > i64::from(i32::MAX) {
+            return Err(ValidateEndpointError::TtlOutOfRange {
+                ttl: self.record_ttl,
+            });
         }
 
         Ok(record_type)
@@ -176,13 +201,12 @@ impl Endpoint {
 impl Changes {
     /// Convert into one bindizr change-set request. `updateOld[i]` and
     /// `updateNew[i]` pair positionally, per the plan contract.
-    pub(crate) fn to_bindizr_changes(&self) -> Result<BindizrChanges, String> {
+    pub(crate) fn to_bindizr_changes(&self) -> Result<BindizrChanges, ConvertChangesError> {
         if self.update_old.len() != self.update_new.len() {
-            return Err(format!(
-                "updateOld and updateNew must pair up ({} vs {} endpoints)",
-                self.update_old.len(),
-                self.update_new.len()
-            ));
+            return Err(ConvertChangesError::UnpairedUpdates {
+                old: self.update_old.len(),
+                new: self.update_new.len(),
+            });
         }
 
         Ok(BindizrChanges {
@@ -191,12 +215,14 @@ impl Changes {
                 .update_old
                 .iter()
                 .zip(&self.update_new)
-                .map(|(old, new)| -> Result<BindizrRecordUpdate, String> {
-                    Ok(BindizrRecordUpdate {
-                        old: old.to_bindizr_record(old.validate()?),
-                        new: new.to_bindizr_record(new.validate()?),
-                    })
-                })
+                .map(
+                    |(old, new)| -> Result<BindizrRecordUpdate, ConvertChangesError> {
+                        Ok(BindizrRecordUpdate {
+                            old: old.to_bindizr_record(old.validate()?),
+                            new: new.to_bindizr_record(new.validate()?),
+                        })
+                    },
+                )
                 .collect::<Result<_, _>>()?,
             deletes: to_bindizr_records(&self.delete)?,
         })
@@ -204,10 +230,12 @@ impl Changes {
 }
 
 /// Validate endpoints and convert them into bindizr records.
-pub(crate) fn to_bindizr_records(endpoints: &[Endpoint]) -> Result<Vec<BindizrRecord>, String> {
+pub(crate) fn to_bindizr_records(
+    endpoints: &[Endpoint],
+) -> Result<Vec<BindizrRecord>, ConvertChangesError> {
     endpoints
         .iter()
-        .map(|endpoint| -> Result<BindizrRecord, String> {
+        .map(|endpoint| -> Result<BindizrRecord, ConvertChangesError> {
             Ok(endpoint.to_bindizr_record(endpoint.validate()?))
         })
         .collect()

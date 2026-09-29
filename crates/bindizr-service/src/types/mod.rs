@@ -20,11 +20,11 @@ mod tsig;
 mod version;
 mod zone;
 
-pub use common::{ErrorResponse, HealthResponse, MessageResponse};
+pub use common::{ErrorResponse, HealthResponse, HealthStatus, MessageResponse, Run};
 pub use dnssec::{
     DnssecDelegationInfo, DnssecDelegationKeyInfo, DnssecDsInfo, DnssecKeyInfo, DnssecKeyMaterial,
-    DnssecStatusResponse, DsState, EnableDnssecRequest, ExportDnssecKeysResponse,
-    ImportDnssecKeyPair, ImportDnssecKeyRequest, RolloverDnssecRequest,
+    DnssecStatusResponse, DsCheck, DsState, EnableDnssecRequest, ExportDnssecKeysResponse,
+    Holddown, ImportDnssecKeyPair, ImportDnssecKeyRequest, RolloverDnssecRequest,
     UpdateDnssecSettingsRequest,
 };
 pub use dnssec_policy::{
@@ -39,7 +39,7 @@ pub use external_dns::{
 pub use grant::CreateGrantRequest;
 pub use import::{ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse};
 pub use pagination::{DEFAULT_PAGE_LIMIT, PageFilter, PaginatedResponse, Pagination};
-pub(crate) use pagination::{normalize_page_limit, parse_setting};
+pub(crate) use pagination::{build_page, normalize_page_limit, parse_setting};
 pub(crate) use record::build_display_value;
 pub use record::{
     BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
@@ -47,8 +47,9 @@ pub use record::{
     RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
 };
 pub use secondary::{
-    CreateSecondaryRequest, GetSecondaryResponse, NotifyCheckResponse, SecondaryCheckResponse,
-    SecondaryResponse, UpdateSecondaryRequest,
+    CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, NotifyCheckResponse,
+    SecondaryCheckResponse, SecondaryResponse, SecondaryTransferSummary,
+    SecondaryTransfersResponse, TransferResponse, TransferSummary, UpdateSecondaryRequest,
 };
 pub use token::{CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenResponse};
 pub use token_grant::{GetTokenGrantResponse, TokenGrantResponse};
@@ -63,6 +64,6 @@ pub use version::{
 };
 pub use zone::{
     CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetZoneResponse, GetZonesFilter,
-    SecondaryStatus, SecondaryStatusResponse, UpdateZoneRequest, ZoneResponse, ZoneStatusResponse,
-    ZoneWriteResponse, build_notify_message,
+    NotifySerial, SecondaryStatus, SecondaryStatusResponse, UpdateZoneRequest, ZoneResponse,
+    ZoneStatusResponse, ZoneView, ZoneWriteResponse, build_notify_message,
 };

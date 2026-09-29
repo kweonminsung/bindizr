@@ -1,12 +1,17 @@
 //! The parent side of a signed zone: asking its nameservers for the DS.
 
-use bindizr_core::dns::{dnssec::DS_DIGEST_TYPES, query::DsRecordSet};
+use bindizr_core::dns::{
+    dnssec::{DS_DIGEST_TYPES, KeyTag},
+    name::ZoneName,
+    query::DsRecordSet,
+};
 use chrono::Utc;
 
-use super::{DnssecService, status::build_status_tx};
+use super::status::build_status_tx;
 use crate::{
+    Context,
     authorization::Caller,
-    database::repository::LockLevel,
+    db::LockLevel,
     dns_client::ds::{ParentDs, probe_parent_ds},
     dnssec::SignedZone,
     error::ServiceError,
@@ -14,52 +19,52 @@ use crate::{
         dnssec_key::{DnssecKey, DnssecKeyState},
         zone::Zone,
     },
-    repository::RepositoryService,
+    transaction,
     types::{DnssecDelegationInfo, DnssecDelegationKeyInfo, DnssecStatusResponse, DsState},
 };
 
-impl DnssecService {
-    /// Ask the zone's parent whether it serves the zone's DS, reporting the
-    /// answer with the zone's status.
-    pub async fn check_ds(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<DnssecStatusResponse, ServiceError> {
-        caller.authorize_global("manage DNSSEC signing")?;
+/// Ask the zone's parent whether it serves the zone's DS, reporting the
+/// answer with the zone's status.
+pub async fn check_ds(
+    cx: &Context,
+    caller: &Caller,
+    zone_name: &ZoneName,
+) -> Result<DnssecStatusResponse, ServiceError> {
+    caller.authorize_global("manage DNSSEC signing")?;
 
-        let mut tx = RepositoryService::begin_read_tx("failed to check the parent DS").await?;
-        let result = async {
-            let signed = Self::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-            let status = build_status_tx(
-                &mut tx,
-                &signed.zone,
-                Some(&signed.policy),
-                &signed.keys,
-                signed.zone.serial,
-            )
-            .await?;
-            Ok((signed, status))
-        }
-        .await;
-        let (signed, mut status) =
-            RepositoryService::finish_tx(tx, result, "failed to check the parent DS").await?;
-        // Read-only, so the wait stays outside the transaction; the keys are
-        // the ones the status describes.
-        status.delegation = Some(Self::probe_delegation(&signed).await?);
-        Ok(status)
+    let mut tx = transaction::begin_read_tx(cx, "failed to check the parent DS").await?;
+    let result: Result<_, ServiceError> = async {
+        let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let status = build_status_tx(
+            &mut tx,
+            &signed.zone,
+            Some(&signed.policy),
+            &signed.keys,
+            signed.zone.serial,
+        )
+        .await?;
+        Ok((signed, status))
     }
+    .await;
+    let (signed, mut status) =
+        transaction::finish_tx(tx, result, "failed to check the parent DS").await?;
+    // Read-only, so the wait stays outside the transaction; the keys are
+    // the ones the status describes.
+    status.delegation = Some(probe_delegation(cx, &signed).await?);
+    Ok(status)
+}
 
-    /// The parent's answer about the zone's DS, matched against the zone's
-    /// SEP keys, or the unverified error a refusal reports.
-    pub(crate) async fn probe_delegation(
-        signed: &SignedZone,
-    ) -> Result<DnssecDelegationInfo, ServiceError> {
-        let parent = probe_parent_ds(&signed.zone)
-            .await
-            .map_err(|e| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), e))?;
+/// The parent's answer about the zone's DS, matched against the zone's
+/// SEP keys, or the unverified error a refusal reports.
+pub(crate) async fn probe_delegation(
+    cx: &Context,
+    signed: &SignedZone,
+) -> Result<DnssecDelegationInfo, ServiceError> {
+    let parent = probe_parent_ds(cx, &signed.zone)
+        .await
+        .map_err(|e| ServiceError::dnssec_ds_unverified(signed.zone.name.as_str(), e))?;
 
-        build_delegation_info(&signed.zone, &signed.keys, parent)
-    }
+    build_delegation_info(&signed.zone, &signed.keys, parent)
 }
 
 /// Match the parent's answers against the zone's SEP keys. Refusal and
@@ -72,7 +77,7 @@ fn build_delegation_info(
     parent: ParentDs,
 ) -> Result<DnssecDelegationInfo, ServiceError> {
     let served: Vec<&DsRecordSet> = parent.answers.iter().flatten().collect();
-    let mut ds_key_tags: Vec<u16> = served
+    let mut ds_key_tags: Vec<KeyTag> = served
         .iter()
         .flat_map(|record_set| record_set.key_tags())
         .collect();
@@ -92,7 +97,7 @@ fn build_delegation_info(
         let mut digest_types: Vec<u8> = served
             .iter()
             .flat_map(|record_set| record_set.records.iter())
-            .filter(|record| record.key_tag == key.key_tag as u16)
+            .filter(|record| record.key_tag == key.key_tag)
             .map(|record| record.digest_type)
             .filter(|digest_type| DS_DIGEST_TYPES.contains(digest_type))
             .collect();
@@ -106,7 +111,7 @@ fn build_delegation_info(
                 let mut for_key = record_set
                     .records
                     .iter()
-                    .filter(|record| record.key_tag == key.key_tag as u16)
+                    .filter(|record| record.key_tag == key.key_tag)
                     .peekable();
                 for_key.peek().is_some()
                     && !for_key.any(|record| DS_DIGEST_TYPES.contains(&record.digest_type))
@@ -134,7 +139,7 @@ fn build_delegation_info(
 
         delegation_keys.push(DnssecDelegationKeyInfo {
             id: key.id,
-            key_tag: key.key_tag as u16,
+            key_tag: key.key_tag,
             role: key.role,
             state: key.state,
             ds_published,

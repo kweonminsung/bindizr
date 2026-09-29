@@ -2,12 +2,17 @@
 //! line numbers errors report.
 
 use super::*;
+use crate::dns::name::ZoneName;
 
 /// Verify that TXT rejects non UTF8 octets.
 #[test]
 fn txt_rejects_non_utf8_octets() {
     // `\255\254` decode to bytes 0xFF 0xFE, which are not valid UTF-8.
-    let parsed = ParsedZoneFile::parse("weird IN TXT \"\\255\\254\"\n", "example.com", 3600);
+    let parsed = ParsedZoneFile::parse(
+        "weird IN TXT \"\\255\\254\"\n",
+        &ZoneName::parse("example.com").unwrap(),
+        Ttl::try_from(3600).unwrap(),
+    );
     assert!(
         parsed.errors.iter().any(|e| e.contains("not valid UTF-8")),
         "expected a UTF-8 error, got: {:?}",
@@ -17,7 +22,7 @@ fn txt_rejects_non_utf8_octets() {
         !parsed
             .records
             .iter()
-            .any(|record| record.record_type == RecordType::TXT),
+            .any(|record| record.record_type == RecordType::Txt),
         "the non-UTF-8 TXT record should not have been stored"
     );
 }
@@ -29,8 +34,8 @@ fn parse_error_names_the_line_of_the_submitted_text() {
     // at the end of the entry, which would blur what this pins down.
     let parsed = ParsedZoneFile::parse(
         "ok IN A 192.0.2.1\nbad !!! IN A 192.0.2.2\n",
-        "example.com",
-        3600,
+        &ZoneName::parse("example.com").unwrap(),
+        Ttl::try_from(3600).unwrap(),
     );
     assert!(
         parsed.errors.iter().any(|e| e.contains(": 2:")),
@@ -42,7 +47,11 @@ fn parse_error_names_the_line_of_the_submitted_text() {
 /// Verify that TXT UTF8 multi segment parses as segments.
 #[test]
 fn txt_utf8_multi_segment_parses_as_segments() {
-    let parsed = ParsedZoneFile::parse("multi IN TXT \"foo\" \"bar\"\n", "example.com", 3600);
+    let parsed = ParsedZoneFile::parse(
+        "multi IN TXT \"foo\" \"bar\"\n",
+        &ZoneName::parse("example.com").unwrap(),
+        Ttl::try_from(3600).unwrap(),
+    );
     assert!(
         parsed.errors.is_empty(),
         "unexpected errors: {:?}",
@@ -51,10 +60,10 @@ fn txt_utf8_multi_segment_parses_as_segments() {
     let record = parsed
         .records
         .iter()
-        .find(|record| record.record_type == RecordType::TXT)
+        .find(|record| record.record_type == RecordType::Txt)
         .expect("a TXT record");
     match &record.value {
-        ZoneFileValue::CharacterStrings(segments) => assert_eq!(segments, &["foo", "bar"]),
+        ZoneFileValue::Segments(segments) => assert_eq!(segments, &["foo", "bar"]),
         other => panic!("expected segments, got {other:?}"),
     }
 }
@@ -66,8 +75,8 @@ fn a_ttl_written_with_units_is_refused() {
     // is a BIND extension, and `named-compilezone` writes it back as seconds.
     let parsed = ParsedZoneFile::parse(
         "www IN A 192.0.2.1\nmail 1h IN A 192.0.2.2\n",
-        "example.com",
-        300,
+        &ZoneName::parse("example.com").unwrap(),
+        Ttl::try_from(300).unwrap(),
     );
 
     assert_eq!(parsed.records.len(), 1);
@@ -89,8 +98,8 @@ fn reads_a_naptr_record_in_its_own_presentation_form() {
             "tel IN NAPTR 200 20 \"u\" \"E2U+tel\" \"!^.*$!tel:+1!\" .\n",
             "sip IN NAPTR 100 10 \"S\" \"SIP+D2U\" \"\" _sip._udp.Example.COM.\n",
         ),
-        "example.com",
-        300,
+        &ZoneName::parse("example.com").unwrap(),
+        Ttl::try_from(300).unwrap(),
     );
 
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
@@ -114,8 +123,8 @@ fn a_soa_outside_the_apex_is_refused() {
     let parsed = ParsedZoneFile::parse(
         "other.example. IN SOA ns1.other.example. host.other.example. (99 1 2 3 4)\n\
          www IN A 192.0.2.1\n",
-        "example.com",
-        3600,
+        &ZoneName::parse("example.com").unwrap(),
+        Ttl::try_from(3600).unwrap(),
     );
     assert!(
         parsed.soa.is_none(),
@@ -132,10 +141,10 @@ fn a_soa_outside_the_apex_is_refused() {
 
     let parsed = ParsedZoneFile::parse(
         "@ IN SOA ns1.example.com. host.example.com. (99 1 2 3 4)\n",
-        "example.com",
-        3600,
+        &ZoneName::parse("example.com").unwrap(),
+        Ttl::try_from(3600).unwrap(),
     );
-    assert_eq!(parsed.soa.expect("apex SOA").serial, 99);
+    assert_eq!(parsed.soa.expect("apex SOA").serial, Serial::from(99));
     assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
 
     // Two apex SOAs leave the serial and timers ambiguous, so taking the first
@@ -143,8 +152,8 @@ fn a_soa_outside_the_apex_is_refused() {
     let parsed = ParsedZoneFile::parse(
         "@ IN SOA ns1.example.com. host.example.com. (99 1 2 3 4)\n\
          @ IN SOA ns2.example.com. host.example.com. (7 1 2 3 4)\n",
-        "example.com",
-        3600,
+        &ZoneName::parse("example.com").unwrap(),
+        Ttl::try_from(3600).unwrap(),
     );
     assert!(
         parsed

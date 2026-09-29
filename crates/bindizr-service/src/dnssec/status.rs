@@ -1,82 +1,83 @@
 //! Assembling the status a signed zone reports: its policy, key inventory,
 //! and the DS records the parent needs.
 
-use bindizr_core::dns::serial_to_u32;
-use chrono::{DateTime, Duration, Utc};
+use bindizr_core::dns::{Serial, name::ZoneName};
+use chrono::{DateTime, Utc};
 
-use super::{DnssecService, parent_ns_addrs::parent_ns_addr_entries};
+use super::parent_ns_addrs::parent_ns_addr_entries;
 use crate::{
+    Context, Transaction,
     authorization::Caller,
-    database::repository::LockLevel,
+    db,
+    db::LockLevel,
     error::ServiceError,
     model::{
         dnssec_key::{DnssecKey, DnssecKeyState},
         dnssec_policy::DnssecPolicy,
         zone::Zone,
     },
-    repository::{RepositoryService, RepositoryTx},
+    transaction,
     types::{DnssecDsInfo, DnssecKeyInfo, DnssecStatusResponse, GetDnssecPolicyResponse},
-    zone::ZoneService,
+    zone,
 };
 
-impl DnssecService {
-    /// DNSSEC signing state of a zone; `enabled: false` with no policy and
-    /// empty key and DS lists for an unsigned zone.
-    pub async fn get_status(
-        caller: &Caller,
-        zone_name: &str,
-    ) -> Result<DnssecStatusResponse, ServiceError> {
-        caller.authorize_global("manage DNSSEC signing")?;
+/// DNSSEC signing state of a zone; `enabled: false` with no policy and
+/// empty key and DS lists for an unsigned zone.
+pub async fn get_status(
+    cx: &Context,
+    caller: &Caller,
+    zone_name: &ZoneName,
+) -> Result<DnssecStatusResponse, ServiceError> {
+    caller.authorize_global("manage DNSSEC signing")?;
 
-        // The DS records are derived from the apex name and the keys, so they
-        // are read together under the zone lock.
-        let mut tx = RepositoryService::begin_read_tx("failed to read DNSSEC status").await?;
-        let result = async {
-            let zone = ZoneService::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-            let keys =
-                RepositoryService::list_dnssec_keys_tx(&mut tx, zone.id, LockLevel::None).await?;
-            let policy = Self::find_zone_policy_tx(&mut tx, &zone).await?;
-            build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
-        }
-        .await;
-        RepositoryService::finish_tx(tx, result, "failed to read DNSSEC status").await
+    // The DS records are derived from the apex name and the keys, so they
+    // are read together under the zone lock.
+    let mut tx = transaction::begin_read_tx(cx, "failed to read DNSSEC status").await?;
+    let result = async {
+        let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
+        build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
     }
+    .await;
+    transaction::finish_tx(tx, result, "failed to read DNSSEC status").await
+}
 
-    /// Zones serving a signed view, for the unauthenticated metrics endpoint.
-    pub async fn count_signed_zones() -> Result<u64, ServiceError> {
-        RepositoryService::count_dnssec_record_zone_ids().await
-    }
+/// Zones serving a signed view, for the unauthenticated metrics endpoint.
+pub async fn count_signed_zones(cx: &Context) -> Result<u64, ServiceError> {
+    Ok(db::dnssec_record::count_zone_ids(cx.db()).await?)
+}
 
-    /// Keys in `state` across every zone, for the metrics endpoint.
-    pub async fn count_keys_by_state(state: DnssecKeyState) -> Result<u64, ServiceError> {
-        RepositoryService::count_dnssec_keys_by_state(state).await
-    }
+/// Keys in `state` across every zone, for the metrics endpoint.
+pub async fn count_keys_by_state(cx: &Context, state: DnssecKeyState) -> Result<u64, ServiceError> {
+    Ok(db::dnssec_key::count_by_state(cx.db(), state).await?)
+}
 
-    /// Count signatures inside their policy's re-sign window across every
-    /// zone.
-    pub async fn count_rrsigs_expiring_within_refresh(
-        now: DateTime<Utc>,
-    ) -> Result<u64, ServiceError> {
-        RepositoryService::count_rrsig_dnssec_records_expiring_within_refresh(now).await
-    }
+/// Count signatures inside their policy's re-sign window across every
+/// zone.
+pub async fn count_rrsigs_expiring_within_refresh(
+    cx: &Context,
+    now: DateTime<Utc>,
+) -> Result<u64, ServiceError> {
+    Ok(db::dnssec_record::count_expiring_within_refresh(cx.db(), now).await?)
+}
 
-    /// Signatures already past their expiration across every zone; any at all
-    /// mean resolvers are failing part of one right now.
-    pub async fn count_rrsigs_expired(now: DateTime<Utc>) -> Result<u64, ServiceError> {
-        RepositoryService::count_rrsig_dnssec_records_expired_before(now).await
-    }
+/// Signatures already past their expiration across every zone; any at all
+/// mean resolvers are failing part of one right now.
+pub async fn count_rrsigs_expired(cx: &Context, now: DateTime<Utc>) -> Result<u64, ServiceError> {
+    Ok(db::dnssec_record::count_expired_before(cx.db(), now).await?)
 }
 
 /// Assemble the zone's status on the caller's transaction: the earliest
 /// signature expiry and any pending withdrawal join the rows already loaded.
 pub(crate) async fn build_status_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     policy: Option<&DnssecPolicy>,
     keys: &[DnssecKey],
-    serial: i32,
+    serial: Serial,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    let derived = RepositoryService::list_dnssec_records_tx(tx, zone.id, LockLevel::None).await?;
+    let derived = db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     let earliest_signature_expires_at = derived.iter().filter_map(|row| row.expires_at).min();
 
     // Only RRSIG rows carry an expiration, so counting those counts signatures.
@@ -91,13 +92,9 @@ pub(crate) async fn build_status_tx(
         .count() as u64;
     let next_resign_at = earliest_signature_expires_at
         .zip(policy)
-        .map(|(expires, policy)| {
-            expires - Duration::days(i64::from(policy.signature_refresh_days))
-        });
+        .map(|(expires, policy)| expires - policy.signature_refresh_days.to_duration());
 
-    let withdrawing = RepositoryService::get_dnssec_withdrawal_tx(tx, zone.id)
-        .await?
-        .is_some();
+    let withdrawing = db::dnssec_withdrawal::get_tx(tx, zone.id).await?.is_some();
 
     // The parent needs DS records only for the SEP keys the zone still wants
     // delegated trust for.
@@ -110,7 +107,7 @@ pub(crate) async fn build_status_tx(
     Ok(DnssecStatusResponse {
         zone_name: zone.name.as_str().to_string(),
         enabled: !keys.is_empty(),
-        policy: policy.map(GetDnssecPolicyResponse::from_policy),
+        policy: policy.map(GetDnssecPolicyResponse::from),
         keys: keys
             .iter()
             .map(|key| DnssecKeyInfo {
@@ -120,7 +117,7 @@ pub(crate) async fn build_status_tx(
                 state_changed_at: key.state_changed_at,
                 eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
                 algorithm: key.algorithm.to_string(),
-                key_tag: key.key_tag as u16,
+                key_tag: key.key_tag,
                 dnskey: format!(
                     "{} 3 {} {}",
                     key.role.flags(),
@@ -135,7 +132,7 @@ pub(crate) async fn build_status_tx(
         signatures,
         expired_signatures,
         next_resign_at,
-        serial: serial_to_u32(serial).map_err(ServiceError::internal)?,
+        serial,
         withdrawing,
         parent_ns_addrs: zone.parent_ns_addrs.as_deref().map(parent_ns_addr_entries),
         delegation: None,
@@ -154,7 +151,7 @@ fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceEr
     let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
 
     Ok(DnssecDsInfo {
-        key_tag: key.key_tag as u16,
+        key_tag: key.key_tag,
         algorithm: key.algorithm.to_int() as u8,
         digest_type: key.algorithm.ds_digest_type(),
         digest: digest.clone(),

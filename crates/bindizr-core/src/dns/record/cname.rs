@@ -1,13 +1,14 @@
-use super::value::validate_domain_record_value;
+use super::{ParseRecordValueError, value::validate_domain_record_value};
 use crate::dns::name::to_fqdn_lowercase;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CnameRecordValue<'a> {
     target: &'a str,
 }
 
 impl<'a> CnameRecordValue<'a> {
     /// Parse and validate a CNAME record value.
-    pub fn parse(value: &'a str) -> Result<Self, String> {
+    pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
         validate_domain_record_value("CNAME record value", value)?;
         Ok(Self { target: value })
     }

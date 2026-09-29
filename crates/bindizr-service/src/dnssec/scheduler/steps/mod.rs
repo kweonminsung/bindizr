@@ -1,18 +1,27 @@
 //! What one scheduler step does to one zone: the transaction each scan's
 //! zone ids are handed to, and the journal retention that runs beside them.
 
-use bindizr_core::model::dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState};
-use chrono::{DateTime, Duration, Utc};
+use bindizr_core::{
+    dns::{dnssec::SigningPass, name::ZoneName},
+    model::{
+        dnssec_key::{DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
+        zone::ZoneId,
+    },
+};
+use chrono::{DateTime, Utc};
 
 use crate::{
-    database::repository::LockLevel,
-    dnssec::{DnssecService, rollover::promotable_sep_key_ids},
+    Context, db,
+    db::LockLevel,
+    dnssec::{self, rollover::promotable_sep_key_ids},
     error::ServiceError,
-    repository::RepositoryService,
+    transaction,
+    types::Holddown,
     zone::version::ChangeSubject,
 };
 
 /// Rows one prune removed from a zone's history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PruneSummary {
     pub(crate) journal_rows: u64,
     pub(crate) version_rows: u64,
@@ -24,12 +33,13 @@ pub(crate) struct PruneSummary {
 /// together: a serial pruned from one alone reads to IXFR clients as a gap
 /// or a missing SOA.
 pub(crate) async fn prune_zone_history_by_zone_id(
-    zone_id: i32,
+    cx: &Context,
+    zone_id: ZoneId,
     cutoff: DateTime<Utc>,
 ) -> Result<PruneSummary, ServiceError> {
-    let mut tx = RepositoryService::begin_tx("failed to prune zone history").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to prune zone history").await?;
     let result = async {
-        if RepositoryService::get_zone_tx(&mut tx, zone_id, LockLevel::Exclusive)
+        if db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive)
             .await?
             .is_none()
         {
@@ -38,65 +48,69 @@ pub(crate) async fn prune_zone_history_by_zone_id(
                 version_rows: 0,
             });
         }
-        let journal_rows = RepositoryService::prune_zone_changes_by_zone_id_older_than_tx(
-            &mut tx, zone_id, cutoff,
-        )
-        .await?;
-        let version_rows = RepositoryService::prune_zone_versions_by_zone_id_older_than_tx(
-            &mut tx, zone_id, cutoff,
-        )
-        .await?;
+        let journal_rows =
+            db::zone_change::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff).await?;
+        let version_rows =
+            db::zone_version::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff).await?;
         Ok::<_, ServiceError>(PruneSummary {
             journal_rows,
             version_rows,
         })
     }
     .await;
-    RepositoryService::finish_tx(tx, result, "failed to prune zone history").await
+    transaction::finish_tx(tx, result, "failed to prune zone history").await
 }
 
 /// Re-sign one zone in its own transaction, bumping the serial only when the
 /// pass actually replaced signatures. `None` when there was nothing to do
 /// (zone deleted or unsigned meanwhile, or a concurrent mutation re-signed it).
-pub(crate) async fn resign_zone_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
-    let mut tx = RepositoryService::begin_tx("failed to sign zone").await?;
+pub(crate) async fn resign_zone_by_zone_id(
+    cx: &Context,
+    zone_id: ZoneId,
+) -> Result<Option<ZoneName>, ServiceError> {
+    let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
     let result = async {
         let Some(signed) =
-            DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
-                .await?
+            dnssec::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
             return Ok(None);
         };
 
-        if DnssecService::resign_zone_tx(&mut tx, &signed, false, &ChangeSubject::system())
-            .await?
-            .is_none()
+        if dnssec::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &ChangeSubject::system(),
+        )
+        .await?
+        .is_none()
         {
             return Ok(None);
         }
-        Ok(Some(signed.zone.name.as_str().to_string()))
+        Ok(Some(signed.zone.name.clone()))
     }
     .await;
-    RepositoryService::finish_tx(tx, result, "failed to sign zone").await
+    transaction::finish_tx(tx, result, "failed to sign zone").await
 }
 
 /// Pre-publish a replacement for a zone's lifetime-expired ZSK in its own
 /// transaction. `None` when the state moved on concurrently.
 pub(crate) async fn start_zsk_rollover_by_zone_id(
-    zone_id: i32,
-) -> Result<Option<String>, ServiceError> {
-    let mut tx = RepositoryService::begin_tx("failed to start key rollover").await?;
+    cx: &Context,
+    zone_id: ZoneId,
+) -> Result<Option<ZoneName>, ServiceError> {
+    let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
     let result = async {
         let Some(mut signed) =
-            DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
-                .await?
+            dnssec::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
             return Ok(None);
         };
-        if signed.policy.zsk_lifetime_days <= 0 {
+        if signed.policy.zsk_lifetime_days.as_days() == 0 {
             return Ok(None);
         }
-        let cutoff = Utc::now() - Duration::days(i64::from(signed.policy.zsk_lifetime_days));
+        let cutoff = Utc::now() - signed.policy.zsk_lifetime_days.to_duration();
         if signed
             .keys
             .iter()
@@ -112,35 +126,40 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
             return Ok(None);
         };
 
-        let new_key = DnssecService::publish_replacement_key_tx(
+        let new_key =
+            dnssec::publish_replacement_key_tx(&mut tx, &signed.zone, template, template.algorithm)
+                .await?;
+        signed.keys.push(new_key);
+        dnssec::resign_zone_tx(
+            cx,
             &mut tx,
-            &signed.zone,
-            template,
-            template.algorithm,
+            &signed,
+            SigningPass::Refresh,
+            &ChangeSubject::system(),
         )
         .await?;
-        signed.keys.push(new_key);
-        DnssecService::resign_zone_tx(&mut tx, &signed, false, &ChangeSubject::system()).await?;
-        Ok(Some(signed.zone.name.as_str().to_string()))
+        Ok(Some(signed.zone.name.clone()))
     }
     .await;
-    RepositoryService::finish_tx(tx, result, "failed to start key rollover").await
+    transaction::finish_tx(tx, result, "failed to start key rollover").await
 }
 
 /// Promote a zone's hold-down-expired pre-published ZSKs in its own
 /// transaction. `None` when the state moved on concurrently.
-pub(crate) async fn promote_zsks_by_zone_id(zone_id: i32) -> Result<Option<String>, ServiceError> {
-    let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
+pub(crate) async fn promote_zsks_by_zone_id(
+    cx: &Context,
+    zone_id: ZoneId,
+) -> Result<Option<ZoneName>, ServiceError> {
+    let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
     let result = async {
         let Some(mut signed) =
-            DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
-                .await?
+            dnssec::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
             return Ok(None);
         };
 
         let now = Utc::now();
-        let due: Vec<i32> = signed
+        let due: Vec<DnssecKeyId> = signed
             .keys
             .iter()
             .filter(|key| {
@@ -155,20 +174,22 @@ pub(crate) async fn promote_zsks_by_zone_id(zone_id: i32) -> Result<Option<Strin
         }
 
         // ZSKs carry no DS at the parent, so nothing outside the zone gates them.
-        signed.keys = DnssecService::promote_published_keys_tx(
+        signed.keys =
+            dnssec::promote_published_keys_tx(&mut tx, &signed.zone, signed.keys, &due, None)
+                .await?;
+
+        dnssec::resign_zone_tx(
+            cx,
             &mut tx,
-            &signed.zone,
-            signed.keys,
-            &due,
-            None,
+            &signed,
+            SigningPass::Refresh,
+            &ChangeSubject::system(),
         )
         .await?;
-
-        DnssecService::resign_zone_tx(&mut tx, &signed, false, &ChangeSubject::system()).await?;
-        Ok(Some(signed.zone.name.as_str().to_string()))
+        Ok(Some(signed.zone.name.clone()))
     }
     .await;
-    RepositoryService::finish_tx(tx, result, "failed to advance key rollover").await
+    transaction::finish_tx(tx, result, "failed to advance key rollover").await
 }
 
 /// Advance a zone's KSK/CSK rollover once the parent serves the new key's DS
@@ -176,27 +197,27 @@ pub(crate) async fn promote_zsks_by_zone_id(zone_id: i32) -> Result<Option<Strin
 /// the parent does not serve it yet or cannot be asked: waiting states, not
 /// failures.
 pub(crate) async fn promote_sep_keys_by_zone_id(
-    zone_id: i32,
-) -> Result<Option<String>, ServiceError> {
-    let mut tx = RepositoryService::begin_tx("failed to advance key rollover").await?;
+    cx: &Context,
+    zone_id: ZoneId,
+) -> Result<Option<ZoneName>, ServiceError> {
+    let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
     let result = async {
         let Some(mut signed) =
-            DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
-                .await?
+            dnssec::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
             return Ok(None);
         };
         // The same rule `ds-seen` applies, minus the errors it reports.
-        let Ok(awaiting) = promotable_sep_key_ids(&signed, false) else {
+        let Ok(awaiting) = promotable_sep_key_ids(&signed, Holddown::Wait) else {
             return Ok(None);
         };
-        let delegation = match DnssecService::probe_delegation(&signed).await {
+        let delegation = match dnssec::probe_delegation(cx, &signed).await {
             Ok(delegation) => delegation,
             Err(e) => {
                 log::warn!(
                     "Parent of zone {} could not be asked for its DS, so the rollover waits: {}",
                     signed.zone.name.as_str(),
-                    e.message
+                    e
                 );
                 return Ok(None);
             }
@@ -218,7 +239,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             return Ok(None);
         }
 
-        signed.keys = DnssecService::promote_published_keys_tx(
+        signed.keys = dnssec::promote_published_keys_tx(
             &mut tx,
             &signed.zone,
             signed.keys,
@@ -226,18 +247,25 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             delegation.ds_ttl,
         )
         .await?;
-        DnssecService::resign_zone_tx(&mut tx, &signed, false, &ChangeSubject::system()).await?;
-        Ok(Some(signed.zone.name.as_str().to_string()))
+        dnssec::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &ChangeSubject::system(),
+        )
+        .await?;
+        Ok(Some(signed.zone.name.clone()))
     }
     .await;
-    RepositoryService::finish_tx(tx, result, "failed to advance key rollover").await
+    transaction::finish_tx(tx, result, "failed to advance key rollover").await
 }
 
 /// The retired keys past their hold-down that the zone can afford to drop:
 /// either another key of that algorithm still signs zone data, or the whole
 /// algorithm is leaving at once (RFC 6840, Section 5.11 keeps an algorithm's
 /// DNSKEYs and its signatures together).
-fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<i32> {
+fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<DnssecKeyId> {
     keys.iter()
         .filter(|key| {
             if key.state != DnssecKeyState::Retired || key.eligible_at > now {
@@ -263,13 +291,13 @@ fn removable_key_ids(keys: &[DnssecKey], now: DateTime<Utc>) -> Vec<i32> {
 /// Prune a zone's hold-down-expired retired keys in its own transaction.
 /// `None` when nothing was removable, or when removing would leave no key.
 pub(crate) async fn prune_retired_keys_by_zone_id(
-    zone_id: i32,
-) -> Result<Option<String>, ServiceError> {
-    let mut tx = RepositoryService::begin_tx("failed to remove retired keys").await?;
+    cx: &Context,
+    zone_id: ZoneId,
+) -> Result<Option<ZoneName>, ServiceError> {
+    let mut tx = transaction::begin_tx(cx, "failed to remove retired keys").await?;
     let result = async {
         let Some(mut signed) =
-            DnssecService::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive)
-                .await?
+            dnssec::find_signed_zone_by_id_tx(&mut tx, zone_id, LockLevel::Exclusive).await?
         else {
             return Ok(None);
         };
@@ -284,18 +312,25 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         let mut remaining = Vec::with_capacity(signed.keys.len());
         for key in std::mem::take(&mut signed.keys) {
             if removable.contains(&key.id) {
-                RepositoryService::delete_dnssec_key_tx(&mut tx, key.id).await?;
+                db::dnssec_key::delete_tx(&mut tx, key.id).await?;
             } else {
                 remaining.push(key);
             }
         }
         signed.keys = remaining;
 
-        DnssecService::resign_zone_tx(&mut tx, &signed, false, &ChangeSubject::system()).await?;
-        Ok(Some(signed.zone.name.as_str().to_string()))
+        dnssec::resign_zone_tx(
+            cx,
+            &mut tx,
+            &signed,
+            SigningPass::Refresh,
+            &ChangeSubject::system(),
+        )
+        .await?;
+        Ok(Some(signed.zone.name.clone()))
     }
     .await;
-    RepositoryService::finish_tx(tx, result, "failed to remove retired keys").await
+    transaction::finish_tx(tx, result, "failed to remove retired keys").await
 }
 
 #[cfg(test)]

@@ -8,7 +8,7 @@ use axum::{
 use serde_json::{Value, json};
 
 use super::{AppState, health_router, webhook_router};
-use crate::{upstream::UpstreamClient, wire::MEDIA_TYPE};
+use crate::{metrics::AdapterMetrics, upstream::UpstreamClient, wire::MEDIA_TYPE};
 
 /// One request the mock bindizr server saw: path, Authorization header, body.
 type RecordedRequest = (String, Option<String>, String);
@@ -130,7 +130,10 @@ async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>)
         None,
     )
     .unwrap();
-    let state = Arc::new(AppState { upstream });
+    let state = Arc::new(AppState {
+        upstream,
+        metrics: AdapterMetrics::new().expect("metrics"),
+    });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let webhook = webhook_router(state);
@@ -471,7 +474,10 @@ async fn healthz_reflects_bindizr_reachability() {
     let mock = spawn_mock(domains, records, changes).await;
 
     let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
-    let state = Arc::new(AppState { upstream });
+    let state = Arc::new(AppState {
+        upstream,
+        metrics: AdapterMetrics::new().expect("metrics"),
+    });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let health = health_router(state);
@@ -497,7 +503,10 @@ async fn healthz_is_unready_with_no_manageable_names() {
     let mock = spawn_mock((200, json!({"domains": []})), records, changes).await;
 
     let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
-    let state = Arc::new(AppState { upstream });
+    let state = Arc::new(AppState {
+        upstream,
+        metrics: AdapterMetrics::new().expect("metrics"),
+    });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {

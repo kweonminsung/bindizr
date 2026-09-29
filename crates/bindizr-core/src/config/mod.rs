@@ -1,31 +1,72 @@
-mod environment;
+mod env_overrides;
 
 #[cfg(test)]
 mod tests;
 
-use std::{
-    env, fmt,
-    net::IpAddr,
-    path::PathBuf,
-    sync::{Arc, OnceLock, RwLock},
-};
+use std::{env, fmt, net::IpAddr, path::PathBuf, time::Duration};
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::dns::{SoaInterval, Ttl, name::ZoneName};
+
+/// Why the configuration could not be loaded or does not describe a runnable
+/// process. Each message names the setting an operator would fix.
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("Bindizr config does not exist: {path}")]
+    NotFound { path: String },
+    #[error("Failed to read the configuration file '{path}': {source}")]
+    Read {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    /// A parse or validation failure, named with the file it came from.
+    #[error("{source} (in {path})")]
+    InFile {
+        path: String,
+        #[source]
+        source: Box<ConfigError>,
+    },
+    #[error("Invalid Bindizr configuration: {0}")]
+    Parse(#[source] toml::de::Error),
+    #[error("Invalid {name} environment variable '{value}': {source}")]
+    Env {
+        name: &'static str,
+        value: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
+    #[error("expected {expected}")]
+    UnknownValue { expected: &'static str },
+    #[error("api and dns cannot share port {port}")]
+    SharedPort { port: u16 },
+    #[error("{key} must not be empty when database.type is {database_type}")]
+    EmptyDatabaseLocation {
+        key: &'static str,
+        database_type: DatabaseType,
+    },
+    #[error("{section}.listen_port must not be 0")]
+    PortZero { section: &'static str },
+    #[error("{present} needs {missing}")]
+    TlsHalfPair {
+        present: &'static str,
+        missing: &'static str,
+    },
+    #[error("dns.catalog_zone_name is not a zone name: {0}")]
+    CatalogZoneName(#[source] crate::dns::name::ParseNameError),
+    /// A zero would stop secondaries refreshing, so a zone must not inherit it.
+    #[error("dns.zone_defaults.{field} must be a positive number of seconds")]
+    ZoneDefaultZero { field: &'static str },
+}
 
 const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
-
-/// Swappable so `reload` can replace it; readers take a snapshot, so a
-/// request decides on one version throughout even if a reload lands mid-way.
-static BINDIZR_CONFIG: RwLock<Option<Arc<BindizrConfig>>> = RwLock::new(None);
-
-/// The file `reload` re-reads. Fixed at startup: a reload changes settings,
-/// never which file they come from.
-static CONFIG_PATH: OnceLock<String> = OnceLock::new();
 
 /// Top-level bindizr configuration.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct BindizrConfig {
+pub struct Config {
     pub api: ApiConfig,
     pub database: DatabaseConfig,
     pub dns: DnsConfig,
@@ -67,10 +108,10 @@ fn default_nsupdate_tsig_required() -> bool {
 }
 
 /// Return the default catalog zone name.
-fn default_catalog_zone_name() -> String {
+fn default_catalog_zone_name() -> ZoneName {
     // RFC 9432, Section 3 leaves the name to the operator; this one says which
     // primary a secondary is holding the catalog of.
-    "catalog.bindizr".to_string()
+    ZoneName::from_row("catalog.bindizr")
 }
 
 /// Return the default API authentication setting.
@@ -101,33 +142,36 @@ pub struct DatabaseConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
-    Mysql,
+    MySql,
     Sqlite,
-    Postgresql,
+    #[serde(rename = "postgresql")]
+    Postgres,
 }
 
 impl fmt::Display for DatabaseType {
     /// Write the database type in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
-            DatabaseType::Mysql => "mysql",
+            DatabaseType::MySql => "mysql",
             DatabaseType::Sqlite => "sqlite",
-            DatabaseType::Postgresql => "postgresql",
+            DatabaseType::Postgres => "postgresql",
         };
         write!(f, "{}", value)
     }
 }
 
 impl std::str::FromStr for DatabaseType {
-    type Err = String;
+    type Err = ConfigError;
 
     /// Parse a database type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "mysql" => Ok(DatabaseType::Mysql),
+            "mysql" => Ok(DatabaseType::MySql),
             "sqlite" => Ok(DatabaseType::Sqlite),
-            "postgresql" => Ok(DatabaseType::Postgresql),
-            _ => Err("expected mysql, postgresql, or sqlite".to_string()),
+            "postgresql" => Ok(DatabaseType::Postgres),
+            _ => Err(ConfigError::UnknownValue {
+                expected: "mysql, postgresql, or sqlite",
+            }),
         }
     }
 }
@@ -163,7 +207,7 @@ pub struct DnsConfig {
     /// secondary holds one zone per name, so two primaries feeding the same
     /// secondary need two names.
     #[serde(default = "default_catalog_zone_name")]
-    pub catalog_zone_name: String,
+    pub catalog_zone_name: ZoneName,
     /// Days of zone history to keep (0 = unlimited): the IXFR journal and the
     /// versions rollback can reach. A secondary asking for a pruned serial
     /// falls back to AXFR.
@@ -199,6 +243,13 @@ pub struct NotifyConfig {
     pub retries: u32,
     #[serde(default = "default_notify_timeout_secs")]
     pub timeout_secs: u64,
+}
+
+impl NotifyConfig {
+    /// How long one NOTIFY, probe, or resolution waits for its answer.
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.timeout_secs)
+    }
 }
 
 impl Default for NotifyConfig {
@@ -238,18 +289,18 @@ impl Default for TransferCacheConfig {
 #[serde(deny_unknown_fields)]
 pub struct ZoneDefaultsConfig {
     #[serde(default = "default_zone_ttl")]
-    pub ttl: i32,
+    pub ttl: Ttl,
     /// Bindizr drives propagation with NOTIFY, so refresh and retry stay
     /// short: they bound how long a secondary stays stale when a NOTIFY is
     /// lost, not the happy-path latency.
     #[serde(default = "default_zone_refresh")]
-    pub refresh: i32,
+    pub refresh: SoaInterval,
     #[serde(default = "default_zone_retry")]
-    pub retry: i32,
+    pub retry: SoaInterval,
     #[serde(default = "default_zone_expire")]
-    pub expire: i32,
+    pub expire: SoaInterval,
     #[serde(default = "default_zone_minimum_ttl")]
-    pub minimum_ttl: i32,
+    pub minimum_ttl: Ttl,
 }
 
 impl Default for ZoneDefaultsConfig {
@@ -266,28 +317,28 @@ impl Default for ZoneDefaultsConfig {
 }
 
 /// Return the default zone TTL setting.
-fn default_zone_ttl() -> i32 {
-    3_600
+fn default_zone_ttl() -> Ttl {
+    Ttl::from_secs(3_600)
 }
 
 /// Return the default zone refresh setting.
-fn default_zone_refresh() -> i32 {
-    300
+fn default_zone_refresh() -> SoaInterval {
+    SoaInterval::from_secs(300)
 }
 
 /// Return the default zone retry setting.
-fn default_zone_retry() -> i32 {
-    60
+fn default_zone_retry() -> SoaInterval {
+    SoaInterval::from_secs(60)
 }
 
 /// Return the default zone expire setting.
-fn default_zone_expire() -> i32 {
-    3_600_000
+fn default_zone_expire() -> SoaInterval {
+    SoaInterval::from_secs(3_600_000)
 }
 
 /// Return the default zone minimum TTL setting.
-fn default_zone_minimum_ttl() -> i32 {
-    86_400
+fn default_zone_minimum_ttl() -> Ttl {
+    Ttl::from_secs(86_400)
 }
 
 /// Return the default zone history retention days setting.
@@ -347,14 +398,16 @@ impl fmt::Display for LogFormat {
 }
 
 impl std::str::FromStr for LogFormat {
-    type Err = String;
+    type Err = ConfigError;
 
     /// Parse a log format from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "text" => Ok(LogFormat::Text),
             "json" => Ok(LogFormat::Json),
-            _ => Err("expected text or json".to_string()),
+            _ => Err(ConfigError::UnknownValue {
+                expected: "text or json",
+            }),
         }
     }
 }
@@ -385,7 +438,7 @@ impl fmt::Display for LogLevel {
 }
 
 impl std::str::FromStr for LogLevel {
-    type Err = String;
+    type Err = ConfigError;
 
     /// Parse a log level from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -395,56 +448,11 @@ impl std::str::FromStr for LogLevel {
             "info" => Ok(LogLevel::Info),
             "warn" => Ok(LogLevel::Warn),
             "error" => Ok(LogLevel::Error),
-            _ => Err("expected trace, debug, info, warn, or error".to_string()),
+            _ => Err(ConfigError::UnknownValue {
+                expected: "trace, debug, info, warn, or error",
+            }),
         }
     }
-}
-
-/// Load configuration from `conf_file_path` (or the default path / env var),
-/// apply environment overrides, and store it as the global config, returning
-/// the file it came from: the logger is installed from what this loads, so
-/// only the caller can report it in the configured format.
-pub fn initialize(conf_file_path: Option<&str>) -> Result<String, String> {
-    let conf_file_path = resolve_config_path(conf_file_path);
-
-    let bindizr_config = load_config_file(&conf_file_path)?;
-    let mut stored = BINDIZR_CONFIG.write().map_err(|_| POISONED)?;
-    if stored.is_some() {
-        return Err("Bindizr configuration is already initialized".to_string());
-    }
-    let _ = CONFIG_PATH.set(conf_file_path.clone());
-    *stored = Some(Arc::new(bindizr_config));
-
-    Ok(conf_file_path)
-}
-
-const POISONED: &str = "Bindizr configuration lock is poisoned";
-
-/// Re-read the configuration file and replace the stored one, returning the
-/// settings that changed. Settings a running process cannot adopt are refused
-/// rather than stored, so the configuration always describes the process.
-pub fn reload() -> Result<Vec<String>, String> {
-    let path = CONFIG_PATH
-        .get()
-        .ok_or("Bindizr configuration is not initialized")?;
-    let next = load_config_file(path)?;
-
-    let mut stored = BINDIZR_CONFIG.write().map_err(|_| POISONED)?;
-    let current = stored
-        .as_ref()
-        .ok_or("Bindizr configuration is not initialized")?;
-
-    let fixed = current.fixed_settings_changed(&next);
-    if !fixed.is_empty() {
-        return Err(format!(
-            "these settings are fixed while bindizr runs, so nothing was reloaded: {}",
-            fixed.join(", ")
-        ));
-    }
-
-    let changed = current.changed_settings(&next);
-    *stored = Some(Arc::new(next));
-    Ok(changed)
 }
 
 /// Resolve the config file path: explicit argument, then `BINDIZR_CONFIG_PATH`,
@@ -464,28 +472,30 @@ fn resolve_config_path_with_env(
         .unwrap_or_else(|| BINDIZR_CONF_PATH.to_string())
 }
 
-/// Load and validate `conf_file_path`, applying environment overrides, without
-/// storing the result or exiting on failure.
-pub fn load_config_file(conf_file_path: &str) -> Result<BindizrConfig, String> {
-    if !PathBuf::from(conf_file_path).exists() {
-        return Err(format!("Bindizr config does not exist: {}", conf_file_path));
+impl Config {
+    /// Load and validate the file at `conf_file_path`, applying environment
+    /// overrides. The value is the caller's to hold; nothing is stored.
+    pub fn load(conf_file_path: &str) -> Result<Config, ConfigError> {
+        if !PathBuf::from(conf_file_path).exists() {
+            return Err(ConfigError::NotFound {
+                path: conf_file_path.to_string(),
+            });
+        }
+
+        let text = std::fs::read_to_string(conf_file_path).map_err(|source| ConfigError::Read {
+            path: conf_file_path.to_string(),
+            source,
+        })?;
+        // A parse or validation failure names no file, and the path may be a
+        // default the caller never spelled.
+        Config::from_toml(&text, |name| env::var(name).ok()).map_err(|source| ConfigError::InFile {
+            path: conf_file_path.to_string(),
+            source: Box::new(source),
+        })
     }
 
-    let text = std::fs::read_to_string(conf_file_path).map_err(|e| {
-        format!(
-            "Failed to read the configuration file '{}': {}",
-            conf_file_path, e
-        )
-    })?;
-    // A parse or validation failure names no file, and the path may be a
-    // default the caller never spelled.
-    BindizrConfig::from_toml(&text, |name| env::var(name).ok())
-        .map_err(|e| format!("{} (in {})", e, conf_file_path))
-}
-
-impl BindizrConfig {
     /// The settings a reload actually changed, for the line that reports it.
-    fn changed_settings(&self, next: &BindizrConfig) -> Vec<String> {
+    pub fn changed_settings(&self, next: &Config) -> Vec<String> {
         let mut changed = Vec::new();
         if self.dns != next.dns {
             changed.push("dns".to_string());
@@ -498,7 +508,7 @@ impl BindizrConfig {
 
     /// Settings bound to something built at startup — a listening socket, the
     /// HTTP router, the database pool — which a reload cannot rebuild.
-    fn fixed_settings_changed(&self, next: &BindizrConfig) -> Vec<String> {
+    pub fn fixed_settings_changed(&self, next: &Config) -> Vec<String> {
         let mut fixed = Vec::new();
         if self.api != next.api {
             fixed.push("api".to_string());
@@ -522,9 +532,11 @@ impl BindizrConfig {
     }
 
     /// Assemble the effective configuration from its raw sections.
-    fn from_toml(text: &str, get_env: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
-        let mut bindizr_config = toml::from_str::<Self>(text)
-            .map_err(|e| format!("Invalid Bindizr configuration: {}", e))?;
+    fn from_toml(
+        text: &str,
+        get_env: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, ConfigError> {
+        let mut bindizr_config = toml::from_str::<Self>(text).map_err(ConfigError::Parse)?;
 
         bindizr_config.apply_env_overrides(get_env)?;
         bindizr_config.api.validate()?;
@@ -536,16 +548,15 @@ impl BindizrConfig {
     }
 
     /// Reject overlapping API and DNS endpoints so both servers can bind at startup.
-    fn validate_listeners(&self) -> Result<(), String> {
+    fn validate_listeners(&self) -> Result<(), ConfigError> {
         if self.api.listen_port == self.dns.listen_port
             && (self.api.listen_addr == self.dns.listen_addr
                 || self.api.listen_addr.is_unspecified()
                 || self.dns.listen_addr.is_unspecified())
         {
-            return Err(format!(
-                "api and dns cannot share port {}",
-                self.api.listen_port
-            ));
+            return Err(ConfigError::SharedPort {
+                port: self.api.listen_port,
+            });
         }
         Ok(())
     }
@@ -553,25 +564,33 @@ impl BindizrConfig {
 
 impl DatabaseConfig {
     /// Validate the database configuration fields.
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), ConfigError> {
         match self.database_type {
-            DatabaseType::Mysql if self.mysql.url.trim().is_empty() => {
-                Err("database.mysql.url must not be empty when database.type is mysql".to_string())
+            DatabaseType::MySql if self.mysql.url.trim().is_empty() => {
+                Err(ConfigError::EmptyDatabaseLocation {
+                    key: "database.mysql.url",
+                    database_type: DatabaseType::MySql,
+                })
             }
-            DatabaseType::Postgresql if self.postgresql.url.trim().is_empty() => Err(
-                "database.postgresql.url must not be empty when database.type is postgresql"
-                    .to_string(),
-            ),
-            DatabaseType::Sqlite if self.sqlite.file_path.trim().is_empty() => Err(
-                "database.sqlite.file_path must not be empty when database.type is sqlite"
-                    .to_string(),
-            ),
+            DatabaseType::Postgres if self.postgresql.url.trim().is_empty() => {
+                Err(ConfigError::EmptyDatabaseLocation {
+                    key: "database.postgresql.url",
+                    database_type: DatabaseType::Postgres,
+                })
+            }
+            DatabaseType::Sqlite if self.sqlite.file_path.trim().is_empty() => {
+                Err(ConfigError::EmptyDatabaseLocation {
+                    key: "database.sqlite.file_path",
+                    database_type: DatabaseType::Sqlite,
+                })
+            }
             _ => Ok(()),
         }
     }
 }
 
 /// The certificate and key files the API serves HTTPS with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TlsFiles<'a> {
     pub cert_file: &'a str,
     pub key_file: &'a str,
@@ -587,15 +606,21 @@ impl ApiConfig {
     }
 
     /// Validate the API configuration fields.
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), ConfigError> {
         if self.listen_port == 0 {
-            return Err("api.listen_port must not be 0".to_string());
+            return Err(ConfigError::PortZero { section: "api" });
         }
         // Half a pair would serve plain HTTP on a port the operator means to
         // be HTTPS, which no later error would reveal.
         match (self.tls_cert_file.as_deref(), self.tls_key_file.as_deref()) {
-            (Some(_), None) => Err("api.tls_cert_file needs api.tls_key_file".to_string()),
-            (None, Some(_)) => Err("api.tls_key_file needs api.tls_cert_file".to_string()),
+            (Some(_), None) => Err(ConfigError::TlsHalfPair {
+                present: "api.tls_cert_file",
+                missing: "api.tls_key_file",
+            }),
+            (None, Some(_)) => Err(ConfigError::TlsHalfPair {
+                present: "api.tls_key_file",
+                missing: "api.tls_cert_file",
+            }),
             _ => Ok(()),
         }
     }
@@ -606,34 +631,27 @@ impl DnsConfig {
     /// serves. Case-insensitive per RFC 4343; callers pass client-cased query
     /// names as-is.
     pub fn is_catalog_zone(&self, zone_name: &str) -> bool {
-        zone_name.eq_ignore_ascii_case(&self.catalog_zone_name)
+        zone_name.eq_ignore_ascii_case(self.catalog_zone_name.as_str())
     }
 
-    /// Validate the DNS configuration fields, leaving the catalog zone name
-    /// canonical.
-    fn validate(&mut self) -> Result<(), String> {
+    /// Validate the DNS configuration fields.
+    fn validate(&self) -> Result<(), ConfigError> {
         if self.listen_port == 0 {
-            return Err("dns.listen_port must not be 0".to_string());
+            return Err(ConfigError::PortZero { section: "dns" });
         }
-        // The name is served as a zone and spelled into every secondary's
-        // configuration, so an unusable one must not reach startup. Parsing is
-        // also what canonicalizes it: the FQDN `catalog.prod.` would otherwise
-        // match no query name, which carries no root dot.
-        match crate::dns::name::ZoneName::parse(&self.catalog_zone_name) {
-            Ok(name) => self.catalog_zone_name = name.to_string(),
-            Err(e) => return Err(format!("dns.catalog_zone_name is not a zone name: {}", e)),
+        // A zone without its own timers inherits these; a zero is refused
+        // here as it is in a request.
+        let defaults = &self.zone_defaults;
+        for (field, secs) in [
+            ("refresh", defaults.refresh.as_secs()),
+            ("retry", defaults.retry.as_secs()),
+            ("expire", defaults.expire.as_secs()),
+            ("minimum_ttl", defaults.minimum_ttl.as_secs()),
+        ] {
+            if secs == 0 {
+                return Err(ConfigError::ZoneDefaultZero { field });
+            }
         }
         Ok(())
     }
-}
-
-/// A snapshot of the global configuration; panics if [`initialize`] has not
-/// run. A reload is invisible to a snapshot already taken, so hold one for
-/// as long as a single decision takes and no longer.
-pub fn bindizr_config() -> Arc<BindizrConfig> {
-    BINDIZR_CONFIG
-        .read()
-        .expect(POISONED)
-        .clone()
-        .expect("Configuration not initialized")
 }

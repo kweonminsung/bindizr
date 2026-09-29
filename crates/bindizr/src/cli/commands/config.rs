@@ -1,13 +1,13 @@
-use bindizr_core::{config, config::BindizrConfig, outln};
+use bindizr_core::{config, config::Config, outln};
 use bindizr_service::types::MessageResponse;
 use clap::Subcommand;
 
 use crate::{
     cli::{
         error::CliError,
-        output::{OutputFormat, color, parse_payload, print_payload},
+        output::{OutputFormat, RenderOutputError, color, print_payload},
     },
-    socket::{client, types::DaemonCommandKind},
+    socket::{client, types::DaemonCommand},
 };
 
 /// Subcommands for inspecting and validating configuration.
@@ -62,7 +62,7 @@ pub(crate) async fn handle_command(subcommand: ConfigCommand) -> Result<(), CliE
 
 /// Ask the daemon to reload its configuration.
 async fn reload_config(output: OutputFormat) -> Result<(), CliError> {
-    let response = client::send_command(DaemonCommandKind::ReloadConfig, ()).await?;
+    let response = client::send_command::<MessageResponse>(DaemonCommand::ReloadConfig).await?;
     match output {
         OutputFormat::Table => outln!("{}", response.message),
         _ => print_payload(&response.data, output)?,
@@ -77,27 +77,23 @@ fn validate_config(file: Option<&str>, output: OutputFormat) -> Result<(), CliEr
         outln!("Checking configuration file: {}", path);
     }
 
-    config::load_config_file(&path).map_err(CliError::configuration)?;
+    Config::load(&path).map_err(CliError::configuration)?;
 
     let message = format!("Configuration file '{}' is valid", path);
     match output {
         OutputFormat::Table => outln!("Configuration is {}.", color::green("valid")),
         // Built here rather than by the daemon: the check never reaches one.
-        _ => {
-            let payload = serde_json::to_value(MessageResponse { message })
-                .map_err(|e| CliError::from(e.to_string()))?;
-            print_payload(&payload, output)?
-        }
+        _ => print_payload(&MessageResponse { message }, output)?,
     }
     Ok(())
 }
 
 /// Print all effective configuration values.
 async fn print_config_list(output: OutputFormat) -> Result<(), CliError> {
-    let response = client::send_control_command(DaemonCommandKind::Config).await?;
+    let response = client::send_control_command::<Config>(DaemonCommand::Config).await?;
 
     match output {
-        OutputFormat::Table => print_config(&parse_payload(&response.data)?),
+        OutputFormat::Table => print_config(&response.data),
         _ => print_payload(&response.data, output)?,
     }
     Ok(())
@@ -106,20 +102,23 @@ async fn print_config_list(output: OutputFormat) -> Result<(), CliError> {
 /// Print one effective configuration value by key. The plain form prints a
 /// string bare, so a value can be read straight into a shell variable.
 async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliError> {
-    let response = client::send_control_command(DaemonCommandKind::Config).await?;
+    let response = client::send_control_command::<Config>(DaemonCommand::Config).await?;
+    let config = serde_json::to_value(&response.data).map_err(RenderOutputError::Json)?;
 
     let found = key
         .split('.')
-        .try_fold(&response.data, |value, part| value.get(part))
-        .ok_or_else(|| format!("Unknown configuration key: {}", key))?;
+        .try_fold(&config, |value, part| value.get(part))
+        .ok_or_else(|| CliError::request(format!("Unknown configuration key: {}", key)))?;
 
     match output {
         OutputFormat::Table => match found {
             serde_json::Value::String(value) => outln!("{}", value),
             serde_json::Value::Object(_) => outln!(
                 "{}",
-                serde_json::to_string_pretty(found)
-                    .map_err(|e| format!("Failed to render configuration value: {}", e))?
+                serde_json::to_string_pretty(found).map_err(|e| CliError::request(format!(
+                    "Failed to render configuration value: {}",
+                    e
+                )))?
             ),
             value => outln!("{}", value),
         },
@@ -129,7 +128,7 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
 }
 
 /// Print configuration values grouped by section.
-fn print_config(config: &BindizrConfig) {
+fn print_config(config: &Config) {
     print_section("api");
     print_value("listen_addr", config.api.listen_addr);
     print_value("listen_port", config.api.listen_port);

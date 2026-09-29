@@ -1,20 +1,18 @@
-//! Process-wide Prometheus registry shared by the HTTP API and DNS layers.
-
-use std::sync::OnceLock;
+//! The daemon's Prometheus registry, held by its `Context` and shared by the
+//! HTTP API and DNS layers.
 
 use prometheus::{
     Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
     Registry, TextEncoder, core::Collector,
 };
+use thiserror::Error;
 
-use crate::{
-    dns::message::{Rcode, Rtype},
-    time::unix_time_ms,
-};
+use crate::dns::message::{Rcode, Rtype};
 
 /// Content type of the Prometheus text exposition format.
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4";
 
+#[derive(Debug)]
 pub struct Metrics {
     registry: Registry,
     pub database_up: IntGauge,
@@ -38,26 +36,29 @@ pub struct Metrics {
     zone_cache_lookups_total: IntCounterVec,
     zone_cache_evictions_total: IntCounter,
     zone_cache_records: IntGauge,
+    /// Set by the daemon once every front end serves.
+    pub started_at_seconds: Gauge,
 }
 
-static METRICS: OnceLock<Metrics> = OnceLock::new();
-
-/// Global registry. First touched at daemon startup so
-/// `bindizr_started_at_seconds` reflects process start.
-pub fn metrics() -> &'static Metrics {
-    METRICS.get_or_init(Metrics::new)
-}
+/// A metric definition or registration the registry refused: a programming
+/// error, since every definition is static.
+#[derive(Debug, Error)]
+#[error("failed to register a metric: {0}")]
+pub struct RegisterMetricsError(#[source] prometheus::Error);
 
 /// Register a shared clone of a metric collector.
-fn register<C: Collector + Clone + 'static>(registry: &Registry, collector: &C) {
+fn register<C: Collector + Clone + 'static>(
+    registry: &Registry,
+    collector: &C,
+) -> Result<(), RegisterMetricsError> {
     registry
         .register(Box::new(collector.clone()))
-        .expect("metric registered twice");
+        .map_err(RegisterMetricsError)
 }
 
 impl Metrics {
     /// Create and register the daemon's metric collectors.
-    fn new() -> Self {
+    pub fn new() -> Result<Self, RegisterMetricsError> {
         let registry = Registry::new();
 
         let build_info = IntGaugeVec::new(
@@ -67,26 +68,25 @@ impl Metrics {
             ),
             &["version"],
         )
-        .expect("valid metric definition");
+        .map_err(RegisterMetricsError)?;
         build_info
             .with_label_values(&[env!("CARGO_PKG_VERSION")])
             .set(1);
-        register(&registry, &build_info);
+        register(&registry, &build_info)?;
 
         let started_at_seconds = Gauge::new(
             "bindizr_started_at_seconds",
-            "Unix time the process started.",
+            "Unix time the daemon began serving.",
         )
-        .expect("valid metric definition");
-        started_at_seconds.set(unix_time_ms() as f64 / 1000.0);
-        register(&registry, &started_at_seconds);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &started_at_seconds)?;
 
         let database_up = IntGauge::new(
             "bindizr_database_up",
             "Whether the database probe of the last scrape succeeded (1) or failed (0).",
         )
-        .expect("valid metric definition");
-        register(&registry, &database_up);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &database_up)?;
 
         let db_connections = IntGaugeVec::new(
             Opts::new(
@@ -96,36 +96,36 @@ impl Metrics {
             ),
             &["state"],
         )
-        .expect("valid metric definition");
-        register(&registry, &db_connections);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &db_connections)?;
 
         let db_connections_max = IntGauge::new(
             "bindizr_db_connections_max",
             "Connection ceiling the pool was built with, scaled to the host's cores",
         )
-        .expect("valid metric definition");
-        register(&registry, &db_connections_max);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &db_connections_max)?;
 
         let zones_total = IntGauge::new(
             "bindizr_zones_total",
             "Number of zones, refreshed at scrape time.",
         )
-        .expect("valid metric definition");
-        register(&registry, &zones_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &zones_total)?;
 
         let records_total = IntGauge::new(
             "bindizr_records_total",
             "Number of records, refreshed at scrape time.",
         )
-        .expect("valid metric definition");
-        register(&registry, &records_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &records_total)?;
 
         let http_requests_total = IntCounterVec::new(
             Opts::new("bindizr_http_requests_total", "HTTP API requests served."),
             &["method", "route", "status"],
         )
-        .expect("valid metric definition");
-        register(&registry, &http_requests_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &http_requests_total)?;
 
         let http_request_duration_seconds = HistogramVec::new(
             HistogramOpts::new(
@@ -134,8 +134,8 @@ impl Metrics {
             ),
             &["method", "route"],
         )
-        .expect("valid metric definition");
-        register(&registry, &http_request_duration_seconds);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &http_request_duration_seconds)?;
 
         let xfr_total = IntCounterVec::new(
             Opts::new(
@@ -144,8 +144,8 @@ impl Metrics {
             ),
             &["type", "result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &xfr_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &xfr_total)?;
 
         let soa_queries_total = IntCounterVec::new(
             Opts::new(
@@ -155,8 +155,8 @@ impl Metrics {
             ),
             &["result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &soa_queries_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &soa_queries_total)?;
 
         let notify_sent_total = IntCounterVec::new(
             Opts::new(
@@ -165,8 +165,8 @@ impl Metrics {
             ),
             &["result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &notify_sent_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &notify_sent_total)?;
 
         let nsupdate_requests_total = IntCounterVec::new(
             Opts::new(
@@ -175,15 +175,15 @@ impl Metrics {
             ),
             &["result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &nsupdate_requests_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &nsupdate_requests_total)?;
 
         let zone_serial_bumps_total = IntCounter::new(
             "bindizr_zone_serial_bumps_total",
             "Zone serial writes across every update path.",
         )
-        .expect("valid metric definition");
-        register(&registry, &zone_serial_bumps_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &zone_serial_bumps_total)?;
 
         let pruned_rows_total = IntCounterVec::new(
             Opts::new(
@@ -193,15 +193,15 @@ impl Metrics {
             ),
             &["table"],
         )
-        .expect("valid metric definition");
-        register(&registry, &pruned_rows_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &pruned_rows_total)?;
 
         let dnssec_zones_total = IntGauge::new(
             "bindizr_dnssec_zones_total",
             "Number of DNSSEC-signed zones, refreshed at scrape time.",
         )
-        .expect("valid metric definition");
-        register(&registry, &dnssec_zones_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &dnssec_zones_total)?;
 
         let dnssec_keys_total = IntGaugeVec::new(
             Opts::new(
@@ -210,24 +210,24 @@ impl Metrics {
             ),
             &["state"],
         )
-        .expect("valid metric definition");
-        register(&registry, &dnssec_keys_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &dnssec_keys_total)?;
 
         let dnssec_rrsigs_expiring_total = IntGauge::new(
             "bindizr_dnssec_rrsigs_expiring_total",
             "Signatures inside the refresh window at scrape time; a value that \
              persists across scrapes means re-signing is falling behind.",
         )
-        .expect("valid metric definition");
-        register(&registry, &dnssec_rrsigs_expiring_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &dnssec_rrsigs_expiring_total)?;
 
         let dnssec_rrsigs_expired_total = IntGauge::new(
             "bindizr_dnssec_rrsigs_expired_total",
             "Signatures already past their expiration; any at all mean resolvers are failing \
              part of a zone",
         )
-        .expect("valid metric definition");
-        register(&registry, &dnssec_rrsigs_expired_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &dnssec_rrsigs_expired_total)?;
 
         let dnssec_scheduler_runs_total = IntCounterVec::new(
             Opts::new(
@@ -236,8 +236,8 @@ impl Metrics {
             ),
             &["result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &dnssec_scheduler_runs_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &dnssec_scheduler_runs_total)?;
 
         let zone_cache_lookups_total = IntCounterVec::new(
             Opts::new(
@@ -247,23 +247,23 @@ impl Metrics {
             ),
             &["result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &zone_cache_lookups_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &zone_cache_lookups_total)?;
 
         let zone_cache_evictions_total = IntCounter::new(
             "bindizr_zone_cache_evictions_total",
             "Zones dropped to make room; a rising count beside a low hit ratio \
              means dns.transfer_cache.max_records is too small for the working set.",
         )
-        .expect("valid metric definition");
-        register(&registry, &zone_cache_evictions_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &zone_cache_evictions_total)?;
 
         let zone_cache_records = IntGauge::new(
             "bindizr_zone_cache_records",
             "Records the zone cache holds, against dns.transfer_cache.max_records.",
         )
-        .expect("valid metric definition");
-        register(&registry, &zone_cache_records);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &zone_cache_records)?;
 
         // Prometheus emits a labelled series only once it is touched, so an
         // alert on a counter staying at zero reads "no data" until the first
@@ -292,8 +292,9 @@ impl Metrics {
             zone_cache_lookups_total.with_label_values(&[result]);
         }
 
-        Self {
+        Ok(Self {
             registry,
+            started_at_seconds,
             database_up,
             db_connections,
             db_connections_max,
@@ -315,7 +316,7 @@ impl Metrics {
             zone_cache_lookups_total,
             zone_cache_evictions_total,
             zone_cache_records,
-        }
+        })
     }
 
     /// Encode every registered metric in the Prometheus text format.
@@ -326,13 +327,14 @@ impl Metrics {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XfrResult {
     Ok,
     Refused,
     NotAuth,
     /// Answered over UDP with TC set; the transfer follows over TCP.
     Truncated,
-    Error,
+    Failed,
 }
 
 impl XfrResult {
@@ -341,7 +343,7 @@ impl XfrResult {
         Self::Refused,
         Self::NotAuth,
         Self::Truncated,
-        Self::Error,
+        Self::Failed,
     ];
 
     /// The metric label value of this xfr result.
@@ -351,34 +353,21 @@ impl XfrResult {
             Self::Refused => "refused",
             Self::NotAuth => "notauth",
             Self::Truncated => "truncated",
-            Self::Error => "error",
+            Self::Failed => "failed",
         }
     }
 }
 
-/// A zone transfer's outcome, by query type. Non-transfer types are not
-/// counted here, so the caller may pass whatever it was asked for.
-pub fn track_xfr(qtype: Rtype, result: XfrResult) {
-    let xfr_type = match qtype {
-        Rtype::AXFR => "axfr",
-        Rtype::IXFR => "ixfr",
-        _ => return,
-    };
-    metrics()
-        .xfr_total
-        .with_label_values(&[xfr_type, result.label()])
-        .inc();
-}
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SoaResult {
     Ok,
     Refused,
     NotAuth,
-    Error,
+    Failed,
 }
 
 impl SoaResult {
-    const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Error];
+    const ALL: [Self; 4] = [Self::Ok, Self::Refused, Self::NotAuth, Self::Failed];
 
     /// The metric label value of this SOA result.
     fn label(&self) -> &'static str {
@@ -386,20 +375,12 @@ impl SoaResult {
             Self::Ok => "ok",
             Self::Refused => "refused",
             Self::NotAuth => "notauth",
-            Self::Error => "error",
+            Self::Failed => "failed",
         }
     }
 }
 
-/// Secondaries poll SOA on their refresh timer, so this is the question
-/// bindizr answers most; the result says whether they are getting a serial.
-pub fn track_soa(result: SoaResult) {
-    metrics()
-        .soa_queries_total
-        .with_label_values(&[result.label()])
-        .inc();
-}
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NsupdateResult {
     /// A TSIG failure answers with its own NOTAUTH, so it is kept apart from
     /// the NOTAUTH an update refused on its merits gets.
@@ -445,115 +426,129 @@ impl NsupdateResult {
     }
 }
 
-/// Increment the counter for a dynamic update result.
-pub fn track_nsupdate(result: NsupdateResult) {
-    metrics()
-        .nsupdate_requests_total
-        .with_label_values(&[result.label()])
-        .inc();
-}
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotifyResult {
     Ok,
-    Error,
+    Failed,
     /// Nothing was sent, so it is kept apart from the send failures it would
     /// otherwise inflate.
-    ResolveError,
+    ResolveFailed,
 }
 
 impl NotifyResult {
-    const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::ResolveError];
+    const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::ResolveFailed];
 
     /// The metric label value of this notify result.
     fn label(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
-            Self::Error => "error",
-            Self::ResolveError => "resolve_error",
+            Self::Failed => "failed",
+            Self::ResolveFailed => "resolve_failed",
         }
     }
 }
 
-/// Record a NOTIFY delivery result.
-pub fn track_notify(result: NotifyResult) {
-    metrics()
-        .notify_sent_total
-        .with_label_values(&[result.label()])
-        .inc();
-}
-
-/// Count pruned journal and version rows separately so differences expose gaps that break IXFR
-/// history.
-pub fn track_pruned_rows(journal_rows: u64, version_rows: u64) {
-    let metrics = metrics();
-    metrics
-        .pruned_rows_total
-        .with_label_values(&["journal"])
-        .inc_by(journal_rows);
-    metrics
-        .pruned_rows_total
-        .with_label_values(&["version"])
-        .inc_by(version_rows);
-}
-
-/// Increment the serial-advance counter before commit; rollbacks can therefore overcount advances.
-pub fn track_serial_bump() {
-    metrics().zone_serial_bumps_total.inc();
-}
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerResult {
     Ok,
-    Error,
+    Failed,
     /// The pass unwound; the scheduler itself survived.
-    Panic,
+    Panicked,
 }
 
 impl SchedulerResult {
-    const ALL: [Self; 3] = [Self::Ok, Self::Error, Self::Panic];
+    const ALL: [Self; 3] = [Self::Ok, Self::Failed, Self::Panicked];
 
     /// The metric label value of this scheduler result.
     fn label(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
-            Self::Error => "error",
-            Self::Panic => "panic",
+            Self::Failed => "failed",
+            Self::Panicked => "panic",
         }
     }
 }
 
-/// Increment the counter for a DNSSEC scheduler pass result.
-pub fn track_dnssec_scheduler(result: SchedulerResult) {
-    metrics()
-        .dnssec_scheduler_runs_total
-        .with_label_values(&[result.label()])
-        .inc();
-}
+impl Metrics {
+    /// A zone transfer's outcome, by query type. Non-transfer types are not
+    /// counted here, so the caller may pass whatever it was asked for.
+    pub fn track_xfr(&self, qtype: Rtype, result: XfrResult) {
+        let xfr_type = match qtype {
+            Rtype::AXFR => "axfr",
+            Rtype::IXFR => "ixfr",
+            _ => return,
+        };
+        self.xfr_total
+            .with_label_values(&[xfr_type, result.label()])
+            .inc();
+    }
 
-/// The pool's occupancy at scrape time.
-pub fn track_db_pool(connections: u32, idle: u32, max: u32) {
-    let metrics = metrics();
-    metrics
-        .db_connections
-        .with_label_values(&["idle"])
-        .set(i64::from(idle));
-    metrics
-        .db_connections
-        .with_label_values(&["in_use"])
-        .set(i64::from(connections.saturating_sub(idle)));
-    metrics.db_connections_max.set(i64::from(max));
-}
+    /// Secondaries poll SOA on their refresh timer, so this is the question
+    /// bindizr answers most; the result says whether they are getting a serial.
+    pub fn track_soa(&self, result: SoaResult) {
+        self.soa_queries_total
+            .with_label_values(&[result.label()])
+            .inc();
+    }
 
-/// Record a zone-cache hit or miss.
-pub fn track_zone_cache_lookup(hit: bool) {
-    metrics()
-        .zone_cache_lookups_total
-        .with_label_values(&[if hit { "hit" } else { "miss" }])
-        .inc();
-}
+    /// Increment the counter for a dynamic update result.
+    pub fn track_nsupdate(&self, result: NsupdateResult) {
+        self.nsupdate_requests_total
+            .with_label_values(&[result.label()])
+            .inc();
+    }
 
-/// What the cache holds after a store, and what it dropped to fit.
-pub fn track_zone_cache_store(records: usize, evicted: usize) {
-    let metrics = metrics();
-    metrics.zone_cache_records.set(records as i64);
-    metrics.zone_cache_evictions_total.inc_by(evicted as u64);
+    /// Record a NOTIFY delivery result.
+    pub fn track_notify(&self, result: NotifyResult) {
+        self.notify_sent_total
+            .with_label_values(&[result.label()])
+            .inc();
+    }
+
+    /// Count pruned journal and version rows separately so differences expose gaps that break IXFR
+    /// history.
+    pub fn track_pruned_rows(&self, journal_rows: u64, version_rows: u64) {
+        self.pruned_rows_total
+            .with_label_values(&["journal"])
+            .inc_by(journal_rows);
+        self.pruned_rows_total
+            .with_label_values(&["version"])
+            .inc_by(version_rows);
+    }
+
+    /// Increment the serial-advance counter before commit; rollbacks can therefore overcount advances.
+    pub fn track_serial_bump(&self) {
+        self.zone_serial_bumps_total.inc();
+    }
+
+    /// Increment the counter for a DNSSEC scheduler pass result.
+    pub fn track_dnssec_scheduler(&self, result: SchedulerResult) {
+        self.dnssec_scheduler_runs_total
+            .with_label_values(&[result.label()])
+            .inc();
+    }
+
+    /// The pool's occupancy at scrape time.
+    pub fn track_db_pool(&self, connections: u32, idle: u32, max: u32) {
+        self.db_connections
+            .with_label_values(&["idle"])
+            .set(i64::from(idle));
+        self.db_connections
+            .with_label_values(&["in_use"])
+            .set(i64::from(connections.saturating_sub(idle)));
+        self.db_connections_max.set(i64::from(max));
+    }
+
+    /// Record a zone-cache hit or miss.
+    pub fn track_zone_cache_lookup(&self, hit: bool) {
+        self.zone_cache_lookups_total
+            .with_label_values(&[if hit { "hit" } else { "miss" }])
+            .inc();
+    }
+
+    /// What the cache holds after a store, and what it dropped to fit.
+    pub fn track_zone_cache_store(&self, records: usize, evicted: usize) {
+        self.zone_cache_records.set(records as i64);
+        self.zone_cache_evictions_total.inc_by(evicted as u64);
+    }
 }

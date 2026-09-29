@@ -1,4 +1,7 @@
-use bindizr_core::dns::name::ZoneName;
+use bindizr_core::{
+    dns::{Serial, SoaInterval, Ttl, name::ZoneName},
+    model::zone::ZoneId,
+};
 use chrono::Utc;
 
 use super::*;
@@ -7,16 +10,16 @@ use crate::model::record::RecordType;
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 300,
-        serial: 5,
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
-        minimum_ttl: 900,
+        default_ttl: Ttl::from_secs(300),
+        serial: Serial::from(5),
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
+        minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -28,14 +31,14 @@ fn zone() -> Zone {
 /// Build an existing database record for import planning.
 fn existing(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     Record {
-        id,
+        id: RecordId::from(id),
         name: OwnerName::parse_in_zone(name, &zone().name).unwrap(),
         record_type,
         value: value.to_string(),
-        ttl,
+        ttl: Ttl::try_from(ttl).unwrap(),
         priority: None,
         created_at: Utc::now(),
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
     }
 }
 
@@ -47,14 +50,14 @@ fn desired(name: &str, record_type: RecordType, value: &str, ttl: Option<i32>) -
             owner_name: name.to_string(),
             record_type,
             value: value.to_string(),
-            ttl,
+            ttl: ttl.map(|ttl| Ttl::try_from(ttl).unwrap()),
             priority: None,
         },
     }
 }
 
 /// Collect record IDs for import-plan assertions.
-fn ids(records: &[Record]) -> Vec<i32> {
+fn ids(records: &[Record]) -> Vec<RecordId> {
     records.iter().map(|r| r.id).collect()
 }
 
@@ -72,7 +75,7 @@ fn append_never_deletes_what_it_did_not_ask_about() {
     let rows = [existing(1, "old", RecordType::A, "192.0.2.9", 300)];
     let want = [desired("new", RecordType::A, "192.0.2.1", None)];
 
-    let plan = compute_import_plan(ImportMode::Append, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Append, &zone(), &rows, &want);
 
     assert!(plan.dels.is_empty());
     assert_eq!(added(&plan), ["192.0.2.1"]);
@@ -84,13 +87,13 @@ fn replace_deletes_every_row_the_file_does_not_name() {
     let rows = [
         existing(1, "keep", RecordType::A, "192.0.2.1", 300),
         existing(2, "drop", RecordType::A, "192.0.2.9", 300),
-        existing(3, "drop", RecordType::TXT, "\"x\"", 300),
+        existing(3, "drop", RecordType::Txt, "\"x\"", 300),
     ];
     let want = [desired("keep", RecordType::A, "192.0.2.1", None)];
 
-    let plan = compute_import_plan(ImportMode::Replace, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &zone(), &rows, &want);
 
-    assert_eq!(ids(&plan.dels), [2, 3]);
+    assert_eq!(ids(&plan.dels), [RecordId::from(2), RecordId::from(3)]);
     assert_eq!(plan.unchanged, 1);
     assert!(plan.adds.is_empty());
 }
@@ -102,14 +105,14 @@ fn upsert_leaves_names_and_types_the_file_is_silent_about() {
     // business.
     let rows = [
         existing(1, "www", RecordType::A, "192.0.2.9", 300),
-        existing(2, "www", RecordType::TXT, "\"x\"", 300),
+        existing(2, "www", RecordType::Txt, "\"x\"", 300),
         existing(3, "other", RecordType::A, "192.0.2.8", 300),
     ];
     let want = [desired("www", RecordType::A, "192.0.2.1", None)];
 
-    let plan = compute_import_plan(ImportMode::Upsert, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Upsert, &zone(), &rows, &want);
 
-    assert_eq!(ids(&plan.dels), [1]);
+    assert_eq!(ids(&plan.dels), [RecordId::from(1)]);
     assert_eq!(added(&plan), ["192.0.2.1"]);
 }
 
@@ -120,9 +123,9 @@ fn a_ttl_change_rewrites_the_row_rather_than_editing_it() {
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
     let want = [desired("www", RecordType::A, "192.0.2.1", Some(600))];
 
-    let plan = compute_import_plan(ImportMode::Upsert, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Upsert, &zone(), &rows, &want);
 
-    assert_eq!(ids(&plan.ttl_dels), [1]);
+    assert_eq!(ids(&plan.ttl_dels), [RecordId::from(1)]);
     assert_eq!(added(&plan), ["192.0.2.1"]);
     assert_eq!(plan.updated, 1);
     assert_eq!(plan.unchanged, 0);
@@ -134,7 +137,7 @@ fn append_keeps_a_ttl_it_disagrees_with() {
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
     let want = [desired("www", RecordType::A, "192.0.2.1", Some(600))];
 
-    let plan = compute_import_plan(ImportMode::Append, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Append, &zone(), &rows, &want);
 
     assert!(plan.ttl_dels.is_empty());
     assert_eq!(plan.unchanged, 1);
@@ -148,9 +151,9 @@ fn an_omitted_ttl_is_the_zones_default_not_a_wildcard() {
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 900)];
     let want = [desired("www", RecordType::A, "192.0.2.1", None)];
 
-    let plan = compute_import_plan(ImportMode::Replace, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &zone(), &rows, &want);
 
-    assert_eq!(ids(&plan.ttl_dels), [1]);
+    assert_eq!(ids(&plan.ttl_dels), [RecordId::from(1)]);
     assert_eq!(plan.updated, 1);
 }
 
@@ -160,18 +163,18 @@ fn a_value_the_file_spells_differently_is_the_same_record() {
     let rows = [existing(
         1,
         "alias",
-        RecordType::CNAME,
+        RecordType::Cname,
         "target.example.com.",
         300,
     )];
     let want = [desired(
         "alias",
-        RecordType::CNAME,
+        RecordType::Cname,
         "Target.Example.COM",
         None,
     )];
 
-    let plan = compute_import_plan(ImportMode::Replace, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &zone(), &rows, &want);
 
     assert!(plan.dels.is_empty());
     assert_eq!(plan.unchanged, 1);

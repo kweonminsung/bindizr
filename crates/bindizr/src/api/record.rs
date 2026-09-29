@@ -1,18 +1,21 @@
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
-    extract::DefaultBodyLimit,
+    extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
 };
 use bindizr_service::{
-    record::RecordService,
+    Context, record,
     types::{
         BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DEFAULT_PAGE_LIMIT,
         DeleteRecordsFilter, DeleteRecordsResponse, ErrorResponse, GetRecordResponse,
-        GetRecordsFilter, PaginatedResponse, RecordResponse, RecordWriteResponse,
+        GetRecordsFilter, PaginatedResponse, RecordResponse, RecordWriteResponse, Run,
         UpdateRecordRequest,
     },
+    zone,
 };
 
 use crate::{
@@ -25,24 +28,19 @@ use crate::{
     params::IdParams,
 };
 
-pub(crate) struct RecordApi;
-
-impl RecordApi {
-    /// Build the record API routes.
-    pub(crate) async fn routes() -> Router {
-        Router::new()
-            .route("/records", routing::get(list_records))
-            .route("/records/{id}", routing::get(get_record))
-            .route("/records", routing::post(create_record))
-            .route("/records/{id}", routing::put(update_record))
-            .route("/records/{id}", routing::delete(delete_record))
-            .route("/records", routing::delete(delete_records_matching))
-            .route(
-                "/records/bulk",
-                routing::post(create_records_bulk)
-                    .layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
-            )
-    }
+/// Build the record API routes.
+pub(crate) fn routes() -> Router<Arc<Context>> {
+    Router::new()
+        .route("/records", routing::get(list_records))
+        .route("/records/{id}", routing::get(get_record))
+        .route("/records", routing::post(create_record))
+        .route("/records/{id}", routing::put(update_record))
+        .route("/records/{id}", routing::delete(delete_record))
+        .route("/records", routing::delete(delete_records_matching))
+        .route(
+            "/records/bulk",
+            routing::post(create_records_bulk).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+        )
 }
 
 /// List DNS records, optionally filtered and paginated.
@@ -60,11 +58,12 @@ impl RecordApi {
         )
 )]
 pub(crate) async fn list_records(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Query(mut query): Query<GetRecordsFilter>,
 ) -> Result<Response, ApiError> {
     query.limit = query.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = RecordService::list_with_zone_by_filter(&caller, query).await?;
+    let response = record::list_with_zone_by_filter(&cx, &caller, query).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -85,13 +84,14 @@ pub(crate) async fn list_records(
         )
 )]
 pub(crate) async fn get_record(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<IdParams>,
 ) -> Result<Response, ApiError> {
-    let raw_record = RecordService::get_with_zone(&caller, params.id).await?;
+    let raw_record = record::get_with_zone(&cx, &caller, params.id).await?;
 
     let response = RecordResponse {
-        record: GetRecordResponse::from_record_with_zone(&raw_record),
+        record: GetRecordResponse::from(&raw_record),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -116,10 +116,11 @@ pub(crate) async fn get_record(
         )
 )]
 pub(crate) async fn create_record(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    let response = RecordService::create(&caller, &body).await?;
+    let response = record::create(&cx, &caller, &body).await?;
     // 201 says a resource now exists; a preview created nothing.
     let status = if response.applied {
         StatusCode::CREATED
@@ -152,11 +153,12 @@ pub(crate) async fn create_record(
         )
 )]
 pub(crate) async fn update_record(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<IdParams>,
     JsonBody(body): JsonBody<UpdateRecordRequest>,
 ) -> Result<Response, ApiError> {
-    let response = RecordService::update(&caller, params.id, &body).await?;
+    let response = record::update(&cx, &caller, params.id, &body).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -180,11 +182,13 @@ pub(crate) async fn update_record(
         )
 )]
 pub(crate) async fn delete_record(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<IdParams>,
     Query(preview): Query<DryRunQuery>,
 ) -> Result<Response, ApiError> {
-    let response = RecordService::delete(&caller, params.id, preview.dry_run).await?;
+    let response =
+        record::delete(&cx, &caller, params.id, Run::from_dry_run(preview.dry_run)).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -206,10 +210,11 @@ pub(crate) async fn delete_record(
         )
 )]
 pub(crate) async fn delete_records_matching(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Query(filter): Query<DeleteRecordsFilter>,
 ) -> Result<Response, ApiError> {
-    let response = RecordService::delete_matching(&caller, &filter).await?;
+    let response = record::delete_matching(&cx, &caller, &filter).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -234,11 +239,18 @@ pub(crate) async fn delete_records_matching(
         )
 )]
 pub(crate) async fn create_records_bulk(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateBulkRecordsRequest>,
 ) -> Result<Response, ApiError> {
-    let response =
-        RecordService::create_bulk(&caller, &body.zone_name, &body.records, body.dry_run).await?;
+    let response = record::create_bulk(
+        &cx,
+        &caller,
+        &zone::normalize_name(&body.zone_name)?,
+        &body.records,
+        Run::from_dry_run(body.dry_run),
+    )
+    .await?;
 
     // 201 says a resource now exists; a preview created nothing.
     let status = if response.applied {

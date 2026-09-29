@@ -1,28 +1,30 @@
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 
-use bindizr_core::{config, dns::address::loopback_if_unspecified};
+use bindizr_core::dns::address::loopback_if_unspecified;
 use bindizr_service::{
+    Context,
     authorization::Caller,
     dns_client::{notify, probe},
     error::ServiceError,
-    zone::ZoneService,
+    secondary,
+    types::SecondaryTransferSummary,
+    zone,
 };
 
 use crate::{
-    daemon::DB_PROBE_TIMEOUT,
-    socket::{
-        server::to_response_data,
-        types::{DaemonDoctorResponse, DaemonResponse, DoctorCheck, DoctorCheckStatus},
-    },
+    daemon::db_probe::DB_PROBE_TIMEOUT,
+    socket::types::{DaemonDoctorResponse, DaemonResponse, DoctorCheck, DoctorCheckStatus},
 };
 
 /// The daemon-side installation checks. The catalog zone is the one probed
 /// because it exists before any user zone, so serial comparison always works.
-pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError> {
-    let config = config::bindizr_config();
+pub(crate) async fn check_installation(
+    cx: &Context,
+) -> Result<DaemonResponse<DaemonDoctorResponse>, ServiceError> {
+    let config = cx.config();
 
     // Count zones without materializing them; large tables must fit the deadline.
-    let zones_probe = ZoneService::count(&Caller::Global);
+    let zones_probe = zone::count(cx, &Caller::Global);
     let database = match tokio::time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
         Ok(Ok(total)) => DoctorCheck {
             status: DoctorCheckStatus::Ok,
@@ -32,11 +34,11 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
             ),
         },
         Ok(Err(e)) => DoctorCheck {
-            status: DoctorCheckStatus::Fail,
+            status: DoctorCheckStatus::Failed,
             message: format!("Database not reachable: {}", e),
         },
         Err(_) => DoctorCheck {
-            status: DoctorCheckStatus::Fail,
+            status: DoctorCheckStatus::Failed,
             message: format!(
                 "Database not reachable: timed out after {} seconds",
                 DB_PROBE_TIMEOUT.as_secs()
@@ -49,7 +51,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
         loopback_if_unspecified(config.dns.listen_addr),
         config.dns.listen_port,
     );
-    let timeout = Duration::from_secs(config.dns.notify.timeout_secs);
+    let timeout = config.dns.notify.timeout();
 
     let (dns_server, catalog_serial) =
         match probe::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout).await {
@@ -65,7 +67,7 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
             ),
             Err(e) => (
                 DoctorCheck {
-                    status: DoctorCheckStatus::Fail,
+                    status: DoctorCheckStatus::Failed,
                     message: format!("DNS server not reachable: {}: {}", dns_addr, e),
                 },
                 None,
@@ -74,31 +76,38 @@ pub(crate) async fn check_installation() -> Result<DaemonResponse, ServiceError>
 
     // The secondaries are rows: a database that did not answer is not asked
     // for them again.
-    let (secondaries, notifies) = if database.status == DoctorCheckStatus::Fail {
-        (Vec::new(), Vec::new())
+    let (secondaries, notifies, transfers) = if database.status == DoctorCheckStatus::Failed {
+        (Vec::new(), Vec::new(), Vec::new())
     } else {
         // Capture secondary serials before the NOTIFY check can trigger a refresh.
-        let secondaries = probe::probe_secondaries(&config.dns.catalog_zone_name, catalog_serial)
-            .await
-            .map_err(ServiceError::internal)?;
+        let secondaries =
+            probe::probe_secondaries(cx, &config.dns.catalog_zone_name, catalog_serial).await?;
         // Actively test NOTIFY delivery; this can prompt secondaries to transfer the catalog.
-        let notifies = notify::send_notify_to_secondaries(&config.dns.catalog_zone_name)
-            .await
-            .map_err(ServiceError::internal)?;
-        (secondaries, notifies)
+        let notifies =
+            notify::send_notify_to_secondaries(cx, &config.dns.catalog_zone_name).await?;
+        let mut transfers = Vec::new();
+        for secondary in secondary::list_enabled(cx).await? {
+            transfers.push(SecondaryTransferSummary {
+                summary: secondary::transfer_summary(cx, &secondary).await?,
+                secondary_name: secondary.name,
+                address: secondary.address.to_string(),
+            });
+        }
+        (secondaries, notifies, transfers)
     };
 
     let response = DaemonDoctorResponse {
         database,
         dns_server,
-        catalog_zone_name: config.dns.catalog_zone_name.clone(),
+        catalog_zone_name: config.dns.catalog_zone_name.to_string(),
         catalog_serial,
         secondaries,
         notifies,
+        transfers,
     };
 
     Ok(DaemonResponse {
         message: "Doctor checks completed".to_string(),
-        data: to_response_data(response)?,
+        data: response,
     })
 }

@@ -1,20 +1,22 @@
+//! Creates, lists, and revokes API tokens.
+
+use bindizr_core::model::api_token::TokenId;
 use chrono::{DateTime, Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
 
-use super::{error::ServiceError, repository::RepositoryService};
+use super::error::ServiceError;
 use crate::{
+    Context,
     authorization::Caller,
+    db,
     model::api_token::ApiToken,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
-    types::{GetTokenResponse, PageFilter, PaginatedResponse},
+    types::{GetTokenResponse, PageFilter, PaginatedResponse, build_page},
 };
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
 const MAX_EXPIRES_IN_DAYS: i64 = 36_500;
-
-/// Creates, lists, and revokes API tokens.
-pub struct TokenService;
 
 /// Hash an API token for storage and lookup.
 pub(crate) fn hash_token(token: &str) -> String {
@@ -23,91 +25,97 @@ pub(crate) fn hash_token(token: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-impl TokenService {
-    /// Create an API token; the secret comes back beside it, shown this once.
-    pub async fn create(
-        caller: &Caller,
-        name: &str,
-        description: Option<&str>,
-        expires_in_days: Option<i64>,
-        is_global: bool,
-    ) -> Result<(ApiToken, String), ServiceError> {
-        caller.authorize_global("manage API tokens")?;
+/// Create an API token; the secret comes back beside it, shown this once.
+pub async fn create(
+    cx: &Context,
+    caller: &Caller,
+    name: &str,
+    description: Option<&str>,
+    expires_in_days: Option<i64>,
+    is_global: bool,
+) -> Result<(ApiToken, String), ServiceError> {
+    caller.authorize_global("manage API tokens")?;
 
-        let name = normalize_token_name(name)?;
-        let description = normalize_description(description, ServiceError::invalid_input)?;
-        let expires_at = normalize_expires_at(expires_in_days)?;
+    let name = normalize_token_name(name)?;
+    let description = normalize_description(description, ServiceError::invalid_input)?;
+    let expires_at = normalize_expires_at(expires_in_days)?;
 
-        // Friendly pre-check; the UNIQUE(name) backstop covers the race.
-        if RepositoryService::get_api_token_by_name(&name)
-            .await?
-            .is_some()
-        {
-            return Err(ServiceError::token_conflict(&name));
-        }
+    // Friendly pre-check; the UNIQUE(name) backstop covers the race.
+    if db::api_token::get_by_name(cx.db(), &name).await?.is_some() {
+        return Err(ServiceError::token_conflict(&name));
+    }
 
-        let raw_token: String = rand::rng()
-            .sample_iter(Alphanumeric)
-            .take(32)
-            .map(char::from)
-            .collect();
+    let raw_token: String = rand::rng()
+        .sample_iter(Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
 
-        let token_hash = hash_token(&raw_token);
+    let token_hash = hash_token(&raw_token);
 
-        let created = RepositoryService::create_api_token(ApiToken {
-            id: 0,
-            name,
+    let created = db::api_token::create(
+        cx.db(),
+        ApiToken {
+            id: TokenId::UNWRITTEN,
+            name: name.clone(),
             token: token_hash,
             description,
             is_global,
             expires_at,
             created_at: Utc::now(),
             last_used_at: None,
-        })
-        .await?;
+        },
+    )
+    .await
+    .map_err(|e| {
+        // A create that raced past the pre-check trips UNIQUE(name); the
+        // backstop reads as the same conflict.
+        if e.is_unique_violation() {
+            ServiceError::token_conflict(&name)
+        } else {
+            e.into()
+        }
+    })?;
 
-        Ok((created, raw_token))
-    }
+    Ok((created, raw_token))
+}
 
-    /// List all API tokens.
-    pub async fn list(
-        caller: &Caller,
-        page: PageFilter,
-    ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
-        caller.authorize_global("manage API tokens")?;
+/// List all API tokens.
+pub async fn list(
+    cx: &Context,
+    caller: &Caller,
+    page: PageFilter,
+) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
+    caller.authorize_global("manage API tokens")?;
 
-        let tokens = RepositoryService::list_api_tokens().await?;
-        PaginatedResponse::from_collection(
-            tokens.iter().map(GetTokenResponse::from_token).collect(),
-            page.limit,
-            page.offset,
-        )
-    }
+    let tokens = db::api_token::list_all(cx.db()).await?;
+    build_page(
+        tokens.iter().map(GetTokenResponse::from).collect(),
+        page.limit,
+        page.offset,
+    )
+}
 
-    /// Create `secret` as a global token named `initial`. The daemon calls
-    /// this only on the startup that built the schema, so a token revoked
-    /// later is never seeded back, and passes a secret the config reader
-    /// Every API token, for the daemon's startup hint.
-    pub async fn count_all() -> Result<u64, ServiceError> {
-        Ok(RepositoryService::list_api_tokens().await?.len() as u64)
-    }
+/// The number of API tokens, read for the daemon's startup hint.
+pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
+    Ok(db::api_token::list_all(cx.db()).await?.len() as u64)
+}
 
-    /// Delete the API token with the given name, returning `NotFound` if it
-    /// is absent.
-    pub async fn delete(caller: &Caller, name: &str) -> Result<(), ServiceError> {
-        caller.authorize_global("manage API tokens")?;
+/// Delete the API token with the given name, returning `NotFound` if it
+/// is absent.
+pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
+    caller.authorize_global("manage API tokens")?;
 
-        let token = Self::lookup_by_name(name).await?;
+    let token = lookup_by_name(cx, name).await?;
 
-        RepositoryService::delete_api_token(token.id).await
-    }
+    Ok(db::api_token::delete(cx.db(), token.id).await?)
+}
 
-    /// Load an API token by name or return a not-found error.
-    pub(crate) async fn lookup_by_name(name: &str) -> Result<ApiToken, ServiceError> {
-        RepositoryService::get_api_token_by_name(&normalize_token_name(name)?)
-            .await?
-            .ok_or_else(|| ServiceError::token_not_found(name))
-    }
+/// Load an API token by name or return a not-found error.
+pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceError> {
+    db::api_token::get_by_name(cx.db(), &normalize_token_name(name)?)
+        .await?
+        .ok_or_else(|| ServiceError::token_not_found(name))
 }
 
 /// Lowercased so one name means one token on every backend (MySQL compares

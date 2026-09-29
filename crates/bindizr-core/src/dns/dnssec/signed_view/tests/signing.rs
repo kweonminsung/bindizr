@@ -1,18 +1,22 @@
 use super::*;
+use crate::{
+    dns::SoaInterval,
+    model::{record::RecordId, zone::ZoneId},
+};
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 3600,
-        serial: 5,
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
-        minimum_ttl: 900,
+        default_ttl: Ttl::from_secs(3600),
+        serial: Serial::from(5),
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
+        minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -25,7 +29,7 @@ fn test_zone() -> Zone {
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
-        id: 0,
+        id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
@@ -33,10 +37,10 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
         },
         record_type,
         value: value.to_string(),
-        ttl,
+        ttl: Ttl::try_from(ttl).unwrap(),
         priority: None,
         created_at: Utc::now(),
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
     }
 }
 
@@ -51,7 +55,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
         DnssecKeyState::Active,
     )];
     let records = [
-        test_record("@", RecordType::NS, "ns1.example.com", 3600),
+        test_record("@", RecordType::Ns, "ns1.example.com", 3600),
         test_record("www", RecordType::A, "192.0.2.10", 300),
     ];
 
@@ -64,7 +68,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     assert!(diff.removed.is_empty());
@@ -96,7 +100,7 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
         "last NSEC must wrap around to the apex"
     );
     // NSEC TTL is min(SOA TTL, SOA MINIMUM) per RFC 9077.
-    assert!(nsecs.iter().all(|row| row.ttl == 900));
+    assert!(nsecs.iter().all(|row| row.ttl == Ttl::from_secs(900)));
 
     // RRSIGs: SOA, DNSKEY, CDS, CDNSKEY, apex NS, apex NSEC, www A, www NSEC.
     let rrsigs = records_of_type(&diff.added, DnssecRecordType::Rrsig);
@@ -111,13 +115,18 @@ fn initial_signing_emits_key_record_sets_nsec_chain_and_rrsigs() {
         rrsigs_covering(
             &diff.added,
             &apex,
-            DnssecRecordType::Dnskey.wire_type() as i32
+            i32::from(DnssecRecordType::Dnskey.wire_type())
         )
         .len(),
         1
     );
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Cds.wire_type() as i32).len(),
+        rrsigs_covering(
+            &diff.added,
+            &apex,
+            i32::from(DnssecRecordType::Cds.wire_type())
+        )
+        .len(),
         1
     );
     assert_eq!(rrsigs_covering(&diff.added, &apex, RECORD_TYPE_NS).len(), 1);
@@ -137,7 +146,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
         DnssecKeyState::Active,
     )];
     let records = [
-        test_record("@", RecordType::NS, "ns1.example.com", 3600),
+        test_record("@", RecordType::Ns, "ns1.example.com", 3600),
         test_record("www", RecordType::A, "192.0.2.10", 300),
     ];
 
@@ -150,7 +159,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     assert!(records_of_type(&diff.added, DnssecRecordType::Nsec).is_empty());
@@ -171,7 +180,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
             rrsigs_covering(
                 &diff.added,
                 &row.name,
-                DnssecRecordType::Nsec3.wire_type() as i32
+                i32::from(DnssecRecordType::Nsec3.wire_type())
             )
             .len(),
             1
@@ -181,7 +190,7 @@ fn nsec3_mode_builds_hashed_chain_with_nsec3param() {
         rrsigs_covering(
             &diff.added,
             &OwnerName::apex(),
-            DnssecRecordType::Nsec3param.wire_type() as i32
+            i32::from(DnssecRecordType::Nsec3param.wire_type())
         )
         .len(),
         1
@@ -199,11 +208,11 @@ fn delegation_ns_and_glue_are_unsigned() {
         DnssecKeyState::Active,
     )];
     let records = [
-        test_record("@", RecordType::NS, "ns1.example.com", 3600),
-        test_record("sub", RecordType::NS, "ns.sub.example.com", 3600),
+        test_record("@", RecordType::Ns, "ns1.example.com", 3600),
+        test_record("sub", RecordType::Ns, "ns.sub.example.com", 3600),
         test_record(
             "sub",
-            RecordType::DS,
+            RecordType::Ds,
             "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383",
             3600,
         ),
@@ -221,7 +230,7 @@ fn delegation_ns_and_glue_are_unsigned() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     let sub = OwnerName::parse_in_zone("sub", &zone.name).unwrap();
@@ -260,7 +269,7 @@ fn mixed_ttl_record_set_signs_at_the_minimum() {
         DnssecKeyState::Active,
     )];
     let records = [
-        test_record("@", RecordType::NS, "ns1.example.com", 3600),
+        test_record("@", RecordType::Ns, "ns1.example.com", 3600),
         test_record("www", RecordType::A, "192.0.2.10", 600),
         test_record("www", RecordType::A, "192.0.2.11", 300),
     ];
@@ -274,13 +283,13 @@ fn mixed_ttl_record_set_signs_at_the_minimum() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     let www = OwnerName::parse_in_zone("www", &zone.name).unwrap();
     let rrsig = rrsigs_covering(&diff.added, &www, RECORD_TYPE_A);
     assert_eq!(rrsig.len(), 1);
-    assert_eq!(rrsig[0].ttl, 300);
+    assert_eq!(rrsig[0].ttl, Ttl::from_secs(300));
 }
 
 /// Verify that withdrawal publishes the delete CDS pair.
@@ -293,12 +302,12 @@ fn withdrawal_publishes_the_delete_cds_pair() {
         DnssecKeyRole::Csk,
         DnssecKeyState::Active,
     )];
-    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+    let records = [test_record("@", RecordType::Ns, "ns1.example.com", 3600)];
 
     let now = fixed_now();
     let diff = SignedViewParams {
         zone: &zone,
-        new_serial: 2,
+        new_serial: Serial::from(2),
         records: &records,
         keys: &keys,
         prev: &[],
@@ -308,7 +317,7 @@ fn withdrawal_publishes_the_delete_cds_pair() {
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
         refresh_secs: 5 * 86_400,
-        force: false,
+        pass: SigningPass::Refresh,
         withdraw_parent_ds: true,
     }
     .compute()

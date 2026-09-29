@@ -19,13 +19,17 @@ use std::{
     io,
     os::unix::fs::{FileTypeExt, PermissionsExt},
     path::Path,
+    sync::Arc,
 };
 
-use bindizr_service::{error::ServiceError, types::ErrorResponse};
+use bindizr_service::{Context, error::ServiceError, types::ErrorResponse};
+use control::DaemonControl;
+use thiserror::Error;
 use tokio::{
     fs,
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{UnixListener, UnixStream},
+    sync::mpsc,
     task::JoinHandle,
 };
 
@@ -33,7 +37,7 @@ use crate::{
     shutdown::Shutdown,
     socket::{
         FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_peer, read_own_uid,
-        types::{DaemonCommand, DaemonCommandKind},
+        types::{DaemonCommand, DaemonResponse},
     },
 };
 
@@ -42,8 +46,52 @@ use crate::{
 /// zone-file content arrives JSON-escaped, roughly doubling in the worst case.
 const MAX_COMMAND_LINE_BYTES: u64 = 64 * 1024 * 1024;
 
+/// Why the control socket could not be bound.
+#[derive(Debug, Error)]
+pub(crate) enum BindSocketError {
+    /// Another daemon answers on the socket; its message is the io error's.
+    #[error("{0}")]
+    InUse(#[source] io::Error),
+    /// Every candidate path failed, each with its reason.
+    #[error("Failed to bind the daemon Unix socket ({})", failures.iter().map(|(path, e)| format!("'{path}': {e}")).collect::<Vec<_>>().join("; "))]
+    Unavailable { failures: Vec<(String, io::Error)> },
+}
+
+/// Why the bound socket could not be served.
+#[derive(Debug, Error)]
+pub(crate) enum ServeSocketError {
+    #[error("Failed to read the daemon's uid: {0}")]
+    ReadUid(#[source] io::Error),
+}
+
+/// The socket front end's context: the daemon's, plus the control channel
+/// the lifecycle loop awaits. A command handler takes the daemon's context;
+/// only a control command needs this one.
+#[derive(Debug)]
+pub(crate) struct SocketContext {
+    daemon: Arc<Context>,
+    control: mpsc::Sender<DaemonControl>,
+}
+
+impl SocketContext {
+    /// The front end's context over the daemon's.
+    pub(crate) fn new(daemon: Arc<Context>, control: mpsc::Sender<DaemonControl>) -> Self {
+        SocketContext { daemon, control }
+    }
+
+    /// The daemon's context.
+    pub(crate) fn daemon(&self) -> &Context {
+        &self.daemon
+    }
+
+    /// The sender a shutdown or restart request goes down.
+    pub(crate) fn control(&self) -> &mpsc::Sender<DaemonControl> {
+        &self.control
+    }
+}
+
 /// Dispatch a control request and send its JSON response.
-async fn handle_client(stream: UnixStream) {
+async fn handle_client(socket_cx: &SocketContext, stream: UnixStream) {
     let mut reader = BufReader::new(stream).take(MAX_COMMAND_LINE_BYTES);
     let mut line = String::new();
 
@@ -54,123 +102,15 @@ async fn handle_client(stream: UnixStream) {
             return;
         }
 
-        let parsed: Result<DaemonCommand, _> = serde_json::from_str(&line);
-
-        let raw_response = match parsed {
-            Ok(cmd) => match cmd.command {
-                DaemonCommandKind::Status => status::handle_status().await,
-                DaemonCommandKind::Config => status::config(),
-                DaemonCommandKind::ReloadConfig => status::reload_config(),
-                DaemonCommandKind::CreateToken => token::create_token(&cmd.data).await,
-                DaemonCommandKind::ListTokens => token::list_tokens(&cmd.data).await,
-                DaemonCommandKind::DeleteToken => token::delete_token(&cmd.data).await,
-                DaemonCommandKind::CreateSecondary => secondary::create_secondary(&cmd.data).await,
-                DaemonCommandKind::ListSecondaries => secondary::list_secondaries(&cmd.data).await,
-                DaemonCommandKind::GetSecondary => secondary::get_secondary(&cmd.data).await,
-                DaemonCommandKind::UpdateSecondary => secondary::update_secondary(&cmd.data).await,
-                DaemonCommandKind::DeleteSecondary => secondary::delete_secondary(&cmd.data).await,
-                DaemonCommandKind::CheckSecondary => secondary::check_secondary(&cmd.data).await,
-                DaemonCommandKind::CreateTsigKey => tsig_key::create_tsig_key(&cmd.data).await,
-                DaemonCommandKind::ListTsigKeys => tsig_key::list_tsig_keys(&cmd.data).await,
-                DaemonCommandKind::GetTsigKey => tsig_key::get_tsig_key(&cmd.data).await,
-                DaemonCommandKind::DeleteTsigKey => tsig_key::delete_tsig_key(&cmd.data).await,
-                DaemonCommandKind::CreateDnssecPolicy => {
-                    dnssec_policy::create_dnssec_policy(&cmd.data).await
-                }
-                DaemonCommandKind::ListDnssecPolicies => {
-                    dnssec_policy::list_dnssec_policies(&cmd.data).await
-                }
-                DaemonCommandKind::GetDnssecPolicy => {
-                    dnssec_policy::get_dnssec_policy(&cmd.data).await
-                }
-                DaemonCommandKind::UpdateDnssecPolicy => {
-                    dnssec_policy::update_dnssec_policy(&cmd.data).await
-                }
-                DaemonCommandKind::DeleteDnssecPolicy => {
-                    dnssec_policy::delete_dnssec_policy(&cmd.data).await
-                }
-                DaemonCommandKind::CreateTsigGrant => tsig_key::create_tsig_grant(&cmd.data).await,
-                DaemonCommandKind::ListTsigGrants => tsig_key::list_tsig_grants(&cmd.data).await,
-                DaemonCommandKind::ListZoneTsigGrants => {
-                    tsig_key::list_zone_tsig_grants(&cmd.data).await
-                }
-                DaemonCommandKind::DeleteTsigGrant => tsig_key::delete_tsig_grant(&cmd.data).await,
-                DaemonCommandKind::DeleteTsigGrantsByKeyAndZone => {
-                    tsig_key::delete_tsig_grants_by_key_and_zone(&cmd.data).await
-                }
-                DaemonCommandKind::CreateTokenGrant => token::create_token_grant(&cmd.data).await,
-                DaemonCommandKind::ListTokenGrants => token::list_token_grants(&cmd.data).await,
-                DaemonCommandKind::ListZoneTokenGrants => {
-                    token::list_zone_token_grants(&cmd.data).await
-                }
-                DaemonCommandKind::DeleteTokenGrant => token::delete_token_grant(&cmd.data).await,
-                DaemonCommandKind::DeleteTokenGrantsByTokenAndZone => {
-                    token::delete_token_grants_by_token_and_zone(&cmd.data).await
-                }
-                DaemonCommandKind::GetZone => zone::get_zone(&cmd.data).await,
-                DaemonCommandKind::ListZones => zone::list_zones(&cmd.data).await,
-                DaemonCommandKind::CreateZone => zone::create_zone(&cmd.data).await,
-                DaemonCommandKind::UpdateZone => zone::update_zone(&cmd.data).await,
-                DaemonCommandKind::DeleteZone => zone::delete_zone(&cmd.data).await,
-                DaemonCommandKind::GetRecord => record::get_record(&cmd.data).await,
-                DaemonCommandKind::ListRecords => record::list_records(&cmd.data).await,
-                DaemonCommandKind::CreateRecord => record::create_record(&cmd.data).await,
-                DaemonCommandKind::UpdateRecord => record::update_record(&cmd.data).await,
-                DaemonCommandKind::UpdateRecordByName => {
-                    record::update_record_by_name(&cmd.data).await
-                }
-                DaemonCommandKind::CreateRecordsBulk => {
-                    record::create_records_bulk(&cmd.data).await
-                }
-                DaemonCommandKind::DeleteRecord => record::delete_record(&cmd.data).await,
-                DaemonCommandKind::DeleteRecordsMatching => {
-                    record::delete_records_matching(&cmd.data).await
-                }
-                DaemonCommandKind::NotifyAllZones => notify::notify_all_zones(&cmd.data).await,
-                DaemonCommandKind::NotifyZone => notify::notify_zone(&cmd.data).await,
-                DaemonCommandKind::ImportZone => zone::import_zone(&cmd.data).await,
-                DaemonCommandKind::ExportZone => zone::export_zone(&cmd.data).await,
-                DaemonCommandKind::ListZoneVersions => zone::list_zone_versions(&cmd.data).await,
-                DaemonCommandKind::GetZoneVersion => zone::get_zone_version(&cmd.data).await,
-                DaemonCommandKind::DiffZoneVersions => zone::diff_zone_versions(&cmd.data).await,
-                DaemonCommandKind::RollbackZone => zone::rollback_zone(&cmd.data).await,
-                DaemonCommandKind::GetZoneStatus => zone::get_zone_status(&cmd.data).await,
-                DaemonCommandKind::EnableDnssec => dnssec::enable_dnssec(&cmd.data).await,
-                DaemonCommandKind::DisableDnssec => dnssec::disable_dnssec(&cmd.data).await,
-                DaemonCommandKind::GetDnssecStatus => dnssec::get_dnssec_status(&cmd.data).await,
-                DaemonCommandKind::SignZone => dnssec::sign_zone(&cmd.data).await,
-                DaemonCommandKind::StartDnssecRollover => {
-                    dnssec::start_dnssec_rollover(&cmd.data).await
-                }
-                DaemonCommandKind::WithdrawDnssec => dnssec::withdraw_dnssec(&cmd.data).await,
-                DaemonCommandKind::CancelDnssecWithdrawal => {
-                    dnssec::cancel_dnssec_withdrawal(&cmd.data).await
-                }
-                DaemonCommandKind::UpdateDnssecSettings => {
-                    dnssec::update_dnssec_settings(&cmd.data).await
-                }
-                DaemonCommandKind::CheckDnssecDs => dnssec::check_dnssec_ds(&cmd.data).await,
-                DaemonCommandKind::ExportDnssecKeys => dnssec::export_dnssec_keys(&cmd.data).await,
-                DaemonCommandKind::ImportDnssecKeys => dnssec::import_dnssec_keys(&cmd.data).await,
-                DaemonCommandKind::DsSeenDnssecRollover => {
-                    dnssec::ds_seen_dnssec_rollover(&cmd.data).await
-                }
-                DaemonCommandKind::Doctor => doctor::check_installation().await,
-                DaemonCommandKind::Shutdown => control::shutdown(),
-                DaemonCommandKind::Restart => control::restart(),
-            },
-
+        let response = match serde_json::from_str::<DaemonCommand>(&line) {
+            Ok(command) => handle_command(socket_cx, command).await,
             Err(e) => {
                 log::error!("Failed to parse command: {}", e);
-                Err(ServiceError::invalid_input("Failed to parse command"))
+                encode_error(&ServiceError::invalid_input(format!(
+                    "Failed to parse command: {}",
+                    e
+                )))
             }
-        };
-
-        let response = match raw_response {
-            Ok(res) => serde_json::to_string(&res).unwrap_or_else(|_| {
-                error_response_json(&ServiceError::internal("Failed to serialize response"))
-            }),
-            Err(e) => error_response_json(&e),
         };
 
         let mut stream = reader.into_inner().into_inner();
@@ -185,8 +125,12 @@ async fn handle_client(stream: UnixStream) {
 /// The daemon removes the socket file once everything has drained: `bindizr
 /// stop` waits for it to disappear, so removing it earlier would report a stop
 /// that is still in progress.
-pub(crate) fn serve(listener: UnixListener, shutdown: &Shutdown) -> Result<JoinHandle<()>, String> {
-    let own_uid = read_own_uid().map_err(|e| format!("Failed to read the daemon's uid: {}", e))?;
+pub(crate) fn serve(
+    socket_cx: Arc<SocketContext>,
+    listener: UnixListener,
+    shutdown: &Shutdown,
+) -> Result<JoinHandle<()>, ServeSocketError> {
+    let own_uid = read_own_uid().map_err(ServeSocketError::ReadUid)?;
     let stop = shutdown.waiter();
     Ok(tokio::spawn(async move {
         tokio::pin!(stop);
@@ -201,8 +145,9 @@ pub(crate) fn serve(listener: UnixListener, shutdown: &Shutdown) -> Result<JoinH
                 // Connecting grants global access, so the peer is checked before a byte is read.
                 Ok((stream, _)) => match stream.peer_cred() {
                     Ok(peer) if is_trusted_peer(peer.uid(), own_uid) => {
+                        let socket_cx = socket_cx.clone();
                         tokio::spawn(async move {
-                            handle_client(stream).await;
+                            handle_client(&socket_cx, stream).await;
                         });
                     }
                     Ok(peer) => {
@@ -241,7 +186,7 @@ const SOCKET_PATH_CANDIDATES: [&str; 2] = [SOCKET_FILE_PATH, FALLBACK_SOCKET_FIL
 
 /// Bind the daemon's configured control socket. Owning it is what refuses a
 /// second daemon, so the daemon binds before anything else it would share.
-pub(crate) async fn bind() -> Result<(String, UnixListener), String> {
+pub(crate) async fn bind() -> Result<(String, UnixListener), BindSocketError> {
     let mut failures = Vec::new();
 
     for (i, path) in SOCKET_PATH_CANDIDATES.iter().enumerate() {
@@ -249,7 +194,9 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), String> {
             Ok(listener) => return Ok(((*path).to_string(), listener)),
             // Another daemon already owns this socket. Trying the next candidate
             // would start a second daemon instead of reporting the conflict.
-            Err(err) if err.kind() == io::ErrorKind::AddrInUse => return Err(err.to_string()),
+            Err(err) if err.kind() == io::ErrorKind::AddrInUse => {
+                return Err(BindSocketError::InUse(err));
+            }
             Err(err) => err,
         };
 
@@ -261,13 +208,9 @@ pub(crate) async fn bind() -> Result<(String, UnixListener), String> {
                 next
             );
         }
-        failures.push(format!("'{}': {}", path, err));
+        failures.push((path.to_string(), err));
     }
-
-    Err(format!(
-        "Failed to bind the daemon Unix socket ({})",
-        failures.join("; ")
-    ))
+    Err(BindSocketError::Unavailable { failures })
 }
 
 /// Bind a Unix listener at the requested path.
@@ -316,25 +259,231 @@ async fn prepare_socket_path(socket_path: &str) -> io::Result<()> {
     }
 }
 
-/// Deserialize a command payload into its typed parameter struct, so missing
-/// and wrongly typed fields are rejected instead of silently defaulting.
-pub(crate) fn parse_params<T: serde::de::DeserializeOwned>(
-    data: &serde_json::Value,
-) -> Result<T, ServiceError> {
-    serde_json::from_value(data.clone())
-        .map_err(|e| ServiceError::invalid_input(format!("Invalid command payload: {}", e)))
+/// Run one command and encode its answer as the line the client reads.
+async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> String {
+    let cx = socket_cx.daemon();
+    match command {
+        DaemonCommand::Status => encode_response(status::handle_status(cx).await),
+        DaemonCommand::Config => encode_response(Ok(status::config(cx))),
+        DaemonCommand::ReloadConfig => encode_response(status::reload_config(cx)),
+        DaemonCommand::Doctor => encode_response(doctor::check_installation(cx).await),
+        DaemonCommand::Shutdown => encode_response(Ok(control::shutdown(socket_cx))),
+        DaemonCommand::Restart => encode_response(Ok(control::restart(socket_cx))),
+        DaemonCommand::CreateToken(request) => {
+            encode_response(token::create_token(cx, &request).await)
+        }
+        DaemonCommand::ListTokens(page) => encode_response(token::list_tokens(cx, page).await),
+        DaemonCommand::DeleteToken { name } => {
+            encode_response(token::delete_token(cx, &name).await)
+        }
+        DaemonCommand::CreateTokenGrant {
+            token_name,
+            request,
+        } => encode_response(token::create_token_grant(cx, &token_name, &request).await),
+        DaemonCommand::ListTokenGrants { token_name, page } => {
+            encode_response(token::list_token_grants(cx, &token_name, page).await)
+        }
+        DaemonCommand::ListZoneTokenGrants { zone_name, page } => {
+            encode_response(token::list_zone_token_grants(cx, &zone_name, page).await)
+        }
+        DaemonCommand::DeleteTokenGrant { id } => {
+            encode_response(token::delete_token_grant(cx, id).await)
+        }
+        DaemonCommand::DeleteTokenGrantsByTokenAndZone {
+            token_name,
+            zone_name,
+        } => encode_response(
+            token::delete_token_grants_by_token_and_zone(cx, &token_name, &zone_name).await,
+        ),
+        DaemonCommand::CreateTsigKey(request) => {
+            encode_response(tsig_key::create_tsig_key(cx, &request).await)
+        }
+        DaemonCommand::ListTsigKeys(page) => {
+            encode_response(tsig_key::list_tsig_keys(cx, page).await)
+        }
+        DaemonCommand::GetTsigKey { name } => {
+            encode_response(tsig_key::get_tsig_key(cx, &name).await)
+        }
+        DaemonCommand::DeleteTsigKey { name } => {
+            encode_response(tsig_key::delete_tsig_key(cx, &name).await)
+        }
+        DaemonCommand::CreateTsigGrant { key_name, request } => {
+            encode_response(tsig_key::create_tsig_grant(cx, &key_name, &request).await)
+        }
+        DaemonCommand::ListTsigGrants { key_name, page } => {
+            encode_response(tsig_key::list_tsig_grants(cx, &key_name, page).await)
+        }
+        DaemonCommand::ListZoneTsigGrants { zone_name, page } => {
+            encode_response(tsig_key::list_zone_tsig_grants(cx, &zone_name, page).await)
+        }
+        DaemonCommand::DeleteTsigGrant { id } => {
+            encode_response(tsig_key::delete_tsig_grant(cx, id).await)
+        }
+        DaemonCommand::DeleteTsigGrantsByKeyAndZone {
+            key_name,
+            zone_name,
+        } => encode_response(
+            tsig_key::delete_tsig_grants_by_key_and_zone(cx, &key_name, &zone_name).await,
+        ),
+        DaemonCommand::CreateSecondary(request) => {
+            encode_response(secondary::create_secondary(cx, &request).await)
+        }
+        DaemonCommand::ListSecondaries(page) => {
+            encode_response(secondary::list_secondaries(cx, page).await)
+        }
+        DaemonCommand::GetSecondary { name } => {
+            encode_response(secondary::get_secondary(cx, &name).await)
+        }
+        DaemonCommand::UpdateSecondary { name, request } => {
+            encode_response(secondary::update_secondary(cx, &name, request).await)
+        }
+        DaemonCommand::DeleteSecondary { name } => {
+            encode_response(secondary::delete_secondary(cx, &name).await)
+        }
+        DaemonCommand::CheckSecondary { name } => {
+            encode_response(secondary::check_secondary(cx, &name).await)
+        }
+        DaemonCommand::ListSecondaryTransfers { name, filter } => {
+            encode_response(secondary::list_secondary_transfers(cx, &name, filter).await)
+        }
+        DaemonCommand::CreateDnssecPolicy(request) => {
+            encode_response(dnssec_policy::create_dnssec_policy(cx, request).await)
+        }
+        DaemonCommand::ListDnssecPolicies(page) => {
+            encode_response(dnssec_policy::list_dnssec_policies(cx, page).await)
+        }
+        DaemonCommand::GetDnssecPolicy { name } => {
+            encode_response(dnssec_policy::get_dnssec_policy(cx, &name).await)
+        }
+        DaemonCommand::UpdateDnssecPolicy { name, request } => {
+            encode_response(dnssec_policy::update_dnssec_policy(cx, &name, request).await)
+        }
+        DaemonCommand::DeleteDnssecPolicy { name } => {
+            encode_response(dnssec_policy::delete_dnssec_policy(cx, &name).await)
+        }
+        DaemonCommand::CreateZone(request) => {
+            encode_response(zone::create_zone(cx, &request).await)
+        }
+        DaemonCommand::ListZones(filter) => encode_response(zone::list_zones(cx, filter).await),
+        DaemonCommand::GetZone { name } => encode_response(zone::get_zone(cx, &name).await),
+        DaemonCommand::UpdateZone { zone_name, request } => {
+            encode_response(zone::update_zone(cx, &zone_name, &request).await)
+        }
+        DaemonCommand::DeleteZone { name, run } => {
+            encode_response(zone::delete_zone(cx, &name, run).await)
+        }
+        DaemonCommand::ImportZone { zone_name, request } => {
+            encode_response(zone::import_zone(cx, &zone_name, &request).await)
+        }
+        DaemonCommand::ExportZone { name, view } => {
+            encode_response(zone::export_zone(cx, &name, view).await)
+        }
+        DaemonCommand::GetZoneStatus { name } => {
+            encode_response(zone::get_zone_status(cx, &name).await)
+        }
+        DaemonCommand::NotifyZone { zone_name, serial } => {
+            encode_response(notify::notify_zone(cx, &zone_name, serial).await)
+        }
+        DaemonCommand::NotifyAllZones { serial } => {
+            encode_response(notify::notify_all_zones(cx, serial).await)
+        }
+        DaemonCommand::ListZoneVersions {
+            name,
+            limit,
+            offset,
+            scope,
+        } => encode_response(zone::list_zone_versions(cx, &name, limit, offset, scope).await),
+        DaemonCommand::GetZoneVersion { name, serial } => {
+            encode_response(zone::get_zone_version(cx, &name, serial).await)
+        }
+        DaemonCommand::DiffZoneVersions {
+            name,
+            from_serial,
+            to_serial,
+        } => encode_response(zone::diff_zone_versions(cx, &name, from_serial, to_serial).await),
+        DaemonCommand::RollbackZone { name, serial, run } => {
+            encode_response(zone::rollback_zone(cx, &name, serial, run).await)
+        }
+        DaemonCommand::CreateRecord(request) => {
+            encode_response(record::create_record(cx, &request).await)
+        }
+        DaemonCommand::CreateRecordsBulk(request) => {
+            encode_response(record::create_records_bulk(cx, &request).await)
+        }
+        DaemonCommand::ListRecords(filter) => {
+            encode_response(record::list_records(cx, filter).await)
+        }
+        DaemonCommand::GetRecord { id } => encode_response(record::get_record(cx, id).await),
+        DaemonCommand::UpdateRecord { id, request } => {
+            encode_response(record::update_record(cx, id, &request).await)
+        }
+        DaemonCommand::UpdateRecordByName {
+            zone_name,
+            record_name,
+            request,
+        } => encode_response(
+            record::update_record_by_name(cx, &zone_name, &record_name, &request).await,
+        ),
+        DaemonCommand::DeleteRecord { id, run } => {
+            encode_response(record::delete_record(cx, id, run).await)
+        }
+        DaemonCommand::DeleteRecordsMatching(filter) => {
+            encode_response(record::delete_records_matching(cx, &filter).await)
+        }
+        DaemonCommand::EnableDnssec { zone_name, request } => {
+            encode_response(dnssec::enable_dnssec(cx, &zone_name, &request).await)
+        }
+        DaemonCommand::DisableDnssec {
+            zone_name,
+            ds_check,
+        } => encode_response(dnssec::disable_dnssec(cx, &zone_name, ds_check).await),
+        DaemonCommand::GetDnssecStatus { name } => {
+            encode_response(dnssec::get_dnssec_status(cx, &name).await)
+        }
+        DaemonCommand::SignZone { name } => encode_response(dnssec::sign_zone(cx, &name).await),
+        DaemonCommand::StartDnssecRollover { zone_name, request } => {
+            encode_response(dnssec::start_dnssec_rollover(cx, &zone_name, &request).await)
+        }
+        DaemonCommand::AdvanceDnssecRollover {
+            zone_name,
+            ds_check,
+            holddown,
+        } => encode_response(
+            dnssec::advance_dnssec_rollover(cx, &zone_name, ds_check, holddown).await,
+        ),
+        DaemonCommand::WithdrawDnssec { name } => {
+            encode_response(dnssec::withdraw_dnssec(cx, &name).await)
+        }
+        DaemonCommand::CancelDnssecWithdrawal { name } => {
+            encode_response(dnssec::cancel_dnssec_withdrawal(cx, &name).await)
+        }
+        DaemonCommand::UpdateDnssecSettings { zone_name, request } => {
+            encode_response(dnssec::update_dnssec_settings(cx, &zone_name, &request).await)
+        }
+        DaemonCommand::CheckDnssecDs { name } => {
+            encode_response(dnssec::check_dnssec_ds(cx, &name).await)
+        }
+        DaemonCommand::ExportDnssecKeys { name } => {
+            encode_response(dnssec::export_dnssec_keys(cx, &name).await)
+        }
+        DaemonCommand::ImportDnssecKeys { zone_name, request } => {
+            encode_response(dnssec::import_dnssec_keys(cx, &zone_name, request).await)
+        }
+    }
 }
 
-/// Serialize a handler result into the `DaemonResponse` data payload.
-pub(crate) fn to_response_data<T: serde::Serialize>(
-    value: T,
-) -> Result<serde_json::Value, ServiceError> {
-    serde_json::to_value(value)
-        .map_err(|e| ServiceError::internal(format!("Failed to serialize response: {}", e)))
+/// Encode a handler's response, or the error it failed with, as one JSON line.
+fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, ServiceError>) -> String {
+    match result {
+        Ok(response) => serde_json::to_string(&response).unwrap_or_else(|_| {
+            encode_error(&ServiceError::internal("Failed to serialize response"))
+        }),
+        Err(e) => encode_error(&e),
+    }
 }
 
-/// Serialize a service error as a control response.
-fn error_response_json(err: &ServiceError) -> String {
+/// Encode a service error as one JSON line.
+fn encode_error(err: &ServiceError) -> String {
     serde_json::to_string(&ErrorResponse::new(err)).unwrap_or_else(|_| {
         r#"{"error":"Failed to serialize error response","code":"INTERNAL"}"#.to_string()
     })

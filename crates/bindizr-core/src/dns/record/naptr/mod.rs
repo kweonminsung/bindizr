@@ -1,13 +1,15 @@
 mod regexp;
 
+pub use regexp::NaptrRegexpError;
 use regexp::validate_naptr_regexp;
 
 use super::{
-    Rdata, to_quoted_charstr,
+    EncodeRdataError, ParseRecordValueError, Rdata, to_quoted_charstr,
     value::{parse_char_string, parse_u16_record_field, validate_domain_record_value},
 };
 use crate::dns::name::{encode_name, to_fqdn_lowercase};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NaptrRecordValue<'a> {
     order: u16,
     preference: u16,
@@ -21,7 +23,7 @@ impl<'a> NaptrRecordValue<'a> {
     /// `<order> <preference> "<flags>" "<services>" "<regexp>" <replacement>`
     /// (RFC 3403, Section 4.1). Both numbers stay inline; NAPTR orders by two
     /// fields, so neither fits the single priority column.
-    pub fn parse(value: &'a str) -> Result<Self, String> {
+    pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
         let rest = value.trim_start();
         let (order, rest) = parse_field("NAPTR order", rest)?;
         let (preference, rest) = parse_field("NAPTR preference", rest)?;
@@ -31,9 +33,9 @@ impl<'a> NaptrRecordValue<'a> {
 
         let replacement = rest.trim();
         if replacement.is_empty() || replacement.split_whitespace().count() != 1 {
-            return Err(format!(
-                "NAPTR record value must be '<order> <preference> \"<flags>\" \"<services>\" \"<regexp>\" <replacement>': {value}"
-            ));
+            return Err(ParseRecordValueError::NaptrShape {
+                value: value.to_string(),
+            });
         }
 
         Ok(Self {
@@ -47,7 +49,7 @@ impl<'a> NaptrRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 3403, Section 4.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub(crate) fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(4);
         rdata.extend_from_slice(&self.order.to_be_bytes());
         rdata.extend_from_slice(&self.preference.to_be_bytes());
@@ -57,7 +59,7 @@ impl<'a> NaptrRecordValue<'a> {
             ("NAPTR regexp", &self.regexp),
         ] {
             let len = u8::try_from(text.len())
-                .map_err(|_| format!("{field} must be 255 bytes or less"))?;
+                .map_err(|_| ParseRecordValueError::CharStringTooLong { field })?;
             rdata.push(len);
             rdata.extend_from_slice(text.as_bytes());
         }
@@ -66,7 +68,7 @@ impl<'a> NaptrRecordValue<'a> {
     }
 
     /// Validate the fields of this NAPTR value.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), ParseRecordValueError> {
         validate_naptr_regexp(&self.regexp)?;
 
         // The replacement is a name or the root, which ends the rewrite chain.
@@ -75,10 +77,7 @@ impl<'a> NaptrRecordValue<'a> {
         }
         // RFC 3403, Section 4.1: the two are mutually exclusive.
         if !self.regexp.is_empty() {
-            return Err(
-                "NAPTR record replacement must be '.' when the regexp is set (RFC 3403, Section 4.1)"
-                    .to_string(),
-            );
+            return Err(ParseRecordValueError::NaptrReplacementWithRegexp);
         }
 
         validate_domain_record_value("NAPTR record replacement", self.replacement)
@@ -106,11 +105,11 @@ impl<'a> NaptrRecordValue<'a> {
         services: &[u8],
         regexp: &[u8],
         replacement: &'a str,
-    ) -> Result<Self, String> {
-        let to_text = |field: &str, bytes: &[u8]| {
+    ) -> Result<Self, ParseRecordValueError> {
+        let to_text = |field: &'static str, bytes: &[u8]| {
             std::str::from_utf8(bytes)
                 .map(str::to_string)
-                .map_err(|_| format!("{field} must be valid UTF-8"))
+                .map_err(|_| ParseRecordValueError::NotUtf8 { field })
         };
 
         Ok(Self {
@@ -125,10 +124,13 @@ impl<'a> NaptrRecordValue<'a> {
 }
 
 /// One whitespace-separated field and the rest of the value.
-fn parse_field<'a>(field: &str, input: &'a str) -> Result<(&'a str, &'a str), String> {
+fn parse_field<'a>(
+    field: &'static str,
+    input: &'a str,
+) -> Result<(&'a str, &'a str), ParseRecordValueError> {
     let end = input
         .find(char::is_whitespace)
-        .ok_or_else(|| format!("NAPTR record value ends before {field}"))?;
+        .ok_or(ParseRecordValueError::NaptrEndsBefore { field })?;
 
     Ok((&input[..end], input[end..].trim_start()))
 }
@@ -136,6 +138,7 @@ fn parse_field<'a>(field: &str, input: &'a str) -> Result<(&'a str, &'a str), St
 #[cfg(test)]
 mod tests {
     use super::NaptrRecordValue;
+    use crate::dns::record::ParseRecordValueError;
 
     /// Verify NAPTR parsing and replacement-name canonicalization.
     #[test]
@@ -191,7 +194,10 @@ mod tests {
         let parsed = NaptrRecordValue::parse("10 10 \"u\" \"E2U+sip\" \"garbage\" .").unwrap();
 
         let err = parsed.validate().unwrap_err();
-        assert!(err.starts_with("NAPTR regexp"), "{err}");
+        assert!(
+            matches!(err, ParseRecordValueError::NaptrRegexp(_)),
+            "{err}"
+        );
     }
 
     /// Verify that a regexp and a replacement name together are rejected.

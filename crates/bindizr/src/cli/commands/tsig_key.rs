@@ -1,7 +1,7 @@
-use bindizr_core::{errln, outln};
+use bindizr_core::{errln, model::tsig_grant::TsigGrantId, outln};
 use bindizr_service::types::{
-    CreateGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse, PageFilter,
-    PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
+    CreateGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
+    MessageResponse, PageFilter, PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
 };
 use clap::Subcommand;
 
@@ -9,17 +9,10 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            OutputFormat, TsigGrantRow, TsigKeyRow, parse_payload, print_payload, print_response,
+            OutputFormat, TsigGrantRow, TsigKeyRow, print_page, print_payload, print_response,
         },
     },
-    params::{IdParams, NameParams},
-    socket::{
-        client,
-        types::{
-            CreateTsigGrantParams, DaemonCommandKind, DeleteTsigGrantsByKeyAndZoneParams,
-            ListGrantsParams,
-        },
-    },
+    socket::{client, types::DaemonCommand},
 };
 
 /// Subcommands for managing TSIG update and transfer credentials.
@@ -163,74 +156,52 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             global,
             output,
         } => {
-            let res = client::send_command(
-                DaemonCommandKind::CreateTsigKey,
+            let res = client::send_command::<TsigKeyResponse>(DaemonCommand::CreateTsigKey(
                 CreateTsigKeyRequest {
                     name,
                     algorithm,
                     secret,
                     global,
                 },
-            )
+            ))
             .await?;
-
             log::debug!("TSIG key creation result: {:?}", res);
-
-            let created: TsigKeyResponse = parse_payload(&res.data)?;
             // stderr, so `--output json` stays parseable.
-            if created.tsig_key.global {
+            if res.data.tsig_key.global {
                 errln!("Warning: this key can update every zone without any grant.");
             }
-            print_response(&res.data, output, |key: &TsigKeyResponse| {
-                vec![TsigKeyRow::from(key)]
-            })?;
+            print_response(&res.data, output, |key| vec![TsigKeyRow::from(key)])?;
         }
         TsigKeyCommand::List {
             limit,
             offset,
             output,
         } => {
-            let res = client::send_command(
-                DaemonCommandKind::ListTsigKeys,
-                PageFilter { limit, offset },
+            let res = client::send_command::<PaginatedResponse<GetTsigKeyResponse>>(
+                DaemonCommand::ListTsigKeys(PageFilter { limit, offset }),
             )
             .await?;
-
             log::debug!("TSIG key list result: {:?}", res);
-
-            print_response(
-                &res.data,
-                output,
-                |keys: &PaginatedResponse<GetTsigKeyResponse>| {
-                    keys.items.iter().map(TsigKeyRow::from).collect()
-                },
-            )?;
+            print_page(&res.data, output, |item| TsigKeyRow::from(item))?;
         }
         TsigKeyCommand::Get { name, output } => {
             let res =
-                client::send_command(DaemonCommandKind::GetTsigKey, NameParams { name }).await?;
-
+                client::send_command::<TsigKeyResponse>(DaemonCommand::GetTsigKey { name }).await?;
             log::debug!("TSIG key get result: {:?}", res);
-
-            print_response(&res.data, output, |key: &TsigKeyResponse| {
-                vec![TsigKeyRow::from(key)]
-            })?;
+            print_response(&res.data, output, |key| vec![TsigKeyRow::from(key)])?;
         }
         TsigKeyCommand::Export { name } => {
             let res =
-                client::send_command(DaemonCommandKind::GetTsigKey, NameParams { name }).await?;
-            let key: TsigKeyResponse = parse_payload(&res.data).map_err(CliError::from)?;
-            print_bind_key(&key);
+                client::send_command::<TsigKeyResponse>(DaemonCommand::GetTsigKey { name }).await?;
+            print_bind_key(&res.data);
         }
         TsigKeyCommand::Delete { name, output } => {
             let res =
-                client::send_command(DaemonCommandKind::DeleteTsigKey, NameParams { name }).await?;
-
+                client::send_command::<MessageResponse>(DaemonCommand::DeleteTsigKey { name })
+                    .await?;
             log::debug!("TSIG key deletion result: {:?}", res);
-
             match output {
                 OutputFormat::Table => outln!("{}", res.message),
-
                 _ => print_payload(&res.data, output)?,
             }
         }
@@ -242,20 +213,17 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             read_only,
             output,
         } => {
-            let res = client::send_command(
-                DaemonCommandKind::CreateTsigGrant,
-                CreateTsigGrantParams {
-                    key_name: name,
-                    request: CreateGrantRequest {
-                        zone_name: zone,
-                        record_name_pattern: pattern,
-                        record_types: types,
-                        can_write: !read_only,
-                    },
+            let res = client::send_command::<TsigGrantResponse>(DaemonCommand::CreateTsigGrant {
+                key_name: name,
+                request: CreateGrantRequest {
+                    zone_name: zone,
+                    record_name_pattern: pattern,
+                    record_types: types,
+                    can_write: !read_only,
                 },
-            )
+            })
             .await?;
-            print_response(&res.data, output, |response: &TsigGrantResponse| {
+            print_response(&res.data, output, |response| {
                 vec![TsigGrantRow::from(&response.tsig_grant)]
             })?;
         }
@@ -265,21 +233,14 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             offset,
             output,
         } => {
-            let res = client::send_command(
-                DaemonCommandKind::ListTsigGrants,
-                ListGrantsParams {
-                    name,
+            let res = client::send_command::<PaginatedResponse<GetTsigGrantResponse>>(
+                DaemonCommand::ListTsigGrants {
+                    key_name: name,
                     page: PageFilter { limit, offset },
                 },
             )
             .await?;
-            print_response(
-                &res.data,
-                output,
-                |grants: &PaginatedResponse<GetTsigGrantResponse>| {
-                    grants.items.iter().map(TsigGrantRow::from).collect()
-                },
-            )?;
+            print_page(&res.data, output, |item| TsigGrantRow::from(item))?;
         }
         // clap holds the two selectors apart.
         TsigKeyCommand::Revoke {
@@ -287,8 +248,10 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             output,
             ..
         } => {
-            let res =
-                client::send_command(DaemonCommandKind::DeleteTsigGrant, IdParams { id }).await?;
+            let res = client::send_command::<MessageResponse>(DaemonCommand::DeleteTsigGrant {
+                id: TsigGrantId::from(id),
+            })
+            .await?;
             match output {
                 OutputFormat::Table => outln!("{}", res.message),
                 _ => print_payload(&res.data, output)?,
@@ -300,9 +263,8 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             output,
             ..
         } => {
-            let res = client::send_command(
-                DaemonCommandKind::DeleteTsigGrantsByKeyAndZone,
-                DeleteTsigGrantsByKeyAndZoneParams {
+            let res = client::send_command::<MessageResponse>(
+                DaemonCommand::DeleteTsigGrantsByKeyAndZone {
                     key_name: name,
                     zone_name: zone,
                 },
@@ -314,12 +276,11 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             }
         }
         TsigKeyCommand::Revoke { .. } => {
-            return Err(CliError::from(
+            return Err(CliError::request(
                 "give a TSIG key name and a zone name, or --id to revoke one grant",
             ));
         }
     }
-
     Ok(())
 }
 

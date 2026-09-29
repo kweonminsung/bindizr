@@ -1,9 +1,10 @@
 use super::{
-    Rdata,
+    EncodeRdataError, ParseRecordValueError, Rdata,
     value::{DEFAULT_PRIORITY, parse_optional_u16_record_field, validate_domain_record_value},
 };
 use crate::dns::name::{encode_name, to_fqdn_lowercase};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MxRecordValue<'a> {
     priority: u16,
     target: &'a str,
@@ -12,7 +13,10 @@ pub struct MxRecordValue<'a> {
 impl<'a> MxRecordValue<'a> {
     /// The value is the target host only; the priority comes from the priority
     /// field (default 10), never inline.
-    pub fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
+    pub fn parse(
+        value: &'a str,
+        fallback_priority: Option<i32>,
+    ) -> Result<Self, ParseRecordValueError> {
         match value.split_whitespace().collect::<Vec<_>>().as_slice() {
             [target] => Ok(Self {
                 priority: parse_optional_u16_record_field(
@@ -22,24 +26,24 @@ impl<'a> MxRecordValue<'a> {
                 )?,
                 target,
             }),
-            _ => Err(format!(
-                "MX record value must be the target host '<target>', with the priority in the priority field: {value}"
-            )),
+            _ => Err(ParseRecordValueError::MxShape {
+                value: value.to_string(),
+            }),
         }
     }
 
     /// The wire-format RDATA of a stored value (RFC 1035, Section 3.3.9).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub(crate) fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = self.priority.to_be_bytes().to_vec();
         rdata.extend_from_slice(&encode_name(self.target)?);
         Rdata::new(rdata)
     }
 
     /// Validate the fields of this MX value.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), ParseRecordValueError> {
         if self.target.trim() == "." {
             if self.priority != 0 {
-                return Err("Null MX record target '.' must use priority 0".to_string());
+                return Err(ParseRecordValueError::NullMxPriority);
             }
             return Ok(());
         }

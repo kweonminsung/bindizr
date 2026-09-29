@@ -1,4 +1,5 @@
 use super::{TxtContent, TxtRecordValue, to_quoted_charstr};
+use crate::dns::record::ParseRecordValueError;
 
 /// Verify that raw TXT RDATA round-trips through the row form.
 #[test]
@@ -34,7 +35,7 @@ fn txt_segments_encode_reversible() {
 fn txt_segments_reject_empty_lists() {
     assert_eq!(
         TxtRecordValue::from_segments(std::iter::empty()).unwrap_err(),
-        "TXT record must contain at least one character-string"
+        ParseRecordValueError::TxtNoCharString
     );
 }
 

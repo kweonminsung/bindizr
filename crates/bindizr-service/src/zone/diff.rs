@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use bindizr_core::dns::Ttl;
+
 use crate::{
     model::{
         record::{RecordData, RecordSetKey},
@@ -18,7 +20,7 @@ use crate::{
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct MemberIdentity {
     rdata: String,
-    ttl: i32,
+    ttl: Ttl,
 }
 
 /// One record within a record set: its identity (for change detection) and

@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use bindizr_core::config::{BindizrConfig, DatabaseType};
+use bindizr_core::config::{Config, DatabaseType};
 use tokio::net::{TcpListener, UdpSocket};
 
 use super::Report;
@@ -18,7 +18,7 @@ use super::Report;
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Connect to the configured database from here, with no daemon to ask.
-pub(crate) async fn check_database(config: &BindizrConfig, report: &mut Report) {
+pub(crate) async fn check_database(config: &Config, report: &mut Report) {
     let database = &config.database;
     if database.database_type == DatabaseType::Sqlite {
         let file_path = Path::new(&database.sqlite.file_path);
@@ -50,7 +50,7 @@ pub(crate) async fn check_database(config: &BindizrConfig, report: &mut Report) 
 }
 
 /// Try binding the DNS and API listen addresses.
-pub(crate) async fn check_listen_ports(config: &BindizrConfig, report: &mut Report) {
+pub(crate) async fn check_listen_ports(config: &Config, report: &mut Report) {
     let dns = SocketAddr::new(config.dns.listen_addr, config.dns.listen_port);
     let bound = async {
         let _tcp = TcpListener::bind(dns).await?;

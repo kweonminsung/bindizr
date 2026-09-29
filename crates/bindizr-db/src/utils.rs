@@ -1,12 +1,14 @@
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
+use crate::error::DatabaseError;
+
 /// Create the directory a SQLite path names, since SQLite itself fails with
 /// a bare "unable to open database file". A path naming no directory, and the
 /// URI forms (`sqlite:`, `file:`), are left alone.
 ///
 /// What this creates is 0700, like the daemon's socket directory: the database
 /// holds TSIG secrets. A directory that already exists is the operator's.
-pub(crate) fn create_parent_dir(file_path: &str) -> Result<(), String> {
+pub(crate) fn create_parent_dir(file_path: &str) -> Result<(), DatabaseError> {
     let file_path = file_path.trim();
     if file_path.starts_with("sqlite:") || file_path.starts_with("file:") {
         return Ok(());
@@ -21,22 +23,19 @@ pub(crate) fn create_parent_dir(file_path: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    let failed = |e: std::io::Error| {
-        format!(
-            "Failed to create the SQLite directory '{}' (check database.sqlite.file_path): {}",
-            parent.display(),
-            e
-        )
+    let failed = |source: std::io::Error| DatabaseError::CreateSqliteDir {
+        path: parent.to_path_buf(),
+        source,
     };
     fs::create_dir_all(parent).map_err(failed)?;
     fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).map_err(failed)
 }
 
 /// Convert a configured SQLite path into a SQLx connection URL.
-pub(crate) fn to_sqlite_url(file_path: &str) -> Result<String, String> {
+pub(crate) fn to_sqlite_url(file_path: &str) -> Result<String, DatabaseError> {
     let file_path = file_path.trim();
     if file_path.is_empty() {
-        return Err("File path cannot be empty".to_string());
+        return Err(DatabaseError::EmptySqlitePath);
     }
 
     if file_path.starts_with("sqlite:") {
@@ -85,9 +84,10 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "sqlite:relative/path/to/database.db");
 
-        let result = to_sqlite_url("");
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "File path cannot be empty");
+        assert!(matches!(
+            to_sqlite_url(""),
+            Err(DatabaseError::EmptySqlitePath)
+        ));
 
         let result = to_sqlite_url("file::memory:?cache=shared");
         assert!(result.is_ok());

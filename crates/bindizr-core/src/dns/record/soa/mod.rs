@@ -1,12 +1,29 @@
 //! SOA record values, including the RNAME mailbox <-> email conversions.
 
+use thiserror::Error;
+
 use crate::dns::{
     name::{MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, encode_name},
-    record::Rdata,
+    record::{EncodeRdataError, Rdata},
 };
+
+/// An email that does not encode as an SOA mailbox, or a mailbox that does
+/// not decode back.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ParseMailboxError {
+    #[error("email must contain exactly one @")]
+    AtCount,
+    #[error(transparent)]
+    Name(#[from] ParseNameError),
+    #[error("SOA mailbox contains a dangling escape")]
+    DanglingEscape,
+    #[error("SOA mailbox is not a valid encoded email")]
+    NotEncodedEmail,
+}
 
 /// An SOA value as its wire fields (RFC 1035, Section 3.3.13); `rname` is the
 /// mailbox presentation form, not an email address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SoaRecordValue<'a> {
     pub mname: &'a str,
     pub rname: &'a str,
@@ -19,7 +36,7 @@ pub struct SoaRecordValue<'a> {
 
 impl<'a> SoaRecordValue<'a> {
     /// Encode the SOA value into wire-format record data.
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub(crate) fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = encode_name(self.mname)?;
         rdata.extend_from_slice(&encode_name(self.rname)?);
         for field in [
@@ -44,10 +61,10 @@ impl SoaMailbox {
     /// Encode an email address into mailbox form. Escaping the local part can
     /// shift label boundaries past the wire limits, so they are re-checked
     /// here; the row form ([`Self::from_encoded`]) is trusted.
-    pub fn from_email(email: &str) -> Result<Self, String> {
+    pub fn from_email(email: &str) -> Result<Self, ParseMailboxError> {
         let (local, domain) = match email.split_once('@') {
             Some(parts) if email.matches('@').count() == 1 => parts,
-            _ => return Err("email must contain exactly one @".to_string()),
+            _ => return Err(ParseMailboxError::AtCount),
         };
 
         let mailbox = Self(format!(
@@ -55,7 +72,7 @@ impl SoaMailbox {
             escape_local_part(local),
             domain.trim_end_matches('.')
         ));
-        mailbox.classify_wire_labels().map_err(|e| e.to_string())?;
+        mailbox.classify_wire_labels()?;
         Ok(mailbox)
     }
 
@@ -67,7 +84,7 @@ impl SoaMailbox {
 
     /// Decode back into an email address. The first unescaped '.' separates
     /// the local part from the domain; `\.` and `\\` are unescaped.
-    pub fn to_email(&self) -> Result<String, String> {
+    pub fn to_email(&self) -> Result<String, ParseMailboxError> {
         let mailbox = self.0.trim_end_matches('.');
         let mut local = String::with_capacity(mailbox.len());
         let mut chars = mailbox.chars();
@@ -76,12 +93,12 @@ impl SoaMailbox {
             match c {
                 '\\' => match chars.next() {
                     Some(escaped) => local.push(escaped),
-                    None => return Err("SOA mailbox contains a dangling escape".to_string()),
+                    None => return Err(ParseMailboxError::DanglingEscape),
                 },
                 '.' => {
                     let domain: String = chars.collect();
                     if local.is_empty() || domain.is_empty() {
-                        return Err("SOA mailbox is not a valid encoded email".to_string());
+                        return Err(ParseMailboxError::NotEncodedEmail);
                     }
                     return Ok(format!("{}@{}", local, domain));
                 }
@@ -89,7 +106,7 @@ impl SoaMailbox {
             }
         }
 
-        Err("SOA mailbox is not a valid encoded email".to_string())
+        Err(ParseMailboxError::NotEncodedEmail)
     }
 
     /// Validate the mailbox local-part label and domain labels.

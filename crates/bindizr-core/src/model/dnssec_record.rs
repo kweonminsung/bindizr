@@ -1,26 +1,36 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
+use thiserror::Error;
 
-use crate::dns::{
-    name::{OwnerName, ZoneName},
-    record::Rdata,
+use crate::{
+    dns::{
+        Ttl,
+        name::{OwnerName, ZoneName},
+        record::Rdata,
+    },
+    model::zone::ZoneId,
 };
+
+id_newtype!(
+    /// The id of a derived DNSSEC record row.
+    DnssecRecordId
+);
 
 /// One record of a zone's derived DNSSEC plane (the signed view): the DNSKEY,
 /// NSEC, and RRSIG rows the signer generates. These are system-owned and never
 /// user data — the record API cannot create or modify them, and lists them
 /// only behind its `signed` flag.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecRecord {
-    pub id: i32,
-    pub zone_id: i32,
+    pub id: DnssecRecordId,
+    pub zone_id: ZoneId,
     #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "i32")]
     pub record_type: DnssecRecordType,
     /// RRSIG rows: the covered record type; NULL otherwise.
     pub covered_record_type: Option<i32>,
-    pub ttl: i32,
+    pub ttl: Ttl,
     pub rdata: Rdata,
     /// RRSIG rows: signature expiration, driving the re-signing schedule.
     pub expires_at: Option<DateTime<Utc>>,
@@ -36,7 +46,7 @@ pub struct DnssecRecord {
 pub struct DnssecRecordKey {
     name: OwnerName,
     record_type: DnssecRecordType,
-    ttl: i32,
+    ttl: Ttl,
     rdata: Rdata,
 }
 
@@ -54,17 +64,26 @@ impl DnssecRecord {
 
 /// A derived record joined with its zone name, as the signed records listing
 /// returns it.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecRecordWithZone {
     #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "i32")]
     pub record_type: DnssecRecordType,
-    pub ttl: i32,
+    pub ttl: Ttl,
     pub rdata: Rdata,
-    pub zone_id: i32,
+    pub zone_id: ZoneId,
     #[sqlx(try_from = "String")]
     pub zone_name: ZoneName,
+}
+
+/// A derived record type bindizr does not generate, by number or mnemonic.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ParseDnssecRecordTypeError {
+    #[error("unknown derived record type {0}")]
+    Number(i32),
+    #[error("unknown derived record type '{0}'")]
+    Name(String),
 }
 
 /// The record types the signer derives; rows store the wire record type number
@@ -116,7 +135,7 @@ impl std::fmt::Display for DnssecRecordType {
 }
 
 impl TryFrom<i32> for DnssecRecordType {
-    type Error = String;
+    type Error = ParseDnssecRecordTypeError;
 
     /// Validate and convert the stored value into a DNSSEC record type.
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -128,13 +147,13 @@ impl TryFrom<i32> for DnssecRecordType {
             51 => Ok(DnssecRecordType::Nsec3param),
             59 => Ok(DnssecRecordType::Cds),
             60 => Ok(DnssecRecordType::Cdnskey),
-            other => Err(format!("unknown derived record type {}", other)),
+            other => Err(ParseDnssecRecordTypeError::Number(other)),
         }
     }
 }
 
 impl std::str::FromStr for DnssecRecordType {
-    type Err = String;
+    type Err = ParseDnssecRecordTypeError;
 
     /// Parse a DNSSEC record type from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -146,7 +165,7 @@ impl std::str::FromStr for DnssecRecordType {
             "NSEC3PARAM" => Ok(DnssecRecordType::Nsec3param),
             "CDS" => Ok(DnssecRecordType::Cds),
             "CDNSKEY" => Ok(DnssecRecordType::Cdnskey),
-            other => Err(format!("unknown derived record type '{}'", other)),
+            other => Err(ParseDnssecRecordTypeError::Name(other.to_string())),
         }
     }
 }
@@ -175,6 +194,6 @@ where
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        (self.wire_type() as i32).encode_by_ref(buf)
+        i32::from(self.wire_type()).encode_by_ref(buf)
     }
 }

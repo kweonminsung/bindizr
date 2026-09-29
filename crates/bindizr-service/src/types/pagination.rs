@@ -1,5 +1,6 @@
 //! Paginated response envelope shared by every listing endpoint.
 
+use bindizr_db::ParseSortError;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -26,17 +27,20 @@ pub(crate) fn normalize_page_limit(limit: Option<u32>) -> Result<u32, ServiceErr
 /// Read a listing's sort or order from the request, or take the default. The
 /// vocabulary lives with the enum the query renders from, so two listings
 /// cannot drift apart on a spelling.
-pub(crate) fn parse_setting<T: Default + std::str::FromStr<Err = String>>(
-    value: Option<&str>,
-) -> Result<T, ServiceError> {
+pub(crate) fn parse_setting<T>(value: Option<&str>) -> Result<T, ServiceError>
+where
+    T: Default + std::str::FromStr<Err = ParseSortError>,
+{
     match value {
         None => Ok(T::default()),
-        Some(value) => value.parse().map_err(ServiceError::invalid_input),
+        Some(value) => value
+            .parse()
+            .map_err(|e: ParseSortError| ServiceError::invalid_input(e.to_string())),
     }
 }
 
 /// The query window of a listing that takes no other filter.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema, IntoParams)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
 #[serde(deny_unknown_fields)]
 pub struct PageFilter {
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
@@ -47,7 +51,7 @@ pub struct PageFilter {
 }
 
 /// A page of items together with its pagination metadata.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
     pub pagination: Pagination,
@@ -71,32 +75,32 @@ impl<T> PaginatedResponse<T> {
             },
         }
     }
+}
 
-    /// A whole collection, paged here rather than in SQL. For the management
-    /// tables — tokens, keys, policies, grants — which a deployment counts in
-    /// tens, so a count query per listing would buy nothing.
-    pub(crate) fn from_collection(
-        items: Vec<T>,
-        limit: Option<u32>,
-        offset: Option<u64>,
-    ) -> Result<Self, ServiceError> {
-        let total = items.len() as u64;
-        let start = offset.unwrap_or(0);
-        let take = match limit {
-            Some(limit) => normalize_page_limit(Some(limit))? as usize,
-            None => items.len(),
-        };
-        let page = items
-            .into_iter()
-            .skip(usize::try_from(start).unwrap_or(usize::MAX))
-            .take(take)
-            .collect();
-        Ok(Self::from_page(page, limit, offset, total))
-    }
+/// A page of a whole collection, cut here rather than in SQL. For the
+/// management tables — tokens, keys, policies, grants — which a deployment
+/// counts in tens, so a count query per listing would buy nothing.
+pub(crate) fn build_page<T>(
+    items: Vec<T>,
+    limit: Option<u32>,
+    offset: Option<u64>,
+) -> Result<PaginatedResponse<T>, ServiceError> {
+    let total = items.len() as u64;
+    let start = offset.unwrap_or(0);
+    let take = match limit {
+        Some(limit) => normalize_page_limit(Some(limit))? as usize,
+        None => items.len(),
+    };
+    let page = items
+        .into_iter()
+        .skip(usize::try_from(start).unwrap_or(usize::MAX))
+        .take(take)
+        .collect();
+    Ok(PaginatedResponse::from_page(page, limit, offset, total))
 }
 
 /// Pagination window and total count for a list response.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct Pagination {
     #[schema(example = 50)]
     pub limit: u32,

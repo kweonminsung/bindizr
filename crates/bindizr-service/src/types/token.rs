@@ -1,5 +1,6 @@
 //! API token payloads.
 
+use bindizr_core::model::api_token::TokenId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -7,7 +8,7 @@ use utoipa::ToSchema;
 use crate::model::api_token::ApiToken;
 
 /// Request body for creating an API token.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateTokenRequest {
     /// Letters, digits, `.`, `_`, and `-`: one URL path segment.
@@ -27,10 +28,10 @@ pub struct CreateTokenRequest {
 }
 
 /// API representation of an API token; never carries the secret.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct GetTokenResponse {
-    #[schema(example = 1)]
-    pub id: i32,
+    #[schema(example = 1, value_type = i32)]
+    pub id: TokenId,
     #[schema(example = "external-dns")]
     pub name: String,
     pub description: Option<String>,
@@ -42,9 +43,9 @@ pub struct GetTokenResponse {
     pub last_used_at: Option<DateTime<Utc>>,
 }
 
-impl GetTokenResponse {
+impl From<&ApiToken> for GetTokenResponse {
     /// Build a token response without exposing its stored hash.
-    pub fn from_token(token: &ApiToken) -> Self {
+    fn from(token: &ApiToken) -> Self {
         GetTokenResponse {
             id: token.id,
             name: token.name.clone(),
@@ -58,13 +59,13 @@ impl GetTokenResponse {
 }
 
 /// One token without its secret: the self lookup.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct TokenResponse {
     pub token: GetTokenResponse,
 }
 
 /// The create response: the token and its secret, the one time it is shown.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct CreatedTokenResponse {
     pub token: GetTokenResponse,
     #[schema(example = "k7Qm2xLp9vRt4wYz8bNc1dFg6hJs3aEu")]

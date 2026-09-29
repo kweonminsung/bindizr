@@ -1,51 +1,55 @@
 //! Reading BIND master-file text into records the record API can accept.
 
 use domain::{
-    base::{
-        Ttl,
-        iana::{Class, Rtype},
-    },
+    base::iana::{Class, Rtype},
     rdata::ZoneRecordData,
-    zonefile::inplace::{Entry, Error as ZoneFileError, ScannedRecord, Zonefile},
+    zonefile::inplace::{self, Entry, ScannedRecord, Zonefile},
 };
 
 use crate::{
-    dns::{name::to_fqdn_lowercase, record::NaptrRecordValue},
+    dns::{
+        Serial, SoaInterval, Ttl,
+        name::{ZoneName, to_fqdn_lowercase},
+        record::NaptrRecordValue,
+    },
     model::record::RecordType,
 };
 
 /// A record's value as the zone file spells it.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ZoneFileValue {
     /// Presentation-form rdata, for every type but TXT.
     Rdata(String),
     /// A TXT record's character-strings, already checked for UTF-8.
-    CharacterStrings(Vec<String>),
+    Segments(Vec<String>),
 }
 
 /// One record from a BIND zone file.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZoneFileRecord {
     /// Absolute owner name (e.g. `www.example.com.`).
     pub owner_fqdn: String,
     pub record_type: RecordType,
     pub value: ZoneFileValue,
-    pub ttl: i32,
+    pub ttl: Ttl,
     pub priority: Option<i32>,
 }
 
 /// The zone fields a file's SOA carries, for creating a zone from it. The
 /// record itself is never stored: a zone's SOA is built from its own columns.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZoneFileSoa {
     pub mname: String,
     pub rname: String,
-    pub serial: u32,
-    pub refresh: i32,
-    pub retry: i32,
-    pub expire: i32,
-    pub minimum_ttl: i32,
+    pub serial: Serial,
+    pub refresh: SoaInterval,
+    pub retry: SoaInterval,
+    pub expire: SoaInterval,
+    pub minimum_ttl: Ttl,
 }
 
 /// What a zone file yielded: its usable records, and what it could not use.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedZoneFile {
     pub records: Vec<ZoneFileRecord>,
     /// The apex SOA's fields, when the file carried one.
@@ -63,8 +67,8 @@ impl ParsedZoneFile {
     /// against the origin, missing TTLs fall back to `default_ttl`, and the SOA
     /// is kept apart in `soa` rather than stored (the zone's SOA comes from its
     /// own fields).
-    pub fn parse(content: &str, zone_name: &str, default_ttl: i32) -> Self {
-        let origin_fqdn = to_fqdn_lowercase(zone_name);
+    pub fn parse(content: &str, zone_name: &ZoneName, default_ttl: Ttl) -> Self {
+        let origin_fqdn = zone_name.to_fqdn();
 
         // Feed $ORIGIN/$TTL as directives so the parser resolves relative names and
         // TTLs. PRELUDE_LINES counts them.
@@ -130,10 +134,10 @@ impl ParsedZoneFile {
                         },
                     };
 
-                    // Stored as i32; reject TTLs that would wrap negative (like the
-                    // JSON and nsupdate paths) instead of silently corrupting them.
+                    // Reject TTLs past the stored range (like the JSON and
+                    // nsupdate paths) instead of silently corrupting them.
                     let ttl_secs = record.ttl().as_secs();
-                    if ttl_secs > i32::MAX as u32 {
+                    let Ok(ttl) = Ttl::try_from(ttl_secs) else {
                         errors.push(format!(
                             "TTL {} for '{}' exceeds the maximum of {}",
                             ttl_secs,
@@ -141,8 +145,7 @@ impl ParsedZoneFile {
                             i32::MAX
                         ));
                         continue;
-                    }
-                    let ttl = ttl_secs as i32;
+                    };
 
                     let (value, priority) = match record.data() {
                         // Rendered from the parsed fields: `domain` appends the
@@ -186,7 +189,7 @@ impl ParsedZoneFile {
                                 ));
                                 continue;
                             }
-                            (ZoneFileValue::CharacterStrings(segments), None)
+                            (ZoneFileValue::Segments(segments), None)
                         }
                         other => {
                             let raw = other.to_string();
@@ -194,7 +197,7 @@ impl ParsedZoneFile {
                             // priority column like the JSON API; both forms
                             // canonicalize equal.
                             match record_type {
-                                RecordType::MX | RecordType::SRV => {
+                                RecordType::Mx | RecordType::Srv => {
                                     let mut fields = raw.split_whitespace();
                                     match fields.next().and_then(|p| p.parse::<i32>().ok()) {
                                         Some(prio) => {
@@ -247,17 +250,17 @@ fn to_zone_file_soa(record: &ScannedRecord) -> Option<ZoneFileSoa> {
     let ZoneRecordData::Soa(soa) = record.data() else {
         return None;
     };
-    let secs = |value: Ttl| i32::try_from(value.as_secs()).ok();
+    let interval = |value: domain::base::Ttl| SoaInterval::try_from(value.as_secs()).ok();
     Some(ZoneFileSoa {
         mname: soa.mname().to_string(),
         // The mailbox is rendered in its SOA form (`admin.example.com.`); the
         // service turns it back into an address.
         rname: soa.rname().to_string(),
-        serial: soa.serial().into_int(),
-        refresh: secs(soa.refresh())?,
-        retry: secs(soa.retry())?,
-        expire: secs(soa.expire())?,
-        minimum_ttl: secs(soa.minimum())?,
+        serial: Serial::from(soa.serial().into_int()),
+        refresh: interval(soa.refresh())?,
+        retry: interval(soa.retry())?,
+        expire: interval(soa.expire())?,
+        minimum_ttl: Ttl::try_from(soa.minimum().as_secs()).ok()?,
     })
 }
 
@@ -266,7 +269,7 @@ const PRELUDE_LINES: usize = 2;
 
 /// Restate a parser error in the submitted text's line numbering. `Error` keeps
 /// its position private, so its `{line}:{col}: {reason}` rendering is all there is.
-fn to_input_line_message(err: &ZoneFileError) -> String {
+fn to_input_line_message(err: &inplace::Error) -> String {
     let message = err.to_string();
     match message.split_once(':') {
         Some((line, rest)) => match line.parse::<usize>() {

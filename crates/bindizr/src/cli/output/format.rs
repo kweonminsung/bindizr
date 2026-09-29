@@ -1,7 +1,18 @@
 use bindizr_core::outln;
+use bindizr_service::types::PaginatedResponse;
 use clap::ValueEnum;
-use serde::de::DeserializeOwned;
+use serde::Serialize;
 use tabled::{Table, Tabled, settings::Style};
+use thiserror::Error;
+
+/// Why a daemon response could not be rendered.
+#[derive(Debug, Error)]
+pub(crate) enum RenderOutputError {
+    #[error("Failed to serialize to YAML: {0}")]
+    Yaml(#[source] serde_norway::Error),
+    #[error("Failed to serialize to JSON: {0}")]
+    Json(#[source] serde_json::Error),
+}
 
 /// How a command renders its result. Deriving `ValueEnum` is what puts the
 /// values in `--help` and in the generated shell completions.
@@ -12,59 +23,61 @@ pub(crate) enum OutputFormat {
     Table,
 }
 
-/// Read a daemon response payload as the type the command expects.
-pub(crate) fn parse_payload<T: DeserializeOwned>(data: &serde_json::Value) -> Result<T, String> {
-    serde_json::from_value(data.clone()).map_err(|e| format!("Unexpected daemon response: {}", e))
-}
-
-/// Print a daemon response: the payload verbatim for JSON and YAML, or a table
-/// built from its typed form. Only the table path deserializes, so
-/// `--output json` stays what the daemon sent.
+/// Print a daemon response: the payload as JSON or YAML, or a table built
+/// from it.
 pub(crate) fn print_response<T, U>(
-    data: &serde_json::Value,
+    data: &T,
     format: OutputFormat,
     to_table_rows: impl Fn(&T) -> Vec<U>,
-) -> Result<(), String>
+) -> Result<(), RenderOutputError>
 where
-    T: DeserializeOwned,
+    T: Serialize,
     U: Tabled,
 {
     match format {
-        OutputFormat::Table => {
-            print_table(to_table_rows(&parse_payload(data)?));
-            print_page_remainder(data);
-        }
+        OutputFormat::Table => print_table(to_table_rows(data)),
         _ => print_payload(data, format)?,
     }
     Ok(())
 }
 
-/// Print the number of omitted rows so a table page is not mistaken for the complete listing.
-fn print_page_remainder(data: &serde_json::Value) {
-    let (Some(total), Some(shown)) = (
-        data["pagination"]["total"].as_u64(),
-        data["items"].as_array().map(|items| items.len() as u64),
-    ) else {
-        return;
-    };
-
-    let seen = data["pagination"]["offset"].as_u64().unwrap_or(0) + shown;
-    if seen < total {
+/// Print one page of a listing as JSON or YAML, or as a table with a row
+/// per item plus the count it left out, so a page is not mistaken for the
+/// whole listing.
+pub(crate) fn print_page<T, U>(
+    page: &PaginatedResponse<T>,
+    format: OutputFormat,
+    to_table_row: impl Fn(&T) -> U,
+) -> Result<(), RenderOutputError>
+where
+    T: Serialize,
+    U: Tabled,
+{
+    if format != OutputFormat::Table {
+        return print_payload(page, format);
+    }
+    print_table(page.items.iter().map(to_table_row).collect());
+    let seen = page.pagination.offset + page.items.len() as u64;
+    if seen < page.pagination.total {
         outln!(
             "Showing {} of {}; page the rest with --limit and --offset.",
             seen,
-            total
+            page.pagination.total
         );
     }
+    Ok(())
 }
 
 /// Print the payload as JSON or YAML, for a command that renders its own table.
-pub(crate) fn print_payload(data: &serde_json::Value, format: OutputFormat) -> Result<(), String> {
+pub(crate) fn print_payload<T: Serialize>(
+    data: &T,
+    format: OutputFormat,
+) -> Result<(), RenderOutputError> {
     let rendered = match format {
-        OutputFormat::Yaml => serde_norway::to_string(data)
-            .map_err(|e| format!("Failed to serialize to YAML: {}", e))?,
-        OutputFormat::Json | OutputFormat::Table => serde_json::to_string_pretty(data)
-            .map_err(|e| format!("Failed to serialize to JSON: {}", e))?,
+        OutputFormat::Yaml => serde_norway::to_string(data).map_err(RenderOutputError::Yaml)?,
+        OutputFormat::Json | OutputFormat::Table => {
+            serde_json::to_string_pretty(data).map_err(RenderOutputError::Json)?
+        }
     };
     outln!("{}", rendered);
     Ok(())

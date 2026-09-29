@@ -429,3 +429,39 @@ async fn zone_versions_record_who_made_each_change() {
     assert_eq!(created["change_source"], "local", "{body}");
     assert!(created["changed_by"].is_null(), "{body}");
 }
+
+/// Verify that a serial past the stored range, as a version or a listing
+/// filter, is refused as invalid input rather than failing in the database:
+/// RFC 1035 serials are 32 bits, rows hold 31.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_serial_past_the_stored_range_is_invalid_input() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    for path in [
+        format!("/zones/{zone_name}/versions/{}", u32::MAX),
+        format!("/zones/{zone_name}/versions/diff?from={}", u32::MAX),
+        format!("/zones/{zone_name}/versions/diff?from=1&to={}", u32::MAX),
+        format!("/zones?serial={}", u32::MAX),
+        format!("/zones?min_serial={}", u32::MAX),
+        format!("/zones?max_serial={}", u32::MAX),
+    ] {
+        let (status, body) = app.send_request(Method::GET, &path, None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {body}");
+        assert_eq!(body["code"], "INVALID_INPUT", "{path}: {body}");
+    }
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!(
+                "/zones/{zone_name}/versions/{}/rollback?dry_run=true",
+                u32::MAX
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "INVALID_INPUT", "{body}");
+}

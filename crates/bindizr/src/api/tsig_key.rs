@@ -1,16 +1,23 @@
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
 };
+use bindizr_core::model::{tsig_grant::TsigGrantId, tsig_key::TsigAlgorithm};
 use bindizr_service::{
-    tsig_key::{TsigKeyService, grant::TsigGrantService},
+    Context,
+    error::ServiceError,
+    tsig_key::{self, grant},
     types::{
         CreateGrantRequest, CreateTsigKeyRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
         GetTsigGrantResponse, GetTsigKeyResponse, MessageResponse, PageFilter, PaginatedResponse,
         TsigGrantResponse, TsigKeyResponse,
     },
+    zone,
 };
 
 use crate::{
@@ -22,27 +29,23 @@ use crate::{
     params::{NameIdParams, NameParams},
 };
 
-pub(crate) struct TsigKeyApi;
-
-impl TsigKeyApi {
-    /// Build the TSIG key API routes.
-    pub(crate) async fn routes() -> Router {
-        Router::new()
-            .route("/tsig-keys", routing::get(list_tsig_keys))
-            .route("/tsig-keys", routing::post(create_tsig_key))
-            .route("/tsig-keys/{name}", routing::get(get_tsig_key))
-            .route("/tsig-keys/{name}", routing::delete(delete_tsig_key))
-            .route("/tsig-keys/{name}/grants", routing::get(list_tsig_grants))
-            .route("/tsig-keys/{name}/grants", routing::post(create_tsig_grant))
-            .route(
-                "/tsig-keys/{name}/grants/{id}",
-                routing::delete(delete_tsig_grant),
-            )
-            .route(
-                "/zones/{name}/tsig-grants",
-                routing::get(list_zone_tsig_grants),
-            )
-    }
+/// Build the TSIG key API routes.
+pub(crate) fn routes() -> Router<Arc<Context>> {
+    Router::new()
+        .route("/tsig-keys", routing::get(list_tsig_keys))
+        .route("/tsig-keys", routing::post(create_tsig_key))
+        .route("/tsig-keys/{name}", routing::get(get_tsig_key))
+        .route("/tsig-keys/{name}", routing::delete(delete_tsig_key))
+        .route("/tsig-keys/{name}/grants", routing::get(list_tsig_grants))
+        .route("/tsig-keys/{name}/grants", routing::post(create_tsig_grant))
+        .route(
+            "/tsig-keys/{name}/grants/{id}",
+            routing::delete(delete_tsig_grant),
+        )
+        .route(
+            "/zones/{name}/tsig-grants",
+            routing::get(list_zone_tsig_grants),
+        )
 }
 
 /// List all TSIG keys (secrets omitted).
@@ -61,11 +64,12 @@ impl TsigKeyApi {
         )
 )]
 pub(crate) async fn list_tsig_keys(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = TsigKeyService::list(&caller, page).await?;
+    let response = tsig_key::list(&cx, &caller, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -88,18 +92,26 @@ pub(crate) async fn list_tsig_keys(
         )
 )]
 pub(crate) async fn create_tsig_key(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTsigKeyRequest>,
 ) -> Result<Response, ApiError> {
-    let key = TsigKeyService::create(
+    let algorithm = body
+        .algorithm
+        .as_deref()
+        .map(str::parse::<TsigAlgorithm>)
+        .transpose()
+        .map_err(ServiceError::invalid_input)?;
+    let key = tsig_key::create(
+        &cx,
         &caller,
         &body.name,
-        body.algorithm.as_deref(),
+        algorithm,
         body.secret.as_deref(),
         body.global,
     )
     .await?;
-    let response = TsigKeyResponse::from_key(&key);
+    let response = TsigKeyResponse::from(&key);
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
 
@@ -122,11 +134,12 @@ pub(crate) async fn create_tsig_key(
         )
 )]
 pub(crate) async fn get_tsig_key(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let key = TsigKeyService::get(&caller, &params.name).await?;
-    let response = TsigKeyResponse::from_key(&key);
+    let key = tsig_key::get(&cx, &caller, &params.name).await?;
+    let response = TsigKeyResponse::from(&key);
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -150,10 +163,11 @@ pub(crate) async fn get_tsig_key(
         )
 )]
 pub(crate) async fn delete_tsig_key(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    TsigKeyService::delete(&caller, &params.name).await?;
+    tsig_key::delete(&cx, &caller, &params.name).await?;
     let response = MessageResponse {
         message: "TSIG key deleted successfully".to_string(),
     };
@@ -180,12 +194,13 @@ pub(crate) async fn delete_tsig_key(
         )
 )]
 pub(crate) async fn list_tsig_grants(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = TsigGrantService::list_by_key(&caller, &params.name, page).await?;
+    let response = grant::list_by_key(&cx, &caller, &params.name, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -211,21 +226,23 @@ pub(crate) async fn list_tsig_grants(
         )
 )]
 pub(crate) async fn create_tsig_grant(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<CreateGrantRequest>,
 ) -> Result<Response, ApiError> {
-    let grant = TsigGrantService::grant(
+    let grant = grant::create(
+        &cx,
         &caller,
         &params.name,
-        &body.zone_name,
+        &zone::normalize_name(&body.zone_name)?,
         body.record_name_pattern.as_deref(),
         body.record_types.as_deref(),
         body.can_write,
     )
     .await?;
     let response = TsigGrantResponse {
-        tsig_grant: GetTsigGrantResponse::from_grant(&grant),
+        tsig_grant: GetTsigGrantResponse::from(&grant),
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
@@ -249,10 +266,11 @@ pub(crate) async fn create_tsig_grant(
         )
 )]
 pub(crate) async fn delete_tsig_grant(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameIdParams>,
 ) -> Result<Response, ApiError> {
-    TsigGrantService::revoke(&caller, &params.name, params.id).await?;
+    grant::revoke(&cx, &caller, &params.name, TsigGrantId::from(params.id)).await?;
     let response = MessageResponse {
         message: "TSIG grant revoked successfully".to_string(),
     };
@@ -279,11 +297,13 @@ pub(crate) async fn delete_tsig_grant(
         )
 )]
 pub(crate) async fn list_zone_tsig_grants(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = TsigGrantService::list_by_zone(&caller, &params.name, page).await?;
+    let response =
+        grant::list_by_zone(&cx, &caller, &zone::normalize_name(&params.name)?, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

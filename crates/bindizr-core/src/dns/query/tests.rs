@@ -10,6 +10,7 @@ use domain::{
 };
 
 use super::*;
+use crate::dns::dnssec::KeyTag;
 
 /// Parse a DNS wire-format name for the test.
 fn name(value: &str) -> Name<Vec<u8>> {
@@ -83,7 +84,7 @@ fn parsed_ds_record(key_tag: u16) -> DsRecord {
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
     DsRecord {
-        key_tag,
+        key_tag: KeyTag::from(key_tag),
         digest_type: 2,
         rdata,
     }
@@ -133,7 +134,10 @@ fn transfer_rejects_a_non_in_record() {
     let wire = answer.finish();
 
     let err = extract_transfer_records(7, &name, false, &wire).unwrap_err();
-    assert!(err.contains("class"), "{err}");
+    assert!(
+        matches!(err, ReadResponseError::ForeignClass { .. }),
+        "{err}"
+    );
 }
 
 /// Verify that transfer first message must echo the question and be authoritative.
@@ -159,16 +163,16 @@ fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
     );
 
     let cached = build_transfer_message(7, &apex, true, false);
-    assert_eq!(
+    assert!(matches!(
         extract_transfer_records(7, &apex, true, &cached).unwrap_err(),
-        "response is not authoritative"
-    );
+        ReadResponseError::NotAuthoritative
+    ));
 
     let other = build_transfer_message(7, &name("other.com"), true, true);
-    assert_eq!(
+    assert!(matches!(
         extract_transfer_records(7, &apex, false, &other).unwrap_err(),
-        "response answers another question"
-    );
+        ReadResponseError::OtherQuestion
+    ));
 }
 
 /// Verify that build edns question advertises the payload size.
@@ -268,9 +272,11 @@ fn extract_ds_record_set_rejects_a_negative_answer_without_a_parent_soa() {
             &[],
             authority_soa,
         );
-        assert_eq!(
-            extract_ds_record_set(42, &child, &response).unwrap_err(),
-            "negative answer carries no SOA of a parent zone",
+        assert!(
+            matches!(
+                extract_ds_record_set(42, &child, &response).unwrap_err(),
+                ReadResponseError::NoParentSoa
+            ),
             "{authority_soa:?}"
         );
     }
@@ -292,10 +298,10 @@ fn extract_ds_record_set_rejects_an_answer_to_another_question() {
         &[],
         Some("com"),
     );
-    assert_eq!(
+    assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
-        "response answers another question"
-    );
+        ReadResponseError::OtherQuestion
+    ));
 }
 
 /// Verify that `extract_ds_record_set` ignores records for another owner.
@@ -329,10 +335,10 @@ fn extract_ds_record_set_rejects_a_non_authoritative_answer() {
         &[("example.com", 3600, 1)],
         None,
     );
-    assert_eq!(
+    assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
-        "response is not authoritative"
-    );
+        ReadResponseError::NotAuthoritative
+    ));
 }
 
 /// Verify that `extract_ds_record_set` rejects a truncated answer.
@@ -349,10 +355,10 @@ fn extract_ds_record_set_rejects_a_truncated_answer() {
         &[],
         Some("com"),
     );
-    assert_eq!(
+    assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
-        "truncated response"
-    );
+        ReadResponseError::Truncated
+    ));
 }
 
 /// Verify that `extract_ds_record_set` rejects an error rcode.
@@ -369,10 +375,10 @@ fn extract_ds_record_set_rejects_an_error_rcode() {
         &[],
         Some("com"),
     );
-    assert_eq!(
+    assert!(matches!(
         extract_ds_record_set(42, &child, &response).unwrap_err(),
-        "RCODE 5"
-    );
+        ReadResponseError::Rcode(5)
+    ));
 }
 
 /// Verify that `extract_ds_record_set` rejects id mismatch.
@@ -392,6 +398,7 @@ fn extract_ds_record_set_rejects_id_mismatch() {
     assert!(
         extract_ds_record_set(7, &child, &response)
             .unwrap_err()
+            .to_string()
             .contains("ID mismatch")
     );
 }

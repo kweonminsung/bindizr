@@ -3,13 +3,19 @@
 
 use std::collections::BTreeMap;
 
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::{
+    dns::{
+        Ttl,
+        name::{OwnerName, ZoneName},
+    },
+    model::record::RecordId,
+};
 use chrono::Utc;
 
 use super::policy::{authoritative_zone, normalize_lookup_name};
 use crate::{
     authorization::Caller,
-    error::{ErrorCode, ServiceError},
+    error::ServiceError,
     model::{
         record::{Record, RecordType},
         zone::Zone,
@@ -22,15 +28,16 @@ use crate::{
 /// One desired record set operation as the request spells it: values are
 /// row-encoded, but the owner is still an absolute lookup name with no zone
 /// resolved yet.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordSetOp {
     pub(crate) name: String,
     pub(crate) record_type: RecordType,
     /// Adds only; `None` resolves to the zone TTL at apply time.
-    pub(crate) ttl: Option<i32>,
+    pub(crate) ttl: Option<Ttl>,
     pub(crate) values: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PendingOp {
     pub(crate) op: RecordSetOp,
     pub(crate) is_delete: bool,
@@ -38,23 +45,23 @@ pub(crate) struct PendingOp {
 
 /// The same operation once grouping has decided which zone owns it, so the
 /// owner is relative to that zone.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ZoneRecordSetOp {
     pub(crate) name: OwnerName,
     pub(crate) record_type: RecordType,
-    pub(crate) ttl: Option<i32>,
+    pub(crate) ttl: Option<Ttl>,
     pub(crate) values: Vec<String>,
 }
 
 /// Adds and deletes of one request that resolved to the same zone.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct ZoneOps {
     pub(crate) adds: Vec<ZoneRecordSetOp>,
     pub(crate) dels: Vec<ZoneRecordSetOp>,
 }
 
 /// The record rows one zone's operations resolve to.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct ZoneChangeSet {
     pub(crate) deletes: Vec<Record>,
     pub(crate) creates: Vec<Record>,
@@ -71,13 +78,10 @@ fn parse_supported_record_type(record_type: &str) -> Result<RecordType, ServiceE
 }
 
 /// ExternalDNS sends TTL 0 for "not configured"; both resolve to the zone TTL.
-fn normalize_ttl(ttl: Option<i32>) -> Result<Option<i32>, ServiceError> {
+fn normalize_ttl(ttl: Option<i32>) -> Result<Option<Ttl>, ServiceError> {
     match ttl {
         Some(0) | None => Ok(None),
-        Some(ttl) => {
-            validate_record_ttl(ttl)?;
-            Ok(Some(ttl))
-        }
+        Some(ttl) => Ok(Some(validate_record_ttl(ttl)?)),
     }
 }
 
@@ -92,7 +96,7 @@ fn validate_record_set_shape(
             record.name, record_type
         )));
     }
-    if *record_type == RecordType::CNAME && record.values.len() > 1 {
+    if *record_type == RecordType::Cname && record.values.len() > 1 {
         return Err(ServiceError::invalid_record_value(format!(
             "CNAME record '{}' must have exactly one value",
             record.name
@@ -155,7 +159,7 @@ pub(crate) fn adjust_record_set(
     Ok(ExternalDnsRecord {
         name: record.name.clone(),
         record_type: record_type.to_string(),
-        ttl,
+        ttl: ttl.map(i32::from),
         values,
     })
 }
@@ -202,18 +206,17 @@ pub(crate) fn group_ops_by_zone(
 
     for pending in ops {
         // From every zone, so a hidden subzone still shadows a granted parent.
-        let zone = authoritative_zone(zones, &pending.op.name)
-            .filter(|zone| caller.sees_zone(zone.id))
+        let (zone, name) = authoritative_zone(zones, &pending.op.name)
+            .filter(|(zone, _)| caller.sees_zone(zone.id))
             .ok_or_else(|| {
-                ServiceError::new(
-                    ErrorCode::ZoneNotFound,
-                    format!("No zone is authoritative for '{}'", pending.op.name),
-                )
+                ServiceError::ZoneNotFound(format!(
+                    "No zone is authoritative for '{}'",
+                    pending.op.name
+                ))
             })?;
 
         let op = ZoneRecordSetOp {
-            name: OwnerName::parse_absolute_in_zone(&pending.op.name, &zone.name)
-                .expect("authoritative_zone matched the name inside this zone"),
+            name,
             record_type: pending.op.record_type,
             ttl: pending.op.ttl,
             values: pending.op.values,
@@ -229,16 +232,16 @@ pub(crate) fn group_ops_by_zone(
     Ok(grouped)
 }
 
-impl ZoneOps {
+impl ZoneChangeSet {
     /// Resolve one zone's operations against its current records; idempotent
     /// operations cancel out, so an effect-free request yields an empty set.
-    pub(crate) fn compute_change_set(
-        &self,
+    pub(crate) fn compute(
+        ops: &ZoneOps,
         zone: &Zone,
         existing: &[Record],
-    ) -> Result<ZoneChangeSet, ServiceError> {
+    ) -> Result<Self, ServiceError> {
         let mut deletes: Vec<Record> = Vec::new();
-        for del in &self.dels {
+        for del in &ops.dels {
             for value in &del.values {
                 for row in existing {
                     if row.name == del.name
@@ -253,7 +256,7 @@ impl ZoneOps {
         }
 
         let mut creates: Vec<Record> = Vec::new();
-        for add in &self.adds {
+        for add in &ops.adds {
             let ttl = add.ttl.unwrap_or(zone.default_ttl);
             for value in &add.values {
                 let same_rdata = |record: &Record| {
@@ -283,9 +286,9 @@ impl ZoneOps {
                 }
 
                 creates.push(Record {
-                    id: 0,
+                    id: RecordId::UNWRITTEN,
                     name: add.name.clone(),
-                    record_type: add.record_type.clone(),
+                    record_type: add.record_type,
                     value: value.clone(),
                     ttl,
                     priority: None,

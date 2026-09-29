@@ -2,10 +2,11 @@
 //! a name.
 
 use super::{
-    Rdata, to_quoted_charstr,
+    EncodeRdataError, ParseRecordValueError, Rdata, to_quoted_charstr,
     value::{MAX_RECORD_RDATA, parse_quoted_string, parse_u8_record_field},
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaaRecordValue<'a> {
     flags: u8,
     tag: &'a str,
@@ -16,8 +17,10 @@ impl<'a> CaaRecordValue<'a> {
     /// The value is `<flags> <tag> <value>`; the value keeps its surrounding
     /// quotes optional, as presentation form allows both. Fields may be
     /// separated by runs of whitespace, as aligned zone files spell them.
-    pub fn parse(value: &'a str) -> Result<Self, String> {
-        let err = || format!("CAA record value must be '<flags> <tag> <value>': {value}");
+    pub fn parse(value: &'a str) -> Result<Self, ParseRecordValueError> {
+        let err = || ParseRecordValueError::CaaShape {
+            value: value.to_string(),
+        };
         let (flags, rest) = value
             .trim()
             .split_once(char::is_whitespace)
@@ -48,32 +51,30 @@ impl<'a> CaaRecordValue<'a> {
     }
 
     /// Validate the fields of this CAA value.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), ParseRecordValueError> {
         // RFC 8659, Section 4.1: a tag is 1-15 alphanumeric characters.
         if self.tag.is_empty()
             || self.tag.len() > 15
             || !self.tag.chars().all(|c| c.is_ascii_alphanumeric())
         {
-            return Err(format!(
-                "CAA tag must be 1-15 alphanumeric characters: {}",
-                self.tag
-            ));
+            return Err(ParseRecordValueError::CaaTag {
+                tag: self.tag.to_string(),
+            });
         }
         if self.value.is_empty() {
-            return Err("CAA value must not be empty".to_string());
+            return Err(ParseRecordValueError::CaaValueEmpty);
         }
         if self.value.chars().any(|c| c.is_control()) {
-            return Err("CAA value must not contain control characters".to_string());
+            return Err(ParseRecordValueError::CaaValueControl);
         }
         // Bounded so the record fits one transfer message beside the flags and
         // length-prefixed tag; enforced here so a stored row cannot poison an AXFR.
         let max_value = MAX_RECORD_RDATA - 2 - self.tag.len();
         if self.value.len() > max_value {
-            return Err(format!(
-                "CAA value must be at most {} bytes, got {}",
-                max_value,
-                self.value.len()
-            ));
+            return Err(ParseRecordValueError::CaaValueTooLong {
+                max: max_value,
+                len: self.value.len(),
+            });
         }
         Ok(())
     }
@@ -89,9 +90,10 @@ impl<'a> CaaRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 8659, Section 5.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
-        let tag_len = u8::try_from(self.tag.len())
-            .map_err(|_| format!("CAA tag must be 1-15 alphanumeric characters: {}", self.tag))?;
+    pub(crate) fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
+        let tag_len = u8::try_from(self.tag.len()).map_err(|_| ParseRecordValueError::CaaTag {
+            tag: self.tag.to_string(),
+        })?;
         let mut rdata = Vec::with_capacity(2 + self.tag.len() + self.value.len());
         rdata.push(self.flags);
         rdata.push(tag_len);

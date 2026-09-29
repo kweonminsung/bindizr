@@ -3,21 +3,20 @@
 //! and must equal the zone's record set there (Section 3.2.3).
 
 use bindizr_core::dns::name::OwnerName;
-use bindizr_db::repository::LockLevel;
+use bindizr_db::LockLevel;
 
 use super::{DynamicUpdateError, Prerequisite, parse_update_owner};
 use crate::{
-    RepositoryTx,
+    Transaction, db,
     model::{
         record::{Record, RecordType},
         zone::Zone,
     },
-    repository::RepositoryService,
 };
 
 /// Evaluate UPDATE prerequisites against the locked zone contents.
 pub(crate) async fn evaluate_prerequisites_tx(
-    tx: &mut RepositoryTx<'_>,
+    tx: &mut Transaction<'_>,
     zone: &Zone,
     prerequisites: &[Prerequisite],
 ) -> Result<(), DynamicUpdateError> {
@@ -25,8 +24,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
         return Ok(());
     }
 
-    let zone_records =
-        RepositoryService::list_records_tx(tx, zone.id, LockLevel::Exclusive).await?;
+    let zone_records = db::record::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
     let mut record_sets: Vec<WantedRecordSet<'_>> = Vec::new();
     for prerequisite in prerequisites {
@@ -80,7 +78,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
                     Some(record_set) => record_set.records.push((value.as_str(), *priority)),
                     None => record_sets.push(WantedRecordSet {
                         owner,
-                        record_type: record_type.clone(),
+                        record_type: *record_type,
                         records: vec![(value.as_str(), *priority)],
                     }),
                 }
@@ -142,6 +140,10 @@ fn has_record_set(owner: &OwnerName, record_type: &RecordType, records: &[Record
 
 #[cfg(test)]
 mod tests {
+    use bindizr_core::{
+        dns::Ttl,
+        model::{record::RecordId, zone::ZoneId},
+    };
     use chrono::Utc;
 
     use super::*;
@@ -149,13 +151,13 @@ mod tests {
     /// Build a stored A record fixture with the given value.
     fn a_record(value: &str) -> Record {
         Record {
-            id: 0,
+            id: RecordId::from(0),
             name: OwnerName::from_row("check"),
             record_type: RecordType::A,
             value: value.to_string(),
-            ttl: 300,
+            ttl: Ttl::from_secs(300),
             priority: None,
-            zone_id: 1,
+            zone_id: ZoneId::from(1),
             created_at: Utc::now(),
         }
     }

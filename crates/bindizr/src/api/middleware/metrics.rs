@@ -1,15 +1,19 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use axum::{
-    extract::{MatchedPath, Request},
+    extract::{MatchedPath, Request, State},
     middleware::Next,
     response::Response,
 };
-use bindizr_core::metrics::metrics;
+use bindizr_service::Context;
 
 /// Record request count and latency, labeled by the route pattern
 /// (`/zones/{zone_name}`, not the concrete path) to bound label cardinality.
-pub(crate) async fn track_http_metrics(request: Request, next: Next) -> Response {
+pub(crate) async fn track_http_metrics(
+    State(cx): State<Arc<Context>>,
+    request: Request,
+    next: Next,
+) -> Response {
     let method = request.method().as_str().to_owned();
     let route = request
         .extensions()
@@ -20,7 +24,7 @@ pub(crate) async fn track_http_metrics(request: Request, next: Next) -> Response
 
     let response = next.run(request).await;
 
-    let metrics = metrics();
+    let metrics = cx.metrics();
     metrics
         .http_requests_total
         .with_label_values(&[method.as_str(), route.as_str(), response.status().as_str()])

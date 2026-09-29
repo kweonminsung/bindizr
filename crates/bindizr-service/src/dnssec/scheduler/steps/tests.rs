@@ -1,4 +1,7 @@
-use bindizr_core::model::dnssec_key::DnssecAlgorithm;
+use bindizr_core::{
+    dns::{Ttl, dnssec::KeyTag},
+    model::dnssec_key::DnssecAlgorithm,
+};
 use chrono::Duration;
 
 use super::*;
@@ -6,17 +9,17 @@ use super::*;
 /// Build a DNSSEC key fixture in the requested lifecycle state.
 fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible: DateTime<Utc>) -> DnssecKey {
     DnssecKey {
-        id,
-        zone_id: 1,
+        id: DnssecKeyId::from(id),
+        zone_id: ZoneId::from(1),
         role,
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
-        key_tag: id,
+        key_tag: KeyTag::try_from(id).unwrap(),
         public_key: String::new(),
         private_key: String::new(),
         state,
         state_changed_at: eligible,
         eligible_at: eligible,
-        max_signed_ttl: 300,
+        max_signed_ttl: Ttl::try_from(300).unwrap(),
         created_at: eligible,
     }
 }
@@ -40,7 +43,7 @@ fn a_retired_key_goes_once_its_replacement_signs_the_zone() {
         ),
     ];
 
-    assert_eq!(removable_key_ids(&keys, now), [1]);
+    assert_eq!(removable_key_ids(&keys, now), [DnssecKeyId::from(1)]);
 }
 
 /// Verify that a retired key waits out its hold down.
@@ -143,7 +146,10 @@ fn an_algorithm_whose_keys_have_all_retired_leaves_together() {
     ];
     keys[2].algorithm = DnssecAlgorithm::Ed25519;
 
-    assert_eq!(removable_key_ids(&keys, now), [1, 2]);
+    assert_eq!(
+        removable_key_ids(&keys, now),
+        [DnssecKeyId::from(1), DnssecKeyId::from(2)]
+    );
 }
 
 /// Verify that one key of a retiring algorithm still inside its hold down holds the rest.

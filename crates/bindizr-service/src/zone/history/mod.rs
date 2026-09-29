@@ -1,394 +1,371 @@
-//! Zone serial history: version listing, point-in-time record reconstruction,
+//! Zone serial history: version listing, rewinding the records to a serial,
 //! and serial-based rollback.
 
-mod reconstruction;
+mod rewind;
 
 use std::collections::{HashMap, HashSet};
 
-use bindizr_core::dns::{name::OwnerName, record::SoaMailbox, serial_to_i32, serial_to_u32};
-use bindizr_db::repository::LockLevel;
-use chrono::Utc;
-use reconstruction::{list_records_at_serial_tx, reconstruct_records_at_serial_tx};
-
-use super::{
-    ZoneService, diff::build_record_diff, update::soa_replacement_changes,
-    validation::normalize_zone_name,
+use bindizr_core::{
+    dns::{
+        Serial,
+        name::{OwnerName, ZoneName},
+        record::SoaMailbox,
+    },
+    model::{record::RecordId, zone_version::VersionScope},
 };
+use bindizr_db::LockLevel;
+use chrono::Utc;
+use rewind::{list_records_at_serial_tx, rewind_records_to_serial_tx};
+
+use super::{diff::build_record_diff, update::soa_replacement_changes};
 use crate::{
-    RepositoryTx,
+    Context, Transaction,
     authorization::Caller,
-    dnssec::DnssecService,
+    db, dnssec,
     error::ServiceError,
     model::{
         record::{Record, RecordData, RecordKey},
         zone::Zone,
     },
-    record::{
-        RecordService, validate_record_add_constraints_normalized, validate_record_name_in_zone,
-    },
-    repository::RepositoryService,
-    serial::generate_serial,
+    record::{self, validate_record_add_constraints_normalized, validate_record_name_in_zone},
+    serial::{generate_serial, validate_stored_serial},
+    transaction,
     types::{
-        PaginatedResponse, RollbackSummary, RollbackZoneResponse, VersionDetailResponse,
+        PaginatedResponse, RollbackSummary, RollbackZoneResponse, Run, VersionDetailResponse,
         VersionDiffResponse, VersionRecordResponse, ZoneVersionResponse, normalize_page_limit,
     },
 };
 
-impl ZoneService {
-    /// A serial is diffable only if it is the current serial or has a version.
-    async fn validate_serial_diffable_tx(
-        tx: &mut RepositoryTx<'_>,
-        zone: &Zone,
-        serial: i32,
-    ) -> Result<(), ServiceError> {
-        if serial == zone.serial {
-            return Ok(());
-        }
-        RepositoryService::get_zone_version_by_serial_tx(tx, zone.id, serial, LockLevel::None)
-            .await?
-            .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
-        Ok(())
+/// A serial is diffable only if it is the current serial or has a version.
+async fn validate_serial_diffable_tx(
+    tx: &mut Transaction<'_>,
+    zone: &Zone,
+    serial: Serial,
+) -> Result<(), ServiceError> {
+    if serial == zone.serial {
+        return Ok(());
     }
+    db::zone_version::get_by_serial_tx(tx, zone.id, serial, LockLevel::Unlocked)
+        .await?
+        .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
+    Ok(())
+}
 
-    /// List a zone's versions (serial history), newest serial first. Unless
-    /// `include_signer_serials`, signer-only serials (DNSSEC re-signs,
-    /// rollovers) are skipped —
-    /// they hold nothing rollback could restore. Visibility is checked on the
-    /// row whose id the queries use, so a same-name recreation cannot swap
-    /// the zone in.
-    pub async fn list_versions(
-        caller: &Caller,
-        zone_name: &str,
-        limit: Option<u32>,
-        offset: Option<u64>,
-        include_signer_serials: bool,
-    ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
-        let zone = Self::get_by_name(caller, zone_name).await?;
+/// List the versions `scope` covers, newest serial first.
+pub async fn list_versions(
+    cx: &Context,
+    caller: &Caller,
+    zone_name: &ZoneName,
+    limit: Option<u32>,
+    offset: Option<u64>,
+    scope: VersionScope,
+) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
+    let zone = super::get_by_name(cx, caller, zone_name).await?;
 
-        let total =
-            RepositoryService::count_zone_versions(zone.id, !include_signer_serials).await?;
-        let effective_limit = normalize_page_limit(limit)?;
-        let versions = RepositoryService::list_zone_versions(
-            zone.id,
-            !include_signer_serials,
-            effective_limit,
-            offset.unwrap_or(0),
-        )
-        .await?;
-        let items = versions
+    let total = db::zone_version::count(cx.db(), zone.id, scope).await?;
+    let effective_limit = normalize_page_limit(limit)?;
+    let versions = db::zone_version::list(
+        cx.db(),
+        zone.id,
+        scope,
+        effective_limit,
+        offset.unwrap_or(0),
+    )
+    .await?;
+    let items = versions
+        .iter()
+        .map(ZoneVersionResponse::try_from)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(PaginatedResponse::from_page(
+        items,
+        Some(effective_limit),
+        offset,
+        total,
+    ))
+}
+
+/// Fetch the version at `serial` together with the records rewound to it.
+pub async fn get_version(
+    cx: &Context,
+    caller: &Caller,
+    zone_name: &ZoneName,
+    serial: Serial,
+) -> Result<VersionDetailResponse, ServiceError> {
+    let serial = validate_stored_serial(serial)?;
+    let mut tx = transaction::begin_read_tx(cx, "Failed to load version").await?;
+
+    let result = async {
+        let zone =
+            super::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
+        caller.authorize_zone_unrestricted(&zone)?;
+        let version =
+            db::zone_version::get_by_serial_tx(&mut tx, zone.id, serial, LockLevel::Unlocked)
+                .await?
+                .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
+
+        let records = list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?;
+
+        Ok::<_, ServiceError>((zone, version, records))
+    }
+    .await;
+
+    let (zone, version, records) =
+        transaction::finish_tx(tx, result, "Failed to load version").await?;
+    Ok(VersionDetailResponse {
+        version: ZoneVersionResponse::try_from(&version)?,
+        records: records
             .iter()
-            .map(ZoneVersionResponse::from_version)
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|record| VersionRecordResponse::from_record_and_zone_name(record, &zone.name))
+            .collect(),
+    })
+}
 
-        Ok(PaginatedResponse::from_page(
-            items,
-            Some(effective_limit),
-            offset,
-            total,
-        ))
-    }
+/// Compute the record-level difference between two of a zone's serials;
+/// `to_serial` defaults to the current one. Each serial must be the
+/// current one or an existing version.
+pub async fn diff_versions(
+    cx: &Context,
+    caller: &Caller,
+    zone_name: &ZoneName,
+    from_serial: Serial,
+    to_serial: Option<Serial>,
+) -> Result<VersionDiffResponse, ServiceError> {
+    let from = validate_stored_serial(from_serial)?;
+    let to = to_serial.map(validate_stored_serial).transpose()?;
+    let mut tx = transaction::begin_read_tx(cx, "Failed to diff versions").await?;
 
-    /// Fetch the version at `serial` together with the reconstructed records
-    /// at that serial. Visibility is checked on the row this tx locked, so
-    /// a same-name recreation cannot swap the zone in.
-    pub async fn get_version(
-        caller: &Caller,
-        zone_name: &str,
-        serial: u32,
-    ) -> Result<VersionDetailResponse, ServiceError> {
-        let serial = serial_to_i32(serial).map_err(ServiceError::invalid_input)?;
-        let mut tx = RepositoryService::begin_read_tx("Failed to load version").await?;
+    let result = async {
+        let zone =
+            super::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
+        caller.authorize_zone_unrestricted(&zone)?;
+        let to = to.unwrap_or(zone.serial);
 
-        let result = async {
-            let zone =
-                ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
-                    .await?;
-            caller.authorize_zone_unrestricted(&zone)?;
-            let version = RepositoryService::get_zone_version_by_serial_tx(
-                &mut tx,
-                zone.id,
-                serial,
-                LockLevel::None,
-            )
-            .await?
-            .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
+        validate_serial_diffable_tx(&mut tx, &zone, from).await?;
+        validate_serial_diffable_tx(&mut tx, &zone, to).await?;
 
-            let records = list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?;
+        let from_records = list_records_at_serial_tx(&mut tx, zone.id, from, zone.serial).await?;
+        let to_records = list_records_at_serial_tx(&mut tx, zone.id, to, zone.serial).await?;
 
-            Ok::<_, ServiceError>((zone, version, records))
-        }
-        .await;
-
-        let (zone, version, records) =
-            RepositoryService::finish_tx(tx, result, "Failed to load version").await?;
-        Ok(VersionDetailResponse {
-            version: ZoneVersionResponse::from_version(&version)?,
-            records: records
-                .iter()
-                .map(|record| VersionRecordResponse::from_record_and_zone_name(record, &zone.name))
-                .collect(),
+        Ok::<_, ServiceError>(VersionDiffResponse {
+            from_serial,
+            to_serial: to,
+            diff: build_record_diff(&zone, &from_records, &to_records),
         })
     }
+    .await;
 
-    /// Compute the record-level difference between two of a zone's serials.
-    /// `to_serial` defaults to the zone's current serial when `None`. Each
-    /// serial must be the current one or an existing version. Visibility is
-    /// checked on the row this tx locked, so a same-name recreation cannot
-    /// swap the zone in.
-    pub async fn diff_versions(
-        caller: &Caller,
-        zone_name: &str,
-        from_serial: u32,
-        to_serial: Option<u32>,
-    ) -> Result<VersionDiffResponse, ServiceError> {
-        let from = serial_to_i32(from_serial).map_err(ServiceError::invalid_input)?;
-        let to = to_serial
-            .map(serial_to_i32)
-            .transpose()
-            .map_err(ServiceError::invalid_input)?;
-        let mut tx = RepositoryService::begin_read_tx("Failed to diff versions").await?;
+    transaction::finish_tx(tx, result, "Failed to diff versions").await
+}
 
-        let result = async {
-            let zone =
-                ZoneService::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared)
-                    .await?;
-            caller.authorize_zone_unrestricted(&zone)?;
-            let to = to.unwrap_or(zone.serial);
+/// Roll a zone back to the state captured at `target_serial`. The records
+/// and SOA metadata return to that serial's state while the zone's
+/// serial advances to a new value (serials never go backward). The zone
+/// name is not part of a version and is never restored.
+pub async fn rollback(
+    cx: &Context,
+    caller: &Caller,
+    zone_name: &ZoneName,
+    target_serial: Serial,
+    run: Run,
+) -> Result<RollbackZoneResponse, ServiceError> {
+    caller.authorize_global("roll back zones")?;
+    let target = validate_stored_serial(target_serial)?;
 
-            Self::validate_serial_diffable_tx(&mut tx, &zone, from).await?;
-            Self::validate_serial_diffable_tx(&mut tx, &zone, to).await?;
+    let mut tx = transaction::begin_tx(cx, "Failed to roll back zone").await?;
 
-            let from_records =
-                list_records_at_serial_tx(&mut tx, zone.id, from, zone.serial).await?;
-            let to_records = list_records_at_serial_tx(&mut tx, zone.id, to, zone.serial).await?;
+    let apply_result = async {
+        let zone = super::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
-            Ok::<_, ServiceError>(VersionDiffResponse {
-                from_serial,
-                to_serial: serial_to_u32(to).map_err(ServiceError::internal)?,
-                diff: build_record_diff(&zone, &from_records, &to_records),
-            })
+        if target.as_u32() < 1 || target >= zone.serial {
+            return Err(ServiceError::invalid_input(format!(
+                "target serial {} must be less than the current serial {}",
+                target, zone.serial
+            )));
         }
-        .await;
+        let version =
+            db::zone_version::get_by_serial_tx(&mut tx, zone.id, target, LockLevel::Unlocked)
+                .await?
+                .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
 
-        RepositoryService::finish_tx(tx, result, "Failed to diff versions").await
-    }
+        let new_serial = generate_serial(Some(zone.serial))?;
+        // SOA metadata comes back from the version; identity and creation
+        // time are not part of one and stay.
+        let rname = SoaMailbox::from_encoded(&version.rname)
+            .to_email()
+            .map_err(|e| {
+                ServiceError::internal(format!("Failed to decode version rname: {}", e))
+            })?;
+        let restored_zone = Zone {
+            id: zone.id,
+            name: zone.name.clone(),
+            mname: version.mname.clone(),
+            rname,
+            default_ttl: version.default_ttl,
+            serial: new_serial,
+            refresh: version.refresh,
+            retry: version.retry,
+            expire: version.expire,
+            dnssec_policy_id: zone.dnssec_policy_id,
+            parent_ns_addrs: zone.parent_ns_addrs.clone(),
+            enabled: zone.enabled,
+            description: zone.description.clone(),
+            minimum_ttl: version.minimum_ttl,
+            created_at: zone.created_at,
+        };
+        let soa_changed = zone.soa_metadata_differs(&restored_zone);
 
-    /// Roll a zone back to the state captured at `target_serial`. The records
-    /// and SOA metadata return to that serial's state while the zone's
-    /// serial advances to a new value (serials never go backward). The zone
-    /// name is not part of a version and is never restored.
-    pub async fn rollback(
-        caller: &Caller,
-        zone_name: &str,
-        target_serial: u32,
-        dry_run: bool,
-    ) -> Result<RollbackZoneResponse, ServiceError> {
-        caller.authorize_global("roll back zones")?;
-        let target = serial_to_i32(target_serial).map_err(ServiceError::invalid_input)?;
+        let current_records = db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
+        let target_records =
+            rewind_records_to_serial_tx(&mut tx, zone.id, target, zone.serial).await?;
 
-        let lookup_name = normalize_zone_name(zone_name)?;
-        let mut tx = RepositoryService::begin_tx("Failed to roll back zone").await?;
+        // Diff current vs target, import-Replace style.
+        let mut target_by_key: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
+        for target in target_records {
+            target_by_key
+                .entry(target.match_key())
+                .or_default()
+                .push(target);
+        }
 
-        let apply_result = async {
-            let zone =
-                ZoneService::get_by_name_tx(&mut tx, lookup_name.as_str(), LockLevel::Exclusive)
-                    .await?;
+        let mut dels: Vec<Record> = Vec::new();
+        let mut unchanged = 0usize;
+        let mut to_add: Vec<RecordData> = Vec::new();
 
-            if target < 1 || target >= zone.serial {
-                return Err(ServiceError::invalid_input(format!(
-                    "target serial {} must be less than the current serial {}",
-                    target, zone.serial
-                )));
-            }
-            let version = RepositoryService::get_zone_version_by_serial_tx(
-                &mut tx,
-                zone.id,
-                target,
-                LockLevel::None,
-            )
-            .await?
-            .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
-
-            let new_serial = generate_serial(Some(zone.serial))?;
-            let new_serial_wire = serial_to_u32(new_serial).map_err(ServiceError::internal)?;
-            // SOA metadata comes back from the version; identity and creation
-            // time are not part of one and stay.
-            let rname = SoaMailbox::from_encoded(&version.rname)
-                .to_email()
-                .map_err(|e| {
-                    ServiceError::internal(format!("Failed to decode version rname: {}", e))
-                })?;
-            let restored_zone = Zone {
-                id: zone.id,
-                name: zone.name.clone(),
-                mname: version.mname.clone(),
-                rname,
-                default_ttl: version.default_ttl,
-                serial: new_serial,
-                refresh: version.refresh,
-                retry: version.retry,
-                expire: version.expire,
-                dnssec_policy_id: zone.dnssec_policy_id,
-                parent_ns_addrs: zone.parent_ns_addrs.clone(),
-                enabled: zone.enabled,
-                description: zone.description.clone(),
-                minimum_ttl: version.minimum_ttl,
-                created_at: zone.created_at,
-            };
-            let soa_changed = zone.soa_metadata_differs(&restored_zone);
-
-            let current_records =
-                RepositoryService::list_records_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
-            let target_records =
-                reconstruct_records_at_serial_tx(&mut tx, zone.id, target, zone.serial).await?;
-
-            // Diff current vs target, import-Replace style.
-            let mut target_by_key: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
-            for target in target_records {
-                target_by_key
-                    .entry(target.match_key())
-                    .or_default()
-                    .push(target);
-            }
-
-            let mut dels: Vec<Record> = Vec::new();
-            let mut unchanged = 0usize;
-            let mut to_add: Vec<RecordData> = Vec::new();
-
-            for record in &current_records {
-                let key = record.match_key();
-                match target_by_key.get_mut(&key).and_then(Vec::pop) {
-                    Some(target) => {
-                        // A TTL change is a DEL + ADD pair, which RFC 2181,
-                        // Section 5.2 requires: one name and type, one TTL.
-                        if record.ttl != target.ttl {
-                            dels.push(record.clone());
-                            to_add.push(target);
-                        } else {
-                            unchanged += 1;
-                        }
+        for record in &current_records {
+            let key = record.match_key();
+            match target_by_key.get_mut(&key).and_then(Vec::pop) {
+                Some(target) => {
+                    // A TTL change is a DEL + ADD pair, which RFC 2181,
+                    // Section 5.2 requires: one name and type, one TTL.
+                    if record.ttl != target.ttl {
+                        dels.push(record.clone());
+                        to_add.push(target);
+                    } else {
+                        unchanged += 1;
                     }
-                    None => dels.push(record.clone()),
                 }
+                None => dels.push(record.clone()),
             }
-            to_add.extend(target_by_key.into_values().flatten());
+        }
+        to_add.extend(target_by_key.into_values().flatten());
 
-            let deleted_ids: HashSet<i32> = dels.iter().map(|del| del.id).collect();
+        let deleted_ids: HashSet<RecordId> = dels.iter().map(|del| del.id).collect();
 
-            // Validate the adds in-memory against the records left after the deletes
-            // (mirrors the import reconcile).
-            let mut records_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
-            for record in &current_records {
-                if deleted_ids.contains(&record.id) {
-                    continue;
-                }
-                records_by_name
-                    .entry(record.name.clone())
-                    .or_default()
-                    .push(record.clone());
+        // Validate the adds in-memory against the records left after the deletes
+        // (mirrors the import reconcile).
+        let mut records_by_name: HashMap<OwnerName, Vec<Record>> = HashMap::new();
+        for record in &current_records {
+            if deleted_ids.contains(&record.id) {
+                continue;
             }
-            let mut to_insert: Vec<Record> = Vec::with_capacity(to_add.len());
-            for target in &to_add {
-                // The history predates the zone's current name, which may no
-                // longer fit the names it restores.
-                validate_record_name_in_zone(&target.name, &zone.name)?;
-                let records_at_name = records_by_name.entry(target.name.clone()).or_default();
-                validate_record_add_constraints_normalized(
-                    records_at_name,
-                    &target.name,
-                    &target.record_type,
-                    &target.value,
-                    target.ttl,
-                    target.priority,
-                    None,
-                )?;
-                let record = Record {
-                    id: 0,
-                    name: target.name.clone(),
-                    record_type: target.record_type.clone(),
-                    value: target.value.clone(),
-                    ttl: target.ttl,
-                    priority: target.priority,
-                    zone_id: zone.id,
-                    created_at: Utc::now(),
-                };
-                records_at_name.push(record.clone());
-                to_insert.push(record);
-            }
-
-            let summary = RollbackSummary {
-                added: to_insert.len() as u64,
-                deleted: dels.len() as u64,
-                unchanged: unchanged as u64,
-                soa_changed,
+            records_by_name
+                .entry(record.name.clone())
+                .or_default()
+                .push(record.clone());
+        }
+        let mut to_insert: Vec<Record> = Vec::with_capacity(to_add.len());
+        for target in &to_add {
+            // The history predates the zone's current name, which may no
+            // longer fit the names it restores.
+            validate_record_name_in_zone(&target.name, &zone.name)?;
+            let records_at_name = records_by_name.entry(target.name.clone()).or_default();
+            validate_record_add_constraints_normalized(
+                records_at_name,
+                &target.name,
+                &target.record_type,
+                &target.value,
+                target.ttl,
+                target.priority,
+                None,
+            )?;
+            let record = Record {
+                id: RecordId::UNWRITTEN,
+                name: target.name.clone(),
+                record_type: target.record_type,
+                value: target.value.clone(),
+                ttl: target.ttl,
+                priority: target.priority,
+                zone_id: zone.id,
+                created_at: Utc::now(),
             };
+            records_at_name.push(record.clone());
+            to_insert.push(record);
+        }
 
-            // A preview stops after reconstruction and validation, before restoring rows.
-            if dry_run {
-                return Ok((
-                    RollbackZoneResponse {
-                        applied: false,
-                        dry_run: true,
-                        target_serial,
-                        new_serial: new_serial_wire,
-                        summary,
-                    },
-                    zone.name.clone(),
-                    false,
-                ));
-            }
+        let summary = RollbackSummary {
+            added: to_insert.len() as u64,
+            deleted: dels.len() as u64,
+            unchanged: unchanged as u64,
+            soa_changed,
+        };
 
-            // Restore metadata and records as a new version in this transaction.
-            RepositoryService::update_zone_tx(&mut tx, restored_zone.clone()).await?;
-
-            if soa_changed {
-                let changes = soa_replacement_changes(&zone, &restored_zone, new_serial)?;
-                RepositoryService::create_zone_changes_tx(&mut tx, &changes).await?;
-            }
-
-            RecordService::delete_with_changes_tx(&mut tx, zone.id, new_serial, &dels).await?;
-            RecordService::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
-            // The restored user plane gets fresh signatures; old RRSIGs are
-            // never restored (derived journal rows are skipped on reconstruction).
-            DnssecService::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
-            ZoneService::save_version_tx(
-                &mut tx,
-                &restored_zone,
-                new_serial,
-                &caller.change_subject(),
-            )
-            .await?;
-
-            Ok((
+        // A preview stops after the rewind and validation, before restoring rows.
+        if run.is_dry_run() {
+            return Ok((
                 RollbackZoneResponse {
-                    applied: true,
-                    dry_run: false,
+                    applied: false,
+                    dry_run: true,
                     target_serial,
-                    new_serial: new_serial_wire,
+                    new_serial,
                     summary,
                 },
                 zone.name.clone(),
-                true,
-            ))
-        }
-        .await;
-
-        let (response, zone_name, applied) =
-            RepositoryService::finish_tx(tx, apply_result, "Failed to roll back zone").await?;
-
-        // Announce only an applied rollback after its new version has committed.
-        if applied {
-            log::info!(
-                "event=zone_rollback zone={} target_serial={} new_serial={} added={} deleted={}",
-                zone_name,
-                response.target_serial,
-                response.new_serial,
-                response.summary.added,
-                response.summary.deleted
-            );
-            crate::notify::notify_after_update(zone_name.as_str()).await;
+                false,
+            ));
         }
 
-        Ok(response)
+        // Restore metadata and records as a new version in this transaction.
+        db::zone::update_tx(&mut tx, restored_zone.clone()).await?;
+
+        if soa_changed {
+            let changes = soa_replacement_changes(&zone, &restored_zone, new_serial)?;
+            db::zone_change::create_many_tx(&mut tx, &changes).await?;
+        }
+
+        record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &dels).await?;
+        record::create_with_changes_tx(&mut tx, zone.id, new_serial, &to_insert).await?;
+        // The restored user plane gets fresh signatures; old RRSIGs are
+        // never restored (derived journal rows are skipped on rewind).
+        dnssec::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
+        super::save_version_tx(
+            cx,
+            &mut tx,
+            &restored_zone,
+            new_serial,
+            &caller.change_subject(),
+        )
+        .await?;
+
+        Ok((
+            RollbackZoneResponse {
+                applied: true,
+                dry_run: false,
+                target_serial,
+                new_serial,
+                summary,
+            },
+            zone.name.clone(),
+            true,
+        ))
     }
+    .await;
+
+    let (response, zone_name, applied) =
+        transaction::finish_tx(tx, apply_result, "Failed to roll back zone").await?;
+
+    // Announce only an applied rollback after its new version has committed.
+    if applied {
+        log::info!(
+            "event=zone_rollback zone={} target_serial={} new_serial={} added={} deleted={}",
+            zone_name,
+            response.target_serial,
+            response.new_serial,
+            response.summary.added,
+            response.summary.deleted
+        );
+        crate::notify::notify_after_update(cx, &zone_name).await;
+    }
+
+    Ok(response)
 }

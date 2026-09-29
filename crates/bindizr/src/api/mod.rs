@@ -17,21 +17,22 @@ mod token;
 mod tsig_key;
 mod zone;
 
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{extract::FromRequestParts, http::request::Parts};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
-use bindizr_core::{config, config::TlsFiles, model::api_token::ApiToken};
-use bindizr_service::{authorization::Caller, error::ServiceError};
+use bindizr_core::{config::TlsFiles, model::api_token::ApiToken};
+use bindizr_service::{Context, authorization::Caller, error::ServiceError};
 use error::ApiError;
-use router::ApiRouter;
+use thiserror::Error;
 use tokio::{net::TcpListener, task::JoinHandle};
 
-use crate::{cli::error::CliError, shutdown::Shutdown};
+use crate::shutdown::Shutdown;
 
 /// The caller attached by the auth middleware, or by the router's
 /// `Caller::Global` layer when authentication is disabled. A request without
 /// one reached a handler outside both layers, so extraction fails closed.
+#[derive(Debug, Clone)]
 pub(crate) struct RequestCaller(pub(crate) Caller);
 
 impl<S> FromRequestParts<S> for RequestCaller
@@ -53,7 +54,7 @@ where
 
 /// The token a request authenticated with, attached by the auth middleware;
 /// absent (so a 401) when authentication is disabled.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct AuthenticatedToken(pub(crate) ApiToken);
 
 impl<S> FromRequestParts<S> for AuthenticatedToken
@@ -76,11 +77,42 @@ where
 /// connections; the plain-HTTP path waits without a deadline, as axum does.
 const TLS_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 
+/// Why the HTTP API could not come up.
+#[derive(Debug, Error)]
+pub(crate) enum StartApiError {
+    #[error("Failed to bind the HTTP API to {addr}: {source}")]
+    Bind {
+        addr: SocketAddr,
+        #[source]
+        source: std::io::Error,
+    },
+    /// A pair that cannot be read is permanent, so it exits as a
+    /// configuration failure rather than looping through systemd's restart.
+    #[error("Failed to read the API TLS certificate '{cert_file}' and key '{key_file}': {source}")]
+    Tls {
+        cert_file: String,
+        key_file: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("Failed to hand the HTTP API listener to the TLS server: {0}")]
+    IntoStd(#[source] std::io::Error),
+    #[error("Failed to start the HTTPS API server on {addr}: {source}")]
+    Serve {
+        addr: SocketAddr,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
 /// Bind the HTTP API listener and spawn the server in the background, over TLS
 /// when `api.tls_cert_file` and `api.tls_key_file` name a pair. The returned
 /// handle finishes once `shutdown` fires and in-flight requests are answered.
-pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, CliError> {
-    let bindizr_config = config::bindizr_config();
+pub(crate) async fn initialize(
+    cx: Arc<Context>,
+    shutdown: &Shutdown,
+) -> Result<JoinHandle<()>, StartApiError> {
+    let bindizr_config = cx.config();
     let addr = SocketAddr::from((
         bindizr_config.api.listen_addr,
         bindizr_config.api.listen_port,
@@ -90,7 +122,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, Cl
     // instead of surfacing in a background task.
     let listener = TcpListener::bind(addr)
         .await
-        .map_err(|e| format!("Failed to bind the HTTP API to {}: {}", addr, e))?;
+        .map_err(|source| StartApiError::Bind { addr, source })?;
 
     let Some(TlsFiles {
         cert_file,
@@ -100,7 +132,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, Cl
         log::info!("HTTP API server listening on http://{}", addr);
         let stop = shutdown.waiter();
         return Ok(tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, ApiRouter::routes().await)
+            if let Err(e) = axum::serve(listener, router::routes(cx))
                 .with_graceful_shutdown(stop)
                 .await
             {
@@ -109,24 +141,16 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, Cl
         }));
     };
 
-    // A pair that cannot be read is permanent, so it exits as a configuration
-    // failure rather than looping through systemd's restart.
     let tls = RustlsConfig::from_pem_file(cert_file, key_file)
         .await
-        .map_err(|e| {
-            CliError::configuration(format!(
-                "Failed to read the API TLS certificate '{}' and key '{}': {}",
-                cert_file, key_file, e
-            ))
+        .map_err(|source| StartApiError::Tls {
+            cert_file: cert_file.to_string(),
+            key_file: key_file.to_string(),
+            source,
         })?;
-    let listener = listener.into_std().map_err(|e| {
-        format!(
-            "Failed to hand the HTTP API listener to the TLS server: {}",
-            e
-        )
-    })?;
+    let listener = listener.into_std().map_err(StartApiError::IntoStd)?;
     let server = axum_server::from_tcp_rustls(listener, tls)
-        .map_err(|e| format!("Failed to start the HTTPS API server on {}: {}", addr, e))?;
+        .map_err(|source| StartApiError::Serve { addr, source })?;
 
     log::info!("HTTP API server listening on https://{}", addr);
 
@@ -140,7 +164,7 @@ pub(crate) async fn initialize(shutdown: &Shutdown) -> Result<JoinHandle<()>, Cl
     Ok(tokio::spawn(async move {
         if let Err(e) = server
             .handle(handle)
-            .serve(ApiRouter::routes().await.into_make_service())
+            .serve(router::routes(cx).into_make_service())
             .await
         {
             log::error!("API server error: {:?}", e);

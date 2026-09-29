@@ -1,6 +1,10 @@
-use bindizr_core::dns::{
-    name::{OwnerName, ZoneName},
-    record::TxtRecordValue,
+use bindizr_core::{
+    dns::{
+        Ttl,
+        name::{OwnerName, ZoneName},
+        record::TxtRecordValue,
+    },
+    model::{record::RecordId, zone::ZoneId},
 };
 use chrono::Utc;
 
@@ -21,13 +25,13 @@ fn normalize_record_owner_name_maps_parse_failures_to_record_name_errors() {
     let zone = ZoneName::from_row("test.example.com");
 
     let outside = normalize_record_owner_name("a1.other.com.", &zone).unwrap_err();
-    assert_eq!(outside.code, ErrorCode::InvalidRecordName);
-    assert!(outside.message.contains("a1.other.com."));
-    assert!(outside.message.contains(zone.as_str()));
+    assert_eq!(outside.code(), ErrorCode::InvalidRecordName);
+    assert!(outside.to_string().contains("a1.other.com."));
+    assert!(outside.to_string().contains(zone.as_str()));
 
     let empty = normalize_record_owner_name("  ", &zone).unwrap_err();
-    assert_eq!(empty.code, ErrorCode::InvalidRecordName);
-    assert!(empty.message.starts_with("record name "));
+    assert_eq!(empty.code(), ErrorCode::InvalidRecordName);
+    assert!(empty.to_string().starts_with("record name "));
 }
 
 /// Validate an add whose owner name is already in stored form.
@@ -44,7 +48,7 @@ fn validate_add(
         &OwnerName::from_row(stored_name),
         record_type,
         value,
-        ttl,
+        Ttl::try_from(ttl).unwrap(),
         priority,
         None,
     )
@@ -56,12 +60,12 @@ fn add_rejects_ds_at_apex_but_defers_the_ns_coupling() {
     const DS_VALUE: &str =
         "12345 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383";
 
-    let at_apex = validate_add(&[], "", &RecordType::DS, DS_VALUE, RRSET_TTL, None);
-    assert_eq!(at_apex.unwrap_err().code, ErrorCode::InvalidRecordName);
+    let at_apex = validate_add(&[], "", &RecordType::Ds, DS_VALUE, RRSET_TTL, None);
+    assert_eq!(at_apex.unwrap_err().code(), ErrorCode::InvalidRecordName);
 
     // The NS coupling is a final-state rule, enforced when the zone is
     // versioned — a lone DS passes the per-add shape checks.
-    let without_ns = validate_add(&[], "sub", &RecordType::DS, DS_VALUE, RRSET_TTL, None);
+    let without_ns = validate_add(&[], "sub", &RecordType::Ds, DS_VALUE, RRSET_TTL, None);
     assert!(without_ns.is_ok());
 }
 
@@ -71,20 +75,20 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let cname_at_apex = validate_add(
         &[],
         "",
-        &RecordType::CNAME,
+        &RecordType::Cname,
         "target.example.com",
         RRSET_TTL,
         None,
     );
     assert_eq!(
-        cname_at_apex.unwrap_err().code,
+        cname_at_apex.unwrap_err().code(),
         ErrorCode::InvalidRecordName
     );
 
     let delegation_ns = validate_add(
         &[],
         "child",
-        &RecordType::NS,
+        &RecordType::Ns,
         "ns.example.com",
         RRSET_TTL,
         None,
@@ -95,45 +99,48 @@ fn add_rejects_cname_at_apex_and_allows_delegation_ns() {
     let cname_conflict = validate_add(
         &[existing_a],
         "www",
-        &RecordType::CNAME,
+        &RecordType::Cname,
         "target.example.com",
         RRSET_TTL,
         None,
     );
-    assert_eq!(cname_conflict.unwrap_err().code, ErrorCode::RecordConflict);
+    assert_eq!(
+        cname_conflict.unwrap_err().code(),
+        ErrorCode::RecordConflict
+    );
 }
 
 /// Verify that `add` rejects wire equivalent MX and SRV duplicates.
 #[test]
 fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
     // Case and trailing-dot differences canonicalize equal, so the add is a duplicate.
-    let existing_mx = test_record(1, "", RecordType::MX, "mail.example.com", Some(10));
+    let existing_mx = test_record(1, "", RecordType::Mx, "mail.example.com", Some(10));
     let duplicate_mx = validate_add(
         &[existing_mx],
         "",
-        &RecordType::MX,
+        &RecordType::Mx,
         "Mail.Example.Com.",
         RRSET_TTL,
         Some(10),
     );
-    assert_eq!(duplicate_mx.unwrap_err().code, ErrorCode::RecordConflict);
+    assert_eq!(duplicate_mx.unwrap_err().code(), ErrorCode::RecordConflict);
 
     let existing_srv = test_record(
         2,
         "_sip._tcp",
-        RecordType::SRV,
+        RecordType::Srv,
         "5 5060 sip.example.com",
         Some(10),
     );
     let duplicate_srv = validate_add(
         &[existing_srv],
         "_sip._tcp",
-        &RecordType::SRV,
+        &RecordType::Srv,
         "5 5060 Sip.Example.Com.",
         RRSET_TTL,
         Some(10),
     );
-    assert_eq!(duplicate_srv.unwrap_err().code, ErrorCode::RecordConflict);
+    assert_eq!(duplicate_srv.unwrap_err().code(), ErrorCode::RecordConflict);
 }
 
 /// Verify that `add` treats an omitted MX priority as the default.
@@ -141,40 +148,40 @@ fn add_rejects_wire_equivalent_mx_and_srv_duplicates() {
 fn add_treats_an_omitted_mx_priority_as_the_default() {
     // A stored MX with no priority and an add carrying the default 10 are the
     // same rdata, so nsupdate can no-op the add instead of refusing it.
-    let existing_mx = test_record(1, "", RecordType::MX, "mail.example.com.", None);
+    let existing_mx = test_record(1, "", RecordType::Mx, "mail.example.com.", None);
     let duplicate_mx = validate_add(
         &[existing_mx],
         "",
-        &RecordType::MX,
+        &RecordType::Mx,
         "mail.example.com.",
         RRSET_TTL,
         Some(10),
     );
-    assert_eq!(duplicate_mx.unwrap_err().code, ErrorCode::RecordConflict);
+    assert_eq!(duplicate_mx.unwrap_err().code(), ErrorCode::RecordConflict);
 }
 
 /// Verify that `add` rejects null MX alongside other MX records.
 #[test]
 fn add_rejects_null_mx_alongside_other_mx_records() {
-    let existing_mx = test_record(1, "", RecordType::MX, "mail.example.com", Some(10));
+    let existing_mx = test_record(1, "", RecordType::Mx, "mail.example.com", Some(10));
     let null_mx_with_existing_mx =
-        validate_add(&[existing_mx], "", &RecordType::MX, ".", RRSET_TTL, Some(0));
+        validate_add(&[existing_mx], "", &RecordType::Mx, ".", RRSET_TTL, Some(0));
     assert_eq!(
-        null_mx_with_existing_mx.unwrap_err().code,
+        null_mx_with_existing_mx.unwrap_err().code(),
         ErrorCode::RecordConflict
     );
 
-    let existing_null_mx = test_record(2, "", RecordType::MX, ".", Some(0));
+    let existing_null_mx = test_record(2, "", RecordType::Mx, ".", Some(0));
     let mx_with_existing_null_mx = validate_add(
         &[existing_null_mx],
         "",
-        &RecordType::MX,
+        &RecordType::Mx,
         "mail.example.com",
         RRSET_TTL,
         Some(10),
     );
     assert_eq!(
-        mx_with_existing_null_mx.unwrap_err().code,
+        mx_with_existing_null_mx.unwrap_err().code(),
         ErrorCode::RecordConflict
     );
 }
@@ -192,7 +199,7 @@ fn add_enforces_one_ttl_per_record_set() {
         600,
         None,
     );
-    assert_eq!(differing_ttl.unwrap_err().code, ErrorCode::RecordConflict);
+    assert_eq!(differing_ttl.unwrap_err().code(), ErrorCode::RecordConflict);
 
     let matching_ttl = validate_add(
         std::slice::from_ref(&existing_a),
@@ -209,7 +216,7 @@ fn add_enforces_one_ttl_per_record_set() {
     let other_record_set = validate_add(
         std::slice::from_ref(&existing_a),
         "www",
-        &RecordType::TXT,
+        &RecordType::Txt,
         &encoded_txt,
         600,
         None,
@@ -226,13 +233,13 @@ fn test_record(
     priority: Option<i32>,
 ) -> Record {
     Record {
-        id,
+        id: RecordId::from(id),
         name: OwnerName::from_row(name),
         record_type,
         value: value.to_string(),
-        ttl: RRSET_TTL,
+        ttl: Ttl::try_from(RRSET_TTL).unwrap(),
         priority,
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
         created_at: Utc::now(),
     }
 }

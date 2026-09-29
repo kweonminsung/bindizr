@@ -1,4 +1,4 @@
-use super::{ParseError, UpdateRecord, UpdateRequest};
+use super::{DeleteShapeError, ParseUpdateError, UpdateRecord, UpdateRequest};
 use crate::{
     dns::message::{Class, Rtype},
     model::record::RecordType,
@@ -70,7 +70,7 @@ fn append_tsig_record_with_owner(message: &mut Vec<u8>, owner: &[u8]) {
 fn parse_update_request_rejects_non_soa_zone_type() {
     let message = minimal_update_with_ztype(1);
     let err = UpdateRequest::parse(&message).unwrap_err();
-    assert!(matches!(err, ParseError::InvalidZoneSection));
+    assert!(matches!(err, ParseUpdateError::InvalidZoneSection));
 }
 
 /// Verify that `UpdateRequest::parse` accepts SOA zone type.
@@ -155,7 +155,7 @@ fn parse_update_request_rejects_tsig_before_other_additional_records() {
     append_opt_record(&mut message);
 
     let err = UpdateRequest::parse(&message).unwrap_err();
-    assert!(matches!(err, ParseError::InvalidTsig));
+    assert!(matches!(err, ParseUpdateError::InvalidTsig));
 }
 
 /// Verify that `to_record_value` preserves TXT character string boundaries.
@@ -182,7 +182,7 @@ fn to_record_value_preserves_txt_character_string_boundaries() {
     let (_, second_value, _) = second.to_record_value(&second.rdata).unwrap();
 
     assert_ne!(first_value, second_value);
-    assert!(!RecordType::TXT.values_equal(&first_value, None, &second_value, None));
+    assert!(!RecordType::Txt.values_equal(&first_value, None, &second_value, None));
 }
 
 /// Verify that `to_record_value` follows compression pointer in name RDATA.
@@ -205,7 +205,7 @@ fn to_record_value_follows_compression_pointer_in_name_rdata() {
     };
 
     let (record_type, value, priority) = record.to_record_value(&message).unwrap();
-    assert_eq!(record_type, RecordType::CNAME);
+    assert_eq!(record_type, RecordType::Cname);
     assert_eq!(value, "example.com.");
     assert_eq!(priority, None);
 }
@@ -224,7 +224,7 @@ fn to_record_value_rejects_non_backward_compression_pointers() {
     for message in [&forward[..], &self_referential[..]] {
         let record = update_record(Rtype::CNAME, Class::IN, 300, message[..2].to_vec());
         let err = record.to_record_value(message).unwrap_err();
-        assert!(!err.is_empty());
+        assert!(!err.to_string().is_empty());
     }
 }
 
@@ -234,7 +234,7 @@ fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
     let message = [1, b'a', 0, 0];
     let record = update_record(Rtype::CNAME, Class::IN, 300, message.to_vec());
     let err = record.to_record_value(&message).unwrap_err();
-    assert!(!err.is_empty());
+    assert!(!err.to_string().is_empty());
 }
 
 /// Verify rejection of empty TXT RDATA, which lacks the character-string required by RFC 1035,
@@ -243,7 +243,7 @@ fn to_record_value_rejects_name_rdata_with_trailing_bytes() {
 fn to_record_value_rejects_empty_txt_rdata() {
     let record = update_record(Rtype::TXT, Class::IN, 300, Vec::new());
     let err = record.to_record_value(&[]).unwrap_err();
-    assert!(!err.is_empty());
+    assert!(!err.to_string().is_empty());
 }
 
 /// Verify that `to_record_value` rejects non UTF8 TXT character strings.
@@ -251,7 +251,7 @@ fn to_record_value_rejects_empty_txt_rdata() {
 fn to_record_value_rejects_non_utf8_txt_character_strings() {
     let record = update_record(Rtype::TXT, Class::IN, 300, vec![1, 0xFF]);
     let err = record.to_record_value(&record.rdata).unwrap_err();
-    assert!(!err.is_empty());
+    assert!(!err.to_string().is_empty());
 }
 
 /// Verify that `to_record_value` splits SRV priority into its own column.
@@ -266,7 +266,7 @@ fn to_record_value_splits_srv_priority_into_its_own_column() {
 
     let (record_type, value, priority) = record.to_record_value(&rdata).unwrap();
 
-    assert_eq!(record_type, RecordType::SRV);
+    assert_eq!(record_type, RecordType::Srv);
     // The wire encoder reads back this 3-field form with the priority column.
     assert_eq!(value, "20 5060 sip.example.com.");
     assert_eq!(priority, Some(10));
@@ -281,5 +281,55 @@ fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> 
         ttl,
         rdata,
         rdata_start: 0,
+    }
+}
+
+/// Build a dynamic update record with the requested wire fields.
+fn delete_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
+    UpdateRecord {
+        name: "www.example.com.".to_string(),
+        record_type,
+        class,
+        ttl,
+        rdata,
+        rdata_start: 0,
+    }
+}
+
+/// Verify that the delete shapes RFC 2136, Section 2.5 allows pass: an
+/// ANY-class delete with zero TTL and empty RDATA, a NONE-class delete
+/// naming one record's RDATA.
+#[test]
+fn a_well_formed_delete_passes_the_shape_check() {
+    delete_record(Rtype::A, Class::ANY, 0, Vec::new())
+        .validate_delete_shape()
+        .unwrap();
+    delete_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1])
+        .validate_delete_shape()
+        .unwrap();
+}
+
+/// Verify that each shape RFC 2136, Section 2.5 forbids is named.
+#[test]
+fn a_malformed_delete_names_what_it_lacks() {
+    for (record, expected) in [
+        (
+            delete_record(Rtype::A, Class::ANY, 60, Vec::new()),
+            DeleteShapeError::NonzeroTtl,
+        ),
+        (
+            delete_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]),
+            DeleteShapeError::AnyClassRdata,
+        ),
+        (
+            delete_record(Rtype::A, Class::NONE, 0, Vec::new()),
+            DeleteShapeError::NoneClassNoRdata,
+        ),
+        (
+            delete_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]),
+            DeleteShapeError::NoneClassTypeAny,
+        ),
+    ] {
+        assert_eq!(record.validate_delete_shape().unwrap_err(), expected);
     }
 }

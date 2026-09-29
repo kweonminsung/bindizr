@@ -11,18 +11,20 @@
 
 use std::sync::Arc;
 
-use bindizr_core::dns::name::OwnerName;
-use bindizr_db::repository::LockLevel;
+use bindizr_core::{
+    dns::name::OwnerName,
+    model::{api_token::TokenId, zone::ZoneId},
+};
+use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
 use crate::{
-    RepositoryTx,
+    Context, Transaction, db,
     error::ServiceError,
     model::{
         api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone,
         zone_version::ChangeSource,
     },
-    repository::RepositoryService,
     token::hash_token,
     zone::version::ChangeSubject,
 };
@@ -38,7 +40,7 @@ pub enum Caller {
         name: Arc<str>,
     },
     Token {
-        id: i32,
+        id: TokenId,
         name: Arc<str>,
         grants: Arc<[TokenGrant]>,
     },
@@ -46,6 +48,7 @@ pub enum Caller {
 
 /// One record-plane write to authorize: the owner name relative to the zone
 /// (stored form) and its type. `None` types only match unrestricted grants.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordWrite<'a> {
     pub(crate) relative_name: OwnerName,
     pub(crate) record_type: Option<&'a RecordType>,
@@ -73,15 +76,18 @@ impl Caller {
 
     /// Validate a Bearer token and preload grants for read checks. Mutations
     /// reload and lock the grants inside their transaction.
-    pub async fn authenticate(bearer_token: &str) -> Result<(Caller, ApiToken), ServiceError> {
-        let token = authenticate_token(bearer_token).await?;
+    pub async fn authenticate(
+        cx: &Context,
+        bearer_token: &str,
+    ) -> Result<(Caller, ApiToken), ServiceError> {
+        let token = authenticate_token(cx, bearer_token).await?;
         if token.is_global {
             let caller = Caller::GlobalToken {
                 name: token.name.as_str().into(),
             };
             return Ok((caller, token));
         }
-        let grants = RepositoryService::list_token_grants_by_token_id(token.id).await?;
+        let grants = db::token_grant::list_by_token_id(cx.db(), token.id).await?;
         let caller = Caller::Token {
             id: token.id,
             name: token.name.as_str().into(),
@@ -103,7 +109,7 @@ impl Caller {
 
     /// The token whose grants bound the caller's visibility; `None` means
     /// unrestricted. List queries join it against the grants in SQL.
-    pub(crate) fn scope_token_id(&self) -> Option<i32> {
+    pub(crate) fn scope_token_id(&self) -> Option<TokenId> {
         match self {
             Caller::Global | Caller::GlobalToken { .. } => None,
             Caller::Token { id, .. } => Some(*id),
@@ -119,7 +125,7 @@ impl Caller {
     }
 
     /// Whether the caller may see `zone_id`.
-    pub(crate) fn sees_zone(&self, zone_id: i32) -> bool {
+    pub(crate) fn sees_zone(&self, zone_id: ZoneId) -> bool {
         match self {
             Caller::Global | Caller::GlobalToken { .. } => true,
             Caller::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
@@ -142,14 +148,14 @@ impl Caller {
     /// `NotFound`, so a write cannot probe zone existence either.
     pub(crate) async fn authorize_record_writes_tx(
         &self,
-        tx: &mut RepositoryTx<'_>,
+        tx: &mut Transaction<'_>,
         zone: &Zone,
         writes: &[RecordWrite<'_>],
     ) -> Result<(), ServiceError> {
         match self {
             Caller::Global | Caller::GlobalToken { .. } => Ok(()),
             Caller::Token { id, .. } => {
-                let grants = RepositoryService::list_token_grants_by_zone_id_and_token_id_tx(
+                let grants = db::token_grant::list_by_zone_id_and_token_id_tx(
                     tx,
                     zone.id,
                     *id,
@@ -170,7 +176,7 @@ impl Caller {
     /// narrows reads the same way it narrows writes.
     pub(crate) fn sees_record(
         &self,
-        zone_id: i32,
+        zone_id: ZoneId,
         name: &OwnerName,
         record_type: Option<&RecordType>,
     ) -> bool {
@@ -234,9 +240,9 @@ fn authorize_with_grants(
 const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
 
 /// Validate an API token, rejecting expired tokens and stamping `last_used_at`.
-async fn authenticate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
+async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, ServiceError> {
     let token_hash = hash_token(token_str);
-    let stored_token = match RepositoryService::get_api_token_by_token(&token_hash).await {
+    let stored_token = match db::api_token::get_by_token(cx.db(), &token_hash).await {
         Ok(Some(token)) => token,
         Ok(None) => {
             return Err(ServiceError::invalid_token(
@@ -264,10 +270,13 @@ async fn authenticate_token(token_str: &str) -> Result<ApiToken, ServiceError> {
         return Ok(stored_token);
     }
 
-    let updated_token = RepositoryService::update_api_token(ApiToken {
-        last_used_at: Some(Utc::now()),
-        ..stored_token
-    })
+    let updated_token = db::api_token::update(
+        cx.db(),
+        ApiToken {
+            last_used_at: Some(Utc::now()),
+            ..stored_token
+        },
+    )
     .await
     .map_err(|e| {
         log::error!("Failed to update last_used_at: {}", e);

@@ -4,10 +4,17 @@ use sqlx::FromRow;
 use crate::{
     dns::name::OwnerName,
     model::{
+        api_token::TokenId,
         grant_pattern::{MATCH_ANY, matches_name, matches_types},
         record::RecordType,
+        zone::ZoneId,
     },
 };
+
+id_newtype!(
+    /// The id of a token grant row.
+    TokenGrantId
+);
 
 /// Grants one API token record-plane rights over part of one zone, the HTTP
 /// twin of [`super::tsig_grant::TsigGrant`]. Global tokens
@@ -17,9 +24,9 @@ use crate::{
 /// grant's.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TokenGrant {
-    pub id: i32,
-    pub zone_id: i32,
-    pub api_token_id: i32,
+    pub id: TokenGrantId,
+    pub zone_id: ZoneId,
+    pub api_token_id: TokenId,
     pub record_name_pattern: String,
     pub record_types: String,
     /// Whether the grant carries write rights as well as read. A read-only
@@ -43,7 +50,7 @@ impl TokenGrant {
 
 /// A token grant joined with the names of the token it belongs to and the
 /// zone it covers.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenGrantWithNames {
     pub grant: TokenGrant,
     pub api_token_name: String,

@@ -41,7 +41,7 @@ fn validate_notify_response_rejects_id_mismatch() {
 
     let err = validate_notify_response(5678, &zone(), &response).unwrap_err();
 
-    assert!(err.contains("ID mismatch"));
+    assert!(err.to_string().contains("ID mismatch"));
 }
 
 /// Verify that `validate_notify_response` rejects error rcode.
@@ -52,7 +52,7 @@ fn validate_notify_response_rejects_error_rcode() {
 
     let err = validate_notify_response(1234, &zone(), &response).unwrap_err();
 
-    assert!(err.contains("RCODE 5"));
+    assert!(err.to_string().contains("RCODE 5"));
 }
 
 /// Verify that `validate_notify_response` rejects another question.
@@ -62,5 +62,5 @@ fn validate_notify_response_rejects_another_question() {
 
     let err = validate_notify_response(1234, &zone(), &response).unwrap_err();
 
-    assert!(err.contains("another question"), "{err}");
+    assert!(err.to_string().contains("another question"), "{err}");
 }

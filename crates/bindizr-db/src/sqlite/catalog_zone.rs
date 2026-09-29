@@ -1,0 +1,46 @@
+use bindizr_core::dns::{Serial, name::ZoneName};
+use sqlx::{Sqlite, Transaction};
+
+use crate::error::DatabaseError;
+
+/// Store a catalog digest and advance its serial when the digest changes in the current
+/// transaction.
+pub(crate) async fn upsert_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    name: &ZoneName,
+    digest: &str,
+    base_serial: Serial,
+) -> Result<Serial, DatabaseError> {
+    // Advance the catalog serial only when the digest changes, kept
+    // monotonic, so secondaries re-transfer the catalog zone only on real changes.
+    sqlx::query(
+        r#"
+        INSERT INTO catalog_zones (name, digest, serial)
+        VALUES (?, ?, ?)
+        ON CONFLICT(name)
+        DO UPDATE SET
+            serial = CASE
+                WHEN digest = excluded.digest THEN serial
+                ELSE max(serial + 1, excluded.serial)
+            END,
+            digest = excluded.digest
+        "#,
+    )
+    .bind(name)
+    .bind(digest)
+    .bind(base_serial)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query_scalar::<_, Serial>(
+        r#"
+        SELECT serial
+        FROM catalog_zones
+        WHERE name = ?
+        "#,
+    )
+    .bind(name)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(DatabaseError::from)
+}

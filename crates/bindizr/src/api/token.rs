@@ -1,16 +1,22 @@
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing,
 };
+use bindizr_core::model::token_grant::TokenGrantId;
 use bindizr_service::{
-    token::{TokenService, grant::TokenGrantService},
+    Context,
+    token::{self, grant},
     types::{
         CreateGrantRequest, CreateTokenRequest, CreatedTokenResponse, DEFAULT_PAGE_LIMIT,
         ErrorResponse, GetTokenGrantResponse, GetTokenResponse, MessageResponse, PageFilter,
         PaginatedResponse, TokenGrantResponse, TokenResponse,
     },
+    zone,
 };
 
 use crate::{
@@ -22,28 +28,24 @@ use crate::{
     params::{NameIdParams, NameParams},
 };
 
-pub(crate) struct TokenApi;
-
-impl TokenApi {
-    /// Build the token API routes.
-    pub(crate) async fn routes() -> Router {
-        Router::new()
-            .route("/tokens", routing::get(list_tokens))
-            .route("/tokens", routing::post(create_token))
-            .route("/tokens/self", routing::get(get_self_token))
-            .route("/tokens/self/grants", routing::get(list_self_token_grants))
-            .route("/tokens/{name}", routing::delete(delete_token))
-            .route("/tokens/{name}/grants", routing::get(list_token_grants))
-            .route("/tokens/{name}/grants", routing::post(create_token_grant))
-            .route(
-                "/tokens/{name}/grants/{id}",
-                routing::delete(delete_token_grant),
-            )
-            .route(
-                "/zones/{name}/token-grants",
-                routing::get(list_zone_token_grants),
-            )
-    }
+/// Build the token API routes.
+pub(crate) fn routes() -> Router<Arc<Context>> {
+    Router::new()
+        .route("/tokens", routing::get(list_tokens))
+        .route("/tokens", routing::post(create_token))
+        .route("/tokens/self", routing::get(get_self_token))
+        .route("/tokens/self/grants", routing::get(list_self_token_grants))
+        .route("/tokens/{name}", routing::delete(delete_token))
+        .route("/tokens/{name}/grants", routing::get(list_token_grants))
+        .route("/tokens/{name}/grants", routing::post(create_token_grant))
+        .route(
+            "/tokens/{name}/grants/{id}",
+            routing::delete(delete_token_grant),
+        )
+        .route(
+            "/zones/{name}/token-grants",
+            routing::get(list_zone_token_grants),
+        )
 }
 
 /// List all API tokens (secrets omitted).
@@ -62,11 +64,12 @@ impl TokenApi {
         )
 )]
 pub(crate) async fn list_tokens(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = TokenService::list(&caller, page).await?;
+    let response = token::list(&cx, &caller, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -89,10 +92,12 @@ pub(crate) async fn list_tokens(
         )
 )]
 pub(crate) async fn create_token(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTokenRequest>,
 ) -> Result<Response, ApiError> {
-    let (token, secret) = TokenService::create(
+    let (token, secret) = token::create(
+        &cx,
         &caller,
         &body.name,
         body.description.as_deref(),
@@ -101,7 +106,7 @@ pub(crate) async fn create_token(
     )
     .await?;
     let response = CreatedTokenResponse {
-        token: GetTokenResponse::from_token(&token),
+        token: GetTokenResponse::from(&token),
         secret,
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
@@ -124,7 +129,7 @@ pub(crate) async fn get_self_token(
     AuthenticatedToken(token): AuthenticatedToken,
 ) -> Result<Response, ApiError> {
     let response = TokenResponse {
-        token: GetTokenResponse::from_token(&token),
+        token: GetTokenResponse::from(&token),
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -144,11 +149,12 @@ pub(crate) async fn get_self_token(
         )
 )]
 pub(crate) async fn list_self_token_grants(
+    State(cx): State<Arc<Context>>,
     AuthenticatedToken(token): AuthenticatedToken,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = TokenGrantService::list_self(&token, page).await?;
+    let response = grant::list_self(&cx, &token, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -171,10 +177,11 @@ pub(crate) async fn list_self_token_grants(
         )
 )]
 pub(crate) async fn delete_token(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    TokenService::delete(&caller, &params.name).await?;
+    token::delete(&cx, &caller, &params.name).await?;
     let response = MessageResponse {
         message: "Token deleted successfully".to_string(),
     };
@@ -201,12 +208,13 @@ pub(crate) async fn delete_token(
         )
 )]
 pub(crate) async fn list_token_grants(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = TokenGrantService::list_by_token(&caller, &params.name, page).await?;
+    let response = grant::list_by_token(&cx, &caller, &params.name, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -232,21 +240,23 @@ pub(crate) async fn list_token_grants(
         )
 )]
 pub(crate) async fn create_token_grant(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<CreateGrantRequest>,
 ) -> Result<Response, ApiError> {
-    let grant = TokenGrantService::grant(
+    let grant = grant::create(
+        &cx,
         &caller,
         &params.name,
-        &body.zone_name,
+        &zone::normalize_name(&body.zone_name)?,
         body.record_name_pattern.as_deref(),
         body.record_types.as_deref(),
         body.can_write,
     )
     .await?;
     let response = TokenGrantResponse {
-        token_grant: GetTokenGrantResponse::from_grant(&grant),
+        token_grant: GetTokenGrantResponse::from(&grant),
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
@@ -270,10 +280,11 @@ pub(crate) async fn create_token_grant(
         )
 )]
 pub(crate) async fn delete_token_grant(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameIdParams>,
 ) -> Result<Response, ApiError> {
-    TokenGrantService::revoke(&caller, &params.name, params.id).await?;
+    grant::revoke(&cx, &caller, &params.name, TokenGrantId::from(params.id)).await?;
     let response = MessageResponse {
         message: "Token grant revoked successfully".to_string(),
     };
@@ -300,11 +311,13 @@ pub(crate) async fn delete_token_grant(
         )
 )]
 pub(crate) async fn list_zone_token_grants(
+    State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
     Query(mut page): Query<PageFilter>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
-    let response = TokenGrantService::list_by_zone(&caller, &params.name, page).await?;
+    let response =
+        grant::list_by_zone(&cx, &caller, &zone::normalize_name(&params.name)?, page).await?;
     Ok((StatusCode::OK, Json(response)).into_response())
 }

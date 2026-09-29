@@ -6,7 +6,6 @@
 use std::net::IpAddr;
 
 use bindizr_core::{
-    config::bindizr_config,
     dns::{
         message::{ParsedQuery, Rcode},
         tsig::{
@@ -15,29 +14,15 @@ use bindizr_core::{
     },
     model::tsig_key::TsigKey,
 };
-use bindizr_service::tsig_key::TsigKeyService;
+use bindizr_service::tsig_key;
 
 use super::acl;
-use crate::dns::error::XfrError;
-
-/// The error response a request is owed, signed when a key was accepted: once
-/// a key is in play the answer carries it, error or not (RFC 8945, Section 5.3).
-pub(crate) fn signed_error(
-    query: &ParsedQuery,
-    rcode: Rcode,
-    signer: Option<&mut TransferSigner>,
-) -> Result<Vec<u8>, XfrError> {
-    match signer {
-        Some(signer) => query
-            .signed_error_response(rcode, signer)
-            .map_err(XfrError::ProtocolError),
-        None => Ok(query.error_response(rcode)),
-    }
-}
+use crate::dns::{error::XfrError, server::DnsContext};
 
 /// A refused transfer and the response it owes the client: a TSIG failure
 /// answers with its own error record, anything else with REFUSED, signed by the
 /// key that got that far.
+#[derive(Debug)]
 pub(crate) struct TransferRefusal {
     pub(crate) reason: String,
     response: Option<Vec<u8>>,
@@ -59,12 +44,13 @@ impl TransferRefusal {
         if let Some(response) = self.response {
             return Ok(response);
         }
-        signed_error(query, Rcode::REFUSED, self.signer.as_mut())
+        Ok(query.signed_error_response(Rcode::REFUSED, self.signer.as_mut())?)
     }
 }
 
 /// Who a transfer request is: the verified key that signed it, or nobody when
 /// the address ACL admitted it unsigned; the signer answers under that key.
+#[derive(Debug)]
 pub(crate) struct TransferIdentity {
     pub(crate) key: Option<TsigKey>,
     pub(crate) signer: Option<TransferSigner>,
@@ -74,14 +60,16 @@ pub(crate) struct TransferIdentity {
 /// admit an unsigned one by the address ACL. The catalog zone is virtual and
 /// holds no grants, so only the ACL or a global key reaches it.
 pub(crate) async fn authenticate_transfer(
+    dns_cx: &DnsContext,
     query_data: &[u8],
     client_ip: IpAddr,
     zone_name: &str,
 ) -> Result<TransferIdentity, TransferRefusal> {
+    let cx = dns_cx.daemon();
     let key_name = match request_signature(query_data) {
         RequestSignature::Key(key_name) => key_name,
         RequestSignature::Absent => {
-            return match acl::is_client_allowed(client_ip).await {
+            return match acl::is_client_allowed(dns_cx, client_ip).await {
                 Ok(true) => Ok(TransferIdentity {
                     key: None,
                     signer: None,
@@ -106,20 +94,23 @@ pub(crate) async fn authenticate_transfer(
         }
     };
 
-    // An unknown key still runs validation: the empty key store makes it
-    // produce the BADKEY error response.
-    let key = TsigKeyService::find_by_wire_name(&key_name)
+    let key = tsig_key::find_by_wire_name(cx, &key_name)
         .await
         .map_err(|e| TransferRefusal::refused(format!("failed to load TSIG key: {}", e), None))?;
-    let domain_key = key
-        .as_ref()
-        .map(TsigKey::to_domain_key)
-        .transpose()
-        .map_err(TransferRefusal::from)?;
-    let signer = verify_tsig_sequence(query_data, domain_key).map_err(TransferRefusal::from)?;
+    let Some(key) = key else {
+        // An unknown key still runs validation: the empty key store makes it
+        // produce the BADKEY error response.
+        verify_tsig_sequence(query_data, None).map_err(TransferRefusal::from)?;
+        return Err(TransferRefusal::refused(
+            "TSIG verification passed without a key".to_string(),
+            None,
+        ));
+    };
+    let domain_key = key.to_domain_key().map_err(TransferRefusal::from)?;
+    let signer =
+        verify_tsig_sequence(query_data, Some(domain_key)).map_err(TransferRefusal::from)?;
 
-    let key = key.expect("verification succeeded, so the key is known");
-    if bindizr_config().dns.is_catalog_zone(zone_name) && !key.is_global {
+    if cx.config().dns.is_catalog_zone(zone_name) && !key.is_global {
         return Err(TransferRefusal::refused(
             format!(
                 "TSIG key '{}' is not granted zone '{}' whole",
@@ -138,14 +129,12 @@ impl From<TsigError> for TransferRefusal {
     /// Translate a TSIG error into a transfer refusal with its required response.
     fn from(error: TsigError) -> Self {
         match error {
-            TsigError::Failed { message, response } => TransferRefusal {
-                reason: message,
+            TsigError::Rejected { rcode, response } => TransferRefusal {
+                reason: format!("TSIG validation failed: {}", rcode),
                 response: Some(response),
                 signer: None,
             },
-            TsigError::Malformed(message) | TsigError::Internal(message) => {
-                TransferRefusal::refused(message, None)
-            }
+            other => TransferRefusal::refused(other.to_string(), None),
         }
     }
 }

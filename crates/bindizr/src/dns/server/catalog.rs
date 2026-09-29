@@ -1,22 +1,24 @@
 use bindizr_core::{
-    config::bindizr_config,
-    dns::{message, message::Rtype, name::ZoneName, tsig::TransferSigner},
-    model::zone::Zone,
+    dns::{Serial, SoaInterval, Ttl, message, message::Rtype, tsig::TransferSigner},
+    model::zone::{Zone, ZoneId},
 };
-use bindizr_service::zone::ZoneService;
+use bindizr_service::zone;
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 
-use crate::dns::error::XfrError;
+use crate::dns::{error::XfrError, server::DnsContext};
 
 /// Generates the catalog zone and its member zone list.
-pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrError> {
-    let config = bindizr_config();
-    let catalog_zone_name = config.dns.catalog_zone_name.as_str();
+pub(crate) async fn generate_catalog_zone(
+    dns_cx: &DnsContext,
+) -> Result<(Zone, Vec<String>), XfrError> {
+    let cx = dns_cx.daemon();
+    let config = cx.config();
+    let catalog_zone_name = &config.dns.catalog_zone_name;
     log::info!("Generating catalog zone: {}", catalog_zone_name);
 
-    let all_zones = ZoneService::list().await?;
+    let all_zones = zone::list(cx).await?;
 
     // The catalog zone is not a member of itself.
     let member_zones: Vec<String> = all_zones
@@ -30,21 +32,24 @@ pub(crate) async fn generate_catalog_zone() -> Result<(Zone, Vec<String>), XfrEr
 
     // The catalog zone is virtual (no DB row).
     let digest = catalog_digest(&member_zones);
-    let base_serial = all_zones.iter().map(|z| z.serial).max().unwrap_or(1);
-    let serial =
-        ZoneService::advance_catalog_serial(catalog_zone_name, &digest, base_serial).await?;
+    let base_serial = all_zones
+        .iter()
+        .map(|z| z.serial)
+        .max()
+        .unwrap_or(Serial::from(1));
+    let serial = zone::advance_catalog_serial(cx, catalog_zone_name, &digest, base_serial).await?;
 
     let catalog_zone = Zone {
-        id: 0,
-        name: ZoneName::from_row(catalog_zone_name),
+        id: ZoneId::from(0),
+        name: catalog_zone_name.clone(),
         mname: "invalid".to_string(),
         rname: "invalid".to_string(),
-        default_ttl: 3600,
+        default_ttl: Ttl::from_secs(3600),
         serial,
-        refresh: 3600,
-        retry: 600,
-        expire: 86400,
-        minimum_ttl: 60,
+        refresh: SoaInterval::from_secs(3600),
+        retry: SoaInterval::from_secs(600),
+        expire: SoaInterval::from_secs(86400),
+        minimum_ttl: Ttl::from_secs(60),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -76,6 +81,7 @@ fn catalog_digest(member_zones: &[String]) -> String {
 
 /// Send a catalog zone transfer using the requested question type.
 pub(crate) async fn handle_catalog_axfr(
+    dns_cx: &DnsContext,
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     response_qtype: Rtype,
@@ -83,11 +89,11 @@ pub(crate) async fn handle_catalog_axfr(
 ) -> Result<(), XfrError> {
     log::info!(
         "AXFR request for catalog zone: {}",
-        bindizr_config().dns.catalog_zone_name
+        dns_cx.daemon().config().dns.catalog_zone_name
     );
 
     // Materialize the virtual catalog from the current member zones.
-    let (catalog_zone, member_zones) = generate_catalog_zone().await?;
+    let (catalog_zone, member_zones) = generate_catalog_zone(dns_cx).await?;
 
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, response_qtype);
     if let Some(signer) = signer {
@@ -96,7 +102,7 @@ pub(crate) async fn handle_catalog_axfr(
     let mut messages_sent = 0usize;
 
     // Both SOAs must carry this snapshot's serial to delimit the AXFR.
-    let serial = bindizr_core::dns::serial_to_u32(catalog_zone.serial)?;
+    let serial = catalog_zone.serial;
 
     crate::dns::wire::add_answer_and_flush_if_needed(
         &mut builder,

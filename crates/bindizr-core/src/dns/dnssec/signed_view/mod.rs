@@ -12,34 +12,95 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
 use domain::{
-    base::{Record as WireRecord, iana::Rtype, rdata::ComposeRecordData},
+    base::{iana::Rtype, rdata::ComposeRecordData},
     crypto::sign::{KeyPair, SecretKeyBytes},
     dnssec::sign::{keys::signingkey::SigningKey, records::Rrset, signatures::rrsigs::sign_rrset},
     rdata::{ZoneRecordData, dnssec::Timestamp},
 };
 use input::denial_records;
 use sha2::{Digest, Sha256};
+use thiserror::Error;
 
-use super::WireName;
+use super::{WireName, WireRecord};
 use crate::{
     dns::{
-        name::{OwnerName, ZoneName},
-        record::Rdata,
+        ConvertTtlError, LibraryError, Serial, Ttl,
+        dnssec::{KeyRdataError, KeyTag, WireNameError},
+        name::{OwnerName, ParseNameError, ZoneName},
+        record::{EncodeRdataError, Rdata},
     },
     model::{
         dnssec_key::DnssecKey,
         dnssec_policy::DnssecDenial,
-        dnssec_record::{DnssecRecord, DnssecRecordKey, DnssecRecordType},
+        dnssec_record::{
+            DnssecRecord, DnssecRecordId, DnssecRecordKey, DnssecRecordType,
+            ParseDnssecRecordTypeError,
+        },
         record::Record,
         zone::Zone,
     },
 };
 
-type SignRecord = WireRecord<WireName, ZoneRecordData<Vec<u8>, WireName>>;
+type SignRecord = WireRecord<ZoneRecordData<Vec<u8>, WireName>>;
 
+/// Why a zone's signed view could not be computed.
+#[derive(Debug, Error)]
+pub enum SignZoneError {
+    #[error("zone has keys but no usable signer for the key records or the zone data")]
+    NoUsableSigner,
+    #[error(transparent)]
+    Ttl(#[from] ConvertTtlError),
+    #[error("derived owner '{owner}' is not inside zone '{zone}': {source}")]
+    OwnerOutsideZone {
+        owner: String,
+        zone: String,
+        #[source]
+        source: ParseNameError,
+    },
+    #[error("stored private key is invalid: {0}")]
+    PrivateKey(#[source] LibraryError),
+    #[error("failed to load signing key: {0}")]
+    LoadKey(#[source] LibraryError),
+    /// The `domain` signer's errors implement no `Error`, so their text is
+    /// what is kept.
+    #[error("mismatched records for one name and type: {reason}")]
+    MismatchedRecordSet { reason: String },
+    #[error("signing failed: {reason}")]
+    Sign { reason: String },
+    #[error("invalid {rtype} rdata: {source}")]
+    Rdata {
+        rtype: &'static str,
+        #[source]
+        source: LibraryError,
+    },
+    #[error("invalid SOA rdata: {0}")]
+    Soa(#[source] LibraryError),
+    #[error("NSEC3 generation failed: {reason}")]
+    Nsec3 { reason: String },
+    #[error("NSEC generation failed: {reason}")]
+    Nsec { reason: String },
+    #[error(transparent)]
+    WireName(#[from] WireNameError),
+    #[error(transparent)]
+    Key(#[from] KeyRdataError),
+    #[error(transparent)]
+    EncodeRdata(#[from] EncodeRdataError),
+    #[error(transparent)]
+    RecordType(#[from] ParseDnssecRecordTypeError),
+}
+
+/// What a signing pass regenerates: the signatures expiring within the
+/// refresh window, or every one (a manual re-sign).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SigningPass {
+    Refresh,
+    Full,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct SignedViewParams<'a> {
     pub zone: &'a Zone,
-    pub new_serial: i32,
+    pub new_serial: Serial,
     pub records: &'a [Record],
     pub keys: &'a [DnssecKey],
     /// The stored derived plane, the reuse source and diff baseline.
@@ -53,8 +114,7 @@ pub struct SignedViewParams<'a> {
     pub expiration_jitter_secs: i64,
     /// Re-sign when a stored signature expires within this window.
     pub refresh_secs: i64,
-    /// Ignore stored signatures entirely (manual re-sign).
-    pub force: bool,
+    pub pass: SigningPass,
     /// Publish the RFC 8078 delete CDS/CDNSKEY pair instead of per-key ones,
     /// asking the parent to drop the zone's DS record set.
     pub withdraw_parent_ds: bool,
@@ -72,17 +132,18 @@ impl SignedViewParams<'_> {
         let mut hasher = Sha256::new();
         hasher.update(owner.as_slice());
         hasher.update(covered.to_be_bytes());
-        let slot = u64::from_be_bytes(
-            hasher.finalize()[..8]
-                .try_into()
-                .expect("8 bytes of digest"),
-        );
+        // The leading eight digest bytes, read big-endian.
+        let slot = hasher
+            .finalize()
+            .iter()
+            .take(8)
+            .fold(0u64, |slot, byte| (slot << 8) | u64::from(*byte));
         self.expiration
             - chrono::Duration::seconds((slot % self.expiration_jitter_secs as u64) as i64)
     }
 
     /// Compute the signed DNSSEC view and its changes from the previous view.
-    pub fn compute(&self) -> Result<SignedViewDiff, String> {
+    pub fn compute(&self) -> Result<SignedViewDiff, SignZoneError> {
         let zone = self.zone;
         let apex = zone.name.to_wire_name()?;
 
@@ -100,10 +161,7 @@ impl SignedViewParams<'_> {
             .filter(|s| s.key.signs_zone_data(self.keys))
             .collect();
         if !signers.is_empty() && (key_signers.is_empty() || data_signers.is_empty()) {
-            return Err(
-                "zone has keys but no usable signer for the key records or the zone data"
-                    .to_string(),
-            );
+            return Err(SignZoneError::NoUsableSigner);
         }
 
         let input = self.signing_input(&apex, &signers)?;
@@ -115,26 +173,26 @@ impl SignedViewParams<'_> {
         // and the denial chain. User records and the SOA stay in their own planes.
         for record in input.iter().filter(|record| is_key_rtype(record.rtype())) {
             new_rows.push(DnssecRecord {
-                id: 0,
+                id: DnssecRecordId::UNWRITTEN,
                 zone_id: zone.id,
                 name: OwnerName::apex(),
                 record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
-                ttl: record.ttl().as_secs() as i32,
-                rdata: to_rdata(record.data()),
+                ttl: Ttl::try_from(record.ttl().as_secs())?,
+                rdata: to_rdata(record.data())?,
                 expires_at: None,
                 record_set_digest: None,
             });
         }
         for record in &denial_records {
             new_rows.push(DnssecRecord {
-                id: 0,
+                id: DnssecRecordId::UNWRITTEN,
                 zone_id: zone.id,
                 name: parse_derived_owner(record.owner(), &zone.name)?,
                 record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
-                ttl: record.ttl().as_secs() as i32,
-                rdata: to_rdata(record.data()),
+                ttl: Ttl::try_from(record.ttl().as_secs())?,
+                rdata: to_rdata(record.data())?,
                 expires_at: None,
                 record_set_digest: None,
             });
@@ -189,7 +247,7 @@ impl SignedViewParams<'_> {
         let refresh_cutoff = self.now + chrono::Duration::seconds(self.refresh_secs);
         for record_set in &signable {
             let owner = parse_derived_owner(record_set[0].owner(), &zone.name)?;
-            let covered = record_set[0].rtype().to_int() as i32;
+            let covered = i32::from(record_set[0].rtype().to_int());
             // The apex key record sets must be signed by keys the parent DS names
             // (RFC 7344, Section 4.1 for CDS/CDNSKEY); everything else by the
             // active zone-data keys.
@@ -199,11 +257,11 @@ impl SignedViewParams<'_> {
                 } else {
                     &data_signers
                 };
-            let digest = record_set_digest(record_set_signers, record_set);
+            let digest = record_set_digest(record_set_signers, record_set)?;
 
             // Reuse only a complete, unchanged set of signatures that outlives
             // the refresh window; a forced pass regenerates every signature.
-            let reusable = if self.force {
+            let reusable = if self.pass == SigningPass::Full {
                 None
             } else {
                 prev_rrsigs
@@ -230,13 +288,13 @@ impl SignedViewParams<'_> {
                     for signer in record_set_signers {
                         let rrsig = signer.sign_rrset(record_set, self.inception, expiration)?;
                         new_rows.push(DnssecRecord {
-                            id: 0,
+                            id: DnssecRecordId::UNWRITTEN,
                             zone_id: zone.id,
                             name: owner.clone(),
                             record_type: DnssecRecordType::Rrsig,
                             covered_record_type: Some(covered),
-                            ttl: rrsig.ttl().as_secs() as i32,
-                            rdata: to_rdata(rrsig.data()),
+                            ttl: Ttl::try_from(rrsig.ttl().as_secs())?,
+                            rdata: to_rdata(rrsig.data())?,
                             expires_at: Some(expiration),
                             record_set_digest: Some(digest.clone()),
                         });
@@ -252,6 +310,7 @@ impl SignedViewParams<'_> {
 
 /// The derived plane's change set. Rows in neither list are stored and
 /// current; `removed` rows carry their database ids.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignedViewDiff {
     pub added: Vec<DnssecRecord>,
     pub removed: Vec<DnssecRecord>,
@@ -295,7 +354,10 @@ fn is_key_rtype(rtype: Rtype) -> bool {
 
 /// Content identity for signature reuse; any component changing must force
 /// a fresh signature.
-fn record_set_digest(signers: &[&Signer<'_>], record_set: &[&SignRecord]) -> String {
+fn record_set_digest(
+    signers: &[&Signer<'_>],
+    record_set: &[&SignRecord],
+) -> Result<String, EncodeRdataError> {
     let mut hasher = Sha256::new();
     hasher.update(record_set[0].owner().as_slice());
     hasher.update(record_set[0].rtype().to_int().to_be_bytes());
@@ -304,7 +366,7 @@ fn record_set_digest(signers: &[&Signer<'_>], record_set: &[&SignRecord]) -> Str
     let mut rdatas: Vec<Rdata> = record_set
         .iter()
         .map(|record| to_rdata(record.data()))
-        .collect();
+        .collect::<Result<_, _>>()?;
     rdatas.sort();
     for rdata in rdatas {
         hasher.update((rdata.as_bytes().len() as u32).to_be_bytes());
@@ -313,11 +375,11 @@ fn record_set_digest(signers: &[&Signer<'_>], record_set: &[&SignRecord]) -> Str
     for signer in signers {
         // Key tags are 16 bits and can collide across a rollover; the row id
         // pins the actual signing key so a stale signature cannot be reused.
-        hasher.update(signer.key.id.to_be_bytes());
-        hasher.update(signer.key_tag.to_be_bytes());
+        hasher.update(i32::from(signer.key.id).to_be_bytes());
+        hasher.update(signer.key_tag.as_u16().to_be_bytes());
         hasher.update([signer.algorithm]);
     }
-    hex::encode(hasher.finalize())
+    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Check whether an owner lies below a delegation in this zone.
@@ -338,36 +400,38 @@ fn is_below_cut(owner: &WireName, apex: &WireName, delegations: &BTreeSet<Vec<u8
 }
 
 /// Convert a derived absolute owner to a name relative to its zone.
-fn parse_derived_owner(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, String> {
-    OwnerName::parse_absolute_in_zone(&owner.to_string(), zone_name).map_err(|e| {
-        format!(
-            "derived owner '{}' is not inside zone '{}': {}",
-            owner, zone_name, e
-        )
+fn parse_derived_owner(owner: &WireName, zone_name: &ZoneName) -> Result<OwnerName, SignZoneError> {
+    OwnerName::parse_absolute_in_zone(&owner.to_string(), zone_name).map_err(|source| {
+        SignZoneError::OwnerOutsideZone {
+            owner: owner.to_string(),
+            zone: zone_name.to_string(),
+            source,
+        }
     })
 }
 
 /// A key loaded into signing form together with its DNSKEY RDATA.
+#[derive(Debug)]
 pub(crate) struct Signer<'a> {
     key: &'a DnssecKey,
     signing_key: SigningKey<Vec<u8>, KeyPair>,
     dnskey: domain::rdata::Dnskey<Vec<u8>>,
-    key_tag: u16,
+    key_tag: KeyTag,
     algorithm: u8,
 }
 
 impl<'a> Signer<'a> {
     /// Load a stored DNSSEC key into a signer for the zone apex.
-    fn new(apex: &WireName, key: &'a DnssecKey) -> Result<Self, String> {
+    fn new(apex: &WireName, key: &'a DnssecKey) -> Result<Self, SignZoneError> {
         let dnskey = key.to_dnskey()?;
         let secret = SecretKeyBytes::parse_from_bind(&key.private_key)
-            .map_err(|e| format!("stored private key is invalid: {}", e))?;
+            .map_err(|e| SignZoneError::PrivateKey(Box::new(e)))?;
         let key_pair = KeyPair::from_bytes(&secret, &dnskey)
-            .map_err(|e| format!("failed to load signing key: {}", e))?;
+            .map_err(|e| SignZoneError::LoadKey(Box::new(e)))?;
         Ok(Signer {
             key,
             signing_key: SigningKey::new(apex.clone(), key.role.flags(), key_pair),
-            key_tag: dnskey.key_tag(),
+            key_tag: KeyTag::from(dnskey.key_tag()),
             algorithm: key.algorithm.to_int() as u8,
             dnskey,
         })
@@ -379,24 +443,26 @@ impl<'a> Signer<'a> {
         record_set: &[&SignRecord],
         inception: DateTime<Utc>,
         expiration: DateTime<Utc>,
-    ) -> Result<WireRecord<WireName, domain::rdata::Rrsig<Vec<u8>, WireName>>, String> {
-        let record_set = Rrset::new_from_refs(record_set)
-            .map_err(|e| format!("mismatched records for one name and type: {}", e))?;
+    ) -> Result<WireRecord<domain::rdata::Rrsig<Vec<u8>, WireName>>, SignZoneError> {
+        let record_set =
+            Rrset::new_from_refs(record_set).map_err(|e| SignZoneError::MismatchedRecordSet {
+                reason: e.to_string(),
+            })?;
         sign_rrset(
             &self.signing_key,
             &record_set,
             Timestamp::from(inception.timestamp() as u32),
             Timestamp::from(expiration.timestamp() as u32),
         )
-        .map_err(|e| format!("signing failed: {}", e))
+        .map_err(|e| SignZoneError::Sign {
+            reason: e.to_string(),
+        })
     }
 }
 
-/// Wire RDATA of `data`, without the length prefix. Composed protocol values
-/// are bounded well under the RDLENGTH limit, so the cap cannot trip here.
-fn to_rdata<D: ComposeRecordData>(data: &D) -> Rdata {
+/// Wire RDATA of `data`, without the length prefix.
+fn to_rdata<D: ComposeRecordData>(data: &D) -> Result<Rdata, EncodeRdataError> {
     let mut bytes = Vec::new();
-    data.compose_rdata(&mut bytes)
-        .expect("composing into a Vec cannot run out of space");
-    Rdata::new(bytes).expect("composed RDATA exceeds the RDLENGTH limit")
+    let Ok(()) = data.compose_rdata(&mut bytes);
+    Rdata::new(bytes)
 }

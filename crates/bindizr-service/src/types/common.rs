@@ -5,22 +5,50 @@ use utoipa::ToSchema;
 
 use crate::error::ServiceError;
 
+/// Whether a previewable write goes through, or only reports what it
+/// would do.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Run {
+    Apply,
+    DryRun,
+}
+
+impl Run {
+    /// The run a `dry_run` flag asks for.
+    pub fn from_dry_run(dry_run: bool) -> Self {
+        if dry_run { Run::DryRun } else { Run::Apply }
+    }
+
+    /// Whether the run writes nothing.
+    pub fn is_dry_run(self) -> bool {
+        self == Run::DryRun
+    }
+}
+
 /// Generic success message response.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct MessageResponse {
     #[schema(example = "Deleted successfully")]
     pub message: String,
 }
 
+/// Whether the API can serve requests: its database answered a probe.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum HealthStatus {
+    Healthy,
+    Unhealthy,
+}
+
 /// Health probe response.
-#[derive(Serialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct HealthResponse {
-    #[schema(example = "healthy")]
-    pub status: String,
+    pub status: HealthStatus,
 }
 
 /// Generic error response: a plain description plus a machine-readable code.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ErrorResponse {
     #[schema(example = "Zone with name 'example.com' not found")]
     pub error: String,
@@ -48,8 +76,8 @@ impl ErrorResponse {
     /// Build an error response from a service error's code and message.
     pub fn new(err: &ServiceError) -> Self {
         ErrorResponse {
-            error: err.message.clone(),
-            code: err.code.as_str().to_string(),
+            error: err.to_string(),
+            code: err.code().as_str().to_string(),
         }
     }
 }

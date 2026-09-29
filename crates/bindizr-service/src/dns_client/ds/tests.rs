@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use bindizr_core::dns::{name::ZoneName, query::DsRecord};
+use bindizr_core::dns::{dnssec::KeyTag, name::ZoneName, query::DsRecord};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, UdpSocket},
@@ -123,7 +123,7 @@ fn parsed_ds_record(key_tag: u16) -> DsRecord {
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
     DsRecord {
-        key_tag,
+        key_tag: KeyTag::from(key_tag),
         digest_type: 2,
         rdata,
     }
@@ -316,7 +316,7 @@ async fn query_ds_reports_absence_per_server() {
             .iter()
             .map(|a| a.as_ref().map(DsRecordSet::key_tags))
             .collect::<Vec<_>>(),
-        vec![None, Some(vec![1])]
+        vec![None, Some(vec![KeyTag::from(1)])]
     );
 }
 
@@ -336,8 +336,8 @@ async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
     )
     .await
     .unwrap_err();
-    assert!(err.contains(&silent.to_string()), "{err}");
-    assert!(err.contains("timeout"), "{err}");
+    assert!(err.to_string().contains(&silent.to_string()), "{err}");
+    assert!(err.to_string().contains("timeout"), "{err}");
 
     let cache = fake_server(Answer::Ds {
         aa: false,
@@ -347,7 +347,7 @@ async fn query_ds_fails_when_a_server_is_silent_or_not_authoritative() {
     let err = query_ds(&zone_name("example.com"), &servers(&[cache]), TIMEOUT)
         .await
         .unwrap_err();
-    assert!(err.contains("not authoritative"), "{err}");
+    assert!(err.to_string().contains("not authoritative"), "{err}");
 }
 
 /// Verify that `query_ds` falls through to the next address of a server.
@@ -372,7 +372,7 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
             .iter()
             .map(|a| a.as_ref().map(DsRecordSet::key_tags))
             .collect::<Vec<_>>(),
-        vec![Some(vec![7])]
+        vec![Some(vec![KeyTag::from(7)])]
     );
 }
 
@@ -382,7 +382,7 @@ async fn resolve_parent_ns_addrs_rejects_an_unresolvable_entry() {
     let err = resolve_parent_ns_addrs("127.0.0.1:5353,nx.invalid", TIMEOUT)
         .await
         .unwrap_err();
-    assert!(err.contains("nx.invalid"), "{err}");
+    assert!(err.to_string().contains("nx.invalid"), "{err}");
 
     let servers = resolve_parent_ns_addrs("127.0.0.1:5353, 192.0.2.1", TIMEOUT)
         .await

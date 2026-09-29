@@ -1,7 +1,7 @@
-//! Database layer: connection-pool setup and repository implementations for
-//! the MySQL, PostgreSQL, and SQLite backends.
+//! Data access: the `Db` a daemon connects to, and one module per entity
+//! whose functions run its queries on whichever backend it holds.
 
-use std::{str::FromStr, sync::OnceLock};
+use std::str::FromStr;
 
 use chrono::Utc;
 use sqlx::{
@@ -11,104 +11,145 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
 
+pub mod api_token;
+pub mod catalog_zone;
+pub mod dnssec_key;
+pub mod dnssec_policy;
+pub mod dnssec_record;
+pub mod dnssec_withdrawal;
 pub mod error;
-pub mod repository;
+mod mysql;
+mod postgres;
+pub mod record;
 mod schema;
+pub mod secondary;
+mod sql;
+mod sqlite;
+pub mod token_grant;
+pub mod transfer;
+pub mod tsig_grant;
+pub mod tsig_key;
+mod tx;
 mod utils;
+pub mod zone;
+pub mod zone_change;
+pub mod zone_version;
 
-pub(crate) use bindizr_core::config;
+use bindizr_core::config;
 pub use bindizr_core::model;
 use error::DatabaseError;
+pub use sql::{ParseSortError, RecordSort, SortOrder, ZoneSort};
+use tx::TransactionKind;
+pub use tx::{LockLevel, Transaction};
 
-static DATABASE_POOL: OnceLock<DatabasePool> = OnceLock::new();
-
+/// The database the daemon connected to: one pool on one of the three
+/// backends. Every query is a root function taking it (`zone::get_by_name`)
+/// and matching the backend to reach the same-named function holding the SQL.
 #[derive(Debug)]
-pub(crate) enum DatabasePool {
-    MySQL(Pool<MySql>),
-    PostgreSQL(Pool<Postgres>),
-    SQLite(Pool<Sqlite>),
+pub struct Db(Backend);
+
+/// Which backend `Db` holds; the root functions match on it.
+#[derive(Debug)]
+pub(crate) enum Backend {
+    MySql(Pool<MySql>),
+    Postgres(Pool<Postgres>),
+    Sqlite(Pool<Sqlite>),
 }
 
-#[derive(Debug, Clone)]
-pub(crate) enum DatabaseType {
-    MySQL,
-    PostgreSQL,
-    SQLite,
-}
+impl Db {
+    /// Connect to the configured backend and set up the schema; the daemon
+    /// calls this once and holds the value.
+    pub async fn connect(database: &config::DatabaseConfig) -> Result<Db, DatabaseError> {
+        let backend = match database.database_type {
+            config::DatabaseType::MySql => Backend::connect_mysql(&database.mysql.url).await?,
+            config::DatabaseType::Postgres => {
+                Backend::connect_postgres(&database.postgresql.url).await?
+            }
+            config::DatabaseType::Sqlite => {
+                // The file is created on a clean install, so its directory is too.
+                utils::create_parent_dir(&database.sqlite.file_path)?;
+                let url = utils::to_sqlite_url(&database.sqlite.file_path)?;
+                Backend::connect_sqlite(&url).await?
+            }
+        };
 
-/// Build the global database pool from configuration; the daemon calls this
-/// once. Returns whether this startup created the schema, which is what tells
-/// a first install from a restart.
-pub async fn initialize() -> Result<(), DatabaseError> {
-    let bindizr_config = config::bindizr_config();
+        let db = Db(backend);
+        db.create_tables().await?;
 
-    let database_type = match bindizr_config.database.database_type {
-        config::DatabaseType::Mysql => DatabaseType::MySQL,
-        config::DatabaseType::Postgresql => DatabaseType::PostgreSQL,
-        config::DatabaseType::Sqlite => DatabaseType::SQLite,
-    };
+        log::info!("Database pool initialized");
+        Ok(db)
+    }
 
-    let database_url = match database_type {
-        DatabaseType::MySQL => bindizr_config.database.mysql.url.clone(),
-        DatabaseType::PostgreSQL => bindizr_config.database.postgresql.url.clone(),
-        DatabaseType::SQLite => {
-            // The file is created on a clean install, so its directory is too.
-            utils::create_parent_dir(&bindizr_config.database.sqlite.file_path)
-                .map_err(DatabaseError::PoolError)?;
-            utils::to_sqlite_url(&bindizr_config.database.sqlite.file_path)
-                .map_err(DatabaseError::PoolError)?
+    /// Begin a transaction on the connected backend.
+    pub async fn begin(&self) -> Result<Transaction<'static>, DatabaseError> {
+        // IMMEDIATE takes SQLite's write lock up front so a read-then-write
+        // transaction can't fail late with "database is locked".
+        self.begin_with("BEGIN IMMEDIATE").await
+    }
+
+    /// Begin a transaction for multi-statement reads that write nothing: SQLite
+    /// readers then run concurrently instead of taking the single writer slot.
+    pub async fn begin_read(&self) -> Result<Transaction<'static>, DatabaseError> {
+        self.begin_with("BEGIN DEFERRED").await
+    }
+
+    /// Shared opener; only SQLite's BEGIN statement distinguishes the two.
+    async fn begin_with(
+        &self,
+        sqlite_begin: &'static str,
+    ) -> Result<Transaction<'static>, DatabaseError> {
+        let kind = match &self.0 {
+            Backend::MySql(pool) => pool.begin().await.map(TransactionKind::MySql),
+            Backend::Postgres(pool) => pool.begin().await.map(TransactionKind::Postgres),
+            Backend::Sqlite(pool) => pool
+                .begin_with(sqlite_begin)
+                .await
+                .map(TransactionKind::Sqlite),
         }
-    };
+        .map_err(DatabaseError::TransactionFailed)?;
+        Ok(Transaction(kind))
+    }
 
-    let connected = match database_type {
-        DatabaseType::MySQL => DatabasePool::new_mysql(&database_url).await?,
-        DatabaseType::PostgreSQL => DatabasePool::new_postgres(&database_url).await?,
-        DatabaseType::SQLite => DatabasePool::new_sqlite(&database_url).await?,
-    };
+    /// The pool's occupancy. sqlx counts held connections, not waiters, so
+    /// saturation shows as `connections` reaching `max`.
+    pub fn stats(&self) -> PoolStats {
+        let (connections, idle) = match &self.0 {
+            Backend::MySql(pool) => (pool.size(), pool.num_idle()),
+            Backend::Postgres(pool) => (pool.size(), pool.num_idle()),
+            Backend::Sqlite(pool) => (pool.size(), pool.num_idle()),
+        };
 
-    DATABASE_POOL
-        .set(connected)
-        .map_err(|_| DatabaseError::PoolError("database pool initialized twice".to_string()))?;
-
-    pool()
-        .create_tables()
-        .await
-        .map_err(DatabaseError::QueryFailed)?;
-
-    log::info!("Database pool initialized");
-    Ok(())
+        PoolStats {
+            connections,
+            idle: idle as u32,
+            max: pool_max_connections(),
+        }
+    }
 }
 
-/// Connect once and run a trivial query, creating neither tables nor the
-/// global pool; `doctor` runs this when no daemon is up.
+/// Connect once and run a trivial query, creating neither tables nor a pool
+/// to keep; `doctor` runs this when no daemon is up.
 pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), DatabaseError> {
     match database.database_type {
-        config::DatabaseType::Mysql => {
+        config::DatabaseType::MySql => {
             let pool = MySqlPoolOptions::new()
                 .max_connections(1)
                 .connect(&database.mysql.url)
                 .await
-                .map_err(|e| DatabaseError::PoolError(mysql_connect_error(&e)))?;
-            sqlx::query("SELECT 1")
-                .execute(&pool)
-                .await
-                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+                .map_err(DatabaseError::MySqlConnect)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
         }
-        config::DatabaseType::Postgresql => {
+        config::DatabaseType::Postgres => {
             let pool = PgPoolOptions::new()
                 .max_connections(1)
                 .connect(&database.postgresql.url)
                 .await
-                .map_err(|e| DatabaseError::PoolError(postgres_connect_error(&e)))?;
-            sqlx::query("SELECT 1")
-                .execute(&pool)
-                .await
-                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+                .map_err(DatabaseError::PostgresConnect)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
         }
         config::DatabaseType::Sqlite => {
             // Creating the file here would leave it owned by whoever ran doctor.
-            let url = utils::to_sqlite_url(&database.sqlite.file_path)
-                .map_err(DatabaseError::PoolError)?;
+            let url = utils::to_sqlite_url(&database.sqlite.file_path)?;
             let connect_options = sqlite_connect_options(&url)?
                 .create_if_missing(false)
                 .read_only(true);
@@ -116,11 +157,8 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
                 .max_connections(1)
                 .connect_with(connect_options)
                 .await
-                .map_err(|e| DatabaseError::PoolError(sqlite_connect_error(&e)))?;
-            sqlx::query("SELECT 1")
-                .execute(&pool)
-                .await
-                .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+                .map_err(DatabaseError::SqliteOpen)?;
+            sqlx::query("SELECT 1").execute(&pool).await?;
         }
     }
     Ok(())
@@ -128,58 +166,17 @@ pub async fn probe_connection(database: &config::DatabaseConfig) -> Result<(), D
 
 /// Parse a SQLite URL into connection options.
 fn sqlite_connect_options(url: &str) -> Result<SqliteConnectOptions, DatabaseError> {
-    SqliteConnectOptions::from_str(url)
-        .map_err(|e| DatabaseError::PoolError(format!("Invalid SQLite file path: {}", e)))
-}
-
-/// The MySQL connection failure, naming the key an operator would fix.
-fn mysql_connect_error(e: &sqlx::Error) -> String {
-    format!("MySQL connection failed (check database.mysql.url): {}", e)
-}
-
-/// The PostgreSQL connection failure, naming the key an operator would fix.
-fn postgres_connect_error(e: &sqlx::Error) -> String {
-    format!(
-        "PostgreSQL connection failed (check database.postgresql.url): {}",
-        e
-    )
-}
-
-/// The SQLite open failure, naming the key an operator would fix.
-fn sqlite_connect_error(e: &sqlx::Error) -> String {
-    format!(
-        "SQLite open failed (check database.sqlite.file_path): {}",
-        e
-    )
-}
-
-/// Return the global database pool, panicking if not yet initialized.
-pub(crate) fn pool() -> &'static DatabasePool {
-    DATABASE_POOL.get().expect("Database pool not initialized")
+    SqliteConnectOptions::from_str(url).map_err(DatabaseError::InvalidSqlitePath)
 }
 
 /// How full the connection pool is. sqlx counts held connections, not waiters,
 /// so saturation shows as `connections` reaching `max`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PoolStats {
     /// Connections the pool holds, idle and handed out alike.
     pub connections: u32,
     pub idle: u32,
     pub max: u32,
-}
-
-/// The pool's occupancy, or `None` before [`initialize`].
-pub fn pool_stats() -> Option<PoolStats> {
-    let (connections, idle) = match DATABASE_POOL.get()? {
-        DatabasePool::MySQL(pool) => (pool.size(), pool.num_idle()),
-        DatabasePool::PostgreSQL(pool) => (pool.size(), pool.num_idle()),
-        DatabasePool::SQLite(pool) => (pool.size(), pool.num_idle()),
-    };
-
-    Some(PoolStats {
-        connections,
-        idle: idle as u32,
-        max: pool_max_connections(),
-    })
 }
 
 /// Max pooled connections, scaled to the host instead of sqlx's flat 10.
@@ -191,9 +188,9 @@ fn pool_max_connections() -> u32 {
     ((cores * 4) as u32).clamp(8, 64)
 }
 
-impl DatabasePool {
-    /// Connect to MySQL, create tables, and return the pool.
-    pub(crate) async fn new_mysql(url: &str) -> Result<Self, DatabaseError> {
+impl Backend {
+    /// Connect to MySQL and return the pool.
+    async fn connect_mysql(url: &str) -> Result<Self, DatabaseError> {
         let pool = MySqlPoolOptions::new()
             .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
@@ -208,13 +205,13 @@ impl DatabasePool {
             })
             .connect(url)
             .await
-            .map_err(|e| DatabaseError::PoolError(mysql_connect_error(&e)))?;
+            .map_err(DatabaseError::MySqlConnect)?;
 
-        Ok(DatabasePool::MySQL(pool))
+        Ok(Backend::MySql(pool))
     }
 
-    /// Connect to PostgreSQL, create tables, and return the pool.
-    pub(crate) async fn new_postgres(url: &str) -> Result<Self, DatabaseError> {
+    /// Connect to PostgreSQL and return the pool.
+    async fn connect_postgres(url: &str) -> Result<Self, DatabaseError> {
         let pool = PgPoolOptions::new()
             .max_connections(pool_max_connections())
             .after_connect(|conn, _| {
@@ -230,13 +227,13 @@ impl DatabasePool {
             })
             .connect(url)
             .await
-            .map_err(|e| DatabaseError::PoolError(postgres_connect_error(&e)))?;
+            .map_err(DatabaseError::PostgresConnect)?;
 
-        Ok(DatabasePool::PostgreSQL(pool))
+        Ok(Backend::Postgres(pool))
     }
 
-    /// Connect to SQLite, create tables, and return the pool.
-    pub(crate) async fn new_sqlite(url: &str) -> Result<Self, DatabaseError> {
+    /// Connect to SQLite and return the pool.
+    async fn connect_sqlite(url: &str) -> Result<Self, DatabaseError> {
         // A clean install points at a database file that does not exist yet.
         let connect_options = sqlite_connect_options(url)?.create_if_missing(true);
 
@@ -271,23 +268,22 @@ impl DatabasePool {
             })
             .connect_with(connect_options)
             .await
-            .map_err(|e| DatabaseError::PoolError(sqlite_connect_error(&e)))?;
+            .map_err(DatabaseError::SqliteOpen)?;
 
-        Ok(DatabasePool::SQLite(pool))
+        Ok(Backend::Sqlite(pool))
     }
+}
 
+impl Db {
     /// Run this backend's creation statements and seed the built-in policy.
-    async fn create_tables(&self) -> Result<(), String> {
-        match self {
-            DatabasePool::MySQL(pool) => {
-                let mut conn = pool.acquire().await.map_err(|e| {
-                    log::error!("Failed to acquire MySQL connection: {}", e);
-                    e.to_string()
-                })?;
+    async fn create_tables(&self) -> Result<(), DatabaseError> {
+        match &self.0 {
+            Backend::MySql(pool) => {
+                let mut conn = pool.acquire().await?;
                 for query in schema::mysql::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
                 }
                 let seed = schema::mysql::default_policy_seed();
@@ -297,18 +293,15 @@ impl DatabasePool {
                     .await
                     .map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", seed, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
             }
-            DatabasePool::PostgreSQL(pool) => {
-                let mut conn = pool.acquire().await.map_err(|e| {
-                    log::error!("Failed to acquire PostgreSQL connection: {}", e);
-                    e.to_string()
-                })?;
+            Backend::Postgres(pool) => {
+                let mut conn = pool.acquire().await?;
                 for query in schema::postgres::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
                 }
                 let seed = schema::postgres::default_policy_seed();
@@ -318,18 +311,15 @@ impl DatabasePool {
                     .await
                     .map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", seed, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
             }
-            DatabasePool::SQLite(pool) => {
-                let mut conn = pool.acquire().await.map_err(|e| {
-                    log::error!("Failed to acquire SQLite connection: {}", e);
-                    e.to_string()
-                })?;
+            Backend::Sqlite(pool) => {
+                let mut conn = pool.acquire().await?;
                 for query in schema::sqlite::table_creation_queries() {
                     sqlx::query(query).execute(&mut *conn).await.map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", query, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
                 }
                 let seed = schema::sqlite::default_policy_seed();
@@ -339,80 +329,10 @@ impl DatabasePool {
                     .await
                     .map_err(|e| {
                         log::error!("Failed to execute query '{}': {}", seed, e);
-                        e.to_string()
+                        DatabaseError::from(e)
                     })?;
             }
         }
         Ok(())
     }
-}
-
-/// Return the initialized zone repository.
-pub fn get_zone_repository() -> Box<dyn repository::ZoneRepository> {
-    pool().zone_repository()
-}
-
-/// Return the initialized record repository.
-pub fn get_record_repository() -> Box<dyn repository::RecordRepository> {
-    pool().record_repository()
-}
-
-/// Return the initialized DNSSEC policy repository.
-pub fn get_dnssec_policy_repository() -> Box<dyn repository::DnssecPolicyRepository> {
-    pool().dnssec_policy_repository()
-}
-
-/// Return the initialized secondary repository.
-pub fn get_secondary_repository() -> Box<dyn repository::SecondaryRepository> {
-    pool().secondary_repository()
-}
-
-/// Return the initialized TSIG key repository.
-pub fn get_tsig_key_repository() -> Box<dyn repository::TsigKeyRepository> {
-    pool().tsig_key_repository()
-}
-
-/// Return the initialized TSIG grant repository.
-pub fn get_tsig_grant_repository() -> Box<dyn repository::TsigGrantRepository> {
-    pool().tsig_grant_repository()
-}
-
-/// Return the initialized token grant repository.
-pub fn get_token_grant_repository() -> Box<dyn repository::TokenGrantRepository> {
-    pool().token_grant_repository()
-}
-
-/// Return the initialized API token repository.
-pub fn get_api_token_repository() -> Box<dyn repository::ApiTokenRepository> {
-    pool().api_token_repository()
-}
-
-/// Return the initialized zone change repository.
-pub fn get_zone_change_repository() -> Box<dyn repository::ZoneChangeRepository> {
-    pool().zone_change_repository()
-}
-
-/// Return the initialized zone version repository.
-pub fn get_zone_version_repository() -> Box<dyn repository::ZoneVersionRepository> {
-    pool().zone_version_repository()
-}
-
-/// Return the initialized catalog zone repository.
-pub fn get_catalog_zone_repository() -> Box<dyn repository::CatalogZoneRepository> {
-    pool().catalog_zone_repository()
-}
-
-/// Return the initialized DNSSEC withdrawal repository.
-pub fn get_dnssec_withdrawal_repository() -> Box<dyn repository::DnssecWithdrawalRepository> {
-    pool().dnssec_withdrawal_repository()
-}
-
-/// Return the initialized DNSSEC key repository.
-pub fn get_dnssec_key_repository() -> Box<dyn repository::DnssecKeyRepository> {
-    pool().dnssec_key_repository()
-}
-
-/// Return the initialized DNSSEC record repository.
-pub fn get_dnssec_record_repository() -> Box<dyn repository::DnssecRecordRepository> {
-    pool().dnssec_record_repository()
 }

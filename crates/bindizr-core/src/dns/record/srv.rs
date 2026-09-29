@@ -1,5 +1,5 @@
 use super::{
-    Rdata,
+    EncodeRdataError, ParseRecordValueError, Rdata,
     value::{
         DEFAULT_PRIORITY, parse_optional_u16_record_field, parse_u16_record_field,
         validate_domain_record_value,
@@ -7,6 +7,7 @@ use super::{
 };
 use crate::dns::name::{encode_name, to_fqdn_lowercase};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SrvRecordValue<'a> {
     priority: u16,
     weight: u16,
@@ -17,7 +18,10 @@ pub struct SrvRecordValue<'a> {
 impl<'a> SrvRecordValue<'a> {
     /// The value is `<weight> <port> <target>`; the priority comes from the
     /// priority field (default 10), never inline.
-    pub fn parse(value: &'a str, fallback_priority: Option<i32>) -> Result<Self, String> {
+    pub fn parse(
+        value: &'a str,
+        fallback_priority: Option<i32>,
+    ) -> Result<Self, ParseRecordValueError> {
         match value.split_whitespace().collect::<Vec<_>>().as_slice() {
             [weight, port, target] => Ok(Self {
                 priority: parse_optional_u16_record_field(
@@ -29,14 +33,14 @@ impl<'a> SrvRecordValue<'a> {
                 port: parse_u16_record_field("SRV port", port)?,
                 target,
             }),
-            _ => Err(format!(
-                "SRV record value must be '<weight> <port> <target>', with the priority in the priority field: {value}"
-            )),
+            _ => Err(ParseRecordValueError::SrvShape {
+                value: value.to_string(),
+            }),
         }
     }
 
     /// The wire-format RDATA of a stored value (RFC 2782).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, String> {
+    pub(crate) fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(6);
         rdata.extend_from_slice(&self.priority.to_be_bytes());
         rdata.extend_from_slice(&self.weight.to_be_bytes());
@@ -46,7 +50,7 @@ impl<'a> SrvRecordValue<'a> {
     }
 
     /// Validate the fields of this SRV value.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), ParseRecordValueError> {
         if self.target.trim() == "." {
             return Ok(());
         }
