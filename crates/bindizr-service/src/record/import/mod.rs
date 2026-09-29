@@ -11,7 +11,8 @@ use bindizr_core::{
         Ttl,
         address::is_address_target,
         name::{OwnerName, ZoneName},
-        zonefile::{ParsedZoneFile, ZoneFileValue},
+        record::SoaMailbox,
+        zonefile::{ParsedZoneFile, ZoneFileSoa, ZoneFileValue},
     },
     model::{record::RecordId, zone::ZoneId},
 };
@@ -29,7 +30,7 @@ use crate::{
     db, dnssec,
     error::ServiceError,
     model::record::{Record, RecordType},
-    serial::generate_serial,
+    serial::{generate_serial, validate_initial_serial},
     time::elapsed_ms,
     transaction,
     types::{
@@ -38,6 +39,37 @@ use crate::{
     },
     zone,
 };
+
+/// The request a zone file's SOA describes. The serial carries over so
+/// secondaries holding the old primary's serial accept the transfer; one past
+/// bindizr's ceiling starts fresh instead.
+fn build_create_zone_request(
+    zone_name: &ZoneName,
+    soa: &ZoneFileSoa,
+) -> Result<CreateZoneRequest, ServiceError> {
+    let rname = SoaMailbox::from_encoded(soa.rname.trim_end_matches('.'))
+        .to_email()
+        .map_err(|e| {
+            ServiceError::invalid_input(format!("the SOA's RNAME is not an address: {}", e))
+        })?;
+    Ok(CreateZoneRequest {
+        dry_run: false,
+        name: zone_name.to_string(),
+        mname: soa.mname.clone(),
+        rname,
+        default_ttl: None,
+        // The file's serial only if a zone may start from it, so an
+        // unusable one generates a fresh serial instead of failing.
+        serial: validate_initial_serial(soa.serial)
+            .is_ok()
+            .then_some(soa.serial),
+        refresh: Some(i32::from(soa.refresh)),
+        retry: Some(i32::from(soa.retry)),
+        expire: Some(i32::from(soa.expire)),
+        minimum_ttl: Some(i32::from(soa.minimum_ttl)),
+        description: None,
+    })
+}
 
 /// Outcome of the transactional part of a zone-file import.
 struct AppliedImport {
@@ -150,7 +182,7 @@ async fn reconcile_zone_file(
                     cx,
                     &mut tx,
                     caller,
-                    &CreateZoneRequest::from_zone_file_soa(zone_name, &soa)?,
+                    &build_create_zone_request(zone_name, &soa)?,
                 )
                 .await?
             }

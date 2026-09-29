@@ -97,7 +97,7 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
                 batch.add(job);
             }
 
-            batch.flush(&cx).await;
+            send_batch(&cx, batch).await;
         }
 
         // Refuse new jobs before flushing: an enqueue racing this shutdown
@@ -112,7 +112,7 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
         while let Some(job) = rx.recv().await {
             last.add(job);
         }
-        last.flush(&cx).await;
+        send_batch(&cx, last).await;
     });
 
     NotifyWorker {
@@ -139,23 +139,24 @@ impl NotifyBatch {
             None => self.all_zones = true,
         }
     }
+}
 
-    /// Drain the pending batch and send notifications for its zones.
-    async fn flush(self, cx: &Context) {
-        if !self.all_zones && self.zones.is_empty() {
-            return;
+/// Send the NOTIFYs a batch collected: one for every zone when any job asked
+/// for all, else one per zone.
+async fn send_batch(cx: &Context, batch: NotifyBatch) {
+    if !batch.all_zones && batch.zones.is_empty() {
+        return;
+    }
+    if batch.all_zones {
+        // Notifying all zones covers every per-zone entry in this batch.
+        if let Err(e) = send_notify(cx, NotifyTarget::All).await {
+            log::warn!("queued notify: NOTIFY failed for zone <all>: {}", e);
         }
-        if self.all_zones {
-            // Notifying all zones covers every per-zone entry in this batch.
-            if let Err(e) = send_notify(cx, NotifyTarget::All).await {
-                log::warn!("queued notify: NOTIFY failed for zone <all>: {}", e);
-            }
-            return;
-        }
-        for zone in self.zones {
-            if let Err(e) = send_notify(cx, NotifyTarget::Zone(&zone)).await {
-                log::warn!("queued notify: NOTIFY failed for zone {}: {}", zone, e);
-            }
+        return;
+    }
+    for zone in batch.zones {
+        if let Err(e) = send_notify(cx, NotifyTarget::Zone(&zone)).await {
+            log::warn!("queued notify: NOTIFY failed for zone {}: {}", zone, e);
         }
     }
 }

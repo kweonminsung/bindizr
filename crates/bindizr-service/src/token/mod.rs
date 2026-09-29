@@ -12,7 +12,7 @@ use crate::{
     db,
     model::api_token::ApiToken,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
-    types::{GetTokenResponse, PageFilter, PaginatedResponse},
+    types::{GetTokenResponse, PageFilter, PaginatedResponse, build_page},
 };
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
@@ -89,7 +89,7 @@ pub async fn list(
     caller.authorize_global("manage API tokens")?;
 
     let tokens = db::api_token::list_all(cx.db()).await?;
-    PaginatedResponse::from_collection(
+    build_page(
         tokens.iter().map(GetTokenResponse::from).collect(),
         page.limit,
         page.offset,

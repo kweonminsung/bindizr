@@ -22,7 +22,7 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    types::{GetTsigGrantResponse, PageFilter, PaginatedResponse},
+    types::{GetTsigGrantResponse, PageFilter, PaginatedResponse, build_page},
     zone,
 };
 
@@ -100,7 +100,7 @@ pub async fn list_by_key(
         .map(|zone| (zone.id, zone.name.to_string()))
         .collect();
 
-    PaginatedResponse::from_collection(
+    build_page(
         grants
             .into_iter()
             .map(|grant| {
@@ -134,7 +134,7 @@ pub async fn list_by_zone(
         .map(|key| (key.id, key.name))
         .collect();
 
-    PaginatedResponse::from_collection(
+    build_page(
         grants
             .into_iter()
             .map(|grant| {

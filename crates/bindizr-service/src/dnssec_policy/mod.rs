@@ -19,7 +19,7 @@ use crate::{
     transaction,
     types::{
         CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageFilter, PaginatedResponse,
-        UpdateDnssecPolicyRequest,
+        UpdateDnssecPolicyRequest, build_page,
     },
 };
 
@@ -105,7 +105,7 @@ pub async fn list(
     caller.authorize_global("manage DNSSEC policies")?;
 
     let policies = db::dnssec_policy::list_all(cx.db()).await?;
-    PaginatedResponse::from_collection(
+    build_page(
         policies.iter().map(GetDnssecPolicyResponse::from).collect(),
         page.limit,
         page.offset,

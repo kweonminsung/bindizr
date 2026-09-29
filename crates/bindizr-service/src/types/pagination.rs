@@ -75,28 +75,28 @@ impl<T> PaginatedResponse<T> {
             },
         }
     }
+}
 
-    /// A whole collection, paged here rather than in SQL. For the management
-    /// tables — tokens, keys, policies, grants — which a deployment counts in
-    /// tens, so a count query per listing would buy nothing.
-    pub(crate) fn from_collection(
-        items: Vec<T>,
-        limit: Option<u32>,
-        offset: Option<u64>,
-    ) -> Result<Self, ServiceError> {
-        let total = items.len() as u64;
-        let start = offset.unwrap_or(0);
-        let take = match limit {
-            Some(limit) => normalize_page_limit(Some(limit))? as usize,
-            None => items.len(),
-        };
-        let page = items
-            .into_iter()
-            .skip(usize::try_from(start).unwrap_or(usize::MAX))
-            .take(take)
-            .collect();
-        Ok(Self::from_page(page, limit, offset, total))
-    }
+/// A page of a whole collection, cut here rather than in SQL. For the
+/// management tables — tokens, keys, policies, grants — which a deployment
+/// counts in tens, so a count query per listing would buy nothing.
+pub(crate) fn build_page<T>(
+    items: Vec<T>,
+    limit: Option<u32>,
+    offset: Option<u64>,
+) -> Result<PaginatedResponse<T>, ServiceError> {
+    let total = items.len() as u64;
+    let start = offset.unwrap_or(0);
+    let take = match limit {
+        Some(limit) => normalize_page_limit(Some(limit))? as usize,
+        None => items.len(),
+    };
+    let page = items
+        .into_iter()
+        .skip(usize::try_from(start).unwrap_or(usize::MAX))
+        .take(take)
+        .collect();
+    Ok(PaginatedResponse::from_page(page, limit, offset, total))
 }
 
 /// Pagination window and total count for a list response.

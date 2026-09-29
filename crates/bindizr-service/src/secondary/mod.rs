@@ -30,7 +30,7 @@ use crate::{
     types::{
         GetSecondaryResponse, GetSecondaryTransfersFilter, PageFilter, PaginatedResponse,
         SecondaryCheckResponse, SecondaryTransfersResponse, TransferResponse, TransferSummary,
-        UpdateSecondaryRequest, normalize_page_limit,
+        UpdateSecondaryRequest, build_page, normalize_page_limit,
     },
 };
 
@@ -111,7 +111,7 @@ pub async fn list(
         .into_iter()
         .map(|key| (key.id, key.name))
         .collect();
-    PaginatedResponse::from_collection(
+    build_page(
         secondaries
             .iter()
             .map(|secondary| {
