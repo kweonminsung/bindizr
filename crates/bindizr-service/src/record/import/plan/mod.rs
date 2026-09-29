@@ -42,97 +42,99 @@ pub(crate) struct ImportPlan<'a> {
     pub(crate) updated: usize,
 }
 
-/// Reconcile the file against the zone under `mode`. Records are indexed by
-/// owner name so each one is compared only against same-name rows.
-pub(crate) fn compute_import_plan<'a>(
-    mode: ImportMode,
-    zone: &Zone,
-    existing_records: &[Record],
-    desired: &'a [DesiredRecord],
-) -> ImportPlan<'a> {
-    let mut existing_by_name: HashMap<&OwnerName, Vec<&Record>> =
-        HashMap::with_capacity(existing_records.len());
-    for record in existing_records {
-        existing_by_name
-            .entry(&record.name)
-            .or_default()
-            .push(record);
-    }
-    let mut desired_by_name: HashMap<&OwnerName, Vec<&DesiredRecord>> =
-        HashMap::with_capacity(desired.len());
-    for record in desired {
-        desired_by_name
-            .entry(&record.stored_name)
-            .or_default()
-            .push(record);
-    }
+impl<'a> ImportPlan<'a> {
+    /// Reconcile the file against the zone under `mode`. Records are indexed
+    /// by owner name so each one is compared only against same-name rows.
+    pub(crate) fn compute(
+        mode: ImportMode,
+        zone: &Zone,
+        existing_records: &[Record],
+        desired: &'a [DesiredRecord],
+    ) -> Self {
+        let mut existing_by_name: HashMap<&OwnerName, Vec<&Record>> =
+            HashMap::with_capacity(existing_records.len());
+        for record in existing_records {
+            existing_by_name
+                .entry(&record.name)
+                .or_default()
+                .push(record);
+        }
+        let mut desired_by_name: HashMap<&OwnerName, Vec<&DesiredRecord>> =
+            HashMap::with_capacity(desired.len());
+        for record in desired {
+            desired_by_name
+                .entry(&record.stored_name)
+                .or_default()
+                .push(record);
+        }
 
-    let desired_matches_existing = |existing: &Record| {
-        desired_by_name
-            .get(&existing.name)
-            .is_some_and(|ds| ds.iter().any(|d| d.matches(existing)))
-    };
-    // Upsert only touches the names and types the file speaks about.
-    let desired_key_matches_existing = |existing: &Record| {
-        desired_by_name.get(&existing.name).is_some_and(|ds| {
-            ds.iter()
-                .any(|d| d.prepared.record_type == existing.record_type)
-        })
-    };
-    let dels: Vec<Record> = match mode {
-        ImportMode::Append => Vec::new(),
-        ImportMode::Replace => existing_records
-            .iter()
-            .filter(|e| !desired_matches_existing(e))
-            .cloned()
-            .collect(),
-        ImportMode::Upsert => existing_records
-            .iter()
-            .filter(|e| desired_key_matches_existing(e) && !desired_matches_existing(e))
-            .cloned()
-            .collect(),
-    };
+        let desired_matches_existing = |existing: &Record| {
+            desired_by_name
+                .get(&existing.name)
+                .is_some_and(|ds| ds.iter().any(|d| d.matches(existing)))
+        };
+        // Upsert only touches the names and types the file speaks about.
+        let desired_key_matches_existing = |existing: &Record| {
+            desired_by_name.get(&existing.name).is_some_and(|ds| {
+                ds.iter()
+                    .any(|d| d.prepared.record_type == existing.record_type)
+            })
+        };
+        let dels: Vec<Record> = match mode {
+            ImportMode::Append => Vec::new(),
+            ImportMode::Replace => existing_records
+                .iter()
+                .filter(|e| !desired_matches_existing(e))
+                .cloned()
+                .collect(),
+            ImportMode::Upsert => existing_records
+                .iter()
+                .filter(|e| desired_key_matches_existing(e) && !desired_matches_existing(e))
+                .cloned()
+                .collect(),
+        };
 
-    // Append leaves what it finds, so a TTL it disagrees with stays.
-    let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
+        // Append leaves what it finds, so a TTL it disagrees with stays.
+        let reconcile_ttl = matches!(mode, ImportMode::Upsert | ImportMode::Replace);
 
-    let mut ttl_dels = Vec::new();
-    let mut adds = Vec::new();
-    let mut unchanged = 0;
-    let mut updated = 0;
-    for d in desired {
-        let desired_ttl = d.prepared.ttl.unwrap_or(zone.default_ttl);
-        let mut present = false;
-        let mut stale = false;
-        if let Some(es) = existing_by_name.get(&d.stored_name) {
-            for e in es {
-                if d.matches(e) {
-                    present = true;
-                    // Journal the old and new TTL as DEL+ADD so IXFR can replay it.
-                    if reconcile_ttl && e.ttl != desired_ttl {
-                        ttl_dels.push((*e).clone());
-                        stale = true;
+        let mut ttl_dels = Vec::new();
+        let mut adds = Vec::new();
+        let mut unchanged = 0;
+        let mut updated = 0;
+        for d in desired {
+            let desired_ttl = d.prepared.ttl.unwrap_or(zone.default_ttl);
+            let mut present = false;
+            let mut stale = false;
+            if let Some(es) = existing_by_name.get(&d.stored_name) {
+                for e in es {
+                    if d.matches(e) {
+                        present = true;
+                        // Journal the old and new TTL as DEL+ADD so IXFR can replay it.
+                        if reconcile_ttl && e.ttl != desired_ttl {
+                            ttl_dels.push((*e).clone());
+                            stale = true;
+                        }
                     }
                 }
             }
+
+            if !present {
+                adds.push(d);
+            } else if stale {
+                updated += 1;
+                adds.push(d);
+            } else {
+                unchanged += 1;
+            }
         }
 
-        if !present {
-            adds.push(d);
-        } else if stale {
-            updated += 1;
-            adds.push(d);
-        } else {
-            unchanged += 1;
+        ImportPlan {
+            dels,
+            ttl_dels,
+            adds,
+            unchanged,
+            updated,
         }
-    }
-
-    ImportPlan {
-        dels,
-        ttl_dels,
-        adds,
-        unchanged,
-        updated,
     }
 }
 

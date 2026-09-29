@@ -4,10 +4,7 @@ use chrono::{DateTime, Duration, Utc};
 
 use super::*;
 use crate::{
-    dns::{
-        dnssec::generate_key,
-        name::{OwnerName, ZoneName},
-    },
+    dns::name::{OwnerName, ZoneName},
     model::{
         dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
         dnssec_policy::DnssecDenial,
@@ -19,7 +16,7 @@ use crate::{
 
 /// Build a signing-key fixture for the test.
 fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) -> DnssecKey {
-    let mut key = generate_key(
+    let mut key = DnssecKey::generate(
         zone,
         DnssecAlgorithm::EcdsaP256Sha256,
         role,

@@ -19,19 +19,6 @@ use bindizr_service::tsig_key;
 use super::acl;
 use crate::dns::{error::XfrError, server::DnsContext};
 
-/// The error response a request is owed, signed when a key was accepted: once
-/// a key is in play the answer carries it, error or not (RFC 8945, Section 5.3).
-pub(crate) fn signed_error(
-    query: &ParsedQuery,
-    rcode: Rcode,
-    signer: Option<&mut TransferSigner>,
-) -> Result<Vec<u8>, XfrError> {
-    match signer {
-        Some(signer) => Ok(query.signed_error_response(rcode, signer)?),
-        None => Ok(query.error_response(rcode)),
-    }
-}
-
 /// A refused transfer and the response it owes the client: a TSIG failure
 /// answers with its own error record, anything else with REFUSED, signed by the
 /// key that got that far.
@@ -57,7 +44,7 @@ impl TransferRefusal {
         if let Some(response) = self.response {
             return Ok(response);
         }
-        signed_error(query, Rcode::REFUSED, self.signer.as_mut())
+        Ok(query.signed_error_response(Rcode::REFUSED, self.signer.as_mut())?)
     }
 }
 

@@ -824,15 +824,27 @@ standing, and no I/O. Such a method is a derivation
 (`record.matches(type, value, priority)`, `key.wants_parent_ds()`), or a
 rendering (`Display`); when it can fail it says so with the module's own
 error type or `Option`, never `ServiceError`. It lives beside the type, so
-a core type's method uses only core.
+a core type's method uses only core. Two consequences (`C-METHOD`,
+`C-CTOR`): a protocol rule a wire type embodies is that type's method even
+when one front end is the only one to ask it
+(`UpdateRecord::validate_delete_shape`, RFC 2136, Section 2.5, answered
+with core's `DeleteShapeError`, which the server maps to its RCODE), and a
+front end never re-wraps a method the type already has
+(`ParsedQuery::signed_error_response` takes the optional signer itself). A
+value a module builds from inputs and nothing else, with its own error, is
+made by an associated function of its type (`DnssecKey::generate`,
+`DnssecKey::import`, `ImportPlan::compute`), not by a free `generate_` or
+`compute_` helper.
 
 Everything else is a function of the flow that needs it: a rule phrased
-against a layer's error type (`normalize_*`, `validate_*`), an assembly of
-several values (`build_record_diff(zone, …)`), anything with I/O or a
-transaction, and a step whose failures are one command's messages
-(`promotable_sep_key_ids` reports the `ds-seen` errors). A payload type in
-`bindizr_service::types` carries only what its wire form defines
-(`RecordValueRequest::to_text`, `to_encoded_value`), never a service rule.
+against a layer's error type (`normalize_*`, `validate_*`,
+`generate_serial`), an assembly of several values that returns a standard
+type or a payload (`build_record_diff(zone, …)`, `group_record_sets`,
+`build_notify_message`), anything with I/O or a transaction, and a step
+whose failures are one command's messages (`promotable_sep_key_ids` reports
+the `ds-seen` errors). A payload type in `bindizr_service::types` carries
+only what its wire form defines (`RecordValueRequest::to_text`,
+`to_encoded_value`), never a service rule.
 A receiver that would be a slice, an `Option`, or a foreign type (the
 `domain` crate's aliases, `DateTime`) rules a method out. `Caller`'s
 `authorize_*` methods are the gate of *Who decides what*, not a value's

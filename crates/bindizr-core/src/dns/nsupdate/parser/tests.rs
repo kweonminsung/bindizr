@@ -1,4 +1,4 @@
-use super::{ParseUpdateError, UpdateRecord, UpdateRequest};
+use super::{DeleteShapeError, ParseUpdateError, UpdateRecord, UpdateRequest};
 use crate::{
     dns::message::{Class, Rtype},
     model::record::RecordType,
@@ -281,5 +281,55 @@ fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> 
         ttl,
         rdata,
         rdata_start: 0,
+    }
+}
+
+/// Build a dynamic update record with the requested wire fields.
+fn delete_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
+    UpdateRecord {
+        name: "www.example.com.".to_string(),
+        record_type,
+        class,
+        ttl,
+        rdata,
+        rdata_start: 0,
+    }
+}
+
+/// Verify that the delete shapes RFC 2136, Section 2.5 allows pass: an
+/// ANY-class delete with zero TTL and empty RDATA, a NONE-class delete
+/// naming one record's RDATA.
+#[test]
+fn a_well_formed_delete_passes_the_shape_check() {
+    delete_record(Rtype::A, Class::ANY, 0, Vec::new())
+        .validate_delete_shape()
+        .unwrap();
+    delete_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1])
+        .validate_delete_shape()
+        .unwrap();
+}
+
+/// Verify that each shape RFC 2136, Section 2.5 forbids is named.
+#[test]
+fn a_malformed_delete_names_what_it_lacks() {
+    for (record, expected) in [
+        (
+            delete_record(Rtype::A, Class::ANY, 60, Vec::new()),
+            DeleteShapeError::NonzeroTtl,
+        ),
+        (
+            delete_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]),
+            DeleteShapeError::AnyClassRdata,
+        ),
+        (
+            delete_record(Rtype::A, Class::NONE, 0, Vec::new()),
+            DeleteShapeError::NoneClassNoRdata,
+        ),
+        (
+            delete_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]),
+            DeleteShapeError::NoneClassTypeAny,
+        ),
+    ] {
+        assert_eq!(record.validate_delete_shape().unwrap_err(), expected);
     }
 }

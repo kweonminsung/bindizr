@@ -1,10 +1,7 @@
 //! Importing and exporting raw key material in BIND key-file form. Reached
 //! only over the daemon socket: private keys never transit the HTTP API.
 
-use bindizr_core::dns::{
-    dnssec::{SigningPass, import_key},
-    name::ZoneName,
-};
+use bindizr_core::dns::{dnssec::SigningPass, name::ZoneName};
 use chrono::Utc;
 
 use super::status::build_status_tx;
@@ -103,7 +100,7 @@ pub async fn import_keys(
         let now = Utc::now();
         let mut keys: Vec<DnssecKey> = Vec::with_capacity(request.keys.len());
         for pair in &request.keys {
-            let key = import_key(
+            let key = DnssecKey::import(
                 &zone,
                 policy.split_keys,
                 &pair.dnskey,

@@ -7,7 +7,7 @@ use bindizr_core::{
         Ttl,
         message::{Class, Rtype},
         name::ZoneName,
-        nsupdate::parser::{ParseUpdateError, UpdateRecord, UpdateRequest},
+        nsupdate::parser::{DeleteShapeError, ParseUpdateError, UpdateRecord, UpdateRequest},
         tsig::{ResponseSigner, TsigError},
     },
     model::{
@@ -44,6 +44,14 @@ pub(crate) enum UpdateError {
     NotZone(String),
     #[error("{0}")]
     Internal(String),
+}
+
+/// A deletion of the wrong shape is refused with its reason.
+impl From<DeleteShapeError> for UpdateError {
+    /// Refuse the update, naming what the shape lacked.
+    fn from(err: DeleteShapeError) -> Self {
+        UpdateError::Refused(err.to_string())
+    }
 }
 
 /// A record type bindizr does not store is the client's to fix.
@@ -258,7 +266,7 @@ fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOpera
             })
         }
         Class::ANY => {
-            validate_delete_shape(record, true)?;
+            record.validate_delete_shape()?;
             Ok(UpdateOperation::DeleteRecordSet {
                 name,
                 record_type: (record.record_type != Rtype::ANY)
@@ -267,7 +275,7 @@ fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOpera
             })
         }
         Class::NONE => {
-            validate_delete_shape(record, false)?;
+            record.validate_delete_shape()?;
             let (record_type, value, priority) = record.to_record_value(query_data)?;
             Ok(UpdateOperation::DeleteRecord {
                 name,
@@ -280,117 +288,5 @@ fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOpera
             "unsupported update class: {}",
             class
         ))),
-    }
-}
-
-/// Validate TTL, type, and data for the selected record-deletion mode.
-fn validate_delete_shape(
-    record: &UpdateRecord,
-    is_record_set_delete: bool,
-) -> Result<(), UpdateError> {
-    if record.ttl != 0 {
-        return Err(UpdateError::Refused(
-            "delete update TTL must be 0".to_string(),
-        ));
-    }
-
-    if is_record_set_delete {
-        if !record.rdata.is_empty() {
-            return Err(UpdateError::Refused(
-                "ANY-class delete must have empty rdata".to_string(),
-            ));
-        }
-    } else {
-        if record.record_type == Rtype::ANY {
-            return Err(UpdateError::Refused(
-                "NONE-class delete must specify record type".to_string(),
-            ));
-        }
-
-        if record.rdata.is_empty() {
-            return Err(UpdateError::Refused(
-                "NONE-class delete must specify rdata".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    //! ANY-class deletions require zero TTL and empty RDATA (RFC 2136, Section 2.5.2).
-    //! NONE-class deletions require zero TTL and identify a specific record through
-    //! RDATA (RFC 2136, Section 2.5.4).
-
-    use bindizr_core::dns::{
-        message::{Class, Rtype},
-        nsupdate::parser::UpdateRecord,
-    };
-
-    use super::{UpdateError, validate_delete_shape};
-
-    /// Verify that an ANY-class deletion accepts zero TTL and empty RDATA.
-    #[test]
-    fn validate_delete_shape_accepts_any_class_record_set_delete() {
-        let record = update_record(Rtype::A, Class::ANY, 0, Vec::new());
-
-        validate_delete_shape(&record, true).unwrap();
-    }
-
-    /// Verify that a NONE-class deletion accepts a specific record's RDATA.
-    #[test]
-    fn validate_delete_shape_accepts_none_class_exact_delete() {
-        let record = update_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1]);
-
-        validate_delete_shape(&record, false).unwrap();
-    }
-
-    /// Verify that deletions reject a nonzero TTL.
-    #[test]
-    fn validate_delete_shape_rejects_delete_with_nonzero_ttl() {
-        let record = update_record(Rtype::A, Class::ANY, 60, Vec::new());
-        let err = validate_delete_shape(&record, true).unwrap_err();
-
-        assert!(matches!(err, UpdateError::Refused(_)));
-    }
-
-    /// Verify that an ANY-class deletion rejects RDATA.
-    #[test]
-    fn validate_delete_shape_rejects_any_class_delete_with_rdata() {
-        let record = update_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]);
-        let err = validate_delete_shape(&record, true).unwrap_err();
-
-        assert!(matches!(err, UpdateError::Refused(_)));
-    }
-
-    /// Verify that a NONE-class deletion requires RDATA.
-    #[test]
-    fn validate_delete_shape_rejects_none_class_delete_without_rdata() {
-        let record = update_record(Rtype::A, Class::NONE, 0, Vec::new());
-        let err = validate_delete_shape(&record, false).unwrap_err();
-
-        assert!(matches!(err, UpdateError::Refused(_)));
-    }
-
-    /// Verify that a NONE-class deletion requires a specific record type.
-    #[test]
-    fn validate_delete_shape_rejects_none_class_delete_with_type_any() {
-        let record = update_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]);
-        let err = validate_delete_shape(&record, false).unwrap_err();
-
-        assert!(matches!(err, UpdateError::Refused(_)));
-    }
-
-    /// Build a dynamic update record with the requested wire fields.
-    fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
-        UpdateRecord {
-            name: "www.example.com.".to_string(),
-            record_type,
-            class,
-            ttl,
-            rdata,
-            rdata_start: 0,
-        }
     }
 }

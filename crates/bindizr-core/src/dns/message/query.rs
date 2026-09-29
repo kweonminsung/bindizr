@@ -120,14 +120,17 @@ impl ParsedQuery {
         Ok(additional.finish())
     }
 
-    /// The same, signed by the key that signed the request: an accepted key
+    /// The error response, signed when a key was accepted: an accepted key
     /// answers under itself, error or not (RFC 8945, Section 5.3).
     pub fn signed_error_response(
         &self,
         rcode: Rcode,
-        signer: &mut TransferSigner,
+        signer: Option<&mut TransferSigner>,
     ) -> Result<Vec<u8>, EncodeMessageError> {
         let question = self.build_question_response(|header| header.set_rcode(rcode));
+        let Some(signer) = signer else {
+            return Ok(question.finish());
+        };
         let mut additional = question.additional();
         signer
             .answer(&mut additional, Time48::now())

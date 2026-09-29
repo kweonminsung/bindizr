@@ -1,9 +1,9 @@
 //! Turning signing on and off, moving a zone between policies, and the
 //! operator's force re-sign.
 
-use bindizr_core::dns::{
-    dnssec::{SigningPass, generate_key},
-    name::ZoneName,
+use bindizr_core::{
+    dns::{dnssec::SigningPass, name::ZoneName},
+    model::dnssec_key::DnssecKey,
 };
 use chrono::Utc;
 
@@ -101,7 +101,7 @@ pub async fn enable(
         };
         let mut keys = Vec::with_capacity(roles.len());
         for role in roles {
-            let key = generate_key(
+            let key = DnssecKey::generate(
                 &zone,
                 policy.algorithm,
                 *role,

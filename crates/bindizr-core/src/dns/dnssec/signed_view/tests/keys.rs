@@ -48,7 +48,7 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
 #[test]
 fn p384_keys_advertise_a_sha384_ds_digest() {
     let zone = test_zone();
-    let key = generate_key(
+    let key = DnssecKey::generate(
         &zone,
         DnssecAlgorithm::EcdsaP384Sha384,
         DnssecKeyRole::Csk,
@@ -69,7 +69,7 @@ fn p384_keys_advertise_a_sha384_ds_digest() {
 #[test]
 fn ds_rdata_pairs_the_key_with_each_supported_digest() {
     let zone = test_zone();
-    let key = generate_key(
+    let key = DnssecKey::generate(
         &zone,
         DnssecAlgorithm::EcdsaP384Sha384,
         DnssecKeyRole::Csk,
@@ -98,7 +98,7 @@ fn ds_rdata_pairs_the_key_with_each_supported_digest() {
 #[test]
 fn ed448_keys_generate_and_sign() {
     let zone = test_zone();
-    let mut key = generate_key(
+    let mut key = DnssecKey::generate(
         &zone,
         DnssecAlgorithm::Ed448,
         DnssecKeyRole::Csk,
@@ -135,7 +135,7 @@ fn ed448_keys_generate_and_sign() {
 #[test]
 fn rsa_keys_generate_and_sign() {
     let zone = test_zone();
-    let mut key = generate_key(
+    let mut key = DnssecKey::generate(
         &zone,
         DnssecAlgorithm::RsaSha256,
         DnssecKeyRole::Csk,

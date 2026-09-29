@@ -75,7 +75,7 @@ fn append_never_deletes_what_it_did_not_ask_about() {
     let rows = [existing(1, "old", RecordType::A, "192.0.2.9", 300)];
     let want = [desired("new", RecordType::A, "192.0.2.1", None)];
 
-    let plan = compute_import_plan(ImportMode::Append, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Append, &zone(), &rows, &want);
 
     assert!(plan.dels.is_empty());
     assert_eq!(added(&plan), ["192.0.2.1"]);
@@ -91,7 +91,7 @@ fn replace_deletes_every_row_the_file_does_not_name() {
     ];
     let want = [desired("keep", RecordType::A, "192.0.2.1", None)];
 
-    let plan = compute_import_plan(ImportMode::Replace, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &zone(), &rows, &want);
 
     assert_eq!(ids(&plan.dels), [RecordId::from(2), RecordId::from(3)]);
     assert_eq!(plan.unchanged, 1);
@@ -110,7 +110,7 @@ fn upsert_leaves_names_and_types_the_file_is_silent_about() {
     ];
     let want = [desired("www", RecordType::A, "192.0.2.1", None)];
 
-    let plan = compute_import_plan(ImportMode::Upsert, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Upsert, &zone(), &rows, &want);
 
     assert_eq!(ids(&plan.dels), [RecordId::from(1)]);
     assert_eq!(added(&plan), ["192.0.2.1"]);
@@ -123,7 +123,7 @@ fn a_ttl_change_rewrites_the_row_rather_than_editing_it() {
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
     let want = [desired("www", RecordType::A, "192.0.2.1", Some(600))];
 
-    let plan = compute_import_plan(ImportMode::Upsert, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Upsert, &zone(), &rows, &want);
 
     assert_eq!(ids(&plan.ttl_dels), [RecordId::from(1)]);
     assert_eq!(added(&plan), ["192.0.2.1"]);
@@ -137,7 +137,7 @@ fn append_keeps_a_ttl_it_disagrees_with() {
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 300)];
     let want = [desired("www", RecordType::A, "192.0.2.1", Some(600))];
 
-    let plan = compute_import_plan(ImportMode::Append, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Append, &zone(), &rows, &want);
 
     assert!(plan.ttl_dels.is_empty());
     assert_eq!(plan.unchanged, 1);
@@ -151,7 +151,7 @@ fn an_omitted_ttl_is_the_zones_default_not_a_wildcard() {
     let rows = [existing(1, "www", RecordType::A, "192.0.2.1", 900)];
     let want = [desired("www", RecordType::A, "192.0.2.1", None)];
 
-    let plan = compute_import_plan(ImportMode::Replace, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &zone(), &rows, &want);
 
     assert_eq!(ids(&plan.ttl_dels), [RecordId::from(1)]);
     assert_eq!(plan.updated, 1);
@@ -174,7 +174,7 @@ fn a_value_the_file_spells_differently_is_the_same_record() {
         None,
     )];
 
-    let plan = compute_import_plan(ImportMode::Replace, &zone(), &rows, &want);
+    let plan = ImportPlan::compute(ImportMode::Replace, &zone(), &rows, &want);
 
     assert!(plan.dels.is_empty());
     assert_eq!(plan.unchanged, 1);
