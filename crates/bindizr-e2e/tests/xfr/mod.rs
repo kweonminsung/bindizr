@@ -55,6 +55,21 @@ async fn an_unsigned_transfer_follows_the_secondary_registry() {
     assert_eq!(outcome.refusal(), Rcode::REFUSED);
 }
 
+/// Verify that a transfer question no zone can carry is answered NOTAUTH,
+/// like a missing zone, rather than closing the connection.
+#[tokio::test]
+#[serial]
+async fn a_name_no_zone_can_carry_is_answered_notauth() {
+    let app = transfer_app().await;
+
+    // RFC 5936, Section 2.2.1: a refusal is an RCODE, not a dropped
+    // connection; the underscore label is one the zone type refuses.
+    for zone in ["nozone.example.", "_foo.example."] {
+        let outcome = axfr(app.dns_port(), zone, None).expect("AXFR");
+        assert_eq!(outcome.refusal(), Rcode::NOTAUTH, "zone {zone}");
+    }
+}
+
 /// Verify that an unsigned transfer still runs under the address acl.
 #[tokio::test]
 #[serial]

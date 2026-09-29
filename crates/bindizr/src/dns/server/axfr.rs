@@ -45,14 +45,19 @@ pub(crate) async fn handle_axfr(
         .await;
     }
 
-    let zone_name = zone::normalize_name(zone_name_str)?;
-    let (zone, content) = match transfer_cache::authorize_transfer_content_by_name(
-        dns_cx,
-        &zone_name,
-        identity.key.as_ref(),
-    )
-    .await?
-    {
+    // A name the zone type refuses is answered NOTAUTH like a missing zone.
+    let access = match zone::normalize_name(zone_name_str) {
+        Ok(zone_name) => {
+            transfer_cache::authorize_transfer_content_by_name(
+                dns_cx,
+                &zone_name,
+                identity.key.as_ref(),
+            )
+            .await?
+        }
+        Err(_) => TransferAccess::NotAuth,
+    };
+    let (zone, content) = match access {
         TransferAccess::Granted(found) => found,
         TransferAccess::NotAuth => {
             return Err(XfrError::NotAuth(zone_name_str.to_string()));

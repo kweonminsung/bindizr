@@ -347,9 +347,11 @@ A zone name crosses into the service as a `ZoneName`, parsed where its text
 arrives by `zone::normalize_name`, which owns the request-phrased rejection
 (`INVALID_ZONE_FIELD`; the root and a wildcard refused): an HTTP path or
 query parameter in its handler, a socket command in its handler, a transfer
-question in the DNS server once the catalog check has passed. A name inside
-a request body or a listing filter is parsed by the service function that
-takes that payload, since the payload is its argument. Everything beneath —
+question in the DNS server once the catalog check has passed, where a name
+the type refuses is answered NOTAUTH like a missing zone (an nsupdate says
+NOTZONE), since no stored zone can match it. A name inside a request body
+or a listing filter is parsed by the service function that takes that
+payload, since the payload is its argument. Everything beneath —
 the `_tx` lookups, the NOTIFY and probe clients, the zone-file parser, the
 db layer, which binds a `ZoneName` as it binds an `OwnerName` — takes
 `&ZoneName` and parses nothing again, and `dns.catalog_zone_name` is a

@@ -120,9 +120,14 @@ async fn handle_soa_request(
         return Ok((builder.build()?, SoaResult::Ok));
     }
 
-    let zone_name = zone::normalize_name(zone_name_str)?;
-    let zone = match zone::authorize_transfer_by_name(cx, &zone_name, identity.key.as_ref()).await?
-    {
+    // A name the zone type refuses is answered NOTAUTH like a missing zone.
+    let access = match zone::normalize_name(zone_name_str) {
+        Ok(zone_name) => {
+            zone::authorize_transfer_by_name(cx, &zone_name, identity.key.as_ref()).await?
+        }
+        Err(_) => TransferAccess::NotAuth,
+    };
+    let zone = match access {
         TransferAccess::Granted(zone) => zone,
         TransferAccess::NotAuth => {
             return Ok(query.signed_error_response(Rcode::NOTAUTH, identity.signer.as_mut())?)
