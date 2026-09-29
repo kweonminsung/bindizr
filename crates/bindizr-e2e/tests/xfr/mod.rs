@@ -386,6 +386,27 @@ async fn the_transfers_served_a_secondary_are_read_back() {
         "{body}"
     );
 
+    // The filter is a zone name: the absolute spelling selects the same
+    // rows, and one that is no name is refused.
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/secondaries/loopback/transfers?zone_name={zone_name}."),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["transfers"][0]["zone_name"], zone_name, "{body}");
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            "/secondaries/loopback/transfers?zone_name=*",
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["code"], "INVALID_ZONE_FIELD", "{body}");
+
     // The zone's status carries the same transfer beside the probe, which
     // finds nothing listening on the registered address.
     let (status, body) = app

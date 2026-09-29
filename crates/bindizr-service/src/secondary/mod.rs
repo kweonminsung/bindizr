@@ -32,6 +32,7 @@ use crate::{
         SecondaryCheckResponse, SecondaryTransfersResponse, TransferResponse, TransferSummary,
         UpdateSecondaryRequest, build_page, normalize_page_limit,
     },
+    zone,
 };
 
 /// Register a secondary by name and `host[:port]` address; with
@@ -276,16 +277,20 @@ pub async fn list_transfers(
     caller.authorize_global("manage secondaries")?;
     let secondary = lookup_by_name(cx, name).await?;
     let limit = normalize_page_limit(filter.limit)? as usize;
+    let zone_filter = filter
+        .zone_name
+        .as_deref()
+        .map(zone::normalize_name)
+        .transpose()?;
 
     let served = transfer::list_by_clients(cx, &resolved_ips(cx, &secondary).await).await?;
     let summary = TransferSummary::from(served.as_slice());
     let transfers = served
         .iter()
         .filter(|transfer| {
-            filter
-                .zone_name
-                .as_deref()
-                .is_none_or(|zone| transfer.zone_name.as_str().eq_ignore_ascii_case(zone))
+            zone_filter
+                .as_ref()
+                .is_none_or(|zone| transfer.zone_name == *zone)
         })
         .take(limit)
         .map(TransferResponse::from)
