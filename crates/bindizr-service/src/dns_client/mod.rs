@@ -158,7 +158,8 @@ pub(crate) async fn resolve_address_entries(
         if trimmed.is_empty() {
             continue;
         }
-        let result = resolve_address_entry(trimmed, resolve_timeout).await;
+        let target = AddressTarget::parse(trimmed, DEFAULT_DNS_PORT);
+        let result = resolve_address_entry(&target, resolve_timeout).await;
         entries.push((trimmed.to_string(), result));
     }
 
@@ -169,13 +170,13 @@ pub(crate) async fn resolve_address_entries(
 /// names. `resolve_timeout` bounds the lookup so a stalled system resolver
 /// fails the entry instead of hanging the caller.
 pub async fn resolve_address_entry(
-    entry: &str,
+    entry: &AddressTarget,
     resolve_timeout: Duration,
 ) -> Result<Vec<SocketAddr>, ResolveAddressError> {
-    match AddressTarget::parse(entry, DEFAULT_DNS_PORT) {
-        AddressTarget::Socket(addr) => Ok(vec![addr]),
+    match entry {
+        AddressTarget::Socket(addr) => Ok(vec![*addr]),
         AddressTarget::HostPort(host_port) => {
-            match tokio::time::timeout(resolve_timeout, lookup_host(&host_port)).await {
+            match tokio::time::timeout(resolve_timeout, lookup_host(host_port)).await {
                 Ok(Ok(resolved)) => {
                     let addrs: Vec<SocketAddr> = resolved.collect();
                     if addrs.is_empty() {

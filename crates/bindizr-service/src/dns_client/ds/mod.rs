@@ -72,7 +72,7 @@ pub(crate) async fn probe_parent_ds(
     zone: &Zone,
 ) -> Result<ParentDs, ProbeParentDsError> {
     let dns_config = &cx.config().dns;
-    let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
+    let timeout = dns_config.notify.timeout();
     let raw = zone
         .parent_ns_addrs
         .as_deref()

@@ -1,7 +1,10 @@
 //! Parsing of `host[:port]` address targets into socket addresses or deferred
 //! host/port pairs.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::{
+    fmt,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+};
 
 use super::name::{MAX_DOMAIN_LEN, classify_domain_label};
 
@@ -9,6 +12,8 @@ use super::name::{MAX_DOMAIN_LEN, classify_domain_label};
 pub const DEFAULT_DNS_PORT: u16 = 53;
 
 /// An address target: a socket address, or a host and port to resolve later.
+/// Canonical by construction: the port is spelled out and a hostname is
+/// lowercase, so one server has one spelling, which rows compare as text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AddressTarget {
     Socket(SocketAddr),
@@ -43,7 +48,57 @@ impl AddressTarget {
             None => host_port,
         };
 
-        AddressTarget::HostPort(host_port)
+        AddressTarget::HostPort(host_port.to_ascii_lowercase())
+    }
+}
+
+/// Decodes the stored form, which [`AddressTarget::parse`] rendered with its
+/// port, so a row column can hold an address target directly.
+impl From<String> for AddressTarget {
+    /// Wrap an address target from its stored string representation.
+    fn from(value: String) -> Self {
+        AddressTarget::parse(&value, DEFAULT_DNS_PORT)
+    }
+}
+
+/// The stored and presentation form: `ip:port`, `[ipv6]:port`, or `host:port`.
+impl fmt::Display for AddressTarget {
+    /// Write the address target in its canonical form.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AddressTarget::Socket(addr) => fmt::Display::fmt(addr, f),
+            AddressTarget::HostPort(host_port) => f.pad(host_port),
+        }
+    }
+}
+
+/// Binding renders the canonical form, so a query never compares a spelling
+/// the parser did not produce.
+impl<DB: sqlx::Database> sqlx::Type<DB> for AddressTarget
+where
+    String: sqlx::Type<DB>,
+{
+    /// Return the SQL type used to store this value.
+    fn type_info() -> DB::TypeInfo {
+        <String as sqlx::Type<DB>>::type_info()
+    }
+
+    /// Check whether the SQL type can store this value.
+    fn compatible(ty: &DB::TypeInfo) -> bool {
+        <String as sqlx::Type<DB>>::compatible(ty)
+    }
+}
+
+impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for AddressTarget
+where
+    String: sqlx::Encode<'q, DB>,
+{
+    /// Encode this value using its database representation.
+    fn encode_by_ref(
+        &self,
+        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        self.to_string().encode_by_ref(buf)
     }
 }
 
@@ -103,105 +158,4 @@ fn is_valid_port(value: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Render a parsed address with its variant so identical text cannot hide a
-    /// SocketAddr/HostPort mismatch.
-    fn target_to_string(target: AddressTarget) -> String {
-        match target {
-            AddressTarget::Socket(addr) => format!("SocketAddr({addr})"),
-            AddressTarget::HostPort(host_port) => format!("HostPort({host_port})"),
-        }
-    }
-
-    /// Verify that `AddressTarget::parse` defaults plain ip addresses to default port.
-    #[test]
-    fn parse_address_target_defaults_plain_ip_addresses_to_default_port() {
-        assert_eq!(
-            target_to_string(AddressTarget::parse("192.0.2.10", 53)),
-            "SocketAddr(192.0.2.10:53)"
-        );
-        assert_eq!(
-            target_to_string(AddressTarget::parse("2001:db8::1", 53)),
-            "SocketAddr([2001:db8::1]:53)"
-        );
-        assert_eq!(
-            target_to_string(AddressTarget::parse("[2001:db8::1]", 53)),
-            "SocketAddr([2001:db8::1]:53)"
-        );
-    }
-
-    /// Verify that `AddressTarget::parse` preserves explicit ports.
-    #[test]
-    fn parse_address_target_preserves_explicit_ports() {
-        assert_eq!(
-            target_to_string(AddressTarget::parse("192.0.2.10:5353", 53)),
-            "SocketAddr(192.0.2.10:5353)"
-        );
-        assert_eq!(
-            target_to_string(AddressTarget::parse("[2001:db8::1]:5353", 53)),
-            "SocketAddr([2001:db8::1]:5353)"
-        );
-        assert_eq!(
-            target_to_string(AddressTarget::parse("ns2.example.com:5353", 53)),
-            "HostPort(ns2.example.com:5353)"
-        );
-    }
-
-    /// Verify that `AddressTarget::parse` drops a hostname's trailing root dot.
-    #[test]
-    fn parse_drops_a_hostnames_trailing_root_dot() {
-        assert_eq!(
-            target_to_string(AddressTarget::parse("ns2.example.com.", 53)),
-            "HostPort(ns2.example.com:53)"
-        );
-        assert_eq!(
-            target_to_string(AddressTarget::parse("ns2.example.com.:5353", 53)),
-            "HostPort(ns2.example.com:5353)"
-        );
-    }
-
-    /// Verify that `is_address_target` accepts host port forms and rejects the rest.
-    #[test]
-    fn is_address_target_accepts_host_port_forms_and_rejects_the_rest() {
-        for value in [
-            "ns.parent.example",
-            "ns.parent.example.",
-            "ns_1.parent.example:5353",
-            "ns.parent.example:5353",
-            "192.0.2.1",
-            "192.0.2.1:53",
-            "2001:db8::1",
-            "[2001:db8::1]",
-            "[2001:db8::1]:53",
-        ] {
-            assert!(is_address_target(value), "{value}");
-        }
-        for value in [
-            "",
-            "bad/name",
-            "bad#name:53",
-            "-bad.example",
-            "ns.parent.example:not-a-port",
-            "ns.parent.example:",
-            "ns.parent.example:0",
-            "192.0.2.1:0",
-            "[2001:db8::1]:0",
-            ":53",
-            "[2001:db8::1",
-            "[2001:db8::1]:x",
-        ] {
-            assert!(!is_address_target(value), "{value}");
-        }
-    }
-
-    /// Verify that `AddressTarget::parse` defaults hostname to default port.
-    #[test]
-    fn parse_address_target_defaults_hostname_to_default_port() {
-        assert_eq!(
-            target_to_string(AddressTarget::parse("ns2.example.com", 53)),
-            "HostPort(ns2.example.com:53)"
-        );
-    }
-}
+mod tests;

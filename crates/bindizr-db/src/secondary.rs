@@ -1,4 +1,7 @@
-use bindizr_core::model::{secondary::SecondaryId, tsig_key::TsigKeyId};
+use bindizr_core::{
+    dns::address::AddressTarget,
+    model::{secondary::SecondaryId, tsig_key::TsigKeyId},
+};
 
 use crate::{
     Backend, Db, LockLevel, Transaction, error::DatabaseError, model::secondary::Secondary, mysql,
@@ -41,7 +44,10 @@ pub async fn get_by_name_tx(
 }
 
 /// Find a secondary by address.
-pub async fn get_by_address(db: &Db, address: &str) -> Result<Option<Secondary>, DatabaseError> {
+pub async fn get_by_address(
+    db: &Db,
+    address: &AddressTarget,
+) -> Result<Option<Secondary>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::secondary::get_by_address(pool, address).await,
         Backend::Postgres(pool) => postgres::secondary::get_by_address(pool, address).await,

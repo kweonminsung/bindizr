@@ -292,7 +292,7 @@ pub async fn list_transfers(
         .collect();
     Ok(SecondaryTransfersResponse {
         secondary_name: secondary.name,
-        address: secondary.address,
+        address: secondary.address.to_string(),
         summary,
         transfers,
     })
@@ -388,7 +388,7 @@ pub(crate) fn normalize_secondary_name(value: &str) -> Result<String, ServiceErr
 /// A `host[:port]` entry in its stored form, the port spelled out and a
 /// hostname lowercased without its root dot, so one server has one row under
 /// UNIQUE(address).
-pub(crate) fn normalize_secondary_address(value: &str) -> Result<String, ServiceError> {
+pub(crate) fn normalize_secondary_address(value: &str) -> Result<AddressTarget, ServiceError> {
     let address = value.trim();
 
     if address.is_empty() {
@@ -402,11 +402,8 @@ pub(crate) fn normalize_secondary_address(value: &str) -> Result<String, Service
             address
         )));
     }
-    let address = match AddressTarget::parse(address, DEFAULT_DNS_PORT) {
-        AddressTarget::Socket(addr) => addr.to_string(),
-        AddressTarget::HostPort(host_port) => host_port.to_ascii_lowercase(),
-    };
-    if address.len() > MAX_COLUMN_TEXT_LEN {
+    let address = AddressTarget::parse(address, DEFAULT_DNS_PORT);
+    if address.to_string().len() > MAX_COLUMN_TEXT_LEN {
         return Err(ServiceError::invalid_input(format!(
             "secondary address must be {} characters or fewer",
             MAX_COLUMN_TEXT_LEN
@@ -442,23 +439,33 @@ mod tests {
     #[test]
     fn normalize_secondary_address_spells_the_port_out_and_lowercases_a_hostname() {
         assert_eq!(
-            normalize_secondary_address(" NS2.Example.net ").unwrap(),
+            normalize_secondary_address(" NS2.Example.net ")
+                .unwrap()
+                .to_string(),
             "ns2.example.net:53"
         );
         assert_eq!(
-            normalize_secondary_address("ns2.example.net.").unwrap(),
+            normalize_secondary_address("ns2.example.net.")
+                .unwrap()
+                .to_string(),
             "ns2.example.net:53"
         );
         assert_eq!(
-            normalize_secondary_address("192.0.2.7").unwrap(),
+            normalize_secondary_address("192.0.2.7")
+                .unwrap()
+                .to_string(),
             "192.0.2.7:53"
         );
         assert_eq!(
-            normalize_secondary_address("2001:db8::7").unwrap(),
+            normalize_secondary_address("2001:db8::7")
+                .unwrap()
+                .to_string(),
             "[2001:db8::7]:53"
         );
         assert_eq!(
-            normalize_secondary_address("[2001:db8::7]:5300").unwrap(),
+            normalize_secondary_address("[2001:db8::7]:5300")
+                .unwrap()
+                .to_string(),
             "[2001:db8::7]:5300"
         );
     }
