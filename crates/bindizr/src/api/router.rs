@@ -106,7 +106,7 @@ async fn openapi_json() -> impl IntoResponse {
 
 /// Return the OpenAPI document as YAML.
 async fn openapi_yaml() -> axum::response::Response {
-    match ApiDoc::openapi().to_yaml() {
+    match serde_norway::to_string(&ApiDoc::openapi()) {
         Ok(openapi_yaml) => (
             StatusCode::OK,
             [(CONTENT_TYPE, "application/yaml; charset=utf-8")],

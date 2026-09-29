@@ -27,10 +27,11 @@ base64.workspace = true
 # `tsig` so the harness can sign an nsupdate request the way a client does.
 domain = { workspace = true, features = ["tsig"] }
 rcgen.workspace = true
-reqwest = { workspace = true, features = ["rustls"] }
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
+ring.workspace = true
+rustls.workspace = true
 serde_json.workspace = true
 serial_test.workspace = true
-sha1.workspace = true
 tempfile.workspace = true
 
 [lints]

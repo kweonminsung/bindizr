@@ -66,6 +66,9 @@ impl UpstreamClient {
         timeout_secs: u64,
         ca_file: Option<&str>,
     ) -> Result<Self, BuildClientError> {
+        // reqwest builds no rustls client without a process-level provider;
+        // Err means one is installed already.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs));
         // Added to the system roots rather than replacing them, so one private
         // CA does not cut off a publicly issued certificate beside it.
