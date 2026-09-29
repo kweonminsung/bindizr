@@ -1,4 +1,7 @@
-use bindizr_core::model::{secondary::SecondaryId, tsig_key::TsigKeyId};
+use bindizr_core::{
+    dns::address::AddressTarget,
+    model::{secondary::SecondaryId, tsig_key::TsigKeyId},
+};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
@@ -68,7 +71,7 @@ pub(crate) async fn get_by_name_tx(
 /// Find a secondary by address.
 pub(crate) async fn get_by_address(
     pool: &Pool<MySql>,
-    address: &str,
+    address: &AddressTarget,
 ) -> Result<Option<Secondary>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 

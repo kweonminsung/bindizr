@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-use crate::model::tsig_key::TsigKeyId;
+use crate::{dns::address::AddressTarget, model::tsig_key::TsigKeyId};
 
 id_newtype!(
     /// The id of a secondary row.
@@ -14,8 +14,9 @@ id_newtype!(
 pub struct Secondary {
     pub id: SecondaryId,
     pub name: String,
-    /// `host[:port]`; a hostname is resolved when used, not when stored.
-    pub address: String,
+    /// A hostname is resolved when used, not when stored.
+    #[sqlx(try_from = "String")]
+    pub address: AddressTarget,
     /// Disabled: no NOTIFY, no unsigned transfer, no probe; still registered.
     pub enabled: bool,
     /// TSIG key outbound NOTIFY is signed with; `None` sends it unsigned.

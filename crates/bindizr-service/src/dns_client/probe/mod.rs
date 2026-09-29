@@ -72,7 +72,7 @@ pub async fn probe_secondaries(
     for secondary in secondaries {
         let zone_name = zone_name.clone();
         tasks.push((
-            secondary.address.clone(),
+            secondary.address.to_string(),
             tokio::spawn(async move {
                 probe_addresses(&zone_name, &secondary, timeout, expected_serial).await
             }),
@@ -127,7 +127,7 @@ async fn probe_addresses(
         Err(e) => {
             return Ok((
                 SecondaryStatusResponse::from_probe(
-                    secondary.address.clone(),
+                    secondary.address.to_string(),
                     expected_serial,
                     Err(ProbeError::Resolve(e)),
                 ),
@@ -139,7 +139,7 @@ async fn probe_addresses(
     // The resolver hands back at least one address, so this stands in for none.
     let probe = probe.unwrap_or_else(|| {
         SecondaryStatusResponse::from_probe(
-            secondary.address.clone(),
+            secondary.address.to_string(),
             expected_serial,
             Err(ProbeError::Resolve(ResolveAddressError::NoAddresses)),
         )

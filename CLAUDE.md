@@ -333,7 +333,10 @@ match a grant's subtree with `LIKE`, and concatenate them into FQDNs.
 The row form is the type's, not a caller's: `from_row` decodes it and
 `sqlx::Encode` renders it, so bind an `OwnerName` itself rather than a string
 you produced. `Display` is the presentation form, whose apex is `@` and not
-the empty string a row holds.
+the empty string a row holds. A `ZoneName` and a secondary's `AddressTarget`
+(`host:port`, the port spelled out and the host lowercase) are rows the same
+way: parsed once by the service, bound as themselves, and read back typed,
+so nothing splits or re-parses their text at the point of use.
 
 `OwnerName::parse_in_zone` qualifies a relative name by appending the zone;
 `parse_absolute_in_zone` never does, and is what input carrying no trailing

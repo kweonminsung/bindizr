@@ -90,7 +90,7 @@ pub(crate) async fn check_installation(
             transfers.push(SecondaryTransferSummary {
                 summary: secondary::transfer_summary(cx, &secondary).await?,
                 secondary_name: secondary.name,
-                address: secondary.address,
+                address: secondary.address.to_string(),
             });
         }
         (secondaries, notifies, transfers)

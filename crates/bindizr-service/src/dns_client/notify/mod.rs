@@ -107,7 +107,7 @@ pub async fn send_notify_to_secondary(
         Err(e) => {
             cx.metrics().track_notify(NotifyResult::Failed);
             return Ok(vec![NotifyCheckResponse {
-                address: secondary.address.clone(),
+                address: secondary.address.to_string(),
                 error: Some(e.to_string()),
             }]);
         }
@@ -117,7 +117,7 @@ pub async fn send_notify_to_secondary(
         Err(e) => {
             cx.metrics().track_notify(NotifyResult::ResolveFailed);
             return Ok(vec![NotifyCheckResponse {
-                address: secondary.address.clone(),
+                address: secondary.address.to_string(),
                 error: Some(format!("failed to resolve: {}", e)),
             }]);
         }

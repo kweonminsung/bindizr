@@ -73,7 +73,7 @@ impl GetSecondaryResponse {
         GetSecondaryResponse {
             id: secondary.id,
             name: secondary.name.clone(),
-            address: secondary.address.clone(),
+            address: secondary.address.to_string(),
             enabled: secondary.enabled,
             notify_key_name: notify_key_name.map(str::to_string),
             created_at: secondary.created_at,
