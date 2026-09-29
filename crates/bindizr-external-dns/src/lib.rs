@@ -73,7 +73,10 @@ pub async fn execute() {
     });
     let state = Arc::new(server::AppState {
         upstream,
-        metrics: metrics::AdapterMetrics::new(),
+        metrics: metrics::AdapterMetrics::new().unwrap_or_else(|e| {
+            errln!("Error: {}", e);
+            std::process::exit(1);
+        }),
     });
 
     // Bind both endpoints before either server starts accepting requests.

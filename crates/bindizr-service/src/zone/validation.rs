@@ -113,13 +113,16 @@ fn normalize_email(value: &str) -> Result<String, ServiceError> {
         ));
     }
 
-    if value.matches('@').count() != 1 {
+    let Some((local, domain)) = value.split_once('@') else {
+        return Err(ServiceError::invalid_zone_field(
+            "rname must contain exactly one @".to_string(),
+        ));
+    };
+    if domain.contains('@') {
         return Err(ServiceError::invalid_zone_field(
             "rname must contain exactly one @".to_string(),
         ));
     }
-
-    let (local, domain) = value.split_once('@').expect("rname contains exactly one @");
 
     validate_email_local_part(local)?;
     let domain = normalize_domain_name(domain, "rname domain")?;

@@ -5,6 +5,7 @@ use prometheus::{
     Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts,
     Registry, TextEncoder, core::Collector,
 };
+use thiserror::Error;
 
 use crate::dns::message::{Rcode, Rtype};
 
@@ -39,23 +40,25 @@ pub struct Metrics {
     pub started_at_seconds: Gauge,
 }
 
+/// A metric definition or registration the registry refused: a programming
+/// error, since every definition is static.
+#[derive(Debug, Error)]
+#[error("failed to register a metric: {0}")]
+pub struct RegisterMetricsError(#[source] prometheus::Error);
+
 /// Register a shared clone of a metric collector.
-fn register<C: Collector + Clone + 'static>(registry: &Registry, collector: &C) {
+fn register<C: Collector + Clone + 'static>(
+    registry: &Registry,
+    collector: &C,
+) -> Result<(), RegisterMetricsError> {
     registry
         .register(Box::new(collector.clone()))
-        .expect("metric registered twice");
-}
-
-impl Default for Metrics {
-    /// A registry with every collector registered, as `new` builds it.
-    fn default() -> Self {
-        Self::new()
-    }
+        .map_err(RegisterMetricsError)
 }
 
 impl Metrics {
     /// Create and register the daemon's metric collectors.
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, RegisterMetricsError> {
         let registry = Registry::new();
 
         let build_info = IntGaugeVec::new(
@@ -65,25 +68,25 @@ impl Metrics {
             ),
             &["version"],
         )
-        .expect("valid metric definition");
+        .map_err(RegisterMetricsError)?;
         build_info
             .with_label_values(&[env!("CARGO_PKG_VERSION")])
             .set(1);
-        register(&registry, &build_info);
+        register(&registry, &build_info)?;
 
         let started_at_seconds = Gauge::new(
             "bindizr_started_at_seconds",
             "Unix time the daemon began serving.",
         )
-        .expect("valid metric definition");
-        register(&registry, &started_at_seconds);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &started_at_seconds)?;
 
         let database_up = IntGauge::new(
             "bindizr_database_up",
             "Whether the database probe of the last scrape succeeded (1) or failed (0).",
         )
-        .expect("valid metric definition");
-        register(&registry, &database_up);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &database_up)?;
 
         let db_connections = IntGaugeVec::new(
             Opts::new(
@@ -93,36 +96,36 @@ impl Metrics {
             ),
             &["state"],
         )
-        .expect("valid metric definition");
-        register(&registry, &db_connections);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &db_connections)?;
 
         let db_connections_max = IntGauge::new(
             "bindizr_db_connections_max",
             "Connection ceiling the pool was built with, scaled to the host's cores",
         )
-        .expect("valid metric definition");
-        register(&registry, &db_connections_max);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &db_connections_max)?;
 
         let zones_total = IntGauge::new(
             "bindizr_zones_total",
             "Number of zones, refreshed at scrape time.",
         )
-        .expect("valid metric definition");
-        register(&registry, &zones_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &zones_total)?;
 
         let records_total = IntGauge::new(
             "bindizr_records_total",
             "Number of records, refreshed at scrape time.",
         )
-        .expect("valid metric definition");
-        register(&registry, &records_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &records_total)?;
 
         let http_requests_total = IntCounterVec::new(
             Opts::new("bindizr_http_requests_total", "HTTP API requests served."),
             &["method", "route", "status"],
         )
-        .expect("valid metric definition");
-        register(&registry, &http_requests_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &http_requests_total)?;
 
         let http_request_duration_seconds = HistogramVec::new(
             HistogramOpts::new(
@@ -131,8 +134,8 @@ impl Metrics {
             ),
             &["method", "route"],
         )
-        .expect("valid metric definition");
-        register(&registry, &http_request_duration_seconds);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &http_request_duration_seconds)?;
 
         let xfr_total = IntCounterVec::new(
             Opts::new(
@@ -141,8 +144,8 @@ impl Metrics {
             ),
             &["type", "result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &xfr_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &xfr_total)?;
 
         let soa_queries_total = IntCounterVec::new(
             Opts::new(
@@ -152,8 +155,8 @@ impl Metrics {
             ),
             &["result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &soa_queries_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &soa_queries_total)?;
 
         let notify_sent_total = IntCounterVec::new(
             Opts::new(
@@ -162,8 +165,8 @@ impl Metrics {
             ),
             &["result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &notify_sent_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &notify_sent_total)?;
 
         let nsupdate_requests_total = IntCounterVec::new(
             Opts::new(
@@ -172,15 +175,15 @@ impl Metrics {
             ),
             &["result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &nsupdate_requests_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &nsupdate_requests_total)?;
 
         let zone_serial_bumps_total = IntCounter::new(
             "bindizr_zone_serial_bumps_total",
             "Zone serial writes across every update path.",
         )
-        .expect("valid metric definition");
-        register(&registry, &zone_serial_bumps_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &zone_serial_bumps_total)?;
 
         let pruned_rows_total = IntCounterVec::new(
             Opts::new(
@@ -190,15 +193,15 @@ impl Metrics {
             ),
             &["table"],
         )
-        .expect("valid metric definition");
-        register(&registry, &pruned_rows_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &pruned_rows_total)?;
 
         let dnssec_zones_total = IntGauge::new(
             "bindizr_dnssec_zones_total",
             "Number of DNSSEC-signed zones, refreshed at scrape time.",
         )
-        .expect("valid metric definition");
-        register(&registry, &dnssec_zones_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &dnssec_zones_total)?;
 
         let dnssec_keys_total = IntGaugeVec::new(
             Opts::new(
@@ -207,24 +210,24 @@ impl Metrics {
             ),
             &["state"],
         )
-        .expect("valid metric definition");
-        register(&registry, &dnssec_keys_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &dnssec_keys_total)?;
 
         let dnssec_rrsigs_expiring_total = IntGauge::new(
             "bindizr_dnssec_rrsigs_expiring_total",
             "Signatures inside the refresh window at scrape time; a value that \
              persists across scrapes means re-signing is falling behind.",
         )
-        .expect("valid metric definition");
-        register(&registry, &dnssec_rrsigs_expiring_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &dnssec_rrsigs_expiring_total)?;
 
         let dnssec_rrsigs_expired_total = IntGauge::new(
             "bindizr_dnssec_rrsigs_expired_total",
             "Signatures already past their expiration; any at all mean resolvers are failing \
              part of a zone",
         )
-        .expect("valid metric definition");
-        register(&registry, &dnssec_rrsigs_expired_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &dnssec_rrsigs_expired_total)?;
 
         let dnssec_scheduler_runs_total = IntCounterVec::new(
             Opts::new(
@@ -233,8 +236,8 @@ impl Metrics {
             ),
             &["result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &dnssec_scheduler_runs_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &dnssec_scheduler_runs_total)?;
 
         let zone_cache_lookups_total = IntCounterVec::new(
             Opts::new(
@@ -244,23 +247,23 @@ impl Metrics {
             ),
             &["result"],
         )
-        .expect("valid metric definition");
-        register(&registry, &zone_cache_lookups_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &zone_cache_lookups_total)?;
 
         let zone_cache_evictions_total = IntCounter::new(
             "bindizr_zone_cache_evictions_total",
             "Zones dropped to make room; a rising count beside a low hit ratio \
              means dns.transfer_cache.max_records is too small for the working set.",
         )
-        .expect("valid metric definition");
-        register(&registry, &zone_cache_evictions_total);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &zone_cache_evictions_total)?;
 
         let zone_cache_records = IntGauge::new(
             "bindizr_zone_cache_records",
             "Records the zone cache holds, against dns.transfer_cache.max_records.",
         )
-        .expect("valid metric definition");
-        register(&registry, &zone_cache_records);
+        .map_err(RegisterMetricsError)?;
+        register(&registry, &zone_cache_records)?;
 
         // Prometheus emits a labelled series only once it is touched, so an
         // alert on a counter staying at zero reads "no data" until the first
@@ -289,7 +292,7 @@ impl Metrics {
             zone_cache_lookups_total.with_label_values(&[result]);
         }
 
-        Self {
+        Ok(Self {
             registry,
             started_at_seconds,
             database_up,
@@ -313,7 +316,7 @@ impl Metrics {
             zone_cache_lookups_total,
             zone_cache_evictions_total,
             zone_cache_records,
-        }
+        })
     }
 
     /// Encode every registered metric in the Prometheus text format.

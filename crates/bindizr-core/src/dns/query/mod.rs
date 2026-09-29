@@ -95,7 +95,7 @@ pub fn question_builder(
     let mut question = builder.question();
     question
         .push((qname, rtype))
-        .expect("composing into a Vec cannot run out of space");
+        .expect("one question fits an unlimited message");
 
     (query_id, question.additional())
 }
@@ -109,7 +109,7 @@ pub fn build_edns_question(rd: bool, qname: &Name<Vec<u8>>, rtype: Rtype) -> (u1
             opt.set_udp_payload_size(EDNS_UDP_PAYLOAD_SIZE);
             Ok(())
         })
-        .expect("composing into a Vec cannot run out of space");
+        .expect("one OPT record fits an unlimited message");
 
     (query_id, additional.finish())
 }
@@ -362,10 +362,7 @@ pub fn extract_ds_record_set(
             continue;
         }
         let mut rdata = Vec::new();
-        record
-            .data()
-            .compose_rdata(&mut rdata)
-            .expect("composing into a Vec cannot run out of space");
+        let Ok(()) = record.data().compose_rdata(&mut rdata);
         records.push(DsRecord {
             key_tag: KeyTag::from(record.data().key_tag()),
             digest_type: record.data().digest_type().to_int(),

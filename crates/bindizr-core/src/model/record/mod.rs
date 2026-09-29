@@ -626,7 +626,9 @@ fn display_last_name_field(value: &str, field_count: usize) -> String {
         return value.to_string();
     }
 
-    let last = fields.pop().expect("valid field count guarantees a target");
+    let Some(last) = fields.pop() else {
+        return value.to_string();
+    };
     fields.push(to_fqdn_lowercase(&last));
     fields.join(" ")
 }

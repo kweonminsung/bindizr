@@ -146,9 +146,7 @@ impl DnsMessageBuilder {
     fn add_answer<N: ToName, D: ComposeRecordData>(&mut self, owner: N, ttl: u32, data: D) {
         let record = domain::base::Record::new(owner, Class::IN, Ttl::from_secs(ttl), data);
         let mut answer = Vec::new();
-        record
-            .compose_record(&mut answer)
-            .expect("composing into a Vec cannot run out of space");
+        let Ok(()) = record.compose_record(&mut answer);
         self.push_answer(answer);
     }
 

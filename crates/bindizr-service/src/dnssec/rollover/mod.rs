@@ -53,34 +53,29 @@ pub async fn start_rollover(
             ));
         }
 
-        let target_role = match role {
-            Some(role) => {
-                if !signed.keys.iter().any(|key| key.role == role) {
-                    return Err(ServiceError::invalid_input(format!(
-                        "zone '{}' has no {} key to roll",
-                        signed.zone.name, role
-                    )));
-                }
-                role
+        // The key the replacement is modelled on: one of the requested role,
+        // or the CSK when the zone has no other kind.
+        let template = match role {
+            Some(role) => signed.keys.iter().find(|key| key.role == role),
+            None if signed.keys.iter().all(|key| key.role == DnssecKeyRole::Csk) => {
+                signed.keys.first()
             }
             None => {
-                if signed.keys.iter().all(|key| key.role == DnssecKeyRole::Csk) {
-                    DnssecKeyRole::Csk
-                } else {
-                    return Err(ServiceError::invalid_input(
-                        "this zone uses split keys; pass the role to roll (ksk or zsk)",
-                    ));
-                }
+                return Err(ServiceError::invalid_input(
+                    "this zone uses split keys; pass the role to roll (ksk or zsk)",
+                ));
             }
+        };
+        let Some(template) = template else {
+            return Err(ServiceError::invalid_input(format!(
+                "zone '{}' has no {} key to roll",
+                signed.zone.name,
+                role.unwrap_or(DnssecKeyRole::Csk)
+            )));
         };
 
         // Publish the replacement alongside the active keys; promotion waits
         // for the role's hold-down and, for a SEP key, the parent DS check.
-        let template = signed
-            .keys
-            .iter()
-            .find(|key| key.role == target_role)
-            .expect("validated above that the role exists");
         let new_key =
             publish_replacement_key_tx(&mut tx, &signed.zone, template, template.algorithm).await?;
         signed.keys.push(new_key);
@@ -321,28 +316,20 @@ pub(crate) fn promotable_sep_key_ids(
         ));
     }
     // ZSKs have no parent DS to confirm; their own step promotes them.
-    let ds_published: Vec<DnssecKeyId> = signed
+    let awaiting: Vec<&DnssecKey> = signed
         .keys
         .iter()
         .filter(|key| key.awaits_parent_ds())
-        .map(|key| key.id)
         .collect();
-    if ds_published.is_empty() {
+    // The deadline stamped at publication is authoritative: a later TTL
+    // change cannot shorten it (status reports it).
+    let Some(promotable_at) = awaiting.iter().map(|key| key.eligible_at).max() else {
         return Err(ServiceError::invalid_input(
             "this rollover replaces the ZSK, which involves no parent DS; it is promoted \
              automatically after the publish hold-down",
         ));
-    }
-
-    // The deadline stamped at publication is authoritative: a later TTL
-    // change cannot shorten it (status reports it).
-    let promotable_at = signed
-        .keys
-        .iter()
-        .filter(|key| ds_published.contains(&key.id))
-        .map(|key| key.eligible_at)
-        .max()
-        .expect("ds_published names at least one key");
+    };
+    let ds_published: Vec<DnssecKeyId> = awaiting.iter().map(|key| key.id).collect();
     if holddown == Holddown::Wait && promotable_at > Utc::now() {
         return Err(ServiceError::invalid_input(format!(
             "the replacement key must stay published so resolvers holding the previous \

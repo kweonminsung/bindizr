@@ -157,27 +157,24 @@ async fn send_notify_to_server(
     key: Option<&TsigSigningKey>,
 ) -> Result<(), SendNotifyError> {
     let attempts = retries.saturating_add(1);
-    let mut last_error = None;
+    let mut attempt = 1;
 
-    for attempt in 1..=attempts {
+    loop {
         match send_notify_to_server_once(qname, server_addr, timeout, key).await {
             Ok(()) => return Ok(()),
-            Err(e) => {
-                if attempt < attempts {
-                    log::info!(
-                        "Retrying NOTIFY to {} ({}/{}) after error: {}",
-                        server_addr,
-                        attempt + 1,
-                        attempts,
-                        e
-                    );
-                }
-                last_error = Some(e);
+            Err(e) if attempt < attempts => {
+                attempt += 1;
+                log::info!(
+                    "Retrying NOTIFY to {} ({}/{}) after error: {}",
+                    server_addr,
+                    attempt,
+                    attempts,
+                    e
+                );
             }
+            Err(e) => return Err(e),
         }
     }
-
-    Err(last_error.expect("attempts is at least one"))
 }
 
 /// Send one NOTIFY attempt and validate the server's response, its
