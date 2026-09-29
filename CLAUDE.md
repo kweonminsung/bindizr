@@ -876,7 +876,10 @@ and values that travel together only inside one function stay locals. A
 wrapper that only renames another struct's fields is not a struct — use the
 original. One shape has one struct: two with the same fields merge, but two
 with different fields are never generalized into one dynamic shape (a stage
-list standing in for two timing structs).
+list standing in for two timing structs). A shape that crosses a process
+boundary is spelled on each side: the adapter's `BindizrRecord` mirrors the
+service's `ExternalDnsRecord` over HTTP, since the adapter depends on core
+alone and a payload does not belong there.
 
 ### Struct literals stay at the use site
 
