@@ -83,15 +83,15 @@ fn authoritative_zone_picks_most_specific_match() {
     ];
 
     assert_eq!(
-        authoritative_zone(&zones, "api.internal.example.com").map(|z| z.id),
+        authoritative_zone(&zones, "api.internal.example.com").map(|(z, _)| z.id),
         Some(ZoneId::from(2))
     );
     assert_eq!(
-        authoritative_zone(&zones, "www.example.com").map(|z| z.id),
+        authoritative_zone(&zones, "www.example.com").map(|(z, _)| z.id),
         Some(ZoneId::from(1))
     );
     assert_eq!(
-        authoritative_zone(&zones, "internal.example.com").map(|z| z.id),
+        authoritative_zone(&zones, "internal.example.com").map(|(z, _)| z.id),
         Some(ZoneId::from(2))
     );
 }

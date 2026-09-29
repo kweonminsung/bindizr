@@ -132,7 +132,7 @@ async fn spawn_adapter(upstream_addr: std::net::SocketAddr, token: Option<&str>)
     .unwrap();
     let state = Arc::new(AppState {
         upstream,
-        metrics: AdapterMetrics::new(),
+        metrics: AdapterMetrics::new().expect("metrics"),
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -476,7 +476,7 @@ async fn healthz_reflects_bindizr_reachability() {
     let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
     let state = Arc::new(AppState {
         upstream,
-        metrics: AdapterMetrics::new(),
+        metrics: AdapterMetrics::new().expect("metrics"),
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -505,7 +505,7 @@ async fn healthz_is_unready_with_no_manageable_names() {
     let upstream = UpstreamClient::new(format!("http://{}", mock.addr), None, 2, None).unwrap();
     let state = Arc::new(AppState {
         upstream,
-        metrics: AdapterMetrics::new(),
+        metrics: AdapterMetrics::new().expect("metrics"),
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

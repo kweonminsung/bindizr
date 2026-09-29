@@ -135,7 +135,16 @@ async fn probe_addresses(
             ));
         }
     };
-    Ok(probe_entry(&qname, addrs, timeout, expected_serial).await)
+    let (probe, clients) = probe_entry(&qname, addrs, timeout, expected_serial).await;
+    // The resolver hands back at least one address, so this stands in for none.
+    let probe = probe.unwrap_or_else(|| {
+        SecondaryStatusResponse::from_probe(
+            secondary.address.clone(),
+            expected_serial,
+            Err(ProbeError::Resolve(ResolveAddressError::NoAddresses)),
+        )
+    });
+    Ok((probe, clients))
 }
 
 /// Attach what Bindizr last sent the secondary for the zone, beside what it
@@ -181,7 +190,7 @@ async fn probe_entry(
     addrs: Vec<SocketAddr>,
     timeout: Duration,
     expected_serial: Option<Serial>,
-) -> (SecondaryStatusResponse, Vec<IpAddr>) {
+) -> (Option<SecondaryStatusResponse>, Vec<IpAddr>) {
     let clients: Vec<IpAddr> = addrs.iter().map(|addr| addr.ip()).collect();
     let mut last = None;
     for addr in addrs {
@@ -204,8 +213,7 @@ async fn probe_entry(
         }
     }
 
-    let probe = last.expect("resolve_address_entry never yields an empty Ok");
-    (probe, clients)
+    (last, clients)
 }
 
 /// Query one secondary server for its SOA status.

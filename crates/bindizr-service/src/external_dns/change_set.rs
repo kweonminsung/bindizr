@@ -206,8 +206,8 @@ pub(crate) fn group_ops_by_zone(
 
     for pending in ops {
         // From every zone, so a hidden subzone still shadows a granted parent.
-        let zone = authoritative_zone(zones, &pending.op.name)
-            .filter(|zone| caller.sees_zone(zone.id))
+        let (zone, name) = authoritative_zone(zones, &pending.op.name)
+            .filter(|(zone, _)| caller.sees_zone(zone.id))
             .ok_or_else(|| {
                 ServiceError::ZoneNotFound(format!(
                     "No zone is authoritative for '{}'",
@@ -216,8 +216,7 @@ pub(crate) fn group_ops_by_zone(
             })?;
 
         let op = ZoneRecordSetOp {
-            name: OwnerName::parse_absolute_in_zone(&pending.op.name, &zone.name)
-                .expect("authoritative_zone matched the name inside this zone"),
+            name,
             record_type: pending.op.record_type,
             ttl: pending.op.ttl,
             values: pending.op.values,

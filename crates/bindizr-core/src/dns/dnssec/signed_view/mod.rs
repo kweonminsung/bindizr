@@ -132,11 +132,12 @@ impl SignedViewParams<'_> {
         let mut hasher = Sha256::new();
         hasher.update(owner.as_slice());
         hasher.update(covered.to_be_bytes());
-        let slot = u64::from_be_bytes(
-            hasher.finalize()[..8]
-                .try_into()
-                .expect("8 bytes of digest"),
-        );
+        // The leading eight digest bytes, read big-endian.
+        let slot = hasher
+            .finalize()
+            .iter()
+            .take(8)
+            .fold(0u64, |slot, byte| (slot << 8) | u64::from(*byte));
         self.expiration
             - chrono::Duration::seconds((slot % self.expiration_jitter_secs as u64) as i64)
     }
@@ -178,7 +179,7 @@ impl SignedViewParams<'_> {
                 record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
                 ttl: Ttl::try_from(record.ttl().as_secs())?,
-                rdata: to_rdata(record.data()),
+                rdata: to_rdata(record.data())?,
                 expires_at: None,
                 record_set_digest: None,
             });
@@ -191,7 +192,7 @@ impl SignedViewParams<'_> {
                 record_type: DnssecRecordType::try_from(record.rtype())?,
                 covered_record_type: None,
                 ttl: Ttl::try_from(record.ttl().as_secs())?,
-                rdata: to_rdata(record.data()),
+                rdata: to_rdata(record.data())?,
                 expires_at: None,
                 record_set_digest: None,
             });
@@ -256,7 +257,7 @@ impl SignedViewParams<'_> {
                 } else {
                     &data_signers
                 };
-            let digest = record_set_digest(record_set_signers, record_set);
+            let digest = record_set_digest(record_set_signers, record_set)?;
 
             // Reuse only a complete, unchanged set of signatures that outlives
             // the refresh window; a forced pass regenerates every signature.
@@ -293,7 +294,7 @@ impl SignedViewParams<'_> {
                             record_type: DnssecRecordType::Rrsig,
                             covered_record_type: Some(covered),
                             ttl: Ttl::try_from(rrsig.ttl().as_secs())?,
-                            rdata: to_rdata(rrsig.data()),
+                            rdata: to_rdata(rrsig.data())?,
                             expires_at: Some(expiration),
                             record_set_digest: Some(digest.clone()),
                         });
@@ -353,7 +354,10 @@ fn is_key_rtype(rtype: Rtype) -> bool {
 
 /// Content identity for signature reuse; any component changing must force
 /// a fresh signature.
-fn record_set_digest(signers: &[&Signer<'_>], record_set: &[&SignRecord]) -> String {
+fn record_set_digest(
+    signers: &[&Signer<'_>],
+    record_set: &[&SignRecord],
+) -> Result<String, EncodeRdataError> {
     let mut hasher = Sha256::new();
     hasher.update(record_set[0].owner().as_slice());
     hasher.update(record_set[0].rtype().to_int().to_be_bytes());
@@ -362,7 +366,7 @@ fn record_set_digest(signers: &[&Signer<'_>], record_set: &[&SignRecord]) -> Str
     let mut rdatas: Vec<Rdata> = record_set
         .iter()
         .map(|record| to_rdata(record.data()))
-        .collect();
+        .collect::<Result<_, _>>()?;
     rdatas.sort();
     for rdata in rdatas {
         hasher.update((rdata.as_bytes().len() as u32).to_be_bytes());
@@ -375,7 +379,7 @@ fn record_set_digest(signers: &[&Signer<'_>], record_set: &[&SignRecord]) -> Str
         hasher.update(signer.key_tag.as_u16().to_be_bytes());
         hasher.update([signer.algorithm]);
     }
-    hex::encode(hasher.finalize())
+    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Check whether an owner lies below a delegation in this zone.
@@ -456,11 +460,9 @@ impl<'a> Signer<'a> {
     }
 }
 
-/// Wire RDATA of `data`, without the length prefix. Composed protocol values
-/// are bounded well under the RDLENGTH limit, so the cap cannot trip here.
-fn to_rdata<D: ComposeRecordData>(data: &D) -> Rdata {
+/// Wire RDATA of `data`, without the length prefix.
+fn to_rdata<D: ComposeRecordData>(data: &D) -> Result<Rdata, EncodeRdataError> {
     let mut bytes = Vec::new();
-    data.compose_rdata(&mut bytes)
-        .expect("composing into a Vec cannot run out of space");
-    Rdata::new(bytes).expect("composed RDATA exceeds the RDLENGTH limit")
+    let Ok(()) = data.compose_rdata(&mut bytes);
+    Rdata::new(bytes)
 }

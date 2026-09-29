@@ -107,19 +107,22 @@ pub(crate) async fn authenticate_transfer(
         }
     };
 
-    // An unknown key still runs validation: the empty key store makes it
-    // produce the BADKEY error response.
     let key = tsig_key::find_by_wire_name(cx, &key_name)
         .await
         .map_err(|e| TransferRefusal::refused(format!("failed to load TSIG key: {}", e), None))?;
-    let domain_key = key
-        .as_ref()
-        .map(TsigKey::to_domain_key)
-        .transpose()
-        .map_err(TransferRefusal::from)?;
-    let signer = verify_tsig_sequence(query_data, domain_key).map_err(TransferRefusal::from)?;
+    let Some(key) = key else {
+        // An unknown key still runs validation: the empty key store makes it
+        // produce the BADKEY error response.
+        verify_tsig_sequence(query_data, None).map_err(TransferRefusal::from)?;
+        return Err(TransferRefusal::refused(
+            "TSIG verification passed without a key".to_string(),
+            None,
+        ));
+    };
+    let domain_key = key.to_domain_key().map_err(TransferRefusal::from)?;
+    let signer =
+        verify_tsig_sequence(query_data, Some(domain_key)).map_err(TransferRefusal::from)?;
 
-    let key = key.expect("verification succeeded, so the key is known");
     if cx.config().dns.is_catalog_zone(zone_name) && !key.is_global {
         return Err(TransferRefusal::refused(
             format!(

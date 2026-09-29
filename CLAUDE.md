@@ -138,6 +138,14 @@ each rule says which spelling is this project's.
   across versions and nothing here matches on them; the few that implement
   no `Error` at all (`SigningError`, `TxtError`) keep their text in a
   `reason` field, which is the one place a message stands in for a source.
+  `unwrap` and `expect` never stand in for a `Result`: an error that a
+  static definition makes impossible still travels as a type
+  (`Metrics::new` returns `RegisterMetricsError`), a `Result` whose error
+  is `Infallible` is read with `let Ok(()) = …`, an invariant the code can
+  restructure around is restructured (the lock target an update pre-reads
+  is an enum, not an `Option` unwrapped later), and the `expect`s that
+  remain guard a constructor's own invariant, a poisoned lock, or a foreign
+  builder's limit a single question cannot reach.
 - **Conversions are the standard traits** (`C-CONV-TRAITS`, `C-CTOR`,
   `C-CONV`). A value derived from one other value and nothing else is
   `impl From<&Zone> for GetZoneResponse` (`TryFrom` when it can fail),

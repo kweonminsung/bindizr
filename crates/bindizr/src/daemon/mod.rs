@@ -9,7 +9,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use bindizr_core::{
     config::{self, Config, ConfigError},
     logger::{self, Logger},
-    metrics::Metrics,
+    metrics::{Metrics, RegisterMetricsError},
 };
 use bindizr_db::{Db, error::DatabaseError};
 use bindizr_service::{
@@ -46,6 +46,8 @@ pub(crate) enum DaemonError {
     Socket(#[from] BindSocketError),
     #[error(transparent)]
     Database(#[from] DatabaseError),
+    #[error(transparent)]
+    Metrics(#[from] RegisterMetricsError),
     /// The catalog zone name is a stored zone's; the service names the clash.
     #[error(transparent)]
     CatalogZone(#[from] ServiceError),
@@ -143,7 +145,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
         config,
         config_path,
         db,
-        Metrics::new(),
+        Metrics::new()?,
         notify_tx,
         period_tx,
     ));

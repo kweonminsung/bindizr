@@ -53,9 +53,7 @@ impl DnssecKey {
     pub fn ds_rdata(&self, apex: &WireName, digest_type: u8) -> Result<Rdata, KeyRdataError> {
         let dnskey = self.to_dnskey()?;
         let mut dnskey_rdata = Vec::new();
-        dnskey
-            .compose_rdata(&mut dnskey_rdata)
-            .expect("composing into a Vec cannot run out of space");
+        let Ok(()) = dnskey.compose_rdata(&mut dnskey_rdata);
 
         let digest: Vec<u8> = match digest_type {
             1 => {

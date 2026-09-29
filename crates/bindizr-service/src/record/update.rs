@@ -3,7 +3,7 @@ use bindizr_core::{
         Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::record::RecordId,
+    model::{record::RecordId, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
 
@@ -26,9 +26,13 @@ use crate::{
     zone::{self, diff::build_record_diff},
 };
 
-/// How an update names the one record it changes.
-enum RecordSelector<'a> {
-    Id(RecordId),
+/// The record an update locks: by id, with the zone the id form pre-read,
+/// or by name.
+enum LockTarget<'a> {
+    Id {
+        record_id: RecordId,
+        zone_id: ZoneId,
+    },
     /// Several records at the name are an error: an update must not pick one
     /// of them on the caller's behalf.
     Name {
@@ -110,10 +114,20 @@ pub async fn update(
     record_id: RecordId,
     request: &UpdateRecordRequest,
 ) -> Result<RecordWriteResponse, ServiceError> {
+    // Non-locking read for the zone_id, so the tx locks zone before record
+    // (the create/bulk/import order); the reverse can deadlock.
+    let zone_id = match db::record::get(cx.db(), record_id).await {
+        Ok(Some(record)) => record.zone_id,
+        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
+        Err(e) => {
+            log::error!("Failed to fetch record: {}", e);
+            return Err(ServiceError::internal("Failed to fetch record"));
+        }
+    };
     update_locked(
         cx,
         caller,
-        RecordSelector::Id(record_id),
+        LockTarget::Id { record_id, zone_id },
         Run::from_dry_run(request.dry_run),
         resolve_update(request),
     )
@@ -132,7 +146,7 @@ pub async fn update_by_name(
     update_locked(
         cx,
         caller,
-        RecordSelector::Name { zone_name, name },
+        LockTarget::Name { zone_name, name },
         Run::from_dry_run(request.dry_run),
         resolve_update(request),
     )
@@ -143,31 +157,15 @@ pub async fn update_by_name(
 async fn update_locked(
     cx: &Context,
     caller: &Caller,
-    selector: RecordSelector<'_>,
+    target: LockTarget<'_>,
     run: Run,
     resolve: impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError>,
 ) -> Result<RecordWriteResponse, ServiceError> {
-    // Non-locking read for the zone_id, so the tx locks zone before record
-    // (the create/bulk/import order); the reverse can deadlock. The name
-    // form already names its zone and needs no pre-read.
-    let zone_id = match selector {
-        RecordSelector::Id(record_id) => match db::record::get(cx.db(), record_id).await {
-            Ok(Some(record)) => Some(record.zone_id),
-            Ok(None) => return Err(ServiceError::record_not_found(record_id)),
-            Err(e) => {
-                log::error!("Failed to fetch record: {}", e);
-                return Err(ServiceError::internal("Failed to fetch record"));
-            }
-        },
-        RecordSelector::Name { .. } => None,
-    };
-
     let mut tx = transaction::begin_tx(cx, "Failed to update record").await?;
 
     let apply_result = async {
-        let (zone, existing_record) = match selector {
-            RecordSelector::Id(record_id) => {
-                let zone_id = zone_id.expect("the id form pre-reads its zone_id");
+        let (zone, existing_record) = match target {
+            LockTarget::Id { record_id, zone_id } => {
                 let zone = match db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
                     Ok(Some(zone)) => zone,
                     Ok(None) => {
@@ -206,7 +204,7 @@ async fn update_locked(
 
                 (zone, existing_record)
             }
-            RecordSelector::Name { zone_name, name } => {
+            LockTarget::Name { zone_name, name } => {
                 let zone =
                     zone::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive)
                         .await?;

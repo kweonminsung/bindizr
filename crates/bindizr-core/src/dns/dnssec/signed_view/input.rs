@@ -69,7 +69,7 @@ impl SignedViewParams<'_> {
                 ));
                 let cdnskey = UnknownRecordData::from_octets(
                     Rtype::CDNSKEY,
-                    to_rdata(&signer.dnskey).into_bytes(),
+                    to_rdata(&signer.dnskey)?.into_bytes(),
                 )
                 .map_err(|e| SignZoneError::Rdata {
                     rtype: "CDNSKEY",

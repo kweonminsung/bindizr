@@ -231,8 +231,8 @@ pub(crate) fn decode_labels(name: &str) -> Result<Vec<String>, ParseNameError> {
                     }
                     label.push(u8::try_from(octet).map_err(|_| ParseNameError::InvalidEscape)?);
                 }
-                Some(_) => {
-                    let escaped = chars.next().expect("peek returned a character");
+                Some(&escaped) => {
+                    chars.next();
                     let mut buf = [0u8; 4];
                     label.extend_from_slice(escaped.encode_utf8(&mut buf).as_bytes());
                 }

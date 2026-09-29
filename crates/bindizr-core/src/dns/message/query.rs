@@ -149,7 +149,7 @@ impl ParsedQuery {
         let mut question = builder.question();
         question
             .push((&self.qname, self.qtype))
-            .expect("composing into a Vec cannot run out of space");
+            .expect("one question fits an unlimited message");
 
         question
     }
