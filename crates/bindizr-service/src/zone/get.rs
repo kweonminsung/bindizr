@@ -12,6 +12,7 @@ use crate::{
     db,
     error::ServiceError,
     model::{zone::Zone, zone_change::ZoneChange},
+    serial::validate_stored_serial,
     types::{
         GetZoneResponse, GetZonesFilter, PaginatedResponse, normalize_page_limit, parse_setting,
     },
@@ -102,6 +103,9 @@ pub async fn list_by_filter(
     let scope_token_id = caller.scope_token_id();
     let limit = Some(normalize_page_limit(filter.limit)?);
     let offset = filter.offset;
+    let serial = filter.serial.map(validate_stored_serial).transpose()?;
+    let min_serial = filter.min_serial.map(validate_stored_serial).transpose()?;
+    let max_serial = filter.max_serial.map(validate_stored_serial).transpose()?;
 
     let zone_filter = ZoneFilter {
         name: filter.name,
@@ -111,9 +115,9 @@ pub async fn list_by_filter(
         default_ttl: filter.default_ttl,
         min_default_ttl: filter.min_default_ttl,
         max_default_ttl: filter.max_default_ttl,
-        serial: filter.serial,
-        min_serial: filter.min_serial,
-        max_serial: filter.max_serial,
+        serial,
+        min_serial,
+        max_serial,
         created_after: filter.created_after,
         created_before: filter.created_before,
         signed: filter.signed,
