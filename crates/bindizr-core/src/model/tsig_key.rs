@@ -1,5 +1,13 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
+use thiserror::Error;
+
+/// A TSIG algorithm name outside the HMACs bindizr signs with.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("unsupported TSIG algorithm '{value}' (supported: {})", TsigAlgorithm::supported_names().join(", "))]
+pub struct ParseTsigAlgorithmError {
+    pub value: String,
+}
 
 /// TSIG HMAC algorithms for update and transfer authentication (RFC 8945).
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
@@ -36,7 +44,7 @@ impl std::fmt::Display for TsigAlgorithm {
 }
 
 impl std::str::FromStr for TsigAlgorithm {
-    type Err = String;
+    type Err = ParseTsigAlgorithmError;
 
     /// Accepts the storage form or the wire form (trailing root dot tolerated),
     /// case-insensitively.
@@ -45,23 +53,26 @@ impl std::str::FromStr for TsigAlgorithm {
             "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
             "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
             "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
-            _ => Err(format!(
-                "unsupported TSIG algorithm '{}' (supported: {})",
-                s,
-                TsigAlgorithm::supported_names().join(", ")
-            )),
+            _ => Err(ParseTsigAlgorithmError {
+                value: s.to_string(),
+            }),
         }
     }
 }
 
 impl TryFrom<String> for TsigAlgorithm {
-    type Error = String;
+    type Error = ParseTsigAlgorithmError;
 
     /// Validate and convert the stored value into a TSIG algorithm.
     fn try_from(s: String) -> Result<Self, Self::Error> {
         s.parse()
     }
 }
+
+id_newtype!(
+    /// The id of a TSIG key row.
+    TsigKeyId
+);
 
 /// A TSIG credential for updates and transfers; `name` is its wire name.
 /// Zone rights come from [`super::tsig_grant::TsigGrant`] rows.
@@ -70,7 +81,7 @@ impl TryFrom<String> for TsigAlgorithm {
 /// every zone without any grant.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TsigKey {
-    pub id: i32,
+    pub id: TsigKeyId,
     pub name: String,
     #[sqlx(try_from = "String")]
     pub algorithm: TsigAlgorithm,

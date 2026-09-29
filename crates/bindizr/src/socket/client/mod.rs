@@ -1,4 +1,5 @@
 use bindizr_service::{error::ErrorCode, types::ErrorResponse};
+use serde::de::DeserializeOwned;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
@@ -8,7 +9,7 @@ use crate::{
     cli::error::CliError,
     socket::{
         FALLBACK_SOCKET_FILE_PATH, SOCKET_FILE_PATH, is_trusted_peer, read_own_uid,
-        types::{DaemonCommand, DaemonCommandKind, DaemonResponse},
+        types::{DaemonCommand, DaemonResponse},
     },
 };
 
@@ -36,45 +37,39 @@ pub(crate) async fn is_daemon_socket_gone() -> bool {
 
 /// Send a command the daemon answers from memory (status/lifecycle) under
 /// a short deadline, so a wedged daemon cannot hang polling loops.
-pub(crate) async fn send_control_command(
-    command: DaemonCommandKind,
-) -> Result<DaemonResponse, CliError> {
+pub(crate) async fn send_control_command<T: DeserializeOwned>(
+    command: DaemonCommand,
+) -> Result<DaemonResponse<T>, CliError> {
     const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-    tokio::time::timeout(CONTROL_TIMEOUT, send_command(command, ()))
+    tokio::time::timeout(CONTROL_TIMEOUT, send_command(command))
         .await
         .map_err(|_| {
-            CliError::from(format!(
+            CliError::request(format!(
                 "The daemon did not answer within {} seconds",
                 CONTROL_TIMEOUT.as_secs()
             ))
         })?
 }
 
-/// Send a command to the daemon and return its parsed response. `data` is
-/// the command's payload type; `()` for the commands that take none.
-pub(crate) async fn send_command(
-    command: DaemonCommandKind,
-    data: impl serde::Serialize,
-) -> Result<DaemonResponse, CliError> {
+/// Send a command to the daemon and read its response, whose payload is
+/// the `T` the command answers with.
+pub(crate) async fn send_command<T: DeserializeOwned>(
+    command: DaemonCommand,
+) -> Result<DaemonResponse<T>, CliError> {
     let mut stream = connect_to_daemon_socket().await?;
 
-    let cmd = DaemonCommand {
-        command,
-        data: serde_json::to_value(data)
-            .map_err(|e| format!("Failed to serialize command payload: {}", e))?,
-    };
-    let json =
-        serde_json::to_string(&cmd).map_err(|e| format!("Failed to serialize command: {}", e))?;
+    let json = serde_json::to_string(&command)
+        .map_err(|e| CliError::request(format!("Failed to serialize command: {}", e)))?;
 
     stream
         .write_all(json.as_bytes())
         .await
-        .map_err(|e| format!("Failed to write to socket: {}", e))?;
+        .map_err(|e| CliError::request(format!("Failed to write to socket: {}", e)))?;
     stream
         .write_all(b"\n")
         .await
-        .map_err(|e| format!("Failed to write newline to socket: {}", e))?;
+        .map_err(|e| CliError::request(format!("Failed to write newline to socket: {}", e)))?;
 
     let mut reader = BufReader::new(stream);
     let mut response = String::new();
@@ -82,7 +77,7 @@ pub(crate) async fn send_command(
     reader
         .read_line(&mut response)
         .await
-        .map_err(|e| format!("Failed to read from socket: {}", e))?;
+        .map_err(|e| CliError::request(format!("Failed to read from socket: {}", e)))?;
 
     // An error reply is an `ErrorResponse` instead of a `DaemonResponse`,
     // so only a failed command parses here.
@@ -93,7 +88,8 @@ pub(crate) async fn send_command(
         ));
     }
 
-    Ok(serde_json::from_str(&response).map_err(|e| format!("Failed to parse response: {}", e))?)
+    serde_json::from_str(&response)
+        .map_err(|e| CliError::request(format!("Failed to parse response: {}", e)))
 }
 /// Open a connection to the daemon's control socket, refusing a daemon that
 /// is neither this user's nor root's (a socket another user planted in /tmp).
@@ -119,10 +115,15 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
 
     let peer_uid = stream
         .peer_cred()
-        .map_err(|e| format!("Could not identify the daemon behind its socket: {}", e))?
+        .map_err(|e| {
+            CliError::request(format!(
+                "Could not identify the daemon behind its socket: {}",
+                e
+            ))
+        })?
         .uid();
-    let own_uid =
-        read_own_uid().map_err(|e| format!("Could not read this process's uid: {}", e))?;
+    let own_uid = read_own_uid()
+        .map_err(|e| CliError::request(format!("Could not read this process's uid: {}", e)))?;
     // Root drives any daemon, as `sudo bindizr` on a package install does.
     if own_uid != 0 && !is_trusted_peer(peer_uid, own_uid) {
         let path = stream
@@ -130,7 +131,7 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
             .ok()
             .and_then(|addr| addr.as_pathname().map(|p| p.display().to_string()))
             .unwrap_or_else(|| "?".to_string());
-        return Err(CliError::from(format!(
+        return Err(CliError::request(format!(
             "The daemon at '{}' runs as uid {}, neither this user nor root. Run the CLI as that \
              user, or remove a socket another user left there.",
             path, peer_uid
@@ -141,7 +142,7 @@ async fn connect_to_daemon_socket() -> Result<UnixStream, CliError> {
 
 /// The error for a socket this user may not open.
 fn denied(socket_path: &str) -> CliError {
-    CliError::from(format!(
+    CliError::request(format!(
         "Permission denied on the daemon socket at '{}'. The socket is owner-only, so run the \
          CLI as the user the daemon runs as (for a package install, `sudo bindizr ...`).",
         socket_path

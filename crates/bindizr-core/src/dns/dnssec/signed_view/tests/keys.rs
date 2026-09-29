@@ -1,18 +1,22 @@
 use super::*;
+use crate::{
+    dns::SoaInterval,
+    model::{dnssec_key::DnssecKeyId, record::RecordId, zone::ZoneId},
+};
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 3600,
-        serial: 5,
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
-        minimum_ttl: 900,
+        default_ttl: Ttl::from_secs(3600),
+        serial: Serial::from(5),
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
+        minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -25,7 +29,7 @@ fn test_zone() -> Zone {
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
-        id: 0,
+        id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
@@ -33,10 +37,10 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
         },
         record_type,
         value: value.to_string(),
-        ttl,
+        ttl: Ttl::try_from(ttl).unwrap(),
         priority: None,
         created_at: Utc::now(),
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
     }
 }
 
@@ -44,7 +48,7 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
 #[test]
 fn p384_keys_advertise_a_sha384_ds_digest() {
     let zone = test_zone();
-    let key = generate_key(
+    let key = DnssecKey::generate(
         &zone,
         DnssecAlgorithm::EcdsaP384Sha384,
         DnssecKeyRole::Csk,
@@ -65,7 +69,7 @@ fn p384_keys_advertise_a_sha384_ds_digest() {
 #[test]
 fn ds_rdata_pairs_the_key_with_each_supported_digest() {
     let zone = test_zone();
-    let key = generate_key(
+    let key = DnssecKey::generate(
         &zone,
         DnssecAlgorithm::EcdsaP384Sha384,
         DnssecKeyRole::Csk,
@@ -94,7 +98,7 @@ fn ds_rdata_pairs_the_key_with_each_supported_digest() {
 #[test]
 fn ed448_keys_generate_and_sign() {
     let zone = test_zone();
-    let mut key = generate_key(
+    let mut key = DnssecKey::generate(
         &zone,
         DnssecAlgorithm::Ed448,
         DnssecKeyRole::Csk,
@@ -103,9 +107,9 @@ fn ed448_keys_generate_and_sign() {
         fixed_now(),
     )
     .unwrap();
-    key.id = 1;
+    key.id = DnssecKeyId::from(1);
     let keys = [key];
-    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+    let records = [test_record("@", RecordType::Ns, "ns1.example.com", 3600)];
 
     let diff = compute(ComputeArgs {
         zone: &zone,
@@ -116,13 +120,13 @@ fn ed448_keys_generate_and_sign() {
         new_serial: 2,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     // Algorithm 16 only signs through the OpenSSL backend; this guards the
     // ring-to-OpenSSL fallback staying wired up.
     let apex = OwnerName::apex();
-    let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32);
+    let rrsigs = rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type()));
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 16);
 }
@@ -131,7 +135,7 @@ fn ed448_keys_generate_and_sign() {
 #[test]
 fn rsa_keys_generate_and_sign() {
     let zone = test_zone();
-    let mut key = generate_key(
+    let mut key = DnssecKey::generate(
         &zone,
         DnssecAlgorithm::RsaSha256,
         DnssecKeyRole::Csk,
@@ -140,9 +144,9 @@ fn rsa_keys_generate_and_sign() {
         fixed_now(),
     )
     .unwrap();
-    key.id = 1;
+    key.id = DnssecKeyId::from(1);
     let keys = [key];
-    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+    let records = [test_record("@", RecordType::Ns, "ns1.example.com", 3600)];
 
     let diff = compute(ComputeArgs {
         zone: &zone,
@@ -153,12 +157,12 @@ fn rsa_keys_generate_and_sign() {
         new_serial: 2,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     // RSA key generation also runs on the OpenSSL backend (ring only signs).
     let apex = OwnerName::apex();
-    let rrsigs = rrsigs_covering(&diff.added, &apex, RecordType::NS.wire_type() as i32);
+    let rrsigs = rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type()));
     assert_eq!(rrsigs.len(), 1);
     assert_eq!(rrsigs[0].rdata.as_bytes()[2], 8);
 }

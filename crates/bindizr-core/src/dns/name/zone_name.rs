@@ -68,6 +68,53 @@ impl From<String> for ZoneName {
     }
 }
 
+/// Binding renders the stored form, so a query never compares a spelling
+/// the parser did not produce.
+impl<DB: sqlx::Database> sqlx::Type<DB> for ZoneName
+where
+    String: sqlx::Type<DB>,
+{
+    /// Return the SQL type used to store this value.
+    fn type_info() -> DB::TypeInfo {
+        <String as sqlx::Type<DB>>::type_info()
+    }
+
+    /// Check whether the SQL type can store this value.
+    fn compatible(ty: &DB::TypeInfo) -> bool {
+        <String as sqlx::Type<DB>>::compatible(ty)
+    }
+}
+
+impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for ZoneName
+where
+    String: sqlx::Encode<'q, DB>,
+{
+    /// Encode this value using its database representation.
+    fn encode_by_ref(
+        &self,
+        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        self.0.encode_by_ref(buf)
+    }
+}
+
+impl serde::Serialize for ZoneName {
+    /// Serialize the zone name as its text.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+/// A name read from a file or a payload is parsed, so it is canonical like
+/// every other.
+impl<'de> serde::Deserialize<'de> for ZoneName {
+    /// Deserialize a zone name from its text, rejecting one that does not parse.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        ZoneName::parse(&value).map_err(serde::de::Error::custom)
+    }
+}
+
 impl std::fmt::Display for ZoneName {
     /// Write the zone name in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

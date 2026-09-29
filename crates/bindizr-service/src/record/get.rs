@@ -1,19 +1,24 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName, decode_name_labels, labels_to_presentation};
-use bindizr_db::repository::{DnssecRecordFilter, RecordFilter};
+use bindizr_core::{
+    dns::name::{OwnerName, ZoneName, decode_name_labels, labels_to_presentation},
+    model::record::RecordId,
+};
+use bindizr_db::{dnssec_record::DnssecRecordFilter, record::RecordFilter};
 
-use super::{ListedRecord, RecordService};
+use super::ListedRecord;
 use crate::{
+    Context,
     authorization::Caller,
+    db,
     error::ServiceError,
     model::{
         dnssec_record::DnssecRecordType,
         record::{RecordType, RecordWithZone},
     },
-    repository::RepositoryService,
     types::{
-        GetRecordResponse, GetRecordsFilter, PaginatedResponse, normalize_page_limit, parse_setting,
+        GetRecordResponse, GetRecordsFilter, PaginatedResponse, ZoneView, normalize_page_limit,
+        parse_setting,
     },
-    zone::{ZoneService, validation::normalize_zone_name},
+    zone::{self, validation::normalize_name},
 };
 
 /// Which plane a `type` filter names: a user record type, or a derived
@@ -25,14 +30,16 @@ enum TypeFilter {
 }
 
 /// Resolve a `type` filter to its plane.
-fn parse_type_filter(value: Option<&str>, signed: bool) -> Result<TypeFilter, ServiceError> {
+fn parse_type_filter(value: Option<&str>, view: ZoneView) -> Result<TypeFilter, ServiceError> {
     let Some(value) = value else {
         return Ok(TypeFilter::Any);
     };
     match value.parse::<RecordType>() {
         Ok(record_type) => Ok(TypeFilter::User(record_type)),
         Err(err) => {
-            if signed && let Ok(record_type) = value.to_uppercase().parse::<DnssecRecordType>() {
+            if view == ZoneView::Signed
+                && let Ok(record_type) = value.to_uppercase().parse::<DnssecRecordType>()
+            {
                 return Ok(TypeFilter::Derived(record_type));
             }
             Err(ServiceError::invalid_input(err))
@@ -40,164 +47,166 @@ fn parse_type_filter(value: Option<&str>, signed: bool) -> Result<TypeFilter, Se
     }
 }
 
-impl RecordService {
-    /// Every record, for the unauthenticated metrics endpoint.
-    pub async fn count_all() -> Result<u64, ServiceError> {
-        RepositoryService::count_records_by_filter(RecordFilter::default()).await
+/// Every record, for the unauthenticated metrics endpoint.
+pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
+    Ok(db::record::count_by_filter(cx.db(), RecordFilter::default()).await?)
+}
+
+/// List records with their zone name matching `filter`, restricted to what
+/// the caller's grants carry in SQL so pagination stays database-side.
+/// Scoped callers see an unknown or invisible zone as an empty page.
+/// With `signed`, the derived DNSSEC plane pages after the user records;
+/// searches reach their names, value filters are refused, and priority filters
+/// exclude the derived plane.
+pub async fn list_with_zone_by_filter(
+    cx: &Context,
+    caller: &Caller,
+    filter: GetRecordsFilter,
+) -> Result<PaginatedResponse<GetRecordResponse>, ServiceError> {
+    let scope_token_id = caller.scope_token_id();
+    let zone_name = filter
+        .zone_name
+        .as_deref()
+        .map(normalize_name)
+        .transpose()?;
+    let limit = Some(normalize_page_limit(filter.limit)?);
+    let offset = filter.offset;
+    let view = ZoneView::from_signed(filter.signed.unwrap_or(false));
+
+    // Scoped callers read unknown and invisible zones alike as empty
+    // pages, so skip the 404 probe.
+    if let Some(name) = zone_name.as_ref()
+        && scope_token_id.is_none()
+    {
+        zone::lookup_by_name(cx, name).await?;
     }
 
-    /// List records with their zone name matching `filter`, restricted to what
-    /// the caller's grants carry in SQL so pagination stays database-side.
-    /// Scoped callers see an unknown or invisible zone as an empty page.
-    /// With `signed`, the derived DNSSEC plane pages after the user records;
-    /// searches reach their names, value filters are refused, and priority filters
-    /// exclude the derived plane.
-    pub async fn list_with_zone_by_filter(
-        caller: &Caller,
-        filter: GetRecordsFilter,
-    ) -> Result<PaginatedResponse<GetRecordResponse>, ServiceError> {
-        let scope_token_id = caller.scope_token_id();
-        let zone_name = filter
-            .zone_name
-            .as_deref()
-            .map(normalize_zone_name)
-            .transpose()?;
-        let limit = Some(normalize_page_limit(filter.limit)?);
-        let offset = filter.offset;
-        let signed = filter.signed.unwrap_or(false);
+    let name = build_record_name_filter(filter.name, zone_name.as_ref());
+    let type_filter = parse_type_filter(filter.record_type.as_deref(), view)?;
 
-        // Scoped callers read unknown and invisible zones alike as empty
-        // pages, so skip the 404 probe.
-        if let Some(name) = zone_name.as_ref()
-            && scope_token_id.is_none()
-        {
-            ZoneService::lookup_by_name(name.as_str()).await?;
-        }
+    // A derived row's rdata is wire bytes, so no `LIKE` reaches it; asking
+    // for both would answer a narrower question than the one put.
+    if view == ZoneView::Signed && filter.value.is_some() {
+        return Err(ServiceError::invalid_input(
+            "value cannot narrow the derived DNSSEC records; drop value, or drop signed",
+        ));
+    }
 
-        let name = build_record_name_filter(filter.name, zone_name.as_ref());
-        let type_filter = parse_type_filter(filter.record_type.as_deref(), signed)?;
+    let user_plane = !matches!(type_filter, TypeFilter::Derived(_));
+    // A derived row carries no priority, so a priority filter answers
+    // "none of them" — which is what leaving the plane out returns.
+    let derived_plane = view == ZoneView::Signed
+        && !matches!(type_filter, TypeFilter::User(_))
+        && filter.priority.is_none()
+        && filter.min_priority.is_none()
+        && filter.max_priority.is_none();
 
-        // A derived row's rdata is wire bytes, so no `LIKE` reaches it; asking
-        // for both would answer a narrower question than the one put.
-        if signed && filter.value.is_some() {
-            return Err(ServiceError::invalid_input(
-                "value cannot narrow the derived DNSSEC records; drop value, or drop signed",
-            ));
-        }
+    let record_filter = RecordFilter {
+        zone_name: zone_name.clone(),
+        name: name.clone(),
+        record_type: match &type_filter {
+            TypeFilter::User(record_type) => Some(*record_type),
+            _ => None,
+        },
+        value: filter.value,
+        ttl: filter.ttl,
+        min_ttl: filter.min_ttl,
+        max_ttl: filter.max_ttl,
+        priority: filter.priority,
+        min_priority: filter.min_priority,
+        max_priority: filter.max_priority,
+        search: filter.search.clone(),
+        scope_token_id,
+        sort: parse_setting(filter.sort.as_deref())?,
+        order: parse_setting(filter.order.as_deref())?,
+        limit,
+        offset,
+    };
+    let derived_filter = DnssecRecordFilter {
+        zone_name,
+        name,
+        record_type: match type_filter {
+            TypeFilter::Derived(record_type) => Some(i32::from(record_type.wire_type())),
+            _ => None,
+        },
+        ttl: filter.ttl,
+        min_ttl: filter.min_ttl,
+        max_ttl: filter.max_ttl,
+        search: filter.search.clone(),
+        scope_token_id,
+        limit: None,
+        offset: None,
+    };
 
-        let user_plane = !matches!(type_filter, TypeFilter::Derived(_));
-        // A derived row carries no priority, so a priority filter answers
-        // "none of them" — which is what leaving the plane out returns.
-        let derived_plane = signed
-            && !matches!(type_filter, TypeFilter::User(_))
-            && filter.priority.is_none()
-            && filter.min_priority.is_none()
-            && filter.max_priority.is_none();
+    let user_total = if user_plane {
+        db::record::count_by_filter(cx.db(), record_filter.clone()).await?
+    } else {
+        0
+    };
+    let derived_total = if derived_plane {
+        db::dnssec_record::count_by_filter(cx.db(), derived_filter.clone()).await?
+    } else {
+        0
+    };
 
-        let zone_name = zone_name.map(|name| name.to_string());
-        let record_filter = RecordFilter {
-            zone_name: zone_name.clone(),
-            name: name.clone(),
-            record_type: match &type_filter {
-                TypeFilter::User(record_type) => Some(record_type.clone()),
-                _ => None,
-            },
-            value: filter.value,
-            ttl: filter.ttl,
-            min_ttl: filter.min_ttl,
-            max_ttl: filter.max_ttl,
-            priority: filter.priority,
-            min_priority: filter.min_priority,
-            max_priority: filter.max_priority,
-            search: filter.search.clone(),
-            scope_token_id,
-            sort: parse_setting(filter.sort.as_deref())?,
-            order: parse_setting(filter.order.as_deref())?,
-            limit,
-            offset,
-        };
-        let derived_filter = DnssecRecordFilter {
-            zone_name,
-            name,
-            record_type: match type_filter {
-                TypeFilter::Derived(record_type) => Some(record_type.wire_type() as i32),
-                _ => None,
-            },
-            ttl: filter.ttl,
-            min_ttl: filter.min_ttl,
-            max_ttl: filter.max_ttl,
-            search: filter.search.clone(),
-            scope_token_id,
-            limit: None,
-            offset: None,
-        };
-
-        let user_total = if user_plane {
-            RepositoryService::count_records_by_filter(record_filter.clone()).await?
-        } else {
-            0
-        };
-        let derived_total = if derived_plane {
-            RepositoryService::count_dnssec_records_by_filter(derived_filter.clone()).await?
-        } else {
-            0
-        };
-
-        let start = offset.unwrap_or(0);
-        let mut items: Vec<ListedRecord> = Vec::new();
-        if user_plane && start < user_total {
-            items.extend(
-                RepositoryService::list_records_by_filter_with_zone(record_filter)
-                    .await?
-                    .into_iter()
-                    .map(ListedRecord::User),
-            );
-        }
-        // The derived plane pages after the user plane: it starts where the
-        // window passed the user rows and fills what the limit still holds.
-        let remaining = limit.map(|limit| limit.saturating_sub(items.len() as u32));
-        if derived_plane && remaining != Some(0) {
-            items.extend(
-                RepositoryService::list_dnssec_records_by_filter_with_zone(DnssecRecordFilter {
+    let start = offset.unwrap_or(0);
+    let mut items: Vec<ListedRecord> = Vec::new();
+    if user_plane && start < user_total {
+        items.extend(
+            db::record::list_by_filter_with_zone(cx.db(), record_filter)
+                .await?
+                .into_iter()
+                .map(ListedRecord::User),
+        );
+    }
+    // The derived plane pages after the user plane: it starts where the
+    // window passed the user rows and fills what the limit still holds.
+    let remaining = limit.map(|limit| limit.saturating_sub(items.len() as u32));
+    if derived_plane && remaining != Some(0) {
+        items.extend(
+            db::dnssec_record::list_by_filter_with_zone(
+                cx.db(),
+                DnssecRecordFilter {
                     limit: remaining,
                     offset: Some(start.saturating_sub(user_total)),
                     ..derived_filter
-                })
-                .await?
-                .into_iter()
-                .map(ListedRecord::Derived),
-            );
-        }
-
-        let items = items.iter().map(ListedRecord::to_response).collect();
-        Ok(PaginatedResponse::from_page(
-            items,
-            limit,
-            offset,
-            user_total + derived_total,
-        ))
+                },
+            )
+            .await?
+            .into_iter()
+            .map(ListedRecord::Derived),
+        );
     }
 
-    /// Fetch a record with its zone name by id. A record the caller's grants
-    /// do not reach reads as `NotFound`, so ids cannot be probed.
-    pub async fn get_with_zone(
-        caller: &Caller,
-        record_id: i32,
-    ) -> Result<RecordWithZone, ServiceError> {
-        let record = match RepositoryService::get_record_with_zone(record_id).await {
-            Ok(Some(record)) => record,
-            Ok(None) => return Err(ServiceError::record_not_found(record_id)),
-            Err(e) => {
-                log::error!("Failed to fetch record: {}", e);
-                return Err(ServiceError::internal("Failed to fetch record"));
-            }
-        };
+    let items = items.iter().map(ListedRecord::to_response).collect();
+    Ok(PaginatedResponse::from_page(
+        items,
+        limit,
+        offset,
+        user_total + derived_total,
+    ))
+}
 
-        if !caller.sees_record(record.zone_id, &record.name, Some(&record.record_type)) {
-            return Err(ServiceError::record_not_found(record_id));
+/// Fetch a record with its zone name by id. A record the caller's grants
+/// do not reach reads as `NotFound`, so ids cannot be probed.
+pub async fn get_with_zone(
+    cx: &Context,
+    caller: &Caller,
+    record_id: RecordId,
+) -> Result<RecordWithZone, ServiceError> {
+    let record = match db::record::get_with_zone(cx.db(), record_id).await {
+        Ok(Some(record)) => record,
+        Ok(None) => return Err(ServiceError::record_not_found(record_id)),
+        Err(e) => {
+            log::error!("Failed to fetch record: {}", e);
+            return Err(ServiceError::internal("Failed to fetch record"));
         }
-        Ok(record)
+    };
+
+    if !caller.sees_record(record.zone_id, &record.name, Some(&record.record_type)) {
+        return Err(ServiceError::record_not_found(record_id));
     }
+    Ok(record)
 }
 
 /// Normalize a name filter for stored-owner and FQDN comparisons.

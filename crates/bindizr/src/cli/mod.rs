@@ -130,7 +130,9 @@ pub async fn execute() {
     let args = Args::parse();
 
     let result = match args.command {
-        Command::Start { config } => daemon::bootstrap(config.as_deref()).await,
+        Command::Start { config } => daemon::bootstrap(config.as_deref())
+            .await
+            .map_err(error::CliError::from),
         Command::Stop { output } => commands::stop::handle_command(output).await,
         Command::Restart { output } => commands::restart::handle_command(output).await,
         Command::Status { output } => commands::status::handle_command(output).await,
@@ -154,7 +156,7 @@ pub async fn execute() {
     // Lost output must not read as success; a reader that stopped early is
     // not lost output.
     let result = result.and_then(|()| match bindizr_core::stream::write_failure() {
-        Some(failure) => Err(error::CliError::from(format!(
+        Some(failure) => Err(error::CliError::request(format!(
             "output was lost: {}",
             failure
         ))),

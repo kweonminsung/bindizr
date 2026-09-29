@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 use super::version::RecordDiff;
 
 /// How parsed records are reconciled with the records already in the zone.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportMode {
     /// Add parsed records; records already present are left untouched.
@@ -21,7 +21,7 @@ pub enum ImportMode {
 
 /// Request body for importing records into a zone: BIND zone file text in
 /// `content`, or a transfer from `from_server`; exactly one of the two.
-#[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImportZoneRequest {
     /// Raw BIND zone file text.
@@ -49,7 +49,7 @@ pub struct ImportZoneRequest {
 }
 
 /// Result of a zone import, including a summary and any validation errors.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ImportZoneResponse {
     #[schema(example = true)]
     pub applied: bool,
@@ -76,7 +76,7 @@ impl ImportZoneResponse {
 /// Counts of records parsed, added, deleted, updated, unchanged, and skipped
 /// during import. `updated` is a TTL-only reconcile and is never also counted
 /// as `unchanged`.
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ImportSummary {
     #[schema(example = 12)]
     pub parsed: u64,

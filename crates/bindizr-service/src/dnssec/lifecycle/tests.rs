@@ -1,6 +1,10 @@
 use bindizr_core::{
-    dns::name::ZoneName,
-    model::{dnssec_key::DnssecAlgorithm, dnssec_policy::DnssecDenial},
+    dns::{Serial, SoaInterval, Ttl, name::ZoneName},
+    model::{
+        dnssec_key::DnssecAlgorithm,
+        dnssec_policy::{Days, DnssecDenial, PolicyId},
+        zone::ZoneId,
+    },
 };
 
 use super::*;
@@ -8,17 +12,17 @@ use super::*;
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 300,
-        serial: 5,
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
-        minimum_ttl: 900,
-        dnssec_policy_id: Some(1),
+        default_ttl: Ttl::from_secs(300),
+        serial: Serial::from(5),
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
+        minimum_ttl: Ttl::from_secs(900),
+        dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: None,
         enabled: true,
         description: None,
@@ -29,14 +33,14 @@ fn zone() -> Zone {
 /// Build a DNSSEC policy fixture with the requested identity.
 fn policy(id: i32, name: &str) -> DnssecPolicy {
     DnssecPolicy {
-        id,
+        id: PolicyId::from(id),
         name: name.to_string(),
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
         denial: DnssecDenial::Nsec,
         split_keys: false,
-        signature_validity_days: 14,
-        signature_refresh_days: 5,
-        zsk_lifetime_days: 0,
+        signature_validity_days: Days::try_from(14).unwrap(),
+        signature_refresh_days: Days::try_from(5).unwrap(),
+        zsk_lifetime_days: Days::try_from(0).unwrap(),
         created_at: Utc::now(),
     }
 }
@@ -46,8 +50,8 @@ fn policy(id: i32, name: &str) -> DnssecPolicy {
 fn a_move_that_only_changes_timings_is_allowed() {
     let current = policy(1, "default");
     let mut target = policy(2, "long-lived");
-    target.signature_validity_days = 30;
-    target.zsk_lifetime_days = 90;
+    target.signature_validity_days = Days::try_from(30).unwrap();
+    target.zsk_lifetime_days = Days::try_from(90).unwrap();
 
     validate_policy_move(&zone(), &current, &target).unwrap();
 }
@@ -85,11 +89,11 @@ fn the_key_layout_cannot_change_under_a_signed_zone() {
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 
-    assert!(error.message.contains("key layout"), "{}", error.message);
+    assert!(error.to_string().contains("key layout"), "{}", error);
     assert!(
-        error.message.contains("split KSK/ZSK keys"),
+        error.to_string().contains("split KSK/ZSK keys"),
         "{}",
-        error.message
+        error
     );
 }
 
@@ -103,5 +107,5 @@ fn the_key_layout_is_still_refused_when_the_denial_chain_moves_with_it() {
 
     let error = validate_policy_move(&zone(), &current, &target).unwrap_err();
 
-    assert!(error.message.contains("key layout"), "{}", error.message);
+    assert!(error.to_string().contains("key layout"), "{}", error);
 }

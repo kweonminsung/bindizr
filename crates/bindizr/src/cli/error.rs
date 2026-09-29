@@ -1,8 +1,18 @@
+use std::fmt;
+
+use bindizr_core::config::ConfigError;
 use bindizr_service::error::ErrorCode;
+use thiserror::Error;
+
+use crate::{
+    cli::{commands::ReadInputError, output::RenderOutputError},
+    daemon::DaemonError,
+};
 
 /// Error surfaced to the CLI user: the daemon's message plus, when the daemon
 /// sent a machine-readable code, an actionable hint derived from it.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("{message}")]
 pub(crate) struct CliError {
     pub(crate) code: Option<ErrorCode>,
     failure: Failure,
@@ -10,7 +20,7 @@ pub(crate) struct CliError {
 }
 
 /// The kinds of failure that exit differently.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Failure {
     /// The request was rejected, by the daemon or before it was sent.
     Request,
@@ -21,24 +31,38 @@ enum Failure {
     Configuration,
 }
 
-impl From<String> for CliError {
-    /// Wrap a message as a CLI error.
-    fn from(message: String) -> Self {
-        CliError {
-            code: None,
-            failure: Failure::Request,
-            message,
-        }
+/// Output that could not be rendered fails the command it was for.
+impl From<RenderOutputError> for CliError {
+    /// Report the rendering failure as a failed request.
+    fn from(err: RenderOutputError) -> Self {
+        CliError::request(err)
     }
 }
 
-impl From<&str> for CliError {
-    /// Wrap a message as a CLI error.
-    fn from(message: &str) -> Self {
-        CliError {
-            code: None,
-            failure: Failure::Request,
-            message: message.to_string(),
+/// Input that could not be read fails the command it was for.
+impl From<ReadInputError> for CliError {
+    /// Report the read failure as a failed request.
+    fn from(err: ReadInputError) -> Self {
+        CliError::request(err)
+    }
+}
+
+/// A configuration the CLI itself loaded and refused.
+impl From<ConfigError> for CliError {
+    /// Report the configuration failure with its exit class.
+    fn from(err: ConfigError) -> Self {
+        CliError::configuration(err)
+    }
+}
+
+/// The daemon's own failure, classed so a supervisor knows whether to retry.
+impl From<DaemonError> for CliError {
+    /// A configuration or TLS failure is permanent; anything else may pass.
+    fn from(err: DaemonError) -> Self {
+        if err.is_configuration() {
+            CliError::configuration(err)
+        } else {
+            CliError::request(err)
         }
     }
 }
@@ -53,6 +77,16 @@ const EXIT_CONFIG: i32 = 6;
 const EXIT_UNAVAILABLE: i32 = 7;
 
 impl CliError {
+    /// A request that failed before or after reaching the daemon, with no
+    /// code to hint from.
+    pub(crate) fn request(message: impl fmt::Display) -> Self {
+        CliError {
+            code: None,
+            failure: Failure::Request,
+            message: message.to_string(),
+        }
+    }
+
     /// An error reply from the daemon, carrying whatever code it sent.
     pub(crate) fn from_daemon(code: Option<ErrorCode>, message: String) -> Self {
         CliError {
@@ -64,36 +98,78 @@ impl CliError {
 
     /// The daemon could not be reached. Exits distinctly so a script can
     /// retry, where a rejected request would fail the same way again.
-    pub(crate) fn daemon_unreachable(message: String) -> Self {
+    pub(crate) fn daemon_unreachable(message: impl fmt::Display) -> Self {
         CliError {
             code: None,
             failure: Failure::Unreachable,
-            message,
+            message: message.to_string(),
         }
     }
 
     /// The configuration is unusable. Exits distinctly so a supervisor can
     /// stop retrying a start that will fail the same way every time.
-    pub(crate) fn configuration(message: String) -> Self {
+    pub(crate) fn configuration(message: impl fmt::Display) -> Self {
         CliError {
             code: None,
             failure: Failure::Configuration,
-            message,
+            message: message.to_string(),
         }
     }
 
-    /// Derived from `http_status`, so a new code needs no second list here.
+    /// The exit status a script branches on. Every code is spelled out, so a
+    /// new one has to choose its class here.
     pub(crate) fn exit_code(&self) -> i32 {
         match self.failure {
             Failure::Unreachable => return EXIT_UNAVAILABLE,
             Failure::Configuration => return EXIT_CONFIG,
             Failure::Request => {}
         }
-        match self.code.map(|code| code.http_status()) {
-            Some(404) => EXIT_NOT_FOUND,
-            Some(409) => EXIT_CONFLICT,
-            Some(401 | 403) => EXIT_DENIED,
-            _ => EXIT_FAILURE,
+        match self.code {
+            Some(
+                ErrorCode::ZoneNotFound
+                | ErrorCode::RecordNotFound
+                | ErrorCode::TokenNotFound
+                | ErrorCode::VersionNotFound
+                | ErrorCode::SecondaryNotFound
+                | ErrorCode::TsigKeyNotFound
+                | ErrorCode::TsigGrantNotFound
+                | ErrorCode::TokenGrantNotFound
+                | ErrorCode::DnssecPolicyNotFound
+                | ErrorCode::EndpointNotFound,
+            ) => EXIT_NOT_FOUND,
+            Some(
+                ErrorCode::ZoneConflict
+                | ErrorCode::RecordConflict
+                | ErrorCode::TokenConflict
+                | ErrorCode::SecondaryConflict
+                | ErrorCode::TsigKeyConflict
+                | ErrorCode::TsigKeyInUse
+                | ErrorCode::DnssecAlreadyEnabled
+                | ErrorCode::DnssecNotEnabled
+                | ErrorCode::DnssecRolloverInProgress
+                | ErrorCode::DnssecNoRolloverInProgress
+                | ErrorCode::DnssecDsPublished
+                | ErrorCode::DnssecDsNotPublished
+                | ErrorCode::DnssecDsUnverified
+                | ErrorCode::DnssecPolicyConflict
+                | ErrorCode::DnssecPolicyInUse,
+            ) => EXIT_CONFLICT,
+            Some(ErrorCode::Unauthorized | ErrorCode::InvalidToken | ErrorCode::Forbidden) => {
+                EXIT_DENIED
+            }
+            Some(
+                ErrorCode::InvalidInput
+                | ErrorCode::InvalidZoneField
+                | ErrorCode::InvalidRecordName
+                | ErrorCode::InvalidRecordValue
+                | ErrorCode::InvalidJsonBody
+                | ErrorCode::MethodNotAllowed
+                | ErrorCode::PayloadTooLarge
+                | ErrorCode::UnsupportedMediaType
+                | ErrorCode::DnssecSigningFailed
+                | ErrorCode::Internal,
+            )
+            | None => EXIT_FAILURE,
         }
     }
 
@@ -199,17 +275,17 @@ mod tests {
         assert_eq!(code(ErrorCode::InvalidInput), EXIT_FAILURE);
         // An unreachable daemon sends no code at all, and a script retries it.
         assert_eq!(
-            CliError::daemon_unreachable("connection refused".to_string()).exit_code(),
+            CliError::daemon_unreachable("connection refused").exit_code(),
             EXIT_UNAVAILABLE
         );
         assert_eq!(
-            CliError::from("malformed response").exit_code(),
+            CliError::request("malformed response").exit_code(),
             EXIT_FAILURE
         );
         // A supervisor restarts a start that failed on a late database, and
         // gives up on one that failed on the configuration file.
         assert_eq!(
-            CliError::configuration("missing field `mname`".to_string()).exit_code(),
+            CliError::configuration("missing field `mname`").exit_code(),
             EXIT_CONFIG
         );
     }

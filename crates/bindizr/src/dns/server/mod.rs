@@ -10,18 +10,46 @@ pub(crate) mod catalog;
 pub(crate) mod ixfr;
 pub(crate) mod nsupdate;
 pub(crate) mod soa;
-pub(crate) mod zone_cache;
+pub(crate) mod transfer_cache;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
-use auth::{TransferRefusal, authenticate_transfer, signed_error};
+use auth::{TransferRefusal, authenticate_transfer};
 use bindizr_core::{
     dns::message::{Rcode, Rtype},
-    metrics::{XfrResult, track_xfr},
+    metrics::XfrResult,
+    model::transfer::TransferKind,
 };
+use bindizr_service::{Context, transfer};
 use tokio::net::TcpStream;
 
 use crate::dns::{error::XfrError, wire};
+
+/// The DNS front end's context: the daemon's, plus the caches only this
+/// front end reads. A handler takes it first as `dns_cx` and binds the
+/// daemon's from it as `cx`.
+#[derive(Debug)]
+pub(crate) struct DnsContext {
+    daemon: Arc<Context>,
+    pub(crate) transfer_cache: transfer_cache::TransferCache,
+    pub(crate) acl: acl::ResolvedAddrs,
+}
+
+impl DnsContext {
+    /// The front end's context over the daemon's, with empty caches.
+    pub(crate) fn new(daemon: Arc<Context>) -> Self {
+        DnsContext {
+            daemon,
+            transfer_cache: transfer_cache::TransferCache::new(),
+            acl: acl::ResolvedAddrs::new(),
+        }
+    }
+
+    /// The daemon's context.
+    pub(crate) fn daemon(&self) -> &Context {
+        &self.daemon
+    }
+}
 
 /// Check whether a query type requests AXFR or IXFR.
 pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
@@ -32,32 +60,45 @@ pub(crate) fn is_xfr_query_type(qtype: Rtype) -> bool {
 ///
 /// Count by the requested type so an IXFR falling back to AXFR still counts as IXFR.
 pub(crate) async fn handle_tcp_xfr(
+    dns_cx: &DnsContext,
     stream: &mut TcpStream,
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],
 ) -> Result<(), XfrError> {
+    let cx = dns_cx.daemon();
     let client_ip = client_addr.ip();
-    let track_result = |result| track_xfr(query.qtype, result);
+    let track_result = |result| cx.metrics().track_xfr(query.qtype, result);
 
     // Verify the key or the address first; the zone's grant is decided beside
     // its row inside the transfer.
-    let mut identity = match authenticate_transfer(query_data, client_ip, &query.zone_name).await {
-        Ok(identity) => identity,
-        Err(refusal) => {
-            track_result(XfrResult::Refused);
-            log::warn!(
-                "Refused XFR TCP query from {}: {}",
-                client_ip,
-                refusal.reason
-            );
-            // RFC 5936, Section 2.2.1: refuse with an RCODE, not a dropped
-            // connection.
-            let response = refusal.into_response(query)?;
-            wire::write_tcp_message(stream, &response).await?;
-            return Ok(());
-        }
-    };
+    let mut identity =
+        match authenticate_transfer(dns_cx, query_data, client_ip, &query.zone_name).await {
+            Ok(identity) => identity,
+            Err(refusal) => {
+                track_result(XfrResult::Refused);
+                log::warn!(
+                    "Refused XFR TCP query from {}: {}",
+                    client_ip,
+                    refusal.reason
+                );
+                // Saved against the client too, so `secondary transfers` can say why
+                // a secondary got nothing.
+                transfer::save_refused(
+                    cx,
+                    client_ip,
+                    &query.zone_name,
+                    TransferKind::from_qtype(query.qtype),
+                    refusal.reason.clone(),
+                )
+                .await;
+                // RFC 5936, Section 2.2.1: refuse with an RCODE, not a dropped
+                // connection.
+                let response = refusal.into_response(query)?;
+                wire::write_tcp_message(stream, &response).await?;
+                return Ok(());
+            }
+        };
 
     log::info!(
         "XFR TCP query: zone={:?}, qtype={:?}, from={}, signed={}",
@@ -69,9 +110,9 @@ pub(crate) async fn handle_tcp_xfr(
 
     let result = match query.qtype {
         Rtype::AXFR => {
-            axfr::handle_axfr(stream, query, client_ip, Rtype::AXFR, &mut identity).await
+            axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::AXFR, &mut identity).await
         }
-        Rtype::IXFR => ixfr::handle_ixfr(stream, query, client_ip, &mut identity).await,
+        Rtype::IXFR => ixfr::handle_ixfr(dns_cx, stream, query, client_ip, &mut identity).await,
         _ => {
             log::warn!("Unsupported query type: {:?}", query.qtype);
             return Err(XfrError::InvalidQuery(format!(
@@ -88,22 +129,38 @@ pub(crate) async fn handle_tcp_xfr(
             track_result(XfrResult::Ok);
             Ok(())
         }
-        Err(XfrError::ZoneNotFound(_)) => {
+        Err(XfrError::NotAuth(_)) => {
             track_result(XfrResult::NotAuth);
-            let response = signed_error(query, Rcode::NOTAUTH, identity.signer.as_mut())?;
+            let response = query.signed_error_response(Rcode::NOTAUTH, identity.signer.as_mut())?;
             wire::write_tcp_message(stream, &response).await?;
             Ok(())
         }
         Err(XfrError::Refused(reason)) => {
             track_result(XfrResult::Refused);
             log::warn!("Refused XFR TCP query from {}: {}", client_ip, reason);
+            transfer::save_refused(
+                cx,
+                client_ip,
+                &query.zone_name,
+                TransferKind::from_qtype(query.qtype),
+                reason.clone(),
+            )
+            .await;
             let response =
                 TransferRefusal::refused(reason, identity.signer.take()).into_response(query)?;
             wire::write_tcp_message(stream, &response).await?;
             Ok(())
         }
         Err(err) => {
-            track_result(XfrResult::Error);
+            track_result(XfrResult::Failed);
+            transfer::save_failed(
+                cx,
+                client_ip,
+                &query.zone_name,
+                TransferKind::from_qtype(query.qtype),
+                err.to_string(),
+            )
+            .await;
             Err(err)
         }
     }
@@ -114,15 +171,17 @@ pub(crate) async fn handle_tcp_xfr(
 /// answered under its key here too (RFC 8945, Section 5.3), truncated or not;
 /// the zone's grant is decided on the TCP retry, beside the row it serves.
 pub(crate) async fn handle_udp_xfr(
+    dns_cx: &DnsContext,
     client_addr: SocketAddr,
     query: &message::ParsedQuery,
     query_data: &[u8],
 ) -> Vec<u8> {
+    let cx = dns_cx.daemon();
     let mut identity =
-        match authenticate_transfer(query_data, client_addr.ip(), &query.zone_name).await {
+        match authenticate_transfer(dns_cx, query_data, client_addr.ip(), &query.zone_name).await {
             Ok(identity) => identity,
             Err(refusal) => {
-                track_xfr(query.qtype, XfrResult::Refused);
+                cx.metrics().track_xfr(query.qtype, XfrResult::Refused);
                 log::warn!(
                     "Refused XFR UDP query from {}: {}",
                     client_addr.ip(),
@@ -134,7 +193,7 @@ pub(crate) async fn handle_udp_xfr(
             }
         };
     // The transfer itself counts when the client returns over TCP.
-    track_xfr(query.qtype, XfrResult::Truncated);
+    cx.metrics().track_xfr(query.qtype, XfrResult::Truncated);
     query
         .signed_truncated_response(identity.signer.as_mut())
         .unwrap_or_else(|_| query.truncated_response())

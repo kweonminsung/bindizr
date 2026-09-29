@@ -5,6 +5,7 @@
 use std::net::SocketAddr;
 
 use clap::Parser;
+use thiserror::Error;
 
 /// ExternalDNS webhook provider adapter for bindizr.
 ///
@@ -60,7 +61,7 @@ pub(crate) struct Cli {
 }
 
 /// The validated adapter settings the listeners and the upstream client start from.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AdapterConfig {
     /// Normalized base URL without a trailing slash.
     pub(crate) bindizr_url: String,
@@ -72,31 +73,59 @@ pub(crate) struct AdapterConfig {
     pub(crate) log_level: bindizr_core::config::LogLevel,
 }
 
+/// Why the command line does not describe a runnable adapter.
+#[derive(Debug, Error)]
+pub(crate) enum LoadAdapterConfigError {
+    #[error("--bindizr-url must start with http:// or https://, got '{url}'")]
+    UrlScheme { url: String },
+    #[error("--bindizr-url '{url}' is not a valid URL: {source}")]
+    InvalidUrl {
+        url: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
+    #[error("--bindizr-url must not carry a query or fragment, got '{url}'")]
+    UrlQueryOrFragment { url: String },
+    #[error("Failed to read token file '{path}': {source}")]
+    ReadTokenFile {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("Invalid --log-level '{value}': {source}")]
+    InvalidLogLevel {
+        value: String,
+        #[source]
+        source: bindizr_core::config::ConfigError,
+    },
+}
+
 impl AdapterConfig {
     /// Validate CLI options and build the adapter configuration.
-    pub(crate) fn from_cli(cli: Cli) -> Result<Self, String> {
+    pub(crate) fn from_cli(cli: Cli) -> Result<Self, LoadAdapterConfigError> {
         let bindizr_url = cli.bindizr_url.trim().trim_end_matches('/').to_string();
         if !bindizr_url.starts_with("http://") && !bindizr_url.starts_with("https://") {
-            return Err(format!(
-                "--bindizr-url must start with http:// or https://, got '{}'",
-                bindizr_url
-            ));
+            return Err(LoadAdapterConfigError::UrlScheme { url: bindizr_url });
         }
         // Endpoint paths are appended to this string, so it must parse as a
         // URL and carry no query/fragment for the joined URLs to stay valid.
-        let parsed = reqwest::Url::parse(&bindizr_url)
-            .map_err(|e| format!("--bindizr-url '{}' is not a valid URL: {}", bindizr_url, e))?;
+        let parsed = reqwest::Url::parse(&bindizr_url).map_err(|source| {
+            LoadAdapterConfigError::InvalidUrl {
+                url: bindizr_url.clone(),
+                source: Box::new(source),
+            }
+        })?;
         if parsed.query().is_some() || parsed.fragment().is_some() {
-            return Err(format!(
-                "--bindizr-url must not carry a query or fragment, got '{}'",
-                bindizr_url
-            ));
+            return Err(LoadAdapterConfigError::UrlQueryOrFragment { url: bindizr_url });
         }
 
         let token = match &cli.token_file {
             Some(path) => Some(
                 std::fs::read_to_string(path)
-                    .map_err(|e| format!("Failed to read token file '{}': {}", path, e))?
+                    .map_err(|source| LoadAdapterConfigError::ReadTokenFile {
+                        path: path.clone(),
+                        source,
+                    })?
                     .trim()
                     .to_string(),
             ),
@@ -107,7 +136,10 @@ impl AdapterConfig {
         let log_level = cli
             .log_level
             .parse::<bindizr_core::config::LogLevel>()
-            .map_err(|e| format!("Invalid --log-level '{}': {}", cli.log_level, e))?;
+            .map_err(|source| LoadAdapterConfigError::InvalidLogLevel {
+                value: cli.log_level.clone(),
+                source,
+            })?;
 
         Ok(AdapterConfig {
             bindizr_url,

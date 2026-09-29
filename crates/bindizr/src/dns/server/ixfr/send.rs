@@ -4,13 +4,14 @@
 use std::collections::HashMap;
 
 use bindizr_core::{
-    dns::{message, message::Rtype, tsig::TransferSigner},
+    dns::{Serial, message, message::Rtype, tsig::TransferSigner},
     model::{
         zone::Zone,
         zone_change::{ChangeOperation, ZoneChange},
         zone_version::ZoneVersion,
     },
 };
+use thiserror::Error;
 use tokio::net::TcpStream;
 
 use crate::dns::error::XfrError;
@@ -35,17 +36,21 @@ pub(crate) async fn send_soa_response(
 }
 
 /// Outcome of a failed IXFR stream: whether any bytes reached the client yet.
+#[derive(Debug, Error)]
 pub(crate) enum IxfrSendError {
     /// Failed before writing anything — safe to fall back to AXFR, which
     /// answers under the same signer since nothing has been signed yet.
+    #[error("{error}")]
     NotStarted {
+        #[source]
         error: XfrError,
         /// Boxed: a signing context dwarfs the error beside it.
         signer: Option<Box<TransferSigner>>,
     },
     /// Failed mid-stream, or in the I/O of the first frame, part of which may
     /// have reached the client; falling back to AXFR would corrupt the stream.
-    Partial(XfrError),
+    #[error("{0}")]
+    Partial(#[source] XfrError),
 }
 
 /// Streams the IXFR answers across multiple TCP messages, flushing before the
@@ -55,9 +60,9 @@ pub(crate) async fn send_ixfr_response(
     stream: &mut TcpStream,
     query: &message::ParsedQuery,
     zone: &Zone,
-    client_serial: u32,
+    client_serial: Serial,
     changes: &[ZoneChange],
-    versions_by_serial: &HashMap<u32, ZoneVersion>,
+    versions_by_serial: &HashMap<Serial, ZoneVersion>,
     signer: Option<TransferSigner>,
 ) -> Result<(), IxfrSendError> {
     let mut builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::IXFR);
@@ -67,11 +72,13 @@ pub(crate) async fn send_ixfr_response(
     let mut messages_sent = 0usize;
 
     let result = async {
-        let current_version = versions_by_serial
-            .get(&bindizr_core::dns::serial_to_u32(zone.serial)?)
-            .ok_or_else(|| {
-                XfrError::ProtocolError("Missing current serial SOA version for IXFR".to_string())
-            })?;
+        let current_version =
+            versions_by_serial
+                .get(&zone.serial)
+                .ok_or(XfrError::MissingVersion {
+                    which: "current serial",
+                    serial: zone.serial,
+                })?;
 
         // Initial SOA (current serial).
         crate::dns::wire::add_answer_and_flush_if_needed(
@@ -82,13 +89,13 @@ pub(crate) async fn send_ixfr_response(
         )
         .await?;
 
-        let mut changes_by_serial: HashMap<u32, Vec<&ZoneChange>> = HashMap::new();
+        let mut changes_by_serial: HashMap<Serial, Vec<&ZoneChange>> = HashMap::new();
         for change in changes {
-            let serial = bindizr_core::dns::serial_to_u32(change.serial)?;
+            let serial = change.serial;
             changes_by_serial.entry(serial).or_default().push(change);
         }
 
-        let mut serials: Vec<u32> = changes_by_serial.keys().copied().collect();
+        let mut serials: Vec<Serial> = changes_by_serial.keys().copied().collect();
         serials.sort();
 
         for (idx, &serial) in serials.iter().enumerate() {
@@ -101,12 +108,12 @@ pub(crate) async fn send_ixfr_response(
             };
 
             // Old SOA (deletion section marker).
-            let old_soa = versions_by_serial.get(&old_serial).ok_or_else(|| {
-                XfrError::ProtocolError(format!(
-                    "Missing old SOA version for serial {}",
-                    old_serial
-                ))
-            })?;
+            let old_soa = versions_by_serial
+                .get(&old_serial)
+                .ok_or(XfrError::MissingVersion {
+                    which: "old",
+                    serial: old_serial,
+                })?;
             crate::dns::wire::add_answer_and_flush_if_needed(
                 &mut builder,
                 stream,
@@ -117,7 +124,7 @@ pub(crate) async fn send_ixfr_response(
 
             for change in serial_changes
                 .iter()
-                .filter(|c| c.operation == ChangeOperation::Del)
+                .filter(|c| c.operation == ChangeOperation::Delete)
             {
                 crate::dns::wire::add_answer_and_flush_if_needed(
                     &mut builder,
@@ -129,9 +136,12 @@ pub(crate) async fn send_ixfr_response(
             }
 
             // New SOA (addition section marker).
-            let new_soa = versions_by_serial.get(&serial).ok_or_else(|| {
-                XfrError::ProtocolError(format!("Missing new SOA version for serial {}", serial))
-            })?;
+            let new_soa = versions_by_serial
+                .get(&serial)
+                .ok_or(XfrError::MissingVersion {
+                    which: "new",
+                    serial,
+                })?;
             crate::dns::wire::add_answer_and_flush_if_needed(
                 &mut builder,
                 stream,
@@ -175,7 +185,7 @@ pub(crate) async fn send_ixfr_response(
         }
         // A failure after the first flush leaves the stream mid-transfer, and
         // so does an I/O failure on the first frame: part of it may be out.
-        Err(err) if messages_sent > 0 || matches!(err, XfrError::IoError(_)) => {
+        Err(err) if messages_sent > 0 || matches!(err, XfrError::Io(_)) => {
             Err(IxfrSendError::Partial(err))
         }
         Err(error) => Err(IxfrSendError::NotStarted {

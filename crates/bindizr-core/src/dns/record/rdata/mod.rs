@@ -6,15 +6,36 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use base64::Engine;
+use thiserror::Error;
 
 use super::{
-    CaaRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, SrvRecordValue,
-    SshfpRecordValue, TlsaRecordValue, TxtRecordValue,
+    CaaRecordValue, DsRecordValue, MxRecordValue, NaptrRecordValue, ParseMailboxError,
+    ParseRecordValueError, SrvRecordValue, SshfpRecordValue, TlsaRecordValue, TxtRecordValue,
 };
 use crate::{
-    dns::name::encode_name,
+    dns::name::{EncodeNameError, encode_name},
     model::{dnssec_record::DnssecRecordType, record::RecordType},
 };
+
+/// Why stored columns did not become wire RDATA: a value or name that does
+/// not encode, or an encoding past the RDLENGTH limit.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum EncodeRdataError {
+    #[error("RDATA is {len} bytes; the RDLENGTH limit is {}", u16::MAX)]
+    TooLong { len: usize },
+    #[error(transparent)]
+    Name(#[from] EncodeNameError),
+    #[error(transparent)]
+    Value(#[from] ParseRecordValueError),
+    #[error(transparent)]
+    Mailbox(#[from] ParseMailboxError),
+    /// An address column no entry path could have written.
+    #[error("Invalid {record_type} record: {value}")]
+    StoredAddress {
+        record_type: RecordType,
+        value: String,
+    },
+}
 
 /// Wire-format RDATA bytes, capped at the RDLENGTH u16 limit
 /// (RFC 1035, Section 3.2.1) by construction.
@@ -44,13 +65,9 @@ impl Rdata {
     }
 
     /// Wrap wire-format record data after checking its length limit.
-    pub fn new(bytes: Vec<u8>) -> Result<Self, String> {
+    pub fn new(bytes: Vec<u8>) -> Result<Self, EncodeRdataError> {
         if bytes.len() > u16::MAX as usize {
-            return Err(format!(
-                "RDATA is {} bytes; the RDLENGTH limit is {}",
-                bytes.len(),
-                u16::MAX
-            ));
+            return Err(EncodeRdataError::TooLong { len: bytes.len() });
         }
         Ok(Self(bytes))
     }
@@ -115,6 +132,7 @@ where
 }
 
 /// A stored record's wire record type number and RDATA bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EncodedRdata {
     pub(crate) record_type: u16,
     pub(crate) rdata: Rdata,
@@ -128,39 +146,39 @@ impl EncodedRdata {
         record_type: &RecordType,
         value: &str,
         priority: Option<i32>,
-    ) -> Result<EncodedRdata, String> {
+    ) -> Result<EncodedRdata, EncodeRdataError> {
+        let stored_address = || EncodeRdataError::StoredAddress {
+            record_type: *record_type,
+            value: value.to_string(),
+        };
         let rdata = match record_type {
             RecordType::A => {
-                let addr: Ipv4Addr = value
-                    .parse()
-                    .map_err(|_| format!("Invalid A record: {}", value))?;
+                let addr: Ipv4Addr = value.parse().map_err(|_| stored_address())?;
                 Rdata::new(addr.octets().to_vec())?
             }
-            RecordType::AAAA => {
-                let addr: Ipv6Addr = value
-                    .parse()
-                    .map_err(|_| format!("Invalid AAAA record: {}", value))?;
+            RecordType::Aaaa => {
+                let addr: Ipv6Addr = value.parse().map_err(|_| stored_address())?;
                 Rdata::new(addr.octets().to_vec())?
             }
-            RecordType::CAA => CaaRecordValue::parse(value)?.to_rdata()?,
-            RecordType::CNAME | RecordType::DNAME | RecordType::NS | RecordType::PTR => {
+            RecordType::Caa => CaaRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Cname | RecordType::Dname | RecordType::Ns | RecordType::Ptr => {
                 Rdata::new(encode_name(value)?)?
             }
-            RecordType::DS => DsRecordValue::parse(value)?.to_rdata()?,
-            RecordType::MX => MxRecordValue::parse(value, priority)?.to_rdata()?,
-            RecordType::NAPTR => NaptrRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Ds => DsRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Mx => MxRecordValue::parse(value, priority)?.to_rdata()?,
+            RecordType::Naptr => NaptrRecordValue::parse(value)?.to_rdata()?,
             // Stored TXT is always the presentation form; every entry path
             // writes it, so anything else here is corruption, not a plain string.
-            RecordType::TXT => Rdata::new(
+            RecordType::Txt => Rdata::new(
                 TxtRecordValue::from_presentation(value)
-                    .ok_or_else(|| {
-                        format!("stored TXT value is not in presentation form: {value}")
+                    .ok_or_else(|| ParseRecordValueError::StoredTxtNotPresentation {
+                        value: value.to_string(),
                     })?
                     .into_rdata(),
             )?,
-            RecordType::SRV => SrvRecordValue::parse(value, priority)?.to_rdata()?,
-            RecordType::SSHFP => SshfpRecordValue::parse(value)?.to_rdata()?,
-            RecordType::TLSA => TlsaRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Srv => SrvRecordValue::parse(value, priority)?.to_rdata()?,
+            RecordType::Sshfp => SshfpRecordValue::parse(value)?.to_rdata()?,
+            RecordType::Tlsa => TlsaRecordValue::parse(value)?.to_rdata()?,
         };
 
         Ok(Self {

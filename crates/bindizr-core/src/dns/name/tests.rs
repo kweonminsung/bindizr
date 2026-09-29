@@ -586,3 +586,15 @@ fn to_fqdn_lowercase_matches_the_decoded_rendering() {
     assert_eq!(to_fqdn_lowercase("."), ".");
     assert_eq!(to_fqdn_lowercase(""), ".");
 }
+
+/// Verify that a zone name is parsed on the way in through serde and
+/// serialized as its text.
+#[test]
+fn zone_name_serde_parses_on_the_way_in() {
+    let name: ZoneName = serde_json::from_str("\"Example.COM.\"").unwrap();
+    assert_eq!(name.as_str(), "example.com");
+    assert_eq!(serde_json::to_string(&name).unwrap(), "\"example.com\"");
+
+    let error = serde_json::from_str::<ZoneName>("\"a b.com\"").unwrap_err();
+    assert!(error.to_string().contains("whitespace"), "{error}");
+}

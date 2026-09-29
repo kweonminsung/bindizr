@@ -136,7 +136,7 @@ async fn zone_seed_and_reject_out_of_range_serial() {
 
     // Past MAX_INITIAL_SERIAL (i32::MAX - 10_000_000) the counter would
     // saturate while the zone is still in use.
-    for out_of_range_serial in [0i64, -1, 2_137_483_648, i32::MAX as i64] {
+    for out_of_range_serial in [0i64, -1, 2_137_483_648, i64::from(i32::MAX)] {
         let out_of_range_zone = json!({
             "name": app.zone_name("out-of-range-serial.example.com"),
             "mname": "ns1.example.com",

@@ -83,6 +83,6 @@ fn refuses_the_substitution_expressions_bind_refuses() {
         ("![]!b!", "unfinished brace"),
     ] {
         let err = validate_naptr_regexp(regexp).expect_err(&format!("{regexp} was accepted"));
-        assert!(err.contains(reason), "{regexp}: {err}");
+        assert!(err.to_string().contains(reason), "{regexp}: {err}");
     }
 }

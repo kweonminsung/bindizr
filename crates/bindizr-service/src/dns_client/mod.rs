@@ -10,14 +10,52 @@ pub mod probe;
 use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::dns::{
-    address::{DEFAULT_DNS_PORT, ParsedAddress},
+    address::{AddressTarget, DEFAULT_DNS_PORT},
     message::encode_tcp_message,
     query::is_truncated,
 };
+use thiserror::Error;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, UdpSocket, lookup_host},
 };
+
+/// Why one exchange with a server produced no response. `what` names the
+/// operation (`"NOTIFY"`, `"SOA probe"`) so the message stands on its own.
+#[derive(Debug, Error)]
+pub enum ExchangeError {
+    #[error(transparent)]
+    Encode(#[from] bindizr_core::dns::message::EncodeMessageError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("{what} TCP timeout")]
+    TcpTimedOut { what: &'static str },
+    #[error("{what} send timeout")]
+    SendTimedOut { what: &'static str },
+    #[error("Incomplete {what} send to {server}: sent {sent} of {len} bytes")]
+    IncompleteSend {
+        what: &'static str,
+        server: SocketAddr,
+        sent: usize,
+        len: usize,
+    },
+    #[error("{what} response timeout from {server}")]
+    ResponseTimedOut {
+        what: &'static str,
+        server: SocketAddr,
+    },
+}
+
+/// Why a `host[:port]` entry named no address.
+#[derive(Debug, Error)]
+pub enum ResolveAddressError {
+    #[error("no addresses")]
+    NoAddresses,
+    #[error(transparent)]
+    Lookup(#[from] std::io::Error),
+    #[error("resolution timed out after {secs} seconds")]
+    TimedOut { secs: u64 },
+}
 
 /// Maximum size of a UDP DNS response we accept: room for the
 /// `EDNS_UDP_PAYLOAD_SIZE` the parent DS questions advertise.
@@ -29,8 +67,8 @@ pub(crate) async fn exchange_with_tcp_fallback(
     server_addr: SocketAddr,
     timeout: Duration,
     request: &[u8],
-    what: &str,
-) -> Result<Vec<u8>, String> {
+    what: &'static str,
+) -> Result<Vec<u8>, ExchangeError> {
     let (received, response) = exchange_over_udp(server_addr, timeout, request, what).await?;
     if !is_truncated(&response[..received]) {
         return Ok(response[..received].to_vec());
@@ -44,33 +82,25 @@ pub(crate) async fn exchange_over_tcp(
     server_addr: SocketAddr,
     timeout: Duration,
     request: &[u8],
-    what: &str,
-) -> Result<Vec<u8>, String> {
+    what: &'static str,
+) -> Result<Vec<u8>, ExchangeError> {
     let frame = encode_tcp_message(request)?;
     let exchange = async {
-        let mut stream = TcpStream::connect(server_addr)
-            .await
-            .map_err(|e| e.to_string())?;
-        stream.write_all(&frame).await.map_err(|e| e.to_string())?;
-        read_tcp_message(&mut stream).await
+        let mut stream = TcpStream::connect(server_addr).await?;
+        stream.write_all(&frame).await?;
+        Ok(read_tcp_message(&mut stream).await?)
     };
     tokio::time::timeout(timeout, exchange)
         .await
-        .map_err(|_| format!("{} TCP timeout", what))?
+        .map_err(|_| ExchangeError::TcpTimedOut { what })?
 }
 
 /// Read one length-prefixed DNS message (RFC 1035, Section 4.2.2).
-pub(crate) async fn read_tcp_message(stream: &mut TcpStream) -> Result<Vec<u8>, String> {
+pub(crate) async fn read_tcp_message(stream: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
     let mut prefix = [0u8; 2];
-    stream
-        .read_exact(&mut prefix)
-        .await
-        .map_err(|e| e.to_string())?;
+    stream.read_exact(&mut prefix).await?;
     let mut message = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
-    stream
-        .read_exact(&mut message)
-        .await
-        .map_err(|e| e.to_string())?;
+    stream.read_exact(&mut message).await?;
     Ok(message)
 }
 
@@ -81,41 +111,36 @@ pub(crate) async fn exchange_over_udp(
     server_addr: SocketAddr,
     timeout: Duration,
     request: &[u8],
-    what: &str,
-) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), String> {
+    what: &'static str,
+) -> Result<(usize, [u8; UDP_RESPONSE_BUF]), ExchangeError> {
     let bind_addr = if server_addr.is_ipv4() {
         "0.0.0.0:0"
     } else {
         "[::]:0"
     };
 
-    let socket = UdpSocket::bind(bind_addr)
-        .await
-        .map_err(|e| e.to_string())?;
-    socket
-        .connect(server_addr)
-        .await
-        .map_err(|e| e.to_string())?;
+    let socket = UdpSocket::bind(bind_addr).await?;
+    socket.connect(server_addr).await?;
 
     let sent = tokio::time::timeout(timeout, socket.send(request))
         .await
-        .map_err(|_| format!("{} send timeout", what))?
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| ExchangeError::SendTimedOut { what })??;
     if sent != request.len() {
-        return Err(format!(
-            "Incomplete {} send to {}: sent {} of {} bytes",
+        return Err(ExchangeError::IncompleteSend {
             what,
-            server_addr,
+            server: server_addr,
             sent,
-            request.len()
-        ));
+            len: request.len(),
+        });
     }
 
     let mut response = [0u8; UDP_RESPONSE_BUF];
     let received = tokio::time::timeout(timeout, socket.recv(&mut response))
         .await
-        .map_err(|_| format!("{} response timeout from {}", what, server_addr))?
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| ExchangeError::ResponseTimedOut {
+            what,
+            server: server_addr,
+        })??;
 
     Ok((received, response))
 }
@@ -125,7 +150,7 @@ pub(crate) async fn exchange_over_udp(
 pub(crate) async fn resolve_address_entries(
     raw: &str,
     resolve_timeout: Duration,
-) -> Vec<(String, Result<Vec<SocketAddr>, String>)> {
+) -> Vec<(String, Result<Vec<SocketAddr>, ResolveAddressError>)> {
     let mut entries = Vec::new();
 
     for item in raw.split(',') {
@@ -133,7 +158,8 @@ pub(crate) async fn resolve_address_entries(
         if trimmed.is_empty() {
             continue;
         }
-        let result = resolve_address_entry(trimmed, resolve_timeout).await;
+        let target = AddressTarget::parse(trimmed, DEFAULT_DNS_PORT);
+        let result = resolve_address_entry(&target, resolve_timeout).await;
         entries.push((trimmed.to_string(), result));
     }
 
@@ -144,24 +170,24 @@ pub(crate) async fn resolve_address_entries(
 /// names. `resolve_timeout` bounds the lookup so a stalled system resolver
 /// fails the entry instead of hanging the caller.
 pub async fn resolve_address_entry(
-    entry: &str,
+    entry: &AddressTarget,
     resolve_timeout: Duration,
-) -> Result<Vec<SocketAddr>, String> {
-    match ParsedAddress::parse(entry, DEFAULT_DNS_PORT) {
-        ParsedAddress::SocketAddr(addr) => Ok(vec![addr]),
-        ParsedAddress::HostPort(host_port) => {
-            match tokio::time::timeout(resolve_timeout, lookup_host(&host_port)).await {
+) -> Result<Vec<SocketAddr>, ResolveAddressError> {
+    match entry {
+        AddressTarget::Socket(addr) => Ok(vec![*addr]),
+        AddressTarget::HostPort(host_port) => {
+            match tokio::time::timeout(resolve_timeout, lookup_host(host_port)).await {
                 Ok(Ok(resolved)) => {
                     let addrs: Vec<SocketAddr> = resolved.collect();
                     if addrs.is_empty() {
-                        Err("no addresses".to_string())
+                        Err(ResolveAddressError::NoAddresses)
                     } else {
                         Ok(addrs)
                     }
                 }
                 Ok(Err(e)) => {
                     log::error!("Invalid server address '{}': {}", entry, e);
-                    Err(e.to_string())
+                    Err(ResolveAddressError::Lookup(e))
                 }
                 Err(_) => {
                     log::error!(
@@ -169,10 +195,9 @@ pub async fn resolve_address_entry(
                         entry,
                         resolve_timeout.as_secs()
                     );
-                    Err(format!(
-                        "resolution timed out after {} seconds",
-                        resolve_timeout.as_secs()
-                    ))
+                    Err(ResolveAddressError::TimedOut {
+                        secs: resolve_timeout.as_secs(),
+                    })
                 }
             }
         }

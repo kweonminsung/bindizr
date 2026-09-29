@@ -1,0 +1,443 @@
+use bindizr_core::{
+    dns::name::OwnerName,
+    model::{record::RecordId, zone::ZoneId},
+};
+use chrono::Utc;
+use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
+
+use crate::{
+    LockLevel,
+    error::DatabaseError,
+    model::record::{Record, RecordWithZone},
+    record::RecordFilter,
+    sql::{
+        apex_owner_sql, concat_pipes, grant_record_match_sql, like_pattern, name_like_types_sql,
+        partial_term,
+    },
+};
+
+/// Insert a batch of records in the current transaction.
+pub(crate) async fn create_many_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    records: &[Record],
+) -> Result<Vec<Record>, DatabaseError> {
+    const CHUNK: usize = 500;
+    let mut out = Vec::with_capacity(records.len());
+    for chunk in records.chunks(CHUNK) {
+        let mut sql = String::from(
+            "INSERT INTO records (name, record_type, value, display_value, ttl, priority, zone_id, created_at) VALUES ",
+        );
+        let mut p = 1;
+        for i in 0..chunk.len() {
+            if i > 0 {
+                sql.push(',');
+            }
+            sql.push_str(&format!(
+                "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                p,
+                p + 1,
+                p + 2,
+                p + 3,
+                p + 4,
+                p + 5,
+                p + 6,
+                p + 7
+            ));
+            p += 8;
+        }
+        sql.push_str(" RETURNING id");
+
+        let now = Utc::now();
+        let mut query = sqlx::query(AssertSqlSafe(sql));
+        for r in chunk {
+            query = query
+                .bind(&r.name)
+                .bind(r.record_type.to_string())
+                .bind(r.value.clone())
+                .bind(r.record_type.display_value(&r.value))
+                .bind(r.ttl)
+                .bind(r.priority)
+                .bind(r.zone_id)
+                .bind(now);
+        }
+        let rows = query.fetch_all(&mut **tx).await?;
+
+        // Postgres returns RETURNING rows in the order the VALUES were given.
+        for (r, row) in chunk.iter().zip(rows) {
+            let mut rec = r.clone();
+            rec.id = RecordId::from(row.get::<i32, _>(0));
+            rec.created_at = now;
+            out.push(rec);
+        }
+    }
+    Ok(out)
+}
+
+/// Find a record by ID.
+pub(crate) async fn get(
+    pool: &Pool<Postgres>,
+    id: RecordId,
+) -> Result<Option<Record>, DatabaseError> {
+    let mut conn = pool.acquire().await?;
+
+    let record = sqlx::query_as::<_, Record>("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&mut *conn)
+        .await
+        ?;
+
+    Ok(record)
+}
+
+/// Find a record with its zone metadata.
+pub(crate) async fn get_with_zone(
+    pool: &Pool<Postgres>,
+    id: RecordId,
+) -> Result<Option<RecordWithZone>, DatabaseError> {
+    let mut conn = pool.acquire().await?;
+
+    let record = sqlx::query_as::<_, RecordWithZone>(
+        r#"
+        SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
+               r.zone_id, z.name AS zone_name
+        FROM records r
+        INNER JOIN zones z ON z.id = r.zone_id
+        WHERE r.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&mut *conn)
+    .await?;
+
+    Ok(record)
+}
+
+/// Find a record by ID in the current transaction.
+pub(crate) async fn get_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    id: RecordId,
+    lock_level: LockLevel,
+) -> Result<Option<Record>, DatabaseError> {
+    let record = sqlx::query_as::<_, Record>(AssertSqlSafe(format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE id = $1{}",lock_level.clause())))
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?;
+
+    Ok(record)
+}
+
+/// List records for a zone in the current transaction.
+pub(crate) async fn list_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+    lock_level: LockLevel,
+) -> Result<Vec<Record>, DatabaseError> {
+    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
+        format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 ORDER BY name, id{}",
+        lock_level.clause(),
+    )))
+    .bind(zone_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    Ok(records)
+}
+
+/// List records at an owner name in a zone in the current transaction.
+pub(crate) async fn list_by_name_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+    name: &OwnerName,
+    lock_level: LockLevel,
+) -> Result<Vec<Record>, DatabaseError> {
+    // Bind the canonical stored form as given: re-folding it here would miss
+    // its own row, and the bare column lets idx_records_zone_name apply.
+    let records = sqlx::query_as::<_, Record>(AssertSqlSafe(
+        format!("SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name = $2 ORDER BY name, id{}",
+        lock_level.clause(),
+    )))
+    .bind(zone_id)
+    .bind(name)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    Ok(records)
+}
+
+/// Find an owner with a DS record but no NS delegation in the current transaction.
+pub(crate) async fn get_ds_name_without_ns_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+) -> Result<Option<String>, DatabaseError> {
+    let name = sqlx::query_scalar::<_, String>(
+        "SELECT d.name FROM records d WHERE d.zone_id = $1 AND d.record_type = 'DS' AND NOT EXISTS (SELECT 1 FROM records n WHERE n.zone_id = $2 AND n.name = d.name AND n.record_type = 'NS') LIMIT 1",
+    )
+    .bind(zone_id)
+    .bind(zone_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(name)
+}
+
+/// List records at the requested owner names in a zone in the current transaction.
+pub(crate) async fn list_by_names_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+    names: &[OwnerName],
+    lock_level: LockLevel,
+) -> Result<Vec<Record>, DatabaseError> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Only same-name rows can conflict, so lock just those.
+    // One round-trip per chunk; keep it large (dominated bulk-import time on
+    // networked backends). 5000 is well under the 65535 placeholder limit.
+    const CHUNK: usize = 5000;
+    let mut out = Vec::new();
+    for chunk in names.chunks(CHUNK) {
+        let mut sql = String::from(
+            "SELECT id, name, record_type, value, ttl, priority, created_at, zone_id FROM records WHERE zone_id = $1 AND name IN (",
+        );
+        for i in 0..chunk.len() {
+            if i > 0 {
+                sql.push(',');
+            }
+            sql.push_str(&format!("${}", i + 2));
+        }
+        sql.push(')');
+        sql.push_str(lock_level.clause());
+
+        let mut query = sqlx::query_as::<_, Record>(AssertSqlSafe(sql)).bind(zone_id);
+        for name in chunk {
+            query = query.bind(name);
+        }
+        let mut rows = query.fetch_all(&mut **tx).await?;
+        out.append(&mut rows);
+    }
+    Ok(out)
+}
+
+/// List matching records with their zone metadata.
+pub(crate) async fn list_by_filter_with_zone(
+    pool: &Pool<Postgres>,
+    filter: RecordFilter,
+) -> Result<Vec<RecordWithZone>, DatabaseError> {
+    let mut conn = pool.acquire().await?;
+    let value = filter.value.as_deref().map(partial_term);
+    let value_exact = filter.value.as_deref().map(str::trim);
+    let search = like_pattern(filter.search.as_deref());
+    let name_like_types = name_like_types_sql();
+    let apex_owner = apex_owner_sql();
+
+    let order_by = filter.sort.order_by_sql(filter.order);
+    let grant_match = grant_record_match_sql("r", Some("record_type"), concat_pipes);
+    let records = sqlx::query_as::<_, RecordWithZone>(AssertSqlSafe(format!(
+        r#"
+        SELECT r.id, r.name, r.record_type, r.value, r.ttl, r.priority, r.created_at,
+               r.zone_id, z.name AS zone_name
+        FROM records r
+        INNER JOIN zones z ON z.id = r.zone_id
+        WHERE ($1::TEXT IS NULL OR r.zone_id = (SELECT id FROM zones WHERE name = $2))
+          AND (
+                $3::TEXT IS NULL
+                OR LOWER(r.name) = LOWER($4)
+                OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
+          )
+          AND ($6::TEXT IS NULL OR r.record_type = $7)
+          AND ($8::TEXT IS NULL OR (CASE
+                WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
+                ELSE POSITION($31 IN r.display_value) > 0
+          END))
+          AND ($10::INT4 IS NULL OR r.ttl = $11)
+          AND ($12::INT4 IS NULL OR r.ttl >= $13)
+          AND ($14::INT4 IS NULL OR r.ttl <= $15)
+          AND ($16::INT4 IS NULL OR r.priority = $17)
+          AND ($18::INT4 IS NULL OR r.priority >= $19)
+          AND ($20::INT4 IS NULL OR r.priority <= $21)
+          AND (
+                $22::TEXT IS NULL
+                OR LOWER(z.name) LIKE LOWER($23) ESCAPE '\'
+                OR LOWER(r.name) LIKE LOWER($24) ESCAPE '\'
+                OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25) ESCAPE '\'
+                OR LOWER(r.record_type) LIKE LOWER($26) ESCAPE '\'
+                OR LOWER(r.display_value) LIKE LOWER($27) ESCAPE '\'
+        )
+          AND (
+                $30::INT4 IS NULL
+                OR EXISTS (SELECT 1 FROM token_grants p
+                           WHERE p.api_token_id = $30 AND p.zone_id = r.zone_id
+                             AND {grant_match})
+          )
+        {order_by}
+        LIMIT $28 OFFSET $29
+        "#
+    )))
+    .bind(&filter.zone_name)
+    .bind(&filter.zone_name)
+    .bind(&filter.name)
+    .bind(&filter.name)
+    .bind(&filter.name)
+    .bind(filter.record_type)
+    .bind(filter.record_type)
+    .bind(&value)
+    .bind(&value)
+    .bind(filter.ttl)
+    .bind(filter.ttl)
+    .bind(filter.min_ttl)
+    .bind(filter.min_ttl)
+    .bind(filter.max_ttl)
+    .bind(filter.max_ttl)
+    .bind(filter.priority)
+    .bind(filter.priority)
+    .bind(filter.min_priority)
+    .bind(filter.min_priority)
+    .bind(filter.max_priority)
+    .bind(filter.max_priority)
+    .bind(&search)
+    .bind(&search)
+    .bind(&search)
+    .bind(&search)
+    .bind(&search)
+    .bind(&search)
+    .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
+    .bind(
+        filter
+            .offset
+            .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
+            .unwrap_or(0),
+    )
+    .bind(filter.scope_token_id)
+    .bind(value_exact)
+    .fetch_all(&mut *conn)
+    .await?;
+
+    Ok(records)
+}
+
+/// Count records matching the filter.
+pub(crate) async fn count_by_filter(
+    pool: &Pool<Postgres>,
+    filter: RecordFilter,
+) -> Result<u64, DatabaseError> {
+    let mut conn = pool.acquire().await?;
+    let value = filter.value.as_deref().map(partial_term);
+    let value_exact = filter.value.as_deref().map(str::trim);
+    let search = like_pattern(filter.search.as_deref());
+    let name_like_types = name_like_types_sql();
+    let apex_owner = apex_owner_sql();
+
+    let grant_match = grant_record_match_sql("r", Some("record_type"), concat_pipes);
+    let count = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
+        r#"
+        SELECT COUNT(*)
+        FROM records r
+        INNER JOIN zones z ON z.id = r.zone_id
+        WHERE ($1::TEXT IS NULL OR r.zone_id = (SELECT id FROM zones WHERE name = $2))
+          AND (
+                $3::TEXT IS NULL
+                OR LOWER(r.name) = LOWER($4)
+                OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) = LOWER($5)
+          )
+          AND ($6::TEXT IS NULL OR r.record_type = $7)
+          AND ($8::TEXT IS NULL OR (CASE
+                WHEN r.record_type IN ({name_like_types}) THEN POSITION(LOWER($9) IN LOWER(r.display_value)) > 0
+                ELSE POSITION($29 IN r.display_value) > 0
+          END))
+          AND ($10::INT4 IS NULL OR r.ttl = $11)
+          AND ($12::INT4 IS NULL OR r.ttl >= $13)
+          AND ($14::INT4 IS NULL OR r.ttl <= $15)
+          AND ($16::INT4 IS NULL OR r.priority = $17)
+          AND ($18::INT4 IS NULL OR r.priority >= $19)
+          AND ($20::INT4 IS NULL OR r.priority <= $21)
+          AND (
+                $22::TEXT IS NULL
+                OR LOWER(z.name) LIKE LOWER($23) ESCAPE '\'
+                OR LOWER(r.name) LIKE LOWER($24) ESCAPE '\'
+                OR LOWER(CASE WHEN r.name = {apex_owner} THEN z.name || '.' ELSE r.name || '.' || z.name || '.' END) LIKE LOWER($25) ESCAPE '\'
+                OR LOWER(r.record_type) LIKE LOWER($26) ESCAPE '\'
+                OR LOWER(r.display_value) LIKE LOWER($27) ESCAPE '\'
+        )
+          AND (
+                $28::INT4 IS NULL
+                OR EXISTS (SELECT 1 FROM token_grants p
+                           WHERE p.api_token_id = $28 AND p.zone_id = r.zone_id
+                             AND {grant_match})
+          )
+        "#
+    )))
+    .bind(&filter.zone_name)
+    .bind(&filter.zone_name)
+    .bind(&filter.name)
+    .bind(&filter.name)
+    .bind(&filter.name)
+    .bind(filter.record_type)
+    .bind(filter.record_type)
+    .bind(&value)
+    .bind(&value)
+    .bind(filter.ttl)
+    .bind(filter.ttl)
+    .bind(filter.min_ttl)
+    .bind(filter.min_ttl)
+    .bind(filter.max_ttl)
+    .bind(filter.max_ttl)
+    .bind(filter.priority)
+    .bind(filter.priority)
+    .bind(filter.min_priority)
+    .bind(filter.min_priority)
+    .bind(filter.max_priority)
+    .bind(filter.max_priority)
+    .bind(&search)
+    .bind(&search)
+    .bind(&search)
+    .bind(&search)
+    .bind(&search)
+    .bind(&search)
+    .bind(filter.scope_token_id)
+    .bind(value_exact)
+    .fetch_one(&mut *conn)
+    .await?;
+
+    Ok(count as u64)
+}
+
+/// Update a record in the current transaction.
+pub(crate) async fn update_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    record: Record,
+) -> Result<Record, DatabaseError> {
+    sqlx::query(
+        r#"
+        UPDATE records
+        SET name = $1, record_type = $2, value = $3, display_value = $4, ttl = $5, priority = $6, zone_id = $7
+        WHERE id = $8
+        "#,
+    )
+    .bind(&record.name)
+    .bind(record.record_type.to_string())
+    .bind(&record.value)
+    .bind(record.record_type.display_value(&record.value))
+    .bind(record.ttl)
+    .bind(record.priority)
+    .bind(record.zone_id)
+    .bind(record.id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(record)
+}
+
+/// Delete the records with the supplied IDs in the current transaction.
+pub(crate) async fn delete_many_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    ids: &[RecordId],
+) -> Result<(), DatabaseError> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query("DELETE FROM records WHERE id = ANY($1)")
+        .bind(ids)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}

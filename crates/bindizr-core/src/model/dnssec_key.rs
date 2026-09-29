@@ -1,5 +1,24 @@
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
+use thiserror::Error;
+
+use crate::{
+    dns::{Ttl, dnssec::KeyTag},
+    model::zone::ZoneId,
+};
+
+/// A DNSSEC key column or parameter outside the values bindizr signs with.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ParseDnssecKeyError {
+    #[error("unsupported DNSSEC algorithm '{value}' (supported: {})", DnssecAlgorithm::supported_names().join(", "))]
+    Algorithm { value: String },
+    #[error("unsupported DNSSEC algorithm number {value}")]
+    AlgorithmNumber { value: i32 },
+    #[error("unsupported DNSSEC key role '{value}' (supported: csk, ksk, zsk)")]
+    Role { value: String },
+    #[error("unsupported DNSSEC key state '{value}' (supported: published, active, retired)")]
+    State { value: String },
+}
 
 /// Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -86,7 +105,7 @@ impl std::fmt::Display for DnssecAlgorithm {
 }
 
 impl std::str::FromStr for DnssecAlgorithm {
-    type Err = String;
+    type Err = ParseDnssecKeyError;
 
     /// Parse a DNSSEC algorithm from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -97,22 +116,19 @@ impl std::str::FromStr for DnssecAlgorithm {
             "ecdsap384sha384" => Ok(DnssecAlgorithm::EcdsaP384Sha384),
             "ed25519" => Ok(DnssecAlgorithm::Ed25519),
             "ed448" => Ok(DnssecAlgorithm::Ed448),
-            _ => Err(format!(
-                "unsupported DNSSEC algorithm '{}' (supported: {})",
-                s,
-                DnssecAlgorithm::supported_names().join(", ")
-            )),
+            _ => Err(ParseDnssecKeyError::Algorithm {
+                value: s.to_string(),
+            }),
         }
     }
 }
 
 impl TryFrom<i32> for DnssecAlgorithm {
-    type Error = String;
+    type Error = ParseDnssecKeyError;
 
     /// Validate and convert the stored value into a DNSSEC algorithm.
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        DnssecAlgorithm::from_int(value)
-            .ok_or_else(|| format!("unsupported DNSSEC algorithm number {}", value))
+        DnssecAlgorithm::from_int(value).ok_or(ParseDnssecKeyError::AlgorithmNumber { value })
     }
 }
 
@@ -159,7 +175,7 @@ impl std::fmt::Display for DnssecKeyRole {
 }
 
 impl std::str::FromStr for DnssecKeyRole {
-    type Err = String;
+    type Err = ParseDnssecKeyError;
 
     /// Parse a DNSSEC key role from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -167,16 +183,15 @@ impl std::str::FromStr for DnssecKeyRole {
             "csk" => Ok(DnssecKeyRole::Csk),
             "ksk" => Ok(DnssecKeyRole::Ksk),
             "zsk" => Ok(DnssecKeyRole::Zsk),
-            _ => Err(format!(
-                "unsupported DNSSEC key role '{}' (supported: csk, ksk, zsk)",
-                s
-            )),
+            _ => Err(ParseDnssecKeyError::Role {
+                value: s.to_string(),
+            }),
         }
     }
 }
 
 impl TryFrom<String> for DnssecKeyRole {
-    type Error = String;
+    type Error = ParseDnssecKeyError;
 
     /// Validate and convert the stored value into a DNSSEC key role.
     fn try_from(s: String) -> Result<Self, Self::Error> {
@@ -220,7 +235,7 @@ impl std::fmt::Display for DnssecKeyState {
 }
 
 impl std::str::FromStr for DnssecKeyState {
-    type Err = String;
+    type Err = ParseDnssecKeyError;
 
     /// Parse a DNSSEC key state from its text representation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -228,16 +243,15 @@ impl std::str::FromStr for DnssecKeyState {
             "published" => Ok(DnssecKeyState::Published),
             "active" => Ok(DnssecKeyState::Active),
             "retired" => Ok(DnssecKeyState::Retired),
-            _ => Err(format!(
-                "unsupported DNSSEC key state '{}' (supported: published, active, retired)",
-                s
-            )),
+            _ => Err(ParseDnssecKeyError::State {
+                value: s.to_string(),
+            }),
         }
     }
 }
 
 impl TryFrom<String> for DnssecKeyState {
-    type Error = String;
+    type Error = ParseDnssecKeyError;
 
     /// Validate and convert the stored value into a DNSSEC key state.
     fn try_from(s: String) -> Result<Self, Self::Error> {
@@ -245,18 +259,23 @@ impl TryFrom<String> for DnssecKeyState {
     }
 }
 
+id_newtype!(
+    /// The id of a DNSSEC key row.
+    DnssecKeyId
+);
+
 /// A zone's DNSSEC signing key; key rows mark a signed zone. Private material
 /// is exported only through the daemon socket, never the HTTP API.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecKey {
-    pub id: i32,
-    pub zone_id: i32,
+    pub id: DnssecKeyId,
+    pub zone_id: ZoneId,
     #[sqlx(try_from = "String")]
     pub role: DnssecKeyRole,
     #[sqlx(try_from = "i32")]
     pub algorithm: DnssecAlgorithm,
     /// RFC 4034, Appendix B key tag, precomputed for display and DS output.
-    pub key_tag: i32,
+    pub key_tag: KeyTag,
     /// DNSKEY public-key field, base64.
     pub public_key: String,
     /// BIND private-key file format.
@@ -271,7 +290,7 @@ pub struct DnssecKey {
     pub eligible_at: DateTime<Utc>,
     /// Largest TTL among the record sets this key has signed, so retirement knows
     /// how long resolvers can keep validating with it.
-    pub max_signed_ttl: i32,
+    pub max_signed_ttl: Ttl,
     pub created_at: DateTime<Utc>,
 }
 
@@ -316,7 +335,7 @@ impl DnssecKey {
     /// cached for their record set's TTL, and — for a key a DS names — the parent's
     /// DS record set, cached for the TTL the confirming probe saw.
     pub fn retirement_interval_secs(&self, parent_ds_ttl: Option<u32>) -> i64 {
-        let signatures = i64::from(self.max_signed_ttl);
+        let signatures = i64::from(self.max_signed_ttl.as_secs());
         if !self.role.is_sep() {
             return signatures;
         }

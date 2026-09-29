@@ -1,17 +1,56 @@
 //! Asking a zone's parent whether it still delegates trust to the zone: the
 //! DS record set the zone's `parent_ns_addrs` serve for the child.
 
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{
-    config,
     dns::{
+        dnssec::WireNameError,
         message::{Name, Rtype},
         name::ZoneName,
         query::{DsRecordSet, build_edns_question, extract_ds_record_set},
     },
     model::zone::Zone,
 };
+use thiserror::Error;
+
+use super::{ExchangeError, ResolveAddressError};
+use crate::Context;
+
+/// Why the parent could not be asked, or what it failed to answer.
+#[derive(Debug, Error)]
+pub(crate) enum ProbeParentDsError {
+    #[error("the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'")]
+    NoParentNameservers,
+    #[error("parent server '{entry}' did not resolve: {source}")]
+    Unresolved {
+        entry: String,
+        #[source]
+        source: ResolveAddressError,
+    },
+    #[error("the zone's parent nameserver addresses name no server")]
+    NoServers,
+    #[error("invalid zone name: {0}")]
+    ZoneName(#[from] WireNameError),
+    /// Every server that failed, in `parent_ns_addrs` order.
+    #[error("{}", failures.iter().map(|(entry, error)| format!("{entry}: {error}")).collect::<Vec<_>>().join("; "))]
+    Unanswered {
+        failures: Vec<(String, QueryDsError)>,
+    },
+}
+
+/// Why one parent server gave no DS answer.
+#[derive(Debug, Error)]
+pub(crate) enum QueryDsError {
+    #[error(transparent)]
+    Exchange(#[from] ExchangeError),
+    #[error(transparent)]
+    Response(#[from] bindizr_core::dns::query::ReadResponseError),
+    #[error("no address")]
+    NoAddress,
+    #[error("probe task failed: {0}")]
+    TaskFailed(#[source] tokio::task::JoinError),
+}
 
 /// What the parent zone's servers said about the zone's DS.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,13 +67,16 @@ pub(crate) struct ParentDs {
 /// Ask every parent server for the zone's DS record set. `Err` when the zone
 /// names no parent or any server fails to answer: silence never reads as
 /// absence.
-pub(crate) async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
-    let dns_config = &config::bindizr_config().dns;
-    let timeout = Duration::from_secs(dns_config.notify.timeout_secs);
-
-    let raw = zone.parent_ns_addrs.as_deref().ok_or(
-        "the zone names no parent nameservers; set them with 'dnssec set --parent-ns-addrs'",
-    )?;
+pub(crate) async fn probe_parent_ds(
+    cx: &Context,
+    zone: &Zone,
+) -> Result<ParentDs, ProbeParentDsError> {
+    let dns_config = &cx.config().dns;
+    let timeout = dns_config.notify.timeout();
+    let raw = zone
+        .parent_ns_addrs
+        .as_deref()
+        .ok_or(ProbeParentDsError::NoParentNameservers)?;
     let servers = resolve_parent_ns_addrs(raw, timeout).await?;
 
     let answers = query_ds(&zone.name, &servers, timeout).await?;
@@ -49,16 +91,16 @@ pub(crate) async fn probe_parent_ds(zone: &Zone) -> Result<ParentDs, String> {
 async fn resolve_parent_ns_addrs(
     raw: &str,
     timeout: Duration,
-) -> Result<Vec<(String, Vec<SocketAddr>)>, String> {
+) -> Result<Vec<(String, Vec<SocketAddr>)>, ProbeParentDsError> {
     let mut servers = Vec::new();
     for (entry, result) in super::resolve_address_entries(raw, timeout).await {
         match result {
             Ok(addrs) => servers.push((entry, addrs)),
-            Err(e) => return Err(format!("parent server '{}' did not resolve: {}", entry, e)),
+            Err(source) => return Err(ProbeParentDsError::Unresolved { entry, source }),
         }
     }
     if servers.is_empty() {
-        return Err("the zone's parent nameserver addresses name no server".to_string());
+        return Err(ProbeParentDsError::NoServers);
     }
     Ok(servers)
 }
@@ -70,9 +112,8 @@ async fn query_ds(
     zone_name: &ZoneName,
     servers: &[(String, Vec<SocketAddr>)],
     timeout: Duration,
-) -> Result<Vec<Option<DsRecordSet>>, String> {
-    let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
-        .map_err(|e| format!("invalid zone name: {}", e))?;
+) -> Result<Vec<Option<DsRecordSet>>, ProbeParentDsError> {
+    let qname = zone_name.to_wire_name()?;
 
     let mut tasks = Vec::with_capacity(servers.len());
     for (entry, addrs) in servers {
@@ -89,12 +130,12 @@ async fn query_ds(
     for (entry, task) in tasks {
         match task.await {
             Ok(Ok(answer)) => answers.push(answer),
-            Ok(Err(e)) => failures.push(format!("{}: {}", entry, e)),
-            Err(e) => failures.push(format!("{}: probe task failed: {}", entry, e)),
+            Ok(Err(e)) => failures.push((entry, e)),
+            Err(e) => failures.push((entry, QueryDsError::TaskFailed(e))),
         }
     }
     if !failures.is_empty() {
-        return Err(failures.join("; "));
+        return Err(ProbeParentDsError::Unanswered { failures });
     }
     Ok(answers)
 }
@@ -105,19 +146,22 @@ async fn query_ds_at(
     qname: &Name<Vec<u8>>,
     addrs: &[SocketAddr],
     timeout: Duration,
-) -> Result<Option<DsRecordSet>, String> {
+) -> Result<Option<DsRecordSet>, QueryDsError> {
     let mut last_error = None;
     for addr in addrs {
         let (query_id, query) = build_edns_question(false, qname, Rtype::DS);
-        let result = super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query")
+        let result = match super::exchange_with_tcp_fallback(*addr, timeout, &query, "DS query")
             .await
-            .and_then(|response| extract_ds_record_set(query_id, qname, &response));
+        {
+            Ok(response) => extract_ds_record_set(query_id, qname, &response).map_err(Into::into),
+            Err(e) => Err(e.into()),
+        };
         match result {
             Ok(record_set) => return Ok(record_set),
             Err(e) => last_error = Some(e),
         }
     }
-    Err(last_error.unwrap_or_else(|| "no address".to_string()))
+    Err(last_error.unwrap_or(QueryDsError::NoAddress))
 }
 
 #[cfg(test)]

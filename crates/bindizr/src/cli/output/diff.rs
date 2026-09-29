@@ -14,7 +14,7 @@ fn rdata(diff_value: &RecordDiffValue, record_type: &str) -> String {
     match record_type {
         "TXT" => {
             let segments: &[String] = match &diff_value.value {
-                RecordValueRequest::String(value) => std::slice::from_ref(value),
+                RecordValueRequest::Text(value) => std::slice::from_ref(value),
                 RecordValueRequest::Segments(segments) => segments,
             };
             segments
@@ -37,11 +37,7 @@ fn rdata(diff_value: &RecordDiffValue, record_type: &str) -> String {
 fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
     let mut out = String::new();
     for entry in entries {
-        let sign = match entry.change {
-            RecordChange::Added => '+',
-            RecordChange::Removed => '-',
-            RecordChange::Changed => '~',
-        };
+        let sign = entry.change.to_string();
         let rtype = entry.record_type.as_str();
 
         // Show only the delta: records removed, then records added.
@@ -64,7 +60,7 @@ fn render_diff_lines(entries: &[RecordDiffEntry]) -> String {
         // Sign and name label the entry once; TTL stays per-line so a TTL-only
         // change reads clearly.
         for (index, (ttl, data)) in lines.iter().enumerate() {
-            let head = if index == 0 { sign } else { ' ' };
+            let head = if index == 0 { sign.as_str() } else { " " };
             let name_col = if index == 0 { entry.name.as_str() } else { "" };
             let line = format!(
                 "{} {:<24} {:>5} IN {:<6} {}",
@@ -89,9 +85,9 @@ pub(crate) fn render_change_preview(diff: &RecordDiff) -> String {
     out.push('\n');
     out.push_str(&format!(
         "By name and type: {} {} {}\n",
-        color::green(&format!("+{}", summary.added)),
-        color::red(&format!("-{}", summary.removed)),
-        color::yellow(&format!("~{}", summary.changed))
+        color::green(&format!("{}{}", RecordChange::Added, summary.added)),
+        color::red(&format!("{}{}", RecordChange::Removed, summary.removed)),
+        color::yellow(&format!("{}{}", RecordChange::Changed, summary.changed))
     ));
     out
 }
@@ -107,8 +103,13 @@ pub(crate) fn render_version_diff(response: &VersionDiffResponse) -> String {
         response.from_serial, response.to_serial
     ));
     out.push_str(&format!(
-        "By name and type: +{} -{} ~{}\n",
-        summary.added, summary.removed, summary.changed
+        "By name and type: {}{} {}{} {}{}\n",
+        RecordChange::Added,
+        summary.added,
+        RecordChange::Removed,
+        summary.removed,
+        RecordChange::Changed,
+        summary.changed
     ));
     out
 }

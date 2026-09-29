@@ -4,12 +4,9 @@ use chrono::{DateTime, Duration, Utc};
 
 use super::*;
 use crate::{
-    dns::{
-        dnssec::generate_key,
-        name::{OwnerName, ZoneName},
-    },
+    dns::name::{OwnerName, ZoneName},
     model::{
-        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyRole, DnssecKeyState},
+        dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
         dnssec_policy::DnssecDenial,
         dnssec_record::{DnssecRecord, DnssecRecordType},
         record::{Record, RecordType},
@@ -19,7 +16,7 @@ use crate::{
 
 /// Build a signing-key fixture for the test.
 fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) -> DnssecKey {
-    let mut key = generate_key(
+    let mut key = DnssecKey::generate(
         zone,
         DnssecAlgorithm::EcdsaP256Sha256,
         role,
@@ -28,7 +25,7 @@ fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) ->
         fixed_now(),
     )
     .unwrap();
-    key.id = id;
+    key.id = DnssecKeyId::from(id);
     key
 }
 
@@ -49,7 +46,7 @@ struct ComputeArgs<'a> {
     expiration: DateTime<Utc>,
     /// `0` pins every record set to `expiration`; the spread has its own test.
     expiration_jitter_secs: i64,
-    force: bool,
+    pass: SigningPass,
 }
 
 /// Compute a signed view using the test's signing parameters.
@@ -57,7 +54,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
     let now = fixed_now();
     SignedViewParams {
         zone: args.zone,
-        new_serial: args.new_serial,
+        new_serial: Serial::try_from(args.new_serial).unwrap(),
         records: args.records,
         keys: args.keys,
         prev: args.prev,
@@ -67,7 +64,7 @@ fn compute(args: ComputeArgs<'_>) -> SignedViewDiff {
         expiration: args.expiration,
         expiration_jitter_secs: args.expiration_jitter_secs,
         refresh_secs: 5 * 86_400,
-        force: args.force,
+        pass: args.pass,
         withdraw_parent_ds: false,
     }
     .compute()
@@ -86,7 +83,7 @@ fn to_stored(records: &[DnssecRecord]) -> Vec<DnssecRecord> {
         .iter()
         .enumerate()
         .map(|(index, row)| DnssecRecord {
-            id: index as i32 + 1,
+            id: DnssecRecordId::from(index as i32 + 1),
             ..row.clone()
         })
         .collect()

@@ -157,6 +157,24 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_secondaries_notify_key ON secondaries(notify_tsig_key_id);
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS transfers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_addr TEXT NOT NULL,
+            zone_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            result TEXT NOT NULL,
+            incremental BOOLEAN NOT NULL,
+            serial INTEGER NULL,
+            served_at DATETIME NOT NULL,
+            error TEXT NULL,
+            UNIQUE (client_addr, zone_id),
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+        );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_transfers_zone ON transfers(zone_id);
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS tsig_grants (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             zone_id INTEGER NOT NULL,

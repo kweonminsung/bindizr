@@ -14,6 +14,8 @@ pub(crate) mod zone;
 
 use std::time::Duration;
 
+use thiserror::Error;
+
 /// Poll `check` every 100ms until it yields a value, bounded by `deadline`.
 /// Returns `None` on expiry.
 pub(crate) async fn poll_with_deadline<T>(
@@ -33,13 +35,29 @@ pub(crate) async fn poll_with_deadline<T>(
 }
 
 /// Read command input from a file path, or from stdin when the path is `-`.
-pub(crate) fn read_input(path: &str) -> Result<String, String> {
+pub(crate) fn read_input(path: &str) -> Result<String, ReadInputError> {
     if path == "-" {
         let mut buf = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
-            .map_err(|e| format!("Failed to read from stdin: {}", e))?;
+            .map_err(ReadInputError::Stdin)?;
         Ok(buf)
     } else {
-        std::fs::read_to_string(path).map_err(|e| format!("Failed to read '{}': {}", path, e))
+        std::fs::read_to_string(path).map_err(|source| ReadInputError::File {
+            path: path.to_string(),
+            source,
+        })
     }
+}
+
+/// Why command input could not be read.
+#[derive(Debug, Error)]
+pub(crate) enum ReadInputError {
+    #[error("Failed to read from stdin: {0}")]
+    Stdin(#[source] std::io::Error),
+    #[error("Failed to read '{path}': {source}")]
+    File {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }

@@ -1,18 +1,23 @@
 use sqlx::FromRow;
+use thiserror::Error;
 
 use crate::{
-    dns::{name::OwnerName, record::Rdata},
-    model::{dnssec_record::DnssecRecordType, record::RecordType},
+    dns::{Serial, Ttl, name::OwnerName, record::Rdata},
+    model::{
+        dnssec_record::{DnssecRecordType, ParseDnssecRecordTypeError},
+        record::RecordType,
+        zone::ZoneId,
+    },
 };
 
 /// A single record add/delete change within a zone, used for IXFR.
 ///
 /// Exactly one of `record_value` and `record_rdata` is set, matching
 /// `derived`; a CHECK constraint enforces it on the row.
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ZoneChange {
-    pub zone_id: i32,
-    pub serial: i32,
+    pub zone_id: ZoneId,
+    pub serial: Serial,
     #[sqlx(try_from = "String")]
     pub operation: ChangeOperation,
     #[sqlx(try_from = "String")]
@@ -24,19 +29,26 @@ pub struct ZoneChange {
     /// Derived rows: the exact wire RDATA the signer produced — signatures
     /// cover these bytes, so IXFR must emit them unre-encoded.
     pub record_rdata: Option<Rdata>,
-    pub record_ttl: i32,
+    pub record_ttl: Ttl,
     pub record_priority: Option<i32>,
     /// Signer-generated DNSSEC change (RRSIG/NSEC/DNSKEY). IXFR emits these
-    /// like any change; history reconstruction and diffs skip them — the
+    /// like any change; the history rewind and diffs skip them — the
     /// derived plane is re-signed, never restored.
     pub derived: bool,
+}
+
+/// A journal operation column holding neither ADD nor DEL.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("unknown journal operation '{value}'")]
+pub struct ParseChangeOperationError {
+    pub value: String,
 }
 
 /// What a journal row did to its record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeOperation {
     Add,
-    Del,
+    Delete,
 }
 
 impl ChangeOperation {
@@ -44,33 +56,28 @@ impl ChangeOperation {
     pub fn as_str(self) -> &'static str {
         match self {
             ChangeOperation::Add => "ADD",
-            ChangeOperation::Del => "DEL",
+            ChangeOperation::Delete => "DEL",
         }
     }
 }
 
-impl std::fmt::Display for ChangeOperation {
-    /// Write the change operation in its display form.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 impl std::str::FromStr for ChangeOperation {
-    type Err = String;
+    type Err = ParseChangeOperationError;
 
     /// Parse the stored text of a change operation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "ADD" => Ok(ChangeOperation::Add),
-            "DEL" => Ok(ChangeOperation::Del),
-            other => Err(format!("unknown journal operation '{}'", other)),
+            "DEL" => Ok(ChangeOperation::Delete),
+            other => Err(ParseChangeOperationError {
+                value: other.to_string(),
+            }),
         }
     }
 }
 
 impl TryFrom<String> for ChangeOperation {
-    type Error = String;
+    type Error = ParseChangeOperationError;
 
     /// Validate and convert the stored value into a change operation.
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -108,7 +115,7 @@ impl std::fmt::Display for JournalRecordType {
 }
 
 impl TryFrom<String> for JournalRecordType {
-    type Error = String;
+    type Error = ParseDnssecRecordTypeError;
 
     /// Validate and convert the stored value into a journal record type.
     fn try_from(value: String) -> Result<Self, Self::Error> {

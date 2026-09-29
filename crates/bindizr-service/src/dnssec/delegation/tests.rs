@@ -1,6 +1,10 @@
 use bindizr_core::{
-    dns::{dnssec::generate_key, name::ZoneName, query::DsRecord},
-    model::dnssec_key::{DnssecAlgorithm, DnssecKeyRole},
+    dns::{Serial, SoaInterval, Ttl, name::ZoneName, query::DsRecord},
+    model::{
+        dnssec_key::{DnssecAlgorithm, DnssecKeyRole},
+        dnssec_policy::PolicyId,
+        zone::ZoneId,
+    },
 };
 
 use super::*;
@@ -9,17 +13,17 @@ use crate::types::DsState;
 /// Build the test zone or its DNS name.
 fn zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 300,
-        serial: 5,
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
-        minimum_ttl: 900,
-        dnssec_policy_id: Some(1),
+        default_ttl: Ttl::from_secs(300),
+        serial: Serial::from(5),
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
+        minimum_ttl: Ttl::from_secs(900),
+        dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: Some("192.0.2.1,192.0.2.2".to_string()),
         enabled: true,
         description: None,
@@ -30,7 +34,7 @@ fn zone() -> Zone {
 /// Build a combined signing key fixture.
 fn csk() -> DnssecKey {
     let now = Utc::now();
-    generate_key(
+    DnssecKey::generate(
         &zone(),
         DnssecAlgorithm::EcdsaP256Sha256,
         DnssecKeyRole::Csk,
@@ -45,7 +49,7 @@ fn csk() -> DnssecKey {
 fn ds_of(key: &DnssecKey, digest_type: u8) -> DsRecord {
     let apex = zone().name.to_wire_name().unwrap();
     DsRecord {
-        key_tag: key.key_tag as u16,
+        key_tag: key.key_tag,
         digest_type,
         rdata: key
             .ds_rdata(&apex, digest_type)
@@ -97,7 +101,7 @@ fn one_server_still_serving_a_ds_is_enough_to_block_a_disable() {
     let key = csk();
     let seen = info(&key, vec![None, record_set(vec![ds_of(&key, 2)])]);
 
-    assert_eq!(seen.ds_key_tags, [key.key_tag as u16]);
+    assert_eq!(seen.ds_key_tags, [key.key_tag]);
     assert_eq!(seen.ds_state, DsState::Published);
 }
 
@@ -120,12 +124,12 @@ fn a_ds_for_another_key_does_not_publish_this_one() {
     let key = csk();
     let other = csk();
     let mut foreign = ds_of(&other, 2);
-    foreign.key_tag = key.key_tag as u16;
+    foreign.key_tag = key.key_tag;
 
     let seen = info(&key, vec![record_set(vec![foreign]); 2]);
 
     assert!(!seen.keys[0].ds_published);
-    assert_eq!(seen.ds_key_tags, [key.key_tag as u16]);
+    assert_eq!(seen.ds_key_tags, [key.key_tag]);
 }
 
 /// Verify that a digest bindizr cannot compute leaves the match undecided.
@@ -135,7 +139,7 @@ fn a_digest_bindizr_cannot_compute_leaves_the_match_undecided() {
     // is not the same as a parent serving no DS at all.
     let key = csk();
     let gost = DsRecord {
-        key_tag: key.key_tag as u16,
+        key_tag: key.key_tag,
         digest_type: 3,
         rdata: vec![0; 32],
     };
@@ -152,7 +156,7 @@ fn one_server_answering_in_a_computable_digest_does_not_mask_another() {
     // A parent mid-rollout between digest types is undecided, not a match.
     let key = csk();
     let gost = DsRecord {
-        key_tag: key.key_tag as u16,
+        key_tag: key.key_tag,
         digest_type: 3,
         rdata: vec![0; 32],
     };

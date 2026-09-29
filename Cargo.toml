@@ -30,10 +30,8 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 [workspace.lints.clippy]
 redundant_clone = "warn"
 inefficient_to_string = "warn"
-upper_case_acronyms = "allow"
 
 [workspace.dependencies]
-async-trait = "0.1.89"
 axum = "0.8.9"
 axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 base64 = "0.23"

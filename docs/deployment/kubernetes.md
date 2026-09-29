@@ -66,7 +66,7 @@ $ kubectl exec -n bindizr deploy/bindizr-bindizr-chart -- \
 
 Bindizr notifies the BIND pods after each change and they pull the zone
 within a second. `zone status` lists each pod with the serial it serves,
-`in_sync` once it has caught up:
+`in sync` once it has caught up:
 
 ```bash
 $ kubectl exec -n bindizr deploy/bindizr-bindizr-chart -- bindizr zone status example.com

@@ -92,6 +92,7 @@ Secondary ns2: ns2.example.net:53 (enabled, NOTIFY signed with notify-key)
 Resolves to: 10.0.0.14:53
 Catalog zone catalog.bindizr: in sync at serial 42
 NOTIFY to 10.0.0.14:53: accepted
+Transfers: 12 zones: 11 IXFR delta, 0 IXFR full, 1 AXFR, 0 refused, 0 failed
 ```
 
 The first line is what is registered, the second what the address resolves
@@ -103,11 +104,37 @@ the report says so on a line of its own and the secondary's serial stands
 alone as `reachable`. The NOTIFY is a real one for the catalog zone, signed
 with the secondary's key when it has one, so a key the server does not
 accept shows up here. A disabled secondary can be checked too, which is how
-to see whether it is ready before enabling it again.
+to see whether it is ready before enabling it again. The last line
+summarizes [what it pulled](#what-it-pulled); it is information, not a
+verdict.
 
 The command exits non-zero when any line fails, so a script can branch on
 it; `-o json` carries the same fields.
 
+## What it pulled
+
+Bindizr keeps the latest transfer it served each client address per zone,
+refusals and failures included. `bindizr secondary transfers <name>` reads
+it back for the addresses the secondary resolves to, `zone status` shows the
+same transfer per zone in its `LAST-TRANSFER` column, and `doctor` prints the
+summary per secondary:
+
+```text
+$ bindizr secondary transfers ns2
+ZONE            TRANSFER     SERIAL  ADDRESS     AT                    ERROR
+example.com     IXFR delta   42      10.0.0.14   2026-09-28T09:41:05Z  -
+example.net     AXFR         7       10.0.0.14   2026-09-28T09:40:58Z  -
+internal.test   refused      -       10.0.0.14   2026-09-28T09:40:58Z  no grant for the zone
+3 zones: 1 IXFR delta, 0 IXFR full, 1 AXFR, 1 refused, 0 failed
+```
+
+`IXFR full` is an IXFR answered with the whole zone because the journal no
+longer held the delta; `refused` and `failed` carry the reason in `ERROR`.
+`--zone` narrows the list and `--limit` shortens it; the summary counts every
+zone regardless. The rows are in the database, so a restart keeps them and
+deleting a zone drops them.
+
 Secondaries are also manageable over the HTTP API (`/secondaries`, with
-`POST /secondaries/{name}/check` for the check) — see the
+`POST /secondaries/{name}/check` for the check and
+`GET /secondaries/{name}/transfers` for the transfers) — see the
 [API Reference](https://kweonminsung.github.io/bindizr/api/).

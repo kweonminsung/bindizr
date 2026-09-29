@@ -1,9 +1,16 @@
-use bindizr_core::dns::name::{OwnerName, ZoneName};
+use bindizr_core::{
+    dns::{
+        Serial, SoaInterval, Ttl,
+        name::{OwnerName, ZoneName},
+    },
+    model::{api_token::TokenId, record::RecordId, token_grant::TokenGrantId, zone::ZoneId},
+};
 use chrono::Utc;
 
 use super::{
     change_set::{
-        ZoneOps, adjust_record_set, group_ops_by_zone, parse_changes_request, parse_record_set_op,
+        ZoneChangeSet, ZoneOps, adjust_record_set, group_ops_by_zone, parse_changes_request,
+        parse_record_set_op,
     },
     policy::{authoritative_zone, normalize_lookup_name},
 };
@@ -21,16 +28,16 @@ use crate::{
 /// Build a zone fixture for the test.
 fn test_zone(id: i32, name: &str) -> Zone {
     Zone {
-        id,
+        id: ZoneId::from(id),
         name: ZoneName::from_row(name),
         mname: format!("ns1.{}", name),
         rname: format!("hostmaster@{}", name),
-        default_ttl: 3600,
-        serial: 1,
-        refresh: 7200,
-        retry: 3600,
-        expire: 604800,
-        minimum_ttl: 86400,
+        default_ttl: Ttl::from_secs(3600),
+        serial: Serial::from(1),
+        refresh: SoaInterval::from_secs(7200),
+        retry: SoaInterval::from_secs(3600),
+        expire: SoaInterval::from_secs(604800),
+        minimum_ttl: Ttl::from_secs(86400),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -42,13 +49,13 @@ fn test_zone(id: i32, name: &str) -> Zone {
 /// Build a record fixture with the requested fields.
 fn test_record(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     Record {
-        id,
+        id: RecordId::from(id),
         name: OwnerName::from_row(name),
         record_type,
         value: value.to_string(),
-        ttl,
+        ttl: Ttl::try_from(ttl).unwrap(),
         priority: None,
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
         created_at: Utc::now(),
     }
 }
@@ -77,16 +84,16 @@ fn authoritative_zone_picks_most_specific_match() {
     ];
 
     assert_eq!(
-        authoritative_zone(&zones, "api.internal.example.com").map(|z| z.id),
-        Some(2)
+        authoritative_zone(&zones, "api.internal.example.com").map(|(z, _)| z.id),
+        Some(ZoneId::from(2))
     );
     assert_eq!(
-        authoritative_zone(&zones, "www.example.com").map(|z| z.id),
-        Some(1)
+        authoritative_zone(&zones, "www.example.com").map(|(z, _)| z.id),
+        Some(ZoneId::from(1))
     );
     assert_eq!(
-        authoritative_zone(&zones, "internal.example.com").map(|z| z.id),
-        Some(2)
+        authoritative_zone(&zones, "internal.example.com").map(|(z, _)| z.id),
+        Some(ZoneId::from(2))
     );
 }
 
@@ -128,7 +135,7 @@ fn parse_record_set_op_rejects_unsupported_types() {
     for record_type in ["NS", "MX", "SRV", "SOA", "PTR"] {
         let err = parse_record_set_op(&record_set("a.example.com", record_type, None, &["x"]))
             .unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert_eq!(err.code(), ErrorCode::InvalidInput);
     }
     assert!(parse_record_set_op(&record_set("a.example.com", "BOGUS", None, &["x"])).is_err());
 }
@@ -143,10 +150,10 @@ fn parse_record_set_op_rejects_multi_value_cname_and_empty_values() {
         &["one.example.com", "two.example.com"],
     ))
     .unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidRecordValue);
+    assert_eq!(err.code(), ErrorCode::InvalidRecordValue);
 
     let err = parse_record_set_op(&record_set("a.example.com", "A", None, &[])).unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidInput);
+    assert_eq!(err.code(), ErrorCode::InvalidInput);
 }
 
 /// Verify that `parse_record_set_op` normalizes TTL.
@@ -162,7 +169,7 @@ fn parse_record_set_op_normalizes_ttl() {
         parse_record_set_op(&record_set("a.example.com", "A", Some(300), &["192.0.2.1"]))
             .unwrap()
             .ttl,
-        Some(300)
+        Some(Ttl::from_secs(300))
     );
     assert!(
         parse_record_set_op(&record_set("a.example.com", "A", Some(-1), &["192.0.2.1"])).is_err()
@@ -194,7 +201,7 @@ fn parse_record_set_op_parses_quoted_txt_values() {
     ))
     .unwrap();
 
-    assert_eq!(op.record_type, RecordType::TXT);
+    assert_eq!(op.record_type, RecordType::Txt);
     assert_eq!(
         op.values[0],
         "\"heritage=external-dns,external-dns/owner=default\""
@@ -318,7 +325,7 @@ fn group_ops_rejects_names_without_authoritative_zone() {
     let ops = parse_changes_request(&request).unwrap();
 
     let err = group_ops_by_zone(&Caller::Global, &zones, ops).unwrap_err();
-    assert_eq!(err.code, ErrorCode::ZoneNotFound);
+    assert_eq!(err.code(), ErrorCode::ZoneNotFound);
 }
 
 /// Verify that group ops reads a hidden zone as absent instead of its granted parent.
@@ -329,12 +336,12 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
         test_zone(2, "internal.example.com"),
     ];
     let caller = Caller::Token {
-        id: 7,
+        id: TokenId::from(7),
         name: "scoped".into(),
         grants: vec![TokenGrant {
-            id: 1,
-            zone_id: 1,
-            api_token_id: 7,
+            id: TokenGrantId::from(1),
+            zone_id: ZoneId::from(1),
+            api_token_id: TokenId::from(7),
             record_name_pattern: "*".to_string(),
             record_types: "*".to_string(),
             can_write: true,
@@ -355,7 +362,7 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
     let ops = parse_changes_request(&request).unwrap();
 
     let err = group_ops_by_zone(&caller, &zones, ops).unwrap_err();
-    assert_eq!(err.code, ErrorCode::ZoneNotFound);
+    assert_eq!(err.code(), ErrorCode::ZoneNotFound);
     assert!(
         err.to_string()
             .contains("No zone is authoritative for 'api.internal.example.com'"),
@@ -380,9 +387,7 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &[])
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &[]).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert_eq!(change_set.creates.len(), 1);
@@ -401,9 +406,7 @@ fn change_set_skips_creates_that_already_exist() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -422,9 +425,7 @@ fn change_set_skips_creates_whose_row_differs_only_in_ttl() {
     };
 
     // No TTL on the record set, so it resolves to the zone's 3600 — not the row's 300.
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -445,14 +446,12 @@ fn change_set_replaces_rows_when_an_update_moves_only_the_ttl() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 1);
-    assert_eq!(change_set.deletes[0].id, 10);
+    assert_eq!(change_set.deletes[0].id, RecordId::from(10));
     assert_eq!(change_set.creates.len(), 1);
-    assert_eq!(change_set.creates[0].ttl, 900);
+    assert_eq!(change_set.creates[0].ttl, Ttl::from_secs(900));
 }
 
 /// Verify that change set skips deletes of absent records.
@@ -465,9 +464,7 @@ fn change_set_skips_deletes_of_absent_records() {
         deletes: vec![record_set("gone.example.com", "A", None, &["192.0.2.9"])],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &[])
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &[]).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -490,9 +487,7 @@ fn change_set_cancels_unchanged_updates_even_with_reordered_targets() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert!(change_set.deletes.is_empty());
     assert!(change_set.creates.is_empty());
@@ -515,13 +510,11 @@ fn change_set_replaces_rows_when_update_changes_targets() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(
         change_set.deletes.iter().map(|r| r.id).collect::<Vec<_>>(),
-        vec![11]
+        vec![RecordId::from(11)]
     );
     assert_eq!(change_set.creates.len(), 1);
     assert_eq!(change_set.creates[0].value, "192.0.2.3");
@@ -554,13 +547,16 @@ fn change_set_replaces_whole_record_set_when_ttl_changes() {
         deletes: vec![],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 2);
     assert_eq!(change_set.creates.len(), 2);
-    assert!(change_set.creates.iter().all(|record| record.ttl == 300));
+    assert!(
+        change_set
+            .creates
+            .iter()
+            .all(|record| record.ttl == Ttl::from_secs(300))
+    );
 }
 
 /// Verify that change set enforces CNAME exclusivity.
@@ -579,10 +575,8 @@ fn change_set_enforces_cname_exclusivity() {
         deletes: vec![],
     };
 
-    let err = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap_err();
-    assert_eq!(err.code, ErrorCode::RecordConflict);
+    let err = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap_err();
+    assert_eq!(err.code(), ErrorCode::RecordConflict);
 }
 
 /// Verify that change set allows CNAME when conflicting row is deleted in same request.
@@ -601,11 +595,9 @@ fn change_set_allows_cname_when_conflicting_row_is_deleted_in_same_request() {
         deletes: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
     };
 
-    let change_set = zone_ops(&request, &zone)
-        .compute_change_set(&zone, &existing)
-        .unwrap();
+    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
 
     assert_eq!(change_set.deletes.len(), 1);
     assert_eq!(change_set.creates.len(), 1);
-    assert_eq!(change_set.creates[0].record_type, RecordType::CNAME);
+    assert_eq!(change_set.creates[0].record_type, RecordType::Cname);
 }

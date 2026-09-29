@@ -1,12 +1,11 @@
-use bindizr_core::{
-    config::bindizr_config,
-    dns::{
-        name::{ZoneName, has_whitespace_or_control},
-        record::SoaMailbox,
-    },
+use bindizr_core::dns::{
+    SoaInterval, Ttl,
+    name::{ZoneName, has_whitespace_or_control},
+    record::SoaMailbox,
 };
 
 use crate::{
+    Context,
     error::ServiceError,
     text::normalize_description,
     ttl::{normalize_soa_interval, validate_default_ttl},
@@ -16,26 +15,28 @@ use crate::{
 const MAX_EMAIL_LEN: usize = 254;
 const MAX_EMAIL_LOCAL_LEN: usize = 64;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NormalizedCreateZoneRequest {
     pub(crate) name: ZoneName,
     pub(crate) mname: String,
     pub(crate) rname: String,
-    pub(crate) ttl: i32,
+    pub(crate) ttl: Ttl,
     pub(crate) description: Option<String>,
 }
 
 /// Validate and normalize the fields of a zone creation request.
 pub(crate) fn normalize_create_zone_request(
+    cx: &Context,
     request: &CreateZoneRequest,
 ) -> Result<NormalizedCreateZoneRequest, ServiceError> {
-    let zone_name = normalize_zone_name(&request.name)?;
-    reject_catalog_zone_name(&zone_name)?;
+    let zone_name = normalize_name(&request.name)?;
+    reject_catalog_zone_name(cx, &zone_name)?;
     let mname = normalize_domain_name(&request.mname, "mname")?.to_string();
     let rname = normalize_email(&request.rname)?;
     let ttl = validate_default_ttl(
         request
             .default_ttl
-            .unwrap_or(bindizr_config().dns.zone_defaults.ttl),
+            .unwrap_or(i32::from(cx.config().dns.zone_defaults.ttl)),
     )?;
 
     // `zone_name` and `mname` are wire-safe after `normalize_domain_name`
@@ -56,14 +57,12 @@ pub(crate) fn normalize_create_zone_request(
     })
 }
 
-/// Validate and normalize a zone name.
 /// Refuse the name the virtual catalog zone answers to: a transfer or SOA
 /// query for it is served from the catalog before any stored zone, and the
 /// catalog leaves that name out of its members, so a zone stored under it
-/// would be reachable as neither. Only taking the name is refused; looking
-/// it up is not.
-pub(crate) fn reject_catalog_zone_name(name: &ZoneName) -> Result<(), ServiceError> {
-    if bindizr_config().dns.is_catalog_zone(name.as_str()) {
+/// would be reachable as neither. Looking the name up is not refused.
+pub(crate) fn reject_catalog_zone_name(cx: &Context, name: &ZoneName) -> Result<(), ServiceError> {
+    if cx.config().dns.is_catalog_zone(name.as_str()) {
         return Err(ServiceError::invalid_zone_field(format!(
             "'{}' is the catalog zone name (dns.catalog_zone_name); a zone cannot take it",
             name
@@ -72,7 +71,9 @@ pub(crate) fn reject_catalog_zone_name(name: &ZoneName) -> Result<(), ServiceErr
     Ok(())
 }
 
-pub(crate) fn normalize_zone_name(value: &str) -> Result<ZoneName, ServiceError> {
+/// Parse a zone name as a request spells it, refusing the root and a
+/// wildcard. Every front end parses here before it calls the service.
+pub fn normalize_name(value: &str) -> Result<ZoneName, ServiceError> {
     let trimmed = value.trim();
 
     if trimmed == "." {
@@ -112,13 +113,16 @@ fn normalize_email(value: &str) -> Result<String, ServiceError> {
         ));
     }
 
-    if value.matches('@').count() != 1 {
+    let Some((local, domain)) = value.split_once('@') else {
+        return Err(ServiceError::invalid_zone_field(
+            "rname must contain exactly one @".to_string(),
+        ));
+    };
+    if domain.contains('@') {
         return Err(ServiceError::invalid_zone_field(
             "rname must contain exactly one @".to_string(),
         ));
     }
-
-    let (local, domain) = value.split_once('@').expect("rname contains exactly one @");
 
     validate_email_local_part(local)?;
     let domain = normalize_domain_name(domain, "rname domain")?;
@@ -191,12 +195,12 @@ fn is_valid_email_local_char(c: char) -> bool {
 
 /// Resolved SOA timing fields. Used both as the fallback source (zone defaults on
 /// create, the existing zone's values on update) and as the validated output.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ResolvedSoaTimers {
-    pub(crate) refresh: i32,
-    pub(crate) retry: i32,
-    pub(crate) expire: i32,
-    pub(crate) minimum_ttl: i32,
+    pub(crate) refresh: SoaInterval,
+    pub(crate) retry: SoaInterval,
+    pub(crate) expire: SoaInterval,
+    pub(crate) minimum_ttl: Ttl,
 }
 
 /// Validate client-supplied SOA timers, using `fallback` for omitted fields

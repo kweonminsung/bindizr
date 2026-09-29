@@ -2,21 +2,14 @@
 
 use bindizr_core::outln;
 use bindizr_service::types::{
-    ExportDnssecKeysResponse, ImportDnssecKeyPair, ImportDnssecKeyRequest,
+    DnssecStatusResponse, ExportDnssecKeysResponse, ImportDnssecKeyPair, ImportDnssecKeyRequest,
 };
 use clap::Subcommand;
 
 use super::print_status;
 use crate::{
-    cli::{
-        error::CliError,
-        output::{OutputFormat, parse_payload},
-    },
-    params::NameParams,
-    socket::{
-        client,
-        types::{DaemonCommandKind, ImportZoneDnssecKeysParams},
-    },
+    cli::{error::CliError, output::OutputFormat},
+    socket::{client, types::DaemonCommand},
 };
 
 /// Subcommands for moving raw key material in and out of bindizr.
@@ -77,11 +70,11 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
     match subcommand {
         DnssecKeysCommand::Export { name } => {
             let response =
-                client::send_command(DaemonCommandKind::ExportDnssecKeys, NameParams { name })
-                    .await?;
-            let exported: ExportDnssecKeysResponse =
-                parse_payload(&response.data).map_err(CliError::from)?;
-            print_key_material(&exported);
+                client::send_command::<ExportDnssecKeysResponse>(DaemonCommand::ExportDnssecKeys {
+                    name,
+                })
+                .await?;
+            print_key_material(&response.data);
         }
         DnssecKeysCommand::Import {
             name,
@@ -91,7 +84,7 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
             output,
         } => {
             if key.len() != private.len() {
-                return Err(CliError::from(format!(
+                return Err(CliError::request(format!(
                     "--key and --private must be given in pairs ({} and {})",
                     key.len(),
                     private.len()
@@ -100,29 +93,27 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
             let mut keys = Vec::with_capacity(key.len());
             for (key, private) in key.iter().zip(&private) {
                 let dnskey = std::fs::read_to_string(key)
-                    .map_err(|e| CliError::from(format!("Failed to read '{}': {}", key, e)))?;
-                let private_key = std::fs::read_to_string(private)
-                    .map_err(|e| CliError::from(format!("Failed to read '{}': {}", private, e)))?;
+                    .map_err(|e| CliError::request(format!("Failed to read '{}': {}", key, e)))?;
+                let private_key = std::fs::read_to_string(private).map_err(|e| {
+                    CliError::request(format!("Failed to read '{}': {}", private, e))
+                })?;
                 keys.push(ImportDnssecKeyPair {
                     dnskey,
                     private_key,
                 });
             }
-            let response = client::send_command(
-                DaemonCommandKind::ImportDnssecKeys,
-                ImportZoneDnssecKeysParams {
+            let response =
+                client::send_command::<DnssecStatusResponse>(DaemonCommand::ImportDnssecKeys {
                     zone_name: name,
                     request: ImportDnssecKeyRequest {
                         keys,
                         policy_name: policy,
                     },
-                },
-            )
-            .await?;
+                })
+                .await?;
             print_status(&response.data, output)?;
         }
     }
-
     Ok(())
 }
 

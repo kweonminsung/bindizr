@@ -1,18 +1,22 @@
 use super::*;
+use crate::{
+    dns::SoaInterval,
+    model::{record::RecordId, zone::ZoneId},
+};
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
     Zone {
-        id: 1,
+        id: ZoneId::from(1),
         name: ZoneName::parse("example.com").unwrap(),
         mname: "ns1.example.com".to_string(),
         rname: "admin@example.com".to_string(),
-        default_ttl: 3600,
-        serial: 5,
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
-        minimum_ttl: 900,
+        default_ttl: Ttl::from_secs(3600),
+        serial: Serial::from(5),
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
+        minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
         enabled: true,
@@ -25,7 +29,7 @@ fn test_zone() -> Zone {
 fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Record {
     let zone = ZoneName::parse("example.com").unwrap();
     Record {
-        id: 0,
+        id: RecordId::from(0),
         name: if name == "@" {
             OwnerName::apex()
         } else {
@@ -33,10 +37,10 @@ fn test_record(name: &str, record_type: RecordType, value: &str, ttl: i32) -> Re
         },
         record_type,
         value: value.to_string(),
-        ttl,
+        ttl: Ttl::try_from(ttl).unwrap(),
         priority: None,
         created_at: Utc::now(),
-        zone_id: 1,
+        zone_id: ZoneId::from(1),
     }
 }
 
@@ -71,7 +75,7 @@ fn expirations_spread_across_the_jitter_window() {
         new_serial: 2,
         expiration: default_expiration(),
         expiration_jitter_secs: window,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     let expirations: BTreeSet<DateTime<Utc>> =
@@ -103,7 +107,7 @@ fn recompute_against_stored_plane_is_empty() {
         DnssecKeyState::Active,
     )];
     let records = [
-        test_record("@", RecordType::NS, "ns1.example.com", 3600),
+        test_record("@", RecordType::Ns, "ns1.example.com", 3600),
         test_record("www", RecordType::A, "192.0.2.10", 300),
     ];
 
@@ -116,7 +120,7 @@ fn recompute_against_stored_plane_is_empty() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
     let stored = to_stored(&initial.added);
 
@@ -130,7 +134,7 @@ fn recompute_against_stored_plane_is_empty() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     assert!(diff.added.is_empty(), "added: {:?}", diff.added);
@@ -148,7 +152,7 @@ fn record_change_reuses_unaffected_signatures() {
         DnssecKeyState::Active,
     )];
     let records = [
-        test_record("@", RecordType::NS, "ns1.example.com", 3600),
+        test_record("@", RecordType::Ns, "ns1.example.com", 3600),
         test_record("www", RecordType::A, "192.0.2.10", 300),
     ];
 
@@ -161,7 +165,7 @@ fn record_change_reuses_unaffected_signatures() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
     let stored = to_stored(&initial.added);
 
@@ -177,7 +181,7 @@ fn record_change_reuses_unaffected_signatures() {
         new_serial: 7,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     let apex = OwnerName::apex();
@@ -190,7 +194,7 @@ fn record_change_reuses_unaffected_signatures() {
         rrsigs_covering(
             &diff.added,
             &apex,
-            DnssecRecordType::Dnskey.wire_type() as i32
+            i32::from(DnssecRecordType::Dnskey.wire_type())
         )
         .is_empty()
     );
@@ -198,7 +202,7 @@ fn record_change_reuses_unaffected_signatures() {
         rrsigs_covering(
             &diff.removed,
             &apex,
-            DnssecRecordType::Dnskey.wire_type() as i32
+            i32::from(DnssecRecordType::Dnskey.wire_type())
         )
         .is_empty()
     );
@@ -239,7 +243,7 @@ fn signature_inside_refresh_window_is_resigned() {
         DnssecKeyRole::Csk,
         DnssecKeyState::Active,
     )];
-    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+    let records = [test_record("@", RecordType::Ns, "ns1.example.com", 3600)];
 
     // Sign with an expiration already inside the 5-day refresh window.
     let initial = compute(ComputeArgs {
@@ -251,7 +255,7 @@ fn signature_inside_refresh_window_is_resigned() {
         new_serial: 6,
         expiration: fixed_now() + Duration::days(2),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
     let stored = to_stored(&initial.added);
     let stored_rrsigs = records_of_type(&stored, DnssecRecordType::Rrsig).len();
@@ -265,7 +269,7 @@ fn signature_inside_refresh_window_is_resigned() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
 
     // Content is unchanged, so only signatures move — every one of them.
@@ -291,7 +295,7 @@ fn force_resigns_every_record_set() {
         DnssecKeyRole::Csk,
         DnssecKeyState::Active,
     )];
-    let records = [test_record("@", RecordType::NS, "ns1.example.com", 3600)];
+    let records = [test_record("@", RecordType::Ns, "ns1.example.com", 3600)];
 
     let initial = compute(ComputeArgs {
         zone: &zone,
@@ -302,7 +306,7 @@ fn force_resigns_every_record_set() {
         new_serial: 6,
         expiration: default_expiration(),
         expiration_jitter_secs: 0,
-        force: false,
+        pass: SigningPass::Refresh,
     });
     let stored = to_stored(&initial.added);
     let stored_rrsigs = records_of_type(&stored, DnssecRecordType::Rrsig).len();
@@ -316,7 +320,7 @@ fn force_resigns_every_record_set() {
         new_serial: 6,
         expiration: default_expiration() + Duration::days(1),
         expiration_jitter_secs: 0,
-        force: true,
+        pass: SigningPass::Full,
     });
 
     assert_eq!(

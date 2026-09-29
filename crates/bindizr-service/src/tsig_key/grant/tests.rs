@@ -5,9 +5,9 @@ use super::*;
 /// Build a grant fixture with the requested name and type filters.
 fn grant(pattern: &str, types: &str) -> TsigGrant {
     TsigGrant {
-        id: 0,
-        zone_id: 1,
-        tsig_key_id: 1,
+        id: TsigGrantId::from(0),
+        zone_id: ZoneId::from(1),
+        tsig_key_id: TsigKeyId::from(1),
         record_name_pattern: pattern.to_string(),
         record_types: types.to_string(),
         can_write: true,
@@ -36,7 +36,7 @@ fn authorize_update_requires_name_and_type_match() {
     assert!(authorize_update(
         &grants,
         &OwnerName::apex(),
-        Some(&RecordType::TXT)
+        Some(&RecordType::Txt)
     ));
     // Whole-name delete (TYPE ANY) is only covered by unrestricted types.
     assert!(authorize_update(&grants, &OwnerName::apex(), None));
@@ -49,7 +49,7 @@ fn authorize_update_requires_name_and_type_match() {
     assert!(!authorize_update(
         &grants,
         &OwnerName::from_row("host.dyn"),
-        Some(&RecordType::TXT)
+        Some(&RecordType::Txt)
     ));
     assert!(!authorize_update(
         &grants,
@@ -69,13 +69,13 @@ fn authorize_update_requires_name_and_type_match() {
 #[test]
 fn only_a_grant_over_the_whole_zone_covers_a_transfer() {
     // A transfer hands the zone over whole, so no narrowed grant covers it.
-    assert!(!covers_whole_zone(&[grant("*.dyn", "*")]));
-    assert!(!covers_whole_zone(&[grant("*", "A,AAAA")]));
-    assert!(!covers_whole_zone(&[grant("@", "*")]));
+    assert!(!has_whole_zone_grant(&[grant("*.dyn", "*")]));
+    assert!(!has_whole_zone_grant(&[grant("*", "A,AAAA")]));
+    assert!(!has_whole_zone_grant(&[grant("@", "*")]));
 
-    assert!(covers_whole_zone(&[grant("*", "*")]));
+    assert!(has_whole_zone_grant(&[grant("*", "*")]));
     // A key a secondary holds needs no nsupdate rights to pull the zone.
-    assert!(covers_whole_zone(&[read_only_grant("*", "*")]));
+    assert!(has_whole_zone_grant(&[read_only_grant("*", "*")]));
 }
 
 /// Verify that a read only grant authorizes no update.
@@ -104,7 +104,7 @@ fn authorize_prerequisite_reaches_only_what_the_grant_covers() {
     assert!(!authorize_prerequisite(
         &grants,
         &OwnerName::from_row("host.dyn"),
-        Some(&RecordType::TXT)
+        Some(&RecordType::Txt)
     ));
     assert!(!authorize_prerequisite(
         &grants,

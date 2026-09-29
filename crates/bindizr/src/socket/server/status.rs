@@ -1,31 +1,21 @@
-use std::{net::SocketAddr, process, sync::OnceLock};
+use std::{net::SocketAddr, process, sync::Arc};
 
-use bindizr_core::{config, time::unix_time_ms};
-use bindizr_service::{
-    error::ServiceError, secondary::SecondaryService, types::MessageResponse, zone::ZoneService,
-};
+use bindizr_core::config::Config;
+use bindizr_service::{Context, error::ServiceError, secondary, types::MessageResponse, zone};
 
 use crate::{
-    daemon::DB_PROBE_TIMEOUT,
-    socket::{
-        server::to_response_data,
-        types::{DaemonResponse, DaemonStatusResponse},
-    },
+    daemon::db_probe::DB_PROBE_TIMEOUT,
+    socket::types::{DaemonResponse, DaemonStatusResponse},
 };
 
-static STARTED_AT_MS: OnceLock<u64> = OnceLock::new();
-
-/// Mark the daemon start time; restart detection compares it across execs.
-pub(crate) fn mark_start_time() {
-    let _ = STARTED_AT_MS.set(unix_time_ms());
-}
-
 /// Return the daemon's current status as JSON.
-pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
-    let config = config::bindizr_config();
+pub(crate) async fn handle_status(
+    cx: &Context,
+) -> Result<DaemonResponse<DaemonStatusResponse>, ServiceError> {
+    let config = cx.config();
     let counts = async {
-        let zones = ZoneService::count_all().await?;
-        let secondaries = SecondaryService::list_enabled().await?.len();
+        let zones = zone::count_all(cx).await?;
+        let secondaries = secondary::list_enabled(cx).await?.len();
         Ok::<_, ServiceError>((zones, secondaries))
     };
     let (zones, secondaries, database_error) =
@@ -49,7 +39,7 @@ pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
     let status = DaemonStatusResponse {
         pid: Some(process::id()),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        started_at_ms: STARTED_AT_MS.get().copied().unwrap_or(0),
+        started_at_ms: cx.started_at().map_or(0, |at| at.timestamp_millis() as u64),
         api_url: format!(
             "{}://{}",
             scheme,
@@ -63,16 +53,15 @@ pub(crate) async fn handle_status() -> Result<DaemonResponse, ServiceError> {
         database_error,
     };
 
-    let response = DaemonResponse {
+    Ok(DaemonResponse {
         message: "Status retrieved successfully".to_string(),
-        data: to_response_data(status)?,
-    };
-    Ok(response)
+        data: status,
+    })
 }
 
 /// Reload the daemon configuration and return the result.
-pub(crate) fn reload_config() -> Result<DaemonResponse, ServiceError> {
-    let changed = crate::daemon::reload_config().map_err(ServiceError::invalid_input)?;
+pub(crate) fn reload_config(cx: &Context) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
+    let changed = crate::daemon::reload_config(cx)?;
 
     let message = if changed.is_empty() {
         "Configuration reloaded; nothing changed".to_string()
@@ -82,14 +71,14 @@ pub(crate) fn reload_config() -> Result<DaemonResponse, ServiceError> {
     log::info!("event=config_reload changed={}", changed.join(","));
     Ok(DaemonResponse {
         message: message.clone(),
-        data: to_response_data(MessageResponse { message })?,
+        data: MessageResponse { message },
     })
 }
 
-/// Return the daemon's effective configuration as JSON.
-pub(crate) fn config() -> Result<DaemonResponse, ServiceError> {
-    Ok(DaemonResponse {
+/// Return the daemon's effective configuration.
+pub(crate) fn config(cx: &Context) -> DaemonResponse<Arc<Config>> {
+    DaemonResponse {
         message: "Configuration retrieved successfully".to_string(),
-        data: to_response_data(config::bindizr_config())?,
-    })
+        data: cx.config(),
+    }
 }

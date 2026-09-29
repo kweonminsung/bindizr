@@ -1,3 +1,5 @@
+//! Business logic for creating, updating, and querying DNS records.
+
 mod bulk;
 mod create;
 mod delete;
@@ -6,16 +8,19 @@ mod import;
 mod update;
 mod validation;
 
-pub(crate) use validation::{AddOutcome, validate_record_name_in_zone};
+pub use bulk::create_bulk;
+pub(crate) use bulk::{create_with_changes_tx, delete_with_changes_tx, update_with_changes_tx};
+pub use create::create;
+pub use delete::{delete, delete_matching};
+pub use get::{count_all, get_with_zone, list_with_zone_by_filter};
+pub use import::import_zone;
+pub use update::{update, update_by_name};
+pub(crate) use validation::{AddResult, validate_add_tx, validate_record_name_in_zone};
 
 use crate::{
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},
     types::{GetRecordResponse, RecordValueRequest},
 };
-
-/// Business logic for creating, updating, and querying DNS records.
-#[derive(Clone)]
-pub struct RecordService;
 
 /// One row of the records listing: a user record or, behind the `signed`
 /// flag, a row of the derived DNSSEC plane.
@@ -30,12 +35,12 @@ impl ListedRecord {
     /// DNSSEC row carries none and renders its RDATA in presentation form.
     fn to_response(&self) -> GetRecordResponse {
         match self {
-            ListedRecord::User(record) => GetRecordResponse::from_record_with_zone(record),
+            ListedRecord::User(record) => GetRecordResponse::from(record),
             ListedRecord::Derived(row) => GetRecordResponse {
                 id: None,
                 name: row.name.to_fqdn(&row.zone_name),
                 record_type: row.record_type.to_string(),
-                value: RecordValueRequest::String(row.rdata.to_presentation(row.record_type)),
+                value: RecordValueRequest::Text(row.rdata.to_presentation(row.record_type)),
                 ttl: row.ttl,
                 priority: None,
                 zone_id: row.zone_id,

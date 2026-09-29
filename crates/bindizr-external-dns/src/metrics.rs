@@ -1,21 +1,20 @@
-//! Adapter-local Prometheus metrics, served on the health listener.
-
-use std::sync::OnceLock;
+//! Adapter-local Prometheus metrics, served on the health listener and held
+//! by the adapter's state.
 
 use prometheus::{HistogramVec, IntCounterVec, Registry, TextEncoder};
 
 /// The adapter's Prometheus registry and the request metrics registered in it.
+#[derive(Debug)]
 pub(crate) struct AdapterMetrics {
     registry: Registry,
     pub(crate) requests_total: IntCounterVec,
     pub(crate) request_duration_seconds: HistogramVec,
 }
 
-static METRICS: OnceLock<AdapterMetrics> = OnceLock::new();
-
-/// Process-wide adapter metrics, created on first use.
-pub(crate) fn metrics() -> &'static AdapterMetrics {
-    METRICS.get_or_init(|| {
+impl AdapterMetrics {
+    /// Create and register the adapter's metric collectors; a refused
+    /// definition is a programming error, since every one is static.
+    pub(crate) fn new() -> Result<Self, prometheus::Error> {
         let registry = Registry::new();
 
         let requests_total = IntCounterVec::new(
@@ -24,11 +23,8 @@ pub(crate) fn metrics() -> &'static AdapterMetrics {
                 "Webhook requests handled by the bindizr ExternalDNS adapter",
             ),
             &["endpoint", "result"],
-        )
-        .expect("valid metric definition");
-        registry
-            .register(Box::new(requests_total.clone()))
-            .expect("metric registers once");
+        )?;
+        registry.register(Box::new(requests_total.clone()))?;
 
         let request_duration_seconds = HistogramVec::new(
             prometheus::HistogramOpts::new(
@@ -36,11 +32,8 @@ pub(crate) fn metrics() -> &'static AdapterMetrics {
                 "Webhook request duration in the bindizr ExternalDNS adapter",
             ),
             &["endpoint"],
-        )
-        .expect("valid metric definition");
-        registry
-            .register(Box::new(request_duration_seconds.clone()))
-            .expect("metric registers once");
+        )?;
+        registry.register(Box::new(request_duration_seconds.clone()))?;
 
         // Pre-create every label combination `server::track_webhook_metrics`
         // emits: an empty metric family fails text encoding, which would blank
@@ -59,15 +52,13 @@ pub(crate) fn metrics() -> &'static AdapterMetrics {
             request_duration_seconds.with_label_values(&[endpoint]);
         }
 
-        AdapterMetrics {
+        Ok(AdapterMetrics {
             registry,
             requests_total,
             request_duration_seconds,
-        }
-    })
-}
+        })
+    }
 
-impl AdapterMetrics {
     /// Render the adapter's metrics in Prometheus text format.
     pub(crate) fn encode(&self) -> String {
         TextEncoder::new()

@@ -24,7 +24,7 @@ async fn zone_import_rejects_the_whole_file_and_exits_non_zero() {
     assert!(!output.status.success(), "{output:?}");
 
     let stdout = String::from_utf8(output.stdout).expect("CLI stdout was not UTF-8");
-    assert_eq!(summary_cells(&stdout)[0], "false", "{stdout}");
+    assert_eq!(summary_cells(&stdout)[0], "no", "{stdout}");
 
     // Nothing landed, including the record that was valid on its own.
     let listed = app.run_cli_success(&["record", "list", &zone_name]).await;

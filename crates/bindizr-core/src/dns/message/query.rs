@@ -9,8 +9,19 @@ use domain::{
     },
     rdata::{Soa, tsig::Time48},
 };
+use thiserror::Error;
 
-use crate::dns::tsig::TransferSigner;
+use super::EncodeMessageError;
+use crate::dns::{LibraryError, tsig::TransferSigner};
+
+/// An inbound message the listener could not read as a query.
+#[derive(Debug, Error)]
+pub enum ParseQueryError {
+    #[error("Failed to parse DNS message: {0}")]
+    Malformed(#[source] LibraryError),
+    #[error("No question in DNS query")]
+    NoQuestion,
+}
 
 /// Whether the message is itself a response (QR=1). Answering one lets a
 /// spoofed source aim the reply at a third party.
@@ -19,6 +30,7 @@ pub fn is_response(message: &[u8]) -> bool {
 }
 
 /// A DNS query parsed once at the listener and handed to every handler.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedQuery {
     pub qname: Name<Vec<u8>>,
     /// Presentation form of `qname` without the trailing dot.
@@ -31,16 +43,16 @@ pub struct ParsedQuery {
 
 impl ParsedQuery {
     /// Parse a DNS question and its optional IXFR serial.
-    pub fn parse(data: &[u8]) -> Result<ParsedQuery, String> {
-        let message = Message::from_octets(data)
-            .map_err(|e| format!("Failed to parse DNS message: {}", e))?;
+    pub fn parse(data: &[u8]) -> Result<ParsedQuery, ParseQueryError> {
+        let message =
+            Message::from_octets(data).map_err(|e| ParseQueryError::Malformed(Box::new(e)))?;
 
         let query_id = message.header().id();
         let opcode = message.header().opcode();
 
         let question = message
             .first_question()
-            .ok_or_else(|| "No question in DNS query".to_string())?;
+            .ok_or(ParseQueryError::NoQuestion)?;
 
         let qname = question.qname().to_name::<Vec<u8>>();
         let qtype = question.qtype();
@@ -93,7 +105,7 @@ impl ParsedQuery {
     pub fn signed_truncated_response(
         &self,
         signer: Option<&mut TransferSigner>,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, EncodeMessageError> {
         let question = self.build_question_response(|header| {
             header.set_aa(true);
             header.set_tc(true);
@@ -104,22 +116,25 @@ impl ParsedQuery {
         let mut additional = question.additional();
         signer
             .answer(&mut additional, Time48::now())
-            .map_err(|e| format!("Failed to sign the response: {}", e))?;
+            .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
         Ok(additional.finish())
     }
 
-    /// The same, signed by the key that signed the request: an accepted key
+    /// The error response, signed when a key was accepted: an accepted key
     /// answers under itself, error or not (RFC 8945, Section 5.3).
     pub fn signed_error_response(
         &self,
         rcode: Rcode,
-        signer: &mut TransferSigner,
-    ) -> Result<Vec<u8>, String> {
+        signer: Option<&mut TransferSigner>,
+    ) -> Result<Vec<u8>, EncodeMessageError> {
         let question = self.build_question_response(|header| header.set_rcode(rcode));
+        let Some(signer) = signer else {
+            return Ok(question.finish());
+        };
         let mut additional = question.additional();
         signer
             .answer(&mut additional, Time48::now())
-            .map_err(|e| format!("Failed to sign the response: {}", e))?;
+            .map_err(|e| EncodeMessageError::Sign(Box::new(e)))?;
         Ok(additional.finish())
     }
 
@@ -137,7 +152,7 @@ impl ParsedQuery {
         let mut question = builder.question();
         question
             .push((&self.qname, self.qtype))
-            .expect("composing into a Vec cannot run out of space");
+            .expect("one question fits an unlimited message");
 
         question
     }

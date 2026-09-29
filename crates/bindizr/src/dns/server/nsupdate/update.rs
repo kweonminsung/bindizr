@@ -3,45 +3,70 @@
 //! rdata parsing. Everything that touches zone data lives in the service.
 
 use bindizr_core::{
-    config,
     dns::{
+        Ttl,
         message::{Class, Rtype},
         name::ZoneName,
-        nsupdate::parser::{UpdateRecord, UpdateRequest},
+        nsupdate::parser::{DeleteShapeError, ParseUpdateError, UpdateRecord, UpdateRequest},
         tsig::{ResponseSigner, TsigError},
     },
-    model::{record::RecordType, tsig_key::TsigKey},
+    model::{
+        record::{ParseRecordTypeError, RecordType},
+        tsig_key::TsigKey,
+    },
 };
 use bindizr_service::{
-    dynamic_update::{
-        DynamicUpdate, DynamicUpdateError, DynamicUpdateService, Prerequisite, UpdateOp,
-    },
-    tsig_key::TsigKeyService,
+    dynamic_update::{self, DynamicUpdate, DynamicUpdateError, Prerequisite, UpdateOperation},
+    tsig_key,
 };
+use thiserror::Error;
 
-#[derive(Debug)]
+use crate::dns::server::DnsContext;
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub(crate) enum UpdateError {
+    #[error("{0}")]
     Refused(String),
     /// TSIG validation failed. Carries the complete NOTAUTH wire response,
     /// built during validation because it must echo (or sign against) the
     /// request's TSIG record (RFC 8945, Sections 5.2–5.3).
-    TsigFailed {
-        msg: String,
-        response: Vec<u8>,
-    },
+    #[error("{msg}")]
+    TsigFailed { msg: String, response: Vec<u8> },
+    #[error("{0}")]
     YxDomain(String),
+    #[error("{0}")]
     YxRrset(String),
+    #[error("{0}")]
     NxDomain(String),
+    #[error("{0}")]
     NxRrset(String),
+    #[error("{0}")]
     NotZone(String),
+    #[error("{0}")]
     Internal(String),
 }
 
+/// A deletion of the wrong shape is refused with its reason.
+impl From<DeleteShapeError> for UpdateError {
+    /// Refuse the update, naming what the shape lacked.
+    fn from(err: DeleteShapeError) -> Self {
+        UpdateError::Refused(err.to_string())
+    }
+}
+
+/// A record type bindizr does not store is the client's to fix.
+impl From<ParseRecordTypeError> for UpdateError {
+    /// Refuse the update, naming the type.
+    fn from(err: ParseRecordTypeError) -> Self {
+        UpdateError::Refused(err.to_string())
+    }
+}
+
 /// Decoding failures from the wire parser are the client's fault.
-impl From<String> for UpdateError {
-    /// Convert a failure into a dynamic update response error.
-    fn from(message: String) -> Self {
-        UpdateError::Refused(message)
+impl From<ParseUpdateError> for UpdateError {
+    /// Refuse the update, naming what did not decode.
+    fn from(err: ParseUpdateError) -> Self {
+        UpdateError::Refused(err.to_string())
     }
 }
 
@@ -49,12 +74,12 @@ impl From<TsigError> for UpdateError {
     /// Convert a failure into a dynamic update response error.
     fn from(err: TsigError) -> Self {
         match err {
-            TsigError::Malformed(msg) => UpdateError::Refused(msg),
-            TsigError::Internal(msg) => UpdateError::Internal(msg),
-            TsigError::Failed { message, response } => UpdateError::TsigFailed {
-                msg: message,
+            TsigError::Malformed(_) => UpdateError::Refused(err.to_string()),
+            TsigError::Rejected { rcode, response } => UpdateError::TsigFailed {
+                msg: format!("TSIG validation failed: {}", rcode),
                 response,
             },
+            other => UpdateError::Internal(other.to_string()),
         }
     }
 }
@@ -78,6 +103,7 @@ impl From<DynamicUpdateError> for UpdateError {
 /// returned signer is `Some` once the request's TSIG was validated, so the
 /// response — success or failure — can be signed.
 pub(crate) async fn apply_update(
+    dns_cx: &DnsContext,
     request: UpdateRequest,
     query_data: &[u8],
 ) -> (Result<bool, UpdateError>, Option<ResponseSigner>) {
@@ -96,7 +122,7 @@ pub(crate) async fn apply_update(
 
         // Authenticate before anything zone-specific: keys are zone-independent,
         // and this lets even NOTZONE/REFUSED responses be signed.
-        let key = authenticate_request(&request, query_data, &mut signer).await?;
+        let key = authenticate_request(dns_cx, &request, query_data, &mut signer).await?;
 
         let update = DynamicUpdate {
             zone_name,
@@ -113,7 +139,7 @@ pub(crate) async fn apply_update(
                 .collect::<Result<_, _>>()?,
         };
 
-        let changed = DynamicUpdateService::apply(update).await?;
+        let changed = dynamic_update::apply(dns_cx.daemon(), update).await?;
         Ok(changed)
     }
     .await;
@@ -125,17 +151,19 @@ pub(crate) async fn apply_update(
 /// accepted because `dns.nsupdate_tsig_required` is off (not recommended in
 /// production); signed requests are always verified.
 async fn authenticate_request(
+    dns_cx: &DnsContext,
     request: &UpdateRequest,
     query_data: &[u8],
     signer: &mut Option<ResponseSigner>,
 ) -> Result<Option<TsigKey>, UpdateError> {
+    let cx = dns_cx.daemon();
     let tsig = match &request.tsig {
         Some(tsig) => tsig,
         None => {
             // An unsigned update carries no identity, so this admits every
             // client that reaches the listener — the same trade
             // `api.authentication_required = false` makes for the API.
-            if !config::bindizr_config().dns.nsupdate_tsig_required {
+            if !cx.config().dns.nsupdate_tsig_required {
                 return Ok(None);
             }
             return Err(UpdateError::Refused(
@@ -144,7 +172,7 @@ async fn authenticate_request(
         }
     };
 
-    let key = TsigKeyService::find_by_wire_name(&tsig.name)
+    let key = tsig_key::find_by_wire_name(cx, &tsig.name)
         .await
         .map_err(|e| UpdateError::Internal(format!("failed to load TSIG key: {}", e)))?;
 
@@ -217,29 +245,29 @@ fn decode_prerequisite(
 }
 
 /// Convert one wire update record into a validated service operation.
-fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, UpdateError> {
+fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOperation, UpdateError> {
     let name = record.name.clone();
     match record.class {
         Class::IN => {
             let (record_type, value, priority) = record.to_record_value(query_data)?;
-            if record.ttl > i32::MAX as u32 {
-                return Err(UpdateError::Refused(format!(
+            let ttl = Ttl::try_from(record.ttl).map_err(|_| {
+                UpdateError::Refused(format!(
                     "TTL value {} exceeds maximum allowed value ({})",
                     record.ttl,
                     i32::MAX
-                )));
-            }
-            Ok(UpdateOp::AddRecord {
+                ))
+            })?;
+            Ok(UpdateOperation::AddRecord {
                 name,
                 record_type,
                 value,
-                ttl: record.ttl as i32,
+                ttl,
                 priority,
             })
         }
         Class::ANY => {
-            validate_delete_shape(record, true)?;
-            Ok(UpdateOp::DeleteRecordSet {
+            record.validate_delete_shape()?;
+            Ok(UpdateOperation::DeleteRecordSet {
                 name,
                 record_type: (record.record_type != Rtype::ANY)
                     .then(|| RecordType::try_from(record.record_type))
@@ -247,9 +275,9 @@ fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, U
             })
         }
         Class::NONE => {
-            validate_delete_shape(record, false)?;
+            record.validate_delete_shape()?;
             let (record_type, value, priority) = record.to_record_value(query_data)?;
-            Ok(UpdateOp::DeleteRecord {
+            Ok(UpdateOperation::DeleteRecord {
                 name,
                 record_type,
                 value,
@@ -260,117 +288,5 @@ fn decode_update(record: &UpdateRecord, query_data: &[u8]) -> Result<UpdateOp, U
             "unsupported update class: {}",
             class
         ))),
-    }
-}
-
-/// Validate TTL, type, and data for the selected record-deletion mode.
-fn validate_delete_shape(
-    record: &UpdateRecord,
-    is_record_set_delete: bool,
-) -> Result<(), UpdateError> {
-    if record.ttl != 0 {
-        return Err(UpdateError::Refused(
-            "delete update TTL must be 0".to_string(),
-        ));
-    }
-
-    if is_record_set_delete {
-        if !record.rdata.is_empty() {
-            return Err(UpdateError::Refused(
-                "ANY-class delete must have empty rdata".to_string(),
-            ));
-        }
-    } else {
-        if record.record_type == Rtype::ANY {
-            return Err(UpdateError::Refused(
-                "NONE-class delete must specify record type".to_string(),
-            ));
-        }
-
-        if record.rdata.is_empty() {
-            return Err(UpdateError::Refused(
-                "NONE-class delete must specify rdata".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    //! ANY-class deletions require zero TTL and empty RDATA (RFC 2136, Section 2.5.2).
-    //! NONE-class deletions require zero TTL and identify a specific record through
-    //! RDATA (RFC 2136, Section 2.5.4).
-
-    use bindizr_core::dns::{
-        message::{Class, Rtype},
-        nsupdate::parser::UpdateRecord,
-    };
-
-    use super::{UpdateError, validate_delete_shape};
-
-    /// Verify that an ANY-class deletion accepts zero TTL and empty RDATA.
-    #[test]
-    fn validate_delete_shape_accepts_any_class_record_set_delete() {
-        let record = update_record(Rtype::A, Class::ANY, 0, Vec::new());
-
-        validate_delete_shape(&record, true).unwrap();
-    }
-
-    /// Verify that a NONE-class deletion accepts a specific record's RDATA.
-    #[test]
-    fn validate_delete_shape_accepts_none_class_exact_delete() {
-        let record = update_record(Rtype::A, Class::NONE, 0, vec![192, 0, 2, 1]);
-
-        validate_delete_shape(&record, false).unwrap();
-    }
-
-    /// Verify that deletions reject a nonzero TTL.
-    #[test]
-    fn validate_delete_shape_rejects_delete_with_nonzero_ttl() {
-        let record = update_record(Rtype::A, Class::ANY, 60, Vec::new());
-        let err = validate_delete_shape(&record, true).unwrap_err();
-
-        assert!(matches!(err, UpdateError::Refused(_)));
-    }
-
-    /// Verify that an ANY-class deletion rejects RDATA.
-    #[test]
-    fn validate_delete_shape_rejects_any_class_delete_with_rdata() {
-        let record = update_record(Rtype::A, Class::ANY, 0, vec![192, 0, 2, 1]);
-        let err = validate_delete_shape(&record, true).unwrap_err();
-
-        assert!(matches!(err, UpdateError::Refused(_)));
-    }
-
-    /// Verify that a NONE-class deletion requires RDATA.
-    #[test]
-    fn validate_delete_shape_rejects_none_class_delete_without_rdata() {
-        let record = update_record(Rtype::A, Class::NONE, 0, Vec::new());
-        let err = validate_delete_shape(&record, false).unwrap_err();
-
-        assert!(matches!(err, UpdateError::Refused(_)));
-    }
-
-    /// Verify that a NONE-class deletion requires a specific record type.
-    #[test]
-    fn validate_delete_shape_rejects_none_class_delete_with_type_any() {
-        let record = update_record(Rtype::ANY, Class::NONE, 0, vec![192, 0, 2, 1]);
-        let err = validate_delete_shape(&record, false).unwrap_err();
-
-        assert!(matches!(err, UpdateError::Refused(_)));
-    }
-
-    /// Build a dynamic update record with the requested wire fields.
-    fn update_record(record_type: Rtype, class: Class, ttl: u32, rdata: Vec<u8>) -> UpdateRecord {
-        UpdateRecord {
-            name: "www.example.com.".to_string(),
-            record_type,
-            class,
-            ttl,
-            rdata,
-            rdata_start: 0,
-        }
     }
 }

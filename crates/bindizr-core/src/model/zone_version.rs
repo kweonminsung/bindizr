@@ -1,21 +1,54 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use thiserror::Error;
+
+use crate::{
+    dns::{Serial, SoaInterval, Ttl},
+    model::zone::ZoneId,
+};
+
+/// Which of a zone's versions a listing covers: every serial, or only
+/// those a user change produced, since a signer-only serial (a re-sign, a
+/// rollover) holds nothing a rollback could restore.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VersionScope {
+    UserChanges,
+    All,
+}
+
+impl VersionScope {
+    /// The scope an `include_signer_serials` flag asks for.
+    pub fn from_include_signer_serials(include_signer_serials: bool) -> Self {
+        if include_signer_serials {
+            VersionScope::All
+        } else {
+            VersionScope::UserChanges
+        }
+    }
+}
+
+id_newtype!(
+    /// The id of a zone version row.
+    ZoneVersionId
+);
 
 /// Point-in-time version of a zone's SOA fields at a given serial.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct ZoneVersion {
-    pub id: i32,
-    pub zone_id: i32,
-    pub serial: i32,
+    pub id: ZoneVersionId,
+    pub zone_id: ZoneId,
+    pub serial: Serial,
     pub mname: String,
     /// Stored in SOA mailbox encoded form, unlike `Zone.rname` which holds the
     /// admin email.
     pub rname: String,
-    pub default_ttl: i32,
-    pub refresh: i32,
-    pub retry: i32,
-    pub expire: i32,
-    pub minimum_ttl: i32,
+    pub default_ttl: Ttl,
+    pub refresh: SoaInterval,
+    pub retry: SoaInterval,
+    pub expire: SoaInterval,
+    pub minimum_ttl: Ttl,
     /// Which plane asked for this version.
     #[sqlx(try_from = "String")]
     pub change_source: ChangeSource,
@@ -24,6 +57,13 @@ pub struct ZoneVersion {
     /// answer outlives the credential.
     pub changed_by: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+/// A change-source column holding none of the known sources.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("unknown change source '{value}'")]
+pub struct ParseChangeSourceError {
+    pub value: String,
 }
 
 /// The plane a zone version's change came through.
@@ -63,7 +103,7 @@ impl std::fmt::Display for ChangeSource {
 }
 
 impl std::str::FromStr for ChangeSource {
-    type Err = String;
+    type Err = ParseChangeSourceError;
 
     /// Parse the stored text of a change source.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -72,13 +112,15 @@ impl std::str::FromStr for ChangeSource {
             "nsupdate" => Ok(ChangeSource::Nsupdate),
             "system" => Ok(ChangeSource::System),
             "local" => Ok(ChangeSource::Local),
-            other => Err(format!("unknown change source '{}'", other)),
+            other => Err(ParseChangeSourceError {
+                value: other.to_string(),
+            }),
         }
     }
 }
 
 impl TryFrom<String> for ChangeSource {
-    type Error = String;
+    type Error = ParseChangeSourceError;
 
     /// Validate and convert the stored value into a change source.
     fn try_from(value: String) -> Result<Self, Self::Error> {

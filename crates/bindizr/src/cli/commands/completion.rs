@@ -21,7 +21,7 @@ pub(crate) fn handle_man_command() -> Result<(), CliError> {
     let mut page = Vec::new();
     clap_mangen::Man::new(Args::command())
         .render(&mut page)
-        .map_err(|e| CliError::from(format!("Failed to render the man page: {}", e)))?;
+        .map_err(|e| CliError::request(format!("Failed to render the man page: {}", e)))?;
     write_generated(&page)
 }
 
@@ -29,7 +29,7 @@ pub(crate) fn handle_man_command() -> Result<(), CliError> {
 /// shell script.
 fn write_generated(bytes: &[u8]) -> Result<(), CliError> {
     let text = std::str::from_utf8(bytes)
-        .map_err(|e| CliError::from(format!("Generated output was not UTF-8: {}", e)))?;
+        .map_err(|e| CliError::request(format!("Generated output was not UTF-8: {}", e)))?;
     write_stdout(text);
     Ok(())
 }

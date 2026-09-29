@@ -7,14 +7,14 @@ use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Sha256, Sha384, Sha512};
 
 use super::*;
-use crate::dns::nsupdate::parser::tests::minimal_update_with_ztype;
+use crate::{dns::nsupdate::parser::tests::minimal_update_with_ztype, model::tsig_key::TsigKeyId};
 
 const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
 /// Build a signing-key fixture for the test.
 pub(crate) fn test_key(algorithm: TsigAlgorithm) -> TsigKey {
     TsigKey {
-        id: 1,
+        id: TsigKeyId::from(1),
         name: "update-key".to_string(),
         algorithm,
         secret: base64::engine::general_purpose::STANDARD.encode(SECRET),
@@ -124,7 +124,7 @@ fn extract_response_tsig(response: &[u8]) -> (Rcode, TsigRcode, u64, Vec<u8>, Ve
 /// Extract the DNS response from a TSIG verification failure.
 fn extract_failed_response(err: TsigError) -> Vec<u8> {
     match err {
-        TsigError::Failed { response, .. } => response,
+        TsigError::Rejected { response, .. } => response,
         other => panic!("expected TsigFailed, got {:?}", other),
     }
 }
