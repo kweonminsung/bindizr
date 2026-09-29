@@ -2,8 +2,7 @@
 
 use base64::Engine;
 use domain::base::{iana::SecurityAlgorithm, rdata::ComposeRecordData};
-use sha1::Sha1;
-use sha2::{Digest, Sha256, Sha384};
+use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY, SHA256, SHA384};
 use thiserror::Error;
 
 use super::WireName;
@@ -55,33 +54,22 @@ impl DnssecKey {
         let mut dnskey_rdata = Vec::new();
         let Ok(()) = dnskey.compose_rdata(&mut dnskey_rdata);
 
-        let digest: Vec<u8> = match digest_type {
-            1 => {
-                let mut hasher = Sha1::new();
-                hasher.update(apex.as_slice());
-                hasher.update(&dnskey_rdata);
-                hasher.finalize().to_vec()
-            }
-            2 => {
-                let mut hasher = Sha256::new();
-                hasher.update(apex.as_slice());
-                hasher.update(&dnskey_rdata);
-                hasher.finalize().to_vec()
-            }
-            4 => {
-                let mut hasher = Sha384::new();
-                hasher.update(apex.as_slice());
-                hasher.update(&dnskey_rdata);
-                hasher.finalize().to_vec()
-            }
+        let algorithm = match digest_type {
+            1 => &SHA1_FOR_LEGACY_USE_ONLY,
+            2 => &SHA256,
+            4 => &SHA384,
             other => return Err(KeyRdataError::UnsupportedDigestType(other)),
         };
+        let mut hasher = Context::new(algorithm);
+        hasher.update(apex.as_slice());
+        hasher.update(&dnskey_rdata);
+        let digest = hasher.finish();
 
-        let mut rdata = Vec::with_capacity(4 + digest.len());
+        let mut rdata = Vec::with_capacity(4 + digest.as_ref().len());
         rdata.extend_from_slice(&self.key_tag.as_u16().to_be_bytes());
         rdata.push(self.algorithm.to_int() as u8);
         rdata.push(digest_type);
-        rdata.extend_from_slice(&digest);
+        rdata.extend_from_slice(digest.as_ref());
         Ok(Rdata::new(rdata)?)
     }
 }

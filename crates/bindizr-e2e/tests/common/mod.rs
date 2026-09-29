@@ -75,6 +75,11 @@ enum TestRuntime {
     Compose(&'static ComposeStack),
 }
 
+/// Install ring as the process's TLS provider; Err means a test already did.
+fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 impl TestApp {
     /// Start the configured end-to-end test application.
     pub(crate) async fn start() -> Self {
