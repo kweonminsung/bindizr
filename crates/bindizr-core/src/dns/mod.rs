@@ -7,12 +7,14 @@ pub mod nsupdate;
 pub mod query;
 pub mod record;
 mod serial;
+mod soa_interval;
 pub mod tsig;
 mod ttl;
 pub mod zonefile;
 
 pub(crate) use catalog_zone::zone_name_to_member_id;
 pub use serial::{ConvertSerialError, Serial};
+pub use soa_interval::{ConvertSoaIntervalError, SoaInterval};
 pub use ttl::{ConvertTtlError, Ttl};
 
 /// Maximum size of a DNS message carried over TCP (16-bit length prefix,

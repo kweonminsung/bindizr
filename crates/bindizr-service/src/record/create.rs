@@ -40,13 +40,16 @@ pub async fn create(
     )?;
 
     let zone_name = zone::normalize_name(&create_record_request.zone_name)?;
+    let owner_name = normalize_record_owner_name(&create_record_request.name, &zone_name)?;
+    let ttl = create_record_request
+        .ttl
+        .map(validate_record_ttl)
+        .transpose()?;
 
     let mut tx = transaction::begin_tx(cx, "Failed to create record").await?;
 
     let apply_result = async {
         let zone = zone::get_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
-
-        let owner_name = normalize_record_owner_name(&create_record_request.name, &zone.name)?;
 
         caller
             .authorize_record_writes_tx(
@@ -75,10 +78,7 @@ pub async fn create(
             };
 
         // Fixed at write time: a later zone TTL change will not move it.
-        let ttl = match create_record_request.ttl {
-            Some(ttl) => validate_record_ttl(ttl)?,
-            None => zone.default_ttl,
-        };
+        let ttl = ttl.unwrap_or(zone.default_ttl);
 
         validate_record_add_constraints_normalized(
             &records_at_name,

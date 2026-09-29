@@ -1,6 +1,9 @@
 //! DNSSEC management payloads.
 
-use bindizr_core::{dns::Serial, model::dnssec_key::DnssecKeyId};
+use bindizr_core::{
+    dns::{Serial, dnssec::KeyTag},
+    model::dnssec_key::DnssecKeyId,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -85,8 +88,8 @@ pub struct UpdateDnssecSettingsRequest {
 pub struct DnssecDelegationKeyInfo {
     #[schema(example = 1, value_type = i32)]
     pub id: DnssecKeyId,
-    #[schema(example = 34217)]
-    pub key_tag: u16,
+    #[schema(example = 34217, value_type = u16)]
+    pub key_tag: KeyTag,
     pub role: DnssecKeyRole,
     pub state: DnssecKeyState,
     /// Whether every parent server serves this key's DS (matched whole, not
@@ -117,7 +120,8 @@ pub struct DnssecDelegationInfo {
     pub parent_ns_addrs: Vec<String>,
     pub ds_state: DsState,
     /// Key tags of the DS records the parent serves.
-    pub ds_key_tags: Vec<u16>,
+    #[schema(value_type = Vec<u16>)]
+    pub ds_key_tags: Vec<KeyTag>,
     /// The zone's SEP keys, each with whether the parent serves its DS.
     pub keys: Vec<DnssecDelegationKeyInfo>,
     /// TTL of the parent's DS records: how long caches may keep serving
@@ -151,8 +155,8 @@ pub struct DnssecKeyInfo {
     pub eligible_at: Option<DateTime<Utc>>,
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: String,
-    #[schema(example = 34217)]
-    pub key_tag: u16,
+    #[schema(example = 34217, value_type = u16)]
+    pub key_tag: KeyTag,
     /// Apex DNSKEY RDATA: `<flags> 3 <alg> <public key>`; flags are 256 for
     /// a ZSK and 257 for a CSK or KSK.
     #[schema(
@@ -165,8 +169,8 @@ pub struct DnssecKeyInfo {
 /// A key's DS form for parent-zone registration.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct DnssecDsInfo {
-    #[schema(example = 34217)]
-    pub key_tag: u16,
+    #[schema(example = 34217, value_type = u16)]
+    pub key_tag: KeyTag,
     #[schema(example = 13)]
     pub algorithm: u8,
     /// DS digest type: 4 (SHA-384) for P-384 keys, otherwise 2 (SHA-256).
@@ -226,7 +230,7 @@ pub struct DnssecKeyMaterial {
     pub role: DnssecKeyRole,
     /// IANA algorithm number.
     pub algorithm: i32,
-    pub key_tag: u16,
+    pub key_tag: KeyTag,
     /// `K*.key` contents: the DNSKEY record line.
     pub dnskey_record: String,
     /// `K*.private` contents.

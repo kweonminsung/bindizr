@@ -36,18 +36,22 @@ pub(crate) fn validate_default_ttl(ttl: i32) -> Result<Ttl, ServiceError> {
     Ttl::try_from(ttl).map_err(ServiceError::invalid_zone_field)
 }
 
-/// Resolve an omitted SOA interval to its fallback and require it positive.
-pub(crate) fn normalize_soa_interval(
+/// Resolve an omitted SOA timer to its fallback and require a given one
+/// positive; `T` is `SoaInterval` for refresh, retry and expire, and [`Ttl`]
+/// for the minimum.
+pub(crate) fn normalize_soa_interval<T: TryFrom<i32>>(
     value: Option<i32>,
-    fallback: i32,
+    fallback: T,
     field: &str,
-) -> Result<i32, ServiceError> {
-    let resolved = value.unwrap_or(fallback);
-    if resolved <= 0 {
-        return Err(ServiceError::invalid_zone_field(format!(
-            "{} must be a positive number of seconds",
-            field
-        )));
+) -> Result<T, ServiceError> {
+    let Some(secs) = value else {
+        return Ok(fallback);
+    };
+    let positive = || {
+        ServiceError::invalid_zone_field(format!("{} must be a positive number of seconds", field))
+    };
+    if secs <= 0 {
+        return Err(positive());
     }
-    Ok(resolved)
+    T::try_from(secs).map_err(|_| positive())
 }

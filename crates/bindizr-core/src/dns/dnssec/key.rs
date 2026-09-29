@@ -4,6 +4,7 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 
+use super::KeyTag;
 use crate::{
     dns::{LibraryError, Ttl},
     model::{
@@ -47,7 +48,7 @@ pub fn generate_key(
         zone_id: zone.id,
         role,
         algorithm,
-        key_tag: i32::from(dnskey.key_tag()),
+        key_tag: KeyTag::from(dnskey.key_tag()),
         public_key: base64::engine::general_purpose::STANDARD.encode(dnskey.public_key()),
         private_key: secret.display_as_bind().to_string(),
         state,

@@ -1,5 +1,8 @@
 use super::*;
-use crate::model::{record::RecordId, zone::ZoneId};
+use crate::{
+    dns::SoaInterval,
+    model::{record::RecordId, zone::ZoneId},
+};
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
@@ -10,9 +13,9 @@ fn test_zone() -> Zone {
         rname: "admin@example.com".to_string(),
         default_ttl: Ttl::from_secs(3600),
         serial: Serial::from(5),
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
@@ -191,7 +194,7 @@ fn record_change_reuses_unaffected_signatures() {
         rrsigs_covering(
             &diff.added,
             &apex,
-            DnssecRecordType::Dnskey.wire_type() as i32
+            i32::from(DnssecRecordType::Dnskey.wire_type())
         )
         .is_empty()
     );
@@ -199,7 +202,7 @@ fn record_change_reuses_unaffected_signatures() {
         rrsigs_covering(
             &diff.removed,
             &apex,
-            DnssecRecordType::Dnskey.wire_type() as i32
+            i32::from(DnssecRecordType::Dnskey.wire_type())
         )
         .is_empty()
     );

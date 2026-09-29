@@ -2,7 +2,7 @@
 //! Partial updates lock the policy row; creates and deletes rely on constraints.
 //! Zone signing consumes these policies in `dnssec`.
 
-use bindizr_core::model::dnssec_policy::PolicyId;
+use bindizr_core::model::dnssec_policy::{Days, PolicyId};
 use chrono::Utc;
 
 use crate::{
@@ -56,7 +56,7 @@ pub async fn create(
     let signature_validity_days = request.signature_validity_days.unwrap_or(14);
     let signature_refresh_days = request.signature_refresh_days.unwrap_or(5);
     let zsk_lifetime_days = request.zsk_lifetime_days.unwrap_or(0);
-    validate_timing(
+    let (signature_validity_days, signature_refresh_days, zsk_lifetime_days) = validate_timing(
         signature_validity_days,
         signature_refresh_days,
         zsk_lifetime_days,
@@ -78,9 +78,9 @@ pub async fn create(
             algorithm,
             denial,
             split_keys: request.split_keys,
-            signature_validity_days: signature_validity_days as i32,
-            signature_refresh_days: signature_refresh_days as i32,
-            zsk_lifetime_days: zsk_lifetime_days as i32,
+            signature_validity_days,
+            signature_refresh_days,
+            zsk_lifetime_days,
             created_at: Utc::now(),
         },
     )
@@ -149,14 +149,14 @@ pub async fn update(
             .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))?;
         let signature_validity_days = request
             .signature_validity_days
-            .unwrap_or(policy.signature_validity_days as u32);
+            .unwrap_or(policy.signature_validity_days.as_days());
         let signature_refresh_days = request
             .signature_refresh_days
-            .unwrap_or(policy.signature_refresh_days as u32);
+            .unwrap_or(policy.signature_refresh_days.as_days());
         let zsk_lifetime_days = request
             .zsk_lifetime_days
-            .unwrap_or(policy.zsk_lifetime_days as u32);
-        validate_timing(
+            .unwrap_or(policy.zsk_lifetime_days.as_days());
+        let (signature_validity_days, signature_refresh_days, zsk_lifetime_days) = validate_timing(
             signature_validity_days,
             signature_refresh_days,
             zsk_lifetime_days,
@@ -165,9 +165,9 @@ pub async fn update(
         Ok(db::dnssec_policy::update_tx(
             &mut tx,
             DnssecPolicy {
-                signature_validity_days: signature_validity_days as i32,
-                signature_refresh_days: signature_refresh_days as i32,
-                zsk_lifetime_days: zsk_lifetime_days as i32,
+                signature_validity_days,
+                signature_refresh_days,
+                zsk_lifetime_days,
                 ..policy
             },
         )
@@ -225,7 +225,7 @@ fn validate_timing(
     signature_validity_days: u32,
     signature_refresh_days: u32,
     zsk_lifetime_days: u32,
-) -> Result<(), ServiceError> {
+) -> Result<(Days, Days, Days), ServiceError> {
     if signature_validity_days == 0 {
         return Err(ServiceError::invalid_input(
             "signature_validity_days must be greater than 0",
@@ -254,7 +254,12 @@ fn validate_timing(
             MAX_ZSK_LIFETIME_DAYS
         )));
     }
-    Ok(())
+    let days = |value: u32| Days::try_from(value).map_err(ServiceError::invalid_input);
+    Ok((
+        days(signature_validity_days)?,
+        days(signature_refresh_days)?,
+        days(zsk_lifetime_days)?,
+    ))
 }
 
 #[cfg(test)]

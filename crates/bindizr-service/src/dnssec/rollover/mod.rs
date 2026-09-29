@@ -4,7 +4,7 @@
 
 use bindizr_core::{
     dns::{
-        dnssec::{SigningPass, generate_key},
+        dnssec::{KeyTag, SigningPass, generate_key},
         name::ZoneName,
     },
     model::dnssec_key::DnssecKeyId,
@@ -169,7 +169,7 @@ pub async fn advance_rollover(
                 .iter()
                 .filter(|key| awaiting.contains(&key.id) && !key.ds_published)
                 .collect();
-            let unsupported: Vec<u16> = unconfirmed
+            let unsupported: Vec<KeyTag> = unconfirmed
                 .iter()
                 .filter(|key| key.ds_digest_unsupported)
                 .map(|key| key.key_tag)
@@ -180,7 +180,7 @@ pub async fn advance_rollover(
                     &unsupported,
                 ));
             }
-            let missing: Vec<u16> = unconfirmed.iter().map(|key| key.key_tag).collect();
+            let missing: Vec<KeyTag> = unconfirmed.iter().map(|key| key.key_tag).collect();
             if !missing.is_empty() {
                 return Err(ServiceError::dnssec_ds_not_published(
                     signed.zone.name.as_str(),

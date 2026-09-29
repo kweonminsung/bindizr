@@ -8,7 +8,7 @@ use bindizr_core::{
         zone::ZoneId,
     },
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 
 use crate::{
     Context, db,
@@ -107,10 +107,10 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
         else {
             return Ok(None);
         };
-        if signed.policy.zsk_lifetime_days <= 0 {
+        if signed.policy.zsk_lifetime_days.as_days() == 0 {
             return Ok(None);
         }
-        let cutoff = Utc::now() - Duration::days(i64::from(signed.policy.zsk_lifetime_days));
+        let cutoff = Utc::now() - signed.policy.zsk_lifetime_days.to_duration();
         if signed
             .keys
             .iter()

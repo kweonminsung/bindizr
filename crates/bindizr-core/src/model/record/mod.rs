@@ -212,7 +212,7 @@ pub enum RecordType {
 impl std::fmt::Display for RecordType {
     /// Write the record type in its display form.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+        f.pad(self.as_str())
     }
 }
 

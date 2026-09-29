@@ -2,7 +2,7 @@
 //! the column set is all this module decides; the cells come from `display`.
 
 use bindizr_core::{
-    dns::{Serial, Ttl},
+    dns::{Serial, SoaInterval, Ttl, dnssec::KeyTag},
     model::{
         api_token::TokenId, dnssec_key::DnssecKeyId, dnssec_policy::PolicyId, record::RecordId,
         secondary::SecondaryId, token_grant::TokenGrantId, tsig_grant::TsigGrantId,
@@ -38,11 +38,11 @@ pub(crate) struct ZoneRow {
     #[tabled(rename = "SERIAL")]
     pub(crate) serial: Serial,
     #[tabled(rename = "REFRESH")]
-    pub(crate) refresh: i32,
+    pub(crate) refresh: SoaInterval,
     #[tabled(rename = "RETRY")]
-    pub(crate) retry: i32,
+    pub(crate) retry: SoaInterval,
     #[tabled(rename = "EXPIRE")]
-    pub(crate) expire: i32,
+    pub(crate) expire: SoaInterval,
     #[tabled(rename = "MINIMUM-TTL")]
     pub(crate) minimum_ttl: i32,
     #[tabled(rename = "SERVED")]
@@ -133,7 +133,7 @@ pub(crate) struct DnssecKeyRow {
     #[tabled(rename = "ALGORITHM")]
     pub(crate) algorithm: String,
     #[tabled(rename = "KEY-TAG")]
-    pub(crate) key_tag: u16,
+    pub(crate) key_tag: KeyTag,
     #[tabled(rename = "DNSKEY")]
     pub(crate) dnskey: String,
     #[tabled(rename = "CREATED-AT")]
@@ -190,7 +190,7 @@ impl From<&GetDnssecPolicyResponse> for DnssecPolicyRow {
             keys: if policy.split_keys { "KSK/ZSK" } else { "CSK" }.to_string(),
             validity: format!("{}d", policy.signature_validity_days),
             refresh: format!("{}d", policy.signature_refresh_days),
-            zsk_lifetime: if policy.zsk_lifetime_days == 0 {
+            zsk_lifetime: if policy.zsk_lifetime_days.as_days() == 0 {
                 MISSING_CELL.to_string()
             } else {
                 format!("{}d", policy.zsk_lifetime_days)
@@ -241,11 +241,11 @@ pub(crate) struct VersionRow {
     #[tabled(rename = "DEFAULT-TTL")]
     pub(crate) default_ttl: i32,
     #[tabled(rename = "REFRESH")]
-    pub(crate) refresh: i32,
+    pub(crate) refresh: SoaInterval,
     #[tabled(rename = "RETRY")]
-    pub(crate) retry: i32,
+    pub(crate) retry: SoaInterval,
     #[tabled(rename = "EXPIRE")]
-    pub(crate) expire: i32,
+    pub(crate) expire: SoaInterval,
     #[tabled(rename = "MINIMUM-TTL")]
     pub(crate) minimum_ttl: i32,
     #[tabled(rename = "SOURCE")]

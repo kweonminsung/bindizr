@@ -1,4 +1,4 @@
-use bindizr_core::{dns::Ttl, model::zone::ZoneId};
+use bindizr_core::model::zone::ZoneId;
 use bindizr_db::Transaction;
 use chrono::Utc;
 
@@ -86,9 +86,7 @@ pub(crate) async fn create_tx(
             refresh: defaults.refresh,
             retry: defaults.retry,
             expire: defaults.expire,
-            minimum_ttl: Ttl::try_from(defaults.minimum_ttl).map_err(|_| {
-                ServiceError::invalid_zone_field("minimum_ttl must be a positive number of seconds")
-            })?,
+            minimum_ttl: defaults.minimum_ttl,
         },
     )?;
     let serial = match create_zone_request.serial {

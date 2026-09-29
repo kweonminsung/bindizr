@@ -3,12 +3,12 @@
 
 use std::{
     net::{IpAddr, SocketAddr},
-    str::FromStr,
     time::Duration,
 };
 
 use bindizr_core::dns::{
     Serial,
+    dnssec::WireNameError,
     message::{Name, Opcode, Rtype},
     name::ZoneName,
     query::{build_question, extract_soa_serial},
@@ -28,7 +28,7 @@ use crate::{
 #[derive(Debug, Error)]
 pub enum ProbeError {
     #[error("invalid zone name: {0}")]
-    ZoneName(#[source] bindizr_core::dns::LibraryError),
+    ZoneName(#[from] WireNameError),
     #[error("failed to resolve: {0}")]
     Resolve(#[source] ResolveAddressError),
     #[error(transparent)]
@@ -64,7 +64,7 @@ pub async fn probe_secondaries(
         return Ok(Vec::new());
     }
 
-    let timeout = Duration::from_secs(cx.config().dns.notify.timeout_secs);
+    let timeout = cx.config().dns.notify.timeout();
 
     // The network half owns its inputs, so each probe runs on a task of its
     // own; the transfer lookup that needs the context follows on this one.
@@ -106,7 +106,7 @@ pub async fn probe_secondary(
     secondary: &Secondary,
     expected_serial: Option<Serial>,
 ) -> Result<SecondaryStatusResponse, ServiceError> {
-    let timeout = Duration::from_secs(cx.config().dns.notify.timeout_secs);
+    let timeout = cx.config().dns.notify.timeout();
     let (probe, clients) = probe_addresses(zone_name, secondary, timeout, expected_serial).await?;
     Ok(with_last_transfer(cx, zone_name, probe, &clients).await)
 }
@@ -120,8 +120,7 @@ async fn probe_addresses(
     timeout: Duration,
     expected_serial: Option<Serial>,
 ) -> Result<(SecondaryStatusResponse, Vec<IpAddr>), ProbeError> {
-    let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
-        .map_err(|e| ProbeError::ZoneName(Box::new(e)))?;
+    let qname = zone_name.to_wire_name()?;
 
     let addrs = match super::resolve_address_entry(&secondary.address, timeout).await {
         Ok(addrs) => addrs,
@@ -168,8 +167,7 @@ pub async fn probe_server(
     zone_name: &ZoneName,
     timeout: Duration,
 ) -> Result<Serial, ProbeError> {
-    let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
-        .map_err(|e| ProbeError::ZoneName(Box::new(e)))?;
+    let qname = zone_name.to_wire_name()?;
     probe_one(&qname, server_addr, timeout).await
 }
 

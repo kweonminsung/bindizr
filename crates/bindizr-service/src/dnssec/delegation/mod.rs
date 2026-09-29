@@ -1,6 +1,10 @@
 //! The parent side of a signed zone: asking its nameservers for the DS.
 
-use bindizr_core::dns::{dnssec::DS_DIGEST_TYPES, name::ZoneName, query::DsRecordSet};
+use bindizr_core::dns::{
+    dnssec::{DS_DIGEST_TYPES, KeyTag},
+    name::ZoneName,
+    query::DsRecordSet,
+};
 use chrono::Utc;
 
 use super::status::build_status_tx;
@@ -73,7 +77,7 @@ fn build_delegation_info(
     parent: ParentDs,
 ) -> Result<DnssecDelegationInfo, ServiceError> {
     let served: Vec<&DsRecordSet> = parent.answers.iter().flatten().collect();
-    let mut ds_key_tags: Vec<u16> = served
+    let mut ds_key_tags: Vec<KeyTag> = served
         .iter()
         .flat_map(|record_set| record_set.key_tags())
         .collect();
@@ -93,7 +97,7 @@ fn build_delegation_info(
         let mut digest_types: Vec<u8> = served
             .iter()
             .flat_map(|record_set| record_set.records.iter())
-            .filter(|record| record.key_tag == key.key_tag as u16)
+            .filter(|record| record.key_tag == key.key_tag)
             .map(|record| record.digest_type)
             .filter(|digest_type| DS_DIGEST_TYPES.contains(digest_type))
             .collect();
@@ -107,7 +111,7 @@ fn build_delegation_info(
                 let mut for_key = record_set
                     .records
                     .iter()
-                    .filter(|record| record.key_tag == key.key_tag as u16)
+                    .filter(|record| record.key_tag == key.key_tag)
                     .peekable();
                 for_key.peek().is_some()
                     && !for_key.any(|record| DS_DIGEST_TYPES.contains(&record.digest_type))
@@ -135,7 +139,7 @@ fn build_delegation_info(
 
         delegation_keys.push(DnssecDelegationKeyInfo {
             id: key.id,
-            key_tag: key.key_tag as u16,
+            key_tag: key.key_tag,
             role: key.role,
             state: key.state,
             ds_published,

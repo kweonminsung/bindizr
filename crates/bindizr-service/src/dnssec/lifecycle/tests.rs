@@ -1,8 +1,8 @@
 use bindizr_core::{
-    dns::{Serial, Ttl, name::ZoneName},
+    dns::{Serial, SoaInterval, Ttl, name::ZoneName},
     model::{
         dnssec_key::DnssecAlgorithm,
-        dnssec_policy::{DnssecDenial, PolicyId},
+        dnssec_policy::{Days, DnssecDenial, PolicyId},
         zone::ZoneId,
     },
 };
@@ -18,9 +18,9 @@ fn zone() -> Zone {
         rname: "admin@example.com".to_string(),
         default_ttl: Ttl::from_secs(300),
         serial: Serial::from(5),
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: None,
@@ -38,9 +38,9 @@ fn policy(id: i32, name: &str) -> DnssecPolicy {
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
         denial: DnssecDenial::Nsec,
         split_keys: false,
-        signature_validity_days: 14,
-        signature_refresh_days: 5,
-        zsk_lifetime_days: 0,
+        signature_validity_days: Days::try_from(14).unwrap(),
+        signature_refresh_days: Days::try_from(5).unwrap(),
+        zsk_lifetime_days: Days::try_from(0).unwrap(),
         created_at: Utc::now(),
     }
 }
@@ -50,8 +50,8 @@ fn policy(id: i32, name: &str) -> DnssecPolicy {
 fn a_move_that_only_changes_timings_is_allowed() {
     let current = policy(1, "default");
     let mut target = policy(2, "long-lived");
-    target.signature_validity_days = 30;
-    target.zsk_lifetime_days = 90;
+    target.signature_validity_days = Days::try_from(30).unwrap();
+    target.zsk_lifetime_days = Days::try_from(90).unwrap();
 
     validate_policy_move(&zone(), &current, &target).unwrap();
 }

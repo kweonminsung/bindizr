@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 
 use bindizr_core::dns::address::loopback_if_unspecified;
 use bindizr_service::{
@@ -51,7 +51,7 @@ pub(crate) async fn check_installation(
         loopback_if_unspecified(config.dns.listen_addr),
         config.dns.listen_port,
     );
-    let timeout = Duration::from_secs(config.dns.notify.timeout_secs);
+    let timeout = config.dns.notify.timeout();
 
     let (dns_server, catalog_serial) =
         match probe::probe_server(dns_addr, &config.dns.catalog_zone_name, timeout).await {

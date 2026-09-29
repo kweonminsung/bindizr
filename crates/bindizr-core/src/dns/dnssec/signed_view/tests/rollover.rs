@@ -1,5 +1,8 @@
 use super::*;
-use crate::model::{dnssec_key::DnssecKeyId, record::RecordId, zone::ZoneId};
+use crate::{
+    dns::SoaInterval,
+    model::{dnssec_key::DnssecKeyId, record::RecordId, zone::ZoneId},
+};
 
 /// Build a zone fixture for the test.
 fn test_zone() -> Zone {
@@ -10,9 +13,9 @@ fn test_zone() -> Zone {
         rname: "admin@example.com".to_string(),
         default_ttl: Ttl::from_secs(3600),
         serial: Serial::from(5),
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,
@@ -80,7 +83,7 @@ fn published_key_cosigns_key_record_sets_but_not_zone_data() {
         rrsigs_covering(
             &diff.added,
             &apex,
-            DnssecRecordType::Dnskey.wire_type() as i32
+            i32::from(DnssecRecordType::Dnskey.wire_type())
         )
         .len(),
         2
@@ -125,7 +128,7 @@ fn retired_key_stays_published_but_leaves_the_cds_set() {
         rrsigs_covering(
             &diff.added,
             &apex,
-            DnssecRecordType::Dnskey.wire_type() as i32
+            i32::from(DnssecRecordType::Dnskey.wire_type())
         )
         .len(),
         2
@@ -178,13 +181,18 @@ fn split_keys_partition_key_record_sets_from_zone_data() {
         rrsigs_covering(
             &diff.added,
             &apex,
-            DnssecRecordType::Dnskey.wire_type() as i32
+            i32::from(DnssecRecordType::Dnskey.wire_type())
         )
         .len(),
         1
     );
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, DnssecRecordType::Cds.wire_type() as i32).len(),
+        rrsigs_covering(
+            &diff.added,
+            &apex,
+            i32::from(DnssecRecordType::Cds.wire_type())
+        )
+        .len(),
         1
     );
     assert_eq!(
@@ -228,7 +236,7 @@ fn algorithm_rollover_double_signs_zone_data_while_published() {
     // all data, so the pre-published new-algorithm key signs immediately.
     let apex = OwnerName::apex();
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RecordType::Ns.wire_type() as i32).len(),
+        rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type())).len(),
         2
     );
 }
@@ -267,7 +275,7 @@ fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
     // all data until the key is removed (RFC 6840, Section 5.11).
     let apex = OwnerName::apex();
     assert_eq!(
-        rrsigs_covering(&diff.added, &apex, RecordType::Ns.wire_type() as i32).len(),
+        rrsigs_covering(&diff.added, &apex, i32::from(RecordType::Ns.wire_type())).len(),
         2
     );
 }

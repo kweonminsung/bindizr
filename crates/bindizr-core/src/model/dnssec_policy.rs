@@ -1,4 +1,7 @@
-use chrono::{DateTime, Utc};
+use std::fmt;
+
+use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use thiserror::Error;
 
@@ -6,9 +9,6 @@ use super::dnssec_key::DnssecAlgorithm;
 
 /// Name of the policy seeded at startup, used when `enable` names none.
 pub const DEFAULT_DNSSEC_POLICY_NAME: &str = "default";
-
-/// Seconds in a day, the unit the policy's day fields are stored in.
-const SECS_PER_DAY: i64 = 86_400;
 
 /// A denial mode outside NSEC and NSEC3.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -94,13 +94,13 @@ pub struct DnssecPolicy {
     /// the parent DS.
     pub split_keys: bool,
     /// Days a new signature stays valid.
-    pub signature_validity_days: i32,
+    pub signature_validity_days: Days,
     /// Re-sign when a signature has fewer than this many days left; always
     /// below `signature_validity_days`.
-    pub signature_refresh_days: i32,
+    pub signature_refresh_days: Days,
     /// Days an active ZSK may sign before the scheduler rolls it; 0 disables
     /// scheduled rolls.
-    pub zsk_lifetime_days: i32,
+    pub zsk_lifetime_days: Days,
     pub created_at: DateTime<Utc>,
 }
 
@@ -124,11 +124,129 @@ impl DnssecPolicy {
 
     /// How long a signature stays valid, in seconds.
     pub fn signature_validity_secs(&self) -> i64 {
-        i64::from(self.signature_validity_days) * SECS_PER_DAY
+        self.signature_validity_days.to_duration().num_seconds()
     }
 
     /// How long before it expires a signature is renewed, in seconds.
     pub fn signature_refresh_secs(&self) -> i64 {
-        i64::from(self.signature_refresh_days) * SECS_PER_DAY
+        self.signature_refresh_days.to_duration().num_seconds()
+    }
+}
+
+/// A count of days as one value with two forms: the unsigned count a payload
+/// carries and the signed 32-bit column a row stores, 0 through 2^31 - 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct Days(u32);
+
+/// A day count outside the range both forms hold.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ConvertDaysError {
+    /// Rows are stored as `i32`, so a negative one is corrupt data.
+    #[error("Invalid day count: {days}")]
+    Negative { days: i32 },
+    /// Past 2^31 - 1, which the row form cannot hold.
+    #[error("day count {days} exceeds the maximum of {}", i32::MAX)]
+    TooLarge { days: u32 },
+}
+
+impl Days {
+    /// The largest count the row form holds.
+    pub const MAX: Days = Days(i32::MAX as u32);
+
+    /// The count of days.
+    pub const fn as_days(self) -> u32 {
+        self.0
+    }
+
+    /// The count as a duration.
+    pub fn to_duration(self) -> Duration {
+        Duration::days(i64::from(self.0))
+    }
+}
+
+impl TryFrom<u32> for Days {
+    type Error = ConvertDaysError;
+
+    /// Take a payload's count, refused past the maximum.
+    fn try_from(days: u32) -> Result<Self, Self::Error> {
+        if days > Self::MAX.0 {
+            return Err(ConvertDaysError::TooLarge { days });
+        }
+        Ok(Days(days))
+    }
+}
+
+impl TryFrom<i32> for Days {
+    type Error = ConvertDaysError;
+
+    /// Read a row's count; a negative one is corrupt data.
+    fn try_from(days: i32) -> Result<Self, Self::Error> {
+        u32::try_from(days)
+            .map(Days)
+            .map_err(|_| ConvertDaysError::Negative { days })
+    }
+}
+
+impl From<Days> for u32 {
+    /// The payload form.
+    fn from(days: Days) -> Self {
+        days.0
+    }
+}
+
+impl From<Days> for i32 {
+    /// The row form; the range invariant makes it exact.
+    fn from(days: Days) -> Self {
+        days.0 as i32
+    }
+}
+
+impl fmt::Display for Days {
+    /// Write the count of days.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl<DB: sqlx::Database> sqlx::Type<DB> for Days
+where
+    i32: sqlx::Type<DB>,
+{
+    /// The row form's column type.
+    fn type_info() -> DB::TypeInfo {
+        <i32 as sqlx::Type<DB>>::type_info()
+    }
+
+    /// Whether the column can hold the row form.
+    fn compatible(ty: &DB::TypeInfo) -> bool {
+        <i32 as sqlx::Type<DB>>::compatible(ty)
+    }
+}
+
+impl<'q, DB: sqlx::Database> sqlx::Encode<'q, DB> for Days
+where
+    i32: sqlx::Encode<'q, DB>,
+{
+    /// Bind the row form.
+    fn encode_by_ref(
+        &self,
+        buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        i32::from(*self).encode_by_ref(buf)
+    }
+}
+
+impl<'r, DB: sqlx::Database> sqlx::Decode<'r, DB> for Days
+where
+    i32: sqlx::Decode<'r, DB>,
+{
+    /// Read the row form; a negative column fails the row.
+    fn decode(
+        value: <DB as sqlx::Database>::ValueRef<'r>,
+    ) -> Result<Self, sqlx::error::BoxDynError> {
+        Ok(Days::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
+            value,
+        )?)?)
     }
 }

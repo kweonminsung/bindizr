@@ -4,12 +4,14 @@
 
 mod key;
 mod key_file;
+mod key_tag;
 mod rdata;
 mod signed_view;
 
 use domain::base::{Name, iana::Rtype};
 pub use key::{GenerateKeyError, generate_key};
 pub use key_file::{ImportKeyError, import_key};
+pub use key_tag::{ConvertKeyTagError, KeyTag};
 pub use rdata::{DS_DIGEST_TYPES, KeyRdataError};
 pub use signed_view::{SignZoneError, SignedViewDiff, SignedViewParams, SigningPass};
 use thiserror::Error;
@@ -62,6 +64,6 @@ impl TryFrom<Rtype> for DnssecRecordType {
 
     /// The stored DNSSEC record type a wire record type maps to.
     fn try_from(rtype: Rtype) -> Result<Self, Self::Error> {
-        DnssecRecordType::try_from(rtype.to_int() as i32)
+        DnssecRecordType::try_from(i32::from(rtype.to_int()))
     }
 }

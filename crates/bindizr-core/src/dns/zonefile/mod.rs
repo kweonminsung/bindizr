@@ -8,7 +8,7 @@ use domain::{
 
 use crate::{
     dns::{
-        Serial, Ttl,
+        Serial, SoaInterval, Ttl,
         name::{ZoneName, to_fqdn_lowercase},
         record::NaptrRecordValue,
     },
@@ -42,9 +42,9 @@ pub struct ZoneFileSoa {
     pub mname: String,
     pub rname: String,
     pub serial: Serial,
-    pub refresh: i32,
-    pub retry: i32,
-    pub expire: i32,
+    pub refresh: SoaInterval,
+    pub retry: SoaInterval,
+    pub expire: SoaInterval,
     pub minimum_ttl: Ttl,
 }
 
@@ -250,16 +250,16 @@ fn to_zone_file_soa(record: &ScannedRecord) -> Option<ZoneFileSoa> {
     let ZoneRecordData::Soa(soa) = record.data() else {
         return None;
     };
-    let secs = |value: domain::base::Ttl| i32::try_from(value.as_secs()).ok();
+    let interval = |value: domain::base::Ttl| SoaInterval::try_from(value.as_secs()).ok();
     Some(ZoneFileSoa {
         mname: soa.mname().to_string(),
         // The mailbox is rendered in its SOA form (`admin.example.com.`); the
         // service turns it back into an address.
         rname: soa.rname().to_string(),
         serial: Serial::from(soa.serial().into_int()),
-        refresh: secs(soa.refresh())?,
-        retry: secs(soa.retry())?,
-        expire: secs(soa.expire())?,
+        refresh: interval(soa.refresh())?,
+        retry: interval(soa.retry())?,
+        expire: interval(soa.expire())?,
         minimum_ttl: Ttl::try_from(soa.minimum().as_secs()).ok()?,
     })
 }

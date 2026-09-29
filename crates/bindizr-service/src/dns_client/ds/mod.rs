@@ -1,10 +1,11 @@
 //! Asking a zone's parent whether it still delegates trust to the zone: the
 //! DS record set the zone's `parent_ns_addrs` serve for the child.
 
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{
     dns::{
+        dnssec::WireNameError,
         message::{Name, Rtype},
         name::ZoneName,
         query::{DsRecordSet, build_edns_question, extract_ds_record_set},
@@ -30,7 +31,7 @@ pub(crate) enum ProbeParentDsError {
     #[error("the zone's parent nameserver addresses name no server")]
     NoServers,
     #[error("invalid zone name: {0}")]
-    ZoneName(#[source] bindizr_core::dns::LibraryError),
+    ZoneName(#[from] WireNameError),
     /// Every server that failed, in `parent_ns_addrs` order.
     #[error("{}", failures.iter().map(|(entry, error)| format!("{entry}: {error}")).collect::<Vec<_>>().join("; "))]
     Unanswered {
@@ -112,8 +113,7 @@ async fn query_ds(
     servers: &[(String, Vec<SocketAddr>)],
     timeout: Duration,
 ) -> Result<Vec<Option<DsRecordSet>>, ProbeParentDsError> {
-    let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
-        .map_err(|e| ProbeParentDsError::ZoneName(Box::new(e)))?;
+    let qname = zone_name.to_wire_name()?;
 
     let mut tasks = Vec::with_capacity(servers.len());
     for (entry, addrs) in servers {

@@ -2,7 +2,7 @@
 //! and the DS records the parent needs.
 
 use bindizr_core::dns::{Serial, name::ZoneName};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 
 use super::parent_ns_addrs::parent_ns_addr_entries;
 use crate::{
@@ -92,9 +92,7 @@ pub(crate) async fn build_status_tx(
         .count() as u64;
     let next_resign_at = earliest_signature_expires_at
         .zip(policy)
-        .map(|(expires, policy)| {
-            expires - Duration::days(i64::from(policy.signature_refresh_days))
-        });
+        .map(|(expires, policy)| expires - policy.signature_refresh_days.to_duration());
 
     let withdrawing = db::dnssec_withdrawal::get_tx(tx, zone.id).await?.is_some();
 
@@ -119,7 +117,7 @@ pub(crate) async fn build_status_tx(
                 state_changed_at: key.state_changed_at,
                 eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
                 algorithm: key.algorithm.to_string(),
-                key_tag: key.key_tag as u16,
+                key_tag: key.key_tag,
                 dnskey: format!(
                     "{} 3 {} {}",
                     key.role.flags(),
@@ -153,7 +151,7 @@ fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceEr
     let digest = hex::encode_upper(&rdata.as_bytes()[4..]);
 
     Ok(DnssecDsInfo {
-        key_tag: key.key_tag as u16,
+        key_tag: key.key_tag,
         algorithm: key.algorithm.to_int() as u8,
         digest_type: key.algorithm.ds_digest_type(),
         digest: digest.clone(),

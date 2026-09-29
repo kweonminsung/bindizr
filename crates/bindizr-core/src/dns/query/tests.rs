@@ -10,6 +10,7 @@ use domain::{
 };
 
 use super::*;
+use crate::dns::dnssec::KeyTag;
 
 /// Parse a DNS wire-format name for the test.
 fn name(value: &str) -> Name<Vec<u8>> {
@@ -83,7 +84,7 @@ fn parsed_ds_record(key_tag: u16) -> DsRecord {
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
     DsRecord {
-        key_tag,
+        key_tag: KeyTag::from(key_tag),
         digest_type: 2,
         rdata,
     }

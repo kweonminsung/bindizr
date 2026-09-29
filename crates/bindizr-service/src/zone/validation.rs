@@ -1,5 +1,5 @@
 use bindizr_core::dns::{
-    Ttl,
+    SoaInterval, Ttl,
     name::{ZoneName, has_whitespace_or_control},
     record::SoaMailbox,
 };
@@ -36,7 +36,7 @@ pub(crate) fn normalize_create_zone_request(
     let ttl = validate_default_ttl(
         request
             .default_ttl
-            .unwrap_or(cx.config().dns.zone_defaults.ttl),
+            .unwrap_or(i32::from(cx.config().dns.zone_defaults.ttl)),
     )?;
 
     // `zone_name` and `mname` are wire-safe after `normalize_domain_name`
@@ -194,9 +194,9 @@ fn is_valid_email_local_char(c: char) -> bool {
 /// create, the existing zone's values on update) and as the validated output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ResolvedSoaTimers {
-    pub(crate) refresh: i32,
-    pub(crate) retry: i32,
-    pub(crate) expire: i32,
+    pub(crate) refresh: SoaInterval,
+    pub(crate) retry: SoaInterval,
+    pub(crate) expire: SoaInterval,
     pub(crate) minimum_ttl: Ttl,
 }
 
@@ -210,11 +210,10 @@ pub(crate) fn normalize_soa_timers(
         refresh: normalize_soa_interval(request.refresh, fallback.refresh, "refresh")?,
         retry: normalize_soa_interval(request.retry, fallback.retry, "retry")?,
         expire: normalize_soa_interval(request.expire, fallback.expire, "expire")?,
-        minimum_ttl: Ttl::try_from(normalize_soa_interval(
+        minimum_ttl: normalize_soa_interval(
             request.minimum_ttl,
-            i32::from(fallback.minimum_ttl),
+            fallback.minimum_ttl,
             "minimum_ttl",
-        )?)
-        .map_err(ServiceError::invalid_zone_field)?,
+        )?,
     })
 }

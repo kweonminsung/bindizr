@@ -79,9 +79,9 @@ impl DnsMessageBuilder {
             mname: "invalid",
             rname: "invalid",
             serial: serial.as_u32(),
-            refresh: zone.refresh as u32,
-            retry: zone.retry as u32,
-            expire: zone.expire as u32,
+            refresh: zone.refresh.as_secs(),
+            retry: zone.retry.as_secs(),
+            expire: zone.expire.as_secs(),
             minimum: zone.minimum_ttl.as_secs(),
         }
         .to_rdata()?;
@@ -102,9 +102,9 @@ impl DnsMessageBuilder {
             mname: &soa.mname,
             rname: &soa.rname,
             serial: soa.serial.as_u32(),
-            refresh: soa.refresh as u32,
-            retry: soa.retry as u32,
-            expire: soa.expire as u32,
+            refresh: soa.refresh.as_secs(),
+            retry: soa.retry.as_secs(),
+            expire: soa.expire.as_secs(),
             minimum: soa.minimum_ttl.as_secs(),
         }
         .to_rdata()?;

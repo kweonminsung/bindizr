@@ -1,6 +1,6 @@
 use bindizr_core::{
     dns::{
-        Serial, Ttl,
+        Serial, SoaInterval, Ttl,
         name::{OwnerName, ZoneName},
     },
     model::{api_token::TokenId, record::RecordId, token_grant::TokenGrantId, zone::ZoneId},
@@ -33,9 +33,9 @@ fn test_zone(id: i32, name: &str) -> Zone {
         rname: format!("hostmaster@{}", name),
         default_ttl: Ttl::from_secs(3600),
         serial: Serial::from(1),
-        refresh: 7200,
-        retry: 3600,
-        expire: 604800,
+        refresh: SoaInterval::from_secs(7200),
+        retry: SoaInterval::from_secs(3600),
+        expire: SoaInterval::from_secs(604800),
         minimum_ttl: Ttl::from_secs(86400),
         dnssec_policy_id: None,
         parent_ns_addrs: None,

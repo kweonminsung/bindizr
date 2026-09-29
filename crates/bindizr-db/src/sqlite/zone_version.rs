@@ -141,7 +141,7 @@ pub(crate) async fn list(
         query = query.bind(zone_id);
     }
     query
-        .bind(limit as i64)
+        .bind(i64::from(limit))
         .bind(i64::try_from(offset).unwrap_or(i64::MAX))
         .fetch_all(pool)
         .await

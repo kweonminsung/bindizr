@@ -1,9 +1,10 @@
 //! Client-side AXFR: pull a whole zone from another server, the fetch half
 //! of `zone import --from-server`.
 
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::dns::{
+    dnssec::WireNameError,
     message::{Name, Opcode, Rtype, encode_tcp_message},
     name::{ZoneName, decode_name_labels, to_fqdn},
     query::{TransferRecord, build_question, extract_transfer_records},
@@ -17,7 +18,7 @@ use super::ResolveAddressError;
 #[derive(Debug, Error)]
 pub(crate) enum TransferZoneError {
     #[error("invalid zone name: {0}")]
-    ZoneName(#[source] bindizr_core::dns::LibraryError),
+    ZoneName(#[from] WireNameError),
     #[error("{server}: resolution timed out")]
     ResolutionTimedOut { server: String },
     #[error("failed to resolve {entry}: {source}")]
@@ -87,8 +88,7 @@ async fn transfer_zone(
     server: &str,
     zone_name: &ZoneName,
 ) -> Result<Vec<TransferRecord>, TransferZoneError> {
-    let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
-        .map_err(|e| TransferZoneError::ZoneName(Box::new(e)))?;
+    let qname = zone_name.to_wire_name()?;
 
     let deadline = tokio::time::Instant::now() + TRANSFER_TIMEOUT;
     let entries = tokio::time::timeout_at(
