@@ -9,8 +9,8 @@ mod rdata;
 mod signed_view;
 
 use domain::base::{Name, iana::Rtype};
-pub use key::{GenerateKeyError, generate_key};
-pub use key_file::{ImportKeyError, import_key};
+pub use key::GenerateKeyError;
+pub use key_file::ImportKeyError;
 pub use key_tag::{ConvertKeyTagError, KeyTag};
 pub use rdata::{DS_DIGEST_TYPES, KeyRdataError};
 pub use signed_view::{SignZoneError, SignedViewDiff, SignedViewParams, SigningPass};

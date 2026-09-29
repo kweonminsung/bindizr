@@ -51,7 +51,7 @@ use thiserror::Error;
 
 impl DnssecKey {
     /// The key's `K*.private` contents: the stored key material, plus the timing
-    /// fields BIND and [`import_key`] read a rollover from, so an export
+    /// fields BIND and [`DnssecKey::import`] read a rollover from, so an export
     /// re-imports where it left off.
     pub fn to_bind_private_file(&self) -> String {
         let timing = match self.state {
@@ -170,94 +170,96 @@ fn bind_key_phase(
     }
 }
 
-/// Rebuild a key from its BIND key files (`K*.key` and `K*.private`),
-/// validating the pair by reconstructing the signer. The zone's key layout
-/// types a SEP key as the CSK or the KSK, and the private file's timing places
-/// it in its rollover.
-pub fn import_key(
-    zone: &Zone,
-    split_keys: bool,
-    dnskey_record: &str,
-    private_key: &str,
-    now: DateTime<Utc>,
-) -> Result<DnssecKey, ImportKeyError> {
-    // `K*.key` holds one DNSKEY record; the bare RDATA form is accepted too.
-    let tokens: Vec<&str> = dnskey_record
-        .lines()
-        .filter(|line| !line.trim_start().starts_with(';'))
-        .flat_map(str::split_whitespace)
-        .collect();
-    let rdata_at = tokens
-        .iter()
-        .position(|token| token.eq_ignore_ascii_case("DNSKEY"))
-        .map_or(0, |index| index + 1);
-    let (flags, protocol, algorithm, public) = match &tokens[rdata_at..] {
-        [flags, protocol, algorithm, public @ ..] if !public.is_empty() => {
-            (flags, protocol, algorithm, public.concat())
-        }
-        _ => return Err(ImportKeyError::DnskeyShape),
-    };
+impl DnssecKey {
+    /// Rebuild a key from its BIND key files (`K*.key` and `K*.private`),
+    /// validating the pair by reconstructing the signer. The zone's key layout
+    /// types a SEP key as the CSK or the KSK, and the private file's timing
+    /// places it in its rollover.
+    pub fn import(
+        zone: &Zone,
+        split_keys: bool,
+        dnskey_record: &str,
+        private_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Self, ImportKeyError> {
+        // `K*.key` holds one DNSKEY record; the bare RDATA form is accepted too.
+        let tokens: Vec<&str> = dnskey_record
+            .lines()
+            .filter(|line| !line.trim_start().starts_with(';'))
+            .flat_map(str::split_whitespace)
+            .collect();
+        let rdata_at = tokens
+            .iter()
+            .position(|token| token.eq_ignore_ascii_case("DNSKEY"))
+            .map_or(0, |index| index + 1);
+        let (flags, protocol, algorithm, public) = match &tokens[rdata_at..] {
+            [flags, protocol, algorithm, public @ ..] if !public.is_empty() => {
+                (flags, protocol, algorithm, public.concat())
+            }
+            _ => return Err(ImportKeyError::DnskeyShape),
+        };
 
-    let flags: u16 = flags.parse().map_err(|_| ImportKeyError::Flags {
-        value: flags.to_string(),
-    })?;
-    if *protocol != "3" {
-        return Err(ImportKeyError::Protocol {
-            value: protocol.to_string(),
-        });
-    }
-    let algorithm = algorithm
-        .parse::<i32>()
-        .ok()
-        .and_then(DnssecAlgorithm::from_int)
-        .ok_or_else(|| ImportKeyError::Algorithm {
-            value: algorithm.to_string(),
+        let flags: u16 = flags.parse().map_err(|_| ImportKeyError::Flags {
+            value: flags.to_string(),
         })?;
-    let public_key = base64::engine::general_purpose::STANDARD
-        .decode(&public)
-        .map_err(ImportKeyError::PublicKeyNotBase64)?;
+        if *protocol != "3" {
+            return Err(ImportKeyError::Protocol {
+                value: protocol.to_string(),
+            });
+        }
+        let algorithm = algorithm
+            .parse::<i32>()
+            .ok()
+            .and_then(DnssecAlgorithm::from_int)
+            .ok_or_else(|| ImportKeyError::Algorithm {
+                value: algorithm.to_string(),
+            })?;
+        let public_key = base64::engine::general_purpose::STANDARD
+            .decode(&public)
+            .map_err(ImportKeyError::PublicKeyNotBase64)?;
 
-    // Interpret the SEP flag using the zone's CSK or split-key layout.
-    let role = match (flags, split_keys) {
-        (257, false) => DnssecKeyRole::Csk,
-        (257, true) => DnssecKeyRole::Ksk,
-        (256, true) => DnssecKeyRole::Zsk,
-        (256, false) => return Err(ImportKeyError::ZskInCskLayout),
-        _ => return Err(ImportKeyError::UnsupportedFlags { flags }),
-    };
+        // Interpret the SEP flag using the zone's CSK or split-key layout.
+        let role = match (flags, split_keys) {
+            (257, false) => DnssecKeyRole::Csk,
+            (257, true) => DnssecKeyRole::Ksk,
+            (256, true) => DnssecKeyRole::Zsk,
+            (256, false) => return Err(ImportKeyError::ZskInCskLayout),
+            _ => return Err(ImportKeyError::UnsupportedFlags { flags }),
+        };
 
-    // Reconstruct the pair to reject a private key for a different DNSKEY.
-    let dnskey = domain::rdata::Dnskey::new(
-        flags,
-        3,
-        SecurityAlgorithm::from_int(algorithm.to_int() as u8),
-        public_key,
-    )
-    .map_err(|e| ImportKeyError::Dnskey(Box::new(e)))?;
-    let secret = domain::crypto::sign::SecretKeyBytes::parse_from_bind(private_key)
-        .map_err(|e| ImportKeyError::PrivateKey(Box::new(e)))?;
-    domain::crypto::sign::KeyPair::from_bytes(&secret, &dnskey)
-        .map_err(|e| ImportKeyError::KeyMismatch(Box::new(e)))?;
+        // Reconstruct the pair to reject a private key for a different DNSKEY.
+        let dnskey = domain::rdata::Dnskey::new(
+            flags,
+            3,
+            SecurityAlgorithm::from_int(algorithm.to_int() as u8),
+            public_key,
+        )
+        .map_err(|e| ImportKeyError::Dnskey(Box::new(e)))?;
+        let secret = domain::crypto::sign::SecretKeyBytes::parse_from_bind(private_key)
+            .map_err(|e| ImportKeyError::PrivateKey(Box::new(e)))?;
+        domain::crypto::sign::KeyPair::from_bytes(&secret, &dnskey)
+            .map_err(|e| ImportKeyError::KeyMismatch(Box::new(e)))?;
 
-    // Preserve the rollover phase encoded by the private file's timing fields.
-    let DnssecKeyPhase {
-        state,
-        state_changed_at,
-        eligible_at,
-    } = bind_key_phase(private_key, zone.default_ttl, now)?;
+        // Preserve the rollover phase encoded by the private file's timing fields.
+        let DnssecKeyPhase {
+            state,
+            state_changed_at,
+            eligible_at,
+        } = bind_key_phase(private_key, zone.default_ttl, now)?;
 
-    Ok(DnssecKey {
-        id: DnssecKeyId::UNWRITTEN,
-        zone_id: zone.id,
-        role,
-        algorithm,
-        key_tag: KeyTag::from(dnskey.key_tag()),
-        public_key: base64::engine::general_purpose::STANDARD.encode(dnskey.public_key()),
-        private_key: secret.display_as_bind().to_string(),
-        state,
-        state_changed_at,
-        eligible_at,
-        max_signed_ttl: Ttl::from_secs(0),
-        created_at: now,
-    })
+        Ok(DnssecKey {
+            id: DnssecKeyId::UNWRITTEN,
+            zone_id: zone.id,
+            role,
+            algorithm,
+            key_tag: KeyTag::from(dnskey.key_tag()),
+            public_key: base64::engine::general_purpose::STANDARD.encode(dnskey.public_key()),
+            private_key: secret.display_as_bind().to_string(),
+            state,
+            state_changed_at,
+            eligible_at,
+            max_signed_ttl: Ttl::from_secs(0),
+            created_at: now,
+        })
+    }
 }

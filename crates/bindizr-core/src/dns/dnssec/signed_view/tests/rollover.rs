@@ -207,7 +207,7 @@ fn split_keys_partition_key_record_sets_from_zone_data() {
 fn algorithm_rollover_double_signs_zone_data_while_published() {
     let zone = test_zone();
     let old = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Active);
-    let mut new = generate_key(
+    let mut new = DnssecKey::generate(
         &zone,
         DnssecAlgorithm::Ed25519,
         DnssecKeyRole::Csk,
@@ -246,7 +246,7 @@ fn algorithm_rollover_double_signs_zone_data_while_published() {
 fn algorithm_rollover_keeps_the_retired_old_algorithm_signing() {
     let zone = test_zone();
     let old = test_key(&zone, 1, DnssecKeyRole::Csk, DnssecKeyState::Retired);
-    let mut new = generate_key(
+    let mut new = DnssecKey::generate(
         &zone,
         DnssecAlgorithm::Ed25519,
         DnssecKeyRole::Csk,

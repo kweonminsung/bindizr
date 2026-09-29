@@ -288,7 +288,37 @@ fn to_presentation_name(name: &ParsedName<&[u8]>) -> Result<String, ParseUpdateE
     Ok(format!("{}.", labels_to_presentation(&labels)))
 }
 
+/// A deletion whose shape RFC 2136, Section 2.5 does not allow.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum DeleteShapeError {
+    #[error("delete update TTL must be 0")]
+    NonzeroTtl,
+    #[error("ANY-class delete must have empty rdata")]
+    AnyClassRdata,
+    #[error("NONE-class delete must specify record type")]
+    NoneClassTypeAny,
+    #[error("NONE-class delete must specify rdata")]
+    NoneClassNoRdata,
+}
+
 impl UpdateRecord {
+    /// Check the TTL, type, and RDATA a deletion of this record's class must
+    /// carry: an ANY-class delete names a record set (RFC 2136, Section
+    /// 2.5.2), a NONE-class delete one record (Section 2.5.4).
+    pub fn validate_delete_shape(&self) -> Result<(), DeleteShapeError> {
+        if self.ttl != 0 {
+            return Err(DeleteShapeError::NonzeroTtl);
+        }
+        match self.class {
+            Class::ANY if !self.rdata.is_empty() => Err(DeleteShapeError::AnyClassRdata),
+            Class::NONE if self.record_type == Rtype::ANY => {
+                Err(DeleteShapeError::NoneClassTypeAny)
+            }
+            Class::NONE if self.rdata.is_empty() => Err(DeleteShapeError::NoneClassNoRdata),
+            _ => Ok(()),
+        }
+    }
+
     /// Decode an update record's wire data into its typed value.
     fn parse_rdata<'a, T>(
         &self,

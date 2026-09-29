@@ -14,7 +14,7 @@ pub(crate) mod transfer_cache;
 
 use std::{net::SocketAddr, sync::Arc};
 
-use auth::{TransferRefusal, authenticate_transfer, signed_error};
+use auth::{TransferRefusal, authenticate_transfer};
 use bindizr_core::{
     dns::message::{Rcode, Rtype},
     metrics::XfrResult,
@@ -131,7 +131,7 @@ pub(crate) async fn handle_tcp_xfr(
         }
         Err(XfrError::NotAuth(_)) => {
             track_result(XfrResult::NotAuth);
-            let response = signed_error(query, Rcode::NOTAUTH, identity.signer.as_mut())?;
+            let response = query.signed_error_response(Rcode::NOTAUTH, identity.signer.as_mut())?;
             wire::write_tcp_message(stream, &response).await?;
             Ok(())
         }

@@ -1,5 +1,5 @@
 use bindizr_core::{
-    dns::{Serial, SoaInterval, Ttl, dnssec::generate_key, name::ZoneName, query::DsRecord},
+    dns::{Serial, SoaInterval, Ttl, name::ZoneName, query::DsRecord},
     model::{
         dnssec_key::{DnssecAlgorithm, DnssecKeyRole},
         dnssec_policy::PolicyId,
@@ -34,7 +34,7 @@ fn zone() -> Zone {
 /// Build a combined signing key fixture.
 fn csk() -> DnssecKey {
     let now = Utc::now();
-    generate_key(
+    DnssecKey::generate(
         &zone(),
         DnssecAlgorithm::EcdsaP256Sha256,
         DnssecKeyRole::Csk,

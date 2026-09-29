@@ -2,7 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 
 use super::*;
 use crate::{
-    dns::{Serial, SoaInterval, dnssec::generate_key, name::ZoneName},
+    dns::{Serial, SoaInterval, name::ZoneName},
     model::zone::{Zone, ZoneId},
 };
 
@@ -58,7 +58,7 @@ fn import(timing: &[(&str, String)]) -> Result<DnssecKey, ImportKeyError> {
     for (field, at) in timing {
         private.push_str(&format!("{}: {}\n", field, at));
     }
-    import_key(&test_zone(), true, BIND_DNSKEY, &private, now())
+    DnssecKey::import(&test_zone(), true, BIND_DNSKEY, &private, now())
 }
 
 /// Verify that a key file without timing imports as a settled active key.
@@ -150,7 +150,7 @@ fn an_exported_key_file_re_imports_in_the_state_it_left() {
         ],
     ] {
         let key = import(&timing).unwrap();
-        let reimported = import_key(
+        let reimported = DnssecKey::import(
             &test_zone(),
             true,
             BIND_DNSKEY,
@@ -175,7 +175,7 @@ fn imported_bind_key_pair_round_trips() {
         generated.public_key
     );
 
-    let imported = import_key(&zone, false, &dnskey, &generated.private_key, now()).unwrap();
+    let imported = DnssecKey::import(&zone, false, &dnskey, &generated.private_key, now()).unwrap();
 
     assert_eq!(imported.role, DnssecKeyRole::Csk);
     assert_eq!(imported.key_tag, generated.key_tag);
@@ -191,16 +191,16 @@ fn import_derives_the_role_from_the_key_layout() {
     let dnskey = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", sep.public_key);
 
     // The SEP flag alone cannot tell a CSK from a KSK; the layout does.
-    let imported = import_key(&zone, false, &dnskey, &sep.private_key, now()).unwrap();
+    let imported = DnssecKey::import(&zone, false, &dnskey, &sep.private_key, now()).unwrap();
     assert_eq!(imported.role, DnssecKeyRole::Csk);
-    let imported = import_key(&zone, true, &dnskey, &sep.private_key, now()).unwrap();
+    let imported = DnssecKey::import(&zone, true, &dnskey, &sep.private_key, now()).unwrap();
     assert_eq!(imported.role, DnssecKeyRole::Ksk);
 
     let zsk = test_key(&zone, 2, DnssecKeyRole::Zsk, DnssecKeyState::Active);
     let dnskey = format!("example.com. 3600 IN DNSKEY 256 3 13 {}", zsk.public_key);
-    let imported = import_key(&zone, true, &dnskey, &zsk.private_key, now()).unwrap();
+    let imported = DnssecKey::import(&zone, true, &dnskey, &zsk.private_key, now()).unwrap();
     assert_eq!(imported.role, DnssecKeyRole::Zsk);
-    assert!(import_key(&zone, false, &dnskey, &zsk.private_key, now()).is_err());
+    assert!(DnssecKey::import(&zone, false, &dnskey, &zsk.private_key, now()).is_err());
 }
 
 /// Verify that `import` rejects a mismatched key pair.
@@ -211,12 +211,12 @@ fn import_rejects_a_mismatched_key_pair() {
     let other = test_key(&zone, 2, DnssecKeyRole::Csk, DnssecKeyState::Active);
     let dnskey = format!("example.com. 3600 IN DNSKEY 257 3 13 {}", one.public_key);
 
-    assert!(import_key(&zone, false, &dnskey, &other.private_key, now()).is_err());
+    assert!(DnssecKey::import(&zone, false, &dnskey, &other.private_key, now()).is_err());
 }
 
 /// Build a signing-key fixture for the test.
 fn test_key(zone: &Zone, id: i32, role: DnssecKeyRole, state: DnssecKeyState) -> DnssecKey {
-    let mut key = generate_key(
+    let mut key = DnssecKey::generate(
         zone,
         DnssecAlgorithm::EcdsaP256Sha256,
         role,

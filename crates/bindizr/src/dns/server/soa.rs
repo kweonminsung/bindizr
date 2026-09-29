@@ -18,7 +18,7 @@ use crate::dns::{
     error::XfrError,
     server::{
         DnsContext,
-        auth::{TransferIdentity, TransferRefusal, authenticate_transfer, signed_error},
+        auth::{TransferIdentity, TransferRefusal, authenticate_transfer},
         catalog,
     },
     wire,
@@ -125,7 +125,7 @@ async fn handle_soa_request(
     {
         TransferAccess::Granted(zone) => zone,
         TransferAccess::NotAuth => {
-            return signed_error(query, Rcode::NOTAUTH, identity.signer.as_mut())
+            return Ok(query.signed_error_response(Rcode::NOTAUTH, identity.signer.as_mut())?)
                 .map(|response| (response, SoaResult::NotAuth));
         }
         TransferAccess::Refused(reason) => {

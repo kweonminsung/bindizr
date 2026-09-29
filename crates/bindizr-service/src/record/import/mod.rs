@@ -17,7 +17,7 @@ use bindizr_core::{
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
-use plan::{DesiredRecord, compute_import_plan};
+use plan::{DesiredRecord, ImportPlan};
 
 use super::{
     bulk::PreparedRecord,
@@ -282,7 +282,7 @@ async fn reconcile_zone_file(
         let effective_ttl = |ttl: Option<Ttl>| ttl.unwrap_or(zone.default_ttl);
 
         let t = Instant::now();
-        let plan = compute_import_plan(mode, &zone, &existing_records, &desired);
+        let plan = ImportPlan::compute(mode, &zone, &existing_records, &desired);
         timings.reconcile_ms = elapsed_ms(t);
 
         // Validate additions against an in-memory copy so constraint

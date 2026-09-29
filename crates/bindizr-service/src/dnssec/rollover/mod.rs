@@ -4,7 +4,7 @@
 
 use bindizr_core::{
     dns::{
-        dnssec::{KeyTag, SigningPass, generate_key},
+        dnssec::{KeyTag, SigningPass},
         name::ZoneName,
     },
     model::dnssec_key::DnssecKeyId,
@@ -236,7 +236,7 @@ pub(crate) async fn publish_replacement_key_tx(
 ) -> Result<DnssecKey, ServiceError> {
     let now = Utc::now();
     let publish_wait = Duration::seconds(i64::from(zone.default_ttl.as_secs()));
-    let new_key = generate_key(
+    let new_key = DnssecKey::generate(
         zone,
         algorithm,
         template.role,
