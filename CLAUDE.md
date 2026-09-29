@@ -174,11 +174,15 @@ each rule says which spelling is this project's.
   two-variant enum named for the choice — `Run::DryRun`, `ZoneView::Signed`,
   `DsCheck::Skip`, `Holddown::Skip`, `NotifySerial::Bump`,
   `VersionScope::All`, `SigningPass::Full` — so `zone::delete(&cx, &caller,
-  &name, Run::DryRun)` reads without the signature, and several such
-  choices on one call are one struct of named fields. The front end that
-  parses the flag builds the enum (`Run::from_dry_run(dry_run)`) and the
-  socket carries it as such. An `Option<&str>` that means "all" when
-  `None` is an enum with an `All` variant (`NotifyTarget::All`); a request
+  &name, Run::DryRun)` reads without the signature, three or more such
+  choices on one call are one struct of named fields, and two stay two
+  parameters (`advance_rollover(…, DsCheck::Skip, Holddown::Skip)`). The
+  front end that parses the flag or query parameter builds the enum
+  (`Run::from_dry_run(dry_run)`) and the socket carries it as such; a
+  body's `dry_run` is read by the service that takes the body
+  (`record::create_bulk`), as *Who decides what* says. An `Option<&str>`
+  that means "all" when `None` is an enum with an `All` variant
+  (`NotifyTarget::All`); a request
   field that spells an enum (`role`, `algorithm`) stays a `String` the
   service parses (`FromStr`, refused as `INVALID_INPUT` naming the supported
   values), as it parses a name; a response field that spells one is the
@@ -474,8 +478,8 @@ the service needs both, and the `_tx` form alone where it needs the lock
 - `list` / `count` — a filtered collection / its cardinality. `list_all` is
   the unfiltered form.
 - `create` / `update` / `delete` — literal row operations. A partial update
-  names the one field it touches: `update_<entity>_<field>`
-  (`update_zone_serial_tx`).
+  names the one field it touches, the entity elided as everywhere:
+  `update_<field>` (`zone::update_serial_tx`).
 - `upsert` — insert-or-update; a conditional rule (the catalog serial
   advancing only when the digest changed) lives in the doc comment, not the
   name.
@@ -507,16 +511,15 @@ connectivity plumbing, not entity functions, and are the only exemptions.
   `_by_filter` is the one non-column key: a struct of optional predicates for
   the listing queries.
 - `_with_<join>` — the result carries joined data
-  (`get_record_with_zone`); never a filter or semi-join.
+  (`record::get_with_zone`); never a filter or semi-join.
 - `_<predicate>` — a comparison filter as `<subject>_<comparison>`. Serial
   intervals keep their contracts in doc comments — the journal's
   `between_serials` is the IXFR half-open `(from, to]`, the versions'
   `in_serial_range` the closed `[from, to]`.
 - Projections — a function returning one column rather than entity rows
-  names that column, pluralized, where the rows would be, prefixed by the
-  row set it filters when the module's entity does not say it
-  (`dnssec_record::list_rrsig_zone_ids_expiring_within_refresh` — `rrsig`,
-  since only RRSIG rows carry `expires_at`).
+  names that column, pluralized, where the rows would be
+  (`dnssec_record::list_zone_ids_expiring_within_refresh`); the predicate
+  says which rows, so no row-set prefix is added.
 - `_tx` — runs on the caller's transaction, taken as the first parameter.
 
 **Time filters** take a `cutoff` parameter and resolve the predicate's
@@ -540,7 +543,9 @@ equality selector the name must carry as `_by_state`.
   and omit the entity the module already names (`zone::get_by_name`, not
   `zone::get_zone_by_name`).
   Verbs: `get_*` maps a miss to NotFound, `find_*` returns `Option`, `list_*`
-  returns a collection, `count_*` a count; a domain verb is preferred where
+  returns a collection, `count_*` a count; `lookup_*` is `get_*` without a
+  caller, the `pub(crate)` read a flow makes past visibility
+  (`zone::lookup_by_name`); a domain verb is preferred where
   it says more (`advance_catalog_serial`, `sign_zone_tx`).
 - A record mutation that also writes IXFR journal rows says so in the name:
   `*_with_changes_tx`. Preconditions (e.g. "caller already validated the
@@ -601,14 +606,17 @@ is created, updated, or deleted. `convert_` does not exist: a conversion is
   field context; `validate_<thing>` is the same check phrased against a named
   field and mapped to the caller's error type. The pair lives together.
   `verify_<thing>` — a cryptographic check that yields a result
-  (`verify_tsig`). `check_<thing>` — a doctor-style diagnostic that reports
-  instead of failing.
-- Derivation: `build_<thing>` / `compute_<thing>` — assemble or derive a value
-  from several inputs (`build_record_diff`, `compute_import_plan`);
-  `group_<things>` partitions into a keyed map; `normalize_<thing>` —
-  service-layer trim + canonicalize + validate, returning the canonical value
-  or a `ServiceError`; `generate_<thing>` — fresh key, secret, or serial
-  material.
+  (`verify_tsig`). `check_<thing>` — a `doctor` diagnostic that reports
+  instead of failing; an operation's `check` (`check_ds`, `secondary::check`)
+  is *Diagnostics*'s verb.
+- Derivation: `build_<thing>` — assemble a payload, a standard type or a
+  map from several inputs (`build_record_diff`, `build_page`); a value of
+  the module's own type is made by that type's `compute` or `generate`
+  constructor (*Methods*), never by a free `compute_`. `group_<things>`
+  partitions into a keyed map; `normalize_<thing>` — service-layer trim +
+  canonicalize + validate, returning the canonical value or a
+  `ServiceError`; `generate_<thing>` — fresh secret or serial material of a
+  standard or foreign type (`generate_secret`, `generate_serial`).
 - I/O: `send_` (one message out), `query_` (one DNS question), `probe_` (ask
   and report reachability or state), `fetch_` (pull a whole artifact, such as
   an AXFR), `resolve_` / `discover_` (names to addresses, the parent zone),
@@ -631,8 +639,8 @@ I/O or a side effect keeps its verb — and to constructors, which are named
 by what they build: the kind alone where the module builds one kind of
 thing (`unauthorized(message) -> Response` in the auth middleware,
 `ServiceError::unauthorized`), with `_error` / `_response` added only where
-one module builds several (`upstream_error_response`,
-`signed_error`). Names an external trait fixes (`Log::enabled`,
+one module builds several (`ParsedQuery::signed_error_response`). Names an
+external trait fixes (`Log::enabled`,
 `KeyStore::get_key`, sqlx's `compatible`) and serde default providers
 (`default_<field>`) are outside the vocabulary.
 
@@ -672,7 +680,8 @@ grep -rnoE "\b[A-Za-z0-9_]*[Rr]r(set|s)?\b" crates --include='*.rs' \
 ### Presentation — a value spells itself once
 
 A fixed-set value has two spellings and no more. `as_str` is the storage and
-API form, the one serde's `rename_all` also produces, and is what a row or a
+API form, the one serde's `rename_all` also produces — each such enum's
+`spells_itself_once` test holds the two together — and is what a row or a
 metric label binds. `Display` is the presentation form, the one a person
 reads in a table cell or a message, and every front end writes the value
 with `{}` rather than spelling a variant itself. The two coincide unless the
@@ -838,8 +847,10 @@ settled the list walked every method in the workspace.
    (`ServiceError::zone_not_found`, `TransferRefusal::refused`). A value a
    module builds from inputs, with the module's own error, is made this way
    (`DnssecKey::generate`, `ImportPlan::compute`, `ZoneChangeSet::compute`
-   takes the ops as an input), never by a free `generate_` or `compute_`
-   helper. I/O belongs here only when the value is the resource it opens
+   takes the ops as an input), never by a free `compute_` helper; a free
+   `generate_` makes material of a standard or foreign type with the
+   service's error (`generate_serial`). I/O belongs here only when the value
+   is the resource it opens
    (`Db::connect`) or a `Caller` authenticated from a request.
 2. **A conversion or accessor**: `as_` a free borrow, `to_` an owned
    derivation, `into_` consuming `self`, and the `From`/`TryFrom`, sqlx,

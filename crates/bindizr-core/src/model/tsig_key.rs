@@ -103,6 +103,8 @@ pub struct TsigKey {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     /// Verify that algorithm parses storage and wire forms case insensitively.
@@ -122,5 +124,22 @@ mod tests {
     #[test]
     fn algorithm_rejects_unsupported_names() {
         assert!("hmac-md5".parse::<TsigAlgorithm>().is_err());
+    }
+
+    /// Verify that `TsigAlgorithm` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn tsig_algorithm_spells_itself_once() {
+        for value in [
+            TsigAlgorithm::HmacSha256,
+            TsigAlgorithm::HmacSha384,
+            TsigAlgorithm::HmacSha512,
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<TsigAlgorithm>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<TsigAlgorithm>().unwrap(), value);
+        }
     }
 }

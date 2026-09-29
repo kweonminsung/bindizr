@@ -345,3 +345,60 @@ impl DnssecKey {
         signatures.max(i64::from(parent_ds_ttl.unwrap_or(0)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// Verify that `DnssecAlgorithm` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn dnssec_algorithm_spells_itself_once() {
+        for value in [
+            DnssecAlgorithm::RsaSha256,
+            DnssecAlgorithm::RsaSha512,
+            DnssecAlgorithm::EcdsaP256Sha256,
+            DnssecAlgorithm::EcdsaP384Sha384,
+            DnssecAlgorithm::Ed25519,
+            DnssecAlgorithm::Ed448,
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<DnssecAlgorithm>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<DnssecAlgorithm>().unwrap(), value);
+        }
+    }
+
+    /// Verify that `DnssecKeyRole` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn dnssec_key_role_spells_itself_once() {
+        for value in [DnssecKeyRole::Csk, DnssecKeyRole::Ksk, DnssecKeyRole::Zsk] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<DnssecKeyRole>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<DnssecKeyRole>().unwrap(), value);
+        }
+    }
+
+    /// Verify that `DnssecKeyState` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn dnssec_key_state_spells_itself_once() {
+        for value in [
+            DnssecKeyState::Published,
+            DnssecKeyState::Active,
+            DnssecKeyState::Retired,
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<DnssecKeyState>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<DnssecKeyState>().unwrap(), value);
+        }
+    }
+}
