@@ -2,7 +2,10 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
-use crate::{dns::Ttl, model::zone::ZoneId};
+use crate::{
+    dns::{Ttl, dnssec::KeyTag},
+    model::zone::ZoneId,
+};
 
 /// A DNSSEC key column or parameter outside the values bindizr signs with.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -272,7 +275,7 @@ pub struct DnssecKey {
     #[sqlx(try_from = "i32")]
     pub algorithm: DnssecAlgorithm,
     /// RFC 4034, Appendix B key tag, precomputed for display and DS output.
-    pub key_tag: i32,
+    pub key_tag: KeyTag,
     /// DNSKEY public-key field, base64.
     pub public_key: String,
     /// BIND private-key file format.

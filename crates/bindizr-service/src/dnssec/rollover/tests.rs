@@ -1,6 +1,9 @@
 use bindizr_core::{
-    dns::{Serial, Ttl, name::ZoneName},
-    model::{dnssec_policy::PolicyId, zone::ZoneId},
+    dns::{Serial, SoaInterval, Ttl, dnssec::KeyTag, name::ZoneName},
+    model::{
+        dnssec_policy::{Days, PolicyId},
+        zone::ZoneId,
+    },
 };
 
 use super::*;
@@ -18,9 +21,9 @@ fn zone() -> Zone {
         rname: "admin@example.com".to_string(),
         default_ttl: Ttl::from_secs(3600),
         serial: Serial::from(5),
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: Some(PolicyId::from(1)),
         parent_ns_addrs: None,
@@ -38,9 +41,9 @@ fn policy() -> DnssecPolicy {
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
         denial: DnssecDenial::Nsec,
         split_keys: false,
-        signature_validity_days: 14,
-        signature_refresh_days: 5,
-        zsk_lifetime_days: 0,
+        signature_validity_days: Days::try_from(14).unwrap(),
+        signature_refresh_days: Days::try_from(5).unwrap(),
+        zsk_lifetime_days: Days::try_from(0).unwrap(),
         created_at: Utc::now(),
     }
 }
@@ -63,7 +66,7 @@ fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible_in: i64) ->
         zone_id: ZoneId::from(1),
         role,
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
-        key_tag: id,
+        key_tag: KeyTag::try_from(id).unwrap(),
         public_key: String::new(),
         private_key: String::new(),
         state,

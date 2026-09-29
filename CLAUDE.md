@@ -174,15 +174,21 @@ each rule says which spelling is this project's.
   `Option<&str>` that spells an enum (`role`, `algorithm`) is parsed to
   that enum by the front end — parse at the boundary, pass the type. A
   policy *name* stays a string: it names a row, not a variant. A number
-  with a meaning of its own is a newtype: `Serial` and `Ttl` in
-  `bindizr_core::dns`, each with its `i32` row form and `u32` wire form as
-  `From`/`TryFrom` conversions and its own sqlx encoding, and an entity's
-  row id beside its row (`ZoneId`, `RecordId`, `TokenId`, …, one
-  `id_newtype!` each), so `list_by_zone_id_and_key_id_tx(tx, key_id,
-  zone_id)` no longer compiles. A payload keeps its wire schema through
-  `#[schema(value_type = …)]`; a request's raw `i32`/`u32` field is
+  with a meaning of its own is a newtype: `Serial`, `Ttl` and
+  `SoaInterval` in `bindizr_core::dns`, `KeyTag` in `dns::dnssec`, the
+  policy's `Days`, each with its `i32` row form and its wire or payload
+  form (`u32`, `u16`) as `From`/`TryFrom` conversions and its own sqlx
+  encoding, and an entity's row id beside its row (`ZoneId`, `RecordId`,
+  `TokenId`, …, one `id_newtype!` each), so `list_by_zone_id_and_key_id_tx(
+  tx, key_id, zone_id)` no longer compiles. A payload keeps its wire schema
+  through `#[schema(value_type = …)]`; a request's raw `i32`/`u32` field is
   validated into the newtype by the service (`validate_record_ttl`,
-  `validate_initial_serial`).
+  `validate_initial_serial`, `normalize_soa_interval`). A record's
+  priority stays `Option<i32>` up to the value parser: `RecordType` reads
+  it with the value and phrases its range against the type (`MX
+  priority`), so no earlier type could carry it. A cast that loses nothing
+  is a `From` (`i64::from(count)`); the `as` casts that remain truncate or
+  change sign on purpose.
 - **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type
   derives `Debug`; `Clone` unless it owns a resource; `PartialEq, Eq` when
   its fields allow; `Copy` for a fieldless enum or a small plain struct;

@@ -2,7 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 
 use super::*;
 use crate::{
-    dns::{Serial, dnssec::generate_key, name::ZoneName},
+    dns::{Serial, SoaInterval, dnssec::generate_key, name::ZoneName},
     model::zone::{Zone, ZoneId},
 };
 
@@ -26,9 +26,9 @@ fn test_zone() -> Zone {
         rname: "admin@example.com".to_string(),
         default_ttl: Ttl::from_secs(3600),
         serial: Serial::from(5),
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,

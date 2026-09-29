@@ -176,7 +176,7 @@ impl Endpoint {
         if !self.set_identifier.is_empty() {
             return Err(ValidateEndpointError::SetIdentifier);
         }
-        if self.record_ttl < 0 || self.record_ttl > i32::MAX as i64 {
+        if self.record_ttl < 0 || self.record_ttl > i64::from(i32::MAX) {
             return Err(ValidateEndpointError::TtlOutOfRange {
                 ttl: self.record_ttl,
             });

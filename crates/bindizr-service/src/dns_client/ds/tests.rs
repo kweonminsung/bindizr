@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use bindizr_core::dns::{name::ZoneName, query::DsRecord};
+use bindizr_core::dns::{dnssec::KeyTag, name::ZoneName, query::DsRecord};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, UdpSocket},
@@ -123,7 +123,7 @@ fn parsed_ds_record(key_tag: u16) -> DsRecord {
     rdata.extend_from_slice(&[13, 2]);
     rdata.extend_from_slice(&[0xab; 32]);
     DsRecord {
-        key_tag,
+        key_tag: KeyTag::from(key_tag),
         digest_type: 2,
         rdata,
     }
@@ -316,7 +316,7 @@ async fn query_ds_reports_absence_per_server() {
             .iter()
             .map(|a| a.as_ref().map(DsRecordSet::key_tags))
             .collect::<Vec<_>>(),
-        vec![None, Some(vec![1])]
+        vec![None, Some(vec![KeyTag::from(1)])]
     );
 }
 
@@ -372,7 +372,7 @@ async fn query_ds_falls_through_to_the_next_address_of_a_server() {
             .iter()
             .map(|a| a.as_ref().map(DsRecordSet::key_tags))
             .collect::<Vec<_>>(),
-        vec![Some(vec![7])]
+        vec![Some(vec![KeyTag::from(7)])]
     );
 }
 

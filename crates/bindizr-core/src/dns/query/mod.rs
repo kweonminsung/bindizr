@@ -13,7 +13,7 @@ use domain::{
 };
 use thiserror::Error;
 
-use crate::dns::LibraryError;
+use crate::dns::{LibraryError, dnssec::KeyTag};
 
 /// Why an answer bindizr asked for could not be read as one.
 #[derive(Debug, Error)]
@@ -318,8 +318,8 @@ pub struct DsRecordSet {
 
 impl DsRecordSet {
     /// Key tags of the keys the records name, ascending and deduplicated.
-    pub fn key_tags(&self) -> Vec<u16> {
-        let mut key_tags: Vec<u16> = self.records.iter().map(|record| record.key_tag).collect();
+    pub fn key_tags(&self) -> Vec<KeyTag> {
+        let mut key_tags: Vec<KeyTag> = self.records.iter().map(|record| record.key_tag).collect();
         key_tags.dedup();
         key_tags
     }
@@ -328,7 +328,7 @@ impl DsRecordSet {
 /// One DS record of a parent's answer.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DsRecord {
-    pub key_tag: u16,
+    pub key_tag: KeyTag,
     pub digest_type: u8,
     /// The RDATA of RFC 4034, Section 5.1; matched whole, since keys can
     /// share a 16-bit tag.
@@ -367,7 +367,7 @@ pub fn extract_ds_record_set(
             .compose_rdata(&mut rdata)
             .expect("composing into a Vec cannot run out of space");
         records.push(DsRecord {
-            key_tag: record.data().key_tag(),
+            key_tag: KeyTag::from(record.data().key_tag()),
             digest_type: record.data().digest_type().to_int(),
             rdata,
         });

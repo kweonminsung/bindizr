@@ -164,8 +164,9 @@ fn parse_quoted_segments(trimmed: &str) -> Result<Vec<String>, ParseRecordValueE
                                 field: "TXT value",
                             });
                         };
-                        let code =
-                            (d - b'0') as u16 * 100 + (d2 - b'0') as u16 * 10 + (d3 - b'0') as u16;
+                        let code = u16::from(d - b'0') * 100
+                            + u16::from(d2 - b'0') * 10
+                            + u16::from(d3 - b'0');
                         if code > 255 {
                             return Err(ParseRecordValueError::InvalidEscape {
                                 field: "TXT value",

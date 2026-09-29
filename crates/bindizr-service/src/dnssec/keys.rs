@@ -49,7 +49,7 @@ pub async fn export_keys(
                 .map(|key| DnssecKeyMaterial {
                     role: key.role,
                     algorithm: key.algorithm.to_int(),
-                    key_tag: key.key_tag as u16,
+                    key_tag: key.key_tag,
                     dnskey_record: format!(
                         "{}. IN DNSKEY {} 3 {} {}",
                         zone.name.as_str(),

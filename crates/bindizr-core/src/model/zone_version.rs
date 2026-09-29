@@ -4,7 +4,7 @@ use sqlx::FromRow;
 use thiserror::Error;
 
 use crate::{
-    dns::{Serial, Ttl},
+    dns::{Serial, SoaInterval, Ttl},
     model::zone::ZoneId,
 };
 
@@ -45,9 +45,9 @@ pub struct ZoneVersion {
     /// admin email.
     pub rname: String,
     pub default_ttl: Ttl,
-    pub refresh: i32,
-    pub retry: i32,
-    pub expire: i32,
+    pub refresh: SoaInterval,
+    pub retry: SoaInterval,
+    pub expire: SoaInterval,
     pub minimum_ttl: Ttl,
     /// Which plane asked for this version.
     #[sqlx(try_from = "String")]

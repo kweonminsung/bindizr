@@ -1,6 +1,6 @@
 //! DNSSEC policy payloads.
 
-use bindizr_core::model::dnssec_policy::PolicyId;
+use bindizr_core::model::dnssec_policy::{Days, PolicyId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -69,13 +69,13 @@ pub struct GetDnssecPolicyResponse {
     pub denial: DnssecDenial,
     #[schema(example = false)]
     pub split_keys: bool,
-    #[schema(example = 14)]
-    pub signature_validity_days: u32,
-    #[schema(example = 5)]
-    pub signature_refresh_days: u32,
+    #[schema(example = 14, value_type = u32)]
+    pub signature_validity_days: Days,
+    #[schema(example = 5, value_type = u32)]
+    pub signature_refresh_days: Days,
     /// 0 disables scheduled ZSK rollovers.
-    #[schema(example = 0)]
-    pub zsk_lifetime_days: u32,
+    #[schema(example = 0, value_type = u32)]
+    pub zsk_lifetime_days: Days,
     pub created_at: DateTime<Utc>,
 }
 
@@ -88,9 +88,9 @@ impl From<&DnssecPolicy> for GetDnssecPolicyResponse {
             algorithm: policy.algorithm.to_string(),
             denial: policy.denial,
             split_keys: policy.split_keys,
-            signature_validity_days: policy.signature_validity_days.max(0) as u32,
-            signature_refresh_days: policy.signature_refresh_days.max(0) as u32,
-            zsk_lifetime_days: policy.zsk_lifetime_days.max(0) as u32,
+            signature_validity_days: policy.signature_validity_days,
+            signature_refresh_days: policy.signature_refresh_days,
+            zsk_lifetime_days: policy.zsk_lifetime_days,
             created_at: policy.created_at,
         }
     }

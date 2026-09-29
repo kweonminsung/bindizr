@@ -97,23 +97,23 @@ impl Config {
                 parse_env_value("BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_TTL") {
-            self.dns.zone_defaults.ttl = parse_env_value("BINDIZR_DNS_ZONE_DEFAULTS_TTL", &value)?;
+            self.dns.zone_defaults.ttl = parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_TTL", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_REFRESH") {
             self.dns.zone_defaults.refresh =
-                parse_env_value("BINDIZR_DNS_ZONE_DEFAULTS_REFRESH", &value)?;
+                parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_REFRESH", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_RETRY") {
             self.dns.zone_defaults.retry =
-                parse_env_value("BINDIZR_DNS_ZONE_DEFAULTS_RETRY", &value)?;
+                parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_RETRY", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE") {
             self.dns.zone_defaults.expire =
-                parse_env_value("BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE", &value)?;
+                parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_EXPIRE", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL") {
             self.dns.zone_defaults.minimum_ttl =
-                parse_env_value("BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL", &value)?;
+                parse_env_secs("BINDIZR_DNS_ZONE_DEFAULTS_MINIMUM_TTL", &value)?;
         }
         if let Some(value) = get_env("BINDIZR_LOGGING_LEVEL") {
             self.logging.level = parse_env_value("BINDIZR_LOGGING_LEVEL", &value)?;
@@ -133,6 +133,21 @@ fn to_optional_setting(value: String) -> Option<String> {
 }
 
 /// Parse an environment override or return a configuration error.
+/// Parse a seconds value into its newtype, refusing what the row form cannot
+/// hold.
+fn parse_env_secs<T>(name: &'static str, value: &str) -> Result<T, ConfigError>
+where
+    T: TryFrom<u32>,
+    T::Error: std::error::Error + Send + Sync + 'static,
+{
+    let secs: u32 = parse_env_value(name, value)?;
+    T::try_from(secs).map_err(|e| ConfigError::Env {
+        name,
+        value: value.to_string(),
+        source: Box::new(e),
+    })
+}
+
 fn parse_env_value<T>(name: &'static str, value: &str) -> Result<T, ConfigError>
 where
     T: std::str::FromStr,

@@ -1,4 +1,7 @@
-use bindizr_core::{dns::Ttl, model::dnssec_key::DnssecAlgorithm};
+use bindizr_core::{
+    dns::{Ttl, dnssec::KeyTag},
+    model::dnssec_key::DnssecAlgorithm,
+};
 use chrono::Duration;
 
 use super::*;
@@ -10,7 +13,7 @@ fn key(id: i32, role: DnssecKeyRole, state: DnssecKeyState, eligible: DateTime<U
         zone_id: ZoneId::from(1),
         role,
         algorithm: DnssecAlgorithm::EcdsaP256Sha256,
-        key_tag: id,
+        key_tag: KeyTag::try_from(id).unwrap(),
         public_key: String::new(),
         private_key: String::new(),
         state,

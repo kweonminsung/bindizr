@@ -9,7 +9,7 @@ use thiserror::Error;
 
 /// A TTL in seconds, 0 through 2^31 - 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "u32", into = "u32")]
 pub struct Ttl(u32);
 
 /// A TTL outside the range both forms hold.
@@ -84,7 +84,7 @@ impl From<Ttl> for i32 {
 impl fmt::Display for Ttl {
     /// Write the TTL in seconds.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        fmt::Display::fmt(&self.0, f)
     }
 }
 

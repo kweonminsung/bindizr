@@ -1,7 +1,7 @@
 //! Zone request, patch, filter, and response payloads.
 
 use bindizr_core::{
-    dns::{Serial, Ttl, name::ZoneName, record::SoaMailbox, zonefile::ZoneFileSoa},
+    dns::{Serial, SoaInterval, Ttl, name::ZoneName, record::SoaMailbox, zonefile::ZoneFileSoa},
     model::zone::ZoneId,
 };
 use chrono::{DateTime, Utc};
@@ -70,12 +70,12 @@ pub struct GetZoneResponse {
     pub default_ttl: Ttl,
     #[schema(example = 42, value_type = u32)]
     pub serial: Serial,
-    #[schema(example = 7200)]
-    pub refresh: i32,
-    #[schema(example = 3600)]
-    pub retry: i32,
-    #[schema(example = 604800)]
-    pub expire: i32,
+    #[schema(example = 7200, value_type = i32)]
+    pub refresh: SoaInterval,
+    #[schema(example = 3600, value_type = i32)]
+    pub retry: SoaInterval,
+    #[schema(example = 604800, value_type = i32)]
+    pub expire: SoaInterval,
     #[schema(example = 3600, value_type = i32)]
     pub minimum_ttl: Ttl,
     /// Whether the DNS plane serves the zone. A disabled one stays editable but
@@ -163,9 +163,9 @@ impl CreateZoneRequest {
             serial: validate_initial_serial(soa.serial)
                 .is_ok()
                 .then_some(soa.serial),
-            refresh: Some(soa.refresh),
-            retry: Some(soa.retry),
-            expire: Some(soa.expire),
+            refresh: Some(i32::from(soa.refresh)),
+            retry: Some(i32::from(soa.retry)),
+            expire: Some(i32::from(soa.expire)),
             minimum_ttl: Some(i32::from(soa.minimum_ttl)),
             description: None,
         })

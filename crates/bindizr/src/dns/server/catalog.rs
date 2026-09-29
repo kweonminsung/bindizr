@@ -1,5 +1,5 @@
 use bindizr_core::{
-    dns::{Serial, Ttl, message, message::Rtype, tsig::TransferSigner},
+    dns::{Serial, SoaInterval, Ttl, message, message::Rtype, tsig::TransferSigner},
     model::zone::{Zone, ZoneId},
 };
 use bindizr_service::zone;
@@ -46,9 +46,9 @@ pub(crate) async fn generate_catalog_zone(
         rname: "invalid".to_string(),
         default_ttl: Ttl::from_secs(3600),
         serial,
-        refresh: 3600,
-        retry: 600,
-        expire: 86400,
+        refresh: SoaInterval::from_secs(3600),
+        retry: SoaInterval::from_secs(600),
+        expire: SoaInterval::from_secs(86400),
         minimum_ttl: Ttl::from_secs(60),
         dnssec_policy_id: None,
         parent_ns_addrs: None,

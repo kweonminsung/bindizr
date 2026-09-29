@@ -1,5 +1,5 @@
 use bindizr_core::{
-    dns::{Serial, Ttl, name::ZoneName},
+    dns::{Serial, SoaInterval, Ttl, name::ZoneName},
     model::zone::ZoneId,
 };
 use chrono::Utc;
@@ -16,9 +16,9 @@ fn zone() -> Zone {
         rname: "admin@example.com".to_string(),
         default_ttl: Ttl::from_secs(300),
         serial: Serial::from(5),
-        refresh: 300,
-        retry: 60,
-        expire: 3600000,
+        refresh: SoaInterval::from_secs(300),
+        retry: SoaInterval::from_secs(60),
+        expire: SoaInterval::from_secs(3600000),
         minimum_ttl: Ttl::from_secs(900),
         dnssec_policy_id: None,
         parent_ns_addrs: None,

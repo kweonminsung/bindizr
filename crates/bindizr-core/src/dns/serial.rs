@@ -77,7 +77,7 @@ impl TryFrom<Serial> for i32 {
 impl fmt::Display for Serial {
     /// Write the serial in decimal.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        fmt::Display::fmt(&self.0, f)
     }
 }
 

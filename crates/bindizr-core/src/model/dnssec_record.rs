@@ -194,6 +194,6 @@ where
         &self,
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        (self.wire_type() as i32).encode_by_ref(buf)
+        i32::from(self.wire_type()).encode_by_ref(buf)
     }
 }

@@ -287,23 +287,23 @@ async fn apply_signed_view_tx(
 mod tests {
     use bindizr_core::model::{
         dnssec_key::DnssecAlgorithm,
-        dnssec_policy::{DnssecDenial, PolicyId},
+        dnssec_policy::{Days, DnssecDenial, PolicyId},
     };
     use chrono::Utc;
 
     use super::DnssecPolicy;
 
     /// Build a policy fixture with the requested signature timing.
-    fn policy(signature_validity_days: i32, signature_refresh_days: i32) -> DnssecPolicy {
+    fn policy(signature_validity_days: u32, signature_refresh_days: u32) -> DnssecPolicy {
         DnssecPolicy {
             id: PolicyId::from(1),
             name: "default".to_string(),
             algorithm: DnssecAlgorithm::EcdsaP256Sha256,
             denial: DnssecDenial::Nsec,
             split_keys: false,
-            signature_validity_days,
-            signature_refresh_days,
-            zsk_lifetime_days: 0,
+            signature_validity_days: Days::try_from(signature_validity_days).unwrap(),
+            signature_refresh_days: Days::try_from(signature_refresh_days).unwrap(),
+            zsk_lifetime_days: Days::try_from(0).unwrap(),
             created_at: Utc::now(),
         }
     }

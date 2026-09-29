@@ -3,7 +3,7 @@ use crate::{
     config::{
         BINDIZR_CONF_PATH, Config, DatabaseType, LogFormat, LogLevel, resolve_config_path_with_env,
     },
-    dns::name::ZoneName,
+    dns::{SoaInterval, name::ZoneName},
 };
 
 /// Deviations from the base config TOML; the default renders a minimal valid
@@ -252,7 +252,7 @@ fn apply_env_overrides_replaces_config_values_before_validation() {
     assert_eq!(overridden.dns.zone_history_retention_days, 0);
     // 0 is the off switch, not a rejected value.
     assert_eq!(overridden.dns.scheduler_interval_secs, 0);
-    assert_eq!(overridden.dns.zone_defaults.ttl, 600);
+    assert_eq!(overridden.dns.zone_defaults.ttl.as_secs(), 600);
     assert!(matches!(overridden.logging.level, LogLevel::Info));
     assert_eq!(overridden.logging.format, LogFormat::Json);
 }
@@ -455,6 +455,21 @@ fn apply_env_overrides_rejects_an_unusable_catalog_zone_name() {
 
     assert!(
         matches!(error, ConfigError::CatalogZoneName(_)),
+        "unexpected error: {error}"
+    );
+}
+
+/// Verify that a zero zone default is refused when the configuration loads,
+/// as the same value in a request would be.
+#[test]
+fn dns_validate_rejects_a_zero_zone_default() {
+    let mut parsed = parse_config(&TestConfigToml::default()).unwrap();
+    parsed.dns.zone_defaults.retry = SoaInterval::from_secs(0);
+
+    let error = parsed.dns.validate().unwrap_err();
+
+    assert!(
+        matches!(error, ConfigError::ZoneDefaultZero { field: "retry" }),
         "unexpected error: {error}"
     );
 }

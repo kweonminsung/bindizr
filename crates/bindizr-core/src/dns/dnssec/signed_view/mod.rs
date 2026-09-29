@@ -25,7 +25,7 @@ use super::{WireName, WireRecord};
 use crate::{
     dns::{
         ConvertTtlError, LibraryError, Serial, Ttl,
-        dnssec::{KeyRdataError, WireNameError},
+        dnssec::{KeyRdataError, KeyTag, WireNameError},
         name::{OwnerName, ParseNameError, ZoneName},
         record::{EncodeRdataError, Rdata},
     },
@@ -246,7 +246,7 @@ impl SignedViewParams<'_> {
         let refresh_cutoff = self.now + chrono::Duration::seconds(self.refresh_secs);
         for record_set in &signable {
             let owner = parse_derived_owner(record_set[0].owner(), &zone.name)?;
-            let covered = record_set[0].rtype().to_int() as i32;
+            let covered = i32::from(record_set[0].rtype().to_int());
             // The apex key record sets must be signed by keys the parent DS names
             // (RFC 7344, Section 4.1 for CDS/CDNSKEY); everything else by the
             // active zone-data keys.
@@ -372,7 +372,7 @@ fn record_set_digest(signers: &[&Signer<'_>], record_set: &[&SignRecord]) -> Str
         // Key tags are 16 bits and can collide across a rollover; the row id
         // pins the actual signing key so a stale signature cannot be reused.
         hasher.update(i32::from(signer.key.id).to_be_bytes());
-        hasher.update(signer.key_tag.to_be_bytes());
+        hasher.update(signer.key_tag.as_u16().to_be_bytes());
         hasher.update([signer.algorithm]);
     }
     hex::encode(hasher.finalize())
@@ -412,7 +412,7 @@ pub(crate) struct Signer<'a> {
     key: &'a DnssecKey,
     signing_key: SigningKey<Vec<u8>, KeyPair>,
     dnskey: domain::rdata::Dnskey<Vec<u8>>,
-    key_tag: u16,
+    key_tag: KeyTag,
     algorithm: u8,
 }
 
@@ -427,7 +427,7 @@ impl<'a> Signer<'a> {
         Ok(Signer {
             key,
             signing_key: SigningKey::new(apex.clone(), key.role.flags(), key_pair),
-            key_tag: dnskey.key_tag(),
+            key_tag: KeyTag::from(dnskey.key_tag()),
             algorithm: key.algorithm.to_int() as u8,
             dnskey,
         })

@@ -3,12 +3,12 @@ mod env_overrides;
 #[cfg(test)]
 mod tests;
 
-use std::{env, fmt, net::IpAddr, path::PathBuf};
+use std::{env, fmt, net::IpAddr, path::PathBuf, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::dns::name::ZoneName;
+use crate::dns::{SoaInterval, Ttl, name::ZoneName};
 
 /// Why the configuration could not be loaded or does not describe a runnable
 /// process. Each message names the setting an operator would fix.
@@ -56,6 +56,9 @@ pub enum ConfigError {
     },
     #[error("dns.catalog_zone_name is not a zone name: {0}")]
     CatalogZoneName(#[source] crate::dns::name::ParseNameError),
+    /// A zero would stop secondaries refreshing, so a zone must not inherit it.
+    #[error("dns.zone_defaults.{field} must be a positive number of seconds")]
+    ZoneDefaultZero { field: &'static str },
 }
 
 const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
@@ -242,6 +245,13 @@ pub struct NotifyConfig {
     pub timeout_secs: u64,
 }
 
+impl NotifyConfig {
+    /// How long one NOTIFY, probe, or resolution waits for its answer.
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.timeout_secs)
+    }
+}
+
 impl Default for NotifyConfig {
     /// Build the default NOTIFY settings.
     fn default() -> Self {
@@ -279,18 +289,18 @@ impl Default for TransferCacheConfig {
 #[serde(deny_unknown_fields)]
 pub struct ZoneDefaultsConfig {
     #[serde(default = "default_zone_ttl")]
-    pub ttl: i32,
+    pub ttl: Ttl,
     /// Bindizr drives propagation with NOTIFY, so refresh and retry stay
     /// short: they bound how long a secondary stays stale when a NOTIFY is
     /// lost, not the happy-path latency.
     #[serde(default = "default_zone_refresh")]
-    pub refresh: i32,
+    pub refresh: SoaInterval,
     #[serde(default = "default_zone_retry")]
-    pub retry: i32,
+    pub retry: SoaInterval,
     #[serde(default = "default_zone_expire")]
-    pub expire: i32,
+    pub expire: SoaInterval,
     #[serde(default = "default_zone_minimum_ttl")]
-    pub minimum_ttl: i32,
+    pub minimum_ttl: Ttl,
 }
 
 impl Default for ZoneDefaultsConfig {
@@ -307,28 +317,28 @@ impl Default for ZoneDefaultsConfig {
 }
 
 /// Return the default zone TTL setting.
-fn default_zone_ttl() -> i32 {
-    3_600
+fn default_zone_ttl() -> Ttl {
+    Ttl::from_secs(3_600)
 }
 
 /// Return the default zone refresh setting.
-fn default_zone_refresh() -> i32 {
-    300
+fn default_zone_refresh() -> SoaInterval {
+    SoaInterval::from_secs(300)
 }
 
 /// Return the default zone retry setting.
-fn default_zone_retry() -> i32 {
-    60
+fn default_zone_retry() -> SoaInterval {
+    SoaInterval::from_secs(60)
 }
 
 /// Return the default zone expire setting.
-fn default_zone_expire() -> i32 {
-    3_600_000
+fn default_zone_expire() -> SoaInterval {
+    SoaInterval::from_secs(3_600_000)
 }
 
 /// Return the default zone minimum TTL setting.
-fn default_zone_minimum_ttl() -> i32 {
-    86_400
+fn default_zone_minimum_ttl() -> Ttl {
+    Ttl::from_secs(86_400)
 }
 
 /// Return the default zone history retention days setting.
@@ -628,6 +638,19 @@ impl DnsConfig {
     fn validate(&self) -> Result<(), ConfigError> {
         if self.listen_port == 0 {
             return Err(ConfigError::PortZero { section: "dns" });
+        }
+        // A zone without its own timers inherits these; a zero is refused
+        // here as it is in a request.
+        let defaults = &self.zone_defaults;
+        for (field, secs) in [
+            ("refresh", defaults.refresh.as_secs()),
+            ("retry", defaults.retry.as_secs()),
+            ("expire", defaults.expire.as_secs()),
+            ("minimum_ttl", defaults.minimum_ttl.as_secs()),
+        ] {
+            if secs == 0 {
+                return Err(ConfigError::ZoneDefaultZero { field });
+            }
         }
         Ok(())
     }

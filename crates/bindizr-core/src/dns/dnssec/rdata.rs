@@ -80,7 +80,7 @@ impl DnssecKey {
         };
 
         let mut rdata = Vec::with_capacity(4 + digest.len());
-        rdata.extend_from_slice(&(self.key_tag as u16).to_be_bytes());
+        rdata.extend_from_slice(&self.key_tag.as_u16().to_be_bytes());
         rdata.push(self.algorithm.to_int() as u8);
         rdata.push(digest_type);
         rdata.extend_from_slice(&digest);

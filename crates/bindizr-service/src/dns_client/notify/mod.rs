@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use bindizr_core::{
     dns::{
@@ -98,7 +98,8 @@ pub async fn send_notify_to_secondary(
     let retries = dns_config.notify.retries;
     // The zone name is a stored row, so one that does not parse is the
     // server's fault.
-    let qname = Name::<Vec<u8>>::from_str(zone_name.as_str())
+    let qname = zone_name
+        .to_wire_name()
         .map_err(|e| ServiceError::internal(format!("invalid zone name: {}", e)))?;
 
     let key = match secondary::notify_signing_key(cx, secondary).await {

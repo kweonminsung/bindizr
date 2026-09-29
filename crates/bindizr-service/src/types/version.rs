@@ -1,6 +1,6 @@
 //! Zone version, diff, and rollback payloads.
 
-use bindizr_core::dns::{Serial, Ttl, name::ZoneName, record::SoaMailbox};
+use bindizr_core::dns::{Serial, SoaInterval, Ttl, name::ZoneName, record::SoaMailbox};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -26,12 +26,12 @@ pub struct ZoneVersionResponse {
     pub rname: String,
     #[schema(example = 3600, value_type = i32)]
     pub default_ttl: Ttl,
-    #[schema(example = 7200)]
-    pub refresh: i32,
-    #[schema(example = 3600)]
-    pub retry: i32,
-    #[schema(example = 604800)]
-    pub expire: i32,
+    #[schema(example = 7200, value_type = i32)]
+    pub refresh: SoaInterval,
+    #[schema(example = 3600, value_type = i32)]
+    pub retry: SoaInterval,
+    #[schema(example = 604800, value_type = i32)]
+    pub expire: SoaInterval,
     #[schema(example = 3600, value_type = i32)]
     pub minimum_ttl: Ttl,
     /// Which plane asked for this version: `token`, `nsupdate`, `system`

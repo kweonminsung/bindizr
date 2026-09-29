@@ -3,7 +3,7 @@ use sqlx::FromRow;
 
 use crate::{
     dns::{
-        Serial, Ttl,
+        Serial, SoaInterval, Ttl,
         name::ZoneName,
         record::{EncodeRdataError, ParseMailboxError, Rdata, SoaMailbox, SoaRecordValue},
     },
@@ -27,9 +27,9 @@ pub struct Zone {
     pub rname: String,
     pub default_ttl: Ttl,
     pub serial: Serial,
-    pub refresh: i32,
-    pub retry: i32,
-    pub expire: i32,
+    pub refresh: SoaInterval,
+    pub retry: SoaInterval,
+    pub expire: SoaInterval,
     pub minimum_ttl: Ttl,
     /// The DNSSEC policy a signed zone signs under; owned by DNSSEC
     /// enable/disable, untouched by ordinary zone updates.
@@ -71,9 +71,9 @@ impl Zone {
             mname: &self.mname,
             rname: rname.as_str(),
             serial: serial.as_u32(),
-            refresh: self.refresh as u32,
-            retry: self.retry as u32,
-            expire: self.expire as u32,
+            refresh: self.refresh.as_secs(),
+            retry: self.retry.as_secs(),
+            expire: self.expire.as_secs(),
             minimum: self.minimum_ttl.as_secs(),
         }
         .to_rdata()

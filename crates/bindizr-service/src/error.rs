@@ -1,7 +1,7 @@
 use std::fmt;
 
 use bindizr_core::{
-    dns::Serial,
+    dns::{Serial, dnssec::KeyTag},
     model::{record::RecordId, token_grant::TokenGrantId, tsig_grant::TsigGrantId},
 };
 use thiserror::Error;
@@ -502,7 +502,7 @@ impl ServiceError {
     }
 
     /// Build an error listing DS records that still block DNSSEC removal.
-    pub(crate) fn dnssec_ds_published(zone_name: impl fmt::Display, key_tags: &[u16]) -> Self {
+    pub(crate) fn dnssec_ds_published(zone_name: impl fmt::Display, key_tags: &[KeyTag]) -> Self {
         ServiceError::DnssecDsPublished(format!(
             "the parent zone still serves DS records for zone '{}' (key tag{} {}); remove \
                  them and wait out their TTL before disabling DNSSEC, or skip the DS check",
@@ -517,7 +517,10 @@ impl ServiceError {
     }
 
     /// Build an error listing DS records still required for key promotion.
-    pub(crate) fn dnssec_ds_not_published(zone_name: impl fmt::Display, key_tags: &[u16]) -> Self {
+    pub(crate) fn dnssec_ds_not_published(
+        zone_name: impl fmt::Display,
+        key_tags: &[KeyTag],
+    ) -> Self {
         ServiceError::DnssecDsNotPublished(format!(
             "the parent zone serves no DS yet for key tag{} {} of zone '{}'; register it \
                  and wait out the DS TTL before confirming, or skip the DS check",
@@ -534,7 +537,7 @@ impl ServiceError {
     /// Build an error for parent DS digests that cannot be verified.
     pub(crate) fn dnssec_ds_digest_unsupported(
         zone_name: impl fmt::Display,
-        key_tags: &[u16],
+        key_tags: &[KeyTag],
     ) -> Self {
         ServiceError::DnssecDsUnverified(format!(
             "the parent zone serves a DS for key tag{} {} of zone '{}', but only in digest \

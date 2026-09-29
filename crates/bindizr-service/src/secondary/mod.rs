@@ -5,7 +5,6 @@
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
-    time::Duration,
 };
 
 use bindizr_core::{
@@ -231,7 +230,7 @@ pub async fn check(
 
     let config = cx.config();
     let catalog_zone = config.dns.catalog_zone_name.clone();
-    let timeout = Duration::from_secs(config.dns.notify.timeout_secs);
+    let timeout = config.dns.notify.timeout();
     // The listener's serial is the reference: it reflects the catalog's
     // current membership, which a stored serial would not.
     let dns_addr = SocketAddr::new(
@@ -311,7 +310,7 @@ pub async fn transfer_summary(
 /// The addresses the secondary resolves to now, which key the transfer
 /// rows; none when it does not resolve.
 async fn resolved_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
-    let timeout = Duration::from_secs(cx.config().dns.notify.timeout_secs);
+    let timeout = cx.config().dns.notify.timeout();
     match resolve_address_entry(&secondary.address, timeout).await {
         Ok(addrs) => addrs.iter().map(|addr| addr.ip()).collect(),
         Err(_) => Vec::new(),
