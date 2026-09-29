@@ -127,3 +127,28 @@ impl TryFrom<String> for ChangeSource {
         value.parse()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// Verify that `ChangeSource` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn change_source_spells_itself_once() {
+        for value in [
+            ChangeSource::Token,
+            ChangeSource::Nsupdate,
+            ChangeSource::System,
+            ChangeSource::Local,
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<ChangeSource>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<ChangeSource>().unwrap(), value);
+        }
+    }
+}

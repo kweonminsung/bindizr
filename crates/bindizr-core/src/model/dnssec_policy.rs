@@ -250,3 +250,23 @@ where
         )?)?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// Verify that `DnssecDenial` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn dnssec_denial_spells_itself_once() {
+        for value in [DnssecDenial::Nsec, DnssecDenial::Nsec3] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<DnssecDenial>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<DnssecDenial>().unwrap(), value);
+        }
+    }
+}
