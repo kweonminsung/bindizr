@@ -957,10 +957,10 @@ Pages CI rebuilds the hosted API docs when `docs/openapi.yaml` changes on
 ### Third-party license notice — generated at release, never committed
 
 `about.toml` and `about.hbs` configure cargo-about, which renders the
-licenses of every crate the shipped binaries link into
-`THIRD_PARTY_LICENSES.html`. The release workflows generate it and attach it
-to the GitHub release; it is git-ignored, so regenerate it locally only to
-inspect it:
+licenses of every crate the shipped binaries are built from, the vendored
+OpenSSL included, into `THIRD_PARTY_LICENSES.html`. The release workflows
+generate it and attach it to the GitHub release; it is git-ignored, so
+regenerate it locally only to inspect it:
 
 ```sh
 cargo install cargo-about --locked --features cli
