@@ -378,10 +378,8 @@ pub fn extract_ds_record_set(
     Ok(Some(DsRecordSet { records, ttl }))
 }
 
-/// Require a strict ancestor's SOA in the authority section to substantiate a negative DS
-/// answer (RFC 2308, Section 2).
-///
-/// The child's own server can also answer NODATA authoritatively, so its SOA is insufficient.
+/// Require a strict ancestor's SOA for negative DS answers (RFC 2308, Section 2);
+/// the child's own authoritative NODATA does not prove the parent has no DS.
 fn validate_parent_soa(
     message: &Message<&[u8]>,
     qname: &Name<Vec<u8>>,

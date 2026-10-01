@@ -30,9 +30,7 @@ pub(crate) async fn handle_metrics(State(cx): State<Arc<Context>>) -> Response {
         .into_response()
 }
 
-/// Set the database count and pool gauges for a metrics scrape.
-///
-/// Count directly: fetching even a one-record page still sorts the whole table.
+/// Set database count and pool gauges using direct counts to avoid sorting a listing.
 async fn track_db_gauges(cx: &Context) -> Result<(), ServiceError> {
     let metrics = cx.metrics();
 

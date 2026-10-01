@@ -62,9 +62,8 @@ pub(crate) struct TransferCache {
     entries: Mutex<Entries>,
 }
 
-/// What the lock guards: the cached transfers by zone id, their record total
-/// against the budget, and the clock recency is measured on. Lock-free, so
-/// the eviction rules are unit-tested as they are.
+/// Transfer-cache entries, record budget, and recency clock; the enclosing
+/// cache owns the lock so eviction can be tested independently.
 #[derive(Debug, Default, Clone)]
 struct Entries {
     zones: HashMap<ZoneId, CachedTransfer>,

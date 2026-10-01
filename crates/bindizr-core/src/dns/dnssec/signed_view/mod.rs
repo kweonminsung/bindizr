@@ -119,9 +119,8 @@ pub struct SignedViewParams<'a> {
 }
 
 impl SignedViewParams<'_> {
-    /// The record set's slot in the jitter window, taken from its identity rather
-    /// than drawn at random: [`Self::compute`] stays a function of its
-    /// inputs, and a record set keeps its slot across re-signings.
+    /// Derive the jitter slot from record identity so [`Self::compute`] stays
+    /// deterministic and re-signing preserves the slot.
     fn record_set_expiration(&self, owner: &WireName, covered: i32) -> DateTime<Utc> {
         if self.expiration_jitter_secs <= 0 {
             return self.expiration;

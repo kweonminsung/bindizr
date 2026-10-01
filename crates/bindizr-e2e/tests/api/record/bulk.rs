@@ -3,41 +3,6 @@ use serde_json::json;
 
 use crate::common::TestApp;
 
-/// Verify bulk record insertion.
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
-async fn record_bulk_insert() {
-    let app = TestApp::start().await;
-    let zone = app.create_test_zone().await;
-    let zone_name = zone["name"].as_str().unwrap();
-
-    let bulk_request = json!({
-        "zone_name": zone_name,
-        "records": [
-            { "name": "bulk1", "type": "A", "value": "192.0.2.1" },
-            { "name": "bulk2", "type": "A", "value": "192.0.2.2", "ttl": 1800 },
-            { "name": "bulkcname", "type": "CNAME", "value": "bulk1" },
-            { "name": "@", "type": "MX", "value": "mail", "priority": 10 }
-        ]
-    });
-    let (status, body) = app
-        .send_request(Method::POST, "/records/bulk", Some(bulk_request))
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["added"], 4);
-    assert_eq!(body["records"].as_array().unwrap().len(), 4);
-
-    let (status, body) = app
-        .send_request(
-            Method::GET,
-            &format!("/records?zone_name={zone_name}&type=A"),
-            None,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["items"].as_array().unwrap().len(), 2);
-}
-
 /// Verify that record bulk insert accepts DS ahead of its delegation NS.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -146,12 +111,14 @@ async fn record_bulk_insert_dry_run_then_apply() {
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Preview both inserts and verify that no A records were stored.
+    // Preview a mixed batch, including default TTL and MX priority handling.
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [
             { "name": "dry1", "type": "A", "value": "192.0.2.40" },
-            { "name": "dry2", "type": "A", "value": "192.0.2.41", "ttl": 1800 }
+            { "name": "dry2", "type": "A", "value": "192.0.2.41", "ttl": 1800 },
+            { "name": "alias", "type": "CNAME", "value": "dry1" },
+            { "name": "@", "type": "MX", "value": "mail", "priority": 10 }
         ],
         "dry_run": true
     });
@@ -162,7 +129,7 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(body["applied"], false);
     assert_eq!(body["dry_run"], true);
     assert_eq!(body["added"], 0);
-    assert_eq!(body["records"].as_array().unwrap().len(), 2);
+    assert_eq!(body["records"].as_array().unwrap().len(), 4);
 
     let (status, body) = app
         .send_request(
@@ -174,12 +141,14 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 
-    // Apply the same batch and verify that both records are now stored.
+    // Apply the previewed batch.
     let bulk_request = json!({
         "zone_name": zone_name,
         "records": [
             { "name": "dry1", "type": "A", "value": "192.0.2.40" },
-            { "name": "dry2", "type": "A", "value": "192.0.2.41", "ttl": 1800 }
+            { "name": "dry2", "type": "A", "value": "192.0.2.41", "ttl": 1800 },
+            { "name": "alias", "type": "CNAME", "value": "dry1" },
+            { "name": "@", "type": "MX", "value": "mail", "priority": 10 }
         ]
     });
     let (status, body) = app
@@ -188,7 +157,8 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["applied"], true);
     assert_eq!(body["dry_run"], false);
-    assert_eq!(body["added"], 2);
+    assert_eq!(body["added"], 4);
+    assert_eq!(body["records"].as_array().unwrap().len(), 4);
 
     let (status, body) = app
         .send_request(
@@ -200,6 +170,3 @@ async fn record_bulk_insert_dry_run_then_apply() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["items"].as_array().unwrap().len(), 2);
 }
-
-// Rows hold one canonical spelling, so the filter has to reach it however the
-// request spells the name.

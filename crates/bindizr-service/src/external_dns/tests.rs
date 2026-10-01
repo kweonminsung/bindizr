@@ -411,40 +411,24 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
     assert_eq!(change_set.creates[0].ttl, zone.default_ttl);
 }
 
-/// Verify that change set skips creates that already exist.
+/// Verify that repeated creates preserve existing records even when their TTL differs.
 #[test]
-fn change_set_skips_creates_that_already_exist() {
+fn change_set_skips_existing_values_regardless_of_ttl() {
     let zone = test_zone(1, "example.com");
-    let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 3600)];
     let request = ExternalDnsChangesRequest {
         creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
         updates: vec![],
         deletes: vec![],
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
-
-    assert!(change_set.deletes.is_empty());
-    assert!(change_set.creates.is_empty());
-}
-
-/// Verify that an existing value with a different TTL makes a create a no-op, avoiding
-/// conflicts on every retry.
-#[test]
-fn change_set_skips_creates_whose_row_differs_only_in_ttl() {
-    let zone = test_zone(1, "example.com");
-    let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 300)];
-    let request = ExternalDnsChangesRequest {
-        creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
-        updates: vec![],
-        deletes: vec![],
-    };
-
-    // No TTL on the record set, so it resolves to the zone's 3600 — not the row's 300.
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
-
-    assert!(change_set.deletes.is_empty());
-    assert!(change_set.creates.is_empty());
+    // An omitted TTL resolves to 3600; retrying must also preserve a row with TTL 300.
+    for ttl in [3600, 300] {
+        let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", ttl)];
+        let change_set =
+            ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
+        assert!(change_set.deletes.is_empty(), "TTL {ttl}");
+        assert!(change_set.creates.is_empty(), "TTL {ttl}");
+    }
 }
 
 /// Verify that an explicit TTL-only update replaces the stored row instead of cancelling itself

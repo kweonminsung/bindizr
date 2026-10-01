@@ -151,10 +151,8 @@ pub(crate) fn parse_char_string<'a>(
     Ok((text, rest))
 }
 
-/// Validate a domain-name record value with the same decoded-label rules as an owner name.
-///
-/// Splitting on `.` would break escaped dots; non-LDH labels also occur in RFC 2317, Section 4
-/// delegations such as `0/25`.
+/// Validate record-value names using decoded owner-label rules, preserving escaped
+/// dots and non-LDH labels such as RFC 2317, Section 4 delegations (`0/25`).
 pub(crate) fn validate_domain_record_value(
     field: &'static str,
     value: &str,
@@ -182,10 +180,8 @@ pub(crate) fn validate_domain_record_value(
 mod tests {
     use super::validate_domain_record_value;
 
-    /// Verify that domain-name record values accept the same labels as owner names.
-    ///
-    /// RFC 2181, Section 11 permits non-LDH labels; both canonicalization and wire encoding
-    /// decode them before use.
+    /// Verify that record-value names accept non-LDH owner labels under
+    /// RFC 2181, Section 11.
     #[test]
     fn accepts_the_labels_an_owner_name_may_carry() {
         for value in [

@@ -163,9 +163,7 @@ impl ParsedZoneFile {
                             }
                         },
                         ZoneRecordData::Txt(txt) => {
-                            // TXT values must be valid UTF-8; reject non-UTF-8
-                            // octets (e.g. BIND `\DDD` escapes) rather than
-                            // storing them.
+                            // Reject non-UTF-8 TXT octets; stored values must be valid UTF-8.
                             let mut segments = Vec::new();
                             let mut non_utf8 = false;
                             for segment in txt.iter() {

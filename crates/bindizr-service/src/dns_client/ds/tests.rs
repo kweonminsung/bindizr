@@ -52,9 +52,8 @@ fn decode_question(query: &[u8]) -> (String, usize) {
     (labels.join("."), pos + 4)
 }
 
-/// A response echoing the query's id and question, with `flags` (QR is
-/// always set) and `rcode`, whose answer section holds `answers` and whose
-/// authority section holds `authority`.
+/// Build a response echoing the query ID and question, with QR set and
+/// the supplied flags, RCODE, answers, and authority records.
 fn build_response(
     query: &[u8],
     flags: u16,

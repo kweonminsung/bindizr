@@ -87,9 +87,8 @@ pub fn labels_to_presentation(labels: &[String]) -> String {
 /// not decode keeps its own spelling — this renders, it does not validate.
 pub(crate) fn to_fqdn_lowercase(value: &str) -> String {
     let trimmed = value.trim();
-    // LDH-and-`_` spellings hold no escape to resolve and need none applied on
-    // the way out, so decoding them into labels lands on the same lowercasing
-    // below that a value failing to decode takes.
+    // LDH and underscore labels need no escaping, so this fast path
+    // produces the same lowercase form as decoding and re-encoding.
     let needs_decode = trimmed
         .bytes()
         .any(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')));
@@ -121,9 +120,8 @@ pub fn encode_name(name: &str) -> Result<Vec<u8>, EncodeNameError> {
     labels_to_wire(labels.iter().map(String::as_str)).map_err(failed)
 }
 
-/// Length-prefixed wire labels plus the root. Limits are re-checked at this
-/// one emitter, so a row edited outside bindizr cannot smuggle a label past
-/// the length octet.
+/// Encode length-prefixed labels and the root, rechecking wire limits
+/// because stored rows may have been edited outside bindizr.
 fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, ParseNameError> {
     let mut wire = Vec::new();
     for label in labels {

@@ -107,9 +107,7 @@ fn resolve_update(
     }
 }
 
-/// Omitted fields keep the stored record's value; the merge runs inside
-/// the transaction, against the row loaded there. The caller is
-/// authorized there too.
+/// Merge omitted fields from the record loaded and authorized inside the transaction.
 pub async fn update(
     cx: &Context,
     caller: &Caller,

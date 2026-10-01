@@ -84,9 +84,8 @@ impl Context {
         }
     }
 
-    /// A snapshot of the configuration. A reload is invisible to a snapshot
-    /// already taken, so hold one for as long as a single decision takes and
-    /// no longer.
+    /// Snapshot the configuration for one decision; discard it afterward so
+    /// later decisions can observe reloads.
     pub fn config(&self) -> Arc<Config> {
         self.config
             .read()

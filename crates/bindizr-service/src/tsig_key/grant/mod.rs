@@ -190,9 +190,8 @@ pub async fn revoke(
     Ok(bindizr_db::tsig_grant::delete(cx.db(), grant.id).await?)
 }
 
-/// Revoke every grant `key_name` holds in `zone_name`, returning how many
-/// went. Matching none is not an error: the rights already read the way
-/// the request asked for.
+/// Revoke all grants for this key and zone, returning the count;
+/// no matches is an idempotent success.
 pub async fn revoke_by_key_and_zone(
     cx: &Context,
     caller: &Caller,

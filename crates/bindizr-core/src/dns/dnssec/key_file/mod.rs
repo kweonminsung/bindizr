@@ -51,9 +51,8 @@ pub enum ImportKeyError {
 use thiserror::Error;
 
 impl DnssecKey {
-    /// The key's `K*.private` contents: the stored key material, plus the timing
-    /// fields BIND and [`DnssecKey::import`] read a rollover from, so an export
-    /// re-imports where it left off.
+    /// The key's `K*.private` contents, including BIND timing fields so
+    /// [`DnssecKey::import`] restores its rollover state.
     pub fn to_bind_private_file(&self) -> String {
         let timing = match self.state {
             DnssecKeyState::Published => vec![

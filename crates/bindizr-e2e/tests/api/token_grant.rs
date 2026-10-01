@@ -754,10 +754,8 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
     }
 }
 
-/// Verify that zone authorization rejects an ungranted batch even when none of its names can be
-/// parsed.
-///
-/// Such a batch produces no write targets for the per-record authorization check.
+/// Verify that zone authorization rejects an ungranted batch even when
+/// unparseable names leave the per-record check with no write targets.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {

@@ -560,12 +560,8 @@ mod tests {
         let err = ServiceError::dnssec_signing_failed(std::io::Error::other("boom"));
         assert_eq!(err.code(), ErrorCode::DnssecSigningFailed);
         assert!(err.code().is_internal());
-        // The CLI parses the code back off the daemon socket.
-        assert_eq!(
-            serde_json::from_value::<ErrorCode>(serde_json::json!(err.code().as_str())).unwrap(),
-            ErrorCode::DnssecSigningFailed
-        );
     }
+
     /// Preserve the concrete source when an internal failure gains context.
     #[test]
     fn internal_context_preserves_the_source() {

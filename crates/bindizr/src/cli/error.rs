@@ -295,31 +295,22 @@ mod tests {
         assert_eq!(code(ErrorCode::RecordConflict), EXIT_CONFLICT);
         assert_eq!(code(ErrorCode::Forbidden), EXIT_DENIED);
         assert_eq!(code(ErrorCode::InvalidInput), EXIT_FAILURE);
-        // An unreachable daemon sends no code at all, and a script retries it.
+        // LSB reserves 7 for NOTRUNNING and 6 for NOTCONFIGURED;
+        // the systemd unit also depends on RestartPreventExitStatus=6.
         assert_eq!(
             CliError::daemon_unreachable(std::io::Error::other("connection refused")).exit_code(),
-            EXIT_UNAVAILABLE
+            7
         );
         assert_eq!(
             CliError::request("malformed response").exit_code(),
             EXIT_FAILURE
         );
-        // A supervisor restarts a start that failed on a late database, and
-        // gives up on one that failed on the configuration file.
         assert_eq!(
             CliError::configuration(std::io::Error::other("missing field `mname`")).exit_code(),
-            EXIT_CONFIG
+            6
         );
     }
 
-    /// Verify that the daemon's two failure classes keep their LSB values.
-    #[test]
-    fn the_daemon_classes_keep_their_lsb_values() {
-        // Nothing links these to `RestartPreventExitStatus=6` in the systemd
-        // unit, where renumbering would mean restarting a hopeless daemon.
-        assert_eq!(EXIT_CONFIG, 6, "systemd prints 6 as NOTCONFIGURED");
-        assert_eq!(EXIT_UNAVAILABLE, 7, "systemd prints 7 as NOTRUNNING");
-    }
     /// Local rendering and transport failures retain an inspectable cause.
     #[test]
     fn local_failure_preserves_the_source() {

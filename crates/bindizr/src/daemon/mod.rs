@@ -88,9 +88,8 @@ impl DaemonError {
     }
 }
 
-/// The front ends the daemon supervises, each yielding the name it is reported
-/// under and how it ended. `join_next` removes a finished task, so the
-/// lifecycle loop and the drain never await the same handle twice.
+/// Supervised front-end tasks paired with their names; `join_next` removes
+/// finished tasks so shutdown never awaits a handle twice.
 type Servers = JoinSet<(&'static str, Result<(), JoinError>)>;
 
 /// Put a spawned front end under the daemon's supervision.
@@ -128,9 +127,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     // Reported after the logger exists, so it carries the configured format.
     log::info!("Configuration loaded from {}", config_path);
 
-    // Binding this first is what refuses a second daemon: otherwise the loser
-    // reports the conflict as a taken DNS port, after opening the database and
-    // running the seeding.
+    // Bind the control socket first so a second daemon fails before
+    // opening the database or claiming DNS ports.
     let (socket_path, socket_listener) = socket::server::bind().await?;
     log::info!("Daemon socket server listening on {}", socket_path);
 
@@ -183,9 +181,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     watch(&mut servers, "DNS TCP server", dns_tcp_task);
     watch(&mut servers, "DNS UDP server", dns_udp_task);
 
-    // Every front end is serving now, so the start time is what `bindizr
-    // restart` waits for before it reports the daemon back up; the gauge
-    // publishes the same moment.
+    // Publish the start time only after all front ends serve; restart
+    // polling and the uptime gauge use this same readiness point.
     cx.set_started_at(Utc::now());
     log::info!("Bindizr is running.");
 
