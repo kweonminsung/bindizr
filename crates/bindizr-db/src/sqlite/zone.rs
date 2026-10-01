@@ -143,8 +143,8 @@ pub(crate) async fn list_by_filter(
           )
           AND (
                 ? IS NULL
-                OR EXISTS (SELECT 1 FROM token_grants p
-                           WHERE p.api_token_id = ? AND p.zone_id = zones.id)
+                OR EXISTS (SELECT 1 FROM role_grants p
+                           WHERE p.role_id = ? AND (p.zone_id IS NULL OR p.zone_id = zones.id))
           )
         {order_by}
         LIMIT ? OFFSET ?
@@ -182,8 +182,8 @@ pub(crate) async fn list_by_filter(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(filter.scope_token_id)
-    .bind(filter.scope_token_id)
+    .bind(filter.scope_role_id)
+    .bind(filter.scope_role_id)
     .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
     .bind(
         filter
@@ -240,8 +240,8 @@ pub(crate) async fn count_by_filter(
           )
           AND (
                 ? IS NULL
-                OR EXISTS (SELECT 1 FROM token_grants p
-                           WHERE p.api_token_id = ? AND p.zone_id = zones.id)
+                OR EXISTS (SELECT 1 FROM role_grants p
+                           WHERE p.role_id = ? AND (p.zone_id IS NULL OR p.zone_id = zones.id))
           )
         "#,
     )
@@ -277,8 +277,8 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(filter.scope_token_id)
-    .bind(filter.scope_token_id)
+    .bind(filter.scope_role_id)
+    .bind(filter.scope_role_id)
     .fetch_one(&mut *conn)
     .await?;
 
