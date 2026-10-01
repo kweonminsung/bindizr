@@ -122,10 +122,8 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
     zone_id: ZoneId,
     cutoff: chrono::DateTime<chrono::Utc>,
 ) -> Result<u64, DatabaseError> {
-    // Delete whole serials only: everything up to the highest serial with
-    // a row older than the cutoff, so remaining IXFR steps stay complete.
-    // SQLite compares timestamps as text; sqlx's RFC 3339 sorts
-    // chronologically.
+    // Prune whole serials to keep IXFR steps complete. SQLite sorts sqlx
+    // RFC 3339 timestamps chronologically as text.
     let result = sqlx::query(
         r#"
         DELETE FROM zone_journal

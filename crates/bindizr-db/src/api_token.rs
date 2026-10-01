@@ -40,10 +40,8 @@ pub async fn list_all(db: &Db) -> Result<Vec<ApiToken>, DatabaseError> {
     }
 }
 
-/// Writes only the mutable columns (`description`, `expires_at`,
-/// `last_used_at`); `name`, `token`, and `is_global` are fixed at create,
-/// so callers must pass them through unchanged for the echoed row to be
-/// truthful.
+/// Update description, expiry, and last-used time; callers must preserve
+/// immutable fields so the returned row matches storage.
 pub async fn update(db: &Db, token: ApiToken) -> Result<ApiToken, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => mysql::api_token::update(pool, token).await,

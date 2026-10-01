@@ -9,9 +9,8 @@ async fn zone_versions_and_rollback_flow() {
     let app = TestApp::start().await;
     let zone_name = app.zone_name("history.example");
 
-    // Build three versions so rollback can preserve www while removing the later
-    // extra. The zone is created directly so the serials count from its own
-    // first mutation.
+    // Build three versions to restore www without the later extra record.
+    // Create directly so serials start with this test's first mutation.
     app.run_cli_success(&[
         "zone",
         "create",

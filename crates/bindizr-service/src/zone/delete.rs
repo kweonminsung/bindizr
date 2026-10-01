@@ -1,10 +1,9 @@
-use bindizr_core::{dns::name::ZoneName, model::zone_version::VersionScope};
+use bindizr_core::{dns::name::ZoneName, model::zone_version::VersionFilter};
 use bindizr_db::{LockLevel, record::RecordFilter};
 
 use crate::{
     Context,
     authorization::Caller,
-    db,
     error::ServiceError,
     transaction,
     types::{DeleteZoneResponse, GetZoneResponse, Run},
@@ -21,14 +20,14 @@ pub async fn delete(
 ) -> Result<DeleteZoneResponse, ServiceError> {
     caller.authorize_global("delete zones")?;
 
-    let mut tx = transaction::begin_tx(cx, "Failed to delete zone").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to delete zone").await?;
 
     let apply_result: Result<_, ServiceError> = async {
         // Locked lookup so a raced double-delete reports 404, not success.
-        let zone = super::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
         // Counted for the report, not acted on, so they run unlocked.
-        let records = db::record::count_by_filter(
+        let records = bindizr_db::record::count_by_filter(
             cx.db(),
             RecordFilter {
                 zone_name: Some(zone.name.clone()),
@@ -36,7 +35,8 @@ pub async fn delete(
             },
         )
         .await?;
-        let versions = db::zone_version::count(cx.db(), zone.id, VersionScope::All).await?;
+        let versions =
+            bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, VersionFilter::All).await?;
 
         let response = DeleteZoneResponse {
             applied: !run.is_dry_run(),
@@ -49,16 +49,18 @@ pub async fn delete(
             return Ok(response);
         }
 
-        db::zone::delete_tx(&mut tx, zone.id).await.map_err(|e| {
-            log::error!("Failed to delete zone: {}", e);
-            ServiceError::internal("Failed to delete zone")
-        })?;
+        bindizr_db::zone::delete_tx(&mut tx, zone.id)
+            .await
+            .map_err(|e| {
+                log::error!("Failed to delete zone: {}", e);
+                ServiceError::internal_with_source("failed to delete zone", e)
+            })?;
         log::info!("event=zone_delete zone={} zone_id={}", zone.name, zone.id);
         Ok(response)
     }
     .await;
 
-    let response = transaction::finish_tx(tx, apply_result, "Failed to delete zone").await?;
+    let response = transaction::finish_tx(tx, apply_result, "failed to delete zone").await?;
 
     // Send catalog NOTIFY so secondaries drop the removed zone
     let config = cx.config();

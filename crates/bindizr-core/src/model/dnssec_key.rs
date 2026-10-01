@@ -21,7 +21,10 @@ pub enum ParseDnssecKeyError {
 }
 
 /// Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum DnssecAlgorithm {
     /// RSA with SHA-256, algorithm 8 (RFC 5702).
     RsaSha256,
@@ -330,15 +333,70 @@ impl DnssecKey {
         self.role.is_sep() && self.state != DnssecKeyState::Retired
     }
 
-    /// The wait before a retired key may be removed: the retire interval of
-    /// RFC 7583, Section 3.3.4. The key outlives the signatures it made,
-    /// cached for their record set's TTL, and — for a key a DS names — the parent's
-    /// DS record set, cached for the TTL the confirming probe saw.
+    /// Return the retire interval (RFC 7583, Section 3.3.4), covering signature
+    /// validity, record TTLs, and the confirmed parent DS TTL for SEP keys.
     pub fn retirement_interval_secs(&self, parent_ds_ttl: Option<u32>) -> i64 {
         let signatures = i64::from(self.max_signed_ttl.as_secs());
         if !self.role.is_sep() {
             return signatures;
         }
         signatures.max(i64::from(parent_ds_ttl.unwrap_or(0)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// Verify that `DnssecAlgorithm` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn dnssec_algorithm_spells_itself_once() {
+        for value in [
+            DnssecAlgorithm::RsaSha256,
+            DnssecAlgorithm::RsaSha512,
+            DnssecAlgorithm::EcdsaP256Sha256,
+            DnssecAlgorithm::EcdsaP384Sha384,
+            DnssecAlgorithm::Ed25519,
+            DnssecAlgorithm::Ed448,
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<DnssecAlgorithm>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<DnssecAlgorithm>().unwrap(), value);
+        }
+    }
+
+    /// Verify that `DnssecKeyRole` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn dnssec_key_role_spells_itself_once() {
+        for value in [DnssecKeyRole::Csk, DnssecKeyRole::Ksk, DnssecKeyRole::Zsk] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<DnssecKeyRole>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<DnssecKeyRole>().unwrap(), value);
+        }
+    }
+
+    /// Verify that `DnssecKeyState` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn dnssec_key_state_spells_itself_once() {
+        for value in [
+            DnssecKeyState::Published,
+            DnssecKeyState::Active,
+            DnssecKeyState::Retired,
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<DnssecKeyState>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<DnssecKeyState>().unwrap(), value);
+        }
     }
 }

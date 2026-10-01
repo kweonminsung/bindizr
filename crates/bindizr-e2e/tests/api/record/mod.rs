@@ -656,10 +656,8 @@ async fn a_name_filter_without_a_zone_reads_the_same_spellings() {
     assert_eq!(body["items"].as_array().map(Vec::len), Some(1), "{body}");
 }
 
-/// Verify that an apex filter works without a zone filter.
-///
-/// Without a zone to construct an FQDN, `@` must map to the empty-string owner stored in apex
-/// rows.
+/// Verify that an apex filter maps `@` to the stored empty owner even
+/// without a zone from which to construct an FQDN.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn apex_filter_finds_apex_records_without_a_zone_filter() {

@@ -949,3 +949,27 @@ async fn escaped_labels_and_values_survive_an_import_and_export_round_trip() {
     );
     assert!(exported.contains(r#"0 issue "a\"b\\c""#), "{exported}");
 }
+
+/// Unknown import modes are input errors, not malformed JSON bodies.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_import_rejects_unknown_mode_in_service() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(json!({"content": "www IN A 192.0.2.10", "mode": "unknown"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "INVALID_INPUT");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("invalid import mode")
+    );
+}

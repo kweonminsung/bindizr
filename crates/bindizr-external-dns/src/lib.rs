@@ -31,9 +31,8 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 /// bindizr's own CLI uses for that class.
 const EXIT_CONFIG: i32 = 6;
 
-/// The listeners the adapter supervises, each yielding the name it is reported
-/// under and how it ended. `join_next` removes a finished task, so the select
-/// and the drain never await the same handle twice.
+/// Supervised adapter tasks paired with their names; `join_next` removes
+/// finished tasks so shutdown never awaits a handle twice.
 type Servers = JoinSet<(&'static str, Result<std::io::Result<()>, JoinError>)>;
 
 /// Put a spawned listener under the adapter's supervision.
@@ -44,7 +43,7 @@ fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<std::io::Re
 /// Parse arguments, start both listeners, and serve until interrupted.
 pub async fn execute() {
     let cli = config::Cli::parse();
-    let adapter_config = config::AdapterConfig::from_cli(cli).unwrap_or_else(|e| {
+    let adapter_config = config::AdapterConfig::load(cli).unwrap_or_else(|e| {
         errln!("Error: {}", e);
         std::process::exit(EXIT_CONFIG);
     });
@@ -158,9 +157,8 @@ async fn wait_for_stop(mut stop: watch::Receiver<bool>) {
     }
 }
 
-/// Resolve on SIGTERM or SIGINT. PID 1 discards a signal it has no handler
-/// for, and the adapter is PID 1 of its container, so without this a stopping
-/// pod waits out its whole grace period.
+/// Wait for SIGTERM or SIGINT; a container's PID 1 needs explicit handlers
+/// to stop before its grace period expires.
 async fn wait_for_signal() {
     let mut terminate = match signal(SignalKind::terminate()) {
         Ok(terminate) => terminate,

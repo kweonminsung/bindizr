@@ -16,12 +16,8 @@ id_newtype!(
     TokenGrantId
 );
 
-/// Grants one API token record-plane rights over part of one zone, the HTTP
-/// twin of [`super::tsig_grant::TsigGrant`]. Global tokens
-/// (`ApiToken::is_global`) bypass grants entirely and hold no rows here.
-///
-/// `record_name_pattern` and `record_types` take the same syntax as a TSIG
-/// grant's.
+/// An API token's record-plane rights within one zone, using [`super::tsig_grant::TsigGrant`] syntax.
+/// Global tokens bypass grants and hold no rows here.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TokenGrant {
     pub id: TokenGrantId,

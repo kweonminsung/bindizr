@@ -28,11 +28,13 @@ pub enum ExchangeError {
     Encode(#[from] bindizr_core::dns::message::EncodeMessageError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Read(#[from] ReadTcpMessageError),
     #[error("{what} TCP timeout")]
     TcpTimedOut { what: &'static str },
     #[error("{what} send timeout")]
     SendTimedOut { what: &'static str },
-    #[error("Incomplete {what} send to {server}: sent {sent} of {len} bytes")]
+    #[error("incomplete {what} send to {server}: sent {sent} of {len} bytes")]
     IncompleteSend {
         what: &'static str,
         server: SocketAddr,
@@ -96,7 +98,9 @@ pub(crate) async fn exchange_over_tcp(
 }
 
 /// Read one length-prefixed DNS message (RFC 1035, Section 4.2.2).
-pub(crate) async fn read_tcp_message(stream: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
+pub(crate) async fn read_tcp_message(
+    stream: &mut TcpStream,
+) -> Result<Vec<u8>, ReadTcpMessageError> {
     let mut prefix = [0u8; 2];
     stream.read_exact(&mut prefix).await?;
     let mut message = vec![0u8; usize::from(u16::from_be_bytes(prefix))];
@@ -104,9 +108,8 @@ pub(crate) async fn read_tcp_message(stream: &mut TcpStream) -> Result<Vec<u8>, 
     Ok(message)
 }
 
-/// Send one UDP DNS message and wait for a single response, with `timeout`
-/// applied to both directions. `what` names the operation in error messages
-/// (e.g. "NOTIFY").
+/// Exchange one UDP DNS message, timing out each direction and naming
+/// the operation with `what` in errors.
 pub(crate) async fn exchange_over_udp(
     server_addr: SocketAddr,
     timeout: Duration,
@@ -203,3 +206,8 @@ pub async fn resolve_address_entry(
         }
     }
 }
+
+/// Failure to read a length-prefixed DNS message from a TCP stream.
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct ReadTcpMessageError(#[from] std::io::Error);

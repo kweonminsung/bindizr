@@ -12,7 +12,7 @@ pub(crate) async fn begin_tx(
 ) -> Result<Transaction<'static>, ServiceError> {
     cx.db().begin().await.map_err(|e| {
         log::error!("Failed to begin transaction: {}", e);
-        ServiceError::internal(internal_msg)
+        ServiceError::internal_with_source(internal_msg, e)
     })
 }
 
@@ -23,7 +23,7 @@ pub(crate) async fn begin_read_tx(
 ) -> Result<Transaction<'static>, ServiceError> {
     cx.db().begin_read().await.map_err(|e| {
         log::error!("Failed to begin transaction: {}", e);
-        ServiceError::internal(internal_msg)
+        ServiceError::internal_with_source(internal_msg, e)
     })
 }
 
@@ -39,7 +39,7 @@ pub(crate) async fn finish_tx<T, E: From<ServiceError>>(
         Ok(value) => {
             tx.commit().await.map_err(|e| {
                 log::error!("Failed to commit transaction: {}", e);
-                E::from(ServiceError::internal(internal_msg))
+                E::from(ServiceError::internal_with_source(internal_msg, e))
             })?;
             Ok(value)
         }

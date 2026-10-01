@@ -16,7 +16,7 @@ pub struct SoaInterval(u32);
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ConvertSoaIntervalError {
     /// Rows are stored as `i32`, so a negative one is corrupt data.
-    #[error("Invalid SOA interval: {secs}")]
+    #[error("invalid SOA interval: {secs}")]
     Negative { secs: i32 },
     /// Past 2^31 - 1, which the row form cannot hold.
     #[error("SOA interval {secs} exceeds the maximum of {}", i32::MAX)]

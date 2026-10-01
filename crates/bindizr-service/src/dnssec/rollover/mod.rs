@@ -9,14 +9,13 @@ use bindizr_core::{
     },
     model::dnssec_key::DnssecKeyId,
 };
+use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
 use super::status::build_status_tx;
 use crate::{
     Context, Transaction,
     authorization::Caller,
-    db,
-    db::LockLevel,
     dnssec::SignedZone,
     error::ServiceError,
     model::{
@@ -25,7 +24,9 @@ use crate::{
         zone::Zone,
     },
     transaction,
-    types::{DnssecDelegationKeyInfo, DnssecStatusResponse, DsCheck, Holddown},
+    types::{
+        DnssecDelegationKeyInfo, DnssecStatusResponse, DsCheck, Holddown, RolloverDnssecRequest,
+    },
 };
 
 /// Start a key rollover: pre-publish a same-algorithm replacement for
@@ -34,15 +35,21 @@ pub async fn start_rollover(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    role: Option<DnssecKeyRole>,
+    request: &RolloverDnssecRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
     caller.authorize_global("manage DNSSEC signing")?;
+    let role = request
+        .role
+        .as_deref()
+        .map(str::parse::<DnssecKeyRole>)
+        .transpose()
+        .map_err(ServiceError::invalid_input)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
     let result = async {
         // Select a role only after ruling out an existing rollover under the zone lock.
         let mut signed =
-            super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         if signed
             .keys
             .iter()
@@ -81,11 +88,11 @@ pub async fn start_rollover(
         signed.keys.push(new_key);
 
         let new_serial = super::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -135,10 +142,8 @@ pub(crate) async fn start_algorithm_rollover_tx(
     Ok(keys)
 }
 
-/// Promote the pre-published SEP key(s) and retire the keys they replace
-/// once the parent serves their DS and the hold-down has passed;
-/// `ds_check` may take the DS on the operator's word, `holddown` may waive
-/// the wait.
+/// Promote published SEP keys and retire their predecessors after parent-DS confirmation
+/// and hold-down; `ds_check` and `holddown` select which checks the operator waives.
 pub async fn advance_rollover(
     cx: &Context,
     caller: &Caller,
@@ -151,7 +156,7 @@ pub async fn advance_rollover(
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
     let result = async {
         let mut signed =
-            super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let awaiting = promotable_sep_key_ids(&signed, holddown)?;
         // The answer that confirms the DS also says how long resolvers
         // cache it — the wait the key it replaces must outlive.
@@ -188,11 +193,11 @@ pub async fn advance_rollover(
                 .await?;
 
         let new_serial = super::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -245,7 +250,7 @@ pub(crate) async fn publish_replacement_key_tx(
         now + publish_wait,
     )
     .map_err(ServiceError::dnssec_signing_failed)?;
-    Ok(db::dnssec_key::create_tx(tx, new_key).await?)
+    Ok(bindizr_db::dnssec_key::create_tx(tx, new_key).await?)
 }
 
 /// Promote the published keys named by `promoted` — drawn from this
@@ -275,14 +280,21 @@ pub(crate) async fn promote_published_keys_tx(
     let mut updated = Vec::with_capacity(keys.len());
     for mut key in keys {
         if promoted.contains(&key.id) {
-            db::dnssec_key::update_state_tx(tx, key.id, DnssecKeyState::Active, now, now).await?;
+            bindizr_db::dnssec_key::update_state_tx(tx, key.id, DnssecKeyState::Active, now, now)
+                .await?;
             key.state = DnssecKeyState::Active;
             key.state_changed_at = now;
             key.eligible_at = now;
         } else if key.state == DnssecKeyState::Active && promoted_roles.contains(&key.role) {
             let eligible_at = now + Duration::seconds(retire_wait);
-            db::dnssec_key::update_state_tx(tx, key.id, DnssecKeyState::Retired, now, eligible_at)
-                .await?;
+            bindizr_db::dnssec_key::update_state_tx(
+                tx,
+                key.id,
+                DnssecKeyState::Retired,
+                now,
+                eligible_at,
+            )
+            .await?;
             key.state = DnssecKeyState::Retired;
             key.state_changed_at = now;
             key.eligible_at = eligible_at;
@@ -298,10 +310,8 @@ pub(crate) async fn promote_published_keys_tx(
     Ok(updated)
 }
 
-/// The pre-published SEP keys a promotion may take; an error when no
-/// rollover is in progress, it replaces only the ZSK, or (unless
-/// `holddown` is skipped) a wait runs. `ds-seen` reports those errors; the
-/// scheduler reads them as nothing to do.
+/// Return promotable SEP keys or reject absent, ZSK-only, or still-waiting rollovers.
+/// The scheduler treats these rejections as idle; `ds-seen` reports them.
 pub(crate) fn promotable_sep_key_ids(
     signed: &SignedZone,
     holddown: Holddown,

@@ -1,15 +1,17 @@
-use std::sync::Arc;
-
 use bindizr_core::{
     dns::{
         Serial, SoaInterval, Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::{api_token::TokenId, token_grant::TokenGrantId, zone::ZoneId},
+    model::{
+        api_token::{ApiToken, TokenId},
+        token_grant::TokenGrantId,
+        zone::ZoneId,
+    },
 };
 use chrono::Utc;
 
-use super::{Caller, RecordWrite, authorize_with_grants};
+use super::*;
 use crate::{
     error::ErrorCode,
     model::{record::RecordType, token_grant::TokenGrant, zone::Zone},
@@ -68,13 +70,9 @@ fn write<'a>(name: &'a str, record_type: Option<&'a RecordType>) -> RecordWrite<
 /// Verify that `authorize_global` rejects scoped tokens.
 #[test]
 fn authorize_global_rejects_scoped_tokens() {
-    assert!(Caller::Global.authorize_global("create zones").is_ok());
+    assert!(Caller::socket().authorize_global("create zones").is_ok());
 
-    let scoped = Caller::Token {
-        id: TokenId::from(3),
-        name: "scoped".into(),
-        grants: Arc::from(vec![]),
-    };
+    let scoped = token(vec![]);
     let err = scoped.authorize_global("create zones").unwrap_err();
     assert_eq!(err.code(), ErrorCode::Forbidden);
     assert!(err.to_string().contains("create zones"));
@@ -154,11 +152,7 @@ fn authorize_rejects_a_read_only_grant() {
 
 /// Build a scoped caller with the supplied token grants.
 fn token(grants: Vec<TokenGrant>) -> Caller {
-    Caller::Token {
-        id: TokenId::from(3),
-        name: "scoped".into(),
-        grants: Arc::from(grants),
-    }
+    Caller::from_token(&token_record(false), grants)
 }
 
 /// Check whether the test caller may read the requested record.
@@ -198,7 +192,7 @@ fn record_visible_survives_a_read_only_grant() {
 #[test]
 fn authorize_zone_unrestricted_rejects_a_scoped_grant() {
     assert!(
-        Caller::Global
+        Caller::socket()
             .authorize_zone_unrestricted(&test_zone())
             .is_ok()
     );
@@ -218,4 +212,51 @@ fn authorize_zone_unrestricted_rejects_a_scoped_grant() {
         .authorize_zone_unrestricted(&test_zone())
         .unwrap_err();
     assert_eq!(err.code(), ErrorCode::ZoneNotFound);
+}
+
+/// Build a token row whose scope can vary independently of its audit identity.
+fn token_record(is_global: bool) -> ApiToken {
+    ApiToken {
+        id: TokenId::from(3),
+        name: "admin".to_string(),
+        token: String::new(),
+        description: None,
+        is_global,
+        created_at: Utc::now(),
+        expires_at: None,
+        last_used_at: None,
+    }
+}
+
+/// Equally privileged socket and API callers retain distinct request origins.
+#[test]
+fn access_scope_does_not_determine_change_attribution() {
+    use crate::model::zone_version::{ChangeActor, ChangeSource};
+
+    let socket = Caller::socket();
+    let api = Caller::unauthenticated_api();
+    let global_token = Caller::from_token(&token_record(true), vec![]);
+    for caller in [&socket, &api, &global_token] {
+        assert!(caller.authorize_global("create zones").is_ok());
+        assert_eq!(caller.scope_token_id(), None);
+    }
+    assert_eq!(socket.change_attribution().source, ChangeSource::Socket);
+    assert_eq!(api.change_attribution().source, ChangeSource::Api);
+    assert_eq!(socket.change_attribution().actor, None);
+    assert_eq!(api.change_attribution().actor, None);
+
+    let scoped_token = token(vec![]);
+    assert_eq!(
+        global_token.change_attribution(),
+        scoped_token.change_attribution()
+    );
+    assert_eq!(global_token.change_attribution().source, ChangeSource::Api);
+    assert_eq!(
+        global_token.change_attribution().actor,
+        Some(ChangeActor::Token {
+            name: "admin".to_string()
+        })
+    );
+    assert_eq!(scoped_token.scope_token_id(), Some(TokenId::from(3)));
+    assert!(scoped_token.authorize_global("create zones").is_err());
 }

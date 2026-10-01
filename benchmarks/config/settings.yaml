@@ -87,14 +87,8 @@ systems:
     label: "CoreDNS"
     kind: file_backed         # no management API; zone file + mtime-poll reload
 
-# Systems exercised by each benchmark.
-#
-# CoreDNS has no management API and no RFC 2136 dynamic update: writes mean
-# rewriting the zone file and waiting for the `file` plugin's mtime poll. It
-# therefore joins only the benchmarks where that is a fair measurement — bulk
-# (one reload for the whole set), AXFR, query, and resources — and is left out
-# of per-record CRUD (b01), propagation (b03), and IXFR (b05, no journal), where
-# the poll interval rather than the server would dominate the result.
+# CoreDNS participates in bulk, AXFR, query, and resource tests only: its file
+# reload poll dominates per-record CRUD/propagation, and it has no IXFR journal.
 benchmarks:
   b01_crud_tps:      [bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_nsupdate, knot]
   b02_bulk_import:   [bindizr, bindizr_knot, bindizr_nsd, bindizr_pdns, powerdns, technitium, bind9_rndc, knot, coredns]

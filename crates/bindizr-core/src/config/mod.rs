@@ -16,7 +16,7 @@ use crate::dns::{SoaInterval, Ttl, name::ZoneName};
 pub enum ConfigError {
     #[error("Bindizr config does not exist: {path}")]
     NotFound { path: String },
-    #[error("Failed to read the configuration file '{path}': {source}")]
+    #[error("failed to read the configuration file '{path}': {source}")]
     Read {
         path: String,
         #[source]
@@ -29,9 +29,9 @@ pub enum ConfigError {
         #[source]
         source: Box<ConfigError>,
     },
-    #[error("Invalid Bindizr configuration: {0}")]
+    #[error("invalid Bindizr configuration: {0}")]
     Parse(#[source] toml::de::Error),
-    #[error("Invalid {name} environment variable '{value}': {source}")]
+    #[error("invalid {name} environment variable '{value}': {source}")]
     Env {
         name: &'static str,
         value: String,
@@ -64,7 +64,7 @@ pub enum ConfigError {
 const BINDIZR_CONF_PATH: &str = "/etc/bindizr/bindizr.conf.toml";
 
 /// Top-level bindizr configuration.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub api: ApiConfig,
@@ -74,7 +74,7 @@ pub struct Config {
 }
 
 /// HTTP API server settings.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ApiConfig {
     pub listen_addr: IpAddr,
@@ -125,7 +125,7 @@ fn default_metrics_enabled() -> bool {
 }
 
 /// Database backend selection and per-backend connection settings.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
     #[serde(rename = "type")]
@@ -139,7 +139,7 @@ pub struct DatabaseConfig {
 }
 
 /// Supported database backends.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
     MySql,
@@ -151,12 +151,7 @@ pub enum DatabaseType {
 impl fmt::Display for DatabaseType {
     /// Write the database type in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let value = match self {
-            DatabaseType::MySql => "mysql",
-            DatabaseType::Sqlite => "sqlite",
-            DatabaseType::Postgres => "postgresql",
-        };
-        write!(f, "{}", value)
+        f.write_str(self.as_str())
     }
 }
 
@@ -177,28 +172,28 @@ impl std::str::FromStr for DatabaseType {
 }
 
 /// MySQL connection settings.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MysqlConfig {
     pub url: String,
 }
 
 /// SQLite connection settings.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct SqliteConfig {
     pub file_path: String,
 }
 
 /// PostgreSQL connection settings.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PostgresqlConfig {
     pub url: String,
 }
 
 /// DNS server settings; NOTIFY and the transfer cache sit in sub-tables.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DnsConfig {
     pub listen_addr: IpAddr,
@@ -213,10 +208,8 @@ pub struct DnsConfig {
     /// falls back to AXFR.
     #[serde(default = "default_zone_history_retention_days")]
     pub zone_history_retention_days: u32,
-    /// Seconds between passes of the background scheduler: signature renewal,
-    /// key rollover steps, and zone history pruning. `0` runs no pass on this
-    /// instance; every instance runs the whole pass, so all but one may turn
-    /// it off, but not all.
+    /// Seconds between scheduler passes for signing, rollover, and history pruning.
+    /// 0 disables this instance; at least one instance must run the scheduler.
     #[serde(default = "default_scheduler_interval_secs")]
     pub scheduler_interval_secs: u64,
     /// Require a TSIG signature on RFC 2136 updates.
@@ -231,7 +224,7 @@ pub struct DnsConfig {
 }
 
 /// When NOTIFY reaches the secondaries.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct NotifyConfig {
     /// Window (ms) that collects one zone's changes into one NOTIFY, sent
@@ -265,7 +258,7 @@ impl Default for NotifyConfig {
 
 /// The cache of each zone's transfer content, keyed by serial, so repeated
 /// AXFRs skip the database read.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TransferCacheConfig {
     /// Records the cache may hold before evicting the least recently used
@@ -285,7 +278,7 @@ impl Default for TransferCacheConfig {
 
 /// What a zone takes when its creation request leaves a field out. Only the
 /// creation reads these: afterwards the values are the zone's own columns.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ZoneDefaultsConfig {
     #[serde(default = "default_zone_ttl")]
@@ -368,7 +361,7 @@ fn default_notify_timeout_secs() -> u64 {
 }
 
 /// Logging settings.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct LoggingConfig {
     pub level: LogLevel,
@@ -378,7 +371,7 @@ pub struct LoggingConfig {
 }
 
 /// The shape of each log line.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogFormat {
     #[default]
@@ -389,11 +382,7 @@ pub enum LogFormat {
 impl fmt::Display for LogFormat {
     /// Write the log format in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let value = match self {
-            LogFormat::Text => "text",
-            LogFormat::Json => "json",
-        };
-        write!(f, "{}", value)
+        f.write_str(self.as_str())
     }
 }
 
@@ -413,7 +402,7 @@ impl std::str::FromStr for LogFormat {
 }
 
 /// Console log verbosity levels.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Trace,
@@ -426,14 +415,7 @@ pub enum LogLevel {
 impl fmt::Display for LogLevel {
     /// Write the log level in its display form.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let value = match self {
-            LogLevel::Trace => "trace",
-            LogLevel::Debug => "debug",
-            LogLevel::Info => "info",
-            LogLevel::Warn => "warn",
-            LogLevel::Error => "error",
-        };
-        write!(f, "{}", value)
+        f.write_str(self.as_str())
     }
 }
 
@@ -522,9 +504,8 @@ impl Config {
         if self.dns.listen_port != next.dns.listen_port {
             fixed.push("dns.listen_port".to_string());
         }
-        // Every secondary names the catalog zone in its own configuration, and
-        // the stored catalog row is keyed by that name: renaming it live would
-        // strand both.
+        // Renaming the catalog live would strand its stored row and the
+        // secondaries configured to request its old name.
         if self.dns.catalog_zone_name != next.dns.catalog_zone_name {
             fixed.push("dns.catalog_zone_name".to_string());
         }
@@ -653,5 +634,60 @@ impl DnsConfig {
             }
         }
         Ok(())
+    }
+}
+
+impl DatabaseType {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MySql => "mysql",
+            Self::Sqlite => "sqlite",
+            Self::Postgres => "postgresql",
+        }
+    }
+}
+
+impl serde::Serialize for DatabaseType {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl LogFormat {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Json => "json",
+        }
+    }
+}
+
+impl serde::Serialize for LogFormat {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl LogLevel {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
+        }
+    }
+}
+
+impl serde::Serialize for LogLevel {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
     }
 }

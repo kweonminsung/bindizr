@@ -1,7 +1,5 @@
-//! Stored record columns → wire-format RDATA. [`EncodedRdata::from_columns`]
-//! is the one stored-columns → wire-RDATA mapping: the XFR encoder and the
-//! DNSSEC signer both consume it, so the bytes a signature covers are
-//! byte-identical to the bytes a transfer serves.
+//! [`EncodedRdata::from_columns`] maps stored columns to wire RDATA for both
+//! XFR and DNSSEC, keeping transferred bytes identical to signed bytes.
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -30,7 +28,7 @@ pub enum EncodeRdataError {
     #[error(transparent)]
     Mailbox(#[from] ParseMailboxError),
     /// An address column no entry path could have written.
-    #[error("Invalid {record_type} record: {value}")]
+    #[error("invalid {record_type} record: {value}")]
     StoredAddress {
         record_type: RecordType,
         value: String,
@@ -78,12 +76,12 @@ impl Rdata {
     }
 
     /// Consume the record data and return its bytes.
-    pub(crate) fn into_bytes(self) -> Vec<u8> {
+    pub fn into_bytes(self) -> Vec<u8> {
         self.0
     }
 
     /// Base64 presentation fallback for rows whose RDATA does not parse.
-    pub(crate) fn to_base64(&self) -> String {
+    pub fn to_base64(&self) -> String {
         base64::engine::general_purpose::STANDARD.encode(&self.0)
     }
 }

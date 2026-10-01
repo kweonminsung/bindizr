@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use bindizr_core::dns::{message::Name, query::ReadResponseError};
 
-use super::extract_soa_serial;
+use super::*;
 use crate::dns_client::ds::tests::encode_name;
 
 /// Build the test zone or its DNS name.

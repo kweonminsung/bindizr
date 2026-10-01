@@ -16,7 +16,7 @@ use super::validation::{
 use crate::{
     Context, Transaction,
     authorization::{Caller, RecordWrite},
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::{
         record::{Record, RecordData, RecordType},
@@ -27,13 +27,14 @@ use crate::{
     transaction,
     ttl::validate_record_ttl,
     types::{
-        BulkRecordsResponse, GetRecordResponse, RecordDiff, RecordItem, RecordValueRequest, Run,
+        BulkRecordsResponse, CreateBulkRecordsRequest, GetRecordResponse, RecordDiff,
+        RecordValueRequest, Run,
     },
     zone::{self, diff::build_record_diff},
 };
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 struct BulkTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,
@@ -90,7 +91,7 @@ pub(crate) async fn create_with_changes_tx(
         return Ok(Vec::new());
     }
 
-    let created_records = db::record::create_many_tx(tx, records).await?;
+    let created_records = bindizr_db::record::create_many_tx(tx, records).await?;
     let changes: Vec<ZoneChange> = created_records
         .iter()
         .map(|record| ZoneChange {
@@ -106,7 +107,7 @@ pub(crate) async fn create_with_changes_tx(
             derived: false,
         })
         .collect();
-    db::zone_change::create_many_tx(tx, &changes).await?;
+    bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
     Ok(created_records)
 }
 
@@ -118,7 +119,7 @@ pub(crate) async fn update_with_changes_tx(
     existing: &Record,
     updated: Record,
 ) -> Result<Record, ServiceError> {
-    let updated = db::record::update_tx(tx, updated).await?;
+    let updated = bindizr_db::record::update_tx(tx, updated).await?;
     let change = |operation, record: &Record| ZoneChange {
         zone_id: record.zone_id,
         serial: new_serial,
@@ -135,7 +136,7 @@ pub(crate) async fn update_with_changes_tx(
         change(ChangeOperation::Delete, existing),
         change(ChangeOperation::Add, &updated),
     ];
-    db::zone_change::create_many_tx(tx, &changes).await?;
+    bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
     Ok(updated)
 }
 
@@ -151,7 +152,7 @@ pub(crate) async fn delete_with_changes_tx(
     }
 
     let ids: Vec<RecordId> = records.iter().map(|r| r.id).collect();
-    db::record::delete_many_tx(tx, &ids).await?;
+    bindizr_db::record::delete_many_tx(tx, &ids).await?;
     let changes: Vec<ZoneChange> = records
         .iter()
         .map(|record| ZoneChange {
@@ -167,20 +168,19 @@ pub(crate) async fn delete_with_changes_tx(
             derived: false,
         })
         .collect();
-    db::zone_change::create_many_tx(tx, &changes).await?;
+    bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
     Ok(())
 }
-/// Insert many records into a zone in one transaction — one serial bump,
-/// one version, one NOTIFY after commit, all or none. A dry run validates
-/// the same way, writes nothing, and answers with the would-be records.
-/// `caller` is authorized against the zone this tx locked.
+/// Insert records atomically after locking and authorizing the zone, with one serial,
+/// version, and post-commit NOTIFY; a dry run validates and returns the proposed rows.
 pub async fn create_bulk(
     cx: &Context,
     caller: &Caller,
-    zone_name: &ZoneName,
-    items: &[RecordItem],
-    run: Run,
+    request: &CreateBulkRecordsRequest,
 ) -> Result<BulkRecordsResponse, ServiceError> {
+    let zone_name = &zone::normalize_name(&request.zone_name)?;
+    let items = &request.records;
+    let run = Run::from_dry_run(request.dry_run);
     if items.is_empty() {
         return Err(ServiceError::invalid_input(
             "no records provided for bulk insert".to_string(),
@@ -207,11 +207,11 @@ pub async fn create_bulk(
 
     let mut timings = BulkTimings::default();
 
-    let mut tx = transaction::begin_tx(cx, "Failed to create records").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to create records").await?;
 
     let apply_result = async {
         let t = Instant::now();
-        let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         timings.load_zone_ms = elapsed_ms(t);
 
         // Authorize before loading existing record rows so an ungranted caller
@@ -240,7 +240,7 @@ pub async fn create_bulk(
         batch_names.sort();
         batch_names.dedup();
 
-        let existing_records = match db::record::list_by_names_tx(
+        let existing_records = match bindizr_db::record::list_by_names_tx(
             &mut tx,
             zone.id,
             &batch_names,
@@ -251,8 +251,9 @@ pub async fn create_bulk(
             Ok(records) => records,
             Err(e) => {
                 log::error!("Failed to load zone records: {}", e);
-                return Err(ServiceError::internal(
-                    "Failed to create records".to_string(),
+                return Err(ServiceError::internal_with_source(
+                    "failed to create records",
+                    e,
                 ));
             }
         };
@@ -350,7 +351,8 @@ pub async fn create_bulk(
         let t = Instant::now();
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the batch.
-        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
+            .await?;
         timings.serial_ms = elapsed_ms(t);
 
         Ok::<(Vec<Record>, ZoneName, RecordDiff), ServiceError>((
@@ -362,7 +364,7 @@ pub async fn create_bulk(
     .await;
 
     let (created_records, zone_name, diff) =
-        transaction::finish_tx(tx, apply_result, "Failed to create records").await?;
+        transaction::finish_tx(tx, apply_result, "failed to create records").await?;
 
     log::info!(
         "event=record_bulk_create zone={} count={} dry_run={}",

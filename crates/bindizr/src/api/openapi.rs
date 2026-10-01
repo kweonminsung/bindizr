@@ -10,16 +10,16 @@ use bindizr_service::types::{
     ExternalDnsRecordUpdate, ExternalDnsRecordsResponse, GetDnssecPolicyResponse,
     GetRecordResponse, GetSecondaryResponse, GetTokenGrantResponse, GetTokenResponse,
     GetTsigGrantResponse, GetTsigKeyResponse, GetZoneResponse, HealthResponse, HealthStatus,
-    ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, MessageResponse,
-    NotifyCheckResponse, PaginatedResponse, Pagination, RecordDiff, RecordDiffEntry,
-    RecordDiffSummary, RecordDiffValue, RecordItem, RecordResponse, RecordValueRequest,
-    RecordWriteResponse, RollbackSummary, RollbackZoneResponse, RolloverDnssecRequest,
-    SecondaryCheckResponse, SecondaryResponse, SecondaryStatusResponse, SecondaryTransferSummary,
-    SecondaryTransfersResponse, TokenGrantResponse, TokenResponse, TransferResponse,
-    TransferSummary, TsigGrantResponse, TsigKeyResponse, UpdateDnssecPolicyRequest,
-    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
-    VersionDetailResponse, VersionDiffResponse, VersionRecordResponse, ZoneResponse,
-    ZoneStatusResponse, ZoneVersionResponse, ZoneWriteResponse,
+    ImportSummary, ImportZoneRequest, ImportZoneResponse, MessageResponse, NotifyCheckResponse,
+    PaginatedResponse, Pagination, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue,
+    RecordItem, RecordResponse, RecordValueRequest, RecordWriteResponse, RollbackSummary,
+    RollbackZoneResponse, RolloverDnssecRequest, SecondaryCheckResponse, SecondaryResponse,
+    SecondaryStatusResponse, SecondaryTransferSummary, SecondaryTransfersResponse,
+    TokenGrantResponse, TokenResponse, TransferResponse, TransferSummary, TsigGrantResponse,
+    TsigKeyResponse, UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
+    UpdateSecondaryRequest, UpdateZoneRequest, VersionDetailResponse, VersionDiffResponse,
+    VersionRecordResponse, ZoneResponse, ZoneStatusResponse, ZoneVersionResponse,
+    ZoneWriteResponse,
 };
 use utoipa::{
     Modify, OpenApi,
@@ -135,7 +135,6 @@ use utoipa::{
         GetTsigGrantResponse,
         HealthResponse,
         HealthStatus,
-        ImportMode,
         ImportSummary,
         ImportZoneRequest,
         DeleteZoneResponse,
@@ -213,7 +212,10 @@ use utoipa::{
         license(name = "Apache 2.0", url = "http://www.apache.org/licenses/LICENSE-2.0.html")
     )
 )]
+#[derive(Clone, PartialEq, Eq, Copy)]
 pub(crate) struct ApiDoc;
+
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 
 struct SecurityAddon;
 

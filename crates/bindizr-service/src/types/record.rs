@@ -7,7 +7,7 @@ use bindizr_core::{
         name::ZoneName,
         record::{ParseRecordValueError, TxtContent, TxtRecordValue},
     },
-    model::{record::RecordId, zone::ZoneId},
+    model::{dnssec_record::DnssecRecordType, record::RecordId, zone::ZoneId},
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -164,14 +164,14 @@ pub struct UpdateRecordRequest {
     pub dry_run: bool,
 }
 
-/// Which records a conditional delete removes, narrowing from a whole name
-/// down to one record, as RFC 2136, Section 2.5.2 spells the same three forms.
+/// Request to delete matching records or preview the deletion, narrowing from
+/// a whole name to one record as in RFC 2136, Section 2.5.2.
 /// `zone_name` and `name` are both required: without a name this would be a
 /// second, quieter way to empty a zone, which `DELETE /zones/{name}` owns.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
-pub struct DeleteRecordsFilter {
+pub struct DeleteRecordsRequest {
     #[schema(example = "example.com")]
     pub zone_name: String,
     /// Owner name relative to the zone, or `@` for the apex.
@@ -291,7 +291,7 @@ pub struct GetRecordResponse {
     pub name: String,
     #[serde(rename = "type")]
     #[schema(example = "A")]
-    pub record_type: String,
+    pub record_type: RecordTypeResponse,
     #[schema(example = "192.168.1.100")]
     pub value: RecordValueRequest,
     #[schema(example = 3600, value_type = i32)]
@@ -310,7 +310,7 @@ impl GetRecordResponse {
         GetRecordResponse {
             id: record.id.written(),
             name: record.name.to_fqdn(zone_name),
-            record_type: record.record_type.to_string(),
+            record_type: record.record_type.into(),
             value: build_display_value(&record.value, &record.record_type),
             ttl: record.ttl,
             priority: record.priority,
@@ -361,4 +361,98 @@ pub struct BulkRecordsResponse {
     pub records: Vec<GetRecordResponse>,
     /// Dry-run diff; adding a value at an existing name and type is a changed group.
     pub diff: RecordDiff,
+}
+
+/// A user record type or a signer-generated type returned by record listing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum RecordTypeResponse {
+    User(RecordType),
+    Derived(DnssecRecordType),
+}
+
+impl RecordTypeResponse {
+    /// Return the DNS mnemonic shared by the response and display forms.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::User(value) => value.as_str(),
+            Self::Derived(value) => value.as_str(),
+        }
+    }
+}
+
+impl std::fmt::Display for RecordTypeResponse {
+    /// Display the canonical DNS mnemonic.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.pad(self.as_str())
+    }
+}
+
+impl From<RecordType> for RecordTypeResponse {
+    /// Wrap a stored user record type for a record response.
+    fn from(value: RecordType) -> Self {
+        Self::User(value)
+    }
+}
+
+impl From<DnssecRecordType> for RecordTypeResponse {
+    /// Wrap a generated DNSSEC record type for a record response.
+    fn from(value: DnssecRecordType) -> Self {
+        Self::Derived(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Keep signed and plain record responses compatible with DNS mnemonic strings.
+    #[test]
+    fn record_type_response_spells_itself_once() {
+        for (value, expected) in [
+            (RecordTypeResponse::from(RecordType::A), "A"),
+            (RecordTypeResponse::from(RecordType::Aaaa), "AAAA"),
+            (RecordTypeResponse::from(RecordType::Caa), "CAA"),
+            (RecordTypeResponse::from(RecordType::Cname), "CNAME"),
+            (RecordTypeResponse::from(RecordType::Dname), "DNAME"),
+            (RecordTypeResponse::from(RecordType::Ds), "DS"),
+            (RecordTypeResponse::from(RecordType::Mx), "MX"),
+            (RecordTypeResponse::from(RecordType::Naptr), "NAPTR"),
+            (RecordTypeResponse::from(RecordType::Txt), "TXT"),
+            (RecordTypeResponse::from(RecordType::Ns), "NS"),
+            (RecordTypeResponse::from(RecordType::Srv), "SRV"),
+            (RecordTypeResponse::from(RecordType::Ptr), "PTR"),
+            (RecordTypeResponse::from(RecordType::Sshfp), "SSHFP"),
+            (RecordTypeResponse::from(RecordType::Tlsa), "TLSA"),
+            (RecordTypeResponse::from(DnssecRecordType::Rrsig), "RRSIG"),
+            (RecordTypeResponse::from(DnssecRecordType::Nsec), "NSEC"),
+            (RecordTypeResponse::from(DnssecRecordType::Dnskey), "DNSKEY"),
+            (RecordTypeResponse::from(DnssecRecordType::Nsec3), "NSEC3"),
+            (
+                RecordTypeResponse::from(DnssecRecordType::Nsec3param),
+                "NSEC3PARAM",
+            ),
+            (RecordTypeResponse::from(DnssecRecordType::Cds), "CDS"),
+            (
+                RecordTypeResponse::from(DnssecRecordType::Cdnskey),
+                "CDNSKEY",
+            ),
+        ] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(value.to_string(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<RecordTypeResponse>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+        for invalid in ["SOA", "ANY", "AAAAA"] {
+            assert!(
+                serde_json::from_value::<RecordTypeResponse>(serde_json::json!(invalid)).is_err()
+            );
+        }
+    }
 }

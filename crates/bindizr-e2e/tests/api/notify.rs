@@ -63,7 +63,7 @@ async fn notify_zone_all_and_bump_serial() {
         body["error"]
             .as_str()
             .unwrap()
-            .contains(&format!("Zone with name '{missing_zone_name}' not found"))
+            .contains(&format!("zone with name '{missing_zone_name}' not found"))
     );
 }
 

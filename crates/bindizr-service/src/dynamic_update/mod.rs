@@ -5,8 +5,6 @@
 use bindizr_db::LockLevel;
 
 mod prerequisite;
-#[cfg(test)]
-mod tests;
 
 use bindizr_core::{
     dns::{
@@ -20,7 +18,7 @@ use prerequisite::evaluate_prerequisites_tx;
 use thiserror::Error;
 
 use crate::{
-    Context, Transaction, db, dnssec,
+    Context, Transaction, dnssec,
     error::ServiceError,
     model::{
         record::{Record, RecordType},
@@ -31,7 +29,7 @@ use crate::{
     serial::generate_serial,
     transaction,
     tsig_key::grant::{authorize_prerequisite, authorize_update},
-    zone::{self, version::ChangeSubject},
+    zone::{self, version::ChangeAttribution},
 };
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
@@ -199,11 +197,11 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
             // Bump the serial and version it so secondaries detect the change via
             // SOA/NOTIFY and can serve it as an IXFR delta.
             zone::advance_serial_tx(
-                cx,
                 &mut tx,
+                cx,
                 &zone,
                 new_serial,
-                &ChangeSubject::nsupdate(update.key.as_ref().map(|key| key.name.as_str())),
+                &ChangeAttribution::nsupdate(update.key.as_ref().map(|key| key.name.as_str())),
             )
             .await?;
         }
@@ -230,10 +228,8 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
     Ok(changed)
 }
 
-/// Authorize an authenticated request: global keys may do anything, other
-/// keys need a grant reaching every prerequisite and every update record. `key`
-/// is `None` for an accepted unsigned request, which skips authorization
-/// entirely.
+/// Authorize every prerequisite and update against the TSIG key's grants;
+/// global keys and accepted unsigned requests need none.
 async fn authorize_key_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -249,9 +245,13 @@ async fn authorize_key_tx(
 
     // Share-lock the grants so a concurrent revocation waits for this
     // transaction instead of racing it.
-    let grants =
-        db::tsig_grant::list_by_zone_id_and_key_id_tx(tx, zone.id, key.id, LockLevel::Shared)
-            .await?;
+    let grants = bindizr_db::tsig_grant::list_by_zone_id_and_key_id_tx(
+        tx,
+        zone.id,
+        key.id,
+        LockLevel::Shared,
+    )
+    .await?;
 
     if grants.is_empty() {
         return Err(DynamicUpdateError::Refused(format!(
@@ -396,7 +396,7 @@ async fn delete_matching_tx(
     let owner = parse_update_owner(name, &zone.name)?;
     // Only records at the owner name can match, so lock just those.
     let owner_records =
-        db::record::list_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive).await?;
+        bindizr_db::record::list_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive).await?;
 
     let matched: Vec<Record> = owner_records
         .iter()
@@ -430,4 +430,53 @@ fn parse_update_owner(name: &str, zone_name: &ZoneName) -> Result<OwnerName, Dyn
         )),
         other => DynamicUpdateError::Refused(format!("owner '{}' {}", to_fqdn(name), other)),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use bindizr_core::dns::name::ZoneName;
+
+    use super::*;
+
+    /// Verify that owner in zone reduces an in zone owner to its stored form.
+    #[test]
+    fn parse_owner_in_zone_reduces_an_in_zone_owner_to_its_stored_form() {
+        assert_eq!(
+            parse_update_owner("www.example.com.", &ZoneName::from_row("example.com"))
+                .unwrap()
+                .to_stored(),
+            "www"
+        );
+        assert!(
+            parse_update_owner("example.com.", &ZoneName::from_row("example.com"))
+                .unwrap()
+                .is_apex()
+        );
+        // A dotted wire label is one label, so it is data rather than a boundary.
+        assert_eq!(
+            parse_update_owner(
+                r"host\.name.example.com.",
+                &ZoneName::from_row("example.com")
+            )
+            .unwrap()
+            .labels(),
+            ["host.name"]
+        );
+    }
+
+    /// Verify that `parse_update_owner` rejects owners outside the zone.
+    #[test]
+    fn parse_owner_in_zone_rejects_owners_outside_the_zone() {
+        for owner in [
+            "aexample.com.",
+            "badexample.com.",
+            "www.badexample.com.",
+            ".",
+            // One label spelling the zone is not inside it.
+            r"evil\.example.com.",
+        ] {
+            let err = parse_update_owner(owner, &ZoneName::from_row("example.com")).unwrap_err();
+            assert!(matches!(err, DynamicUpdateError::NotZone(_)), "{owner:?}");
+        }
+    }
 }

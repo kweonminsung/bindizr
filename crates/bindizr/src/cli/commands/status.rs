@@ -60,7 +60,7 @@ pub(crate) async fn handle_command(output: OutputFormat) -> Result<(), CliError>
     // says so for a health wrapper and the container health check.
     match status.database_error {
         Some(error) => Err(CliError::request(format!(
-            "Database unavailable: {}",
+            "database unavailable: {}",
             error
         ))),
         None => Ok(()),

@@ -1,7 +1,7 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
     CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, MessageResponse,
-    PageFilter, PaginatedResponse, UpdateDnssecPolicyRequest,
+    PageRequest, PaginatedResponse, UpdateDnssecPolicyRequest,
 };
 use clap::Subcommand;
 
@@ -18,7 +18,7 @@ use crate::{
 
 /// Subcommands for managing DNSSEC policies, the named signing-parameter
 /// bundles zones sign under.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DnssecPolicyCommand {
     /// Create a DNSSEC policy (omitted options take the built-in defaults)
     #[command(after_help = "\
@@ -147,7 +147,7 @@ pub(crate) async fn handle_command(subcommand: DnssecPolicyCommand) -> Result<()
             output,
         } => {
             let res = client::send_command::<PaginatedResponse<GetDnssecPolicyResponse>>(
-                DaemonCommand::ListDnssecPolicies(PageFilter { limit, offset }),
+                DaemonCommand::ListDnssecPolicies(PageRequest { limit, offset }),
             )
             .await?;
             log::debug!("DNSSEC policy list result: {:?}", res);

@@ -7,7 +7,7 @@ use bindizr_db::LockLevel;
 
 use super::{DynamicUpdateError, Prerequisite, parse_update_owner};
 use crate::{
-    Transaction, db,
+    Transaction,
     model::{
         record::{Record, RecordType},
         zone::Zone,
@@ -24,7 +24,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
         return Ok(());
     }
 
-    let zone_records = db::record::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
+    let zone_records = bindizr_db::record::list_tx(tx, zone.id, LockLevel::Exclusive).await?;
 
     let mut record_sets: Vec<WantedRecordSet<'_>> = Vec::new();
     for prerequisite in prerequisites {
@@ -105,6 +105,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
 }
 
 /// The records a prerequisite names at one owner and type, as value and priority.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct WantedRecordSet<'a> {
     owner: OwnerName,
     record_type: RecordType,

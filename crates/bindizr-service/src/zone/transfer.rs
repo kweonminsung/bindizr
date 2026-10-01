@@ -5,7 +5,7 @@ use bindizr_core::dns::name::ZoneName;
 use bindizr_db::LockLevel;
 
 use crate::{
-    Context, Transaction, db,
+    Context, Transaction,
     error::ServiceError,
     model::{dnssec_record::DnssecRecord, record::Record, tsig_key::TsigKey, zone::Zone},
     transaction,
@@ -70,9 +70,9 @@ pub async fn authorize_transfer_content_by_name(
             TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
             TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
         };
-        let records = db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let records = bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let dnssec_records =
-            db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+            bindizr_db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         Ok(TransferAccess::Granted(TransferContent {
             zone,
             records,

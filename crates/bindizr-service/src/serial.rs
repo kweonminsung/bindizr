@@ -1,12 +1,6 @@
-//! SOA serial-number generation: a plain monotonic counter.
-//!
-//! Serials start at 1 and advance by exactly one on every zone mutation; the
-//! "when" of a serial comes from `zone_versions.created_at`, not from the
-//! serial itself. An explicit serial supplied at zone creation (e.g. when
-//! taking over a zone whose secondaries already track a serial) simply becomes
-//! the starting point and the counter continues from there. Stops at
-//! `i32::MAX` because IXFR encodes serials as `u32` and rejects negatives, so
-//! wrapping is not an option.
+//! SOA serials start at 1 (or the supplied initial value) and increment once per mutation.
+//! Time comes from `zone_versions.created_at`. Stop at `i32::MAX` to keep the row
+//! representation nonnegative and convertible to the IXFR wire serial without wrapping.
 
 use bindizr_core::dns::Serial;
 
@@ -19,10 +13,8 @@ const RESERVED_SERIAL_HEADROOM: u32 = 10_000_000;
 /// `RESERVED_SERIAL_HEADROOM` mutations before the counter reaches the ceiling.
 const MAX_INITIAL_SERIAL: u32 = Serial::MAX_STORED.as_u32() - RESERVED_SERIAL_HEADROOM;
 
-/// Generate the next SOA serial: `None` (new zone) yields 1; `Some(s)` yields
-/// `s + 1`. The stored ceiling is an error rather than a saturating no-op,
-/// which would repeat a serial silently — `zone_versions` upserts on
-/// `(zone_id, serial)`.
+/// Generate 1 for a new zone or increment its serial, rejecting the storage ceiling
+/// so `zone_versions` cannot silently overwrite the same `(zone_id, serial)`.
 pub(crate) fn generate_serial(current_serial: Option<Serial>) -> Result<Serial, ServiceError> {
     match current_serial {
         Some(serial) => serial.next().ok_or_else(|| {

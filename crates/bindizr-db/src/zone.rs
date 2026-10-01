@@ -9,12 +9,12 @@ use crate::{
     error::DatabaseError,
     model::zone::Zone,
     mysql, postgres,
-    sql::{SortOrder, ZoneSort},
+    sql::{SortOrder, ZoneSortField},
     sqlite,
     tx::TransactionKind,
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ZoneFilter {
     pub name: Option<String>,
     pub id: Option<ZoneId>,
@@ -39,7 +39,7 @@ pub struct ZoneFilter {
     /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
     pub scope_token_id: Option<TokenId>,
-    pub sort: ZoneSort,
+    pub sort: ZoneSortField,
     pub order: SortOrder,
     pub limit: Option<u32>,
     pub offset: Option<u64>,

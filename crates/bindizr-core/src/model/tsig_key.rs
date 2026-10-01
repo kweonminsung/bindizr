@@ -10,7 +10,18 @@ pub struct ParseTsigAlgorithmError {
 }
 
 /// TSIG HMAC algorithms for update and transfer authentication (RFC 8945).
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    utoipa::ToSchema,
+)]
+#[serde(rename_all = "kebab-case")]
 pub enum TsigAlgorithm {
     /// The default a key is created with, matching `tsig-keygen`'s.
     #[default]
@@ -74,11 +85,9 @@ id_newtype!(
     TsigKeyId
 );
 
-/// A TSIG credential for updates and transfers; `name` is its wire name.
-/// Zone rights come from [`super::tsig_grant::TsigGrant`] rows.
-///
-/// `is_global` is fixed at creation: a global key may update and transfer
-/// every zone without any grant.
+/// A TSIG credential whose wire `name` identifies it for updates and transfers.
+/// Rights come from [`super::tsig_grant::TsigGrant`]; `is_global`, fixed at creation,
+/// permits updates and transfers in every zone without grants.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TsigKey {
     pub id: TsigKeyId,
@@ -92,6 +101,8 @@ pub struct TsigKey {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     /// Verify that algorithm parses storage and wire forms case insensitively.
@@ -111,5 +122,22 @@ mod tests {
     #[test]
     fn algorithm_rejects_unsupported_names() {
         assert!("hmac-md5".parse::<TsigAlgorithm>().is_err());
+    }
+
+    /// Verify that `TsigAlgorithm` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn tsig_algorithm_spells_itself_once() {
+        for value in [
+            TsigAlgorithm::HmacSha256,
+            TsigAlgorithm::HmacSha384,
+            TsigAlgorithm::HmacSha512,
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<TsigAlgorithm>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<TsigAlgorithm>().unwrap(), value);
+        }
     }
 }

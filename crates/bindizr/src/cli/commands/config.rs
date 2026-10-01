@@ -11,7 +11,7 @@ use crate::{
 };
 
 /// Subcommands for inspecting and validating configuration.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ConfigCommand {
     /// Validate a configuration file without starting bindizr
     Check {
@@ -108,17 +108,17 @@ async fn print_config_value(key: &str, output: OutputFormat) -> Result<(), CliEr
     let found = key
         .split('.')
         .try_fold(&config, |value, part| value.get(part))
-        .ok_or_else(|| CliError::request(format!("Unknown configuration key: {}", key)))?;
+        .ok_or_else(|| CliError::request(format!("unknown configuration key: {}", key)))?;
 
     match output {
         OutputFormat::Table => match found {
             serde_json::Value::String(value) => outln!("{}", value),
             serde_json::Value::Object(_) => outln!(
                 "{}",
-                serde_json::to_string_pretty(found).map_err(|e| CliError::request(format!(
-                    "Failed to render configuration value: {}",
+                serde_json::to_string_pretty(found).map_err(|e| CliError::request_with_source(
+                    format!("failed to render configuration value: {}", e),
                     e
-                )))?
+                ))?
             ),
             value => outln!("{}", value),
         },

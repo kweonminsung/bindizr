@@ -7,12 +7,12 @@ use bindizr_core::dns::{
     dnssec::WireNameError,
     message::{Name, Opcode, Rtype, encode_tcp_message},
     name::{ZoneName, decode_name_labels, to_fqdn},
-    query::{TransferRecord, build_question, extract_transfer_records},
+    query::{TransferMessagePosition, TransferRecord, build_question, extract_transfer_records},
 };
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 
-use super::ResolveAddressError;
+use super::{ReadTcpMessageError, ResolveAddressError};
 
 /// Why a zone could not be pulled from another server.
 #[derive(Debug, Error)]
@@ -45,7 +45,7 @@ pub(crate) enum TransferZoneError {
     #[error(transparent)]
     Encode(#[from] bindizr_core::dns::message::EncodeMessageError),
     #[error("read failed before the closing SOA: {0}")]
-    Read(#[source] std::io::Error),
+    Read(#[source] ReadTcpMessageError),
     #[error("transfer exceeds {limit} bytes")]
     TooLarge { limit: usize },
     #[error(transparent)]
@@ -149,7 +149,12 @@ async fn transfer_from(
             });
         }
 
-        let batch = extract_transfer_records(query_id, qname, records.is_empty(), &response)?;
+        let position = if records.is_empty() {
+            TransferMessagePosition::First
+        } else {
+            TransferMessagePosition::Following
+        };
+        let batch = extract_transfer_records(query_id, qname, position, &response)?;
         for record in batch {
             if records.is_empty() {
                 if record.rtype != Rtype::SOA {

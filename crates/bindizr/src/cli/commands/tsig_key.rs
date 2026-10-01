@@ -1,7 +1,7 @@
 use bindizr_core::{errln, model::tsig_grant::TsigGrantId, outln};
 use bindizr_service::types::{
     CreateGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
-    MessageResponse, PageFilter, PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
+    MessageResponse, PageRequest, PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
 };
 use clap::Subcommand;
 
@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// Subcommands for managing TSIG update and transfer credentials.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TsigKeyCommand {
     /// Create a TSIG key (generates a secret unless one is provided)
     Create {
@@ -178,7 +178,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             output,
         } => {
             let res = client::send_command::<PaginatedResponse<GetTsigKeyResponse>>(
-                DaemonCommand::ListTsigKeys(PageFilter { limit, offset }),
+                DaemonCommand::ListTsigKeys(PageRequest { limit, offset }),
             )
             .await?;
             log::debug!("TSIG key list result: {:?}", res);
@@ -236,7 +236,7 @@ pub(crate) async fn handle_command(subcommand: TsigKeyCommand) -> Result<(), Cli
             let res = client::send_command::<PaginatedResponse<GetTsigGrantResponse>>(
                 DaemonCommand::ListTsigGrants {
                     key_name: name,
-                    page: PageFilter { limit, offset },
+                    page: PageRequest { limit, offset },
                 },
             )
             .await?;

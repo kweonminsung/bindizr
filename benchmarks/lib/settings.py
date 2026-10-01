@@ -15,11 +15,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _results_dir() -> Path:
-    """Each run writes to its own `results_<YYYYmmdd_HHMMSS>/` directory.
+    """Choose `results_<YYYYmmdd_HHMMSS>/`, or reuse `BENCH_RESULTS_DIR`.
 
-    Set `BENCH_RESULTS_DIR` to reuse an existing one — required when re-running a
-    subset of benchmarks (`-b ...`) so the report is rebuilt from the full set of
-    raw results rather than just the ones re-run.
+    Reuse the directory for subset reruns so the report includes earlier results.
     """
     override = os.environ.get("BENCH_RESULTS_DIR")
     if override:

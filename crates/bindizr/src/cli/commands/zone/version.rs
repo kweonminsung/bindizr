@@ -1,6 +1,6 @@
 //! The `zone version` subcommands: list, show, diff, and rollback.
 
-use bindizr_core::{dns::Serial, model::zone_version::VersionScope, out, outln};
+use bindizr_core::{dns::Serial, model::zone_version::VersionFilter, out, outln};
 use bindizr_service::types::{
     PaginatedResponse, RollbackZoneResponse, Run, VersionDetailResponse, VersionDiffResponse,
     ZoneVersionResponse,
@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// Subcommands for inspecting a zone's versions.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ZoneVersionCommand {
     /// List a zone's versions (serial history)
     #[command(
@@ -29,8 +29,9 @@ Examples:
   bindizr zone version list example.com
   bindizr zone version list example.com --include-signer-serials
 
-By default only serials a user change produced are listed; re-signs and
-rollovers move the serial too, and --include-signer-serials shows those."
+By default, past serials with only derived DNSSEC changes are hidden.
+The current serial and serials without journal entries remain visible.
+Use --include-signer-serials to list every stored version."
     )]
     List {
         /// The name of the zone
@@ -122,7 +123,7 @@ pub(crate) async fn handle_command(subcommand: ZoneVersionCommand) -> Result<(),
                     name,
                     limit,
                     offset,
-                    scope: VersionScope::from_include_signer_serials(include_signer_serials),
+                    filter: VersionFilter::from_include_signer_serials(include_signer_serials),
                 },
             )
             .await?;

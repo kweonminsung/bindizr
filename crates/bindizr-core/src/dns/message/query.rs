@@ -17,9 +17,9 @@ use crate::dns::{LibraryError, tsig::TransferSigner};
 /// An inbound message the listener could not read as a query.
 #[derive(Debug, Error)]
 pub enum ParseQueryError {
-    #[error("Failed to parse DNS message: {0}")]
+    #[error("failed to parse DNS message: {0}")]
     Malformed(#[source] LibraryError),
-    #[error("No question in DNS query")]
+    #[error("no question in DNS query")]
     NoQuestion,
 }
 

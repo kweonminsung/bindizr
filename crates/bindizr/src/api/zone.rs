@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::{dns::Serial, model::zone_version::VersionScope};
+use bindizr_core::{dns::Serial, model::zone_version::VersionFilter};
 use bindizr_service::{
     Context, record,
     types::{
@@ -141,7 +141,7 @@ pub(crate) async fn export_zone(
             ("name" = String, Path, description = "The name of the DNS zone."),
             ("limit" = Option<u32>, Query, minimum = 1, maximum = 1000, description = "Versions per page; defaults to 50."),
             ("offset" = Option<u64>, Query, description = "Number of versions to skip."),
-            ("include_signer_serials" = Option<bool>, Query, description = "Include signer-only serials (DNSSEC re-signs and rollovers); by default only serials with user changes, plus the current serial, are listed.")
+            ("include_signer_serials" = Option<bool>, Query, description = "Include past serials with only derived DNSSEC changes. By default these are hidden; the current serial and serials without journal entries remain visible.")
         ),
         responses(
             (status = 200, description = "A list of zone versions", body = PaginatedResponse<ZoneVersionResponse>),
@@ -162,7 +162,7 @@ pub(crate) async fn list_zone_versions(
         &zone::normalize_name(&params.name)?,
         query.limit.or(Some(DEFAULT_PAGE_LIMIT)),
         query.offset,
-        VersionScope::from_include_signer_serials(query.include_signer_serials),
+        VersionFilter::from_include_signer_serials(query.include_signer_serials),
     )
     .await?;
     Ok((StatusCode::OK, Json(response)).into_response())

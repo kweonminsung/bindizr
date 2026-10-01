@@ -9,11 +9,11 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use super::secondary::TransferResponse;
-use crate::{dns_client::probe::ProbeError, model::zone::Zone, notify::NotifyTarget};
+use crate::{model::zone::Zone, notify::NotifyTarget};
 
 /// Which records a zone reads back as: the user records alone, or with the
 /// derived DNSSEC records bindizr generates.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ZoneView {
     Plain,
@@ -33,7 +33,7 @@ impl ZoneView {
 
 /// Whether a manual NOTIFY bumps the zone serial first, so secondaries
 /// transfer even when nothing changed.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum NotifySerial {
     Keep,
@@ -130,10 +130,20 @@ pub struct CreateZoneRequest {
     /// Free-text note for operators, at most 255 characters.
     #[schema(example = "customer A, migrated 2026-01")]
     pub description: Option<String>,
+    /// Start the zone with an apex NS record naming the SOA MNAME; false
+    /// leaves every NS record to the caller.
+    #[serde(default = "default_apex_ns")]
+    #[schema(default = true, example = true)]
+    pub apex_ns: bool,
     /// Validate and report the change without writing it.
     #[serde(default)]
     #[schema(example = false)]
     pub dry_run: bool,
+}
+
+/// Create the apex NS record when a request leaves the choice out.
+fn default_apex_ns() -> bool {
+    true
 }
 
 /// Query filters and pagination for listing zones.
@@ -197,6 +207,7 @@ pub struct GetZonesFilter {
     /// Zones per page; defaults to 50 when omitted, 1000 is the largest page
     /// accepted.
     #[schema(example = 50)]
+    #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
     /// Number of zones to skip.
     #[schema(example = 0)]
@@ -309,7 +320,7 @@ pub struct ExportZoneFileResponse {
 }
 
 /// How the serial a secondary serves compares with the one Bindizr serves.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SecondaryStatus {
     InSync,
@@ -348,42 +359,6 @@ pub struct SecondaryStatusResponse {
 }
 
 impl SecondaryStatusResponse {
-    /// Classify a probed SOA serial against the serial Bindizr serves; a
-    /// probe error reads as `unreachable`, an answer with nothing to compare
-    /// it to as `reachable`.
-    pub fn from_probe(
-        address: String,
-        expected_serial: Option<Serial>,
-        result: Result<Serial, ProbeError>,
-    ) -> Self {
-        match result {
-            Ok(visible) => {
-                let status = match expected_serial {
-                    Some(expected) => match visible.cmp(&expected) {
-                        std::cmp::Ordering::Equal => SecondaryStatus::InSync,
-                        std::cmp::Ordering::Less => SecondaryStatus::Lagging,
-                        std::cmp::Ordering::Greater => SecondaryStatus::Ahead,
-                    },
-                    None => SecondaryStatus::Reachable,
-                };
-                SecondaryStatusResponse {
-                    address,
-                    status,
-                    visible_serial: Some(visible),
-                    error: None,
-                    last_transfer: None,
-                }
-            }
-            Err(error) => SecondaryStatusResponse {
-                address,
-                status: SecondaryStatus::Unreachable,
-                visible_serial: None,
-                error: Some(error.to_string()),
-                last_transfer: None,
-            },
-        }
-    }
-
     /// Whether the probed secondary serial matches this status's zone serial.
     pub fn is_in_sync(&self) -> bool {
         self.status == SecondaryStatus::InSync
@@ -404,4 +379,117 @@ pub struct ZoneStatusResponse {
     #[schema(example = 42, value_type = u32)]
     pub serial: Serial,
     pub secondaries: Vec<SecondaryStatusResponse>,
+}
+
+impl ZoneView {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Plain => "plain",
+            Self::Signed => "signed",
+        }
+    }
+}
+
+impl serde::Serialize for ZoneView {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl NotifySerial {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Keep => "keep",
+            Self::Bump => "bump",
+        }
+    }
+}
+
+impl serde::Serialize for NotifySerial {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl SecondaryStatus {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InSync => "in_sync",
+            Self::Lagging => "lagging",
+            Self::Ahead => "ahead",
+            Self::Reachable => "reachable",
+            Self::Unreachable => "unreachable",
+        }
+    }
+}
+
+impl serde::Serialize for SecondaryStatus {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify the canonical spelling and round-trip of every ZoneView variant.
+    #[test]
+    fn zone_view_spells_itself_once() {
+        for (value, expected) in [(ZoneView::Plain, "plain"), (ZoneView::Signed, "signed")] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<ZoneView>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+    }
+
+    /// Verify the canonical spelling and round-trip of every NotifySerial variant.
+    #[test]
+    fn notify_serial_spells_itself_once() {
+        for (value, expected) in [(NotifySerial::Keep, "keep"), (NotifySerial::Bump, "bump")] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<NotifySerial>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+    }
+
+    /// Verify the canonical spelling and round-trip of every SecondaryStatus variant.
+    #[test]
+    fn secondary_status_spells_itself_once() {
+        for (value, expected) in [
+            (SecondaryStatus::InSync, "in_sync"),
+            (SecondaryStatus::Lagging, "lagging"),
+            (SecondaryStatus::Ahead, "ahead"),
+            (SecondaryStatus::Reachable, "reachable"),
+            (SecondaryStatus::Unreachable, "unreachable"),
+        ] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<SecondaryStatus>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+    }
 }

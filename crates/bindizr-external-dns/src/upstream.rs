@@ -27,24 +27,24 @@ pub(crate) enum UpstreamError {
 /// Why the client to bindizr could not be built.
 #[derive(Debug, Error)]
 pub(crate) enum BuildClientError {
-    #[error("Failed to read the CA certificate '{path}': {source}")]
+    #[error("failed to read the CA certificate '{path}': {source}")]
     ReadCa {
         path: String,
         #[source]
         source: std::io::Error,
     },
-    #[error("Invalid CA certificate '{path}': {source}")]
+    #[error("invalid CA certificate '{path}': {source}")]
     InvalidCa {
         path: String,
         #[source]
         source: reqwest::Error,
     },
-    #[error("Failed to build HTTP client: {0}")]
+    #[error("failed to build HTTP client: {0}")]
     Build(#[source] reqwest::Error),
 }
 
 /// The `error` message a bindizr API error response carries.
-#[derive(Deserialize)]
+#[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
 struct UpstreamErrorBody {
     error: String,
 }
@@ -96,7 +96,7 @@ impl UpstreamClient {
 
     /// Fetch domain names available to the adapter's token.
     pub(crate) async fn list_domains(&self) -> Result<Vec<String>, UpstreamError> {
-        #[derive(Deserialize)]
+        #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
         struct DomainsBody {
             domains: Vec<String>,
         }
@@ -106,7 +106,7 @@ impl UpstreamClient {
 
     /// Fetch the records visible through the bindizr external-dns API.
     pub(crate) async fn list_records(&self) -> Result<Vec<BindizrRecord>, UpstreamError> {
-        #[derive(Deserialize)]
+        #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
         struct RecordsBody {
             records: Vec<BindizrRecord>,
         }
@@ -132,17 +132,19 @@ impl UpstreamClient {
         &self,
         records: &[BindizrRecord],
     ) -> Result<Vec<BindizrRecord>, UpstreamError> {
-        #[derive(serde::Serialize)]
+        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
         struct AdjustRequest<'a> {
-            records: &'a [BindizrRecord],
+            records: std::borrow::Cow<'a, [BindizrRecord]>,
         }
-        #[derive(Deserialize)]
+        #[derive(Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
         struct AdjustBody {
             records: Vec<BindizrRecord>,
         }
         let request = self
             .request(reqwest::Method::POST, "/external-dns/adjust")
-            .json(&AdjustRequest { records });
+            .json(&AdjustRequest {
+                records: records.into(),
+            });
         let response = self.send(request).await?;
         let body: AdjustBody = response
             .json()

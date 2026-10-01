@@ -9,8 +9,8 @@ use super::record::{RecordValueRequest, build_display_value};
 use crate::{
     error::ServiceError,
     model::{
-        record::RecordData,
-        zone_version::{ChangeSource, ZoneVersion},
+        record::{RecordData, RecordType},
+        zone_version::{ChangeActor, ChangeSource, ZoneVersion},
     },
 };
 
@@ -34,14 +34,11 @@ pub struct ZoneVersionResponse {
     pub expire: SoaInterval,
     #[schema(example = 3600, value_type = i32)]
     pub minimum_ttl: Ttl,
-    /// Which plane asked for this version: `token`, `nsupdate`, `system`
-    /// (the DNSSEC scheduler), or `local` (the daemon socket, or
-    /// any request while authentication is disabled).
+    /// The request path (`api`, `socket`, `nsupdate`) or background process (`system`).
     pub change_source: ChangeSource,
-    /// The API token or TSIG key the change was made under, absent where no
-    /// credential stood behind it.
-    #[schema(example = "admin")]
-    pub changed_by: Option<String>,
+    /// Token or TSIG key kind and name. Null for socket commands, unauthenticated
+    /// API requests, unsigned updates, and background work.
+    pub changed_by: Option<ChangeActor>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -54,7 +51,10 @@ impl TryFrom<&ZoneVersion> for ZoneVersionResponse {
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
             .map_err(|e| {
-                ServiceError::internal(format!("Failed to decode version rname: {}", e))
+                ServiceError::internal_with_source(
+                    format!("failed to decode version rname: {}", e),
+                    e,
+                )
             })?;
         Ok(ZoneVersionResponse {
             serial: version.serial,
@@ -80,7 +80,7 @@ pub struct VersionRecordResponse {
     pub name: String,
     #[serde(rename = "type")]
     #[schema(example = "A")]
-    pub record_type: String,
+    pub record_type: RecordType,
     pub value: RecordValueRequest,
     #[schema(example = 3600, value_type = i32)]
     pub ttl: Ttl,
@@ -94,7 +94,7 @@ impl VersionRecordResponse {
     pub(crate) fn from_record_and_zone_name(record: &RecordData, zone_name: &ZoneName) -> Self {
         VersionRecordResponse {
             name: record.name.to_fqdn(zone_name),
-            record_type: record.record_type.to_string(),
+            record_type: record.record_type,
             // Decode TXT out of its stored form, as the record endpoints do.
             value: build_display_value(&record.value, &record.record_type),
             ttl: record.ttl,
@@ -122,7 +122,7 @@ pub struct RecordDiffValue {
 }
 
 /// Which way the records of one name and type differ between two serials.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RecordChange {
     Added,
@@ -150,7 +150,7 @@ pub struct RecordDiffEntry {
     pub name: String,
     #[serde(rename = "type")]
     #[schema(example = "A")]
-    pub record_type: String,
+    pub record_type: RecordType,
     pub from: Vec<RecordDiffValue>,
     pub to: Vec<RecordDiffValue>,
 }
@@ -211,4 +211,47 @@ pub struct RollbackZoneResponse {
     #[schema(example = 13, value_type = u32)]
     pub new_serial: Serial,
     pub summary: RollbackSummary,
+}
+
+impl RecordChange {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Added => "added",
+            Self::Removed => "removed",
+            Self::Changed => "changed",
+        }
+    }
+}
+
+impl serde::Serialize for RecordChange {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify the canonical spelling and round-trip of every RecordChange variant.
+    #[test]
+    fn record_change_spells_itself_once() {
+        for (value, expected) in [
+            (RecordChange::Added, "added"),
+            (RecordChange::Removed, "removed"),
+            (RecordChange::Changed, "changed"),
+        ] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<RecordChange>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+    }
 }

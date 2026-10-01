@@ -14,28 +14,25 @@ use chrono::Utc;
 use crate::{
     Context,
     authorization::Caller,
-    db,
     error::ServiceError,
     grant_pattern::{normalize_pattern, normalize_types},
     model::{
         api_token::ApiToken,
         token_grant::{TokenGrant, TokenGrantWithNames},
     },
-    types::{GetTokenGrantResponse, PageFilter, PaginatedResponse, build_page},
+    pagination::build_page,
+    types::{CreateGrantRequest, GetTokenGrantResponse, PageRequest, PaginatedResponse},
     zone,
 };
 
-/// Grant `token_name` record rights in `zone_name`, optionally restricted
+/// Grant `token_name` record rights in the request's zone, optionally restricted
 /// to a record name pattern and/or record types. Global tokens are
 /// rejected: they already cover every zone and never carry grants.
 pub async fn create(
     cx: &Context,
     caller: &Caller,
     token_name: &str,
-    zone_name: &ZoneName,
-    record_name_pattern: Option<&str>,
-    record_types: Option<&str>,
-    can_write: bool,
+    request: &CreateGrantRequest,
 ) -> Result<TokenGrantWithNames, ServiceError> {
     caller.authorize_global("manage token grants")?;
 
@@ -46,12 +43,12 @@ pub async fn create(
             token.name
         )));
     }
-    let zone = zone::lookup_by_name(cx, zone_name).await?;
+    let zone = zone::lookup_by_name(cx, &zone::normalize_name(&request.zone_name)?).await?;
 
-    let record_name_pattern = normalize_pattern(record_name_pattern)?;
-    let record_types = normalize_types(record_types)?;
+    let record_name_pattern = normalize_pattern(request.record_name_pattern.as_deref())?;
+    let record_types = normalize_types(request.record_types.as_deref())?;
 
-    let grant = db::token_grant::create(
+    let grant = bindizr_db::token_grant::create(
         cx.db(),
         TokenGrant {
             id: TokenGrantId::UNWRITTEN,
@@ -59,7 +56,7 @@ pub async fn create(
             api_token_id: token.id,
             record_name_pattern,
             record_types,
-            can_write,
+            can_write: request.can_write,
             created_at: Utc::now(),
         },
     )
@@ -68,7 +65,7 @@ pub async fn create(
         // The zone or token can go between the lookups above and this insert;
         // the FK reports it.
         if e.is_foreign_key_violation() {
-            ServiceError::ZoneNotFound("Zone or token no longer exists".to_string())
+            ServiceError::ZoneNotFound("zone or token no longer exists".to_string())
         } else {
             e.into()
         }
@@ -86,7 +83,7 @@ pub async fn list_by_token(
     cx: &Context,
     caller: &Caller,
     token_name: &str,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
     caller.authorize_global("manage token grants")?;
 
@@ -99,12 +96,12 @@ pub async fn list_by_token(
 pub async fn list_self(
     cx: &Context,
     token: &ApiToken,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
-    let grants = db::token_grant::list_by_token_id(cx.db(), token.id).await?;
+    let grants = bindizr_db::token_grant::list_by_token_id(cx.db(), token.id).await?;
 
     // Any token reaches this, so read only its granted zones.
-    let zone_names: HashMap<ZoneId, String> = db::zone::list_by_filter(
+    let zone_names: HashMap<ZoneId, String> = bindizr_db::zone::list_by_filter(
         cx.db(),
         ZoneFilter {
             scope_token_id: Some(token.id),
@@ -137,14 +134,14 @@ pub async fn list_by_zone(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
     caller.authorize_global("manage token grants")?;
 
     let zone = zone::lookup_by_name(cx, zone_name).await?;
-    let grants = db::token_grant::list_by_zone_id(cx.db(), zone.id).await?;
+    let grants = bindizr_db::token_grant::list_by_zone_id(cx.db(), zone.id).await?;
 
-    let token_names: HashMap<TokenId, String> = db::api_token::list_all(cx.db())
+    let token_names: HashMap<TokenId, String> = bindizr_db::api_token::list_all(cx.db())
         .await?
         .into_iter()
         .map(|token| (token.id, token.name))
@@ -180,17 +177,16 @@ pub async fn revoke(
     caller.authorize_global("manage token grants")?;
 
     let token = super::lookup_by_name(cx, token_name).await?;
-    let grant = db::token_grant::get(cx.db(), grant_id)
+    let grant = bindizr_db::token_grant::get(cx.db(), grant_id)
         .await?
         .filter(|grant| grant.api_token_id == token.id)
         .ok_or_else(|| ServiceError::token_grant_not_found(grant_id))?;
 
-    Ok(db::token_grant::delete(cx.db(), grant.id).await?)
+    Ok(bindizr_db::token_grant::delete(cx.db(), grant.id).await?)
 }
 
-/// Revoke every grant `token_name` holds in `zone_name`, returning how
-/// many went. Matching none is not an error: the rights already read the
-/// way the request asked for.
+/// Revoke all grants for this token and zone, returning the count;
+/// no matches is an idempotent success.
 pub async fn revoke_by_token_and_zone(
     cx: &Context,
     caller: &Caller,
@@ -202,7 +198,7 @@ pub async fn revoke_by_token_and_zone(
     let token = super::lookup_by_name(cx, token_name).await?;
     let zone = zone::lookup_by_name(cx, zone_name).await?;
 
-    Ok(db::token_grant::delete_by_token_id_and_zone_id(cx.db(), token.id, zone.id).await?)
+    Ok(bindizr_db::token_grant::delete_by_token_id_and_zone_id(cx.db(), token.id, zone.id).await?)
 }
 
 /// Revoke a grant by its id, which identifies the row on its own.
@@ -213,9 +209,9 @@ pub async fn revoke_by_id(
 ) -> Result<(), ServiceError> {
     caller.authorize_global("manage token grants")?;
 
-    let grant = db::token_grant::get(cx.db(), grant_id)
+    let grant = bindizr_db::token_grant::get(cx.db(), grant_id)
         .await?
         .ok_or_else(|| ServiceError::token_grant_not_found(grant_id))?;
 
-    Ok(db::token_grant::delete(cx.db(), grant.id).await?)
+    Ok(bindizr_db::token_grant::delete(cx.db(), grant.id).await?)
 }

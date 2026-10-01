@@ -2,12 +2,8 @@ use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
 use crate::error::DatabaseError;
 
-/// Create the directory a SQLite path names, since SQLite itself fails with
-/// a bare "unable to open database file". A path naming no directory, and the
-/// URI forms (`sqlite:`, `file:`), are left alone.
-///
-/// What this creates is 0700, like the daemon's socket directory: the database
-/// holds TSIG secrets. A directory that already exists is the operator's.
+/// Create a SQLite file's parent directory with mode 0700 to protect TSIG secrets.
+/// Leave existing directories, bare filenames, and `sqlite:`/`file:` URIs alone.
 pub(crate) fn create_parent_dir(file_path: &str) -> Result<(), DatabaseError> {
     let file_path = file_path.trim();
     if file_path.starts_with("sqlite:") || file_path.starts_with("file:") {

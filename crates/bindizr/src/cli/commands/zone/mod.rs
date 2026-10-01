@@ -7,7 +7,7 @@ use bindizr_core::{dns::Serial, errln, out, outln};
 use bindizr_service::types::{
     self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetTokenGrantResponse,
     GetTsigGrantResponse, GetZoneResponse, GetZonesFilter, ImportZoneRequest, ImportZoneResponse,
-    MessageResponse, NotifySerial, PageFilter, PaginatedResponse, Run, UpdateZoneRequest,
+    MessageResponse, NotifySerial, PageRequest, PaginatedResponse, Run, UpdateZoneRequest,
     ZoneResponse, ZoneStatusResponse, ZoneView, ZoneWriteResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
@@ -25,7 +25,7 @@ use crate::{
 };
 
 /// Subcommands for managing zones.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ZoneCommand {
     /// Create a zone
     #[command(after_help = "\
@@ -66,6 +66,9 @@ and the contact is the address a resolver operator writes to.")]
         /// Free-text note for operators
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
+        /// Start without the apex NS record that would name --mname
+        #[arg(long)]
+        no_apex_ns: bool,
         /// Validate and report the change without writing it
         #[arg(long)]
         dry_run: bool,
@@ -327,7 +330,7 @@ Examples:
 /// How `zone import` reconciles parsed records with the records already in the
 /// zone. Mirrors the service-layer `ImportMode`; serialized as its lowercase
 /// wire name.
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
 pub(crate) enum ImportMode {
     /// Add parsed records; records already present are left untouched
     Append,
@@ -349,7 +352,7 @@ impl From<ImportMode> for types::ImportMode {
 }
 
 /// Arguments for the `zone notify` subcommand.
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NotifyArgs {
     /// The name of the zone; omit it to notify every zone
     #[arg(value_name = "ZONE_NAME")]
@@ -379,12 +382,14 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             expire,
             minimum_ttl,
             description,
+            no_apex_ns,
             dry_run,
             output,
         } => {
             let response = client::send_command::<ZoneWriteResponse>(DaemonCommand::CreateZone(
                 CreateZoneRequest {
                     dry_run,
+                    apex_ns: !no_apex_ns,
                     name,
                     mname,
                     rname,
@@ -536,7 +541,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 request: ImportZoneRequest {
                     content,
                     from_server,
-                    mode: mode.into(),
+                    mode: types::ImportMode::from(mode).as_str().to_owned(),
                     dry_run,
                     skip_unsupported,
                     create,
@@ -595,7 +600,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client::send_command::<PaginatedResponse<GetTokenGrantResponse>>(
                 DaemonCommand::ListZoneTokenGrants {
                     zone_name: name,
-                    page: PageFilter { limit, offset },
+                    page: PageRequest { limit, offset },
                 },
             )
             .await?;
@@ -610,7 +615,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client::send_command::<PaginatedResponse<GetTsigGrantResponse>>(
                 DaemonCommand::ListZoneTsigGrants {
                     zone_name: name,
-                    page: PageFilter { limit, offset },
+                    page: PageRequest { limit, offset },
                 },
             )
             .await?;

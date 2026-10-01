@@ -6,24 +6,24 @@ use thiserror::Error;
 /// it kept as its source.
 #[derive(Debug, Error)]
 pub enum DatabaseError {
-    #[error("Query failed: {0}")]
+    #[error("query failed: {0}")]
     QueryFailed(#[source] sqlx::Error),
 
     /// A UNIQUE constraint rejected the statement. Kept distinct so callers
     /// can map lost check-then-insert races to a conflict instead of a
     /// generic internal error.
-    #[error("Unique constraint violation: {0}")]
+    #[error("unique constraint violation: {0}")]
     UniqueViolation(#[source] sqlx::Error),
 
     /// A FOREIGN KEY constraint rejected the statement: the referenced row is
     /// gone, or the row is still referenced.
-    #[error("Foreign key constraint violation: {0}")]
+    #[error("foreign key constraint violation: {0}")]
     ForeignKeyViolation(#[source] sqlx::Error),
 
-    #[error("Transaction failed: {0}")]
+    #[error("transaction failed: {0}")]
     TransactionFailed(#[source] sqlx::Error),
 
-    #[error("Pool timed out")]
+    #[error("pool timed out")]
     PoolTimedOut,
 
     /// Each names the setting an operator would fix.
@@ -36,13 +36,13 @@ pub enum DatabaseError {
     #[error("SQLite open failed (check database.sqlite.file_path): {0}")]
     SqliteOpen(#[source] sqlx::Error),
 
-    #[error("Invalid SQLite file path: {0}")]
+    #[error("invalid SQLite file path: {0}")]
     InvalidSqlitePath(#[source] sqlx::Error),
 
-    #[error("File path cannot be empty")]
+    #[error("file path cannot be empty")]
     EmptySqlitePath,
 
-    #[error("Failed to create the SQLite directory '{}' (check database.sqlite.file_path): {source}", path.display())]
+    #[error("failed to create the SQLite directory '{}' (check database.sqlite.file_path): {source}", path.display())]
     CreateSqliteDir {
         path: PathBuf,
         #[source]

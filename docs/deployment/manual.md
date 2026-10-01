@@ -110,10 +110,9 @@ the fix for the common ones.
 ## 6. Create a zone and query it
 
 ```bash
+# The zone starts with an apex NS record naming ns1.example.com, which a
+# secondary needs before it will load the zone; --no-apex-ns leaves that to you.
 $ sudo bindizr zone create example.com --mname ns1.example.com --rname admin@example.com
-
-# The apex NS records are yours to write; a secondary will not load a zone without them.
-$ sudo bindizr record create example.com @ --type NS --value ns1.example.com
 $ sudo bindizr record create example.com www --type A --value 192.0.2.1
 
 # The secondary learned the zone through the catalog and pulled it; it answers on 53

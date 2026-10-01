@@ -1,13 +1,8 @@
-//! Caller identity and zone-scope authorization. Scoped tokens are the HTTP
-//! twin of non-global TSIG keys: record-plane only, within their
-//! `token_grants` rows matched by the nsupdate pattern/type rules.
-//! Invisible zones read as 404, denied writes as 403.
+//! Authorize scoped tokens through record-plane grants using nsupdate pattern/type rules.
+//! Invisible zones read as 404; denied writes as 403.
 //!
-//! Every service operation a front end can reach takes a [`Caller`] and
-//! decides its own authorization; a transport never gates on its own. The
-//! daemon socket is reachable only by the local daemon owner, so it passes
-//! [`Caller::Global`]. Operations serving the DNS protocol plane (transfers,
-//! NOTIFY, nsupdate) take no caller — that plane authorizes by ACL and TSIG.
+//! Management entry points authorize their [`Caller`]; the local socket passes
+//! [`Caller::socket`]. DNS operations authorize through ACL and TSIG instead.
 
 use std::sync::Arc;
 
@@ -19,29 +14,32 @@ use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
 use crate::{
-    Context, Transaction, db,
+    Context, Transaction,
     error::ServiceError,
     model::{
-        api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone,
-        zone_version::ChangeSource,
+        api_token::ApiToken,
+        record::RecordType,
+        token_grant::TokenGrant,
+        zone::Zone,
+        zone_version::{ChangeActor, ChangeSource},
     },
     token::hash_token,
-    zone::version::ChangeSubject,
+    zone::version::ChangeAttribution,
 };
 
-/// The identity a request acts as. The daemon socket and disabled
-/// authentication act as `Global`, behind no credential at all; a token
-/// carries the name a change is recorded under, and a scoped one its grants,
-/// preloaded once per request by the auth middleware.
-#[derive(Debug, Clone)]
-pub enum Caller {
+/// A request's access rights and change attribution, kept as independent facts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Caller {
+    scope: CallerScope,
+    attribution: ChangeAttribution,
+}
+
+/// Which resources the caller may access; transport and credential names do not decide it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CallerScope {
     Global,
-    GlobalToken {
-        name: Arc<str>,
-    },
     Token {
         id: TokenId,
-        name: Arc<str>,
         grants: Arc<[TokenGrant]>,
     },
 }
@@ -55,23 +53,56 @@ pub(crate) struct RecordWrite<'a> {
 }
 
 impl Caller {
-    /// Check whether the caller has unrestricted global access.
-    fn is_global(&self) -> bool {
-        matches!(self, Caller::Global | Caller::GlobalToken { .. })
-    }
-
-    /// The credential name a change made by this caller is recorded under.
-    pub(crate) fn change_subject(&self) -> ChangeSubject {
-        match self {
-            Caller::Global => ChangeSubject {
-                source: ChangeSource::Local,
+    /// Build the globally authorized caller after the daemon socket checks its peer UID.
+    pub fn socket() -> Self {
+        Self {
+            scope: CallerScope::Global,
+            attribution: ChangeAttribution {
+                source: ChangeSource::Socket,
                 actor: None,
             },
-            Caller::GlobalToken { name } | Caller::Token { name, .. } => ChangeSubject {
-                source: ChangeSource::Token,
-                actor: Some(name.to_string()),
+        }
+    }
+
+    /// Build the API caller when configuration explicitly disables token authentication.
+    pub fn unauthenticated_api() -> Self {
+        Self {
+            scope: CallerScope::Global,
+            attribution: ChangeAttribution {
+                source: ChangeSource::Api,
+                actor: None,
             },
         }
+    }
+
+    /// Build an API caller from an authenticated token and its loaded grants.
+    pub(crate) fn from_token(token: &ApiToken, grants: Vec<TokenGrant>) -> Self {
+        Self {
+            scope: if token.is_global {
+                CallerScope::Global
+            } else {
+                CallerScope::Token {
+                    id: token.id,
+                    grants: grants.into(),
+                }
+            },
+            attribution: ChangeAttribution {
+                source: ChangeSource::Api,
+                actor: Some(ChangeActor::Token {
+                    name: token.name.clone(),
+                }),
+            },
+        }
+    }
+
+    /// Check whether the caller has unrestricted global access.
+    fn is_global(&self) -> bool {
+        matches!(self.scope, CallerScope::Global)
+    }
+
+    /// Return the request origin and credential snapshot recorded with a mutation.
+    pub(crate) fn change_attribution(&self) -> &ChangeAttribution {
+        &self.attribution
     }
 
     /// Validate a Bearer token and preload grants for read checks. Mutations
@@ -81,19 +112,12 @@ impl Caller {
         bearer_token: &str,
     ) -> Result<(Caller, ApiToken), ServiceError> {
         let token = authenticate_token(cx, bearer_token).await?;
-        if token.is_global {
-            let caller = Caller::GlobalToken {
-                name: token.name.as_str().into(),
-            };
-            return Ok((caller, token));
-        }
-        let grants = db::token_grant::list_by_token_id(cx.db(), token.id).await?;
-        let caller = Caller::Token {
-            id: token.id,
-            name: token.name.as_str().into(),
-            grants: grants.into(),
+        let grants = if token.is_global {
+            Vec::new()
+        } else {
+            bindizr_db::token_grant::list_by_token_id(cx.db(), token.id).await?
         };
-        Ok((caller, token))
+        Ok((Caller::from_token(&token, grants), token))
     }
 
     /// Reject non-global callers for zone-plane and management operations.
@@ -110,25 +134,25 @@ impl Caller {
     /// The token whose grants bound the caller's visibility; `None` means
     /// unrestricted. List queries join it against the grants in SQL.
     pub(crate) fn scope_token_id(&self) -> Option<TokenId> {
-        match self {
-            Caller::Global | Caller::GlobalToken { .. } => None,
-            Caller::Token { id, .. } => Some(*id),
+        match &self.scope {
+            CallerScope::Global => None,
+            CallerScope::Token { id, .. } => Some(*id),
         }
     }
 
     /// The grants that bound the caller, or `None` when nothing does.
     pub(crate) fn grants(&self) -> Option<&[TokenGrant]> {
-        match self {
-            Caller::Global | Caller::GlobalToken { .. } => None,
-            Caller::Token { grants, .. } => Some(grants),
+        match &self.scope {
+            CallerScope::Global => None,
+            CallerScope::Token { grants, .. } => Some(grants),
         }
     }
 
     /// Whether the caller may see `zone_id`.
     pub(crate) fn sees_zone(&self, zone_id: ZoneId) -> bool {
-        match self {
-            Caller::Global | Caller::GlobalToken { .. } => true,
-            Caller::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
+        match &self.scope {
+            CallerScope::Global => true,
+            CallerScope::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
         }
     }
 
@@ -142,20 +166,18 @@ impl Caller {
         }
     }
 
-    /// Authorize record-plane writes in `zone`, share-locking the caller's
-    /// grants inside the transaction so a concurrent revocation waits for
-    /// this mutation instead of racing it. An ungranted zone reads as
-    /// `NotFound`, so a write cannot probe zone existence either.
+    /// Authorize record writes, share-locking grants so revocation waits for the mutation.
+    /// Return `NotFound` for ungranted zones to prevent existence probes.
     pub(crate) async fn authorize_record_writes_tx(
         &self,
         tx: &mut Transaction<'_>,
         zone: &Zone,
         writes: &[RecordWrite<'_>],
     ) -> Result<(), ServiceError> {
-        match self {
-            Caller::Global | Caller::GlobalToken { .. } => Ok(()),
-            Caller::Token { id, .. } => {
-                let grants = db::token_grant::list_by_zone_id_and_token_id_tx(
+        match &self.scope {
+            CallerScope::Global => Ok(()),
+            CallerScope::Token { id, .. } => {
+                let grants = bindizr_db::token_grant::list_by_zone_id_and_token_id_tx(
                     tx,
                     zone.id,
                     *id,
@@ -180,9 +202,9 @@ impl Caller {
         name: &OwnerName,
         record_type: Option<&RecordType>,
     ) -> bool {
-        match self {
-            Caller::Global | Caller::GlobalToken { .. } => true,
-            Caller::Token { grants, .. } => grants
+        match &self.scope {
+            CallerScope::Global => true,
+            CallerScope::Token { grants, .. } => grants
                 .iter()
                 .any(|grant| grant.zone_id == zone_id && grant.matches(name, record_type)),
         }
@@ -192,9 +214,9 @@ impl Caller {
     /// from — its export, a stored version, a version diff — cannot be
     /// narrowed: half a zone re-applied deletes what it left out.
     pub(crate) fn authorize_zone_unrestricted(&self, zone: &Zone) -> Result<(), ServiceError> {
-        let unrestricted = match self {
-            Caller::Global | Caller::GlobalToken { .. } => true,
-            Caller::Token { grants, .. } => grants
+        let unrestricted = match &self.scope {
+            CallerScope::Global => true,
+            CallerScope::Token { grants, .. } => grants
                 .iter()
                 .any(|grant| grant.zone_id == zone.id && grant.is_unrestricted()),
         };
@@ -242,17 +264,18 @@ const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
 /// Validate an API token, rejecting expired tokens and stamping `last_used_at`.
 async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, ServiceError> {
     let token_hash = hash_token(token_str);
-    let stored_token = match db::api_token::get_by_token(cx.db(), &token_hash).await {
+    let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
         Ok(Some(token)) => token,
         Ok(None) => {
             return Err(ServiceError::invalid_token(
-                "Invalid or expired token".to_string(),
+                "invalid or expired token".to_string(),
             ));
         }
         Err(e) => {
             log::error!("Failed to validate token: {}", e);
-            return Err(ServiceError::internal(
-                "Failed to validate token".to_string(),
+            return Err(ServiceError::internal_with_source(
+                "failed to validate token",
+                e,
             ));
         }
     };
@@ -260,7 +283,7 @@ async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, S
     if let Some(expires_at) = &stored_token.expires_at
         && Utc::now() >= *expires_at
     {
-        return Err(ServiceError::invalid_token("Token has expired"));
+        return Err(ServiceError::invalid_token("token has expired"));
     }
 
     let stamp_is_fresh = stored_token.last_used_at.is_some_and(|last_used| {
@@ -270,7 +293,7 @@ async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, S
         return Ok(stored_token);
     }
 
-    let updated_token = db::api_token::update(
+    let updated_token = bindizr_db::api_token::update(
         cx.db(),
         ApiToken {
             last_used_at: Some(Utc::now()),
@@ -280,7 +303,7 @@ async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, S
     .await
     .map_err(|e| {
         log::error!("Failed to update last_used_at: {}", e);
-        ServiceError::internal("Failed to update last_used_at")
+        ServiceError::internal_with_source("failed to update last_used_at", e)
     })?;
 
     Ok(updated_token)

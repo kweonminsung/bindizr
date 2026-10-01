@@ -14,7 +14,7 @@ pub(crate) struct AdapterMetrics {
 impl AdapterMetrics {
     /// Create and register the adapter's metric collectors; a refused
     /// definition is a programming error, since every one is static.
-    pub(crate) fn new() -> Result<Self, prometheus::Error> {
+    pub(crate) fn new() -> Result<Self, RegisterMetricsError> {
         let registry = Registry::new();
 
         let requests_total = IntCounterVec::new(
@@ -66,3 +66,8 @@ impl AdapterMetrics {
             .unwrap_or_default()
     }
 }
+
+/// Failure to register an adapter metric collector.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub(crate) struct RegisterMetricsError(#[from] prometheus::Error);

@@ -26,7 +26,7 @@ pub use get::{
     list_by_filter, list_changes_between_serials, ping,
 };
 pub(crate) use get::{
-    find_by_name_tx, find_served_by_name_tx, get_by_name_tx, get_visible_by_name_tx, lookup_by_name,
+    find_by_name_tx, find_served_by_name_tx, get_by_name_tx, lookup_by_name, lookup_by_name_tx,
 };
 pub use history::{diff_versions, get_version, list_versions, rollback};
 pub use notify::notify;

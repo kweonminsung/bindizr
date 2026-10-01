@@ -21,7 +21,7 @@ use crate::{
     error::ServiceError,
     model::secondary::Secondary,
     secondary, transfer,
-    types::{SecondaryStatusResponse, TransferResponse},
+    types::{SecondaryStatus, SecondaryStatusResponse, TransferResponse},
 };
 
 /// Why a secondary's serial could not be read.
@@ -48,6 +48,42 @@ impl From<ProbeError> for ServiceError {
             message: err.to_string(),
             source: Some(Box::new(err)),
         }
+    }
+}
+
+/// Classify a probed SOA serial against the serial Bindizr serves; a
+/// probe error reads as `unreachable`, an answer with nothing to compare
+/// it to as `reachable`.
+fn build_secondary_status(
+    address: String,
+    expected_serial: Option<Serial>,
+    result: Result<Serial, ProbeError>,
+) -> SecondaryStatusResponse {
+    match result {
+        Ok(visible) => {
+            let status = match expected_serial {
+                Some(expected) => match visible.cmp(&expected) {
+                    std::cmp::Ordering::Equal => SecondaryStatus::InSync,
+                    std::cmp::Ordering::Less => SecondaryStatus::Lagging,
+                    std::cmp::Ordering::Greater => SecondaryStatus::Ahead,
+                },
+                None => SecondaryStatus::Reachable,
+            };
+            SecondaryStatusResponse {
+                address,
+                status,
+                visible_serial: Some(visible),
+                error: None,
+                last_transfer: None,
+            }
+        }
+        Err(error) => SecondaryStatusResponse {
+            address,
+            status: SecondaryStatus::Unreachable,
+            visible_serial: None,
+            error: Some(error.to_string()),
+            last_transfer: None,
+        },
     }
 }
 
@@ -86,7 +122,7 @@ pub async fn probe_secondaries(
                 probes.push(attach_last_transfer(cx, zone_name, probe, &clients).await)
             }
             Ok(Err(e)) => return Err(e.into()),
-            Err(e) => probes.push(SecondaryStatusResponse::from_probe(
+            Err(e) => probes.push(build_secondary_status(
                 address,
                 expected_serial,
                 Err(ProbeError::TaskFailed(e)),
@@ -126,7 +162,7 @@ async fn probe_addresses(
         Ok(addrs) => addrs,
         Err(e) => {
             return Ok((
-                SecondaryStatusResponse::from_probe(
+                build_secondary_status(
                     secondary.address.to_string(),
                     expected_serial,
                     Err(ProbeError::Resolve(e)),
@@ -138,7 +174,7 @@ async fn probe_addresses(
     let (probe, clients) = probe_entry(&qname, addrs, timeout, expected_serial).await;
     // The resolver hands back at least one address, so this stands in for none.
     let probe = probe.unwrap_or_else(|| {
-        SecondaryStatusResponse::from_probe(
+        build_secondary_status(
             secondary.address.to_string(),
             expected_serial,
             Err(ProbeError::Resolve(ResolveAddressError::NoAddresses)),
@@ -180,11 +216,8 @@ pub async fn probe_server(
     probe_one(&qname, server_addr, timeout).await
 }
 
-/// Probe the resolved addresses in order, classifying the first that answers
-/// (on failure, the last one tried), and hand back the addresses tried.
-/// NOTIFY and the transfer ACL act on every resolved address, so probing only
-/// the first would contradict what propagates — commonly an unusable IPv6
-/// ahead of a working IPv4.
+/// Probe addresses in order; return the first answer or last failure and the addresses tried.
+/// Try beyond the first address to match NOTIFY and transfer ACL resolution.
 async fn probe_entry(
     qname: &Name<Vec<u8>>,
     addrs: Vec<SocketAddr>,
@@ -196,7 +229,7 @@ async fn probe_entry(
     for addr in addrs {
         match probe_one(qname, addr, timeout).await {
             Ok(serial) => {
-                last = Some(SecondaryStatusResponse::from_probe(
+                last = Some(build_secondary_status(
                     addr.to_string(),
                     expected_serial,
                     Ok(serial),
@@ -204,7 +237,7 @@ async fn probe_entry(
                 break;
             }
             Err(e) => {
-                last = Some(SecondaryStatusResponse::from_probe(
+                last = Some(build_secondary_status(
                     addr.to_string(),
                     expected_serial,
                     Err(e),

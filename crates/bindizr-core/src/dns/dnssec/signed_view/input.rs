@@ -165,10 +165,8 @@ fn parse_soa(rdata: &[u8]) -> Result<domain::rdata::Soa<WireName>, SignZoneError
         .map_err(|e| SignZoneError::Soa(Box::new(e)))
 }
 
-/// The complete denial chain for `input` (canonical order): NSEC records, or
-/// the NSEC3 chain plus its NSEC3PARAM. The chain is cheap to rebuild whole,
-/// and doing so removes incremental chain-repair edge cases entirely
-/// (RFC 9077 TTLs and zone cuts included).
+/// Build the full NSEC or NSEC3/NSEC3PARAM chain in canonical order.
+/// Rebuilding avoids incremental chain repair around zone cuts and RFC 9077 TTLs.
 pub(crate) fn denial_records(
     apex: &WireName,
     input: &[SignRecord],

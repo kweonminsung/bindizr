@@ -133,7 +133,8 @@ fn transfer_rejects_a_non_in_record() {
         .unwrap();
     let wire = answer.finish();
 
-    let err = extract_transfer_records(7, &name, false, &wire).unwrap_err();
+    let err =
+        extract_transfer_records(7, &name, TransferMessagePosition::Following, &wire).unwrap_err();
     assert!(
         matches!(err, ReadResponseError::ForeignClass { .. }),
         "{err}"
@@ -146,17 +147,17 @@ fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
     let apex = name("example.com");
     let whole = build_transfer_message(7, &apex, true, true);
     assert_eq!(
-        extract_transfer_records(7, &apex, true, &whole)
+        extract_transfer_records(7, &apex, TransferMessagePosition::First, &whole)
             .unwrap()
             .len(),
         1
     );
 
     let unasked = build_transfer_message(7, &apex, false, true);
-    assert!(extract_transfer_records(7, &apex, true, &unasked).is_err());
+    assert!(extract_transfer_records(7, &apex, TransferMessagePosition::First, &unasked).is_err());
     // A later message may leave the question out.
     assert_eq!(
-        extract_transfer_records(7, &apex, false, &unasked)
+        extract_transfer_records(7, &apex, TransferMessagePosition::Following, &unasked)
             .unwrap()
             .len(),
         1
@@ -164,13 +165,13 @@ fn transfer_first_message_must_echo_the_question_and_be_authoritative() {
 
     let cached = build_transfer_message(7, &apex, true, false);
     assert!(matches!(
-        extract_transfer_records(7, &apex, true, &cached).unwrap_err(),
+        extract_transfer_records(7, &apex, TransferMessagePosition::First, &cached).unwrap_err(),
         ReadResponseError::NotAuthoritative
     ));
 
     let other = build_transfer_message(7, &name("other.com"), true, true);
     assert!(matches!(
-        extract_transfer_records(7, &apex, false, &other).unwrap_err(),
+        extract_transfer_records(7, &apex, TransferMessagePosition::Following, &other).unwrap_err(),
         ReadResponseError::OtherQuestion
     ));
 }

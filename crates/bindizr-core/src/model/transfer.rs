@@ -164,6 +164,42 @@ pub struct TransferWithZone {
     pub serial: Option<Serial>,
     pub served_at: DateTime<Utc>,
     pub error: Option<String>,
-    #[sqlx(try_from = "String")]
     pub zone_name: ZoneName,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// Verify that `TransferKind` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn transfer_kind_spells_itself_once() {
+        for value in [TransferKind::Axfr, TransferKind::Ixfr] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<TransferKind>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<TransferKind>().unwrap(), value);
+        }
+    }
+
+    /// Verify that `TransferResult` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn transfer_result_spells_itself_once() {
+        for value in [
+            TransferResult::Ok,
+            TransferResult::Refused,
+            TransferResult::Failed,
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<TransferResult>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<TransferResult>().unwrap(), value);
+        }
+    }
 }

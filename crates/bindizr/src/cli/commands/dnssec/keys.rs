@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Subcommands for moving raw key material in and out of bindizr.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DnssecKeysCommand {
     /// Print the zone's keys in BIND key-file form, private halves
     /// included — redirect somewhere with tight permissions
@@ -92,10 +92,11 @@ pub(crate) async fn handle_command(subcommand: DnssecKeysCommand) -> Result<(), 
             }
             let mut keys = Vec::with_capacity(key.len());
             for (key, private) in key.iter().zip(&private) {
-                let dnskey = std::fs::read_to_string(key)
-                    .map_err(|e| CliError::request(format!("Failed to read '{}': {}", key, e)))?;
+                let dnskey = std::fs::read_to_string(key).map_err(|e| {
+                    CliError::request_with_source(format!("failed to read '{}': {}", key, e), e)
+                })?;
                 let private_key = std::fs::read_to_string(private).map_err(|e| {
-                    CliError::request(format!("Failed to read '{}': {}", private, e))
+                    CliError::request_with_source(format!("failed to read '{}': {}", private, e), e)
                 })?;
                 keys.push(ImportDnssecKeyPair {
                     dnskey,

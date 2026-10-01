@@ -1,8 +1,6 @@
-//! The signed view: the derived DNSSEC plane a zone's records imply, computed
-//! whole and diffed against the stored plane. Signatures are reused while
-//! their record set, signer set, and validity are unchanged, so the diff — the
-//! IXFR delta — carries only real changes; a rollover state transition
-//! re-signs exactly the affected record sets through the same digests.
+//! Compute the DNSSEC plane and diff it against storage for IXFR.
+//! Reuse signatures while their record set, signer set, and validity are unchanged;
+//! rollovers re-sign only the affected sets.
 
 mod input;
 #[cfg(test)]
@@ -97,7 +95,7 @@ pub enum SigningPass {
     Full,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SignedViewParams<'a> {
     pub zone: &'a Zone,
     pub new_serial: Serial,
@@ -121,9 +119,8 @@ pub struct SignedViewParams<'a> {
 }
 
 impl SignedViewParams<'_> {
-    /// The record set's slot in the jitter window, taken from its identity rather
-    /// than drawn at random: [`Self::compute`] stays a function of its
-    /// inputs, and a record set keeps its slot across re-signings.
+    /// Derive the jitter slot from record identity so [`Self::compute`] stays
+    /// deterministic and re-signing preserves the slot.
     fn record_set_expiration(&self, owner: &WireName, covered: i32) -> DateTime<Utc> {
         if self.expiration_jitter_secs <= 0 {
             return self.expiration;
@@ -305,7 +302,7 @@ impl SignedViewParams<'_> {
         }
 
         // Diff the complete derived plane so unchanged rows keep their storage identity.
-        Ok(SignedViewDiff::from_planes(self.prev, new_rows))
+        Ok(SignedViewDiff::compute(self.prev, new_rows))
     }
 }
 
@@ -324,7 +321,7 @@ impl SignedViewDiff {
     }
 
     /// Compare derived record identities to find additions and removals.
-    fn from_planes(prev: &[DnssecRecord], new_rows: Vec<DnssecRecord>) -> SignedViewDiff {
+    fn compute(prev: &[DnssecRecord], new_rows: Vec<DnssecRecord>) -> SignedViewDiff {
         let mut remaining: BTreeMap<DnssecRecordKey, Vec<DnssecRecord>> = BTreeMap::new();
         for record in prev {
             remaining

@@ -22,6 +22,8 @@ const RESOLVE_FAILURE_TTL: Duration = Duration::from_secs(5);
 /// A resolver that never answers must not hold a DNS request open.
 const RESOLVE_TIMEOUT: Duration = Duration::from_secs(2);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+
 struct SecondaryAcl {
     entries: Vec<SecondaryAclEntry>,
 }
@@ -80,7 +82,7 @@ struct CachedAddrs {
 
 /// The hostnames the ACL resolved lately, so a transfer request waits on the
 /// resolver once per window rather than once per query.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct ResolvedAddrs {
     cache: Mutex<HashMap<String, CachedAddrs>>,
 }
@@ -88,9 +90,7 @@ pub(crate) struct ResolvedAddrs {
 impl ResolvedAddrs {
     /// An empty resolution cache.
     pub(crate) fn new() -> Self {
-        ResolvedAddrs {
-            cache: Mutex::new(HashMap::new()),
-        }
+        Self::default()
     }
 
     /// Return cached address resolutions for an ACL hostname.
@@ -110,10 +110,8 @@ impl ResolvedAddrs {
     }
 }
 
-/// Whether `client_ip` is one of the enabled secondaries. The list is read
-/// per check rather than captured at startup, so a change takes effect on
-/// the next transfer; parsing a short list costs nothing next to the
-/// hostname resolution it may avoid.
+/// Check enabled secondary addresses afresh so changes affect the next transfer.
+/// A direct IP match avoids hostname resolution.
 pub(crate) async fn is_client_allowed(
     dns_cx: &DnsContext,
     client_ip: IpAddr,

@@ -47,9 +47,8 @@ pub(crate) fn display_record_value(value: &RecordValueRequest) -> String {
     }
 }
 
-/// The time since `started_at_ms` in days, hours, minutes, and seconds. The
-/// start time is stamped once every front end is up, so an unset one means the
-/// daemon is still starting.
+/// Format uptime as days, hours, minutes, and seconds; an unset start
+/// time means the front ends are still starting.
 pub(crate) fn display_uptime(started_at_ms: u64) -> String {
     if started_at_ms == 0 {
         return "starting".to_string();

@@ -27,7 +27,7 @@ use super::{
 use crate::{
     Context,
     authorization::Caller,
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::record::{Record, RecordType},
     serial::{generate_serial, validate_initial_serial},
@@ -54,6 +54,8 @@ fn build_create_zone_request(
         })?;
     Ok(CreateZoneRequest {
         dry_run: false,
+        // The zone file carries its own NS records.
+        apex_ns: false,
         name: zone_name.to_string(),
         mname: soa.mname.clone(),
         rname,
@@ -72,6 +74,7 @@ fn build_create_zone_request(
 }
 
 /// Outcome of the transactional part of a zone-file import.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct AppliedImport {
     response: ImportZoneResponse,
     zone_name: ZoneName,
@@ -82,7 +85,7 @@ struct AppliedImport {
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY;
 /// `db_write_ms`/`serial_ms` stay zero on a dry run or no-op.
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 struct ImportTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,
@@ -94,10 +97,8 @@ struct ImportTimings {
     serial_ms: f64,
 }
 
-/// Import records into an existing zone from BIND zone file text or over
-/// AXFR from `from_server`, reconciling them by mode. On apply the zone
-/// serial is incremented once and a single NOTIFY is sent. If any record
-/// fails validation nothing is applied and the errors are returned.
+/// Import zone-file or AXFR records by mode; any validation failure rejects the whole import.
+/// Applying advances the serial once and sends one NOTIFY.
 pub async fn import_zone(
     cx: &Context,
     caller: &Caller,
@@ -105,6 +106,10 @@ pub async fn import_zone(
     request: &ImportZoneRequest,
 ) -> Result<ImportZoneResponse, ServiceError> {
     caller.authorize_global("import zone files")?;
+    let mode = request
+        .mode
+        .parse::<ImportMode>()
+        .map_err(ServiceError::invalid_input)?;
 
     let content: Cow<'_, str> = match (&request.content, &request.from_server) {
         (Some(content), None) => Cow::Borrowed(content.as_str()),
@@ -137,7 +142,7 @@ pub async fn import_zone(
             return Err(ServiceError::invalid_input("give content or from_server"));
         }
     };
-    reconcile_zone_file(cx, caller, zone_name, &content, request).await
+    reconcile_zone_file(cx, caller, zone_name, &content, request, mode).await
 }
 
 /// Preview or apply a zone-file reconciliation in its own transaction; a
@@ -149,15 +154,15 @@ async fn reconcile_zone_file(
     zone_name: &ZoneName,
     content: &str,
     request: &ImportZoneRequest,
+    mode: ImportMode,
 ) -> Result<ImportZoneResponse, ServiceError> {
-    let subject = &caller.change_subject();
+    let attribution = caller.change_attribution();
     let run = Run::from_dry_run(request.dry_run);
-    let mode = request.mode;
     let t_total = Instant::now();
 
     let mut timings = ImportTimings::default();
 
-    let mut tx = transaction::begin_tx(cx, "Failed to import zone file").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to import zone file").await?;
 
     let apply_result: Result<AppliedImport, ServiceError> = async {
         let t = Instant::now();
@@ -179,8 +184,8 @@ async fn reconcile_zone_file(
                     })?;
                 created = true;
                 zone::create_tx(
-                    cx,
                     &mut tx,
+                    cx,
                     caller,
                     &build_create_zone_request(zone_name, &soa)?,
                 )
@@ -293,7 +298,7 @@ async fn reconcile_zone_file(
                     desired.iter().map(|d| d.stored_name.clone()).collect();
                 names.sort();
                 names.dedup();
-                db::record::list_by_names_tx(
+                bindizr_db::record::list_by_names_tx(
                     &mut tx,
                     zone.id,
                     &names,
@@ -302,12 +307,12 @@ async fn reconcile_zone_file(
                 .await
             }
             ImportMode::Replace | ImportMode::Upsert => {
-                db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await
+                bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await
             }
         }
         .map_err(|e| {
             log::error!("Failed to load zone records: {}", e);
-            ServiceError::internal("Failed to import zone file")
+            ServiceError::internal_with_source("failed to import zone file", e)
         })?;
         timings.load_existing_ms = elapsed_ms(t);
 
@@ -432,7 +437,7 @@ async fn reconcile_zone_file(
             let t = Instant::now();
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the import.
-            zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, subject).await?;
+            zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, attribution).await?;
             timings.serial_ms = elapsed_ms(t);
         }
 
@@ -468,7 +473,7 @@ async fn reconcile_zone_file(
     } = if discard {
         transaction::discard_tx(tx, apply_result).await?
     } else {
-        transaction::finish_tx(tx, apply_result, "Failed to import zone file").await?
+        transaction::finish_tx(tx, apply_result, "failed to import zone file").await?
     };
 
     log::info!(

@@ -19,6 +19,7 @@ pub(crate) fn to_fqdn(name: &str) -> String {
 
 /// The record a mutation is about to replace or remove, kept with the zone it
 /// sits in, which decides whether DNS can be asked about it at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PreviousDnsKey {
     pub(crate) zone_name: String,
     pub(crate) name: String,

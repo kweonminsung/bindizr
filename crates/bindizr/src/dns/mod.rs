@@ -32,7 +32,7 @@ const MAX_TCP_CONNECTIONS: usize = 128;
 #[derive(Debug, Error)]
 pub(crate) enum StartDnsError {
     /// Names the usual cause when the port is already taken.
-    #[error("Failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == std::io::ErrorKind::AddrInUse { " (BIND on this host? change dns.listen_port)" } else { "" })]
+    #[error("failed to bind DNS {socket} on {addr}: {source}{}", if source.kind() == std::io::ErrorKind::AddrInUse { " (BIND on this host? change dns.listen_port)" } else { "" })]
     Bind {
         socket: &'static str,
         addr: SocketAddr,
@@ -46,15 +46,15 @@ pub(crate) enum StartDnsError {
 enum ServeDnsError {
     #[error(transparent)]
     Closed(#[from] tokio::sync::AcquireError),
-    #[error("Failed to read DNS TCP message: {0}")]
+    #[error("failed to read DNS TCP message: {0}")]
     Read(#[source] XfrError),
-    #[error("Failed to answer an unsupported DNS TCP opcode: {0}")]
+    #[error("failed to answer an unsupported DNS TCP opcode: {0}")]
     AnswerOpcode(#[source] XfrError),
-    #[error("Failed to handle SOA TCP query: {0}")]
+    #[error("failed to handle SOA TCP query: {0}")]
     Soa(#[source] XfrError),
-    #[error("Failed to handle XFR TCP query: {0}")]
+    #[error("failed to handle XFR TCP query: {0}")]
     Xfr(#[source] XfrError),
-    #[error("Failed to refuse a DNS TCP query: {0}")]
+    #[error("failed to refuse a DNS TCP query: {0}")]
     Refusal(#[source] XfrError),
     #[error(transparent)]
     Nsupdate(#[from] server::nsupdate::NsupdateError),

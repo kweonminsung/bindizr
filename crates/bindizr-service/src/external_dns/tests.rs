@@ -3,17 +3,21 @@ use bindizr_core::{
         Serial, SoaInterval, Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::{api_token::TokenId, record::RecordId, token_grant::TokenGrantId, zone::ZoneId},
+    model::{
+        api_token::{ApiToken, TokenId},
+        record::RecordId,
+        token_grant::TokenGrantId,
+        zone::ZoneId,
+    },
+};
+use change_set::{
+    ZoneChangeSet, ZoneOps, adjust_record_set, group_ops_by_zone, parse_changes_request,
+    parse_record_set_op,
 };
 use chrono::Utc;
+use policy::{authoritative_zone, normalize_lookup_name};
 
-use super::{
-    change_set::{
-        ZoneChangeSet, ZoneOps, adjust_record_set, group_ops_by_zone, parse_changes_request,
-        parse_record_set_op,
-    },
-    policy::{authoritative_zone, normalize_lookup_name},
-};
+use super::*;
 use crate::{
     authorization::Caller,
     error::ErrorCode,
@@ -304,7 +308,7 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
     };
     let ops = parse_changes_request(&request).unwrap();
 
-    let grouped = group_ops_by_zone(&Caller::Global, &zones, ops).unwrap();
+    let grouped = group_ops_by_zone(&Caller::unauthenticated_api(), &zones, ops).unwrap();
     assert_eq!(grouped.len(), 1);
     assert!(grouped.contains_key(&ZoneName::from_row("internal.example.com")));
     assert_eq!(
@@ -324,7 +328,7 @@ fn group_ops_rejects_names_without_authoritative_zone() {
     };
     let ops = parse_changes_request(&request).unwrap();
 
-    let err = group_ops_by_zone(&Caller::Global, &zones, ops).unwrap_err();
+    let err = group_ops_by_zone(&Caller::unauthenticated_api(), &zones, ops).unwrap_err();
     assert_eq!(err.code(), ErrorCode::ZoneNotFound);
 }
 
@@ -335,10 +339,18 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
         test_zone(1, "example.com"),
         test_zone(2, "internal.example.com"),
     ];
-    let caller = Caller::Token {
-        id: TokenId::from(7),
-        name: "scoped".into(),
-        grants: vec![TokenGrant {
+    let caller = Caller::from_token(
+        &ApiToken {
+            id: TokenId::from(7),
+            name: "scoped".into(),
+            token: String::new(),
+            description: None,
+            is_global: false,
+            created_at: Utc::now(),
+            expires_at: None,
+            last_used_at: None,
+        },
+        vec![TokenGrant {
             id: TokenGrantId::from(1),
             zone_id: ZoneId::from(1),
             api_token_id: TokenId::from(7),
@@ -346,9 +358,8 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
             record_types: "*".to_string(),
             can_write: true,
             created_at: Utc::now(),
-        }]
-        .into(),
-    };
+        }],
+    );
     let request = ExternalDnsChangesRequest {
         creates: vec![record_set(
             "api.internal.example.com",
@@ -365,7 +376,7 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
     assert_eq!(err.code(), ErrorCode::ZoneNotFound);
     assert!(
         err.to_string()
-            .contains("No zone is authoritative for 'api.internal.example.com'"),
+            .contains("no zone is authoritative for 'api.internal.example.com'"),
         "{err}"
     );
 }
@@ -373,7 +384,12 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
 /// Resolve an external-dns change request into operations for the test zone.
 fn zone_ops(request: &ExternalDnsChangesRequest, zone: &Zone) -> ZoneOps {
     let ops = parse_changes_request(request).unwrap();
-    let grouped = group_ops_by_zone(&Caller::Global, std::slice::from_ref(zone), ops).unwrap();
+    let grouped = group_ops_by_zone(
+        &Caller::unauthenticated_api(),
+        std::slice::from_ref(zone),
+        ops,
+    )
+    .unwrap();
     grouped.into_values().next().unwrap_or_default()
 }
 
@@ -395,40 +411,24 @@ fn change_set_creates_new_records_with_zone_default_ttl() {
     assert_eq!(change_set.creates[0].ttl, zone.default_ttl);
 }
 
-/// Verify that change set skips creates that already exist.
+/// Verify that repeated creates preserve existing records even when their TTL differs.
 #[test]
-fn change_set_skips_creates_that_already_exist() {
+fn change_set_skips_existing_values_regardless_of_ttl() {
     let zone = test_zone(1, "example.com");
-    let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 3600)];
     let request = ExternalDnsChangesRequest {
         creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
         updates: vec![],
         deletes: vec![],
     };
 
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
-
-    assert!(change_set.deletes.is_empty());
-    assert!(change_set.creates.is_empty());
-}
-
-/// Verify that an existing value with a different TTL makes a create a no-op, avoiding
-/// conflicts on every retry.
-#[test]
-fn change_set_skips_creates_whose_row_differs_only_in_ttl() {
-    let zone = test_zone(1, "example.com");
-    let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", 300)];
-    let request = ExternalDnsChangesRequest {
-        creates: vec![record_set("app.example.com", "A", None, &["192.0.2.1"])],
-        updates: vec![],
-        deletes: vec![],
-    };
-
-    // No TTL on the record set, so it resolves to the zone's 3600 — not the row's 300.
-    let change_set = ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
-
-    assert!(change_set.deletes.is_empty());
-    assert!(change_set.creates.is_empty());
+    // An omitted TTL resolves to 3600; retrying must also preserve a row with TTL 300.
+    for ttl in [3600, 300] {
+        let existing = vec![test_record(10, "app", RecordType::A, "192.0.2.1", ttl)];
+        let change_set =
+            ZoneChangeSet::compute(&zone_ops(&request, &zone), &zone, &existing).unwrap();
+        assert!(change_set.deletes.is_empty(), "TTL {ttl}");
+        assert!(change_set.creates.is_empty(), "TTL {ttl}");
+    }
 }
 
 /// Verify that an explicit TTL-only update replaces the stored row instead of cancelling itself

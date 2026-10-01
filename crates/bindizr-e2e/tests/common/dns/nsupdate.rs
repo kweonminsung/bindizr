@@ -17,6 +17,7 @@ use domain::{
 use crate::common::{TestApp, dns::parse_name};
 
 /// The key an update is signed with, as `tsig-key get` reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SigningKey {
     pub(crate) name: String,
     pub(crate) secret: String,
@@ -35,6 +36,7 @@ impl SigningKey {
 
 /// One record of an update section, in the class that gives it its meaning
 /// (RFC 2136, Section 2.5).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum UpdateRecord {
     /// CLASS IN: add this address record.
     AddA {
@@ -49,6 +51,7 @@ pub(crate) enum UpdateRecord {
 }
 
 /// One prerequisite (RFC 2136, Section 2.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PrereqRecord {
     /// CLASS ANY, TYPE ANY: the owner name must exist.
     NameInUse { name: String },

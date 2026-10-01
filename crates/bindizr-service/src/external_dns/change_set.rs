@@ -210,7 +210,7 @@ pub(crate) fn group_ops_by_zone(
             .filter(|(zone, _)| caller.sees_zone(zone.id))
             .ok_or_else(|| {
                 ServiceError::ZoneNotFound(format!(
-                    "No zone is authoritative for '{}'",
+                    "no zone is authoritative for '{}'",
                     pending.op.name
                 ))
             })?;

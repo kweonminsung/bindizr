@@ -327,10 +327,8 @@ async fn nsec3_zone_propagates_nsec3param_and_cds() {
     }
 }
 
-/// Read the loopback secondary's transfers until the summary counts
-/// `expected` under `field`, or give up after a few seconds and hand back
-/// what it says. The daemon saves a transfer after answering it, so a read
-/// right behind the client can still see the row about to be replaced.
+/// Poll transfer counts until `field` reaches `expected`, returning the last summary on timeout.
+/// Saving follows the transfer response, so an immediate read may still see the old row.
 async fn wait_for_transfer_summary(app: &TestApp, field: &str, expected: u64) -> Value {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {

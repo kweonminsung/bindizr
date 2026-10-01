@@ -1,6 +1,6 @@
 use bindizr_core::{model::record::RecordId, out, outln};
 use bindizr_service::types::{
-    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsRequest,
     DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, PaginatedResponse, Pagination,
     RecordItem, RecordResponse, RecordValueRequest, RecordWriteResponse, Run, UpdateRecordRequest,
 };
@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Subcommands for managing records.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RecordCommand {
     /// Create a record
     #[command(after_help = "\
@@ -379,21 +379,22 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             let content = super::read_input(&file)?;
             // YAML is a superset of JSON, so one parse accepts both formats.
             let parsed: serde_json::Value = serde_norway::from_str(&content).map_err(|e| {
-                CliError::request(format!("Invalid JSON/YAML in '{}': {}", file, e))
+                CliError::request_with_source(format!("invalid JSON/YAML in '{}': {}", file, e), e)
             })?;
             let records = match parsed {
                 serde_json::Value::Array(_) => parsed,
                 serde_json::Value::Object(mut obj) => obj.remove("records").ok_or_else(|| {
-                    CliError::request("Input object must contain a 'records' array")
+                    CliError::request("input object must contain a 'records' array")
                 })?,
                 _ => {
                     return Err(CliError::request(
-                        "Expected an array of records or an object with a 'records' array",
+                        "expected an array of records or an object with a 'records' array",
                     ));
                 }
             };
-            let records: Vec<RecordItem> = serde_json::from_value(records)
-                .map_err(|e| CliError::request(format!("Invalid record in '{}': {}", file, e)))?;
+            let records: Vec<RecordItem> = serde_json::from_value(records).map_err(|e| {
+                CliError::request_with_source(format!("invalid record in '{}': {}", file, e), e)
+            })?;
             let response = client::send_command::<BulkRecordsResponse>(
                 DaemonCommand::CreateRecordsBulk(CreateBulkRecordsRequest {
                     zone_name: zone,
@@ -435,9 +436,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             output,
             ..
         } => {
-            // A name can hold several records, so this is the listing filtered
-            // to one owner. It defines no paging flags and promises every
-            // record at the name, so the pages are walked here.
+            // This command promises every record at the owner, so traverse all pages.
             let mut items: Vec<GetRecordResponse> = Vec::new();
             let mut offset = 0u64;
             let total = loop {
@@ -564,7 +563,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ..
         } => {
             let response = client::send_command::<DeleteRecordsResponse>(
-                DaemonCommand::DeleteRecordsMatching(DeleteRecordsFilter {
+                DaemonCommand::DeleteRecordsMatching(DeleteRecordsRequest {
                     zone_name: zone,
                     name,
                     record_type,

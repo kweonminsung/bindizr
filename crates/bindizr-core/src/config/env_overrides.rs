@@ -132,9 +132,7 @@ fn to_optional_setting(value: String) -> Option<String> {
     Some(value.trim().to_string()).filter(|path| !path.is_empty())
 }
 
-/// Parse an environment override or return a configuration error.
-/// Parse a seconds value into its newtype, refusing what the row form cannot
-/// hold.
+/// Parse a seconds override into its newtype, rejecting values outside its stored range.
 fn parse_env_secs<T>(name: &'static str, value: &str) -> Result<T, ConfigError>
 where
     T: TryFrom<u32>,
@@ -148,6 +146,7 @@ where
     })
 }
 
+/// Parse an environment override into the field's type, naming the variable on failure.
 fn parse_env_value<T>(name: &'static str, value: &str) -> Result<T, ConfigError>
 where
     T: std::str::FromStr,

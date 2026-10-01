@@ -8,9 +8,9 @@ use thiserror::Error;
 /// Why a daemon response could not be rendered.
 #[derive(Debug, Error)]
 pub(crate) enum RenderOutputError {
-    #[error("Failed to serialize to YAML: {0}")]
+    #[error("failed to serialize to YAML: {0}")]
     Yaml(#[source] serde_norway::Error),
-    #[error("Failed to serialize to JSON: {0}")]
+    #[error("failed to serialize to JSON: {0}")]
     Json(#[source] serde_json::Error),
 }
 
@@ -41,9 +41,7 @@ where
     Ok(())
 }
 
-/// Print one page of a listing as JSON or YAML, or as a table with a row
-/// per item plus the count it left out, so a page is not mistaken for the
-/// whole listing.
+/// Print a page as JSON, YAML, or a table that also reports omitted items.
 pub(crate) fn print_page<T, U>(
     page: &PaginatedResponse<T>,
     format: OutputFormat,

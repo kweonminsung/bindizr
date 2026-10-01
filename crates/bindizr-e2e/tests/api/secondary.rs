@@ -284,5 +284,5 @@ async fn secondary_check_reports_resolution_catalog_and_notify() {
     );
     let args = ["secondary", "check", "dead"];
     let failed = app.run_cli(&args).await;
-    assert_cli_failure_contains(&args, &failed, "Secondary 'dead' failed the check");
+    assert_cli_failure_contains(&args, &failed, "secondary 'dead' failed the check");
 }

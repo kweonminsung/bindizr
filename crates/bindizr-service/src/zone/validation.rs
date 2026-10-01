@@ -57,10 +57,8 @@ pub(crate) fn normalize_create_zone_request(
     })
 }
 
-/// Refuse the name the virtual catalog zone answers to: a transfer or SOA
-/// query for it is served from the catalog before any stored zone, and the
-/// catalog leaves that name out of its members, so a zone stored under it
-/// would be reachable as neither. Looking the name up is not refused.
+/// Refuse storing a zone at the virtual catalog name, which shadows SOA and transfer queries
+/// and is excluded from catalog membership. Lookups remain allowed.
 pub(crate) fn reject_catalog_zone_name(cx: &Context, name: &ZoneName) -> Result<(), ServiceError> {
     if cx.config().dns.is_catalog_zone(name.as_str()) {
         return Err(ServiceError::invalid_zone_field(format!(
