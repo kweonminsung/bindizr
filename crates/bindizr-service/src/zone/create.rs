@@ -1,4 +1,4 @@
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::{record::RecordId, zone::ZoneId};
 use bindizr_db::Transaction;
 use chrono::Utc;
 
@@ -6,15 +6,17 @@ use crate::{
     Context,
     authorization::Caller,
     error::ServiceError,
-    model::zone::Zone,
+    model::{record::Record, zone::Zone},
+    record::{PreparedRecord, normalize_record_owner_name, parse_record_request},
     serial::{generate_serial, validate_initial_serial},
     transaction,
-    types::{CreateZoneRequest, GetZoneResponse, ZoneWriteResponse},
+    types::{CreateZoneRequest, GetZoneResponse, RecordValueRequest, ZoneWriteResponse},
     zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
 };
 
-/// Create a new zone and NOTIFY the catalog zone. The zone carries its
-/// SOA and no records; its NS records are the caller's to add.
+/// Create a new zone and NOTIFY the catalog zone. The zone carries its SOA
+/// and, unless the request opts out, an apex NS record naming the MNAME, an
+/// ordinary record from then on; further NS records are the caller's to add.
 pub async fn create(
     cx: &Context,
     caller: &Caller,
@@ -129,6 +131,34 @@ pub(crate) async fn create_tx(
                 ServiceError::internal("Failed to create zone")
             }
         })?;
+
+    // The apex NS is born with the zone at its first serial, so it needs no
+    // journal row: a secondary learns a new zone by AXFR.
+    if create_zone_request.apex_ns {
+        let PreparedRecord {
+            record_type,
+            value,
+            priority,
+            ..
+        } = parse_record_request(
+            "@",
+            "NS",
+            &RecordValueRequest::Text(created_zone.mname.clone()),
+            None,
+            None,
+        )?;
+        let apex_ns = Record {
+            id: RecordId::UNWRITTEN,
+            name: normalize_record_owner_name("@", &created_zone.name)?,
+            record_type,
+            value,
+            ttl: created_zone.default_ttl,
+            priority,
+            zone_id: created_zone.id,
+            created_at: Utc::now(),
+        };
+        bindizr_db::record::create_many_tx(tx, &[apex_ns]).await?;
+    }
 
     super::save_version_tx(
         cx,

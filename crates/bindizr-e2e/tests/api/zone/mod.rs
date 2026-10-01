@@ -900,3 +900,56 @@ async fn a_disabled_zone_leaves_the_dns_plane_but_stays_editable() {
         "re-enabling serves the zone again"
     );
 }
+
+/// Verify that a new zone starts with a deletable apex NS naming its MNAME.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_create_starts_with_a_deletable_apex_ns() {
+    let app = TestApp::start().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    let records = app.list_records(zone_name).await;
+    assert_eq!(records.len(), 1, "{records:?}");
+    let ns = &records[0];
+    assert_eq!(ns["type"], "NS");
+    assert_eq!(
+        ns["value"].as_str().unwrap().trim_end_matches('.'),
+        format!("ns1.{zone_name}")
+    );
+    // The record belongs to the zone's first version, so the serial stayed.
+    assert_eq!(zone["serial"], 10);
+
+    let (status, body) = app
+        .send_request(
+            Method::DELETE,
+            &format!("/records/{}", ns["id"].as_i64().unwrap()),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(app.list_records(zone_name).await.is_empty());
+}
+
+/// Verify that `apex_ns: false` creates a zone with no records.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_create_without_apex_ns_has_no_records() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("bare.example.com");
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "apex_ns": false,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert!(app.list_records(&zone_name).await.is_empty());
+}

@@ -87,6 +87,7 @@ pub async fn update(
         |existing| {
             CreateZoneRequest {
                 dry_run: false,
+                apex_ns: false,
                 name: request
                     .name
                     .clone()

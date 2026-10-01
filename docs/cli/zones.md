@@ -13,10 +13,11 @@ for the same payload the HTTP API returns.
 # --expire, and --minimum-ttl set the other SOA timers
 $ bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
 
-# A new zone holds its SOA and nothing else. Give it the NS records that name
-# its public name servers, and an address record for any of them inside the zone
-# (the parent zone needs matching glue for those).
-$ bindizr record create example.com @ --type NS --value ns1.example.com
+# A new zone holds its SOA and one apex NS record naming --mname; pass
+# --no-apex-ns to write the NS records yourself. Add the other name servers,
+# and an address record for any of them inside the zone (the parent zone
+# needs matching glue for those).
+$ bindizr record create example.com @ --type NS --value ns2.example.com
 $ bindizr record create example.com ns1 --type A --value 192.0.2.1
 
 # List, inspect, and delete zones

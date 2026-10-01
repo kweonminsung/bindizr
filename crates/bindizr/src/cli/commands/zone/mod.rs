@@ -66,6 +66,9 @@ and the contact is the address a resolver operator writes to.")]
         /// Free-text note for operators
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
+        /// Start without the apex NS record that would name --mname
+        #[arg(long)]
+        no_apex_ns: bool,
         /// Validate and report the change without writing it
         #[arg(long)]
         dry_run: bool,
@@ -379,12 +382,14 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             expire,
             minimum_ttl,
             description,
+            no_apex_ns,
             dry_run,
             output,
         } => {
             let response = client::send_command::<ZoneWriteResponse>(DaemonCommand::CreateZone(
                 CreateZoneRequest {
                     dry_run,
+                    apex_ns: !no_apex_ns,
                     name,
                     mname,
                     rname,

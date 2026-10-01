@@ -331,7 +331,20 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
     app.set_auth_token(global_token);
 
     let zone_name = app.zone_name("example.com");
-    app.create_named_zone(&zone_name).await;
+    // Without its apex NS, so the apex holds only the TXT below.
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "apex_ns": false,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     for (name, record_type, value) in [
         ("@", "TXT", "apex"),
         ("host.dyn", "A", "192.0.2.1"),
@@ -372,7 +385,6 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
         )
     };
 
-    // The apex holds only the TXT above: a new zone carries no records.
     assert_eq!(listed(&app).await, (1, 1));
 
     app.run_cli_success(&[

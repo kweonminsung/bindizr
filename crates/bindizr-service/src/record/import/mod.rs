@@ -54,6 +54,8 @@ fn build_create_zone_request(
         })?;
     Ok(CreateZoneRequest {
         dry_run: false,
+        // The zone file carries its own NS records.
+        apex_ns: false,
         name: zone_name.to_string(),
         mname: soa.mname.clone(),
         rname,

@@ -145,8 +145,8 @@ async fn zone_status_via_cli() {
     app.create_zone_cli(&zone_name, "3600").await;
 
     let status = app.run_cli_success(&["zone", "status", &zone_name]).await;
-    // Serial 2: the zone starts at 1 and its apex NS is the second mutation.
-    assert!(status.contains(&format!("Zone {} (serial 2)", zone_name)));
+    // Serial 1: the zone and its apex NS arrive in one version.
+    assert!(status.contains(&format!("Zone {} (serial 1)", zone_name)));
 
     if !app.has_dns_secondaries() {
         assert!(status.contains("No enabled secondaries."));
@@ -212,4 +212,31 @@ async fn zone_filter_and_paginate() {
         1
     );
     assert_eq!(page["pagination"]["total"], 2);
+}
+
+/// Verify that `--no-apex-ns` creates a zone with no records.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_create_without_apex_ns_via_cli() {
+    let app = TestApp::start().await;
+    let zone_name = app.zone_name("bare-cli.example.com");
+    let mname = format!("ns1.{zone_name}");
+
+    app.run_cli_success(&[
+        "zone",
+        "create",
+        &zone_name,
+        "--mname",
+        &mname,
+        "--rname",
+        "admin@example.com",
+        "--no-apex-ns",
+    ])
+    .await;
+
+    let records = app
+        .run_cli_success(&["record", "list", &zone_name, "--output", "json"])
+        .await;
+    let records: Value = serde_json::from_str(&records).expect("CLI did not return valid JSON");
+    assert_eq!(records["pagination"]["total"], 0, "{records}");
 }
