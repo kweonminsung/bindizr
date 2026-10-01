@@ -5,20 +5,17 @@ Catalog zones need **NSD 4.9 or newer**; Bindizr's interoperability run covers
 
 ## 1. Register the secondary in Bindizr
 
-Bindizr sends NOTIFY to, and accepts unsigned transfers from, only the
-secondaries registered with it; an NSD missing from them gets every
-transfer refused. Register it by address or hostname — see
-[Secondaries](../cli/secondaries.md) — and it is fed from the next change
-on, with no restart:
+Register the secondary's address so it receives NOTIFY and can transfer
+zones. This example uses a server on the same host, listening on port 53:
 
 ```bash
 # A NSD on this host; elsewhere, its address or hostname
-$ sudo bindizr secondary create nsd --address 127.0.0.1
+sudo bindizr secondary create nsd --address 127.0.0.1
 ```
 
-A [signed transfer](#sign-the-transfers) is authorized by its key, but NOTIFY
-still goes only to the registered secondaries, so a keyed secondary is
-registered all the same.
+For a remote server, use its address or hostname and Bindizr's reachable DNS
+address in the configuration below. Registration is also needed when using
+[signed transfers](#sign-the-transfers), so NOTIFY reaches the server.
 
 ## 2. Configure the catalog zone
 
@@ -48,9 +45,9 @@ NSD writes each member's zone file itself, but not the directory holding them.
 NSD where it is:
 
 ```bash
-$ sudo install -d -o nsd -g nsd "$(nsd-checkconf -o zonesdir /etc/nsd/nsd.conf)/members"
-$ sudo nsd-checkconf /etc/nsd/nsd.conf
-$ sudo systemctl restart nsd
+sudo install -d -o nsd -g nsd "$(nsd-checkconf -o zonesdir /etc/nsd/nsd.conf)/members"
+sudo nsd-checkconf /etc/nsd/nsd.conf
+sudo systemctl restart nsd
 ```
 
 ## 3. Check a zone it learned
@@ -58,7 +55,12 @@ $ sudo systemctl restart nsd
 `zonestatus` reports the catalog member id the zone was provisioned under:
 
 ```bash
-$ sudo nsd-control zonestatus example.com
+sudo nsd-control zonestatus example.com
+```
+
+Example output:
+
+```text
 zone:	example.com
 	pattern: catalog-member
 	catalog-member-id: 33220188aa7541b8d3b935bd11880c49.zones.catalog.bindizr.
@@ -119,15 +121,9 @@ zone:
     request-xfr: 10.0.0.5@5300 xfr-key
 ```
 
-The catalog zone takes the key too: it is the transfer every member is
-provisioned from, so leaving it on `NOKEY` signs everything except the one
-that has to arrive first.
-
-`allow-notify` stays `NOKEY` unless the secondary is registered with
-`--notify-key`, which signs every NOTIFY to it — see
-[Signed NOTIFY](../cli/secondaries.md#signed-notify); then name the key there
-instead. Bindizr sends NOTIFY unsigned otherwise, so requiring a key it was
-not given would reject it.
+Keep `allow-notify` on `NOKEY` unless the secondary is registered with
+`--notify-key`; then use that key there too. See
+[Signed NOTIFY](../cli/secondaries.md#signed-notify).
 
 See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
 for creating the key in a role that holds `zone:transfer` in every zone.

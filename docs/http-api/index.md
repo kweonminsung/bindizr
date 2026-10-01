@@ -1,20 +1,44 @@
 # HTTP API
 
-Bindizr exposes zones, records, versions, secondaries, TSIG keys, and tokens
-over an HTTP API served on `api.listen_addr:api.listen_port` (`127.0.0.1:3000` by default).
+Manage zones, records, secondaries, access control, and DNSSEC over HTTP.
+The packaged configuration listens on `127.0.0.1:3000`; the Compose and Helm
+examples use port `8000`.
 
 [Open the full API reference :material-open-in-new:](https://kweonminsung.github.io/bindizr/api/){ .md-button .md-button--primary }
 
-The reference is generated from the OpenAPI spec, which is also served directly
-at [`openapi.yaml`](../openapi.yaml) if you want to feed it to a client
-generator.
+Download the [OpenAPI specification](../openapi.yaml) for client generation.
+
+## Authentication
+
+Create the first token with the CLI on the daemon host. For a package install:
+
+```bash
+sudo bindizr token create admin --role admin
+```
+
+In Docker or Kubernetes, run the same command inside the container or pod.
+Save the secret when it is printed; it cannot be retrieved later. Use it in
+an `Authorization` header:
+
+```bash
+export BINDIZR_TOKEN='<your-token>'
+curl -H "Authorization: Bearer $BINDIZR_TOKEN" http://127.0.0.1:3000/zones
+```
+
+Each token belongs to a [role](../cli/access-control.md). The built-in `admin`
+role has full access; create narrower roles for applications. A token with
+`access:manage` can create roles and further tokens through the API.
+`GET /tokens/self` shows the caller's token metadata, and
+`GET /tokens/self/grants` shows its grants.
+
+If all administrator tokens are lost, create a replacement through the CLI.
+`api.authentication_required = false` allows full access without a token;
+use it only on a trusted network.
 
 ## TLS
 
-Requests carry their API token in an `Authorization` header, so the HTTP API is
-loopback-only out of the box. Anything reachable off the host needs TLS —
-point `api.tls_cert_file` and `api.tls_key_file` at a PEM certificate chain
-and private key and Bindizr serves HTTPS on the same port:
+For access off-host, configure HTTPS or use a TLS-terminating proxy. To serve
+HTTPS directly, set both PEM file paths:
 
 ```toml
 [api]
@@ -23,86 +47,47 @@ tls_cert_file = "/etc/bindizr/tls/tls.crt"
 tls_key_file = "/etc/bindizr/tls/tls.key"
 ```
 
-Both or neither: half a pair is refused at startup rather than quietly
-serving plain HTTP on a port meant to be HTTPS. The files are read once at
-startup, so a renewed certificate needs a restart, and `[api]` is fixed while
-running — a `config reload` that changes them is refused whole.
-
-A TLS-terminating proxy or Ingress in front is the other way, and the one to
-use where certificates are already managed there. Terminating in front leaves
-Bindizr's own port plain, so keep it on loopback or a private network.
+Supplying only one file is rejected at startup. Certificates are read at
+startup, so restart Bindizr after renewal. All `[api]` settings require a
+restart. With a proxy or Ingress terminating TLS, keep Bindizr's HTTP listener
+on loopback or a private network.
 
 ## Listings
 
-Every listing answers the same shape — `items` beside a `pagination` object of
-`limit`, `offset`, and `total` — and takes `limit` and `offset` as query
-parameters. An omitted `limit` pages at 50; 1000 is the most one call returns.
+Paginated listings return `items` and a `pagination` object containing
+`limit`, `offset`, and `total`. The API defaults to 50 items per page and
+accepts at most 1000:
 
 ```bash
-$ curl -H "Authorization: Bearer $TOKEN" \
-    'http://localhost:3000/tokens?limit=20&offset=40'
+curl -H "Authorization: Bearer $BINDIZR_TOKEN" \
+  'http://127.0.0.1:3000/zones?limit=20&offset=40'
 ```
 
-The CLI takes the same `--limit` and `--offset`, and pages at 1000 rather
-than 50 when neither is given. A table that did not fit says so on its last
-line: `Showing 1000 of 2001; page the rest with --limit and --offset.`
+`/zones` and `/records` also accept `sort` and `order`; tied values are ordered
+by ID. The CLI uses `--limit` and `--offset`, with a default page size of 1000.
 
-`/zones` and `/records` also take `sort` and `order`. Equal values are
-ordered by `id`, so paging stays stable even where the column has ties.
-
-`/records?signed=true` pages the zone's derived DNSSEC records after its user
-records. They are narrowed by the same name, type, and TTL filters; a `search`
-reaches them by name only, a `priority` filter leaves them out because none
-carries one, and a `value` filter is refused rather than answered without
-them.
+To include generated DNSSEC records, use
+`GET /records?zone_name=example.com&signed=true`. They follow user records in
+the same pagination. Name, type, and TTL filters apply to both; `search`
+matches generated records by name only, `priority` excludes them, and
+`value` cannot be combined with `signed=true`.
 
 ## Rejected requests
 
-An unknown query parameter or body field is refused rather than ignored, so
-`DELETE /records?type=A` answers 400 naming `type` instead of quietly deleting
-every type at that name.
+Unknown query parameters and body fields return `400`. For example, record
+deletion uses `type`; `DELETE /records?...&record_type=A` is rejected.
 
-A zone import that fails validation answers 422 and applies nothing, carrying
-the same body as a successful one so the per-record errors survive the status.
-Every other failure answers the usual `{"error", "code"}` envelope.
-
-## Authentication
-
-Bootstrap the first token with the CLI:
-
-```bash
-$ bindizr token create admin --role admin
-```
-
-Every token is created through the CLI or through `POST /tokens` with a token
-that already exists, so the first one is always `bindizr token create` on the
-daemon host — in the container or pod when that is where Bindizr runs.
-
-Every token names one [role](../cli/access-control.md), whose grants decide
-which zones it sees and what it may do there; the built-in `admin` role covers
-everything.
-
-Then include it in the `Authorization` header:
-
-```bash
-$ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/zones
-```
-
-From there a token whose role has `access:manage` manages access over HTTP
-as well — `POST /roles` and `POST /roles/{name}/grants` define roles,
-`POST /tokens` (with a `role_name`) returns a new secret once, `GET /tokens`
-lists tokens, `DELETE /tokens/{name}` revokes one. Any token may read itself:
-`GET /tokens/self` describes the token a request carries — name, `role_name`,
-expiry, never the secret — and `GET /tokens/self/grants` lists its role's
-grants. The CLI stays the recovery path: if every token that could manage
-access is lost, create a new one on the daemon host.
-
-Setting `api.authentication_required = false` disables the check entirely — only
-sensible when Bindizr is bound to a loopback address or an otherwise trusted
-network.
+Errors normally return an object with `error` and `code`. Zone-import
+validation errors return `422` with the import report, including per-record
+errors; no changes are applied.
 
 ## Unauthenticated endpoints
 
-`GET /health` and `GET /metrics` are always unauthenticated, and neither exposes
-zone data. `/health` is part of the OpenAPI spec; `/metrics` is not. See
-[Prometheus Metrics](metrics.md).
+- `GET /health` checks database availability.
+- `GET /metrics` serves [Prometheus metrics](metrics.md) when
+  `api.metrics_enabled` is on (the default).
+- `GET /openapi.json` and `GET /openapi.yaml` serve the API specification when
+  `api.openapi_enabled` is on (off by default).
+
+These endpoints do not require an API token. The OpenAPI endpoints describe
+the complete API surface; health and metrics expose no zone records.

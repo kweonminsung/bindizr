@@ -14,7 +14,7 @@ paths:
       tags:
       - DNSSEC
       summary: List all DNSSEC policies
-      description: 'Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC, 14-day signatures re-signed with 5 days left) is seeded at startup.'
+      description: 'Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC3, 14-day signatures re-signed with 5 days left) is seeded at startup.'
       operationId: list_dnssec_policies
       parameters:
       - name: limit
@@ -390,7 +390,7 @@ paths:
       tags:
       - ExternalDNS
       summary: List the names ExternalDNS may manage
-      description: 'The ExternalDNS domain filter the calling token''s role comes to: every zone name with authentication disabled, otherwise one name per grant that creates or deletes records — the zone where the grant covers every name, the granted subtree where it does not. Each entry covers itself and everything under it, so a grant narrowed by record type or to one exact name reads wider here than it is.'
+      description: 'Returns every existing zone name when authentication is disabled. Otherwise, includes zones or subtrees covered by a grant containing all three actions: `record:read`, `record:create`, and `record:delete`. Entries are deduplicated. Each entry includes its descendants, so record-type and exact-name restrictions still need to be enforced when changes are applied.'
       operationId: list_external_dns_domains
       responses:
         '200':
@@ -1728,7 +1728,7 @@ paths:
       tags:
       - Secondary
       summary: List a secondary's transfers
-      description: 'The transfers Bindizr served the secondary''s addresses, newest first, with how each zone was last served: AXFR, IXFR as a delta or as the whole zone, or refused and why. Bindizr keeps the latest transfer per zone and address, so each zone appears once.'
+      description: 'The transfers Bindizr served the secondary''s addresses, newest first, with how each zone was last served: AXFR, IXFR as a delta or as the whole zone, or refused and why. Bindizr keeps the latest transfer per zone and client address. A secondary with multiple addresses can have several entries for one zone.'
       operationId: list_secondary_transfers
       parameters:
       - name: name
@@ -2887,7 +2887,7 @@ paths:
       tags:
       - DNSSEC
       summary: Start a key rollover for a zone
-      description: Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`policy` in `PUT /zones/{name}/dnssec`), which double-signs the zone through the transition (RFC 6840, Section 5.11).
+      description: Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`policy_name` in `PUT /zones/{name}/dnssec`), which double-signs the zone through the transition (RFC 6840, Section 5.11).
       operationId: start_dnssec_rollover
       parameters:
       - name: name

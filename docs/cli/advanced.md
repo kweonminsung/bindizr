@@ -87,7 +87,7 @@ key "xfr-key" {
 
 zone "example.com" {
     type secondary;
-    primaries { 192.0.2.1 key xfr-key; };
+    primaries { 192.0.2.1 port 5300 key xfr-key; };
 };
 ```
 

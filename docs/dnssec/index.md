@@ -1,115 +1,94 @@
 # DNSSEC
 
-Bindizr signs zones itself: enabling DNSSEC generates the zone's key(s),
-derives the `DNSKEY`, `CDS`/`CDNSKEY`, denial-of-existence, and `RRSIG`
-records, and serves them over the same AXFR/IXFR path — secondaries need
-**no configuration changes**. Every record change re-signs exactly what
-changed, in the same serial, and a scheduler pass — hourly by default,
-set by `dns.scheduler_interval_secs` — renews signatures before they expire
-and carries [key rollovers](rollover.md) through, asking the parent about the
-DS when one is waiting on it.
+Bindizr signs zones and sends the signed records to secondaries over AXFR/IXFR.
+Secondaries need no signing configuration. Record changes update signatures,
+and the background scheduler renews them before expiry and advances
+[key rollovers](rollover.md).
 
-How a zone is signed is described by a [DNSSEC policy](policies.md), a named
-bundle of signing parameters that zones reference; a `default` policy is
-seeded at startup. Keys move in and out as BIND key files — see
-[Key Import and Export](keys.md).
+A [DNSSEC policy](policies.md) controls the algorithm, key layout, and timing.
+The built-in `default` uses one ECDSA P-256 combined signing key (CSK) and
+NSEC3. To retain keys from another signer, use [Key Import and Export](keys.md).
 
 ## Enabling DNSSEC for a zone
+
+For an existing zone, supply the parent zone's authoritative name servers.
+This example uses the default policy:
 
 ```sh
 bindizr dnssec enable example.com \
   --parent-ns-addrs a.gtld-servers.net,b.gtld-servers.net
-bindizr dnssec enable example.com \
-  --parent-ns-addrs ns1.parent.example --policy strict
 ```
 
-or over HTTP:
+The equivalent HTTP request is:
 
 ```sh
-curl -X POST -H "Authorization: Bearer $TOKEN" \
+curl -X POST -H "Authorization: Bearer $BINDIZR_TOKEN" \
   http://127.0.0.1:3000/zones/example.com/dnssec \
   -H "Content-Type: application/json" \
-  -d '{"policy_name": "strict", "parent_ns_addrs": ["ns1.parent.example"]}'
+  -d '{"parent_ns_addrs": ["a.gtld-servers.net", "b.gtld-servers.net"]}'
 ```
 
-`--parent-ns-addrs` is required, and names the servers every later DS check
-asks — in a hidden primary layout the host resolver cannot see the zones
-Bindizr serves, so there is nothing reliable to guess them from. The TTL those
-servers hand out with the zone's DS is read from their answer, not configured,
-and `dnssec status` reports it: a retired SEP key waits it out, so a long
-parent TTL lengthens a rollover.
-
-This generates the key(s) the policy prescribes (under `default`, a single
-ECDSA P-256 CSK), signs the whole zone, and notifies the secondaries. The
-private key never leaves bindizr.
-
-A signed zone moves to another policy with:
-
-```sh
-bindizr dnssec set example.com --policy strict
-```
-
-Also `policy_name` in `PUT /zones/{name}/dnssec`. The target must share the zone's
-key layout — that has no safe in-place transition, so to change it disable
-DNSSEC and re-enable under the new policy, going insecure in between. A
-different denial mode is replaced in place under one serial: every algorithm
-Bindizr signs with is NSEC3-capable (RFC 5155, Section 2), so a resolver that
-could follow the old chain already understands the new one. A different
-algorithm starts an [algorithm rollover](rollover.md#algorithm-rollover); different timing
-simply applies from the next signing pass.
+Bindizr generates keys, signs the zone, and notifies secondaries.
+`--parent-ns-addrs` is required: subsequent DS checks query these servers, so
+Bindizr must be able to reach them. Use `host[:port]` entries; change them later
+with `bindizr dnssec set example.com --parent-ns-addrs <servers>`.
 
 ## Completing the chain of trust
 
-Signatures only validate once the parent delegates trust to your key. The
-DS record to register at your parent (usually via your registrar) is in the
-enable output and in `bindizr dnssec status example.com` (`ds_records` of
-`GET /zones/{name}/dnssec`):
+Publish the DS record at the parent, usually through your registrar. The
+enable response and `bindizr dnssec status example.com` show the record:
 
 ```text
 DS records (register in the parent zone):
   example.com. IN DS 34217 13 2 4B9B6B073EDD97FE1A7B19871EE93BE250E49B2D9466E661A22C74C426ACE383
 ```
 
-Signed zones also publish `CDS`/`CDNSKEY` (RFC 7344) for parents that scan
-for DS changes. Until the DS is published, resolvers simply treat the zone
-as insecure — safe to roll out gradually.
+Use the DS from your own zone, then check the parent:
+
+```sh
+bindizr dnssec check-ds example.com
+```
+
+Signed zones also publish `CDS`/`CDNSKEY` for parents that support automatic
+DS updates. Until a matching DS is published, resolvers treat a newly signed
+zone with no previous DS as insecure.
+
+## Changing the signing policy
+
+After [creating a policy](policies.md), move a signed zone to it:
+
+```sh
+bindizr dnssec set example.com --policy strict
+```
+
+Over HTTP, send `policy_name` in `PUT /zones/{name}/dnssec`.
+
+- A new algorithm starts an [algorithm rollover](rollover.md#algorithm-rollover).
+- A new denial mode replaces the NSEC/NSEC3 records in one serial.
+- Timing changes apply from the next signing pass.
+- A different key layout (CSK versus KSK/ZSK) requires disabling DNSSEC and
+  re-enabling it under the new policy. Follow the DS removal procedure below.
 
 ## Disabling DNSSEC
 
-Dropping signatures while the parent still publishes your DS makes the zone
-**bogus**, so `dnssec disable` asks the parent's name servers for the DS
-first and refuses while any still serves one (`DNSSEC_DS_PUBLISHED`) or
-fails to answer (`DNSSEC_DS_UNVERIFIED`). Go insecure in order:
+Removing signatures while the parent still publishes a DS breaks validation.
+Disable signing in this order:
 
-1. Ask the parent to remove the DS. If the parent consumes CDS,
-   `bindizr dnssec withdraw start example.com` publishes the RFC 8078
-   delete pair (`CDS 0 0 0 00`) and the parent drops the DS on its own;
-   otherwise remove it at the registrar. `bindizr dnssec withdraw cancel`
-   takes a withdrawal back.
-2. Wait until the DS is gone and its TTL has passed. `bindizr dnssec
-   check-ds example.com` (`POST /zones/{name}/dnssec/check-ds`) shows what
-   the parent serves now and its TTL; the wait itself is yours.
-3. `bindizr dnssec disable example.com`
+1. Remove the DS at the registrar. If the parent processes CDS withdrawal,
+   `bindizr dnssec withdraw start example.com` publishes the RFC 8078 delete
+   pair instead. `bindizr dnssec withdraw cancel example.com` cancels that request.
+2. Run `bindizr dnssec check-ds example.com` to confirm removal, then wait out
+   the previously published DS TTL so cached copies expire.
+3. Run `bindizr dnssec disable example.com`.
 
-`--skip-ds-check` (`DELETE /zones/{name}/dnssec?skip_ds_check=true`) skips
-the check, for a host that cannot reach the parent at all.
-
-Every check asks the name servers the zone names — including the scheduler's,
-so a host running Bindizr needs outbound DNS to them. Set at enable and
-changed with:
-
-```sh
-bindizr dnssec set example.com --parent-ns-addrs ns1.parent.example:5353
-```
-
-The same field is `parent_ns_addrs`, a list of `host[:port]` entries, in the
-enable body and in `PUT /zones/{name}/dnssec`, and it must always name at
-least one server.
-`dnssec status` shows it beside the DS TTL the parent answers with, which is
-read rather than configured: it is how long caches may keep serving a DS
-after its removal, and it paces a rollover's retirement.
+Disable is refused while any configured parent server still publishes a DS
+(`DNSSEC_DS_PUBLISHED`) or cannot confirm its absence (`DNSSEC_DS_UNVERIFIED`).
+`--skip-ds-check` bypasses that check; use it only when you have independently
+verified removal and waited out the TTL.
 
 ## Behavior notes
 
-How delegations are signed and how the derived records appear in listings and
-history is in [Advanced DNSSEC](advanced.md).
+The scheduler runs hourly by default (`dns.scheduler_interval_secs`).
+`dnssec status` reports the parent DS TTL, which also affects key retirement.
+See [Advanced DNSSEC](advanced.md) for delegation signing, generated records,
+and version history.

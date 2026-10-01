@@ -18,29 +18,29 @@ is the same, which is why that setting belongs on a trusted network only.
 
 ```bash
 # A role, one grant, and a token that authenticates into it
-$ bindizr role create external-dns-prod
-$ bindizr role grant external-dns-prod --zone example.com \
+bindizr role create external-dns-prod
+bindizr role grant external-dns-prod --zone example.com \
     --actions record:read,record:create,record:delete \
     --pattern '*.apps' --types A,AAAA,CNAME,TXT
-$ bindizr token create cluster-a --role external-dns-prod
+bindizr token create cluster-a --role external-dns-prod
 
 # The same role behind an RFC 2136 client
-$ bindizr tsig-key create legacy-rfc2136 --role external-dns-prod
+bindizr tsig-key create legacy-rfc2136 --role external-dns-prod
 ```
 
 ## Roles
 
 ```bash
 # Create a role; it holds no grants yet
-$ bindizr role create dns-admins --description 'Operators of the public zones'
+bindizr role create dns-admins --description 'Operators of the public zones'
 
 # List roles, or show one
-$ bindizr role list
-$ bindizr role get dns-admins
-
-# Delete a role and its grants (refused while a token or key still names it)
-$ bindizr role delete dns-admins
+bindizr role list
+bindizr role get dns-admins
 ```
+
+Delete an unused role with `bindizr role delete <name>`. Deletion is refused
+while a token or TSIG key still belongs to it.
 
 ### The built-in admin role
 
@@ -49,7 +49,7 @@ including zones created later. It can be neither changed nor deleted. The
 first token is created with it on the daemon host:
 
 ```bash
-$ sudo bindizr token create admin --role admin
+sudo bindizr token create admin --role admin
 ```
 
 ## Grants
@@ -59,16 +59,17 @@ pattern and a type list:
 
 ```bash
 # Every zone, including zones created later: leave out --zone
-$ bindizr role grant dns-admins --actions zone:read,zone:update,record:read
+bindizr role grant dns-admins --actions zone:read,zone:update,record:read
 
 # One zone, narrowed to TXT records at _acme-challenge
-$ bindizr role grant acme --zone example.com \
+bindizr role create challenge-txt
+bindizr role grant challenge-txt --zone example.com \
     --actions record:create,record:delete \
     --pattern '_acme-challenge' --types TXT
 
 # List a role's grants, then revoke one by its ID
-$ bindizr role grants acme
-$ bindizr role revoke acme 7
+bindizr role grants challenge-txt
+bindizr role revoke challenge-txt <GRANT_ID>
 ```
 
 `--pattern` is `*` (any name, the default), `@` (the apex), `*.sub` (`sub`
@@ -112,28 +113,24 @@ secret is shown once, when it is created.
 
 ```bash
 # Create a token in a role; the secret is printed here and never again
-$ bindizr token create cluster-a --role external-dns-prod
+bindizr token create cluster-b --role external-dns-prod
 
 # Create a token that expires
-$ bindizr token create temp --role monitoring --expires-in-days 30
+bindizr token create temp --role external-dns-prod --expires-in-days 30
 
 # List tokens (with their roles), or delete one
-$ bindizr token list
-$ bindizr token delete cluster-a
+bindizr token list
+bindizr token delete cluster-b
 ```
 
 A lost token is replaced, not recovered. The CLI stays the recovery path: if
 every token in a role with `access:manage` is lost, create a new one on the
 daemon host.
 
-Over HTTP, a token whose role has `access:manage` manages all of this too:
-`GET`/`POST /roles`, `GET`/`DELETE /roles/{name}`, `GET`/`POST
-/roles/{name}/grants` and `DELETE /roles/{name}/grants/{id}` for roles;
-`GET`/`POST /tokens` and `DELETE /tokens/{name}` for tokens, with the role in
-the body's `role_name`. Any token may read itself: `GET /tokens/self`
-describes the calling token, its `role_name` included, and `GET
-/tokens/self/grants` lists its role's grants. See the
-[API Reference](https://kweonminsung.github.io/bindizr/api/).
+Over HTTP, a token with `access:manage` can manage roles and tokens.
+Any token can inspect itself with `GET /tokens/self` and its grants with
+`GET /tokens/self/grants`. See the
+[API Reference](https://kweonminsung.github.io/bindizr/api/) for the endpoints.
 
 ## TSIG keys
 
@@ -143,22 +140,22 @@ the NOTIFY Bindizr sends to a secondary registered with `--notify-key` — see
 on the wire.
 
 ```bash
-# Create a key in a role (the secret is generated and printed once)
-$ bindizr tsig-key create update-key --role acme
+# Create a key in a role; use `get` below to retrieve its secret later
+bindizr tsig-key create update-key --role external-dns-prod
 
 # Import an existing base64 secret, or pick another HMAC algorithm
-$ bindizr tsig-key create legacy-key --role acme --algorithm hmac-sha512 \
+bindizr tsig-key create legacy-key --role external-dns-prod --algorithm hmac-sha512 \
     --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
 
 # List keys (secrets are not shown), or show one with its secret
-$ bindizr tsig-key list
-$ bindizr tsig-key get update-key
+bindizr tsig-key list
+bindizr tsig-key get update-key
 
 # Print the key as a BIND `key` block, to paste into a secondary's named.conf
-$ bindizr tsig-key export xfr-key
+bindizr tsig-key export update-key
 
 # Delete a key (refused while it still signs a secondary's NOTIFY)
-$ bindizr tsig-key delete update-key
+bindizr tsig-key delete update-key
 ```
 
 Over HTTP the same is `/tsig-keys`, with the role in the body's `role_name`.
@@ -173,20 +170,9 @@ and [Signing zone transfers](advanced.md#signing-zone-transfers).
 
 ### ExternalDNS
 
-ExternalDNS reads ownership records, adds, and deletes in one sync, so its
-domain filter is built only from the grants that hold all of `record:read`,
-`record:create`, and `record:delete`; a grant missing any of them is left out.
-It never uses `record:update`:
-
-```bash
-$ bindizr role create external-dns-prod
-$ bindizr role grant external-dns-prod --zone example.com \
-    --actions record:read,record:create,record:delete \
-    --pattern '*.apps' --types A,AAAA,CNAME,TXT
-$ bindizr token create cluster-a --role external-dns-prod
-```
-
-See [ExternalDNS](../external-dns.md) for the rest of the setup.
+The role at the top of this page grants the three actions ExternalDNS needs.
+Keep them in one grant so the adapter includes the scope in its domain filter.
+See [ExternalDNS](../external-dns.md) for deployment and record-type constraints.
 
 ### An ACME DNS-01 client over nsupdate
 
@@ -194,14 +180,14 @@ cert-manager's RFC 2136 solver, or any other ACME client, adds and removes TXT
 records at the challenge names and nothing else:
 
 ```bash
-$ bindizr role create acme
-$ bindizr role grant acme --zone example.com \
+bindizr role create acme
+bindizr role grant acme --zone example.com \
     --actions record:read,record:create,record:delete \
     --pattern '_acme-challenge' --types TXT
-$ bindizr role grant acme --zone example.com \
+bindizr role grant acme --zone example.com \
     --actions record:read,record:create,record:delete \
     --pattern '_acme-challenge.www' --types TXT
-$ bindizr tsig-key create acme-key --role acme
+bindizr tsig-key create acme-key --role acme
 ```
 
 The challenge for `www.example.com` lives at `_acme-challenge.www`, so each
@@ -214,18 +200,18 @@ A secondary that signs its transfers needs `zone:transfer` in every zone, so
 it can pull the catalog zone and every member zone the catalog lists:
 
 ```bash
-$ bindizr role create secondaries
-$ bindizr role grant secondaries --actions zone:transfer
-$ bindizr tsig-key create xfr-key --role secondaries
-$ bindizr tsig-key export xfr-key      # paste into the secondary
+bindizr role create secondaries
+bindizr role grant secondaries --actions zone:transfer
+bindizr tsig-key create xfr-key --role secondaries
+bindizr tsig-key export xfr-key      # paste into the secondary
 ```
 
 A key that only signs NOTIFY to a secondary still needs a role; an empty one
 will do:
 
 ```bash
-$ bindizr role create notify-only
-$ bindizr tsig-key create notify-key --role notify-only
+bindizr role create notify-only
+bindizr tsig-key create notify-key --role notify-only
 ```
 
 ### Read-only monitoring
@@ -233,8 +219,8 @@ $ bindizr tsig-key create notify-key --role notify-only
 A dashboard or an audit job that reads everything and changes nothing:
 
 ```bash
-$ bindizr role create monitoring
-$ bindizr role grant monitoring \
+bindizr role create monitoring
+bindizr role grant monitoring \
     --actions zone:read,record:read,dnssec:read,secondary:read
-$ bindizr token create grafana --role monitoring
+bindizr token create grafana --role monitoring
 ```

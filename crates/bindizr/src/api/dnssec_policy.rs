@@ -48,7 +48,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         tag = "DNSSEC",
         summary = "List all DNSSEC policies",
         params(PageRequest),
-        description = "Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC, 14-day signatures re-signed with 5 days left) is seeded at startup.",
+        description = "Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC3, 14-day signatures re-signed with 5 days left) is seeded at startup.",
         responses(
             (status = 200, description = "All DNSSEC policies", body = PaginatedResponse<GetDnssecPolicyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),

@@ -11,8 +11,7 @@ bindizr dnssec-policy list
 bindizr dnssec-policy create strict --algorithm ed25519 --denial nsec3 \
     --signature-validity-days 7 --signature-refresh-days 3
 bindizr dnssec-policy get strict
-bindizr dnssec-policy update strict --zsk-lifetime-days 90
-bindizr dnssec-policy delete strict
+bindizr dnssec-policy update strict --signature-refresh-days 2
 ```
 
 Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
@@ -20,8 +19,7 @@ Also `GET`/`POST /dnssec-policies` and `GET`/`PUT`/`DELETE
 
 `algorithm`
 :   `ecdsap256sha256` (default), `ecdsap384sha384`, `ed25519`, `ed448`,
-    `rsasha256`, or `rsasha512` — every algorithm RFC 8624 permits for
-    signing.
+    `rsasha256`, or `rsasha512`.
 
 `denial`
 :   `nsec3` (default, RFC 9276 parameters) or `nsec`. NSEC lets anyone walk
@@ -59,8 +57,6 @@ it, or signatures expire. `bindizr dnssec
 sign example.com` forces a full re-sign if stored signatures are ever
 doubted.
 
-To give some zones different timing, create a policy with the values you
-want and move them to it with `dnssec set --policy`; editing a policy
-with `dnssec-policy update` changes every zone under it from the next
-signing pass or scheduler scan. `dnssec status` reports the zone's
-policy and its values.
+Use `bindizr dnssec status example.com` to inspect the policy currently
+applied to a zone. Remove an unused custom policy with
+`bindizr dnssec-policy delete <name>`.

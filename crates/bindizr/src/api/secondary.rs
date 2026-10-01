@@ -217,7 +217,7 @@ pub(crate) async fn check_secondary(
     path = "/secondaries/{name}/transfers",
     tag = "Secondary",
     summary = "List a secondary's transfers",
-    description = "The transfers Bindizr served the secondary's addresses, newest first, with how each zone was last served: AXFR, IXFR as a delta or as the whole zone, or refused and why. Bindizr keeps the latest transfer per zone and address, so each zone appears once.",
+    description = "The transfers Bindizr served the secondary's addresses, newest first, with how each zone was last served: AXFR, IXFR as a delta or as the whole zone, or refused and why. Bindizr keeps the latest transfer per zone and client address. A secondary with multiple addresses can have several entries for one zone.",
     params(
         ("name" = String, Path, description = "The name of the secondary."),
         GetSecondaryTransfersFilter
