@@ -96,10 +96,8 @@ struct ImportTimings {
     serial_ms: f64,
 }
 
-/// Import records into an existing zone from BIND zone file text or over
-/// AXFR from `from_server`, reconciling them by mode. On apply the zone
-/// serial is incremented once and a single NOTIFY is sent. If any record
-/// fails validation nothing is applied and the errors are returned.
+/// Import zone-file or AXFR records by mode; any validation failure rejects the whole import.
+/// Applying advances the serial once and sends one NOTIFY.
 pub async fn import_zone(
     cx: &Context,
     caller: &Caller,
@@ -152,7 +150,7 @@ async fn reconcile_zone_file(
     content: &str,
     request: &ImportZoneRequest,
 ) -> Result<ImportZoneResponse, ServiceError> {
-    let subject = &caller.change_subject();
+    let attribution = caller.change_attribution();
     let run = Run::from_dry_run(request.dry_run);
     let mode = request.mode;
     let t_total = Instant::now();
@@ -434,7 +432,7 @@ async fn reconcile_zone_file(
             let t = Instant::now();
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the import.
-            zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, subject).await?;
+            zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, attribution).await?;
             timings.serial_ms = elapsed_ms(t);
         }
 

@@ -27,10 +27,8 @@ use crate::{
 /// the read is paged; the protocol wants every endpoint in one answer.
 const RECORD_READ_PAGE: u32 = 5_000;
 
-/// Canonicalize desired records to the form applying them would store, so
-/// the adapter's AdjustEndpoints answer cannot drift from the server's
-/// normalization. Takes no caller: it only normalizes the request's own
-/// payload.
+/// Normalize desired records with the apply flow's rules for AdjustEndpoints.
+/// No caller is needed: only the request's own payload is read.
 pub fn adjust_records(
     request: &ExternalDnsAdjustRequest,
 ) -> Result<ExternalDnsAdjustResponse, ServiceError> {

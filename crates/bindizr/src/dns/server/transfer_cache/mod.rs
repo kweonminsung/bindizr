@@ -123,10 +123,8 @@ impl TransferCache {
     }
 }
 
-/// The transfer content of the zone `zone_name` names, as far as `key`
-/// may read it, from cache when one is configured and fresh. The zone and
-/// the grant are decided on one locked row; a hit serves the content of
-/// that row's serial.
+/// Load authorized transfer content, reusing cached data for the locked zone's serial.
+/// Decide the zone and key grant together under that lock.
 pub(crate) async fn authorize_transfer_content_by_name(
     dns_cx: &DnsContext,
     zone_name: &ZoneName,

@@ -171,10 +171,8 @@ fn bind_key_phase(
 }
 
 impl DnssecKey {
-    /// Rebuild a key from its BIND key files (`K*.key` and `K*.private`),
-    /// validating the pair by reconstructing the signer. The zone's key layout
-    /// types a SEP key as the CSK or the KSK, and the private file's timing
-    /// places it in its rollover.
+    /// Rebuild and validate a signer from its BIND key pair, using the zone's
+    /// key layout for its role and the private file's timing for its rollover state.
     pub fn import(
         zone: &Zone,
         split_keys: bool,

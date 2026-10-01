@@ -3,7 +3,12 @@ use bindizr_core::{
         Serial, SoaInterval, Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::{api_token::TokenId, record::RecordId, token_grant::TokenGrantId, zone::ZoneId},
+    model::{
+        api_token::{ApiToken, TokenId},
+        record::RecordId,
+        token_grant::TokenGrantId,
+        zone::ZoneId,
+    },
 };
 use chrono::Utc;
 
@@ -304,7 +309,7 @@ fn group_ops_resolves_subzone_without_parent_fallback() {
     };
     let ops = parse_changes_request(&request).unwrap();
 
-    let grouped = group_ops_by_zone(&Caller::Global, &zones, ops).unwrap();
+    let grouped = group_ops_by_zone(&Caller::unauthenticated_api(), &zones, ops).unwrap();
     assert_eq!(grouped.len(), 1);
     assert!(grouped.contains_key(&ZoneName::from_row("internal.example.com")));
     assert_eq!(
@@ -324,7 +329,7 @@ fn group_ops_rejects_names_without_authoritative_zone() {
     };
     let ops = parse_changes_request(&request).unwrap();
 
-    let err = group_ops_by_zone(&Caller::Global, &zones, ops).unwrap_err();
+    let err = group_ops_by_zone(&Caller::unauthenticated_api(), &zones, ops).unwrap_err();
     assert_eq!(err.code(), ErrorCode::ZoneNotFound);
 }
 
@@ -335,10 +340,18 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
         test_zone(1, "example.com"),
         test_zone(2, "internal.example.com"),
     ];
-    let caller = Caller::Token {
-        id: TokenId::from(7),
-        name: "scoped".into(),
-        grants: vec![TokenGrant {
+    let caller = Caller::from_token(
+        &ApiToken {
+            id: TokenId::from(7),
+            name: "scoped".into(),
+            token: String::new(),
+            description: None,
+            is_global: false,
+            created_at: Utc::now(),
+            expires_at: None,
+            last_used_at: None,
+        },
+        vec![TokenGrant {
             id: TokenGrantId::from(1),
             zone_id: ZoneId::from(1),
             api_token_id: TokenId::from(7),
@@ -346,9 +359,8 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
             record_types: "*".to_string(),
             can_write: true,
             created_at: Utc::now(),
-        }]
-        .into(),
-    };
+        }],
+    );
     let request = ExternalDnsChangesRequest {
         creates: vec![record_set(
             "api.internal.example.com",
@@ -373,7 +385,12 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
 /// Resolve an external-dns change request into operations for the test zone.
 fn zone_ops(request: &ExternalDnsChangesRequest, zone: &Zone) -> ZoneOps {
     let ops = parse_changes_request(request).unwrap();
-    let grouped = group_ops_by_zone(&Caller::Global, std::slice::from_ref(zone), ops).unwrap();
+    let grouped = group_ops_by_zone(
+        &Caller::unauthenticated_api(),
+        std::slice::from_ref(zone),
+        ops,
+    )
+    .unwrap();
     grouped.into_values().next().unwrap_or_default()
 }
 

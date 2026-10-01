@@ -139,7 +139,8 @@ pub async fn create(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
+            .await?;
 
         Ok::<(Record, ZoneName, RecordDiff), ServiceError>((created_record, zone.name, diff))
     }

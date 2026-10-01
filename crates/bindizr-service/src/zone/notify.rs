@@ -29,13 +29,13 @@ pub async fn notify(
         NotifyTarget::Zone(name) => {
             super::get_by_name(cx, caller, name).await?;
             if serial == NotifySerial::Bump {
-                super::force_increment_serial(cx, target, &caller.change_subject()).await?;
+                super::force_increment_serial(cx, target, caller.change_attribution()).await?;
             }
         }
         NotifyTarget::All => {
             caller.authorize_global("send NOTIFY for all zones")?;
             if serial == NotifySerial::Bump {
-                super::force_increment_serial(cx, target, &caller.change_subject()).await?;
+                super::force_increment_serial(cx, target, caller.change_attribution()).await?;
             }
         }
     }

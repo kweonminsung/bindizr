@@ -24,7 +24,7 @@ use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use crate::{
     LockLevel,
     error::DatabaseError,
-    model::zone_version::{VersionFilter, ZoneVersion},
+    model::zone_version::{ChangeActor, VersionFilter, ZoneVersion},
 };
 
 /// Insert or update a zone version in the current transaction.
@@ -32,10 +32,15 @@ pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, Postgres>,
     version: ZoneVersion,
 ) -> Result<ZoneVersion, DatabaseError> {
+    let (changed_by_kind, changed_by_name) = version
+        .changed_by
+        .as_ref()
+        .map(ChangeActor::as_columns)
+        .unzip();
     sqlx::query_as::<_, ZoneVersion>(
         r#"
-        INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (zone_id, serial)
         DO UPDATE SET
             mname = EXCLUDED.mname,
@@ -46,8 +51,9 @@ pub(crate) async fn upsert_tx(
             expire = EXCLUDED.expire,
             minimum_ttl = EXCLUDED.minimum_ttl,
             change_source = EXCLUDED.change_source,
-            changed_by = EXCLUDED.changed_by
-        RETURNING id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+            changed_by_kind = EXCLUDED.changed_by_kind,
+            changed_by_name = EXCLUDED.changed_by_name
+        RETURNING id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         "#,
     )
     .bind(version.zone_id)
@@ -60,7 +66,8 @@ pub(crate) async fn upsert_tx(
     .bind(version.expire)
     .bind(version.minimum_ttl)
     .bind(version.change_source.as_str())
-    .bind(&version.changed_by)
+    .bind(changed_by_kind)
+    .bind(changed_by_name)
     .bind(Utc::now())
     .fetch_one(&mut **tx)
     .await
@@ -75,7 +82,7 @@ pub(crate) async fn get_by_serial(
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = $1 AND serial = $2
         "#,
@@ -96,7 +103,7 @@ pub(crate) async fn list_in_serial_range(
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = $1 AND serial >= $2 AND serial <= $3
         "#,
@@ -123,7 +130,7 @@ pub(crate) async fn list_by_filter(
     };
     sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = $1{predicate}
         ORDER BY serial DESC
@@ -166,7 +173,7 @@ pub(crate) async fn get_by_serial_tx(
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         AssertSqlSafe(format!("{}{}", r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = $1 AND serial = $2
         "#, lock_level.clause())),

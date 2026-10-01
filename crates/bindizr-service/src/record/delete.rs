@@ -136,7 +136,8 @@ pub async fn delete(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
+            .await?;
 
         log::info!(
             "event=record_delete zone={} name={} type={} value={} record_id={}",
@@ -258,7 +259,8 @@ pub async fn delete_matching(
         super::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Once for the whole set, so IXFR consumers see one step.
-        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
+            .await?;
 
         Ok((response, owner))
     }

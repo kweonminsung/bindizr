@@ -28,13 +28,9 @@ def dig(name: str, rtype: str, server: str, port: int, tcp: bool = False,
 
 def _transfer(zone: str, server: str, port: int, qtype: str,
               timeout: int) -> tuple[float, int, int]:
-    """Run a transfer and return (secs, answer_lines, bytes).
+    """Return transfer duration, answer-line count, and bytes.
 
-    The count is answer *lines*, not distinct records: a transfer is framed by a
-    SOA at both ends, so a fully-populated zone reports one more line than it
-    holds records, and an emptied-but-still-declared zone floors at its apex
-    rather than at zero.
-    """
+    The count includes both framing SOAs; an empty zone still has apex records."""
     args = ["dig", f"@{server}", "-p", str(port), zone, qtype, "+tcp",
             f"+time={timeout}"]
     t0 = time.monotonic()
@@ -73,13 +69,9 @@ def poll_until_visible(name: str, rtype: str, expected: str, server: str, port: 
 def first_unqueryable(records: list[dict], zone: str, server: str, port: int,
                       interval_ms: int = 50,
                       timeout_secs: int = 30) -> dict | None:
-    """Return the first of the set's first/middle/last records that never became
-    visible, or None if all three answered.
+    """Return the first unavailable record among the first, middle, and last, or None.
 
-    A bulk write only *starts* the transfer to a secondary, so measuring right
-    after it can count missing names as errors. Sampling both ends catches a
-    partially transferred zone that probing one record would miss.
-    """
+    Sample across the zone because a bulk write may still be propagating."""
     suffix = zone.rstrip(".")
     for idx in sorted({0, len(records) // 2, len(records) - 1}) if records else []:
         rec = records[idx]

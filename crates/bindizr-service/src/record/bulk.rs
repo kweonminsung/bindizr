@@ -171,10 +171,8 @@ pub(crate) async fn delete_with_changes_tx(
     bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
     Ok(())
 }
-/// Insert many records into a zone in one transaction — one serial bump,
-/// one version, one NOTIFY after commit, all or none. A dry run validates
-/// the same way, writes nothing, and answers with the would-be records.
-/// `caller` is authorized against the zone this tx locked.
+/// Insert records atomically after locking and authorizing the zone, with one serial,
+/// version, and post-commit NOTIFY; a dry run validates and returns the proposed rows.
 pub async fn create_bulk(
     cx: &Context,
     caller: &Caller,
@@ -352,7 +350,8 @@ pub async fn create_bulk(
         let t = Instant::now();
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the batch.
-        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
+            .await?;
         timings.serial_ms = elapsed_ms(t);
 
         Ok::<(Vec<Record>, ZoneName, RecordDiff), ServiceError>((

@@ -10,7 +10,7 @@ use crate::{
     error::ServiceError,
     model::{
         record::RecordData,
-        zone_version::{ChangeSource, ZoneVersion},
+        zone_version::{ChangeActor, ChangeSource, ZoneVersion},
     },
 };
 
@@ -34,14 +34,11 @@ pub struct ZoneVersionResponse {
     pub expire: SoaInterval,
     #[schema(example = 3600, value_type = i32)]
     pub minimum_ttl: Ttl,
-    /// Which plane asked for this version: `token`, `nsupdate`, `system`
-    /// (the DNSSEC scheduler), or `local` (the daemon socket, or
-    /// any request while authentication is disabled).
+    /// The request path (`api`, `socket`, `nsupdate`) or background process (`system`).
     pub change_source: ChangeSource,
-    /// The API token or TSIG key the change was made under, absent where no
-    /// credential stood behind it.
-    #[schema(example = "admin")]
-    pub changed_by: Option<String>,
+    /// Token or TSIG key kind and name. Null for socket commands, unauthenticated
+    /// API requests, unsigned updates, and background work.
+    pub changed_by: Option<ChangeActor>,
     pub created_at: DateTime<Utc>,
 }
 

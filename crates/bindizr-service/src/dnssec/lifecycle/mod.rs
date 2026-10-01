@@ -126,7 +126,7 @@ pub async fn enable(
             cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -239,7 +239,7 @@ pub async fn update_settings(
             cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -320,7 +320,7 @@ pub async fn disable(
             cx,
             &signed.zone,
             new_serial,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?;
 
@@ -350,7 +350,7 @@ pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result
             cx,
             &signed,
             SigningPass::Full,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?;
         Ok(signed.zone.name.clone())

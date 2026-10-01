@@ -18,7 +18,7 @@ pub(crate) async fn create_token(
     cx: &Context,
     request: &CreateTokenRequest,
 ) -> Result<DaemonResponse<CreatedTokenResponse>, ServiceError> {
-    let (token, secret) = token::create(cx, &Caller::Global, request).await?;
+    let (token, secret) = token::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: "Token created successfully".to_string(),
         data: CreatedTokenResponse {
@@ -33,7 +33,7 @@ pub(crate) async fn list_tokens(
     cx: &Context,
     page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTokenResponse>>, ServiceError> {
-    let response = token::list(cx, &Caller::Global, page).await?;
+    let response = token::list(cx, &Caller::socket(), page).await?;
     Ok(DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
         data: response,
@@ -45,7 +45,7 @@ pub(crate) async fn delete_token(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    token::delete(cx, &Caller::Global, name).await?;
+    token::delete(cx, &Caller::socket(), name).await?;
     let message = format!("Token '{}' deleted successfully", name);
     Ok(DaemonResponse {
         message: message.clone(),
@@ -59,7 +59,7 @@ pub(crate) async fn create_token_grant(
     token_name: &str,
     request: &CreateGrantRequest,
 ) -> Result<DaemonResponse<TokenGrantResponse>, ServiceError> {
-    let grant = grant::create(cx, &Caller::Global, token_name, request).await?;
+    let grant = grant::create(cx, &Caller::socket(), token_name, request).await?;
     Ok(DaemonResponse {
         message: "Token grant created successfully".to_string(),
         data: TokenGrantResponse {
@@ -74,7 +74,7 @@ pub(crate) async fn list_token_grants(
     token_name: &str,
     page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTokenGrantResponse>>, ServiceError> {
-    let response = grant::list_by_token(cx, &Caller::Global, token_name, page).await?;
+    let response = grant::list_by_token(cx, &Caller::socket(), token_name, page).await?;
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
         data: response,
@@ -87,8 +87,13 @@ pub(crate) async fn list_zone_token_grants(
     zone_name: &str,
     page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTokenGrantResponse>>, ServiceError> {
-    let response =
-        grant::list_by_zone(cx, &Caller::Global, &zone::normalize_name(zone_name)?, page).await?;
+    let response = grant::list_by_zone(
+        cx,
+        &Caller::socket(),
+        &zone::normalize_name(zone_name)?,
+        page,
+    )
+    .await?;
     Ok(DaemonResponse {
         message: "Token grants retrieved successfully".to_string(),
         data: response,
@@ -100,7 +105,7 @@ pub(crate) async fn delete_token_grant(
     cx: &Context,
     id: TokenGrantId,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    grant::revoke_by_id(cx, &Caller::Global, id).await?;
+    grant::revoke_by_id(cx, &Caller::socket(), id).await?;
     let message = "Token grant revoked successfully".to_string();
     Ok(DaemonResponse {
         message: message.clone(),
@@ -116,7 +121,7 @@ pub(crate) async fn delete_token_grants_by_token_and_zone(
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
     let revoked = grant::revoke_by_token_and_zone(
         cx,
-        &Caller::Global,
+        &Caller::socket(),
         token_name,
         &zone::normalize_name(zone_name)?,
     )

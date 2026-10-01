@@ -84,10 +84,8 @@ impl From<config::LogLevel> for Level {
 }
 
 impl Logger {
-    /// Install the process's logger behind the `log` facade, which allows one
-    /// per process: the level and format are read per record, so a reload
-    /// changes them with `set_level` and `set_format` rather than a second
-    /// install.
+    /// Install the process-wide logger; reload changes its level and format
+    /// through setters because the `log` facade permits only one installation.
     pub fn init(logging: &config::LoggingConfig) {
         let log_level = Level::from(logging.level);
 

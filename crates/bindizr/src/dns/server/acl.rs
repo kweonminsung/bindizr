@@ -108,10 +108,8 @@ impl ResolvedAddrs {
     }
 }
 
-/// Whether `client_ip` is one of the enabled secondaries. The list is read
-/// per check rather than captured at startup, so a change takes effect on
-/// the next transfer; parsing a short list costs nothing next to the
-/// hostname resolution it may avoid.
+/// Check enabled secondary addresses afresh so changes affect the next transfer.
+/// A direct IP match avoids hostname resolution.
 pub(crate) async fn is_client_allowed(
     dns_cx: &DnsContext,
     client_ip: IpAddr,

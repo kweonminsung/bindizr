@@ -3,18 +3,18 @@ use bindizr_db::LockLevel;
 
 use crate::{
     Context, dnssec, error::ServiceError, model::zone::Zone, notify::NotifyTarget,
-    serial::generate_serial, transaction, zone::version::ChangeSubject,
+    serial::generate_serial, transaction, zone::version::ChangeAttribution,
 };
 
 /// Force-increment the serial of one zone by name, or of every zone.
 pub(crate) async fn force_increment_serial(
     cx: &Context,
     target: NotifyTarget<'_>,
-    subject: &ChangeSubject,
+    attribution: &ChangeAttribution,
 ) -> Result<Vec<Zone>, ServiceError> {
     match target {
         NotifyTarget::Zone(name) => {
-            let zone = force_increment_serial_by_name(cx, name, subject).await?;
+            let zone = force_increment_serial_by_name(cx, name, attribution).await?;
             Ok(vec![zone])
         }
         NotifyTarget::All => {
@@ -25,7 +25,8 @@ pub(crate) async fn force_increment_serial(
                 // Bump each zone in its own transaction so the new serial
                 // derives from the current row and a concurrent edit to other
                 // fields is not clobbered.
-                bumped_zones.push(force_increment_serial_by_name(cx, &zone.name, subject).await?);
+                bumped_zones
+                    .push(force_increment_serial_by_name(cx, &zone.name, attribution).await?);
             }
 
             Ok(bumped_zones)
@@ -37,7 +38,7 @@ pub(crate) async fn force_increment_serial(
 async fn force_increment_serial_by_name(
     cx: &Context,
     zone_name: &ZoneName,
-    subject: &ChangeSubject,
+    attribution: &ChangeAttribution,
 ) -> Result<Zone, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "Failed to force increment zone serial").await?;
 
@@ -61,7 +62,7 @@ async fn force_increment_serial_by_name(
         // The SOA rdata carries the serial, so its signature must follow
         // every bump — forced ones included.
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(&mut tx, cx, &updated_zone, new_serial, subject).await?;
+        super::save_version_tx(&mut tx, cx, &updated_zone, new_serial, attribution).await?;
 
         Ok::<Zone, ServiceError>(updated_zone)
     }

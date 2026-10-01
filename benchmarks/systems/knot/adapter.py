@@ -118,13 +118,9 @@ class KnotAdapter(DnsAdapter):
         return  # the zone is declared in knot.conf
 
     async def delete_zone(self, zone: str) -> None:
-        """Drop the zone contents and reload the pristine zone file.
+        """Purge zone contents and reload the seed file; DDNS cannot remove the configured zone.
 
-        The zone itself is declared in knot.conf and cannot be removed over
-        DDNS. `+zonefile` is deliberately left out of the purge: `zonefile-sync:
-        -1` means Knot never writes back, so that file is still the seed and the
-        reload restores the bare apex from it.
-        """
+        Omit `+zonefile`: `zonefile-sync: -1` preserves the seed for restoring the apex."""
         if not self.cid:
             return
         await self._knotc("-f", "zone-purge", "+expire", "+journal", "+timers", ZONE)

@@ -256,7 +256,9 @@ each rule says which spelling is this project's.
 - **Authorization is the service's.** A management operation a front end can
   reach takes a `Caller` after its state parameters and gates itself; a
   transport never calls
-  `authorize_global` on its own. The daemon socket passes `Caller::Global`.
+  `authorize_global` on its own. The daemon socket passes `Caller::socket()`; an API with authentication
+  disabled passes `Caller::unauthenticated_api()`. Both have global access,
+  but their change origins remain distinct.
   Service-internal lookups that must skip visibility are `pub(crate)` under
   their own name (`zone::lookup_by_name`). The daemon socket
   authenticates its peer by uid (`peer_cred` on both ends: the daemon's own
@@ -504,6 +506,18 @@ versions whose nonempty journal contains only derived DNSSEC changes; the curren
 version and versions without journal entries remain. `All` includes every stored
 version.
 This is a content filter, independent of `change_source` and `changed_by`.
+
+Keep the request path, actor, and access scope separate. `ChangeSource` names
+`Api`, `Socket`, `Nsupdate`, or `System`, never an authentication method or a
+permission level. `changed_by` is an optional `ChangeActor` carrying a credential
+kind and its name (`Token` or `TsigKey`), snapshotted without a foreign key.
+Socket commands, unauthenticated API requests, unsigned updates, and background
+work have no named token/key actor. The trusted entry point supplies attribution;
+request payloads cannot choose it. `CallerScope` decides permissions independently
+of the `ChangeAttribution` stored with a version. Persist an actor in the scalar
+columns `changed_by_kind` and `changed_by_name`; both are populated or both null.
+Decode them into `Option<ChangeActor>` at the row boundary. The API's object shape
+does not dictate a JSON database column.
 
 Use the same role in parameters, fields, SQL constants, and function selectors:
 `filter: VersionFilter`, `list_by_filter`, `count_by_filter`. A name change does

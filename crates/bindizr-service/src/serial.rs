@@ -13,10 +13,8 @@ const RESERVED_SERIAL_HEADROOM: u32 = 10_000_000;
 /// `RESERVED_SERIAL_HEADROOM` mutations before the counter reaches the ceiling.
 const MAX_INITIAL_SERIAL: u32 = Serial::MAX_STORED.as_u32() - RESERVED_SERIAL_HEADROOM;
 
-/// Generate the next SOA serial: `None` (new zone) yields 1; `Some(s)` yields
-/// `s + 1`. The stored ceiling is an error rather than a saturating no-op,
-/// which would repeat a serial silently — `zone_versions` upserts on
-/// `(zone_id, serial)`.
+/// Generate 1 for a new zone or increment its serial, rejecting the storage ceiling
+/// so `zone_versions` cannot silently overwrite the same `(zone_id, serial)`.
 pub(crate) fn generate_serial(current_serial: Option<Serial>) -> Result<Serial, ServiceError> {
     match current_serial {
         Some(serial) => serial.next().ok_or_else(|| {

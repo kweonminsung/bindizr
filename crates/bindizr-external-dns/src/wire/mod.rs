@@ -241,10 +241,8 @@ pub(crate) fn to_bindizr_records(
         .collect()
 }
 
-/// Pair server-adjusted records with the desired endpoints by position:
-/// identity (dnsName, labels) stays the caller's, type/TTL/targets are the
-/// server's. Dropping provider-specific properties declares them
-/// unsupported.
+/// Pair adjusted records with endpoints by position, retaining caller identity
+/// and server type/TTL/targets; discard unsupported provider-specific properties.
 pub(crate) fn build_adjusted_endpoints(
     endpoints: Vec<Endpoint>,
     adjusted: Vec<BindizrRecord>,

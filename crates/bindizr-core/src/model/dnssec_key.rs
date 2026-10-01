@@ -333,10 +333,8 @@ impl DnssecKey {
         self.role.is_sep() && self.state != DnssecKeyState::Retired
     }
 
-    /// The wait before a retired key may be removed: the retire interval of
-    /// RFC 7583, Section 3.3.4. The key outlives the signatures it made,
-    /// cached for their record set's TTL, and — for a key a DS names — the parent's
-    /// DS record set, cached for the TTL the confirming probe saw.
+    /// Return the retire interval (RFC 7583, Section 3.3.4), covering signature
+    /// validity, record TTLs, and the confirmed parent DS TTL for SEP keys.
     pub fn retirement_interval_secs(&self, parent_ds_ttl: Option<u32>) -> i64 {
         let signatures = i64::from(self.max_signed_ttl.as_secs());
         if !self.role.is_sep() {

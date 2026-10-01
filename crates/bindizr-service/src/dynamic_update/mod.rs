@@ -31,7 +31,7 @@ use crate::{
     serial::generate_serial,
     transaction,
     tsig_key::grant::{authorize_prerequisite, authorize_update},
-    zone::{self, version::ChangeSubject},
+    zone::{self, version::ChangeAttribution},
 };
 
 /// Why an update was not applied, in the terms RFC 2136, Section 2.2 gives the
@@ -203,7 +203,7 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
                 cx,
                 &zone,
                 new_serial,
-                &ChangeSubject::nsupdate(update.key.as_ref().map(|key| key.name.as_str())),
+                &ChangeAttribution::nsupdate(update.key.as_ref().map(|key| key.name.as_str())),
             )
             .await?;
         }

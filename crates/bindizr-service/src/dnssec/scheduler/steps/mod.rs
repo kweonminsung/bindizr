@@ -17,7 +17,7 @@ use crate::{
     error::ServiceError,
     transaction,
     types::Holddown,
-    zone::version::ChangeSubject,
+    zone::version::ChangeAttribution,
 };
 
 /// Rows one prune removed from a zone's history.
@@ -80,7 +80,7 @@ pub(crate) async fn resign_zone_by_zone_id(
             cx,
             &signed,
             SigningPass::Refresh,
-            &ChangeSubject::system(),
+            &ChangeAttribution::system(),
         )
         .await?
         .is_none()
@@ -134,7 +134,7 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
             cx,
             &signed,
             SigningPass::Refresh,
-            &ChangeSubject::system(),
+            &ChangeAttribution::system(),
         )
         .await?;
         Ok(Some(signed.zone.name.clone()))
@@ -182,7 +182,7 @@ pub(crate) async fn promote_zsks_by_zone_id(
             cx,
             &signed,
             SigningPass::Refresh,
-            &ChangeSubject::system(),
+            &ChangeAttribution::system(),
         )
         .await?;
         Ok(Some(signed.zone.name.clone()))
@@ -191,10 +191,8 @@ pub(crate) async fn promote_zsks_by_zone_id(
     transaction::finish_tx(tx, result, "failed to advance key rollover").await
 }
 
-/// Advance a zone's KSK/CSK rollover once the parent serves the new key's DS
-/// — what `ds-seen` otherwise waits for an operator to assert. `None` when
-/// the parent does not serve it yet or cannot be asked: waiting states, not
-/// failures.
+/// Advance KSK/CSK rollover after parent-DS confirmation.
+/// Return `None` while the DS is absent or the parent is unreachable.
 pub(crate) async fn promote_sep_keys_by_zone_id(
     cx: &Context,
     zone_id: ZoneId,
@@ -251,7 +249,7 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
             cx,
             &signed,
             SigningPass::Refresh,
-            &ChangeSubject::system(),
+            &ChangeAttribution::system(),
         )
         .await?;
         Ok(Some(signed.zone.name.clone()))
@@ -323,7 +321,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
             cx,
             &signed,
             SigningPass::Refresh,
-            &ChangeSubject::system(),
+            &ChangeAttribution::system(),
         )
         .await?;
         Ok(Some(signed.zone.name.clone()))
