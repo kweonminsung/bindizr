@@ -210,7 +210,11 @@ fn query_dns_record_count(port: u16, name: &str, record_type: u16) -> Result<usi
 }
 
 /// Send a DNS query and return its ID and response bytes.
-fn exchange_dns_query(port: u16, name: &str, record_type: u16) -> Result<(u16, Vec<u8>), String> {
+pub(crate) fn exchange_dns_query(
+    port: u16,
+    name: &str,
+    record_type: u16,
+) -> Result<(u16, Vec<u8>), String> {
     let socket = UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))

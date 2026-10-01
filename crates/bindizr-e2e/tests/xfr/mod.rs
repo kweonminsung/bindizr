@@ -3,7 +3,13 @@
 
 use std::time::{Duration, Instant};
 
-use domain::base::iana::Rcode;
+use domain::{
+    base::{
+        Message,
+        iana::{Rcode, Rtype},
+    },
+    rdata::Soa,
+};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use serial_test::serial;
@@ -11,7 +17,7 @@ use serial_test::serial;
 use crate::common::{
     TestApp, TransferOutcome, axfr,
     dns::nsupdate::{KeyRole, SigningKey, create_tsig_key},
-    wait_for_any_dns_record,
+    exchange_dns_query, wait_for_any_dns_record,
 };
 
 /// A bindizr whose transfer ACL admits the test's own loopback pull.
@@ -68,6 +74,39 @@ async fn a_name_no_zone_can_carry_is_answered_notauth() {
         let outcome = axfr(app.dns_port(), zone, None).expect("AXFR");
         assert_eq!(outcome.refusal(), Rcode::NOTAUTH, "zone {zone}");
     }
+}
+
+/// Verify that an IXFR over UDP is answered with the zone's current SOA
+/// alone, which sends a client that is behind to TCP.
+#[tokio::test]
+#[serial]
+async fn a_udp_ixfr_is_answered_with_the_current_soa() {
+    let app = transfer_app().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+
+    // RFC 1995, Section 2: Windows DNS asks this way after a NOTIFY and goes
+    // to TCP only when the answer's serial is ahead of its own.
+    let (query_id, buf) =
+        exchange_dns_query(app.dns_port(), zone_name, Rtype::IXFR.to_int()).unwrap();
+
+    let response = Message::from_octets(buf.as_slice()).unwrap();
+    let header = response.header();
+    assert_eq!(header.id(), query_id);
+    assert_eq!(header.rcode(), Rcode::NOERROR);
+    assert!(header.aa() && !header.tc());
+    assert_eq!(response.sole_question().unwrap().qtype(), Rtype::IXFR);
+    let answer: Vec<_> = response
+        .answer()
+        .unwrap()
+        .limit_to::<Soa<_>>()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(answer.len(), 1);
+    assert_eq!(
+        u64::from(answer[0].data().serial().into_int()),
+        zone["serial"].as_u64().unwrap()
+    );
 }
 
 /// Verify that an unsigned transfer still runs under the address acl.

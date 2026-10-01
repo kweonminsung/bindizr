@@ -166,8 +166,8 @@ pub(crate) async fn handle_tcp_xfr(
     }
 }
 
-/// Answer an XFR query received over UDP with TC set, so an allowed client
-/// asks again over TCP; the caller checked the qtype. A signed question is
+/// Answer an AXFR received over UDP with TC set, so an allowed client asks
+/// again over TCP; the caller checked the qtype. A signed question is
 /// answered under its key here too (RFC 8945, Section 5.3), truncated or not;
 /// the zone's grant is decided on the TCP retry, beside the row it serves.
 pub(crate) async fn handle_udp_xfr(
