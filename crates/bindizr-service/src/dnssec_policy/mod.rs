@@ -188,7 +188,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     let policy = lookup_by_name(cx, name).await?;
     // `enable` and `keys import` fall back to it by name.
-    if policy.name == DEFAULT_DNSSEC_POLICY_NAME {
+    if policy.is_builtin() {
         return Err(ServiceError::invalid_input(format!(
             "the built-in '{}' policy cannot be deleted; edit it instead",
             DEFAULT_DNSSEC_POLICY_NAME

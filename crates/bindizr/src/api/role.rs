@@ -89,9 +89,8 @@ pub(crate) async fn create_role(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateRoleRequest>,
 ) -> Result<Response, ApiError> {
-    let role = role::create(&cx, &caller, &body).await?;
     let response = RoleResponse {
-        role: GetRoleResponse::from(&role),
+        role: role::create(&cx, &caller, &body).await?,
     };
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
@@ -118,9 +117,8 @@ pub(crate) async fn get_role(
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
 ) -> Result<Response, ApiError> {
-    let role = role::get(&cx, &caller, &params.name).await?;
     let response = RoleResponse {
-        role: GetRoleResponse::from(&role),
+        role: role::get(&cx, &caller, &params.name).await?,
     };
     Ok((StatusCode::OK, Json(response)).into_response())
 }

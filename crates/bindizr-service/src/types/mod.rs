@@ -50,8 +50,10 @@ pub use secondary::{
     SecondaryCheckResponse, SecondaryResponse, SecondaryTransferSummary,
     SecondaryTransfersResponse, TransferResponse, TransferSummary, UpdateSecondaryRequest,
 };
-pub use token::{CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenResponse};
-pub use tsig::{CreateTsigKeyRequest, GetTsigKeyResponse, TsigKeyResponse};
+pub use token::{
+    CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenFilter, TokenResponse,
+};
+pub use tsig::{CreateTsigKeyRequest, GetTsigKeyResponse, TsigKeyFilter, TsigKeyResponse};
 pub use version::{
     RecordChange, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,
     RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse, VersionRecordResponse,

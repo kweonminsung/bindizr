@@ -4,8 +4,8 @@ use bindizr_service::{
     error::ServiceError,
     token,
     types::{
-        CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, MessageResponse, PageRequest,
-        PaginatedResponse,
+        CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, MessageResponse,
+        PaginatedResponse, TokenFilter,
     },
 };
 
@@ -26,9 +26,9 @@ pub(crate) async fn create_token(
 /// List the requested tokens.
 pub(crate) async fn list_tokens(
     cx: &Context,
-    page: PageRequest,
+    filter: &TokenFilter,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTokenResponse>>, ServiceError> {
-    let response = token::list(cx, &Caller::socket(), page).await?;
+    let response = token::list(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
         message: "Tokens retrieved successfully".to_string(),
         data: response,

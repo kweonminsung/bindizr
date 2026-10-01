@@ -34,13 +34,17 @@ bindizr tsig-key create legacy-rfc2136 --role external-dns-prod
 # Create a role; it holds no grants yet
 bindizr role create dns-admins --description 'Operators of the public zones'
 
-# List roles, or show one
+# List roles with how many grants, tokens, and keys each has, or show one
 bindizr role list
 bindizr role get dns-admins
+
+# The tokens and keys in one role
+bindizr token list --role dns-admins
+bindizr tsig-key list --role dns-admins
 ```
 
 Delete an unused role with `bindizr role delete <name>`. Deletion is refused
-while a token or TSIG key still belongs to it.
+while a token or TSIG key still belongs to it, and the refusal names them.
 
 ### The built-in admin role
 
@@ -118,8 +122,9 @@ bindizr token create cluster-b --role external-dns-prod
 # Create a token that expires
 bindizr token create temp --role external-dns-prod --expires-in-days 30
 
-# List tokens (with their roles), or delete one
+# List tokens (with their roles), only one role's, or delete one
 bindizr token list
+bindizr token list --role external-dns-prod
 bindizr token delete cluster-b
 ```
 
@@ -147,8 +152,9 @@ bindizr tsig-key create update-key --role external-dns-prod
 bindizr tsig-key create legacy-key --role external-dns-prod --algorithm hmac-sha512 \
     --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
 
-# List keys (secrets are not shown), or show one with its secret
+# List keys (secrets are not shown), only one role's, or show one with its secret
 bindizr tsig-key list
+bindizr tsig-key list --role external-dns-prod
 bindizr tsig-key get update-key
 
 # Print the key as a BIND `key` block, to paste into a secondary's named.conf

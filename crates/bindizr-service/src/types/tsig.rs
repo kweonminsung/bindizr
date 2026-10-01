@@ -3,7 +3,7 @@
 use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKeyId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::model::tsig_key::TsigKey;
 
@@ -23,6 +23,22 @@ pub struct CreateTsigKeyRequest {
     /// may name one without grants.
     #[schema(example = "rfc2136-legacy")]
     pub role_name: String,
+}
+
+/// Query parameters of the TSIG keys listing: one role's, or every one.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct TsigKeyFilter {
+    /// Only the TSIG keys authenticating into this role.
+    #[schema(example = "secondaries")]
+    pub role_name: Option<String>,
+    /// Items per page; the HTTP API defaults it, the daemon socket does not.
+    #[schema(example = 50)]
+    #[param(minimum = 1, maximum = 1000)]
+    pub limit: Option<u32>,
+    #[schema(example = 0)]
+    pub offset: Option<u64>,
 }
 
 /// API representation of a TSIG key; never carries the secret.

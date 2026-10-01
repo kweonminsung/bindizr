@@ -4,8 +4,8 @@ use bindizr_service::{
     error::ServiceError,
     tsig_key,
     types::{
-        CreateTsigKeyRequest, GetTsigKeyResponse, MessageResponse, PageRequest, PaginatedResponse,
-        TsigKeyResponse,
+        CreateTsigKeyRequest, GetTsigKeyResponse, MessageResponse, PaginatedResponse,
+        TsigKeyFilter, TsigKeyResponse,
     },
 };
 
@@ -26,9 +26,9 @@ pub(crate) async fn create_tsig_key(
 /// List the requested TSIG keys.
 pub(crate) async fn list_tsig_keys(
     cx: &Context,
-    page: PageRequest,
+    filter: &TsigKeyFilter,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTsigKeyResponse>>, ServiceError> {
-    let response = tsig_key::list(cx, &Caller::socket(), page).await?;
+    let response = tsig_key::list(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
         message: "TSIG keys retrieved successfully".to_string(),
         data: response,

@@ -67,6 +67,9 @@ pub struct GetDnssecPolicyResponse {
     pub id: PolicyId,
     #[schema(example = "default")]
     pub name: String,
+    /// Whether this is the built-in `default` policy, which cannot be deleted.
+    #[schema(example = true)]
+    pub builtin: bool,
     #[schema(example = "ecdsap256sha256")]
     pub algorithm: DnssecAlgorithm,
     pub denial: DnssecDenial,
@@ -88,6 +91,7 @@ impl From<&DnssecPolicy> for GetDnssecPolicyResponse {
         GetDnssecPolicyResponse {
             id: policy.id,
             name: policy.name.clone(),
+            builtin: policy.is_builtin(),
             algorithm: policy.algorithm,
             denial: policy.denial,
             split_keys: policy.split_keys,

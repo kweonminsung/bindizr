@@ -50,6 +50,19 @@ pub(crate) async fn get(
     Ok(grant)
 }
 
+/// List every role's grants.
+pub(crate) async fn list_all(pool: &Pool<Postgres>) -> Result<Vec<RoleGrant>, DatabaseError> {
+    let mut conn = pool.acquire().await?;
+
+    let grants = sqlx::query_as::<_, RoleGrant>(
+        "SELECT id, role_id, zone_id, actions, record_name_pattern, record_types, created_at FROM role_grants ORDER BY id",
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+
+    Ok(grants)
+}
+
 /// List every grant of a role.
 pub(crate) async fn list_by_role_id(
     pool: &Pool<Postgres>,

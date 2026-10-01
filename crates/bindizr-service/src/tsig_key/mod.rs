@@ -27,7 +27,7 @@ use crate::{
     role,
     text::MAX_COLUMN_TEXT_LEN,
     types::{
-        CreateTsigKeyRequest, GetTsigKeyResponse, PageRequest, PaginatedResponse, TsigKeyResponse,
+        CreateTsigKeyRequest, GetTsigKeyResponse, PaginatedResponse, TsigKeyFilter, TsigKeyResponse,
     },
 };
 
@@ -93,15 +93,21 @@ pub async fn create(
     Ok(TsigKeyResponse::from_key(&key, &role.name))
 }
 
-/// List all TSIG keys.
+/// List the TSIG keys, every one or one role's.
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    page: PageRequest,
+    filter: &TsigKeyFilter,
 ) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let keys = bindizr_db::tsig_key::list_all(cx.db()).await?;
+    let keys = match &filter.role_name {
+        Some(role_name) => {
+            let role = role::lookup_by_name(cx, role_name).await?;
+            bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id).await?
+        }
+        None => bindizr_db::tsig_key::list_all(cx.db()).await?,
+    };
     let role_names: HashMap<RoleId, String> = bindizr_db::role::list_all(cx.db())
         .await?
         .into_iter()
@@ -114,8 +120,8 @@ pub async fn list(
                 GetTsigKeyResponse::from_key(key, role_name)
             })
             .collect(),
-        page.limit,
-        page.offset,
+        filter.limit,
+        filter.offset,
     )
 }
 
