@@ -1,7 +1,5 @@
-//! A stand-in secondary that receives NOTIFY, records how each request was
-//! signed, and answers as RFC 1996 asks, signed when the request was. It
-//! also answers any SOA query at [`SERVED_SERIAL`], so a probe finds it
-//! reachable and behind.
+//! A fake secondary that records NOTIFY signatures and signs its replies (RFC 1996).
+//! SOA replies use [`SERVED_SERIAL`] so probes see it as reachable and behind.
 
 use std::{
     net::{SocketAddr, UdpSocket},
@@ -33,6 +31,8 @@ pub(crate) struct ReceivedNotify {
     /// is answered with the TSIG error instead.
     pub(crate) verified: bool,
 }
+
+#[derive(Debug)]
 
 pub(crate) struct FakeSecondary {
     addr: SocketAddr,

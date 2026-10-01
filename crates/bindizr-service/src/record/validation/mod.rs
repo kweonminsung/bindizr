@@ -12,7 +12,7 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 
 use crate::{
-    Transaction, db,
+    Transaction,
     error::ServiceError,
     model::{
         record::{Record, RecordType},
@@ -88,7 +88,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         priority,
     ) {
         return Err(ServiceError::record_conflict(format!(
-            "Record '{}' {} '{}' already exists in this zone",
+            "record '{}' {} '{}' already exists in this zone",
             stored_name, record_type, value
         )));
     }
@@ -105,7 +105,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
 
         if (adding_null_mx && has_existing_mx) || (!adding_null_mx && has_existing_null_mx) {
             return Err(ServiceError::record_conflict(format!(
-                "Null MX record for '{}' cannot coexist with other MX records",
+                "null MX record for '{}' cannot coexist with other MX records",
                 stored_name
             )));
         }
@@ -114,7 +114,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
     if !records_at_name.is_empty() {
         if *record_type == RecordType::Cname {
             return Err(ServiceError::record_conflict(format!(
-                "Another record with name '{}' already exists in this zone, so CNAME cannot be used",
+                "another record with name '{}' already exists in this zone, so CNAME cannot be used",
                 stored_name
             )));
         }
@@ -191,11 +191,9 @@ pub(crate) enum AddResult {
     Duplicate,
 }
 
-/// Validate an add against conflicting records loaded within the caller's
-/// transaction, reporting an rdata-identical record as
-/// [`AddResult::Duplicate`] rather than rejecting it — RFC 2136,
-/// Section 3.4.2.2 makes it a silent no-op. The API paths call the
-/// validator directly, where the same case stays a conflict.
+/// Validate an add against records loaded in the caller's transaction.
+/// Identical RDATA yields [`AddResult::Duplicate`] per RFC 2136, Section 3.4.2.2;
+/// API callers use the validator directly and report the duplicate as a conflict.
 pub(crate) async fn validate_add_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -208,11 +206,11 @@ pub(crate) async fn validate_add_tx(
     // Only records sharing the owner name can conflict, so load just those
     // instead of the whole zone.
     let records_at_name =
-        db::record::list_by_name_tx(tx, zone.id, owner_name, LockLevel::Exclusive)
+        bindizr_db::record::list_by_name_tx(tx, zone.id, owner_name, LockLevel::Exclusive)
             .await
             .map_err(|e| {
                 log::error!("Failed to load records: {}", e);
-                ServiceError::internal("Failed to load records")
+                ServiceError::internal_with_source("failed to load records", e)
             })?;
 
     if has_matching_rdata(records_at_name.iter(), record_type, value, priority) {

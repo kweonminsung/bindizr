@@ -28,7 +28,6 @@ id_newtype!(
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Record {
     pub id: RecordId,
-    #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
@@ -51,10 +50,8 @@ pub struct RecordKey {
 }
 
 impl Record {
-    /// Whether this stored record falls inside the narrowing RFC 2136,
-    /// Section 2.5.2 spells for a delete: the type, then the rdata, then the
-    /// preference. Values compare canonically and without the priority, which
-    /// MX and SRV keep in their own column and which narrows separately.
+    /// Match an RFC 2136, Section 2.5.2 delete by type, canonical value, and priority.
+    /// MX and SRV priorities narrow separately because they occupy their own column.
     pub fn matches(
         &self,
         record_type: Option<&RecordType>,
@@ -95,12 +92,11 @@ impl Record {
     }
 }
 
-/// The record set a record belongs to: its owner name and type, as text, the
-/// way a diff entry and an ExternalDNS record are named.
+/// The owner name and type identifying a record set.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RecordSetKey {
     pub name: String,
-    pub record_type: String,
+    pub record_type: RecordType,
 }
 
 /// A record without its row identity: what a [`Record`] carries besides its
@@ -145,17 +141,15 @@ impl RecordData {
 /// A [`Record`] joined with the name of its owning zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RecordWithZone {
-    id: RecordId,
-    #[sqlx(try_from = "String")]
+    pub id: RecordId,
     pub name: OwnerName,
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
-    value: String,
-    ttl: Ttl,
-    priority: Option<i32>,
-    created_at: DateTime<Utc>,
+    pub value: String,
+    pub ttl: Ttl,
+    pub priority: Option<i32>,
+    pub created_at: DateTime<Utc>,
     pub zone_id: ZoneId,
-    #[sqlx(try_from = "String")]
     pub zone_name: ZoneName,
 }
 
@@ -191,7 +185,10 @@ impl RecordWithZone {
 }
 
 /// The record types bindizr stores.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum RecordType {
     A,
     Aaaa,
@@ -220,7 +217,7 @@ impl std::fmt::Display for RecordType {
 /// wire type.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseRecordTypeError {
-    #[error("Invalid record type: {0}")]
+    #[error("invalid record type: {0}")]
     Unknown(String),
     #[error("unsupported record type: {0}")]
     Unsupported(Rtype),
@@ -589,10 +586,8 @@ fn to_display_text(text: &str) -> String {
     out
 }
 
-/// Types whose display form is a domain name, so their values compare
-/// case-insensitively (RFC 4343). The record-filter SQL selects on this same
-/// set, which is why it is rendered from here rather than spelled out per
-/// backend.
+/// Return domain-name value types for case-insensitive comparison (RFC 4343).
+/// Record-filter SQL shares this list across backends.
 pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
     RecordType::Cname,
     RecordType::Dname,
@@ -612,10 +607,8 @@ pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
     RecordType::Txt,
 ];
 
-/// Render the trailing domain-name field of a stored record value.
-///
-/// Priority is a separate column: MX stores only the target, and SRV stores weight, port, and
-/// target.
+/// Render the stored trailing domain name; MX priority is stored separately,
+/// and SRV retains only weight, port, and target in its value.
 fn display_last_name_field(value: &str, field_count: usize) -> String {
     let mut fields = value
         .split_whitespace()
@@ -635,3 +628,17 @@ fn display_last_name_field(value: &str, field_count: usize) -> String {
 
 #[cfg(test)]
 mod tests;
+
+impl Ord for RecordType {
+    /// Preserve mnemonic ordering in record lists and diffs.
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl PartialOrd for RecordType {
+    /// Compare record types by their canonical mnemonic.
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}

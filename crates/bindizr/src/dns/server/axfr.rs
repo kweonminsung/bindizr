@@ -13,10 +13,8 @@ use tokio::net::TcpStream;
 use super::{auth::TransferIdentity, catalog, transfer_cache};
 use crate::dns::{error::XfrError, server::DnsContext};
 
-/// Handles an AXFR payload under `response_qtype`: the IXFR fallback keeps
-/// QTYPE=IXFR to match the original query. The signer in `identity` is claimed
-/// only once the zone is granted, so a refusal or a missing zone leaves it for
-/// the caller's error response.
+/// Send AXFR content with the original QTYPE, including IXFR fallback.
+/// Claim the signer only after authorization, leaving it available for refusal responses.
 pub(crate) async fn handle_axfr(
     dns_cx: &DnsContext,
     stream: &mut TcpStream,

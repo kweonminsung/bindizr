@@ -6,7 +6,7 @@ use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use bindizr_db::LockLevel;
 
 use crate::{
-    Transaction, db,
+    Transaction,
     error::ServiceError,
     model::{
         record::{Record, RecordData, RecordKey},
@@ -23,8 +23,8 @@ pub(crate) async fn rewind_records_to_serial_tx(
     target_serial: Serial,
     current_serial: Serial,
 ) -> Result<Vec<RecordData>, ServiceError> {
-    let records = db::record::list_tx(tx, zone_id, LockLevel::Unlocked).await?;
-    let changes = db::zone_change::list_between_serials_tx(
+    let records = bindizr_db::record::list_tx(tx, zone_id, LockLevel::Unlocked).await?;
+    let changes = bindizr_db::zone_change::list_between_serials_tx(
         tx,
         zone_id,
         target_serial,
@@ -36,10 +36,8 @@ pub(crate) async fn rewind_records_to_serial_tx(
     Ok(undo_changes(records, &changes))
 }
 
-/// Undo `changes` — ordered by (serial, id) ascending — newest-first over
-/// `records`, yielding the zone as it stood before them. A change the live
-/// rows cannot explain is logged and passed over: a history that no longer
-/// adds up must not block a rollback.
+/// Undo ascending `(serial, id)` changes newest-first over the current records.
+/// Log and skip unexplained changes so inconsistent history cannot block rollback.
 fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData> {
     let mut state: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
     for record in records {
@@ -105,11 +103,12 @@ pub(crate) async fn list_records_at_serial_tx(
     current_serial: Serial,
 ) -> Result<Vec<RecordData>, ServiceError> {
     if serial == current_serial {
-        let mut records: Vec<RecordData> = db::record::list_tx(tx, zone_id, LockLevel::Unlocked)
-            .await?
-            .into_iter()
-            .map(RecordData::from)
-            .collect();
+        let mut records: Vec<RecordData> =
+            bindizr_db::record::list_tx(tx, zone_id, LockLevel::Unlocked)
+                .await?
+                .into_iter()
+                .map(RecordData::from)
+                .collect();
         sort_records(&mut records);
         Ok(records)
     } else {

@@ -8,7 +8,7 @@ use super::change_set::{ZoneChangeSet, group_ops_by_zone, parse_changes_request}
 use crate::{
     Context,
     authorization::{Caller, RecordWrite},
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     record,
     serial::generate_serial,
@@ -40,12 +40,12 @@ pub async fn apply_changes(
         });
     }
 
-    let mut tx = transaction::begin_tx(cx, "Failed to apply ExternalDNS changes").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to apply ExternalDNS changes").await?;
 
     let apply_result = async {
         // Resolve authoritative zones from committed state inside the tx;
         // the residual race with concurrent zone creation is accepted.
-        let zones = db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
+        let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
         let zone_ops = group_ops_by_zone(caller, &zones, ops)?;
 
         let mut changed_zones = Vec::new();
@@ -55,7 +55,7 @@ pub async fn apply_changes(
         // BTreeMap iteration locks zones in name order, so concurrent
         // multi-zone requests cannot deadlock on row locks.
         for (zone_name, ops) in &zone_ops {
-            let zone = db::zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive)
+            let zone = bindizr_db::zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive)
                 .await?
                 .ok_or_else(|| ServiceError::zone_not_found(zone_name))?;
 
@@ -84,9 +84,13 @@ pub async fn apply_changes(
                 .collect();
             names.sort();
             names.dedup();
-            let records_at_names =
-                db::record::list_by_names_tx(&mut tx, zone.id, &names, LockLevel::Exclusive)
-                    .await?;
+            let records_at_names = bindizr_db::record::list_by_names_tx(
+                &mut tx,
+                zone.id,
+                &names,
+                LockLevel::Exclusive,
+            )
+            .await?;
 
             let change_set = ZoneChangeSet::compute(ops, &zone, &records_at_names)?;
             if change_set.deletes.is_empty() && change_set.creates.is_empty() {
@@ -101,7 +105,7 @@ pub async fn apply_changes(
                 .await?;
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the change
-            zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject())
+            zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
                 .await?;
 
             deleted += change_set.deletes.len() as u64;
@@ -114,7 +118,7 @@ pub async fn apply_changes(
     .await;
 
     let (changed_zones, added, deleted) =
-        transaction::finish_tx(tx, apply_result, "Failed to apply ExternalDNS changes").await?;
+        transaction::finish_tx(tx, apply_result, "failed to apply ExternalDNS changes").await?;
 
     // Every affected zone must commit before any secondary is asked to transfer.
     for zone_name in &changed_zones {

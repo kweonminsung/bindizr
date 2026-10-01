@@ -33,11 +33,12 @@ cargo +nightly fmt                                         # format (needs night
 
 - `bindizr-core` — config, logging, DB models, and the DNS library: value
   types, wire encoding/decoding, DNSSEC signing, TSIG, and zone-file parsing.
-  It owns the whole `domain` crate dependency; nothing above it uses `domain`
-  directly.
-- `bindizr-db` — data access behind a `Db` value: `Db::connect` returns an
-  enum over the three sqlx pools, and `db.begin()` a `Transaction` enum
-  over their transactions. One module per entity at the crate root
+  It owns the production `domain` dependency; higher product layers use core
+  types. The e2e package may use `domain` as a dev-dependency to construct and
+  inspect protocol messages independently.
+- `bindizr-db` — data access behind a `Db` value: `Db::connect` wraps an
+  enum over the three sqlx pools, and `db.begin()` a `Transaction` wrapping
+  the backend transaction enum. One module per entity at the crate root
   (`bindizr_db::zone`), whose functions take the `Db` or the `Transaction`
   first and match its backend to call the same-named function in `mysql/`,
   `postgres/`, or `sqlite/`, where the SQL lives. **The three backends are
@@ -50,7 +51,7 @@ cargo +nightly fmt                                         # format (needs night
   `transfer` records what the DNS server served each client, in the
   database, so a secondary's transfers read back across restarts. It owns
   `Context`, the daemon's state — configuration, `Db`, metrics, the NOTIFY
-  and scheduler senders — which every service function takes first.
+  and scheduler senders — passed explicitly to the flows that need it.
 - `bindizr` — the binary: the daemon runtime (`daemon/`: `bootstrap` builds
   the `Context` in dependency order and serves it) and every front end
   it serves — HTTP API (axum), CLI (clap), Unix-socket daemon IPC, and the DNS
@@ -64,6 +65,15 @@ cargo +nightly fmt                                         # format (needs night
   only so `env!("CARGO_BIN_EXE_…")` resolves inside the test package.
 
 ## Design rules
+
+### Apply a rule by responsibility
+
+Classify a function by what it owns and does: a service entry point, a step
+of an existing transaction, a pure calculation, a type-owned operation, or
+test support. The sections below define those boundaries; a rule about one
+kind does not extend to every function in its crate. Explicitly scoped rules
+take precedence over their general summaries. Examples illustrate a rule;
+an existing name or implementation is not an exemption from it.
 
 ### Rust idioms — a module is the namespace, an enum the closed set, a type the error
 
@@ -91,7 +101,7 @@ each rule says which spelling is this project's.
   `Metrics`.
 - **A closed set is an enum; a trait is for an open one.** The process
   chooses one of three database backends at startup and never another, so
-  the backend is `enum DatabasePool { MySql(…), Postgres(…), Sqlite(…) }`
+  the backend is `enum Backend { MySql(…), Postgres(…), Sqlite(…) }`
   and the code that differs per backend is a `match` on it, in a function
   per query (`bindizr_db::zone::get_by_name`) that calls the same-named
   backend function where the SQL lives. A trait with three implementors
@@ -104,65 +114,68 @@ each rule says which spelling is this project's.
   caller outside the crate may add one) or a generic bound needs it
   (`impl IntoIterator<Item = &Record>`); one whose implementors all live
   in one crate and are only ever boxed is an enum. The transaction
-  follows: `Transaction<'a>` is an enum a `_tx` function matches, so a
+  follows: `Transaction<'a>` wraps an enum a `_tx` function matches, so a
   backend function receives its own `sqlx::Transaction` and no "kind
   mismatch" error can exist. Nothing needs `async-trait`.
-- **An error is a type** (`C-GOOD-ERR`). Every fallible function returns
-  a `Result` whose error is a type declared in the module that raises it,
-  derived with `thiserror`, implementing `std::error::Error` with its
-  `source()` intact, `Send + Sync`, its `Display` lowercase without a
-  trailing period, named `<Verb><Object>Error` (`ParseNameError`,
-  `C-WORD-ORDER`) or `<Layer>Error` for a layer's whole surface
-  (`DatabaseError`, `ServiceError`). `String` is never an error type — not
-  `Result<T, String>`, not `type Err = String`, not an `Option<String>`
-  holding the reason — and no error type implements `From<String>` or
-  `From<&str>`: that impl is the sink a stringly error drains into. A
-  variant is what a caller can match on; the site's detail (a name, a
-  value) is a field of it. Crossing a layer is a `From` impl and `?`
-  (`From<DatabaseError> for ServiceError`), never a `map_err(|e|
-  ServiceError::internal(format!("failed to …: {}", e)))` that flattens
-  the source to text; `map_err` appears where the site adds a
-  classification the source cannot (a UNIQUE violation read as
-  `zone_conflict`). `ServiceError` is an enum whose variants are its
-  `ErrorCode`s, each carrying the message the error payload shows — the
-  wire fixes that text, so a variant holds it rather than typed fields —
-  and the two server-fault variants (`Internal`, `DnssecSigningFailed`)
-  keep the failure beneath them as their `source`. `code()` and `Display`
-  are the two faces the payload reads, and it knows nothing of HTTP: a
-  front end maps a code to its own status (`api/error.rs` to an HTTP
-  status, `cli/error.rs` to an exit code, the nsupdate server to an RCODE)
-  and asks the service only what it can answer (`is_internal()`). A layer
-  above the service names its own type the same way (`DaemonError`,
-  `XfrError`, `CliError`), with `From` impls for what it wraps. An error of
-  the `domain` crate is carried boxed (`dns::LibraryError`): its types vary
-  across versions and nothing here matches on them; the few that implement
-  no `Error` at all (`SigningError`, `TxtError`) keep their text in a
-  `reason` field, which is the one place a message stands in for a source.
-  `unwrap` and `expect` never stand in for a `Result`: an error that a
-  static definition makes impossible still travels as a type
-  (`Metrics::new` returns `RegisterMetricsError`), a `Result` whose error
-  is `Infallible` is read with `let Ok(()) = …`, an invariant the code can
-  restructure around is restructured (the lock target an update pre-reads
-  is an enum, not an `Option` unwrapped later), and the `expect`s that
-  remain guard a constructor's own invariant, a poisoned lock, or a foreign
-  builder's limit a single question cannot reach.
+- **An error is a type** (`C-GOOD-ERR`). Every fallible function returns a `Result`
+  whose error is a type declared in the module that raises it, derived with `thiserror`,
+  implementing `std::error::Error` with its `source()` intact and `Send + Sync`.
+  Project-authored error prose starts lowercase without a trailing period; protocol
+  tokens, proper names, and wrapped errors retain their original spelling. Name it `<Verb><Object>Error`
+  (`ParseNameError`, `C-WORD-ORDER`) or `<Layer>Error` for a layer's whole surface
+  (`DatabaseError`, `ServiceError`). Production failures propagate as types: not
+  `Result<T, String>`, not `type Err = String`, not an `Option<String>` carrying a
+  failure between operations. Error text in a response or diagnostic report is
+  presentation at the boundary, not an error to propagate. No error type implements
+  `From<String>` or `From<&str>`: that impl is the sink a stringly error drains into. A
+  variant is what a caller can match on; the site's detail (a name, a value) is a field
+  of it. Crossing a layer is a `From` impl and `?` (`From<DatabaseError> for
+  ServiceError`), never a `map_err(|e| ServiceError::internal(format!("failed to …: {}",
+  e)))` that flattens the source to text; `map_err` appears where the site adds a
+  classification or operation context the source cannot (a UNIQUE violation read as
+  `zone_conflict`, or `internal_with_source` preserving the cause beside a contextual
+  message). `ServiceError` is an enum whose variants are its `ErrorCode`s, each carrying
+  the message the error payload shows — the wire fixes that text, so a variant holds it
+  rather than typed fields — and the two server-fault variants (`Internal`,
+  `DnssecSigningFailed`) keep the failure beneath them as their `source`. `code()` and
+  `Display` are the two faces the payload reads, and it knows nothing of HTTP: a front
+  end maps a code to its own status (`api/error.rs` to an HTTP status, `cli/error.rs` to
+  an exit code, the nsupdate server to an RCODE) using the service's error code. A layer above the service names its own type the same way
+  (`DaemonError`, `XfrError`, `CliError`), with `From` impls for what it wraps. An error
+  of the `domain` crate is carried boxed (`dns::LibraryError`): its types vary across
+  versions and nothing here matches on them; the few that implement no `Error` at all
+  (`SigningError`, `TxtError`) keep their text in a `reason` field, which is the one
+  place a message stands in for a source. In production, `unwrap` and `expect` never
+  stand in for a `Result`: an error that a static definition makes impossible still
+  travels as a type (`Metrics::new` returns `RegisterMetricsError`), a `Result` whose
+  error is `Infallible` is read with `let Ok(()) = …`, an invariant the code can
+  restructure around is restructured (the lock target an update pre-reads is an enum,
+  not an `Option` unwrapped later), and the `expect`s that remain guard a constructor's
+  own invariant, a poisoned lock, or a foreign builder's limit a single question cannot
+  reach. Test failures and test helpers follow *Test helpers*.
 - **Conversions are the standard traits** (`C-CONV-TRAITS`, `C-CTOR`,
   `C-CONV`). A value derived from one other value and nothing else is
   `impl From<&Zone> for GetZoneResponse` (`TryFrom` when it can fail),
   which is how `cli/output/table.rs` already builds every row; a named
-  `from_<source>` constructor exists only where `From` cannot say it — an
-  extra argument (`from_secondary(secondary, notify_key_name)`), or an
-  encoding the type name does not fix (`OwnerName::from_row`,
-  `SoaMailbox::from_email`). `Into` and `TryInto` are never implemented.
+  `from_<source>` constructor is a representation change whose name adds
+  meaning the source type lacks (`OwnerName::from_row`,
+  `SoaMailbox::from_email`, `Run::from_dry_run`), or whose main source needs
+  supplementary representation data (`from_secondary(secondary,
+  notify_key_name)`). It does no I/O and makes no service policy decision.
+  Combining independent inputs or classifying an outcome is an assembly;
+  *Methods and free functions* decides who owns it, not the argument count.
+  `Into` and `TryInto` are never implemented.
   The prefix says the cost: `as_` borrows for free, `to_` does work and
   returns an owned value, `into_` consumes `self`. A conversion trait is
   implemented for a type, never for a `Result` — the caller writes `?`
   first.
 - **A constructor is an associated function named by how the value comes
-  to be** (`C-CTOR`): `new` for the plain case, with `Default` beside it
-  when there is a no-argument form; `connect`, `load`, `spawn` for one that
-  does I/O or starts work (`Db::connect`, `Config::load`,
-  `NotifyQueue::spawn`); `from_<source>` for the conversions above. A
+  to be** (`C-CTOR`): `new` for the plain case, with `Default` beside an
+  infallible no-argument `new() -> Self`, producing the same value. A
+  fallible `new() -> Result<Self, _>` keeps its error and requires no
+  `Default`. I/O constructors follow *Methods and free functions*:
+  `connect`, `load`, `spawn` say how the value comes to be;
+  `from_<source>` is a pure conversion as above. A
   builder (`DnsMessageBuilder`) exists where construction is incremental;
   a struct of optional fields with `Default` and update syntax
   (`ZoneFilter { name, ..Default::default() }`) is the plain form, not a
@@ -170,18 +183,27 @@ each rule says which spelling is this project's.
 - **An argument carries its meaning in its type** (`C-CUSTOM-TYPE`,
   `C-NEWTYPE`). A `bool` parameter states a fact the field is named by
   (`enabled: bool` being written, `incremental: bool` stored on the
-  transfer row); a `bool` that selects what the function does is a
-  two-variant enum named for the choice — `Run::DryRun`, `ZoneView::Signed`,
+  transfer row); a `bool` that selects a validation policy, interpretation, or execution
+  path is a two-variant enum named for the choice — `Run::DryRun`, `ZoneView::Signed`,
   `DsCheck::Skip`, `Holddown::Skip`, `NotifySerial::Bump`,
-  `VersionScope::All`, `SigningPass::Full` — so `zone::delete(&cx, &caller,
-  &name, Run::DryRun)` reads without the signature, and several such
-  choices on one call are one struct of named fields. The front end that
-  parses the flag builds the enum (`Run::from_dry_run(dry_run)`) and the
-  socket carries it as such. An `Option<&str>` that means "all" when
-  `None` is an enum with an `All` variant (`NotifyTarget::All`); an
-  `Option<&str>` that spells an enum (`role`, `algorithm`) is parsed to
-  that enum by the front end — parse at the boundary, pass the type. A
-  policy *name* stays a string: it names a row, not a variant. A number
+  `VersionFilter::All`, `SigningPass::Full` — so `zone::delete(&cx, &caller,
+  &name, Run::DryRun)` reads without the signature. Facts stay booleans when
+  copied or reported (`aa`, `rd`, a cache hit); policy-derived inputs that
+  choose interpretation use `DnssecKeyLayout`, `LabelCharset`, or
+  `TransferMessagePosition` at the consuming boundary. Thus three or more such
+  choices on one call are one struct of named fields, and two stay two
+  parameters (`advance_rollover(…, DsCheck::Skip, Holddown::Skip)`). The
+  front end that parses the flag or query parameter builds the enum
+  (`Run::from_dry_run(dry_run)`) and the socket carries it as such; a
+  body's `dry_run` is read by the service that takes the body
+  (`record::create_bulk`), as *Who decides what* says. An `Option<&str>`
+  that means "all" when `None` is an enum with an `All` variant
+  (`NotifyTarget::All`); a request
+  field that spells an enum (`role`, `algorithm`) stays a `String` the
+  service parses (`FromStr`, refused as `INVALID_INPUT` naming the supported
+  values), as it parses a name; a response field that spells one is the
+  enum, so the schema lists its values. A policy *name* stays a string: it
+  names a row, not a variant. A number
   with a meaning of its own is a newtype: `Serial`, `Ttl` and
   `SoaInterval` in `bindizr_core::dns`, `KeyTag` in `dns::dnssec`, the
   policy's `Days`, each with its `i32` row form and its wire or payload
@@ -197,14 +219,16 @@ each rule says which spelling is this project's.
   priority`), so no earlier type could carry it. A cast that loses nothing
   is a `From` (`i64::from(count)`); the `as` casts that remain truncate or
   change sign on purpose.
-- **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type
-  derives `Debug`; `Clone` unless it owns a resource; `PartialEq, Eq` when
-  its fields allow; `Copy` for a fieldless enum or a small plain struct;
-  `Hash` and `Ord` when it keys a map or sorts; `Default` when the empty
-  value means something (a filter); `Serialize` / `Deserialize` on every
-  payload — a row carries neither, since nothing serializes one and two
-  hold secrets. A fixed set keeps `as_str` and `Display` as
-  *Presentation* says.
+- **Common traits, eagerly** (`C-COMMON-TRAITS`, `C-DEBUG`). Every type derives `Debug`;
+  `Clone` when its fields support cloning and it does not own a resource;
+  `PartialEq, Eq` when its fields allow; `Copy` for a fieldless enum or a small plain struct; `Hash`
+  and `Ord` when it keys a map or sorts; `Default` when the empty value means something
+  (a filter); `Serialize` / `Deserialize` on every process-boundary payload, including
+  adapter-local HTTP shapes — a row carries neither, since nothing serializes one and
+  two hold secrets. Query extractors and final CLI presentation structs need only the
+  direction their transport uses. An enum with a stored, wire, or textual representation
+  keeps `as_str` and `Display` as *Presentation* says; a control enum that has no such
+  representation needs neither.
 - **Casing is RFC 430** (`C-CASE`): an acronym is one word — `MySql`,
   `Postgres`, `Sqlite`, `Tsig`, `Dnssec` — and no lint is allowed away to
   hide an exception. A protocol token keeps its own spelling only inside a
@@ -216,10 +240,11 @@ each rule says which spelling is this project's.
   it straight into typed data; a unit-variant kind beside a
   `serde_json::Value` that a `parse_params` step re-types is one message
   described twice.
-- **State is a value, passed by reference.** Every service function takes
-  the `Context` first (`zone::create(&cx, &caller, &request)`), the way
-  cargo's `ops` take their `GlobalContext`; an axum handler receives it as
-  `State<Arc<Context>>`, a spawned task holds an `Arc<Context>`. No
+- **State is a value, passed by reference.** A service flow takes only the
+  state it uses, in the order *Service functions* defines. A stateful entry
+  point starts with `Context` (`zone::create(&cx, &caller, &request)`);
+  an axum handler receives it as `State<Arc<Context>>`, a spawned task holds
+  an `Arc<Context>`. No
   function reaches for a `static` to find the configuration, the pool, the
   metrics, or a cache: *State is a value* says what the `Context` holds,
   what a front end holds for itself, and which two globals remain. A test
@@ -228,10 +253,12 @@ each rule says which spelling is this project's.
 
 ### Who decides what
 
-- **Authorization is the service's.** Every service operation a front end can
-  reach takes the `Context` first, a `Caller` next, and gates itself; a
+- **Authorization is the service's.** A management operation a front end can
+  reach takes a `Caller` after its state parameters and gates itself; a
   transport never calls
-  `authorize_global` on its own. The daemon socket passes `Caller::Global`.
+  `authorize_global` on its own. The daemon socket passes `Caller::socket()`; an API with authentication
+  disabled passes `Caller::unauthenticated_api()`. Both have global access,
+  but their change origins remain distinct.
   Service-internal lookups that must skip visibility are `pub(crate)` under
   their own name (`zone::lookup_by_name`). The daemon socket
   authenticates its peer by uid (`peer_cred` on both ends: the daemon's own
@@ -243,50 +270,55 @@ each rule says which spelling is this project's.
   (`token::grant::list_self`, keyed by the authenticated `ApiToken`), and
   the aggregate counts behind the unauthenticated metrics endpoint
   (`count_all`), which expose no zone data.
-- **Transactions are the service's.** No other crate opens one: `Db` is a
-  private field of `Context`, read by `cx.db()` inside the service crate
+- **Transactions are the service's.** Service flows choose their lifetime
+  through the database's transaction primitives; front ends do not open one.
+  `Db` is a private field of `Context`, read by `cx.db()` inside the service crate
   alone, so the service's `*_tx` functions and its `Transaction` re-export
   are `pub(crate)`.
 - **A use case has one home.** When two front ends answer the same question,
   the assembly lives in one place both reach (`zone::get_status`,
   shared by the HTTP API and the daemon socket), not once per transport.
-- **Payload shapes are the service's.** `bindizr_service::types` is the wire
-  contract of the HTTP API, the daemon socket, and the CLI alike; response
-  types the CLI reads back derive `Deserialize` too. Front ends convert to
-  their own presentation (CLI table rows), never re-derive the payload.
-  One vocabulary across payloads: a field that names another entity is
-  `<entity>_name` (`zone_name`, `token_name`, `notify_key_name`,
+- **A body is the service's to read.** The front end parses only what
+  reaches it outside a body — a path or query parameter, a flag, the peer it
+  authenticates into a `Caller` — and hands a body over whole, as its
+  payload type: `grant::create(&cx, &caller, &token_name, &request)`, never
+  the request's fields one by one, so both front ends pass the same value
+  and neither parses for the other.
+- **Shared management payloads are the service's.** `bindizr_service::types` is the
+  shared HTTP API, daemon socket, and CLI contract. Daemon control messages, transport
+  envelopes, and reports about PID/listener state belong in `socket::types`; the HTTP
+  adapter owns the shapes of its external protocol. A query extractor belongs to its
+  front end, not to the shared payload layer; response types the CLI reads back derive
+  `Deserialize` too. Front ends convert to their own presentation (CLI table rows),
+  never re-derive the payload. One vocabulary across payloads: a field that names
+  another entity is `<entity>_name` (`zone_name`, `token_name`, `notify_key_name`,
   `policy_name`), a serial is `u32`, a key tag `u16`, a count `u64` named
-  `added`/`deleted`/`unchanged` (a diff says `removed`), a fixed set of
-  values is an enum with a schema — `*Result` for how one attempt turned
-  out (`TransferResult`, the metrics `XfrResult`), `*Status` for what a
-  check finds (`SecondaryStatus`, `DoctorCheckStatus`, `HealthStatus`),
-  `*State` for where a thing stands in its lifecycle (`DnssecKeyState`,
-  `DsState`) — whose failure variant is `Failed` and never `Error` or
-  `Fail`, so that `error` stays the text beside it, and a response's
-  `Option` is emitted as `null`, never
-  skipped, so clients read one shape. One entity travels in an envelope
-  keyed by its name (`{"zone": …}`); a report (status, check, diff, import,
-  rollback, the DNSSEC status) travels bare. A listing's query parameters
-  come from its filter struct (`IntoParams`), never a hand-written list.
+  `added`/`deleted`/`unchanged` (a diff says `removed`), a fixed set of values is an
+  enum with a schema — `*Result` for how one attempt turned out (`TransferResult`, the
+  metrics `XfrResult`), `*Status` for what a check finds (`SecondaryStatus`,
+  `DoctorCheckStatus`, `HealthStatus`), `*State` for where a thing stands in its
+  lifecycle (`DnssecKeyState`, `DsState`) — whose failure variant is `Failed` and never
+  `Error` or `Fail`, so that `error` stays the text beside it, and a response's `Option`
+  is emitted as `null`, never skipped, so clients read one shape. One entity travels in
+  an envelope keyed by its name (`{"zone": …}`); a report (status, check, diff, import,
+  rollback, the DNSSEC status) travels bare. A listing's query parameters come from its
+  filter struct (`IntoParams`), never a hand-written list.
 
 ### Transactions and locking
 
 One locking model covers the service layer; keep new code on it:
 
-- A **zone-data mutation** (records, serial, journal rows, versions) is one
-  transaction that locks the zone row (`zone::get_by_name_tx` in the
-  service, `bindizr_db::zone::get_by_name_tx` / `get_tx` beneath it,
-  `FOR UPDATE`) **before** any record rows — that order is the deadlock
-  rule. Authorization, validation, and conflict checks decide on
-  rows loaded inside that transaction, never on an earlier unlocked read.
-  `get_by_name_tx` is the unchecked tx lookup (record writes authorize
-  through `authorize_record_writes_tx`); the caller-gated tx read is
-  `get_visible_by_name_tx`.
-- Outside the transaction belong: pure input parsing/normalization,
-  non-locking pre-reads done only to learn the lock target (commented at each
-  site), friendly duplicate pre-checks that a UNIQUE/FK constraint backstops,
-  and NOTIFY/logging after commit.
+- A **zone-data mutation** (records, serial, journal rows, versions) is one transaction
+  that locks the zone row (`zone::lookup_by_name_tx` in the service,
+  `bindizr_db::zone::get_by_name_tx` / `get_tx` beneath it, `FOR UPDATE`) **before** any
+  record rows — that order is the deadlock rule. Authorization, validation, and conflict
+  checks decide on rows loaded inside that transaction, never on an earlier unlocked
+  read. `lookup_by_name_tx` is the unchecked tx lookup (record writes authorize through
+  `authorize_record_writes_tx`); the caller-gated tx read is `get_by_name_tx`, with its
+  `Caller` argument as in the non-tx form. - Outside the transaction belong: pure input
+  parsing/normalization, non-locking pre-reads done only to learn the lock target
+  (commented at each site), friendly duplicate pre-checks that a UNIQUE/FK constraint
+  backstops, and NOTIFY/logging after commit.
 - **Reads**: one statement needs no transaction. A derived output that must
   be internally consistent (zone export, version detail, version diff)
   takes a transaction plus the zone lock. Paginated listings run count and
@@ -294,30 +326,35 @@ One locking model covers the service layer; keep new code on it:
 - **Single-statement management writes** (tokens, TSIG keys, policies) take
   no transaction: UNIQUE/FK constraints backstop their check-then-act races,
   read as friendly conflicts where the service calls the statement.
-- Isolation is pinned to READ COMMITTED on every backend; correctness comes
-  from row locks and constraints, never from snapshot isolation. The
-  ExternalDNS apply resolves authoritative zones from committed state inside
+- MySQL and PostgreSQL use READ COMMITTED with row locks and constraints.
+  SQLite uses WAL: mutations begin IMMEDIATE to reserve the database writer,
+  and read-only transactions begin DEFERRED to read a consistent snapshot.
+  `LockLevel` emits row-lock clauses only for MySQL/PostgreSQL. The common
+  guarantee is atomic writes and a consistent protected read. ExternalDNS apply resolves authoritative zones from committed state inside
   its transaction; the residual race with concurrent zone creation is
   accepted.
-- **The row lock and the constraint are the whole guarantee.** The service
+- **Transaction locks and constraints provide concurrency guarantees.** The service
   layer never re-guards the gap between an unlocked pre-read and the locked
   read after it: no fingerprint or "changed meanwhile" comparison, no
   snapshot carried across a network wait, no in-process mutex or
   singleflight around a cache miss. Such a guard means something only if
   every path carries it, and none does. Work whose answer the transaction
-  acts on — a parent-DS probe included — runs inside it under the zone
-  lock; a read-only path runs it outside and accepts drift. The duplicate
+  acts on — a parent-DS probe included — runs inside it under the zone row lock
+  (or SQLite writer reservation); a read-only path runs it outside and accepts drift. The duplicate
   pre-check above is an integrity check the constraint backstops, not a
   concurrency guard.
 
 ### Names are labels, not strings
 
-A name is decoded into labels at the parse boundary — `OwnerName::parse_in_zone`
-/ `parse_absolute_in_zone`, `ZoneName::parse`, `dns::name::decode_name_labels`
-— resolving the `\.`, `\\`, and `\DDD` escapes of RFC 1035, Section 5.1. Every
-comparison runs on labels, so a dot inside a label is data, never a boundary.
+An owner name is decoded into labels at the parse boundary —
+`OwnerName::parse_in_zone` / `parse_absolute_in_zone` and
+`dns::name::decode_name_labels` resolve the `\.`, `\\`, and `\DDD` escapes of
+RFC 1035, Section 5.1. A dot inside a label is data, never a boundary.
+`ZoneName::parse` instead requires strict LDH labels and rejects escapes;
+that invariant lets `ZoneName` itself split its stored text on dots.
 
-Do not answer a question about names with string operations. `ends_with`,
+Outside these name types and their parsers, do not answer a question about
+name relationships with string operations. `ends_with`,
 `split('.')`, or `strip_suffix` on a name is a bug even when it looks right:
 it reads `evil\.example.com` as inside `example.com`. Use `OwnerName`'s
 methods (`is_same_or_under`, `is_apex`, `to_fqdn`) or `is_label_suffix`.
@@ -330,18 +367,22 @@ in rendered text is always a label boundary. That is what lets the
 record-filter SQL compare owner names as text under a bytewise collation,
 match a grant's subtree with `LIKE`, and concatenate them into FQDNs.
 
-The row form is the type's, not a caller's: `from_row` decodes it and
-`sqlx::Encode` renders it, so bind an `OwnerName` itself rather than a string
-you produced. `Display` is the presentation form, whose apex is `@` and not
+The row form is the type's, not a caller's: `from_row` decodes it, behind
+the type's `sqlx::Decode`, and `sqlx::Encode` renders it, so bind an
+`OwnerName` itself rather than a string you produced; no `From<String>`
+exists to build one unparsed. `Display` is the presentation form, whose apex is `@` and not
 the empty string a row holds. A `ZoneName` and a secondary's `AddressTarget`
 (`host:port`, the port spelled out and the host lowercase) are rows the same
 way: parsed once by the service, bound as themselves, and read back typed,
 so nothing splits or re-parses their text at the point of use.
 
-`OwnerName::parse_in_zone` qualifies a relative name by appending the zone;
-`parse_absolute_in_zone` never does, and is what input carrying no trailing
-dot (lookup form, wire owners) must use — otherwise an out-of-zone name is
-silently qualified instead of rejected.
+Choose the owner-name parser from the input contract, not its final character.
+`OwnerName::parse_in_zone` accepts client input including `@`, a relative
+name such as `www`, and an absolute name; it qualifies relative input with
+the zone. `parse_absolute_in_zone` takes input already known to be absolute
+(lookup form, wire owners), even when its rendered form omits the trailing
+dot, and never qualifies it. With zone `example.com`, client input `www` is
+relative, while a wire owner `www.other.org` must be rejected as out of zone.
 
 A zone name crosses into the service as a `ZoneName`, parsed where its text
 arrives by `zone::normalize_name`, which owns the request-phrased rejection
@@ -434,22 +475,86 @@ than returning anything.
 
 ## Naming
 
+### Type names — facts, selectors, and choices
+
+Name a type for its domain subject and responsibility, not whether Rust spells
+it as a struct or enum. Read its variants, fields, and call sites before choosing
+a suffix. A domain noun that already states the choice (`Run`, `DsCheck`,
+`Holddown`, `SigningPass`) needs no generic suffix added to it.
+
+| Role | Name | Boundary |
+| --- | --- | --- |
+| Which rows match | `<Subject>Filter` | An enum selects a predicate; a struct combines predicates. Neither is a `Scope` merely because it narrows a query. |
+| Which resources a caller may access | `<Subject>Scope`, `scope_<key>` | Authorization boundary, such as `scope_token_id`; ordinary search criteria are filters. |
+| Which representation of an entity to read | `<Subject>View` | `ZoneView` selects plain or DNSSEC-derived content; it is not an arbitrary history filter. |
+| How an operation executes | `<Operation>Mode` | `ImportMode` chooses append/upsert/replace behavior, not the origin of existing rows. |
+| Reusable rules governing operations | `<Subject>Policy` | A named bundle such as `DnssecPolicy`, not a one-call boolean switch. |
+| Where a change came from | `<Subject>Source` | Recorded provenance, such as `ChangeSource`; `changed_by` identifies the token or key, not which history to show. |
+| What an operation acts on | `<Operation>Target` | A destination or resource identity (`NotifyTarget`, `LockTarget`), not its execution mode. |
+| Which column and direction to sort | `<Subject>SortField`, `SortOrder` | Keep the field separate from the ascending/descending choice. |
+| A pagination window alone | `PageRequest` | Limit/offset choose a page, not matching rows; response metadata is `Pagination`. |
+| A whole operation's input | `<Operation><Subject>Request` | Selection plus mutation controls such as `dry_run` is a request (`DeleteRecordsRequest`), not merely a filter. |
+| Transport extraction or grouped arguments | `<Subject>Query`, `<Subject>Params`, `<Subject>Options` | `Query` is HTTP query extraction; `Params`/`Options` group an existing operation's inputs, not a substitute for a more specific role. |
+
+A listing filter may carry sorting and pagination beside its predicates; do not
+split it solely to enforce the suffix. A pagination-only type is still a
+`PageRequest`. A request stays a request when HTTP carries it in query parameters
+or the daemon socket carries it as a payload. External protocol names and
+dependency-owned types retain their own vocabulary.
+
+Variants state the actual predicate or behavior. Do not name a content selector
+for an assumed actor (`UserChanges`), an unspecified judgment (`Relevant`), or a
+default that may change. `VersionFilter::ExcludePastSignerOnly` excludes past
+versions whose nonempty journal contains only derived DNSSEC changes; the current
+version and versions without journal entries remain. `All` includes every stored
+version.
+This is a content filter, independent of `change_source` and `changed_by`.
+
+Keep the request path, actor, and access scope separate. `ChangeSource` names
+`Api`, `Socket`, `Nsupdate`, or `System`, never an authentication method or a
+permission level. `changed_by` is an optional `ChangeActor` carrying a credential
+kind and its name (`Token` or `TsigKey`), snapshotted without a foreign key.
+Socket commands, unauthenticated API requests, unsigned updates, and background
+work have no named token/key actor. The trusted entry point supplies attribution;
+request payloads cannot choose it. `CallerScope` decides permissions independently
+of the `ChangeAttribution` stored with a version. Persist an actor in the scalar
+columns `changed_by_kind` and `changed_by_name`; both are populated or both null.
+Decode them into `Option<ChangeActor>` at the row boundary. The API's object shape
+does not dictate a JSON database column.
+
+Use the same role in parameters, fields, SQL constants, and function selectors:
+`filter: VersionFilter`, `list_by_filter`, `count_by_filter`. A name change does
+not authorize changing the predicate, permission boundary, or execution behavior.
+For outcome and lifecycle names (`Result`, `Status`, `State`), follow
+*Who decides what*; for enum spellings, follow *Presentation*.
+
 ### Data-access functions — `bindizr-db`
 
-A data-access function is one SQL statement — the root function takes the
-`Db` or the `Transaction` first, matches its backend, and calls the
+A data-access function performs one query or row operation; a batch may
+repeat that operation in chunks to respect backend bind limits. The root
+takes the `Db` or the `Transaction` first, matches its backend, and calls the
 same-named function in `mysql/`, `postgres/`, or `sqlite/` — and nothing
 more: no error mapping, no rule. It lives in the module named for its
 entity, and every name is an instance of
 
 ```text
-<entity>::<verb>[_many][_by_<keys>][_with_<join>][_<predicate>][_tx]
+<entity>::<operation>[_by_<selector>][_with_<join>][_<predicate>][_tx]
+
+<operation> = get | find | find_<projection>
+            | list | list_all | list_<projection>
+            | count | count_all | count_<projection>
+            | create | create_many | update | update_many | update_<field>
+            | delete | delete_many | upsert | prune
 ```
 
-No other segment exists. `_for_<x>` in particular is banned — the grammar has
-no slot saying which role `x` plays: if `x` identifies rows it is `_by_<x>`;
-if it is a value being written it is just an argument; if it is a condition
-it folds into the verb (`upsert`) or the doc comment.
+The operation contains its field, projection, batch, or unfiltered marker;
+selectors, joins, predicates, and `_tx` follow in that order. The forms below
+define when each is meaningful; add only operations a live caller needs.
+`_for_<x>` is banned — the grammar has no slot saying which role `x` plays:
+if `x` identifies rows it is `_by_<x>`;
+if it is a value being written it is just an argument; a row-selection
+comparison is a predicate, and a conditional write rule belongs to the
+operation (`upsert`) and its doc comment.
 
 The first parameter is the connection: `&Db` for a statement on the pool,
 `&mut Transaction<'_>` for `_tx`. The backend function beneath takes its own
@@ -463,11 +568,14 @@ the service needs both, and the `_tx` form alone where it needs the lock
 
 - `get` — one row by identity; returns `Option`. 404 mapping happens in the
   service layer, never here.
+- `find` — at most one match of a predicate, without asserting that the
+  predicate identifies a unique row; returns `Option`. The doc comment
+  states whether any match suffices or an ordering selects one.
 - `list` / `count` — a filtered collection / its cardinality. `list_all` is
   the unfiltered form.
 - `create` / `update` / `delete` — literal row operations. A partial update
-  names the one field it touches: `update_<entity>_<field>`
-  (`update_zone_serial_tx`).
+  names the one field it touches, the entity elided as everywhere:
+  `update_<field>` (`zone::update_serial_tx`).
 - `upsert` — insert-or-update; a conditional rule (the catalog serial
   advancing only when the digest changed) lives in the doc comment, not the
   name.
@@ -475,17 +583,18 @@ the service needs both, and the `_tx` form alone where it needs the lock
   matches (the newest zone version, serial boundaries) — semantics a literal
   `delete_*_older_than` would misdescribe.
 
-`Transaction::begin` / `begin_read` / `commit` / `rollback`, the service's
-`finish_tx` / `discard_tx` around them, and `ping` are transaction and
-connectivity plumbing, not entity functions, and are the only exemptions.
+`Db::connect` / `begin` / `begin_read`, `Transaction::commit` / `rollback`,
+the service's transaction helpers, and connection probes are resource and
+lifecycle operations, outside the entity-query grammar.
 
 **Segments:**
 
 - `_many` / entity — the module names the entity, so a function omits it
   and marks the batch form `_many` (`record::create_many_tx`, never
   `record::create_records_tx`).
-- `_by_<keys>` — equality on named columns, joined with `_and_` and never
-  dropping `_id` (`list_by_zone_id_and_key_id_tx`). The entity's canonical id
+- `_by_<selector>` — equality keys or a named filter input. Column keys
+  are joined with `_and_` and keep `_id` (`list_by_zone_id_and_key_id_tx`).
+  The entity's canonical id
   keys are elided, carried by the signature alone: bare `get`/`update`/
   `delete` take the row's own id, bare `list`/`count` the owning zone's id
   (`list_all` stays the unfiltered form). A non-id selector is always named,
@@ -496,19 +605,22 @@ connectivity plumbing, not entity functions, and are the only exemptions.
   `count_by_key_id`, `delete_by_zone_id_tx`), and any key set whose elision
   would leave two functions of one module distinguishable only by their
   signatures — which is why the two-sided policy tables spell everything.
-  `_by_filter` is the one non-column key: a struct of optional predicates for
-  the listing queries.
+  A non-column selector names the input that defines its predicates:
+  `_by_filter` for a predicate selector, whether a struct (`RecordFilter`) or
+  an enum (`VersionFilter`). `_by_scope` is reserved for an actual authorization
+  scope input. The contract spells the selected rows and retained exceptions.
 - `_with_<join>` — the result carries joined data
-  (`get_record_with_zone`); never a filter or semi-join.
-- `_<predicate>` — a comparison filter as `<subject>_<comparison>`. Serial
+  (`record::get_with_zone`); never a filter or semi-join.
+- `_<predicate>` — a comparison or relation filter as `<subject>_<comparison>`
+  (`ds_without_ns`: a DS has no same-owner NS). Serial
   intervals keep their contracts in doc comments — the journal's
   `between_serials` is the IXFR half-open `(from, to]`, the versions'
   `in_serial_range` the closed `[from, to]`.
-- Projections — a function returning one column rather than entity rows
-  names that column, pluralized, where the rows would be, prefixed by the
-  row set it filters when the module's entity does not say it
-  (`dnssec_record::list_rrsig_zone_ids_expiring_within_refresh` — `rrsig`,
-  since only RRSIG rows carry `expires_at`).
+- Projections — a function returning a column rather than entity rows
+  names that column: singular for `find_name_ds_without_ns_tx`, plural for
+  `dnssec_record::list_zone_ids_expiring_within_refresh`. `count_<projection>`
+  counts distinct projected values (`count_zone_ids`). The predicate says
+  which rows, so no row-set prefix is added.
 - `_tx` — runs on the caller's transaction, taken as the first parameter.
 
 **Time filters** take a `cutoff` parameter and resolve the predicate's
@@ -528,12 +640,27 @@ equality selector the name must carry as `_by_state`.
 
 ### Service functions
 
+- Parameters follow responsibility: an operation on an existing transaction
+  takes `tx` first, then `cx` only if it also needs configuration, metrics,
+  or another service resource. Other stateful flows take `cx` first. A
+  `Caller`, when required, follows those state parameters, then the request
+  and other inputs. Pure helpers take neither `Context` nor `Transaction`
+  merely to match a signature. Methods keep `self` before these parameters.
+  The transaction lifecycle helpers `begin_tx` / `begin_read_tx` create a
+  transaction rather than receive one; `finish_tx` / `discard_tx` consume it.
 - The functions of `bindizr_service::<entity>` carry the domain semantics
   and omit the entity the module already names (`zone::get_by_name`, not
   `zone::get_zone_by_name`).
-  Verbs: `get_*` maps a miss to NotFound, `find_*` returns `Option`, `list_*`
-  returns a collection, `count_*` a count; a domain verb is preferred where
-  it says more (`advance_catalog_serial`, `sign_zone_tx`).
+  Required reads use `get_*` at the caller-gated boundary and `lookup_*`
+  inside a flow that owns authorization; both report a missing required row
+  as an error. Internal lookups are private or `pub(crate)` and never
+  authorize implicitly: the flow gates the returned row before exposing or
+  changing it. The same distinction applies with `_tx`: `get_by_name_tx`
+  takes a `Caller`, `lookup_by_name_tx` does not. `find_*` returns `Option`
+  when absence is an ordinary outcome, `list_*` a collection, `count_*` a
+  count. Their authorization follows *Who decides what* and their contract;
+  an optional return does not imply authorization. A domain verb is preferred
+  where it says more (`advance_catalog_serial`, `sign_zone_tx`).
 - A record mutation that also writes IXFR journal rows says so in the name:
   `*_with_changes_tx`. Preconditions (e.g. "caller already validated the
   rows") belong in the doc comment, not the name.
@@ -543,24 +670,29 @@ equality selector the name must carry as `_by_state`.
   counts). `track_*` is a
   metrics counter, and `record` is never a verb: it is the noun of
   *Vocabulary*.
-- Adjacent layers never reuse one name for different semantics (e.g. a raw
-  row delete in `bindizr-db` vs. a delete-plus-journal-log in the service).
+- The same data-access verb identifies the same kind of read or write across
+  layers; layer contracts decide missing-row errors and authorization. Extra
+  domain effects must be named (a raw row delete in `bindizr-db` vs.
+  `delete_with_changes_tx` in the service).
 
 ### Diagnostics — `status`, `check`, `doctor`
 
-Three words for asking how things are, told apart by side effect and scope.
-`status` reads and probes without acting (`zone status`, a `GET`). `check`
-acts to find out — it asks a third party or sends a real message
-(`dnssec check-ds` asks the parent, `secondary check` sends a NOTIFY) and is
-a `POST`. `doctor` runs every check across the installation. A bare `check`
-covers the whole object; `check-<part>` one aspect of it, so a narrow check
-never takes the bare name.
+The requested operation decides the word, not whether it uses the network.
+`status` reports the object's current state and may make read-only probes
+needed for that report (`zone status` compares SOA serials). It does not
+trigger propagation or change managed state. `check` explicitly exercises
+a capability or verifies a named condition: `secondary check` sends a NOTIFY,
+and `dnssec check-ds` verifies the parent's delegation, without changing it.
+`doctor` aggregates installation diagnostics. A bare `check` covers the
+whole object's capability; `check-<part>` a specific condition. Existing
+status routes use `GET` and explicit checks use `POST`; those are transport
+contracts, not a claim that every check mutates state.
 
 ### Free-function helpers
 
 The `get_*`/`find_*`/`list_*`/`count_*` verbs above are reserved for data
-access and mean the same thing in every crate, not just the service — a free
-helper that computes a value never takes `get_`, and a metrics counter is
+access; their layer-specific error and authorization contracts are defined
+above. A free helper that computes a value never takes `get_`, and a metrics counter is
 `track_`, never `count_`. The verb says what is read, not where: a stored
 row is `get`/`list` in `bindizr-db`, the service, and a front end alike; a
 value the `Context` holds — the configuration snapshot, the metrics, the
@@ -579,10 +711,13 @@ is created, updated, or deleted. `convert_` does not exist: a conversion is
   sources reach the same form (`labels_to_wire` beside `encode_name`), or
   the source is the point (`zone_name_to_member_id`). A conversion from
   one value with nothing else is a `From`/`TryFrom` impl, as *Rust idioms*
-  says, before it is a helper. Two or more inputs make an
-  assembly, `build_`. `parse_<thing>` — text or wire bytes into a typed
-  value, fallible; an infallible reading is `to_` (`to_record_value_request`
-  over the `--value` arguments). `encode_<thing>` / `decode_<thing>` — a
+  says, before it is a helper. A named representation conversion follows
+  the same rule, including its supplementary data. An assembly follows
+  *Methods and free functions*: `build_` for a flow-owned payload or standard
+  value, `compute` for a type's own derived value. `parse_<thing>` — text or
+  wire bytes into a typed value, fallible; an infallible reading is `to_`
+  (`to_record_value_request` over the `--value` arguments).
+  `encode_<thing>` / `decode_<thing>` — a
   typed value to and from its wire bytes (`encode_name`). `extract_<thing>`
   — one part out of an already-parsed message (`extract_ds_record_set`).
   `render_<thing>` — a typed value as multi-line human text
@@ -593,14 +728,17 @@ is created, updated, or deleted. `convert_` does not exist: a conversion is
   field context; `validate_<thing>` is the same check phrased against a named
   field and mapped to the caller's error type. The pair lives together.
   `verify_<thing>` — a cryptographic check that yields a result
-  (`verify_tsig`). `check_<thing>` — a doctor-style diagnostic that reports
-  instead of failing.
-- Derivation: `build_<thing>` / `compute_<thing>` — assemble or derive a value
-  from several inputs (`build_record_diff`, `compute_import_plan`);
-  `group_<things>` partitions into a keyed map; `normalize_<thing>` —
-  service-layer trim + canonicalize + validate, returning the canonical value
-  or a `ServiceError`; `generate_<thing>` — fresh key, secret, or serial
-  material.
+  (`verify_tsig`). `check_<thing>` — a `doctor` diagnostic that reports
+  instead of failing; an operation's `check` (`check_ds`, `secondary::check`)
+  is *Diagnostics*'s verb.
+- Derivation: `build_<thing>` — assemble a payload, a standard type or a
+  map from several inputs (`build_record_diff`, `build_page`); a value of
+  the module's own type is made by that type's `compute` or `generate`
+  constructor (*Methods*), never by a free `compute_`. `group_<things>`
+  partitions into a keyed map; `normalize_<thing>` — service-layer trim +
+  canonicalize + validate, returning the canonical value or a
+  `ServiceError`; `generate_<thing>` — fresh secret or serial material of a
+  standard or foreign type (`generate_secret`, `generate_serial`).
 - I/O: `send_` (one message out), `query_` (one DNS question), `probe_` (ask
   and report reachability or state), `fetch_` (pull a whole artifact, such as
   an AXFR), `resolve_` / `discover_` (names to addresses, the parent zone),
@@ -613,8 +751,9 @@ A domain action or lifecycle step keeps its own verb (`sign_zone`,
 `escape_label`, `enqueue_notify`, `run_udp_server`); the vocabulary above is
 for the helpers around them, so an action never borrows a helper verb to
 look like one (a `build_` that writes, a `to_` that sends). Predicate
-methods read as a sentence about their receiver (`key.wants_parent_ds()`);
-`is_`/`has_`/`matches_` are for free functions, which have no subject.
+methods follow *Methods and free functions*; a free predicate includes its
+subject in `is_<subject>_<property>`, `has_<thing>`, or `matches_<thing>`
+where the arguments do not make it evident.
 
 Noun names belong to pure derivations named by what they return, where a
 verb would add nothing the return type does not say (`elapsed_ms`,
@@ -623,8 +762,8 @@ I/O or a side effect keeps its verb — and to constructors, which are named
 by what they build: the kind alone where the module builds one kind of
 thing (`unauthorized(message) -> Response` in the auth middleware,
 `ServiceError::unauthorized`), with `_error` / `_response` added only where
-one module builds several (`upstream_error_response`,
-`signed_error`). Names an external trait fixes (`Log::enabled`,
+one module builds several (`ParsedQuery::signed_error_response`). Names an
+external trait fixes (`Log::enabled`,
 `KeyStore::get_key`, sqlx's `compatible`) and serde default providers
 (`default_<field>`) are outside the vocabulary.
 
@@ -663,18 +802,19 @@ grep -rnoE "\b[A-Za-z0-9_]*[Rr]r(set|s)?\b" crates --include='*.rs' \
 
 ### Presentation — a value spells itself once
 
-A fixed-set value has two spellings and no more. `as_str` is the storage and
-API form, the one serde's `rename_all` also produces, and is what a row or a
-metric label binds. `Display` is the presentation form, the one a person
-reads in a table cell or a message, and every front end writes the value
-with `{}` rather than spelling a variant itself. The two coincide unless the
-presentation is a DNS mnemonic (`NSEC3`, `AXFR`), a human phrase
-(`in sync`), or a notation (`RecordChange`'s `+`/`-`/`~`); a type whose
-`Display` nobody reads has none. The CLI's free `display_<thing>` helpers in
-`cli/output` render only what no type of ours can own — an `Option` (`-`), a
-`bool` (`yes`/`no`), a timestamp, a duration, a truncated cell, and one cell
-assembled from several fields — and every command reuses them rather than
+An enum with a stored, wire, or textual representation has two spellings and no more.
+`as_str` is the storage and API form, the one serde's `rename_all` also produces — each
+such enum's `spells_itself_once` test holds the two together — and is what a row or a
+metric label binds. `Display` is the presentation form, the one a person reads in a
+table cell or a message, and every front end writes the value with `{}` rather than
+spelling a variant itself. The two coincide unless the presentation is a DNS mnemonic
+(`NSEC3`, `AXFR`), a human phrase (`in sync`), or a notation (`RecordChange`'s
+`+`/`-`/`~`); a type whose `Display` nobody reads has none. The CLI's free
+`display_<thing>` helpers in `cli/output` render only what no type of ours can own — an
+`Option` (`-`), a `bool` (`yes`/`no`), a timestamp, a duration, a truncated cell, and
+one cell assembled from several fields — and every command reuses them rather than
 formatting inline.
+
 
 ## Code style
 
@@ -748,8 +888,10 @@ methods (`use std::fmt::Write as _`).
 
 `[workspace.lints]` in the root `Cargo.toml` is the one place lint levels are
 set; every crate opts in with `[lints] workspace = true`. `unsafe_code` is
-denied (the project is pure safe Rust), and `unreachable_pub` mechanically
-enforces the visibility rule below. Keep the set small: a lint that fights an
+denied (the project is pure safe Rust), and `unreachable_pub` rejects `pub`
+items hidden behind a private module or type. It checks reachability, not
+caller counts or whether members form one interface; use the visibility rule
+below for those decisions. Keep the set small: a lint that fights an
 idiom the codebase uses deliberately costs more than it catches, because the
 build must stay warning-free without `#[allow]`. No `allow` hides a naming
 the API guidelines reject: an acronym is one word (`MySql`, `Sqlite`;
@@ -769,7 +911,7 @@ together.
 
 ### Module file layout — `mod.rs`, never the sibling form
 
-A module with submodules is a directory containing `mod.rs`
+A module with file submodules is a directory containing `mod.rs`
 (`bindizr-core/src/dns/message/mod.rs`), not the 2018-edition sibling form
 (`message.rs`
 next to `wire/`). The community leans the other way, so the uniformity is
@@ -780,27 +922,55 @@ it is under **100 lines**, counting the module's own braces, and moves to
 `<module>/tests.rs` once it reaches that — making the module a directory if it
 was not one. The number is the rule, so a module that crosses it moves rather
 than being argued over; `mod.rs` then declares it as `#[cfg(test)] mod tests;`
-and the file opens with `use super::*;`.
+and the file imports its parent with `use super::*;`; rustfmt orders it beside
+the other imports. Apply the same threshold after deletions: below 100 lines,
+including the enclosing module braces, return the tests inline.
 
-### Visibility records usage
+### Visibility follows the interface contract
 
-The scheme is three-level and nothing else: private, `pub(crate)`, `pub`.
-`pub` means another crate touches it today, `pub(crate)` that only its own
-crate does, private that only its own module does. **Do not use `pub(super)`
-or `pub(in path)`** — their meaning depends on where the file sits, so it
-reads wrong after a move and has to churn with every reorganization; half the
-uses this codebase once had were at depth-1 modules, where `pub(super)` is
-just an obscure spelling of `pub(crate)`.
+Use only private, `pub(crate)`, and `pub`; never `pub(super)` or `pub(in path)`.
+Choose visibility for a coherent group of existing operations or fields, then
+use the narrowest scope that serves that group's contract. Current call sites
+are evidence of the contract, not a separate visibility rule for each member.
 
-Items and struct fields carry the narrowest of the three that compiles. A
-struct mixing them is a measurement, not a design statement — widen a field
-when the compiler asks, and no sooner. This keeps rustc's dead-code analysis
-covering fields (`pub` fields are exempt) and keeps cross-crate struct
-literals impossible.
+- **`pub` — a cross-crate interface.** Members of the same public API remain
+  `pub` even when some currently have only in-crate callers: a value's ordinary
+  constructors, representations and predicates; related error constructors;
+  or single-item and multi-item forms of the same operation. Examples are
+  `OwnerName::is_apex` / `is_same_or_under`, `Rdata::as_bytes` / `into_bytes`,
+  `ServiceError` constructors, and `probe_secondary` / `probe_secondaries`.
+  A public enum's canonical `as_str` belongs to this value API too.
+- **`pub(crate)` — an internal interface.** Apply the same grouping within a
+  crate, including shared implementation types and their operations. A private
+  module or crate-internal type does not gain `pub` members just to resemble
+  a public type; the containing interface limits the group's visibility.
+  Re-exports count: a `pub` function in a private implementation module may
+  still belong to the public facade that re-exports it.
+- **Private — implementation and invariants.** Helpers and state whose access
+  is mediated by an operation stay hidden. A shared file, `impl`, name prefix,
+  or adjacent declaration alone does not make two members the same API group.
 
-Deliberate exceptions: `bindizr_service::types` payloads are fully `pub` (their
-fields are the wire contract), and invariant-bearing types (`OwnerName`) keep
-fields private behind constructors.
+Fields of a plain data carrier form one group at its interface's scope:
+`RecordWithZone` fields are `pub`, as `Record` fields are; the adapter's
+`Changes` fields are `pub(crate)`. Shared service payload fields are all `pub`.
+Constructor-validated storage (`OwnerName`, `Rdata`), resource lifecycle state,
+cache internals, and fields requiring controlled mutation stay private.
+Mixed visibility is appropriate when fields have these different roles, such
+as a private metrics registry beside directly updated public collectors.
+
+Architectural boundaries take precedence over symmetry: `Context::db`, service
+`*_tx` operations, authorization-internal lookups, third-party representation
+helpers, and test helpers retain their explicitly limited scope. A DTO's
+service-only row assembly or encoding helper is not part of its wire contract.
+`notify::send_notify` is internal orchestration beneath caller-checked entry
+points; public DNS diagnostic operations are a separate group.
+
+Review visibility by naming the group and checking its boundary. Do not narrow
+one member solely because a cross-crate caller disappeared, or widen an
+internal helper solely to match its neighbors. Explain a non-obvious boundary
+once at the owning type or module; routine members need no extra comments.
+This grouping permits consistent visibility for existing, live operations;
+it does not authorize speculative APIs, unused code, or lint suppression.
 
 ### Helper extraction — split at the second caller
 
@@ -819,26 +989,31 @@ asks for the split.
 ### Methods and free functions — what a type owns
 
 An inherent `impl` holds only these kinds of function; a function that is
-none of them is a free function of the flow that needs it. The audit that
-settled the list walked every method in the workspace.
+none of them is a free function of the flow that needs it. Returning a type
+does not by itself make the operation belong to that type.
 
 1. **A constructor** (`C-CTOR`): an associated function returning `Self` or
-   `Result<Self, _>` — `new`; `from_<source>` where `From` cannot spell the
-   conversion; `parse` for text; a verb for how the value comes to be
+   `Result<Self, _>` — `new`; `from_<source>` for the representation
+   conversions *Rust idioms* defines; `parse` for text; a verb for how the
+   value comes to be
    (`generate`, `import`, `compute`, `connect`, `load`, `spawn`); the kind
    alone where the type is an error or a refusal
    (`ServiceError::zone_not_found`, `TransferRefusal::refused`). A value a
    module builds from inputs, with the module's own error, is made this way
    (`DnssecKey::generate`, `ImportPlan::compute`, `ZoneChangeSet::compute`
-   takes the ops as an input), never by a free `generate_` or `compute_`
-   helper. I/O belongs here only when the value is the resource it opens
-   (`Db::connect`) or a `Caller` authenticated from a request.
+   takes the ops as an input), never by a free `compute_` helper; a free
+   `generate_` makes material whose type belongs elsewhere, with the flow's
+   error (`generate_serial`). I/O belongs in a constructor when it opens a
+   resource the value owns (`Db::connect`), loads the value's stored
+   representation (`Config::load`), starts work the returned handle controls,
+   or authenticates a `Caller`. Reading unrelated application state to
+   assemble a response remains a service flow.
 2. **A conversion or accessor**: `as_` a free borrow, `to_` an owned
    derivation, `into_` consuming `self`, and the `From`/`TryFrom`, sqlx,
    serde and `Display` impls beside them.
 3. **A derivation or predicate about the receiver**: `is_`/`has_`/`matches_`
-   or a verb phrase read as a sentence (`key.wants_parent_ds()`), computed
-   from the fields and plain arguments; a peer of the same type may be an
+   or another verb phrase read as a sentence (`key.wants_parent_ds()`),
+   computed from the fields and plain arguments; a peer of the same type may be an
    argument (`zone.soa_metadata_differs(&other)`,
    `key.signs_zone_data(&keys)`, `desired.matches(&record)`).
 4. **A wire or protocol rule the type embodies**, failing with the type's
@@ -860,10 +1035,11 @@ is not the receiver's (a queue's `send_batch(cx, batch)`); an assembly of
 several values of equal standing that returns a payload, a standard type or
 a map (`build_record_diff(zone, …)`, `group_record_sets`,
 `build_notify_message`); a service rule on a payload type — a payload's
-constructors only reshape (`from_page`, `from_probe`, `From` impls), so
-the page limit and the zone file's SOA are applied by `build_page` and
-`build_create_zone_request` beside the flows that need them; a step of a
-transaction; anything whose receiver would be a slice, an `Option`, or a
+conversions only reshape a source (`From` impls, `from_secondary`). Page
+limits and metadata belong to the service's `pagination` module, probe
+classification to `dns_client::probe::build_secondary_status`, and the
+zone file's SOA to `build_create_zone_request` beside its import flow; a step
+of a transaction; anything whose receiver would be a slice, an `Option`, or a
 foreign type (the `domain` crate's aliases, `DateTime`). A method's error
 is its module's own; `ServiceError` appears on a method only in the
 service crate's own structs and the gate.
@@ -875,35 +1051,42 @@ stored, passed on, compared, or keys a map another function reads
 (`RecordSetKey`), and every payload. A pair the caller takes apart on
 arrival stays a tuple (`let (token, secret) = token::create(…)`),
 and values that travel together only inside one function stay locals. A
-wrapper that only renames another struct's fields is not a struct — use the
-original. One shape has one struct: two with the same fields merge, but two
-with different fields are never generalized into one dynamic shape (a stage
-list standing in for two timing structs). A shape that crosses a process
+wrapper that only renames another struct's fields without changing its
+meaning or invariants uses the original. Merge structs only when their
+fields, domain meaning, invariants, and contract are the same. Nominal types
+such as `ZoneId` and `RecordId` remain distinct despite identical storage;
+interchanging them is exactly what their types forbid. Shapes with different
+fields are not generalized into one dynamic shape (a stage list standing
+in for two timing structs). A shape that crosses a process
 boundary is spelled on each side: the adapter's `BindizrRecord` mirrors the
 service's `ExternalDnsRecord` over HTTP, since the adapter depends on core
 alone and a payload does not belong there.
 
 ### Struct literals stay at the use site
 
-A struct literal is never the body a helper is extracted for. A function that
-only assembles `SomeStruct { field: arg, … }` from its parameters hides which
+In production, a struct literal alone does not justify extracting a helper.
+A function that only assembles `SomeStruct { field: arg, … }` from its parameters hides which
 fields are set without shortening anything — spell the literal at each site,
 even when several sites fill the same fields and even though that duplicates
-them. The exceptions are type-owned conversions deriving a value from one
-source (`From` impls — `impl From<&Zone> for GetZoneResponse` — and the
-`from_<source>` constructors *Rust idioms* keeps) and constructors guarding
-an invariant behind private fields (`OwnerName`); a bag of loose parameters
-is neither.
+them. Type-owned representation conversions (`From` impls —
+`impl From<&Zone> for GetZoneResponse` — and the `from_<source>` constructors
+*Rust idioms* defines) and constructors guarding an invariant behind private
+fields (`OwnerName`) are allowed; a bag of loose parameters is neither.
+Test fixture construction follows *Test helpers* instead.
 
 ### Test helpers — extraction and visibility
 
-Test code optimizes for standalone readability, not DRY. Extract a helper only
-when it hides **mechanics** (how to invoke the CLI, build a config, POST a
-request) while the test's meaningful **data and assertions stay inline at the
-call site** — and only for blocks that are large or repeated many times and
-change in lockstep. Small struct-literal fixtures (`test_record()`-style) stay
-local to each test file even when several files have near-identical copies; do
-**not** collect them into shared fixture modules.
+Test code optimizes for standalone readability. A helper may hide either
+**mechanics** (invoke the CLI, build a config, POST a request) or **incidental
+fixture defaults**. The test's meaningful data and assertions stay at its
+call site: a fixture exposes the fields the case varies as parameters or
+local overrides, and does not hide the condition being tested. Extract shared
+mechanics only for blocks that are large or repeated many times and change
+in lockstep. Small struct-literal fixtures (`test_record()`-style) are allowed
+as private helpers in each test file, even when other files have similar
+copies; do not collect them into shared fixture modules. Test assertions and
+fixture setup may use `unwrap`/`expect`; a test helper's error may be a
+`String`, since a failure ends the test instead of entering application logic.
 
 Import/export rules for shared helpers (narrowest visibility that compiles,
 never bare `pub`):
@@ -998,10 +1181,12 @@ section above.
 
 `release.yml` publishes what the pushed `v*` tag says, `manual-release.yml`
 what `Cargo.toml` and the dispatch inputs say, and `publish-image.yml` the
-image tag typed in. Each validates its version before anything is built
-(SemVer with every prerelease identifier checked, no build metadata, at most
-128 characters, so a Docker tag can carry it), and that validation is the
-only gate. `latest` follows the version in the release workflows, as
+image tag typed in. Release and Manual Release validate SemVer before building:
+check every prerelease identifier, forbid build metadata, and cap the version at 128
+characters so a Docker tag can carry it. Publish Image accepts any valid
+Docker tag of at most 128 characters, including non-version labels such as
+`dev`. These format checks are the only version/tag gates. Build checks and
+the third-party license gate still apply. `latest` follows the version in the release workflows, as
 `packaging/scripts/build_image.sh` does; Publish Image has a checkbox for it.
 
 Do not add guards against a release overwriting an earlier one, and remove

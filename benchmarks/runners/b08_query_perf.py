@@ -1,12 +1,7 @@
-"""Benchmark 8 — DNS Query Performance.
+"""Benchmark 8: measure UDP QPS and latency for existing names in a fixed A-record zone.
 
-Loads a fixed A-record zone into the system, then hammers its resolver with UDP
-queries for existing names, measuring QPS and latency percentiles.
-
-Compare each Bindizr pairing with the same server run standalone (`Native
-BIND9`, `Knot DNS`, `PowerDNS Authoritative`), since the secondary answers the
-pairing's queries. The measured QPS difference determines the report's
-query-overhead conclusion.
+Compare each Bindizr pairing with the same secondary server run standalone;
+their measured QPS difference determines the report's query-overhead conclusion.
 """
 from __future__ import annotations
 

@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 use super::version::RecordDiff;
 
 /// How parsed records are reconciled with the records already in the zone.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportMode {
     /// Add parsed records; records already present are left untouched.
@@ -21,7 +21,7 @@ pub enum ImportMode {
 
 /// Request body for importing records into a zone: BIND zone file text in
 /// `content`, or a transfer from `from_server`; exactly one of the two.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImportZoneRequest {
     /// Raw BIND zone file text.
@@ -33,8 +33,10 @@ pub struct ImportZoneRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "192.0.2.1:53")]
     pub from_server: Option<String>,
-    #[serde(default)]
-    pub mode: ImportMode,
+    /// Reconciliation mode: `append` (default), `upsert`, or `replace`.
+    #[serde(default = "default_import_mode")]
+    #[schema(value_type = ImportMode, default = "append", example = "append")]
+    pub mode: String,
     /// When true, parse and validate without applying any change.
     #[serde(default)]
     pub dry_run: bool,
@@ -90,4 +92,85 @@ pub struct ImportSummary {
     pub unchanged: u64,
     #[schema(example = 0)]
     pub skipped: u64,
+}
+
+impl ImportMode {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Append => "append",
+            Self::Upsert => "upsert",
+            Self::Replace => "replace",
+        }
+    }
+}
+
+impl serde::Serialize for ImportMode {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+/// Supply the wire default when an import request omits its mode.
+fn default_import_mode() -> String {
+    ImportMode::Append.as_str().to_owned()
+}
+
+impl Default for ImportZoneRequest {
+    /// Default to an append request with all optional actions disabled.
+    fn default() -> Self {
+        Self {
+            content: None,
+            from_server: None,
+            mode: default_import_mode(),
+            dry_run: false,
+            skip_unsupported: false,
+            create: false,
+        }
+    }
+}
+
+/// An import mode outside the supported reconciliation strategies.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("invalid import mode '{0}': expected append, upsert, or replace")]
+pub struct ParseImportModeError(String);
+
+impl std::str::FromStr for ImportMode {
+    type Err = ParseImportModeError;
+
+    /// Validate the raw mode supplied in an import request.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "append" => Ok(Self::Append),
+            "upsert" => Ok(Self::Upsert),
+            "replace" => Ok(Self::Replace),
+            _ => Err(ParseImportModeError(value.to_owned())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify the canonical spelling and round-trip of every ImportMode variant.
+    #[test]
+    fn import_mode_spells_itself_once() {
+        for (value, expected) in [
+            (ImportMode::Append, "append"),
+            (ImportMode::Upsert, "upsert"),
+            (ImportMode::Replace, "replace"),
+        ] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<ImportMode>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+    }
 }

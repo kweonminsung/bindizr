@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use crate::common::{TestApp, TestAppOptions, reserve_tcp_port};
 
 /// A spawned bindizr-external-dns adapter process, killed on drop.
+#[derive(Debug)]
 struct ExternalDnsAdapter {
     child: Child,
     pub(crate) base_url: String,
@@ -344,7 +345,7 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
     // Worded as for a name no zone covers, so the hidden zone stays hidden.
     assert_eq!(
         body["error"],
-        json!(format!("No zone is authoritative for 'b.{ungranted_zone}'"))
+        json!(format!("no zone is authoritative for 'b.{ungranted_zone}'"))
     );
 
     // Nothing was applied for the granted zone either.

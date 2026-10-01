@@ -11,10 +11,8 @@ use crate::dns::{
 /// and compared as this value, so both types must agree on it.
 pub(crate) const DEFAULT_PRIORITY: u16 = 10;
 
-/// Maximum RDATA bytes for one stored record: the TCP message limit less the
-/// header, worst-case question and answer fields, and the TSIG a signed
-/// transfer appends. A record cannot be split across messages, so an accepted
-/// one must fit an envelope whether or not the secondary asked with a key.
+/// RDATA limit after reserving the TCP envelope, worst-case question, and TSIG.
+/// A record must fit one transfer message even when the secondary uses a key.
 pub(crate) const MAX_RECORD_RDATA: usize =
     DNS_TCP_MAX_SIZE - 12 - (MAX_DOMAIN_LEN + 2 + 4) - (MAX_DOMAIN_LEN + 2 + 10) - MAX_TSIG_RECORD;
 
@@ -153,10 +151,8 @@ pub(crate) fn parse_char_string<'a>(
     Ok((text, rest))
 }
 
-/// Validate a domain-name record value with the same decoded-label rules as an owner name.
-///
-/// Splitting on `.` would break escaped dots; non-LDH labels also occur in RFC 2317, Section 4
-/// delegations such as `0/25`.
+/// Validate record-value names using decoded owner-label rules, preserving escaped
+/// dots and non-LDH labels such as RFC 2317, Section 4 delegations (`0/25`).
 pub(crate) fn validate_domain_record_value(
     field: &'static str,
     value: &str,
@@ -184,10 +180,8 @@ pub(crate) fn validate_domain_record_value(
 mod tests {
     use super::validate_domain_record_value;
 
-    /// Verify that domain-name record values accept the same labels as owner names.
-    ///
-    /// RFC 2181, Section 11 permits non-LDH labels; both canonicalization and wire encoding
-    /// decode them before use.
+    /// Verify that record-value names accept non-LDH owner labels under
+    /// RFC 2181, Section 11.
     #[test]
     fn accepts_the_labels_an_owner_name_may_carry() {
         for value in [

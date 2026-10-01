@@ -71,10 +71,8 @@ fn is_self_probe(dns_cx: &DnsContext, client_ip: IpAddr) -> bool {
     client_ip.is_loopback() || client_ip == dns_cx.daemon().config().dns.listen_addr.to_canonical()
 }
 
-/// The response bytes, which TCP and UDP send alike, and the outcome they
-/// carry. A secondary polls the serial with the key it transfers under, so
-/// one gate answers both, and the zone answered is the one that key is
-/// granted.
+/// Build the SOA response and outcome for either transport, applying the same
+/// zone grant as transfers because secondaries poll with their transfer key.
 async fn handle_soa_request(
     dns_cx: &DnsContext,
     query: &message::ParsedQuery,

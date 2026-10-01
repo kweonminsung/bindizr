@@ -9,10 +9,10 @@ use super::error::ServiceError;
 use crate::{
     Context,
     authorization::Caller,
-    db,
     model::api_token::ApiToken,
+    pagination::build_page,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
-    types::{GetTokenResponse, PageFilter, PaginatedResponse, build_page},
+    types::{CreateTokenRequest, GetTokenResponse, PageRequest, PaginatedResponse},
 };
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
@@ -27,19 +27,20 @@ pub(crate) fn hash_token(token: &str) -> String {
 pub async fn create(
     cx: &Context,
     caller: &Caller,
-    name: &str,
-    description: Option<&str>,
-    expires_in_days: Option<i64>,
-    is_global: bool,
+    request: &CreateTokenRequest,
 ) -> Result<(ApiToken, String), ServiceError> {
     caller.authorize_global("manage API tokens")?;
 
-    let name = normalize_token_name(name)?;
-    let description = normalize_description(description, ServiceError::invalid_input)?;
-    let expires_at = normalize_expires_at(expires_in_days)?;
+    let name = normalize_token_name(&request.name)?;
+    let description =
+        normalize_description(request.description.as_deref(), ServiceError::invalid_input)?;
+    let expires_at = normalize_expires_at(request.expires_in_days)?;
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
-    if db::api_token::get_by_name(cx.db(), &name).await?.is_some() {
+    if bindizr_db::api_token::get_by_name(cx.db(), &name)
+        .await?
+        .is_some()
+    {
         return Err(ServiceError::token_conflict(&name));
     }
 
@@ -51,14 +52,14 @@ pub async fn create(
 
     let token_hash = hash_token(&raw_token);
 
-    let created = db::api_token::create(
+    let created = bindizr_db::api_token::create(
         cx.db(),
         ApiToken {
             id: TokenId::UNWRITTEN,
             name: name.clone(),
             token: token_hash,
             description,
-            is_global,
+            is_global: request.global,
             expires_at,
             created_at: Utc::now(),
             last_used_at: None,
@@ -82,11 +83,11 @@ pub async fn create(
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
     caller.authorize_global("manage API tokens")?;
 
-    let tokens = db::api_token::list_all(cx.db()).await?;
+    let tokens = bindizr_db::api_token::list_all(cx.db()).await?;
     build_page(
         tokens.iter().map(GetTokenResponse::from).collect(),
         page.limit,
@@ -96,7 +97,7 @@ pub async fn list(
 
 /// The number of API tokens, read for the daemon's startup hint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
-    Ok(db::api_token::list_all(cx.db()).await?.len() as u64)
+    Ok(bindizr_db::api_token::list_all(cx.db()).await?.len() as u64)
 }
 
 /// Delete the API token with the given name, returning `NotFound` if it
@@ -106,12 +107,12 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     let token = lookup_by_name(cx, name).await?;
 
-    Ok(db::api_token::delete(cx.db(), token.id).await?)
+    Ok(bindizr_db::api_token::delete(cx.db(), token.id).await?)
 }
 
 /// Load an API token by name or return a not-found error.
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceError> {
-    db::api_token::get_by_name(cx.db(), &normalize_token_name(name)?)
+    bindizr_db::api_token::get_by_name(cx.db(), &normalize_token_name(name)?)
         .await?
         .ok_or_else(|| ServiceError::token_not_found(name))
 }
@@ -148,4 +149,73 @@ fn normalize_expires_at(
 pub mod grant;
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+    use crate::error::ErrorCode;
+
+    /// Verify that `normalize_token_name` trims and folds case.
+    #[test]
+    fn normalize_token_name_trims_and_folds_case() {
+        assert_eq!(
+            normalize_token_name(" external-dns ").unwrap(),
+            "external-dns"
+        );
+        assert_eq!(normalize_token_name("Deploy").unwrap(), "deploy");
+        assert_eq!(
+            normalize_token_name("DEPLOY").unwrap(),
+            normalize_token_name("deploy").unwrap()
+        );
+    }
+
+    /// Verify that `normalize_token_name` rejects empty and whitespace names.
+    #[test]
+    fn normalize_token_name_rejects_empty_and_whitespace_names() {
+        for name in ["", "   ", "bad name", "bad\tname"] {
+            let err = normalize_token_name(name).unwrap_err();
+            assert_eq!(err.code(), ErrorCode::InvalidInput);
+        }
+    }
+
+    /// Verify rejection of token names that cannot remain one URL path segment.
+    ///
+    /// `/` splits segments, `?` and `#` terminate them, and URL normalization removes dot segments.
+    #[test]
+    fn normalize_token_name_rejects_names_that_are_not_one_path_segment() {
+        for name in [".", "..", "self", "a/b", "a?b", "a#b", "a%2fb", "토큰"] {
+            let err = normalize_token_name(name).unwrap_err();
+            assert_eq!(err.code(), ErrorCode::InvalidInput, "{name}");
+        }
+        assert_eq!(
+            normalize_token_name("ci.prod_v2-x").unwrap(),
+            "ci.prod_v2-x"
+        );
+    }
+
+    /// Verify that `normalize_expires_at` is none without days and ahead of now with them.
+    #[test]
+    fn to_expires_at_is_none_without_days_and_ahead_of_now_with_them() {
+        assert!(normalize_expires_at(None).unwrap().is_none());
+        assert!(normalize_expires_at(Some(1)).unwrap().unwrap() > chrono::Utc::now());
+        assert!(normalize_expires_at(Some(MAX_EXPIRES_IN_DAYS)).is_ok());
+    }
+
+    /// Verify that `normalize_expires_at` rejects non positive values.
+    #[test]
+    fn to_expires_at_rejects_non_positive_values() {
+        let zero = normalize_expires_at(Some(0)).unwrap_err();
+        let negative = normalize_expires_at(Some(-1)).unwrap_err();
+
+        assert_eq!(zero.code(), ErrorCode::InvalidInput);
+        assert_eq!(negative.code(), ErrorCode::InvalidInput);
+    }
+
+    /// Verify that `normalize_expires_at` rejects values beyond the cap.
+    #[test]
+    fn to_expires_at_rejects_values_beyond_the_cap() {
+        let just_over = normalize_expires_at(Some(MAX_EXPIRES_IN_DAYS + 1)).unwrap_err();
+        let overflow = normalize_expires_at(Some(i64::MAX)).unwrap_err();
+
+        assert_eq!(just_over.code(), ErrorCode::InvalidInput);
+        assert_eq!(overflow.code(), ErrorCode::InvalidInput);
+    }
+}

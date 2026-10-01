@@ -1,9 +1,5 @@
-//! Service-layer request and response payloads, grouped by the entity they
-//! belong to. Re-exported flat so callers keep naming them `types::X`.
-//!
-//! These are the wire contract of every front end, not just HTTP: the daemon
-//! socket carries the same shapes, so a response type the CLI reads back
-//! derives `Deserialize` too.
+//! Request and response payloads, grouped by entity and re-exported as `types::X`.
+//! HTTP and the daemon socket share this contract; CLI responses also need `Deserialize`.
 
 mod common;
 mod dnssec;
@@ -37,14 +33,15 @@ pub use external_dns::{
     ExternalDnsRecordUpdate, ExternalDnsRecordsResponse,
 };
 pub use grant::CreateGrantRequest;
-pub use import::{ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse};
-pub use pagination::{DEFAULT_PAGE_LIMIT, PageFilter, PaginatedResponse, Pagination};
-pub(crate) use pagination::{build_page, normalize_page_limit, parse_setting};
+pub use import::{
+    ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, ParseImportModeError,
+};
+pub use pagination::{DEFAULT_PAGE_LIMIT, PageRequest, PaginatedResponse, Pagination};
 pub(crate) use record::build_display_value;
 pub use record::{
-    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsRequest,
     DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, RecordItem, RecordResponse,
-    RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
+    RecordTypeResponse, RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
 };
 pub use secondary::{
     CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, NotifyCheckResponse,

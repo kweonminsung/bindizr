@@ -34,6 +34,7 @@ static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 static RUN_ID: OnceLock<String> = OnceLock::new();
 
 /// One bindizr under test, reached over its HTTP API and CLI, plus the DNS ports it serves.
+#[derive(Debug)]
 pub(crate) struct TestApp {
     runtime: TestRuntime,
     client: Client,
@@ -45,6 +46,7 @@ pub(crate) struct TestApp {
 }
 
 /// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub(crate) struct TestAppOptions {
     pub(crate) authentication_required: bool,
     pub(crate) external_dns_enabled: bool,
@@ -70,6 +72,7 @@ impl Default for TestAppOptions {
 }
 
 /// Where the daemon under test runs: a process this test spawned, or the shared Compose stack.
+#[derive(Debug)]
 enum TestRuntime {
     Local { temp_dir: TempDir, child: Child },
     Compose(&'static ComposeStack),
@@ -307,31 +310,11 @@ impl TestApp {
             "expire": 604800,
             "minimum_ttl": 86400
         });
-        let (status, _) = self
+        // The zone starts with its apex NS record naming ns1.
+        let (status, body) = self
             .send_request(Method::POST, "/zones", Some(request))
             .await;
         assert_eq!(status, StatusCode::CREATED);
-
-        // The apex NS is the operator's record, so the fixture adds one.
-        let (status, _) = self
-            .send_request(
-                Method::POST,
-                "/records",
-                Some(json!({
-                    "zone_name": zone_name,
-                    "name": "@",
-                    "type": "NS",
-                    "value": format!("ns1.{zone_name}"),
-                })),
-            )
-            .await;
-        assert_eq!(status, StatusCode::CREATED);
-
-        // That record moved the serial, so report the zone as it now stands.
-        let (status, body) = self
-            .send_request(Method::GET, &format!("/zones/{zone_name}"), None)
-            .await;
-        assert_eq!(status, StatusCode::OK);
         body["zone"].clone()
     }
 
@@ -340,27 +323,18 @@ impl TestApp {
     pub(crate) async fn create_zone_cli(&self, zone_name: &str, default_ttl: &str) -> String {
         let mname = format!("ns1.{zone_name}");
         let rname = format!("hostmaster@{zone_name}");
-        let created = self
-            .run_cli_success(&[
-                "zone",
-                "create",
-                zone_name,
-                "--mname",
-                &mname,
-                "--rname",
-                &rname,
-                "--default-ttl",
-                default_ttl,
-            ])
-            .await;
-
-        // The apex NS is the operator's record, so the fixture adds one.
         self.run_cli_success(&[
-            "record", "create", zone_name, "@", "--type", "NS", "--value", &mname,
+            "zone",
+            "create",
+            zone_name,
+            "--mname",
+            &mname,
+            "--rname",
+            &rname,
+            "--default-ttl",
+            default_ttl,
         ])
-        .await;
-
-        created
+        .await
     }
 
     /// Run a CLI command against this test application.
@@ -368,10 +342,8 @@ impl TestApp {
         self.run_cli_with_input(args, None).await
     }
 
-    /// Run the CLI, optionally piping `input` to its stdin (for `-` file args).
-    ///
-    /// After selected zone/record commands succeed, wait for configured secondary
-    /// DNS answers to match the API.
+    /// Run the CLI with optional stdin; after selected zone/record writes,
+    /// wait for configured secondaries to match the API.
     pub(crate) async fn run_cli_with_input(
         &self,
         args: &[&str],

@@ -45,9 +45,9 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
             super::middleware::auth::auth_middleware,
         ));
     } else {
-        // Grant Global explicitly so a missing caller stays a wiring
+        // Attach the API caller explicitly so a missing caller stays a wiring
         // error the extractor rejects instead of implying full access.
-        api_router = api_router.layer(Extension(Caller::Global));
+        api_router = api_router.layer(Extension(Caller::unauthenticated_api()));
     }
 
     let mut router = api_router;

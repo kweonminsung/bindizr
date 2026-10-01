@@ -1,13 +1,9 @@
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
-/// Hides serials whose journal carries only signer-generated changes
-/// (re-signs, rollovers). Serials with user changes, serials with no journal
-/// at all (zone creation, forced bumps), and the current serial stay listed.
-///
-/// Takes one extra `?` bind of the zone id, keeping the current-serial
-/// subquery uncorrelated.
-const USER_CHANGES_FILTER: &str = r#"
+/// Exclude past versions whose nonempty journal contains only derived changes.
+/// Bind one extra zone id to keep the current-serial subquery uncorrelated.
+const EXCLUDE_PAST_SIGNER_ONLY_FILTER: &str = r#"
               AND (
                   zone_versions.serial = (SELECT zones.serial FROM zones WHERE zones.id = ?)
                   OR EXISTS (
@@ -28,7 +24,7 @@ use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use crate::{
     LockLevel,
     error::DatabaseError,
-    model::zone_version::{VersionScope, ZoneVersion},
+    model::zone_version::{ChangeActor, VersionFilter, ZoneVersion},
 };
 
 /// Insert or update a zone version in the current transaction.
@@ -36,10 +32,15 @@ pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, MySql>,
     version: ZoneVersion,
 ) -> Result<ZoneVersion, DatabaseError> {
+    let (changed_by_kind, changed_by_name) = version
+        .changed_by
+        .as_ref()
+        .map(ChangeActor::as_columns)
+        .unzip();
     sqlx::query(
         r#"
-        INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             mname = VALUES(mname),
             rname = VALUES(rname),
@@ -49,7 +50,8 @@ pub(crate) async fn upsert_tx(
             expire = VALUES(expire),
             minimum_ttl = VALUES(minimum_ttl),
             change_source = VALUES(change_source),
-            changed_by = VALUES(changed_by)
+            changed_by_kind = VALUES(changed_by_kind),
+            changed_by_name = VALUES(changed_by_name)
         "#,
     )
     .bind(version.zone_id)
@@ -62,7 +64,8 @@ pub(crate) async fn upsert_tx(
     .bind(version.expire)
     .bind(version.minimum_ttl)
     .bind(version.change_source.as_str())
-    .bind(&version.changed_by)
+    .bind(changed_by_kind)
+    .bind(changed_by_name)
     .bind(Utc::now())
     .execute(&mut **tx)
     .await?;
@@ -80,7 +83,7 @@ pub(crate) async fn get_by_serial(
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = ? AND serial = ?
         "#,
@@ -101,7 +104,7 @@ pub(crate) async fn list_in_serial_range(
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = ? AND serial >= ? AND serial <= ?
         "#,
@@ -115,28 +118,28 @@ pub(crate) async fn list_in_serial_range(
 }
 
 /// List zone versions for a zone.
-pub(crate) async fn list(
+pub(crate) async fn list_by_filter(
     pool: &Pool<MySql>,
     zone_id: ZoneId,
-    scope: VersionScope,
+    filter: VersionFilter,
     limit: u32,
     offset: u64,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
-    let filter = match scope {
-        VersionScope::UserChanges => USER_CHANGES_FILTER,
-        VersionScope::All => "",
+    let predicate = match filter {
+        VersionFilter::ExcludePastSignerOnly => EXCLUDE_PAST_SIGNER_ONLY_FILTER,
+        VersionFilter::All => "",
     };
     let mut query = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
-        WHERE zone_id = ?{filter}
+        WHERE zone_id = ?{predicate}
         ORDER BY serial DESC
         LIMIT ? OFFSET ?
         "#
     )))
     .bind(zone_id);
-    if scope == VersionScope::UserChanges {
+    if filter == VersionFilter::ExcludePastSignerOnly {
         query = query.bind(zone_id);
     }
     query
@@ -148,20 +151,20 @@ pub(crate) async fn list(
 }
 
 /// Count zone versions using the requested change filter.
-pub(crate) async fn count(
+pub(crate) async fn count_by_filter(
     pool: &Pool<MySql>,
     zone_id: ZoneId,
-    scope: VersionScope,
+    filter: VersionFilter,
 ) -> Result<u64, DatabaseError> {
-    let filter = match scope {
-        VersionScope::UserChanges => USER_CHANGES_FILTER,
-        VersionScope::All => "",
+    let predicate = match filter {
+        VersionFilter::ExcludePastSignerOnly => EXCLUDE_PAST_SIGNER_ONLY_FILTER,
+        VersionFilter::All => "",
     };
     let mut query = sqlx::query_scalar(AssertSqlSafe(format!(
-        "SELECT COUNT(*) FROM zone_versions WHERE zone_id = ?{filter}"
+        "SELECT COUNT(*) FROM zone_versions WHERE zone_id = ?{predicate}"
     )))
     .bind(zone_id);
-    if scope == VersionScope::UserChanges {
+    if filter == VersionFilter::ExcludePastSignerOnly {
         query = query.bind(zone_id);
     }
     let count: i64 = query.fetch_one(pool).await?;
@@ -177,7 +180,7 @@ pub(crate) async fn get_by_serial_tx(
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         AssertSqlSafe(format!("{}{}", r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = ? AND serial = ?
         "#, lock_level.clause())),

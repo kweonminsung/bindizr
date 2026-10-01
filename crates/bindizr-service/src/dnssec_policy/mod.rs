@@ -3,23 +3,23 @@
 //! Zone signing consumes these policies in `dnssec`.
 
 use bindizr_core::model::dnssec_policy::{Days, PolicyId};
+use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use crate::{
     Context,
     authorization::Caller,
-    db,
-    db::LockLevel,
     error::ServiceError,
     model::{
         dnssec_key::DnssecAlgorithm,
         dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
     },
+    pagination::build_page,
     text::normalize_identifier,
     transaction,
     types::{
-        CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageFilter, PaginatedResponse,
-        UpdateDnssecPolicyRequest, build_page,
+        CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageRequest, PaginatedResponse,
+        UpdateDnssecPolicyRequest,
     },
 };
 
@@ -63,14 +63,14 @@ pub async fn create(
     )?;
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
-    if db::dnssec_policy::get_by_name(cx.db(), &name)
+    if bindizr_db::dnssec_policy::get_by_name(cx.db(), &name)
         .await?
         .is_some()
     {
         return Err(ServiceError::dnssec_policy_conflict(&name));
     }
 
-    db::dnssec_policy::create(
+    bindizr_db::dnssec_policy::create(
         cx.db(),
         DnssecPolicy {
             id: PolicyId::UNWRITTEN,
@@ -100,11 +100,11 @@ pub async fn create(
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetDnssecPolicyResponse>, ServiceError> {
     caller.authorize_global("manage DNSSEC policies")?;
 
-    let policies = db::dnssec_policy::list_all(cx.db()).await?;
+    let policies = bindizr_db::dnssec_policy::list_all(cx.db()).await?;
     build_page(
         policies.iter().map(GetDnssecPolicyResponse::from).collect(),
         page.limit,
@@ -123,7 +123,7 @@ pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<DnssecPoli
 /// service-internal use; front ends go through [`get`].
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<DnssecPolicy, ServiceError> {
     let name = normalize_policy_name(name)?;
-    db::dnssec_policy::get_by_name(cx.db(), &name)
+    bindizr_db::dnssec_policy::get_by_name(cx.db(), &name)
         .await?
         .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))
 }
@@ -144,9 +144,10 @@ pub async fn update(
     // each restore the fields the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC policy").await?;
     let result: Result<_, ServiceError> = async {
-        let policy = db::dnssec_policy::get_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
-            .await?
-            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))?;
+        let policy =
+            bindizr_db::dnssec_policy::get_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
+                .await?
+                .ok_or_else(|| ServiceError::dnssec_policy_not_found(&name))?;
         let signature_validity_days = request
             .signature_validity_days
             .unwrap_or(policy.signature_validity_days.as_days());
@@ -162,7 +163,7 @@ pub async fn update(
             zsk_lifetime_days,
         )?;
 
-        Ok(db::dnssec_policy::update_tx(
+        Ok(bindizr_db::dnssec_policy::update_tx(
             &mut tx,
             DnssecPolicy {
                 signature_validity_days,
@@ -191,12 +192,12 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
         )));
     }
 
-    let zone_count = db::zone::count_by_dnssec_policy_id(cx.db(), policy.id).await?;
+    let zone_count = bindizr_db::zone::count_by_dnssec_policy_id(cx.db(), policy.id).await?;
     if zone_count > 0 {
         return Err(ServiceError::dnssec_policy_in_use(&policy.name, zone_count));
     }
 
-    db::dnssec_policy::delete(cx.db(), policy.id)
+    bindizr_db::dnssec_policy::delete(cx.db(), policy.id)
         .await
         .map_err(|e| {
             // A zone enabled between the count above and this delete trips
@@ -217,10 +218,8 @@ pub(crate) fn normalize_policy_name(value: &str) -> Result<String, ServiceError>
     normalize_identifier(value, "DNSSEC policy name", MAX_POLICY_NAME_LEN)
 }
 
-/// Validate signature validity, refresh, and key lifetime settings.
-///
-/// The refresh window must be shorter than validity, or every scheduler pass would re-sign
-/// the zone.
+/// Validate signing timings, requiring refresh below validity so the scheduler
+/// does not re-sign on every pass.
 fn validate_timing(
     signature_validity_days: u32,
     signature_refresh_days: u32,

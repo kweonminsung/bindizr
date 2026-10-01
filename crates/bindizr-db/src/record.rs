@@ -8,12 +8,12 @@ use crate::{
     error::DatabaseError,
     model::record::{Record, RecordType, RecordWithZone},
     mysql, postgres,
-    sql::{RecordSort, SortOrder},
+    sql::{RecordSortField, SortOrder},
     sqlite,
     tx::TransactionKind,
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RecordFilter {
     /// Matched through a subquery on `zones.name`, so the filter still lands
     /// on `records.zone_id` and keeps the listing on `idx_records_zone_name`
@@ -33,7 +33,7 @@ pub struct RecordFilter {
     /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
     pub scope_token_id: Option<TokenId>,
-    pub sort: RecordSort,
+    pub sort: RecordSortField,
     pub order: SortOrder,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
@@ -116,20 +116,21 @@ pub async fn list_by_name_tx(
     }
 }
 
-/// One owner name holding a DS record but no NS record — a delegation a DS
-/// would orphan. Row-form name, so the apex reads as the empty string.
-/// Every zone mutation runs this, so `record_type` leads the predicate to
-/// keep it on `idx_records_zone_type`.
-pub async fn get_ds_name_without_ns_tx(
+/// Find any DS owner without an NS record, in row form (empty at the apex).
+/// One violation rejects the write; ordering is unspecified. The type-first
+/// predicate uses `idx_records_zone_type` on every zone mutation.
+pub async fn find_name_ds_without_ns_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
 ) -> Result<Option<String>, DatabaseError> {
     match &mut tx.0 {
-        TransactionKind::MySql(tx) => mysql::record::get_ds_name_without_ns_tx(tx, zone_id).await,
+        TransactionKind::MySql(tx) => mysql::record::find_name_ds_without_ns_tx(tx, zone_id).await,
         TransactionKind::Postgres(tx) => {
-            postgres::record::get_ds_name_without_ns_tx(tx, zone_id).await
+            postgres::record::find_name_ds_without_ns_tx(tx, zone_id).await
         }
-        TransactionKind::Sqlite(tx) => sqlite::record::get_ds_name_without_ns_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => {
+            sqlite::record::find_name_ds_without_ns_tx(tx, zone_id).await
+        }
     }
 }
 

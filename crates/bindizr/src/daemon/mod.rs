@@ -57,23 +57,23 @@ pub(crate) enum DaemonError {
     ServeSocket(#[from] ServeSocketError),
     #[error(transparent)]
     Api(#[from] StartApiError),
-    #[error("Failed to listen for {signal}: {source}")]
+    #[error("failed to listen for {signal}: {source}")]
     Signal {
         signal: &'static str,
         #[source]
         source: std::io::Error,
     },
-    #[error("The {name} stopped")]
+    #[error("the {name} stopped")]
     ServerStopped { name: &'static str },
-    #[error("The {name} failed: {source}")]
+    #[error("the {name} failed: {source}")]
     ServerFailed {
         name: &'static str,
         #[source]
         source: tokio::task::JoinError,
     },
-    #[error("Failed to locate the bindizr executable")]
+    #[error("failed to locate the bindizr executable")]
     ExecutableUnknown,
-    #[error("Failed to re-execute bindizr: {0}")]
+    #[error("failed to re-execute bindizr: {0}")]
     Reexec(#[source] std::io::Error),
 }
 
@@ -88,9 +88,8 @@ impl DaemonError {
     }
 }
 
-/// The front ends the daemon supervises, each yielding the name it is reported
-/// under and how it ended. `join_next` removes a finished task, so the
-/// lifecycle loop and the drain never await the same handle twice.
+/// Supervised front-end tasks paired with their names; `join_next` removes
+/// finished tasks so shutdown never awaits a handle twice.
 type Servers = JoinSet<(&'static str, Result<(), JoinError>)>;
 
 /// Put a spawned front end under the daemon's supervision.
@@ -128,9 +127,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     // Reported after the logger exists, so it carries the configured format.
     log::info!("Configuration loaded from {}", config_path);
 
-    // Binding this first is what refuses a second daemon: otherwise the loser
-    // reports the conflict as a taken DNS port, after opening the database and
-    // running the seeding.
+    // Bind the control socket first so a second daemon fails before
+    // opening the database or claiming DNS ports.
     let (socket_path, socket_listener) = socket::server::bind().await?;
     log::info!("Daemon socket server listening on {}", socket_path);
 
@@ -183,9 +181,8 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     watch(&mut servers, "DNS TCP server", dns_tcp_task);
     watch(&mut servers, "DNS UDP server", dns_udp_task);
 
-    // Every front end is serving now, so the start time is what `bindizr
-    // restart` waits for before it reports the daemon back up; the gauge
-    // publishes the same moment.
+    // Publish the start time only after all front ends serve; restart
+    // polling and the uptime gauge use this same readiness point.
     cx.set_started_at(Utc::now());
     log::info!("Bindizr is running.");
 
@@ -256,6 +253,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 }
 
 /// Why the lifecycle loop ended.
+#[derive(Debug)]
 enum RunResult {
     Stop,
     Restart,
@@ -273,11 +271,8 @@ impl RunResult {
     }
 }
 
-/// Stop accepting work, then give in-flight requests and queued NOTIFYs a
-/// bounded time to finish.
-///
-/// In-flight zone transfers are not waited on: they run in tasks of their own,
-/// and a cut transfer is one the secondary discards and retries.
+/// Stop accepting work and drain requests and queued NOTIFYs within the shutdown timeout.
+/// Detached zone transfers are not awaited; secondaries discard and retry interrupted transfers.
 async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_worker: queue::NotifyWorker) {
     shutdown.trigger();
 

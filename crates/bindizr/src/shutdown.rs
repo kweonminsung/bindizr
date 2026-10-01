@@ -11,6 +11,13 @@ pub(crate) struct Shutdown {
     tx: watch::Sender<bool>,
 }
 
+impl Default for Shutdown {
+    /// Create a shutdown signal that has not been triggered.
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Shutdown {
     /// Create a shared shutdown signal.
     pub(crate) fn new() -> Self {

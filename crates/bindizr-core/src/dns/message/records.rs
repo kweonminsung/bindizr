@@ -119,7 +119,7 @@ impl DnsMessageBuilder {
     }
 
     /// Adds one answer of any supported stored type at an absolute owner name.
-    pub(crate) fn add_text_rdata(
+    pub fn add_text_rdata(
         &mut self,
         name: &str,
         ttl: u32,
@@ -193,7 +193,7 @@ impl DnsMessageBuilder {
 
     /// Adds an answer from stored record columns (records and journal
     /// rows share this shape). Unsupported types are skipped.
-    pub(crate) fn add_record_parts(
+    pub fn add_record_parts(
         &mut self,
         zone_name: &ZoneName,
         name: &OwnerName,

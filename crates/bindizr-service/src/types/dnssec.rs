@@ -2,7 +2,7 @@
 
 use bindizr_core::{
     dns::{Serial, dnssec::KeyTag},
-    model::dnssec_key::DnssecKeyId,
+    model::dnssec_key::{DnssecAlgorithm, DnssecKeyId},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ use crate::model::dnssec_key::{DnssecKeyRole, DnssecKeyState};
 
 /// Whether a step that depends on the parent's DS asks the parent
 /// nameservers, or takes the DS on the operator's word.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DsCheck {
     Probe,
@@ -33,7 +33,7 @@ impl DsCheck {
 
 /// Whether a key promotion waits out the hold-down resolvers need to learn
 /// the new key, or goes ahead at once.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Holddown {
     Wait,
@@ -106,7 +106,7 @@ pub struct DnssecDelegationKeyInfo {
 }
 
 /// Whether the parent serves a DS for the zone.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DsState {
     Published,
@@ -154,7 +154,7 @@ pub struct DnssecKeyInfo {
     /// `retired`; absent for `active`.
     pub eligible_at: Option<DateTime<Utc>>,
     #[schema(example = "ecdsap256sha256")]
-    pub algorithm: String,
+    pub algorithm: DnssecAlgorithm,
     #[schema(example = 34217, value_type = u16)]
     pub key_tag: KeyTag,
     /// Apex DNSKEY RDATA: `<flags> 3 <alg> <public key>`; flags are 256 for
@@ -263,4 +263,111 @@ pub struct ImportDnssecKeyRequest {
     /// Policy the zone signs under; defaults to `default`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy_name: Option<String>,
+}
+
+impl DsCheck {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Probe => "probe",
+            Self::Skip => "skip",
+        }
+    }
+}
+
+impl serde::Serialize for DsCheck {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl Holddown {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Wait => "wait",
+            Self::Skip => "skip",
+        }
+    }
+}
+
+impl serde::Serialize for Holddown {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl DsState {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Published => "published",
+            Self::Hidden => "hidden",
+        }
+    }
+}
+
+impl serde::Serialize for DsState {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify the canonical spelling and round-trip of every DsCheck variant.
+    #[test]
+    fn ds_check_spells_itself_once() {
+        for (value, expected) in [(DsCheck::Probe, "probe"), (DsCheck::Skip, "skip")] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<DsCheck>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+    }
+
+    /// Verify the canonical spelling and round-trip of every Holddown variant.
+    #[test]
+    fn holddown_spells_itself_once() {
+        for (value, expected) in [(Holddown::Wait, "wait"), (Holddown::Skip, "skip")] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<Holddown>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+    }
+
+    /// Verify the canonical spelling and round-trip of every DsState variant.
+    #[test]
+    fn ds_state_spells_itself_once() {
+        for (value, expected) in [
+            (DsState::Published, "published"),
+            (DsState::Hidden, "hidden"),
+        ] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<DsState>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+    }
 }

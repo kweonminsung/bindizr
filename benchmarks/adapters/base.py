@@ -1,15 +1,8 @@
-"""Common adapter interface every system-under-test implements.
+"""Common adapter contract for running identical workloads across DNS systems.
 
-A benchmark runner talks only to this interface, so the same workload runs
-unchanged against Bindizr, PowerDNS, Technitium, and BIND9+nsupdate/rndc.
-
-Semantics notes:
-- `create_record` returns an opaque handle (id or name) used by get/update/delete.
-- For systems without a REST record API (BIND9+nsupdate/rndc) the handle is the
-  record name; update/delete operate by name.
-- `dns_endpoint()` returns (host, port) of a resolver that answers queries for
-  the managed zone — for Bindizr this is its secondary (BIND9, Knot DNS, NSD,
-  or PowerDNS), proving the control plane is outside the data plane.
+`create_record` returns an opaque get/update/delete handle: an id, or a record
+name for BIND9 adapters. `dns_endpoint()` returns the zone's answering server;
+for Bindizr, that is the secondary, keeping queries outside the control plane.
 """
 from __future__ import annotations
 
@@ -79,12 +72,9 @@ class DnsAdapter(abc.ABC):
         ...
 
     async def bulk_import(self, zone: str, records: list[dict]) -> None:
-        """Concurrent creates via a fixed worker pool; adapters override for batch APIs.
+        """Create records concurrently, retry transient failures, and count unrecovered bulk errors.
 
-        Failures are retried — a real importer would retry transient backend
-        contention such as SQLite write locks — then counted in `bulk_errors`
-        rather than aborting the whole import.
-        """
+        Adapters may override this worker-pool fallback with a batch API."""
         self.bulk_errors = 0
         queue: asyncio.Queue[int] = asyncio.Queue()
         for i in range(len(records)):

@@ -22,9 +22,7 @@ use crate::api::{
     middleware::body_parser::{JsonBody, MAX_UPLOAD_BODY_BYTES},
 };
 
-/// Build the external DNS API routes.
-///
-/// Registered only when `api.external_dns_enabled` is set.
+/// Build ExternalDNS routes, registered only when `api.external_dns_enabled` is set.
 pub(crate) fn routes() -> Router<Arc<Context>> {
     Router::new()
         .route(

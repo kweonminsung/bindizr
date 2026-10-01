@@ -1,4 +1,4 @@
-use bindizr_core::{dns::Serial, model::zone_version::VersionScope};
+use bindizr_core::{dns::Serial, model::zone_version::VersionFilter};
 use bindizr_service::{
     Context,
     authorization::Caller,
@@ -20,7 +20,7 @@ pub(crate) async fn get_zone(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<ZoneResponse>, ServiceError> {
-    let zone = zone::get_by_name(cx, &Caller::Global, &zone::normalize_name(name)?).await?;
+    let zone = zone::get_by_name(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
     Ok(DaemonResponse {
         message: "Zone retrieved successfully".to_string(),
         data: ZoneResponse {
@@ -34,7 +34,7 @@ pub(crate) async fn list_zones(
     cx: &Context,
     filter: GetZonesFilter,
 ) -> Result<DaemonResponse<PaginatedResponse<GetZoneResponse>>, ServiceError> {
-    let response = zone::list_by_filter(cx, &Caller::Global, filter).await?;
+    let response = zone::list_by_filter(cx, &Caller::socket(), filter).await?;
     Ok(DaemonResponse {
         message: "Zones retrieved successfully".to_string(),
         data: response,
@@ -46,7 +46,7 @@ pub(crate) async fn create_zone(
     cx: &Context,
     request: &CreateZoneRequest,
 ) -> Result<DaemonResponse<ZoneWriteResponse>, ServiceError> {
-    let response = zone::create(cx, &Caller::Global, request).await?;
+    let response = zone::create(cx, &Caller::socket(), request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             "Zone would be created".to_string()
@@ -65,7 +65,7 @@ pub(crate) async fn update_zone(
 ) -> Result<DaemonResponse<ZoneWriteResponse>, ServiceError> {
     let response = zone::update(
         cx,
-        &Caller::Global,
+        &Caller::socket(),
         &zone::normalize_name(zone_name)?,
         request,
     )
@@ -88,7 +88,7 @@ pub(crate) async fn import_zone(
 ) -> Result<DaemonResponse<ImportZoneResponse>, ServiceError> {
     let response = record::import_zone(
         cx,
-        &Caller::Global,
+        &Caller::socket(),
         &zone::normalize_name(zone_name)?,
         request,
     )
@@ -115,7 +115,7 @@ pub(crate) async fn export_zone(
     name: &str,
     view: ZoneView,
 ) -> Result<DaemonResponse<ExportZoneFileResponse>, ServiceError> {
-    let zone_file = zone::export(cx, &Caller::Global, &zone::normalize_name(name)?, view).await?;
+    let zone_file = zone::export(cx, &Caller::socket(), &zone::normalize_name(name)?, view).await?;
     Ok(DaemonResponse {
         message: "Zone exported successfully".to_string(),
         data: ExportZoneFileResponse { zone_file },
@@ -128,15 +128,15 @@ pub(crate) async fn list_zone_versions(
     name: &str,
     limit: Option<u32>,
     offset: Option<u64>,
-    scope: VersionScope,
+    filter: VersionFilter,
 ) -> Result<DaemonResponse<PaginatedResponse<ZoneVersionResponse>>, ServiceError> {
     let response = zone::list_versions(
         cx,
-        &Caller::Global,
+        &Caller::socket(),
         &zone::normalize_name(name)?,
         limit,
         offset,
-        scope,
+        filter,
     )
     .await?;
     Ok(DaemonResponse {
@@ -152,7 +152,7 @@ pub(crate) async fn get_zone_version(
     serial: Serial,
 ) -> Result<DaemonResponse<VersionDetailResponse>, ServiceError> {
     let response =
-        zone::get_version(cx, &Caller::Global, &zone::normalize_name(name)?, serial).await?;
+        zone::get_version(cx, &Caller::socket(), &zone::normalize_name(name)?, serial).await?;
     Ok(DaemonResponse {
         message: format!("Version '{}' retrieved successfully", serial),
         data: response,
@@ -168,7 +168,7 @@ pub(crate) async fn diff_zone_versions(
 ) -> Result<DaemonResponse<VersionDiffResponse>, ServiceError> {
     let response = zone::diff_versions(
         cx,
-        &Caller::Global,
+        &Caller::socket(),
         &zone::normalize_name(name)?,
         from_serial,
         to_serial,
@@ -196,7 +196,7 @@ pub(crate) async fn rollback_zone(
 ) -> Result<DaemonResponse<RollbackZoneResponse>, ServiceError> {
     let response = zone::rollback(
         cx,
-        &Caller::Global,
+        &Caller::socket(),
         &zone::normalize_name(name)?,
         serial,
         run,
@@ -224,7 +224,7 @@ pub(crate) async fn get_zone_status(
     cx: &Context,
     name: &str,
 ) -> Result<DaemonResponse<ZoneStatusResponse>, ServiceError> {
-    let response = zone::get_status(cx, &Caller::Global, &zone::normalize_name(name)?).await?;
+    let response = zone::get_status(cx, &Caller::socket(), &zone::normalize_name(name)?).await?;
     let in_sync = response
         .secondaries
         .iter()
@@ -252,7 +252,7 @@ pub(crate) async fn delete_zone(
     name: &str,
     run: Run,
 ) -> Result<DaemonResponse<DeleteZoneResponse>, ServiceError> {
-    let response = zone::delete(cx, &Caller::Global, &zone::normalize_name(name)?, run).await?;
+    let response = zone::delete(cx, &Caller::socket(), &zone::normalize_name(name)?, run).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!(

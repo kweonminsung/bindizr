@@ -13,7 +13,7 @@ use bindizr_core::{
 };
 use chrono::Utc;
 
-use crate::{Context, db, error::ServiceError};
+use crate::{Context, error::ServiceError};
 
 /// Save a transfer answered for `zone_id` up to `serial`. A failure to
 /// save is logged; the transfer already went out.
@@ -25,7 +25,7 @@ pub async fn save_ok(
     incremental: bool,
     serial: Serial,
 ) {
-    let saved = db::transfer::upsert(
+    let saved = bindizr_db::transfer::upsert(
         cx.db(),
         Transfer {
             client_addr: client.to_string(),
@@ -80,7 +80,7 @@ async fn save_unserved(
     let Ok(zone_name) = ZoneName::parse(zone_name) else {
         return;
     };
-    let zone = match db::zone::get_by_name(cx.db(), &zone_name).await {
+    let zone = match bindizr_db::zone::get_by_name(cx.db(), &zone_name).await {
         Ok(Some(zone)) => zone,
         Ok(None) => return,
         Err(e) => {
@@ -88,7 +88,7 @@ async fn save_unserved(
             return;
         }
     };
-    let saved = db::transfer::upsert(
+    let saved = bindizr_db::transfer::upsert(
         cx.db(),
         Transfer {
             client_addr: client.to_string(),
@@ -115,7 +115,8 @@ pub(crate) async fn list_by_clients(
     let mut transfers = Vec::new();
     for client in clients {
         transfers.extend(
-            db::transfer::list_by_client_addr_with_zone(cx.db(), &client.to_string()).await?,
+            bindizr_db::transfer::list_by_client_addr_with_zone(cx.db(), &client.to_string())
+                .await?,
         );
     }
     transfers.sort_by_key(|transfer| std::cmp::Reverse(transfer.served_at));
@@ -130,7 +131,7 @@ pub(crate) async fn find_by_clients_and_zone_name(
 ) -> Result<Option<TransferWithZone>, ServiceError> {
     let mut latest: Option<TransferWithZone> = None;
     for client in clients {
-        if let Some(transfer) = db::transfer::get_by_client_addr_and_zone_name_with_zone(
+        if let Some(transfer) = bindizr_db::transfer::get_by_client_addr_and_zone_name_with_zone(
             cx.db(),
             &client.to_string(),
             zone_name,

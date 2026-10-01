@@ -2,20 +2,19 @@
 //! only over the daemon socket: private keys never transit the HTTP API.
 
 use bindizr_core::dns::{dnssec::SigningPass, name::ZoneName};
+use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::status::build_status_tx;
 use crate::{
     Context,
     authorization::Caller,
-    db,
-    db::LockLevel,
     dnssec::SignedZone,
     dnssec_policy::normalize_policy_name,
     error::ServiceError,
     model::{
         dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
-        dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME,
+        dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecKeyLayout},
         zone::Zone,
     },
     transaction,
@@ -38,7 +37,7 @@ pub async fn export_keys(
     let mut tx = transaction::begin_read_tx(cx, "failed to export DNSSEC keys").await?;
     let result = async {
         let SignedZone { zone, keys, .. } =
-            super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+            super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         Ok(ExportDnssecKeysResponse {
             zone_name: zone.name.as_str().to_string(),
             keys: keys
@@ -86,23 +85,24 @@ pub async fn import_keys(
 
     let mut tx = transaction::begin_tx(cx, "failed to import DNSSEC keys").await?;
     let result = async {
-        let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        if !db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked)
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        if !bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked)
             .await?
             .is_empty()
         {
             return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
         }
-        let policy = db::dnssec_policy::get_by_name_tx(&mut tx, &policy_name, LockLevel::Shared)
-            .await?
-            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
+        let policy =
+            bindizr_db::dnssec_policy::get_by_name_tx(&mut tx, &policy_name, LockLevel::Shared)
+                .await?
+                .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
 
         let now = Utc::now();
         let mut keys: Vec<DnssecKey> = Vec::with_capacity(request.keys.len());
         for pair in &request.keys {
             let key = DnssecKey::import(
                 &zone,
-                policy.split_keys,
+                DnssecKeyLayout::from_split_keys(policy.split_keys),
                 &pair.dnskey,
                 &pair.private_key,
                 now,
@@ -147,10 +147,10 @@ pub async fn import_keys(
         }
 
         // Store the validated key set and its first signed view together.
-        db::zone::update_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id)).await?;
+        bindizr_db::zone::update_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id)).await?;
         let mut stored = Vec::with_capacity(keys.len());
         for key in keys {
-            stored.push(db::dnssec_key::create_tx(&mut tx, key).await?);
+            stored.push(bindizr_db::dnssec_key::create_tx(&mut tx, key).await?);
         }
         let signed = SignedZone {
             zone: Zone {
@@ -162,11 +162,11 @@ pub async fn import_keys(
         };
 
         let new_serial = super::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);

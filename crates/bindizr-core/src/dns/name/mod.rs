@@ -1,9 +1,6 @@
-//! Domain-name handling: label and length limits, FQDN normalization, and the
-//! whitespace/control hygiene check shared by name-like inputs.
-//!
-//! Names decode into labels at the parse boundary ([`OwnerName`], [`ZoneName`]),
-//! so an escaped dot is label data and never a boundary. Text is a rendering,
-//! re-escaped canonically (RFC 1035, Section 5.1).
+//! Parse and normalize names, enforcing label, length, and whitespace limits.
+//! [`OwnerName`] and [`ZoneName`] decode labels before comparison: escaped dots
+//! remain label data. Text uses canonical RFC 1035, Section 5.1 escapes.
 
 mod error;
 mod owner_name;
@@ -27,10 +24,10 @@ pub fn has_whitespace_or_control(value: &str) -> bool {
 }
 
 /// Classify one label's problem, if any: non-empty, at most 63 bytes, LDH
-/// charset (plus `_` when `allow_underscore`), no leading/trailing hyphen.
+/// charset (plus `_` when `LabelCharset::LdhUnderscore`), no leading/trailing hyphen.
 pub(crate) fn classify_domain_label(
     label: &str,
-    allow_underscore: bool,
+    charset: LabelCharset,
 ) -> Result<(), ParseNameError> {
     if label.is_empty() {
         return Err(ParseNameError::EmptyLabel);
@@ -40,12 +37,13 @@ pub(crate) fn classify_domain_label(
         return Err(ParseNameError::LabelTooLong);
     }
 
-    if !label
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || (allow_underscore && c == '_'))
-    {
+    if !label.chars().all(|c| {
+        c.is_ascii_alphanumeric()
+            || c == '-'
+            || (charset == LabelCharset::LdhUnderscore && c == '_')
+    }) {
         return Err(ParseNameError::LabelCharset {
-            underscore_allowed: allow_underscore,
+            underscore_allowed: charset == LabelCharset::LdhUnderscore,
         });
     }
 
@@ -89,9 +87,8 @@ pub fn labels_to_presentation(labels: &[String]) -> String {
 /// not decode keeps its own spelling — this renders, it does not validate.
 pub(crate) fn to_fqdn_lowercase(value: &str) -> String {
     let trimmed = value.trim();
-    // LDH-and-`_` spellings hold no escape to resolve and need none applied on
-    // the way out, so decoding them into labels lands on the same lowercasing
-    // below that a value failing to decode takes.
+    // LDH and underscore labels need no escaping, so this fast path
+    // produces the same lowercase form as decoding and re-encoding.
     let needs_decode = trimmed
         .bytes()
         .any(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')));
@@ -123,9 +120,8 @@ pub fn encode_name(name: &str) -> Result<Vec<u8>, EncodeNameError> {
     labels_to_wire(labels.iter().map(String::as_str)).map_err(failed)
 }
 
-/// Length-prefixed wire labels plus the root. Limits are re-checked at this
-/// one emitter, so a row edited outside bindizr cannot smuggle a label past
-/// the length octet.
+/// Encode length-prefixed labels and the root, rechecking wire limits
+/// because stored rows may have been edited outside bindizr.
 fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, ParseNameError> {
     let mut wire = Vec::new();
     for label in labels {
@@ -147,3 +143,10 @@ fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, 
 
 #[cfg(test)]
 mod tests;
+
+/// Character policy for an LDH label validator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LabelCharset {
+    Ldh,
+    LdhUnderscore,
+}

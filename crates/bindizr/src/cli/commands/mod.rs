@@ -52,9 +52,9 @@ pub(crate) fn read_input(path: &str) -> Result<String, ReadInputError> {
 /// Why command input could not be read.
 #[derive(Debug, Error)]
 pub(crate) enum ReadInputError {
-    #[error("Failed to read from stdin: {0}")]
+    #[error("failed to read from stdin: {0}")]
     Stdin(#[source] std::io::Error),
-    #[error("Failed to read '{path}': {source}")]
+    #[error("failed to read '{path}': {source}")]
     File {
         path: String,
         #[source]

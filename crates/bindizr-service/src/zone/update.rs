@@ -7,7 +7,7 @@ use bindizr_db::LockLevel;
 use crate::{
     Context,
     authorization::Caller,
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::{
         zone::Zone,
@@ -19,11 +19,12 @@ use crate::{
     types::{CreateZoneRequest, GetZoneResponse, Run, UpdateZoneRequest, ZoneWriteResponse},
     zone::{
         validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
-        version::ChangeSubject,
+        version::ChangeAttribution,
     },
 };
 
 /// Outcome of the transactional part of a zone update.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct AppliedZoneUpdate {
     zone: Zone,
     /// Whether the update changed what the catalog publishes: its members are
@@ -81,12 +82,13 @@ pub async fn update(
     let updated_zone = update_locked(
         cx,
         zone_name,
-        &caller.change_subject(),
+        caller.change_attribution(),
         request.enabled,
         Run::from_dry_run(request.dry_run),
         |existing| {
             CreateZoneRequest {
                 dry_run: false,
+                apex_ns: false,
                 name: request
                     .name
                     .clone()
@@ -130,17 +132,18 @@ pub async fn update(
 async fn update_locked(
     cx: &Context,
     zone_name: &ZoneName,
-    subject: &ChangeSubject,
+    attribution: &ChangeAttribution,
     enabled: Option<bool>,
     run: Run,
     build: impl FnOnce(&Zone) -> CreateZoneRequest,
 ) -> Result<Zone, ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "Failed to update zone").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to update zone").await?;
 
     let apply_result: Result<AppliedZoneUpdate, ServiceError> = async {
         // Lock the zone row so the serial computed below stays ahead of
         // concurrent record mutations and nsupdate on the same zone.
-        let existing_zone = super::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let existing_zone =
+            super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let zone_id = existing_zone.id;
 
         let request = build(&existing_zone);
@@ -149,7 +152,8 @@ async fn update_locked(
         // A longer zone name lengthens every record's wire name, so the
         // records must still fit under it or the zone stops transferring.
         if validated.name != existing_zone.name {
-            let records = db::record::list_tx(&mut tx, zone_id, LockLevel::Unlocked).await?;
+            let records =
+                bindizr_db::record::list_tx(&mut tx, zone_id, LockLevel::Unlocked).await?;
             for record in &records {
                 validate_record_name_in_zone(&record.name, &validated.name)?;
             }
@@ -169,18 +173,21 @@ async fn update_locked(
         // deadlocks); renames that race past it hit the UNIQUE(name)
         // backstop, which maps to the same conflict error.
         if validated.name != existing_zone.name {
-            match db::zone::get_by_name(cx.db(), &validated.name).await {
+            match bindizr_db::zone::get_by_name(cx.db(), &validated.name).await {
                 Ok(Some(zone)) if zone.id != zone_id => {
                     log::error!("Zone with name {} already exists", validated.name);
                     return Err(ServiceError::zone_conflict(format!(
-                        "Zone with name '{}' already exists",
+                        "zone with name '{}' already exists",
                         validated.name
                     )));
                 }
                 Ok(_) => {}
                 Err(e) => {
                     log::error!("Failed to check existing zone: {}", e);
-                    return Err(ServiceError::internal("Failed to update zone"));
+                    return Err(ServiceError::internal_with_source(
+                        "failed to update zone",
+                        e,
+                    ));
                 }
             }
         }
@@ -215,30 +222,32 @@ async fn update_locked(
         }
 
         let name = candidate.name.clone();
-        let updated_zone = db::zone::update_tx(&mut tx, candidate).await.map_err(|e| {
-            // A rename that raced past the pre-check above trips
-            // UNIQUE(name); the backstop reads as the same conflict.
-            if e.is_unique_violation() {
-                ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
-            } else {
-                log::error!("Failed to update zone: {}", e);
-                ServiceError::internal("Failed to update zone")
-            }
-        })?;
+        let updated_zone = bindizr_db::zone::update_tx(&mut tx, candidate)
+            .await
+            .map_err(|e| {
+                // A rename that raced past the pre-check above trips
+                // UNIQUE(name); the backstop reads as the same conflict.
+                if e.is_unique_violation() {
+                    ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
+                } else {
+                    log::error!("Failed to update zone: {}", e);
+                    ServiceError::internal_with_source("failed to update zone", e)
+                }
+            })?;
 
         // Journal the SOA and signature changes under the zone update's serial,
         // then save the version that future IXFR and rollback reads will use.
         let changes = soa_replacement_changes(&existing_zone, &updated_zone, new_serial)?;
 
-        db::zone_change::create_many_tx(&mut tx, &changes)
+        bindizr_db::zone_change::create_many_tx(&mut tx, &changes)
             .await
             .map_err(|e| {
                 log::error!("Failed to create zone changes: {}", e);
-                ServiceError::internal("Failed to create zone change")
+                ServiceError::internal_with_source("failed to create zone change", e)
             })?;
 
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(cx, &mut tx, &updated_zone, new_serial, subject).await?;
+        super::save_version_tx(&mut tx, cx, &updated_zone, new_serial, attribution).await?;
 
         Ok(AppliedZoneUpdate {
             catalog_changed: existing_zone.name != updated_zone.name
@@ -253,7 +262,7 @@ async fn update_locked(
         zone: updated_zone,
         catalog_changed,
         new_serial,
-    } = transaction::finish_tx(tx, apply_result, "Failed to update zone").await?;
+    } = transaction::finish_tx(tx, apply_result, "failed to update zone").await?;
 
     log::info!(
         "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",

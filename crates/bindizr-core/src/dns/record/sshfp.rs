@@ -70,7 +70,7 @@ impl SshfpRecordValue {
     }
 
     /// The wire-format RDATA of a stored value (RFC 4255, Section 3.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
+    pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(2 + self.fingerprint.len());
         rdata.push(self.algorithm);
         rdata.push(self.fingerprint_type);

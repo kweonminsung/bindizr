@@ -265,9 +265,8 @@ impl Metrics {
         .map_err(RegisterMetricsError)?;
         register(&registry, &zone_cache_records)?;
 
-        // Prometheus emits a labelled series only once it is touched, so an
-        // alert on a counter staying at zero reads "no data" until the first
-        // event. Every label set here is small and fully known.
+        // Initialize every known label set so zero counters appear in metrics
+        // instead of reading as missing data until the first event.
         for result in XfrResult::ALL {
             for xfr_type in ["axfr", "ixfr"] {
                 xfr_total.with_label_values(&[xfr_type, result.label()]);

@@ -31,7 +31,7 @@ struct DoctorReport {
 
 /// Collects check outcomes for the exit code, printing each as it lands
 /// unless the caller asked for one document.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Report {
     format: OutputFormat,
     checks: Vec<DoctorCheck>,

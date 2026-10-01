@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
-"""A/B the Bindizr transfer cache (stored records cached by zone id and serial) on the AXFR path.
+"""Compare cold and warm AXFR times with Bindizr's zone-and-serial cache off and on.
 
-The suite's Benchmark 4 pulls AXFR from the BIND9 *secondary*, so it never
-exercises Bindizr's own XFR server. Here we AXFR straight at Bindizr from inside
-the bind9 container, signed with a global TSIG key: a registered secondary
-would transfer the zone on the import's NOTIFY, before the first measurement.
-
-At a fixed serial the first AXFR is a cache miss (reads the DB) and every
-subsequent one should hit. We report cold (1st) vs warm (rest) transfer times
-with the cache off and on.
+Query Bindizr directly from the bind9 container; Benchmark 4 queries the secondary.
+A global TSIG key avoids registering a secondary that would warm the cache on NOTIFY.
+At a fixed serial, the first transfer misses and subsequent transfers should hit.
 """
 from __future__ import annotations
 

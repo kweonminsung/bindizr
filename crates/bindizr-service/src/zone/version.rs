@@ -5,35 +5,36 @@ use bindizr_core::{
 use chrono::Utc;
 
 use crate::{
-    Context, Transaction, db,
+    Context, Transaction,
     error::ServiceError,
     model::{
         zone::Zone,
-        zone_version::{ChangeSource, ZoneVersion},
+        zone_version::{ChangeActor, ChangeSource, ZoneVersion},
     },
 };
 
-/// Who a zone version is recorded as the work of; the scheduler and an
-/// unsigned update have no name to give.
+/// The origin of a version and the named credential behind it, independent of permissions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ChangeSubject {
+pub(crate) struct ChangeAttribution {
     pub(crate) source: ChangeSource,
-    pub(crate) actor: Option<String>,
+    pub(crate) actor: Option<ChangeActor>,
 }
 
-impl ChangeSubject {
+impl ChangeAttribution {
     /// An RFC 2136 update, named by the TSIG key that signed it; unsigned
     /// updates reach here only through an address ACL, which names nobody.
     pub(crate) fn nsupdate(key_name: Option<&str>) -> Self {
-        ChangeSubject {
+        ChangeAttribution {
             source: ChangeSource::Nsupdate,
-            actor: key_name.map(str::to_string),
+            actor: key_name.map(|name| ChangeActor::TsigKey {
+                name: name.to_string(),
+            }),
         }
     }
 
     /// The scheduler, acting on nobody's request.
     pub(crate) fn system() -> Self {
-        ChangeSubject {
+        ChangeAttribution {
             source: ChangeSource::System,
             actor: None,
         }
@@ -43,20 +44,20 @@ impl ChangeSubject {
 /// Advance the zone serial so IXFR consumers detect the change, and
 /// version it in the same transaction.
 pub(crate) async fn advance_serial_tx(
-    cx: &Context,
     tx: &mut Transaction<'_>,
+    cx: &Context,
     zone: &Zone,
     new_serial: Serial,
-    subject: &ChangeSubject,
+    attribution: &ChangeAttribution,
 ) -> Result<(), ServiceError> {
-    db::zone::update_serial_tx(tx, zone.id, new_serial)
+    bindizr_db::zone::update_serial_tx(tx, zone.id, new_serial)
         .await
         .map_err(|e| {
             log::error!("Failed to update zone serial: {}", e);
-            ServiceError::internal("Failed to update zone serial")
+            ServiceError::internal_with_source("failed to update zone serial", e)
         })?;
 
-    save_version_tx(cx, tx, zone, new_serial, subject).await
+    save_version_tx(tx, cx, zone, new_serial, attribution).await
 }
 
 /// Reject DS records without an NS delegation at the same owner: a DS identifies a child
@@ -65,7 +66,7 @@ async fn validate_delegations_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
 ) -> Result<(), ServiceError> {
-    let orphaned = db::record::get_ds_name_without_ns_tx(tx, zone_id).await?;
+    let orphaned = bindizr_db::record::find_name_ds_without_ns_tx(tx, zone_id).await?;
     if let Some(name) = orphaned.as_deref() {
         let name = if name.is_empty() { "@" } else { name };
         return Err(ServiceError::record_conflict(format!(
@@ -80,14 +81,14 @@ async fn validate_delegations_tx(
 /// Every mutation path ends here, so the cross-row invariants are
 /// checked once, against the final state, order-independently.
 pub(crate) async fn save_version_tx(
-    cx: &Context,
     tx: &mut Transaction<'_>,
+    cx: &Context,
     zone: &Zone,
     serial: Serial,
-    subject: &ChangeSubject,
+    attribution: &ChangeAttribution,
 ) -> Result<(), ServiceError> {
     validate_delegations_tx(tx, zone.id).await?;
-    db::zone_version::upsert_tx(
+    bindizr_db::zone_version::upsert_tx(
         tx,
         ZoneVersion {
             id: ZoneVersionId::UNWRITTEN,
@@ -103,15 +104,15 @@ pub(crate) async fn save_version_tx(
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: zone.minimum_ttl,
-            change_source: subject.source,
-            changed_by: subject.actor.clone(),
+            change_source: attribution.source,
+            changed_by: attribution.actor.clone(),
             created_at: Utc::now(),
         },
     )
     .await
     .map_err(|e| {
         log::error!("Failed to save SOA version: {}", e);
-        ServiceError::internal("Failed to save SOA version")
+        ServiceError::internal_with_source("failed to save SOA version", e)
     })?;
 
     // Every serial-advancing path funnels through this version write.
@@ -126,7 +127,7 @@ pub async fn find_version_by_serial(
     zone_id: ZoneId,
     serial: Serial,
 ) -> Result<Option<ZoneVersion>, ServiceError> {
-    Ok(db::zone_version::get_by_serial(cx.db(), zone_id, serial).await?)
+    Ok(bindizr_db::zone_version::get_by_serial(cx.db(), zone_id, serial).await?)
 }
 
 /// Fetch every SOA version for a zone with serial in `[from_serial, to_serial]`.
@@ -136,5 +137,8 @@ pub async fn list_versions_in_serial_range(
     from_serial: Serial,
     to_serial: Serial,
 ) -> Result<Vec<ZoneVersion>, ServiceError> {
-    Ok(db::zone_version::list_in_serial_range(cx.db(), zone_id, from_serial, to_serial).await?)
+    Ok(
+        bindizr_db::zone_version::list_in_serial_range(cx.db(), zone_id, from_serial, to_serial)
+            .await?,
+    )
 }

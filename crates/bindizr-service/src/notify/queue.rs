@@ -123,7 +123,7 @@ pub fn spawn(cx: Arc<Context>, mut rx: UnboundedReceiver<NotifyJob>) -> NotifyWo
 
 /// Accumulates queued jobs so a burst collapses to one NOTIFY per zone. An
 /// all-zones job supersedes every per-zone job in the same batch.
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct NotifyBatch {
     all_zones: bool,
     zones: HashSet<ZoneName>,

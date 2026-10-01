@@ -18,7 +18,7 @@ pub enum ParseSortError {
 
 /// The column a zone listing sorts by.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ZoneSort {
+pub enum ZoneSortField {
     #[default]
     Name,
     Serial,
@@ -28,7 +28,7 @@ pub enum ZoneSort {
 
 /// The column a record listing sorts by.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum RecordSort {
+pub enum RecordSortField {
     #[default]
     Name,
     RecordType,
@@ -54,54 +54,53 @@ impl SortOrder {
     }
 }
 
-impl ZoneSort {
+impl ZoneSortField {
     /// Return the SQL column for this sort field.
     fn column(self) -> &'static str {
         match self {
-            ZoneSort::Name => "name",
-            ZoneSort::Serial => "serial",
-            ZoneSort::DefaultTtl => "default_ttl",
-            ZoneSort::CreatedAt => "created_at",
+            ZoneSortField::Name => "name",
+            ZoneSortField::Serial => "serial",
+            ZoneSortField::DefaultTtl => "default_ttl",
+            ZoneSortField::CreatedAt => "created_at",
         }
     }
 
-    /// The `ORDER BY` a zone listing pages under. The id follows the sort
-    /// column so the order is total: rows tied on it would otherwise be free
-    /// to swap between pages, dropping or repeating one.
+    /// Build a zone listing order with id as the tie-breaker, preventing tied
+    /// rows from moving between pages.
     pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
         format!("ORDER BY {} {}, id", self.column(), order.as_str())
     }
 }
 
-impl RecordSort {
+impl RecordSortField {
     /// Return the SQL column for this sort field.
     fn column(self) -> &'static str {
         match self {
-            RecordSort::Name => "r.name",
-            RecordSort::RecordType => "r.record_type",
-            RecordSort::Ttl => "r.ttl",
-            RecordSort::Priority => "r.priority",
-            RecordSort::CreatedAt => "r.created_at",
+            RecordSortField::Name => "r.name",
+            RecordSortField::RecordType => "r.record_type",
+            RecordSortField::Ttl => "r.ttl",
+            RecordSortField::Priority => "r.priority",
+            RecordSortField::CreatedAt => "r.created_at",
         }
     }
 
     /// The `ORDER BY` a record listing pages under; see
-    /// [`ZoneSort::order_by_sql`].
+    /// [`ZoneSortField::order_by_sql`].
     pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
         format!("ORDER BY {} {}, r.id", self.column(), order.as_str())
     }
 }
 
-impl std::str::FromStr for ZoneSort {
+impl std::str::FromStr for ZoneSortField {
     type Err = ParseSortError;
 
     /// Parse a zone sort from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "name" => Ok(ZoneSort::Name),
-            "serial" => Ok(ZoneSort::Serial),
-            "default_ttl" => Ok(ZoneSort::DefaultTtl),
-            "created_at" => Ok(ZoneSort::CreatedAt),
+            "name" => Ok(ZoneSortField::Name),
+            "serial" => Ok(ZoneSortField::Serial),
+            "default_ttl" => Ok(ZoneSortField::DefaultTtl),
+            "created_at" => Ok(ZoneSortField::CreatedAt),
             other => Err(ParseSortError::UnknownField {
                 value: other.to_string(),
                 expected: "name, serial, default_ttl, or created_at",
@@ -110,17 +109,17 @@ impl std::str::FromStr for ZoneSort {
     }
 }
 
-impl std::str::FromStr for RecordSort {
+impl std::str::FromStr for RecordSortField {
     type Err = ParseSortError;
 
     /// Parse a record sort from its text representation.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "name" => Ok(RecordSort::Name),
-            "type" => Ok(RecordSort::RecordType),
-            "ttl" => Ok(RecordSort::Ttl),
-            "priority" => Ok(RecordSort::Priority),
-            "created_at" => Ok(RecordSort::CreatedAt),
+            "name" => Ok(RecordSortField::Name),
+            "type" => Ok(RecordSortField::RecordType),
+            "ttl" => Ok(RecordSortField::Ttl),
+            "priority" => Ok(RecordSortField::Priority),
+            "created_at" => Ok(RecordSortField::CreatedAt),
             other => Err(ParseSortError::UnknownField {
                 value: other.to_string(),
                 expected: "name, type, ttl, priority, or created_at",
@@ -154,15 +153,15 @@ mod tests {
         // LIMIT/OFFSET over a non-unique sort would let tied rows swap between
         // pages, dropping or repeating one.
         assert_eq!(
-            ZoneSort::Serial.order_by_sql(SortOrder::Desc),
+            ZoneSortField::Serial.order_by_sql(SortOrder::Desc),
             "ORDER BY serial DESC, id"
         );
         assert_eq!(
-            RecordSort::Ttl.order_by_sql(SortOrder::Asc),
+            RecordSortField::Ttl.order_by_sql(SortOrder::Asc),
             "ORDER BY r.ttl ASC, r.id"
         );
         assert_eq!(
-            RecordSort::default().order_by_sql(SortOrder::default()),
+            RecordSortField::default().order_by_sql(SortOrder::default()),
             "ORDER BY r.name ASC, r.id"
         );
     }

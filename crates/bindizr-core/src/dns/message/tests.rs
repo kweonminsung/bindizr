@@ -6,7 +6,7 @@ use domain::{
     tsig::{ClientSequence, Key},
 };
 
-use super::{DNS_TCP_MAX_SIZE, DnsMessageBuilder, ParsedQuery, encode_tcp_message, is_response};
+use super::*;
 use crate::{
     dns::tsig::verify_tsig_sequence,
     model::{record::RecordType, tsig_key::TsigAlgorithm},
@@ -104,9 +104,8 @@ fn is_response_separates_a_reply_from_a_query() {
     assert!(is_response(&reply));
 }
 
-/// A signed AXFR query for `example.com.`, and the client sequence that
-/// verifies what answers it — `domain`'s own client, so the check is
-/// independent of the server code under test.
+/// Build a signed AXFR query for `example.com.` and a `domain` client
+/// sequence that verifies replies independently of the server under test.
 fn signed_axfr_query(key: Arc<Key>) -> (Vec<u8>, ClientSequence<Arc<Key>>) {
     let mut builder = MessageBuilder::new_vec();
     builder.header_mut().set_id(1234);

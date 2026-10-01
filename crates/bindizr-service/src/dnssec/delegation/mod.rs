@@ -5,13 +5,13 @@ use bindizr_core::dns::{
     name::ZoneName,
     query::DsRecordSet,
 };
+use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::status::build_status_tx;
 use crate::{
     Context,
     authorization::Caller,
-    db::LockLevel,
     dns_client::ds::{ParentDs, probe_parent_ds},
     dnssec::SignedZone,
     error::ServiceError,
@@ -34,7 +34,7 @@ pub async fn check_ds(
 
     let mut tx = transaction::begin_read_tx(cx, "failed to check the parent DS").await?;
     let result: Result<_, ServiceError> = async {
-        let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         let status = build_status_tx(
             &mut tx,
             &signed.zone,
@@ -67,10 +67,8 @@ pub(crate) async fn probe_delegation(
     build_delegation_info(&signed.zone, &signed.keys, parent)
 }
 
-/// Match the parent's answers against the zone's SEP keys. Refusal and
-/// promotion read them in opposite directions — a DS at any one server blocks
-/// a disable, promotion waits for every one — so a parent still propagating
-/// the change cannot move the zone the unsafe way in either direction.
+/// Match parent answers against SEP keys: any DS blocks disabling, all servers must confirm promotion.
+/// This keeps both transitions safe while parent changes propagate.
 fn build_delegation_info(
     zone: &Zone,
     keys: &[DnssecKey],
@@ -87,7 +85,7 @@ fn build_delegation_info(
     let apex = zone
         .name
         .to_wire_name()
-        .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
+        .map_err(|e| ServiceError::internal_with_source(format!("invalid zone apex: {}", e), e))?;
 
     let mut delegation_keys = Vec::new();
     for key in keys.iter().filter(|key| key.role.is_sep()) {

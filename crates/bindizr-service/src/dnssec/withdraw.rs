@@ -2,11 +2,11 @@
 //! asks a CDS-consuming parent to drop the zone's DS, and taking it back.
 
 use bindizr_core::dns::{dnssec::SigningPass, name::ZoneName};
+use bindizr_db::LockLevel;
 
 use super::status::build_status_tx;
 use crate::{
-    Context, authorization::Caller, db, db::LockLevel, error::ServiceError, transaction,
-    types::DnssecStatusResponse,
+    Context, authorization::Caller, error::ServiceError, transaction, types::DnssecStatusResponse,
 };
 
 /// Publish the RFC 8078 delete CDS/CDNSKEY pair, asking a CDS-consuming
@@ -20,8 +20,8 @@ pub async fn withdraw(
 
     let mut tx = transaction::begin_tx(cx, "failed to withdraw the parent DS").await?;
     let result = async {
-        let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        if db::dnssec_withdrawal::get_tx(&mut tx, signed.zone.id)
+        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        if bindizr_db::dnssec_withdrawal::get_tx(&mut tx, signed.zone.id)
             .await?
             .is_some()
         {
@@ -29,14 +29,14 @@ pub async fn withdraw(
                 "the DS withdrawal is already published",
             ));
         }
-        db::dnssec_withdrawal::create_tx(&mut tx, signed.zone.id).await?;
+        bindizr_db::dnssec_withdrawal::create_tx(&mut tx, signed.zone.id).await?;
 
         let new_serial = super::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -69,21 +69,21 @@ pub async fn cancel_withdrawal(
 
     let mut tx = transaction::begin_tx(cx, "failed to cancel the DS withdrawal").await?;
     let result = async {
-        let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        if db::dnssec_withdrawal::get_tx(&mut tx, signed.zone.id)
+        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        if bindizr_db::dnssec_withdrawal::get_tx(&mut tx, signed.zone.id)
             .await?
             .is_none()
         {
             return Err(ServiceError::invalid_input("no DS withdrawal is published"));
         }
-        db::dnssec_withdrawal::delete_tx(&mut tx, signed.zone.id).await?;
+        bindizr_db::dnssec_withdrawal::delete_tx(&mut tx, signed.zone.id).await?;
 
         let new_serial = super::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);

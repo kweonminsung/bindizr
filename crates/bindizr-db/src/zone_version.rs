@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use crate::{
     Backend, Db, LockLevel, Transaction,
     error::DatabaseError,
-    model::zone_version::{VersionScope, ZoneVersion},
+    model::zone_version::{VersionFilter, ZoneVersion},
     mysql, postgres, sqlite,
     tx::TransactionKind,
 };
@@ -58,34 +58,40 @@ pub async fn list_in_serial_range(
     }
 }
 
-/// List the versions of a zone that `scope` covers, newest serial first,
+/// List the versions of a zone that `filter` covers, newest serial first,
 /// paginated; the current serial is always listed.
-pub async fn list(
+pub async fn list_by_filter(
     db: &Db,
     zone_id: ZoneId,
-    scope: VersionScope,
+    filter: VersionFilter,
     limit: u32,
     offset: u64,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
-            mysql::zone_version::list(pool, zone_id, scope, limit, offset).await
+            mysql::zone_version::list_by_filter(pool, zone_id, filter, limit, offset).await
         }
         Backend::Postgres(pool) => {
-            postgres::zone_version::list(pool, zone_id, scope, limit, offset).await
+            postgres::zone_version::list_by_filter(pool, zone_id, filter, limit, offset).await
         }
         Backend::Sqlite(pool) => {
-            sqlite::zone_version::list(pool, zone_id, scope, limit, offset).await
+            sqlite::zone_version::list_by_filter(pool, zone_id, filter, limit, offset).await
         }
     }
 }
 
-/// Count the versions of a zone that `scope` covers.
-pub async fn count(db: &Db, zone_id: ZoneId, scope: VersionScope) -> Result<u64, DatabaseError> {
+/// Count the versions of a zone that `filter` covers.
+pub async fn count_by_filter(
+    db: &Db,
+    zone_id: ZoneId,
+    filter: VersionFilter,
+) -> Result<u64, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::zone_version::count(pool, zone_id, scope).await,
-        Backend::Postgres(pool) => postgres::zone_version::count(pool, zone_id, scope).await,
-        Backend::Sqlite(pool) => sqlite::zone_version::count(pool, zone_id, scope).await,
+        Backend::MySql(pool) => mysql::zone_version::count_by_filter(pool, zone_id, filter).await,
+        Backend::Postgres(pool) => {
+            postgres::zone_version::count_by_filter(pool, zone_id, filter).await
+        }
+        Backend::Sqlite(pool) => sqlite::zone_version::count_by_filter(pool, zone_id, filter).await,
     }
 }
 

@@ -11,7 +11,7 @@ use domain::{
 };
 use serde_json::{Value, json};
 
-use crate::common::dns::parse_dns_response;
+use super::*;
 
 /// Verify that parse DNS response renders values in harness comparison format.
 #[test]

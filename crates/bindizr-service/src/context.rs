@@ -1,7 +1,4 @@
-//! The daemon's state, built once by `bootstrap` in dependency order and
-//! passed by reference to every service function: the configuration
-//! snapshot, the database, the metrics, the senders of the NOTIFY queue and
-//! the DNSSEC scheduler, and the moment the daemon began serving.
+//! Daemon state, built by `bootstrap` in dependency order and passed to service flows.
 
 use std::sync::{Arc, OnceLock, RwLock};
 
@@ -44,7 +41,7 @@ impl From<ReloadConfigError> for ServiceError {
     }
 }
 
-/// What every service function takes first. The workers that need it back
+/// Shared state for service flows. The workers that need it back
 /// (the NOTIFY queue, the scheduler) are spawned after it with an `Arc` of
 /// their own; only their senders live here.
 #[derive(Debug)]
@@ -87,9 +84,8 @@ impl Context {
         }
     }
 
-    /// A snapshot of the configuration. A reload is invisible to a snapshot
-    /// already taken, so hold one for as long as a single decision takes and
-    /// no longer.
+    /// Snapshot the configuration for one decision; discard it afterward so
+    /// later decisions can observe reloads.
     pub fn config(&self) -> Arc<Config> {
         self.config
             .read()
@@ -102,10 +98,8 @@ impl Context {
         &self.config_path
     }
 
-    /// Re-read the configuration file and replace the held one, returning the
-    /// settings that changed. A setting a running process cannot adopt is
-    /// refused rather than stored. The caller applies what only it can: the
-    /// logger's level, the scheduler's period.
+    /// Reload configuration, rejecting changes that require restart, and return changed settings.
+    /// The caller applies the logger level and scheduler period.
     pub fn reload_config(&self) -> Result<Vec<String>, ReloadConfigError> {
         let next = Config::load(&self.config_path)?;
 

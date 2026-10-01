@@ -13,7 +13,7 @@ use super::validation::{
 use crate::{
     Context,
     authorization::{Caller, RecordWrite},
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::{
         record::{Record, RecordData, RecordType},
@@ -28,6 +28,7 @@ use crate::{
 
 /// The record an update locks: by id, with the zone the id form pre-read,
 /// or by name.
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 enum LockTarget<'a> {
     Id {
         record_id: RecordId,
@@ -43,6 +44,7 @@ enum LockTarget<'a> {
 
 /// The record's fields after the request has been resolved against the
 /// stored record: the owner normalized and `encoded_value` in row form.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedRecordUpdate {
     owner_name: OwnerName,
     record_type: RecordType,
@@ -105,9 +107,7 @@ fn resolve_update(
     }
 }
 
-/// Omitted fields keep the stored record's value; the merge runs inside
-/// the transaction, against the row loaded there. The caller is
-/// authorized there too.
+/// Merge omitted fields from the record loaded and authorized inside the transaction.
 pub async fn update(
     cx: &Context,
     caller: &Caller,
@@ -116,12 +116,15 @@ pub async fn update(
 ) -> Result<RecordWriteResponse, ServiceError> {
     // Non-locking read for the zone_id, so the tx locks zone before record
     // (the create/bulk/import order); the reverse can deadlock.
-    let zone_id = match db::record::get(cx.db(), record_id).await {
+    let zone_id = match bindizr_db::record::get(cx.db(), record_id).await {
         Ok(Some(record)) => record.zone_id,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(e) => {
             log::error!("Failed to fetch record: {}", e);
-            return Err(ServiceError::internal("Failed to fetch record"));
+            return Err(ServiceError::internal_with_source(
+                "failed to fetch record",
+                e,
+            ));
         }
     };
     update_locked(
@@ -161,36 +164,48 @@ async fn update_locked(
     run: Run,
     resolve: impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError>,
 ) -> Result<RecordWriteResponse, ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "Failed to update record").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to update record").await?;
 
     let apply_result = async {
         let (zone, existing_record) = match target {
             LockTarget::Id { record_id, zone_id } => {
-                let zone = match db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
-                    Ok(Some(zone)) => zone,
-                    Ok(None) => {
-                        return Err(ServiceError::ZoneNotFound(format!(
-                            "Zone with id '{}' not found",
-                            zone_id
-                        )));
-                    }
-                    Err(e) => {
-                        log::error!("Failed to fetch zone: {}", e);
-                        return Err(ServiceError::internal("Failed to fetch zone"));
-                    }
-                };
-
-                let existing_record =
-                    match db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
-                        Ok(Some(record)) if record.zone_id == zone.id => record,
-                        Ok(Some(_)) | Ok(None) => {
-                            return Err(ServiceError::record_not_found(record_id));
+                let zone =
+                    match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
+                        Ok(Some(zone)) => zone,
+                        Ok(None) => {
+                            return Err(ServiceError::ZoneNotFound(format!(
+                                "zone with id '{}' not found",
+                                zone_id
+                            )));
                         }
                         Err(e) => {
-                            log::error!("Failed to fetch record: {}", e);
-                            return Err(ServiceError::internal("Failed to fetch record"));
+                            log::error!("Failed to fetch zone: {}", e);
+                            return Err(ServiceError::internal_with_source(
+                                "failed to fetch zone",
+                                e,
+                            ));
                         }
                     };
+
+                let existing_record = match bindizr_db::record::get_tx(
+                    &mut tx,
+                    record_id,
+                    LockLevel::Exclusive,
+                )
+                .await
+                {
+                    Ok(Some(record)) if record.zone_id == zone.id => record,
+                    Ok(Some(_)) | Ok(None) => {
+                        return Err(ServiceError::record_not_found(record_id));
+                    }
+                    Err(e) => {
+                        log::error!("Failed to fetch record: {}", e);
+                        return Err(ServiceError::internal_with_source(
+                            "failed to fetch record",
+                            e,
+                        ));
+                    }
+                };
 
                 // A record the caller's grants do not reach reads as 404,
                 // as it does on GET, so ids cannot be probed.
@@ -206,20 +221,23 @@ async fn update_locked(
             }
             LockTarget::Name { zone_name, name } => {
                 let zone =
-                    zone::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive)
-                        .await?;
+                    zone::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive).await?;
                 let owner = normalize_record_owner_name(name, &zone.name)?;
 
                 // Count only what the caller can see, so the count never
                 // reports rows their grants do not reach.
-                let mut matched: Vec<Record> =
-                    db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)
-                        .await?
-                        .into_iter()
-                        .filter(|record| {
-                            caller.sees_record(zone.id, &record.name, Some(&record.record_type))
-                        })
-                        .collect();
+                let mut matched: Vec<Record> = bindizr_db::record::list_by_name_tx(
+                    &mut tx,
+                    zone.id,
+                    &owner,
+                    LockLevel::Exclusive,
+                )
+                .await?
+                .into_iter()
+                .filter(|record| {
+                    caller.sees_record(zone.id, &record.name, Some(&record.record_type))
+                })
+                .collect();
 
                 match matched.len() {
                     1 => (zone, matched.remove(0)),
@@ -257,7 +275,7 @@ async fn update_locked(
             .await?;
         // Only records sharing the new owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name = match db::record::list_by_name_tx(
+        let records_at_name = match bindizr_db::record::list_by_name_tx(
             &mut tx,
             zone.id,
             &resolved.owner_name,
@@ -268,8 +286,9 @@ async fn update_locked(
             Ok(records) => records,
             Err(e) => {
                 log::error!("Failed to load records: {}", e);
-                return Err(ServiceError::internal(
-                    "Failed to update record".to_string(),
+                return Err(ServiceError::internal_with_source(
+                    "failed to update record",
+                    e,
                 ));
             }
         };
@@ -296,7 +315,7 @@ async fn update_locked(
         let mut framed = records_at_name.clone();
         if candidate.name != existing_record.name {
             framed.extend(
-                db::record::list_by_name_tx(
+                bindizr_db::record::list_by_name_tx(
                     &mut tx,
                     zone.id,
                     &existing_record.name,
@@ -331,14 +350,15 @@ async fn update_locked(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
+            .await?;
 
         Ok::<(Record, ZoneName, RecordDiff), ServiceError>((updated_record, zone_name, diff))
     }
     .await;
 
     let (updated_record, zone_name, diff) =
-        transaction::finish_tx(tx, apply_result, "Failed to update record").await?;
+        transaction::finish_tx(tx, apply_result, "failed to update record").await?;
 
     log::info!(
         "event=record_update zone={} name={} type={} ttl={} priority={} record_id={}",

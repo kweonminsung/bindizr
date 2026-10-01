@@ -9,7 +9,7 @@ use super::{
 use crate::{
     Context,
     authorization::{Caller, RecordWrite},
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::record::{Record, RecordData},
     serial::generate_serial,
@@ -46,10 +46,10 @@ pub async fn create(
         .map(validate_record_ttl)
         .transpose()?;
 
-    let mut tx = transaction::begin_tx(cx, "Failed to create record").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to create record").await?;
 
     let apply_result = async {
-        let zone = zone::get_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
 
         caller
             .authorize_record_writes_tx(
@@ -64,18 +64,23 @@ pub async fn create(
 
         // Only records sharing the owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name =
-            match db::record::list_by_name_tx(&mut tx, zone.id, &owner_name, LockLevel::Exclusive)
-                .await
-            {
-                Ok(records) => records,
-                Err(e) => {
-                    log::error!("Failed to check existing records: {}", e);
-                    return Err(ServiceError::internal(
-                        "Failed to create record".to_string(),
-                    ));
-                }
-            };
+        let records_at_name = match bindizr_db::record::list_by_name_tx(
+            &mut tx,
+            zone.id,
+            &owner_name,
+            LockLevel::Exclusive,
+        )
+        .await
+        {
+            Ok(records) => records,
+            Err(e) => {
+                log::error!("Failed to check existing records: {}", e);
+                return Err(ServiceError::internal_with_source(
+                    "failed to create record",
+                    e,
+                ));
+            }
+        };
 
         // Fixed at write time: a later zone TTL change will not move it.
         let ttl = ttl.unwrap_or(zone.default_ttl);
@@ -130,19 +135,20 @@ pub async fn create(
         .pop()
         .ok_or_else(|| {
             log::error!("Record insert returned no row");
-            ServiceError::internal("Failed to create record")
+            ServiceError::internal("record insert returned no row")
         })?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, caller.change_attribution())
+            .await?;
 
         Ok::<(Record, ZoneName, RecordDiff), ServiceError>((created_record, zone.name, diff))
     }
     .await;
 
     let (created_record, zone_name, diff) =
-        transaction::finish_tx(tx, apply_result, "Failed to create record").await?;
+        transaction::finish_tx(tx, apply_result, "failed to create record").await?;
 
     log::info!(
         "event=record_create dry_run={} zone={} name={} type={} ttl={} priority={} record_id={}",

@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use super::{Changes, Endpoint};
+use super::*;
 
 /// Build an external-dns endpoint fixture with the supplied targets.
 fn endpoint(dns_name: &str, record_type: &str, ttl: i64, targets: &[&str]) -> Endpoint {

@@ -84,13 +84,10 @@ DIMENSION_FIELDS = ("system", "backend", "size", "changes", "status")
 
 
 def _aggregate(rows: list[dict]) -> list[dict]:
-    """Collapse repeated runs: group by dimension fields, average numeric metrics
-    into `<metric>` plus a `<metric>_std`, and count them in `runs`.
+    """Group repeats by dimensions and report each metric's mean, sample deviation, and run count.
 
-    A metric is only averaged when every run in the group reported it as a
-    number; otherwise the first run's value carries through, since a mean over a
-    subset would silently describe fewer runs than the `runs` count claims.
-    """
+    Average only metrics numeric in every run; otherwise retain the first value
+    so a partial mean cannot imply coverage of all runs."""
     groups: dict[tuple, list[dict]] = {}
     for r in rows:
         groups.setdefault(tuple(str(r.get(f)) for f in DIMENSION_FIELDS), []).append(r)

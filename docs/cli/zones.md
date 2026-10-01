@@ -13,10 +13,11 @@ for the same payload the HTTP API returns.
 # --expire, and --minimum-ttl set the other SOA timers
 $ bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
 
-# A new zone holds its SOA and nothing else. Give it the NS records that name
-# its public name servers, and an address record for any of them inside the zone
-# (the parent zone needs matching glue for those).
-$ bindizr record create example.com @ --type NS --value ns1.example.com
+# A new zone holds its SOA and one apex NS record naming --mname; pass
+# --no-apex-ns to write the NS records yourself. Add the other name servers,
+# and an address record for any of them inside the zone (the parent zone
+# needs matching glue for those).
+$ bindizr record create example.com @ --type NS --value ns2.example.com
 $ bindizr record create example.com ns1 --type A --value 192.0.2.1
 
 # List, inspect, and delete zones
@@ -120,10 +121,16 @@ text) or `from_server` the same way, and `skip_unsupported` alongside them.
 ## Zone history
 
 Every SOA serial has a version behind it, so a zone can be diffed and rolled
-back, and each version records who made the change: the API token or TSIG key
-it was made under (`system` for the DNSSEC scheduler, `local` for the CLI
-or a request made while authentication is disabled). The
-name is copied into the version, so it still answers after the token is gone.
+back. Each version records its source separately from the credential behind it:
+
+- `change_source`: `api`, `socket` (CLI), `nsupdate`, or `system` (DNSSEC scheduler).
+- `changed_by`: a credential object such as `{"kind":"token","name":"admin"}`
+  or `{"kind":"tsig_key","name":"updater"}`. The CLI table displays `token:admin`
+  or `tsig_key:updater`. The identity is copied, so it survives credential deletion.
+
+Socket commands, API requests with authentication disabled, unsigned updates,
+and background work have `changed_by: null` (`-` in a table). An API request
+remains `api` even when it carries no token.
 
 ```bash
 # List a zone's versions (SOA serials are a plain counter starting at 1)

@@ -1,6 +1,4 @@
-//! SQL fragments shared by the per-backend filter queries, rendered from the
-//! core types so no backend can drift. The two that carry a vocabulary of
-//! their own live beside this one.
+//! Shared SQL filter fragments rendered from core types.
 
 mod grant;
 mod sort;
@@ -8,7 +6,7 @@ mod sort;
 use bindizr_core::dns::name::OwnerName;
 use chrono::{DateTime, TimeDelta, Utc};
 pub(crate) use grant::{concat_fn, concat_pipes, grant_record_match_sql};
-pub use sort::{ParseSortError, RecordSort, SortOrder, ZoneSort};
+pub use sort::{ParseSortError, RecordSortField, SortOrder, ZoneSortField};
 
 use crate::model::record::NAME_LIKE_RECORD_TYPES;
 

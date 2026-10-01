@@ -26,7 +26,8 @@ paths:
           - integer
           - 'null'
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         required: false
@@ -1043,7 +1044,8 @@ paths:
           - integer
           - 'null'
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         required: false
@@ -1411,7 +1413,8 @@ paths:
           - integer
           - 'null'
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         required: false
@@ -1544,7 +1547,8 @@ paths:
           - integer
           - 'null'
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         required: false
@@ -1809,7 +1813,8 @@ paths:
           - integer
           - 'null'
           format: int32
-          minimum: 0
+          maximum: 1000
+          minimum: 1
       - name: offset
         in: query
         required: false
@@ -3504,7 +3509,7 @@ paths:
           minimum: 0
       - name: include_signer_serials
         in: query
-        description: Include signer-only serials (DNSSEC re-signs and rollovers); by default only serials with user changes, plus the current serial, are listed.
+        description: Include past serials with only derived DNSSEC changes. By default these are hidden; the current serial and serials without journal entries remain visible.
         required: false
         schema:
           type: boolean
@@ -3739,14 +3744,39 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GetRecordResponse'
+    ChangeActor:
+      oneOf:
+      - type: object
+        required:
+        - name
+        - kind
+        properties:
+          kind:
+            type: string
+            enum:
+            - token
+          name:
+            type: string
+      - type: object
+        required:
+        - name
+        - kind
+        properties:
+          kind:
+            type: string
+            enum:
+            - tsig_key
+          name:
+            type: string
+      description: The named credential behind a change, copied so deleting it preserves the history.
     ChangeSource:
       type: string
-      description: The plane a zone version's change came through.
+      description: The request path or background process that produced a zone version.
       enum:
-      - token
+      - api
+      - socket
       - nsupdate
       - system
-      - local
     CreateBulkRecordsRequest:
       type: object
       description: Request body for bulk-inserting records into a zone.
@@ -3991,6 +4021,13 @@ components:
       - mname
       - rname
       properties:
+        apex_ns:
+          type: boolean
+          description: |-
+            Start the zone with an apex NS record naming the SOA MNAME; false
+            leaves every NS record to the caller.
+          default: true
+          example: true
         default_ttl:
           type:
           - integer
@@ -4131,6 +4168,16 @@ components:
           minimum: 0
         zone:
           $ref: '#/components/schemas/GetZoneResponse'
+    DnssecAlgorithm:
+      type: string
+      description: Supported DNSSEC signing algorithms, with their IANA numbers and mnemonics.
+      enum:
+      - rsasha256
+      - rsasha512
+      - ecdsap256sha256
+      - ecdsap384sha384
+      - ed25519
+      - ed448
     DnssecDelegationInfo:
       type: object
       description: What the parent zone's servers answered when asked for the zone's DS.
@@ -4269,8 +4316,7 @@ components:
       - created_at
       properties:
         algorithm:
-          type: string
-          example: ecdsap256sha256
+          $ref: '#/components/schemas/DnssecAlgorithm'
         created_at:
           type: string
           format: date-time
@@ -4332,6 +4378,19 @@ components:
       properties:
         dnssec_policy:
           $ref: '#/components/schemas/GetDnssecPolicyResponse'
+    DnssecRecordType:
+      type: string
+      description: |-
+        The record types the signer derives; rows store the wire record type number
+        (RFC 4034).
+      enum:
+      - RRSIG
+      - NSEC
+      - DNSKEY
+      - NSEC3
+      - NSEC3PARAM
+      - CDS
+      - CDNSKEY
     DnssecStatusResponse:
       type: object
       description: DNSSEC signing state of a zone.
@@ -4447,6 +4506,51 @@ components:
           description: Name of the DNSSEC policy to sign under; defaults to `default`.
           example: default
       additionalProperties: false
+    ErrorCode:
+      type: string
+      description: |-
+        Machine-readable error codes exposed to API and CLI clients. The
+        SCREAMING_SNAKE_CASE wire name is the public contract; what status a
+        code answers with is each transport's own table.
+      enum:
+      - INVALID_INPUT
+      - INVALID_ZONE_FIELD
+      - INVALID_RECORD_NAME
+      - INVALID_RECORD_VALUE
+      - INVALID_JSON_BODY
+      - ZONE_CONFLICT
+      - RECORD_CONFLICT
+      - TOKEN_CONFLICT
+      - ENDPOINT_NOT_FOUND
+      - METHOD_NOT_ALLOWED
+      - ZONE_NOT_FOUND
+      - RECORD_NOT_FOUND
+      - TOKEN_NOT_FOUND
+      - VERSION_NOT_FOUND
+      - SECONDARY_NOT_FOUND
+      - SECONDARY_CONFLICT
+      - TSIG_KEY_NOT_FOUND
+      - TSIG_KEY_CONFLICT
+      - TSIG_KEY_IN_USE
+      - TSIG_GRANT_NOT_FOUND
+      - TOKEN_GRANT_NOT_FOUND
+      - DNSSEC_ALREADY_ENABLED
+      - DNSSEC_NOT_ENABLED
+      - DNSSEC_ROLLOVER_IN_PROGRESS
+      - DNSSEC_NO_ROLLOVER_IN_PROGRESS
+      - DNSSEC_DS_PUBLISHED
+      - DNSSEC_DS_NOT_PUBLISHED
+      - DNSSEC_DS_UNVERIFIED
+      - DNSSEC_POLICY_NOT_FOUND
+      - DNSSEC_POLICY_CONFLICT
+      - DNSSEC_POLICY_IN_USE
+      - DNSSEC_SIGNING_FAILED
+      - UNAUTHORIZED
+      - INVALID_TOKEN
+      - FORBIDDEN
+      - PAYLOAD_TOO_LARGE
+      - UNSUPPORTED_MEDIA_TYPE
+      - INTERNAL
     ErrorResponse:
       type: object
       description: 'Generic error response: a plain description plus a machine-readable code.'
@@ -4455,29 +4559,11 @@ components:
       - code
       properties:
         code:
-          type: string
-          description: |-
-            One of `INVALID_INPUT`, `INVALID_ZONE_FIELD`, `INVALID_RECORD_NAME`,
-            `INVALID_RECORD_VALUE`, `INVALID_JSON_BODY`, `UNAUTHORIZED`,
-            `INVALID_TOKEN`, `FORBIDDEN`, `ENDPOINT_NOT_FOUND`,
-            `METHOD_NOT_ALLOWED`, `ZONE_NOT_FOUND`, `RECORD_NOT_FOUND`,
-            `TOKEN_NOT_FOUND`, `VERSION_NOT_FOUND`, `SECONDARY_NOT_FOUND`,
-            `TSIG_KEY_NOT_FOUND`,
-            `TSIG_GRANT_NOT_FOUND`, `TOKEN_GRANT_NOT_FOUND`,
-            `DNSSEC_POLICY_NOT_FOUND`, `ZONE_CONFLICT`, `RECORD_CONFLICT`,
-            `TOKEN_CONFLICT`, `SECONDARY_CONFLICT`, `TSIG_KEY_CONFLICT`,
-            `TSIG_KEY_IN_USE`,
-            `DNSSEC_POLICY_CONFLICT`, `DNSSEC_POLICY_IN_USE`,
-            `DNSSEC_ALREADY_ENABLED`, `DNSSEC_NOT_ENABLED`,
-            `DNSSEC_ROLLOVER_IN_PROGRESS`, `DNSSEC_NO_ROLLOVER_IN_PROGRESS`,
-            `DNSSEC_DS_PUBLISHED`, `DNSSEC_DS_NOT_PUBLISHED`,
-            `DNSSEC_DS_UNVERIFIED`, `PAYLOAD_TOO_LARGE`,
-            `UNSUPPORTED_MEDIA_TYPE`, `DNSSEC_SIGNING_FAILED`, `INTERNAL`.
-          example: ZONE_NOT_FOUND
-          pattern: ^[A-Z_]+$
+          $ref: '#/components/schemas/ErrorCode'
+          description: Machine-readable failure classification.
         error:
           type: string
-          example: Zone with name 'example.com' not found
+          example: zone with name 'example.com' not found
     ExternalDnsAdjustRequest:
       type: object
       description: Request body for canonicalizing desired records without applying them.
@@ -4626,8 +4712,7 @@ components:
       - created_at
       properties:
         algorithm:
-          type: string
-          example: ecdsap256sha256
+          $ref: '#/components/schemas/DnssecAlgorithm'
         created_at:
           type: string
           format: date-time
@@ -4696,8 +4781,7 @@ components:
           format: int32
           example: 3600
         type:
-          type: string
-          example: A
+          $ref: '#/components/schemas/RecordTypeResponse'
         value:
           $ref: '#/components/schemas/RecordValueRequest'
         zone_id:
@@ -4855,8 +4939,7 @@ components:
       - created_at
       properties:
         algorithm:
-          type: string
-          example: hmac-sha256
+          $ref: '#/components/schemas/TsigAlgorithm'
         created_at:
           type: string
           format: date-time
@@ -5034,6 +5117,8 @@ components:
           example: 192.0.2.1:53
         mode:
           $ref: '#/components/schemas/ImportMode'
+          description: 'Reconciliation mode: `append` (default), `upsert`, or `replace`.'
+          default: append
         skip_unsupported:
           type: boolean
           description: |-
@@ -5119,8 +5204,7 @@ components:
             - created_at
             properties:
               algorithm:
-                type: string
-                example: ecdsap256sha256
+                $ref: '#/components/schemas/DnssecAlgorithm'
               created_at:
                 type: string
                 format: date-time
@@ -5200,8 +5284,7 @@ components:
                 format: int32
                 example: 3600
               type:
-                type: string
-                example: A
+                $ref: '#/components/schemas/RecordTypeResponse'
               value:
                 $ref: '#/components/schemas/RecordValueRequest'
               zone_id:
@@ -5414,8 +5497,7 @@ components:
             - created_at
             properties:
               algorithm:
-                type: string
-                example: hmac-sha256
+                $ref: '#/components/schemas/TsigAlgorithm'
               created_at:
                 type: string
                 format: date-time
@@ -5537,18 +5619,14 @@ components:
             properties:
               change_source:
                 $ref: '#/components/schemas/ChangeSource'
-                description: |-
-                  Which plane asked for this version: `token`, `nsupdate`, `system`
-                  (the DNSSEC scheduler), or `local` (the daemon socket, or
-                  any request while authentication is disabled).
+                description: The request path (`api`, `socket`, `nsupdate`) or background process (`system`).
               changed_by:
-                type:
-                - string
-                - 'null'
-                description: |-
-                  The API token or TSIG key the change was made under, absent where no
-                  credential stood behind it.
-                example: admin
+                oneOf:
+                - $ref: '#/components/schemas/ChangeActor'
+                  description: |-
+                    Token or TSIG key kind and name. Null for socket commands, unauthenticated
+                    API requests, unsigned updates, and background work.
+                - type: 'null'
               created_at:
                 type: string
                 format: date-time
@@ -5656,8 +5734,7 @@ components:
           items:
             $ref: '#/components/schemas/RecordDiffValue'
         type:
-          type: string
-          example: A
+          $ref: '#/components/schemas/RecordType'
     RecordDiffSummary:
       type: object
       description: How many name-and-type groups of records were added, removed, and changed.
@@ -5745,6 +5822,29 @@ components:
       properties:
         record:
           $ref: '#/components/schemas/GetRecordResponse'
+    RecordType:
+      type: string
+      description: The record types bindizr stores.
+      enum:
+      - A
+      - AAAA
+      - CAA
+      - CNAME
+      - DNAME
+      - DS
+      - MX
+      - NAPTR
+      - TXT
+      - NS
+      - SRV
+      - PTR
+      - SSHFP
+      - TLSA
+    RecordTypeResponse:
+      oneOf:
+      - $ref: '#/components/schemas/RecordType'
+      - $ref: '#/components/schemas/DnssecRecordType'
+      description: A user record type or a signer-generated type returned by record listing.
     RecordValueRequest:
       oneOf:
       - type: string
@@ -6016,7 +6116,7 @@ components:
       - ixfr
     TransferResponse:
       type: object
-      description: One transfer Bindizr answered, or refused, for a secondary's address.
+      description: One transfer Bindizr answered, refused, or failed for a secondary's address.
       required:
       - address
       - zone_name
@@ -6111,6 +6211,13 @@ components:
           format: int64
           example: 12
           minimum: 0
+    TsigAlgorithm:
+      type: string
+      description: TSIG HMAC algorithms for update and transfer authentication (RFC 8945).
+      enum:
+      - hmac-sha256
+      - hmac-sha384
+      - hmac-sha512
     TsigGrantResponse:
       type: object
       description: A single TSIG grant wrapped in a response envelope.
@@ -6330,7 +6437,7 @@ components:
       additionalProperties: false
     VersionDetailResponse:
       type: object
-      description: One version plus the reconstructed records at that serial.
+      description: One version plus the records rewound to that serial.
       required:
       - version
       - records
@@ -6364,7 +6471,7 @@ components:
     VersionRecordResponse:
       type: object
       description: |-
-        A record reconstructed from the zone's journal, named as the record
+        A record rewound from the zone's journal, named as the record
         listing names it; unlike stored records it has no database id.
       required:
       - name
@@ -6386,8 +6493,7 @@ components:
           format: int32
           example: 3600
         type:
-          type: string
-          example: A
+          $ref: '#/components/schemas/RecordType'
         value:
           $ref: '#/components/schemas/RecordValueRequest'
     ZoneResponse:
@@ -6441,18 +6547,14 @@ components:
       properties:
         change_source:
           $ref: '#/components/schemas/ChangeSource'
-          description: |-
-            Which plane asked for this version: `token`, `nsupdate`, `system`
-            (the DNSSEC scheduler), or `local` (the daemon socket, or
-            any request while authentication is disabled).
+          description: The request path (`api`, `socket`, `nsupdate`) or background process (`system`).
         changed_by:
-          type:
-          - string
-          - 'null'
-          description: |-
-            The API token or TSIG key the change was made under, absent where no
-            credential stood behind it.
-          example: admin
+          oneOf:
+          - $ref: '#/components/schemas/ChangeActor'
+            description: |-
+              Token or TSIG key kind and name. Null for socket commands, unauthenticated
+              API requests, unsigned updates, and background work.
+          - type: 'null'
         created_at:
           type: string
           format: date-time

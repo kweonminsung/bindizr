@@ -7,14 +7,13 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::model::{tsig_grant::TsigGrantId, tsig_key::TsigAlgorithm};
+use bindizr_core::model::tsig_grant::TsigGrantId;
 use bindizr_service::{
     Context,
-    error::ServiceError,
     tsig_key::{self, grant},
     types::{
         CreateGrantRequest, CreateTsigKeyRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
-        GetTsigGrantResponse, GetTsigKeyResponse, MessageResponse, PageFilter, PaginatedResponse,
+        GetTsigGrantResponse, GetTsigKeyResponse, MessageResponse, PageRequest, PaginatedResponse,
         TsigGrantResponse, TsigKeyResponse,
     },
     zone,
@@ -54,7 +53,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/tsig-keys",
         tag = "TSIG",
         summary = "List all TSIG keys",
-        params(PageFilter),
+        params(PageRequest),
         description = "Lists every TSIG key without its secret. Fetch a single key to read the secret.",
         responses(
             (status = 200, description = "All TSIG keys", body = PaginatedResponse<GetTsigKeyResponse>),
@@ -66,7 +65,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 pub(crate) async fn list_tsig_keys(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = tsig_key::list(&cx, &caller, page).await?;
@@ -96,21 +95,7 @@ pub(crate) async fn create_tsig_key(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTsigKeyRequest>,
 ) -> Result<Response, ApiError> {
-    let algorithm = body
-        .algorithm
-        .as_deref()
-        .map(str::parse::<TsigAlgorithm>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?;
-    let key = tsig_key::create(
-        &cx,
-        &caller,
-        &body.name,
-        algorithm,
-        body.secret.as_deref(),
-        body.global,
-    )
-    .await?;
+    let key = tsig_key::create(&cx, &caller, &body).await?;
     let response = TsigKeyResponse::from(&key);
     Ok((StatusCode::CREATED, Json(response)).into_response())
 }
@@ -197,7 +182,7 @@ pub(crate) async fn list_tsig_grants(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = grant::list_by_key(&cx, &caller, &params.name, page).await?;
@@ -231,16 +216,7 @@ pub(crate) async fn create_tsig_grant(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<CreateGrantRequest>,
 ) -> Result<Response, ApiError> {
-    let grant = grant::create(
-        &cx,
-        &caller,
-        &params.name,
-        &zone::normalize_name(&body.zone_name)?,
-        body.record_name_pattern.as_deref(),
-        body.record_types.as_deref(),
-        body.can_write,
-    )
-    .await?;
+    let grant = grant::create(&cx, &caller, &params.name, &body).await?;
     let response = TsigGrantResponse {
         tsig_grant: GetTsigGrantResponse::from(&grant),
     };
@@ -300,7 +276,7 @@ pub(crate) async fn list_zone_tsig_grants(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response =

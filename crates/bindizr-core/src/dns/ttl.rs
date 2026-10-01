@@ -16,7 +16,7 @@ pub struct Ttl(u32);
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ConvertTtlError {
     /// Rows are stored as `i32`, so a negative one is corrupt data.
-    #[error("Invalid TTL: {ttl}")]
+    #[error("invalid TTL: {ttl}")]
     Negative { ttl: i32 },
     /// Past 2^31 - 1, which RFC 2181, Section 8 reads as zero.
     #[error("TTL {ttl} exceeds the maximum of {}", i32::MAX)]

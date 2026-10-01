@@ -1,7 +1,5 @@
-//! ExternalDNS provider integration: authoritative zone matching and atomic
-//! record set change application behind the `/external-dns` HTTP API (consumed by
-//! the bindizr-external-dns adapter). Which zones a caller may see and change
-//! is decided by its token's grants, like every other endpoint.
+//! Match authoritative zones and apply atomic changes for the ExternalDNS adapter.
+//! Token grants control visibility and writes through `/external-dns`.
 
 mod apply;
 mod change_set;
@@ -18,7 +16,6 @@ use bindizr_db::{record::RecordFilter, zone::ZoneFilter};
 use crate::{
     Context,
     authorization::Caller,
-    db,
     error::ServiceError,
     grant_pattern::pattern_domain,
     model::record::RecordSetKey,
@@ -30,10 +27,8 @@ use crate::{
 /// the read is paged; the protocol wants every endpoint in one answer.
 const RECORD_READ_PAGE: u32 = 5_000;
 
-/// Canonicalize desired records to the form applying them would store, so
-/// the adapter's AdjustEndpoints answer cannot drift from the server's
-/// normalization. Takes no caller: it only normalizes the request's own
-/// payload.
+/// Normalize desired records with the apply flow's rules for AdjustEndpoints.
+/// No caller is needed: only the request's own payload is read.
 pub fn adjust_records(
     request: &ExternalDnsAdjustRequest,
 ) -> Result<ExternalDnsAdjustResponse, ServiceError> {
@@ -45,16 +40,13 @@ pub fn adjust_records(
     Ok(ExternalDnsAdjustResponse { records })
 }
 
-/// The names the caller may manage, as an ExternalDNS domain filter spells
-/// them: a name, and everything under it. A grant narrowed to a subtree
-/// contributes that subtree, not its zone, so ExternalDNS plans inside what
-/// the apply accepts rather than failing the whole sync on the first record
-/// outside it.
+/// List manageable subtrees as ExternalDNS domain filters.
+/// Narrow grants contribute their subtree so planning stays within apply permissions.
 pub async fn list_managed_domains(
     cx: &Context,
     caller: &Caller,
 ) -> Result<Vec<String>, ServiceError> {
-    let zones = db::zone::list_by_filter(
+    let zones = bindizr_db::zone::list_by_filter(
         cx.db(),
         ZoneFilter {
             scope_token_id: caller.scope_token_id(),
@@ -102,7 +94,7 @@ pub async fn list_records(
     loop {
         // Folded as they arrive, so the rows never sit beside the group
         // they build. The query's name-and-id order is total, so pages tile.
-        let rows = db::record::list_by_filter_with_zone(
+        let rows = bindizr_db::record::list_by_filter_with_zone(
             cx.db(),
             RecordFilter {
                 scope_token_id: caller.scope_token_id(),
@@ -126,7 +118,7 @@ pub async fn list_records(
             grouped
                 .entry(RecordSetKey {
                     name,
-                    record_type: record.record_type.to_string(),
+                    record_type: record.record_type,
                 })
                 .or_default()
                 .entry(record.ttl)
@@ -148,7 +140,7 @@ pub async fn list_records(
                 values.sort();
                 ExternalDnsRecord {
                     name: key.name.clone(),
-                    record_type: key.record_type.clone(),
+                    record_type: key.record_type.as_str().to_owned(),
                     ttl: Some(i32::from(ttl)),
                     values,
                 }

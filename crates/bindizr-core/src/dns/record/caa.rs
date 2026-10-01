@@ -90,7 +90,7 @@ impl<'a> CaaRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 8659, Section 5.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
+    pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let tag_len = u8::try_from(self.tag.len()).map_err(|_| ParseRecordValueError::CaaTag {
             tag: self.tag.to_string(),
         })?;

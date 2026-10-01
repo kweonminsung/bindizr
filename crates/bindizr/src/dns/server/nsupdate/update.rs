@@ -146,10 +146,8 @@ pub(crate) async fn apply_update(
     (result, signer)
 }
 
-/// Verify the request's TSIG signature and record the response-signing
-/// context. Returns the signing key, or `None` for an unsigned request
-/// accepted because `dns.nsupdate_tsig_required` is off (not recommended in
-/// production); signed requests are always verified.
+/// Verify TSIG and retain its response signer, or return `None` for an allowed unsigned update.
+/// Disabling `nsupdate_tsig_required` never bypasses verification of signed requests.
 async fn authenticate_request(
     dns_cx: &DnsContext,
     request: &UpdateRequest,

@@ -28,12 +28,8 @@ fn like_escaped_sql(expression: &str) -> String {
     escaped
 }
 
-/// A condition on the `token_grants` row `p` and the record `alias`. Pass the
-/// record's type column, or `None` for the derived DNSSEC plane, which carries
-/// no type of the grant's vocabulary.
-///
-/// A subtree pattern matches by text, exactly: a stored name renders an
-/// in-label dot as `\046`, so every `.` in it is a label boundary.
+/// Build a grant condition for row `p` and record `alias`; `None` selects the derived DNSSEC plane.
+/// Subtree text matching is safe because stored in-label dots render as `\046`.
 pub(crate) fn grant_record_match_sql(
     alias: &str,
     record_type_column: Option<&str>,

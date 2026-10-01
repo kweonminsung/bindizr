@@ -30,7 +30,7 @@ impl TxtRecordValue {
     }
 
     /// Wrap raw RDATA bytes, validating the character-string chain.
-    pub(crate) fn from_rdata(rdata: &[u8]) -> Result<Self, ParseRecordValueError> {
+    pub fn from_rdata(rdata: &[u8]) -> Result<Self, ParseRecordValueError> {
         if rdata.is_empty() || char_strings(rdata).is_none() {
             return Err(ParseRecordValueError::TxtRdata);
         }
@@ -135,7 +135,7 @@ impl TxtRecordValue {
     }
 
     /// Consume the TXT segments and encode their length-prefixed wire data.
-    pub(crate) fn into_rdata(self) -> Vec<u8> {
+    pub fn into_rdata(self) -> Vec<u8> {
         self.0
     }
 }

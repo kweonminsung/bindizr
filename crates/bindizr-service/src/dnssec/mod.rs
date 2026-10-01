@@ -1,14 +1,10 @@
-//! DNSSEC zone signing: key management and rollover, the signed-view hook
-//! every zone-data mutation runs before its serial bump, and the scheduler.
-//! Whether a zone is signed is carried by its key rows, the parameters it
-//! signs under by the policy `zones.dnssec_policy_id` names;
-//! every transition journals its delta so secondaries follow via IXFR.
+//! DNSSEC keys, rollover, scheduling, and the signing hook run before each serial bump.
+//! Key rows indicate signing state; `zones.dnssec_policy_id` selects its parameters.
+//! Every transition journals its delta for IXFR.
 //!
-//! Promotion waits for the publish TTL and, for SEP keys, parent DS confirmation
-//! by the scheduler or `ds-seen`. Retired keys remain until their cache deadlines.
-//! A parent probe runs inside the transaction that acts on its answer, under
-//! the zone lock, so the answer is about the keys and parent it then moves;
-//! `dns.notify.timeout_secs` bounds each exchange.
+//! Promotion waits for publish TTL and SEP parent-DS confirmation (scheduler or `ds-seen`);
+//! retired keys stay until cache expiry. Parent probes run under the acting transaction's
+//! zone lock to keep their inputs current; `dns.notify.timeout_secs` bounds each exchange.
 
 mod delegation;
 mod keys;
@@ -27,6 +23,7 @@ use bindizr_core::{
     },
     model::{dnssec_record::DnssecRecordId, zone::ZoneId},
 };
+use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 pub use delegation::check_ds;
 pub(crate) use delegation::probe_delegation;
@@ -43,8 +40,7 @@ pub use status::{
 pub use withdraw::{cancel_withdrawal, withdraw};
 
 use crate::{
-    Context, Transaction, db,
-    db::LockLevel,
+    Context, Transaction,
     error::ServiceError,
     model::{
         dnssec_key::DnssecKey,
@@ -52,7 +48,7 @@ use crate::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    zone::{self, version::ChangeSubject},
+    zone::{self, version::ChangeAttribution},
 };
 
 /// Backdated inception absorbs validator clock skew; one hour covers any
@@ -77,11 +73,11 @@ pub(crate) async fn sign_zone_tx(
     zone: &Zone,
     new_serial: Serial,
 ) -> Result<(), ServiceError> {
-    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Ok(());
     }
-    let policy = get_zone_policy_tx(tx, zone).await?;
+    let policy = lookup_zone_policy_tx(tx, zone).await?;
     apply_signed_view_tx(tx, zone, &policy, new_serial, &keys, SigningPass::Refresh).await?;
     Ok(())
 }
@@ -90,11 +86,11 @@ pub(crate) async fn sign_zone_tx(
 /// same serial/IXFR mechanics as any record change; `None` (serial kept)
 /// when nothing needed replacing.
 async fn resign_zone_tx(
-    cx: &Context,
     tx: &mut Transaction<'_>,
+    cx: &Context,
     signed: &SignedZone,
     pass: SigningPass,
-    subject: &ChangeSubject,
+    attribution: &ChangeAttribution,
 ) -> Result<Option<Serial>, ServiceError> {
     let new_serial = crate::serial::generate_serial(Some(signed.zone.serial))?;
     if !apply_signed_view_tx(
@@ -109,7 +105,7 @@ async fn resign_zone_tx(
     {
         return Ok(None);
     }
-    zone::advance_serial_tx(cx, tx, &signed.zone, new_serial, subject).await?;
+    zone::advance_serial_tx(tx, cx, &signed.zone, new_serial, attribution).await?;
     Ok(Some(new_serial))
 }
 
@@ -123,7 +119,7 @@ async fn find_zone_policy_tx(
     let Some(policy_id) = zone.dnssec_policy_id else {
         return Ok(None);
     };
-    db::dnssec_policy::get_tx(tx, policy_id, LockLevel::Unlocked)
+    bindizr_db::dnssec_policy::get_tx(tx, policy_id, LockLevel::Unlocked)
         .await?
         .map(Some)
         .ok_or_else(|| {
@@ -136,7 +132,7 @@ async fn find_zone_policy_tx(
 
 /// The policy a signed zone signs under; a signed zone without one is a
 /// broken invariant, never a caller error.
-async fn get_zone_policy_tx(
+async fn lookup_zone_policy_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
 ) -> Result<DnssecPolicy, ServiceError> {
@@ -150,41 +146,39 @@ async fn get_zone_policy_tx(
 
 /// Load the zone (locked at `lock_level`) together with its policy and
 /// signing keys; a zone with no keys reads as not DNSSEC-enabled.
-async fn get_signed_zone_tx(
+async fn lookup_signed_zone_tx(
     tx: &mut Transaction<'_>,
     zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<SignedZone, ServiceError> {
-    let zone = zone::get_by_name_tx(tx, zone_name, lock_level).await?;
-    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let zone = zone::lookup_by_name_tx(tx, zone_name, lock_level).await?;
+    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
     }
-    let policy = get_zone_policy_tx(tx, &zone).await?;
+    let policy = lookup_zone_policy_tx(tx, &zone).await?;
     Ok(SignedZone { zone, policy, keys })
 }
 
-/// The scheduler's form of [`get_signed_zone_tx`]: `None` when the
+/// The scheduler's form of [`lookup_signed_zone_tx`]: `None` when the
 /// zone was deleted or unsigned since its id was listed.
 async fn find_signed_zone_by_id_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Option<SignedZone>, ServiceError> {
-    let Some(zone) = db::zone::get_tx(tx, zone_id, lock_level).await? else {
+    let Some(zone) = bindizr_db::zone::get_tx(tx, zone_id, lock_level).await? else {
         return Ok(None);
     };
-    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Ok(None);
     }
-    let policy = get_zone_policy_tx(tx, &zone).await?;
+    let policy = lookup_zone_policy_tx(tx, &zone).await?;
     Ok(Some(SignedZone { zone, policy, keys }))
 }
 
-/// Apply the signed DNSSEC view and journal its changes under the held zone lock.
-///
-/// Returns whether anything changed.
+/// Apply and journal the signed view under the zone lock, reporting whether it changed.
 async fn apply_signed_view_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -194,10 +188,12 @@ async fn apply_signed_view_tx(
     pass: SigningPass,
 ) -> Result<bool, ServiceError> {
     // Read both planes under the zone lock so the diff uses one consistent state.
-    let records = db::record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
-    let prev = db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let records = bindizr_db::record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let prev = bindizr_db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
 
-    let withdraw_parent_ds = db::dnssec_withdrawal::get_tx(tx, zone.id).await?.is_some();
+    let withdraw_parent_ds = bindizr_db::dnssec_withdrawal::get_tx(tx, zone.id)
+        .await?
+        .is_some();
 
     let now = Utc::now();
     let diff = SignedViewParams {
@@ -240,7 +236,7 @@ async fn apply_signed_view_tx(
             continue;
         };
         if signed_ttl > key.max_signed_ttl {
-            db::dnssec_key::update_max_signed_ttl_tx(tx, key.id, signed_ttl).await?;
+            bindizr_db::dnssec_key::update_max_signed_ttl_tx(tx, key.id, signed_ttl).await?;
         }
     }
 
@@ -276,10 +272,10 @@ async fn apply_signed_view_tx(
     }
 
     // The derived rows and their IXFR journal commit in the caller's transaction.
-    db::zone_change::create_many_tx(tx, &changes).await?;
+    bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
     let removed_ids: Vec<DnssecRecordId> = diff.removed.iter().map(|row| row.id).collect();
-    db::dnssec_record::delete_many_tx(tx, &removed_ids).await?;
-    db::dnssec_record::create_many_tx(tx, &diff.added).await?;
+    bindizr_db::dnssec_record::delete_many_tx(tx, &removed_ids).await?;
+    bindizr_db::dnssec_record::create_many_tx(tx, &diff.added).await?;
     Ok(true)
 }
 

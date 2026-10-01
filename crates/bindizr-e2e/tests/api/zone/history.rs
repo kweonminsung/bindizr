@@ -387,7 +387,7 @@ async fn zone_rollback_rejects_bad_serials() {
     }
 }
 
-/// Verify that zone versions record who made each change.
+/// Record the request path separately from the credential and preserve both in history.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn zone_versions_record_who_made_each_change() {
@@ -398,8 +398,7 @@ async fn zone_versions_record_who_made_each_change() {
     .await;
     let (token_name, token) = app.create_api_token().await;
 
-    // Over the daemon socket, whose peer is the local daemon owner: no
-    // credential stands behind it.
+    // The socket authenticates the OS peer, without an API token or TSIG key.
     let zone_name = app.zone_name("audit.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
@@ -422,12 +421,53 @@ async fn zone_versions_record_who_made_each_change() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let items = body["items"].as_array().unwrap();
 
-    assert_eq!(items[0]["change_source"], "token", "{body}");
-    assert_eq!(items[0]["changed_by"], token_name, "{body}");
+    assert_eq!(items[0]["change_source"], "api", "{body}");
+    assert_eq!(
+        items[0]["changed_by"],
+        json!({"kind": "token", "name": token_name}),
+        "{body}"
+    );
 
     let created = items.last().unwrap();
-    assert_eq!(created["change_source"], "local", "{body}");
+    assert_eq!(created["change_source"], "socket", "{body}");
     assert!(created["changed_by"].is_null(), "{body}");
+
+    app.run_cli_success(&["token", "delete", &token_name]).await;
+    let history = app
+        .run_cli_success(&["zone", "version", "list", &zone_name, "-o", "json"])
+        .await;
+    let history: serde_json::Value = serde_json::from_str(&history).unwrap();
+    assert_eq!(
+        history["items"][0]["changed_by"],
+        json!({"kind": "token", "name": token_name})
+    );
+    let table = app
+        .run_cli_success(&["zone", "version", "list", &zone_name])
+        .await;
+    assert!(table.contains(&format!("token:{token_name}")), "{table}");
+}
+
+/// Authentication-disabled API writes and socket commands keep distinct sources.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn zone_versions_distinguish_unauthenticated_api_from_socket() {
+    let app = TestApp::start_local().await;
+    let zone = app.create_test_zone().await;
+    let zone_name = zone["name"].as_str().unwrap();
+    app.run_cli_success(&["zone", "update", zone_name, "--refresh", "301"])
+        .await;
+
+    let (status, history) = app
+        .send_request(Method::GET, &format!("/zones/{zone_name}/versions"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{history}");
+    let items = history["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2, "{history}");
+    assert_eq!(items[0]["change_source"], "socket", "{history}");
+    assert_eq!(items[1]["change_source"], "api", "{history}");
+    for item in items {
+        assert!(item.get("changed_by").unwrap().is_null(), "{item}");
+    }
 }
 
 /// Verify that a serial past the stored range, as a version or a listing

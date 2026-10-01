@@ -73,6 +73,7 @@ async fn register_compose_secondaries(client: &Client) {
 
 /// The Docker Compose project hosting bindizr and its BIND9 secondaries for
 /// the DNS-verified run.
+#[derive(Debug)]
 pub(crate) struct ComposeStack {
     project_name: String,
     compose_dir: PathBuf,

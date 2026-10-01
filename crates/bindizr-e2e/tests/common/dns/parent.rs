@@ -20,7 +20,7 @@ use ring::digest::{Context, SHA1_FOR_LEGACY_USE_ONLY};
 use serde_json::Value;
 
 /// A DS record for the fake parent to serve.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ServedDs {
     key_tag: u16,
     algorithm: u8,
@@ -108,6 +108,7 @@ impl ServedDs {
 }
 
 /// A parent nameserver on loopback, serving whatever DS records the test hands it.
+#[derive(Debug)]
 pub(crate) struct FakeParent {
     addr: SocketAddr,
     ds: Arc<Mutex<Vec<ServedDs>>>,

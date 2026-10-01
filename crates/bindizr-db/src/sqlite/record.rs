@@ -42,7 +42,7 @@ pub(crate) async fn create_many_tx(
         for r in chunk {
             query = query
                 .bind(&r.name)
-                .bind(r.record_type.to_string())
+                .bind(r.record_type.as_str())
                 .bind(r.value.clone())
                 .bind(r.record_type.display_value(&r.value))
                 .bind(r.ttl)
@@ -156,7 +156,7 @@ pub(crate) async fn list_by_name_tx(
 }
 
 /// Find an owner with a DS record but no NS delegation in the current transaction.
-pub(crate) async fn get_ds_name_without_ns_tx(
+pub(crate) async fn find_name_ds_without_ns_tx(
     tx: &mut Transaction<'_, Sqlite>,
     zone_id: ZoneId,
 ) -> Result<Option<String>, DatabaseError> {
@@ -401,7 +401,7 @@ pub(crate) async fn update_tx(
         "#,
     )
     .bind(&record.name)
-    .bind(record.record_type.to_string())
+    .bind(record.record_type.as_str())
     .bind(&record.value)
     .bind(record.record_type.display_value(&record.value))
     .bind(record.ttl)

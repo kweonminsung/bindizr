@@ -4,10 +4,8 @@ use super::{
     MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, has_whitespace_or_control,
 };
 
-/// A record's owner name as its decoded labels, relative to its zone; the apex
-/// is the empty label list. A `.` inside a label is data, so no spelling can
-/// make one label read as two. Labels are lowercased on construction, so the
-/// derived `Eq`/`Hash` fold case (RFC 4343).
+/// Decoded zone-relative labels; the apex is empty and in-label dots remain data.
+/// Construction lowercases labels for case-insensitive `Eq`/`Hash` (RFC 4343).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OwnerName(Vec<String>);
 
@@ -59,9 +57,9 @@ impl OwnerName {
         }
     }
 
-    /// Parse a name that is already absolute, so a name outside `zone` is an
-    /// error instead of being qualified by appending the zone. Callers whose
-    /// input carries no trailing dot (lookup form, wire owners) need this.
+    /// Parse an absolute name, rejecting names outside `zone` without qualification.
+    /// The caller guarantees an absolute name even without a trailing dot;
+    /// relative client input belongs to [`Self::parse_in_zone`].
     pub fn parse_absolute_in_zone(
         input: &str,
         zone_name: &ZoneName,
@@ -137,14 +135,6 @@ impl OwnerName {
     }
 }
 
-/// Decodes the stored form, so a row column can hold an owner name directly.
-impl From<String> for OwnerName {
-    /// Wrap an owner name from its stored string representation.
-    fn from(value: String) -> Self {
-        Self::from_row(&value)
-    }
-}
-
 /// The write half: binding renders [`OwnerName::to_stored`], so a query cannot
 /// reach a column through [`std::fmt::Display`], whose apex is `@`.
 impl<DB: sqlx::Database> sqlx::Type<DB> for OwnerName
@@ -172,6 +162,21 @@ where
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
         self.to_stored().encode_by_ref(buf)
+    }
+}
+
+/// The read half: the column holds the row form, so decoding never fails.
+impl<'r, DB: sqlx::Database> sqlx::Decode<'r, DB> for OwnerName
+where
+    &'r str: sqlx::Decode<'r, DB>,
+{
+    /// Read the row form.
+    fn decode(
+        value: <DB as sqlx::Database>::ValueRef<'r>,
+    ) -> Result<Self, sqlx::error::BoxDynError> {
+        Ok(Self::from_row(<&str as sqlx::Decode<'r, DB>>::decode(
+            value,
+        )?))
     }
 }
 
@@ -260,10 +265,8 @@ fn decode_label(label: Vec<u8>) -> Result<String, ParseNameError> {
     Ok(label)
 }
 
-/// Classify a decoded owner label consistently across name constructors.
-///
-/// Owner labels may contain `_` and `*`; reject whitespace and control octets even when
-/// supplied through `\DDD` escapes.
+/// Validate decoded owner labels, allowing `_` and `*` but rejecting whitespace
+/// and control octets even when supplied through `\DDD` escapes.
 fn classify_owner_label(label: &str) -> Result<(), ParseNameError> {
     if label.is_empty() {
         return Err(ParseNameError::EmptyLabel);

@@ -11,7 +11,7 @@ use thiserror::Error;
 ///
 /// Serves the ExternalDNS webhook protocol on a localhost listener and
 /// forwards every operation to the bindizr HTTP API with a Bearer token.
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone, PartialEq, Eq)]
 #[command(name = "bindizr-external-dns", version, about)]
 pub(crate) struct Cli {
     /// Base URL of the bindizr HTTP API, e.g. http://bindizr:8000
@@ -86,13 +86,13 @@ pub(crate) enum LoadAdapterConfigError {
     },
     #[error("--bindizr-url must not carry a query or fragment, got '{url}'")]
     UrlQueryOrFragment { url: String },
-    #[error("Failed to read token file '{path}': {source}")]
+    #[error("failed to read token file '{path}': {source}")]
     ReadTokenFile {
         path: String,
         #[source]
         source: std::io::Error,
     },
-    #[error("Invalid --log-level '{value}': {source}")]
+    #[error("invalid --log-level '{value}': {source}")]
     InvalidLogLevel {
         value: String,
         #[source]
@@ -102,7 +102,7 @@ pub(crate) enum LoadAdapterConfigError {
 
 impl AdapterConfig {
     /// Validate CLI options and build the adapter configuration.
-    pub(crate) fn from_cli(cli: Cli) -> Result<Self, LoadAdapterConfigError> {
+    pub(crate) fn load(cli: Cli) -> Result<Self, LoadAdapterConfigError> {
         let bindizr_url = cli.bindizr_url.trim().trim_end_matches('/').to_string();
         if !bindizr_url.starts_with("http://") && !bindizr_url.starts_with("https://") {
             return Err(LoadAdapterConfigError::UrlScheme { url: bindizr_url });
@@ -180,11 +180,11 @@ mod tests {
     #[test]
     fn config_normalizes_url_and_requires_http_scheme() {
         let config =
-            AdapterConfig::from_cli(to_cli(&["--bindizr-url", "http://bindizr:8000/"])).unwrap();
+            AdapterConfig::load(to_cli(&["--bindizr-url", "http://bindizr:8000/"])).unwrap();
         assert_eq!(config.bindizr_url, "http://bindizr:8000");
         assert!(config.token.is_none());
 
-        assert!(AdapterConfig::from_cli(to_cli(&["--bindizr-url", "bindizr:8000"])).is_err());
+        assert!(AdapterConfig::load(to_cli(&["--bindizr-url", "bindizr:8000"])).is_err());
     }
 
     /// Verify that `config` rejects unusable base urls.
@@ -197,14 +197,14 @@ mod tests {
             "http://bindizr:8000#api",
         ] {
             assert!(
-                AdapterConfig::from_cli(to_cli(&["--bindizr-url", url])).is_err(),
+                AdapterConfig::load(to_cli(&["--bindizr-url", url])).is_err(),
                 "accepted '{}'",
                 url
             );
         }
 
         let config =
-            AdapterConfig::from_cli(to_cli(&["--bindizr-url", "http://bindizr:8000/api"])).unwrap();
+            AdapterConfig::load(to_cli(&["--bindizr-url", "http://bindizr:8000/api"])).unwrap();
         assert_eq!(config.bindizr_url, "http://bindizr:8000/api");
     }
 
@@ -215,7 +215,7 @@ mod tests {
         let path = dir.path().join("token");
         std::fs::write(&path, "secret-token\n").unwrap();
 
-        let config = AdapterConfig::from_cli(to_cli(&[
+        let config = AdapterConfig::load(to_cli(&[
             "--bindizr-url",
             "http://bindizr:8000",
             "--token",
@@ -231,7 +231,7 @@ mod tests {
     /// Verify that missing token resolves to none.
     #[test]
     fn missing_token_resolves_to_none() {
-        let config = AdapterConfig::from_cli(to_cli(&[
+        let config = AdapterConfig::load(to_cli(&[
             "--bindizr-url",
             "http://bindizr:8000",
             "--token",

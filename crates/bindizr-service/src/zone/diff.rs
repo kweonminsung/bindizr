@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// What makes two records of one record set the same: canonical rdata and TTL.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct MemberIdentity {
     rdata: String,
     ttl: Ttl,
@@ -25,7 +25,7 @@ struct MemberIdentity {
 
 /// One record within a record set: its identity (for change detection) and
 /// its display-form value (for the response).
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct RecordSetMember {
     identity: MemberIdentity,
     value: RecordDiffValue,
@@ -41,7 +41,7 @@ fn group_record_sets(
     for record in records {
         let key = RecordSetKey {
             name: record.name.to_fqdn(&zone.name),
-            record_type: record.record_type.to_string(),
+            record_type: record.record_type,
         };
         record_sets.entry(key).or_default().push(RecordSetMember {
             identity: MemberIdentity {

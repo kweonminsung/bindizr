@@ -207,7 +207,7 @@ async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
     let absent_zone = app.zone_name("absent.com");
     for zone in [&hidden_zone, &absent_zone] {
         let spelled = format!("{}.", zone.to_uppercase());
-        let expected = json!(format!("Zone with name '{zone}' not found"));
+        let expected = json!(format!("zone with name '{zone}' not found"));
 
         let (status, body) = app
             .send_request(Method::GET, &format!("/zones/{spelled}"), None)
@@ -331,7 +331,20 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
     app.set_auth_token(global_token);
 
     let zone_name = app.zone_name("example.com");
-    app.create_named_zone(&zone_name).await;
+    // Without its apex NS, so the apex holds only the TXT below.
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/zones",
+            Some(json!({
+                "name": zone_name,
+                "mname": format!("ns1.{zone_name}"),
+                "rname": "admin@example.com",
+                "apex_ns": false,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     for (name, record_type, value) in [
         ("@", "TXT", "apex"),
         ("host.dyn", "A", "192.0.2.1"),
@@ -372,7 +385,6 @@ async fn a_grants_pattern_and_types_narrow_the_count_too() {
         )
     };
 
-    // The apex holds only the TXT above: a new zone carries no records.
     assert_eq!(listed(&app).await, (1, 1));
 
     app.run_cli_success(&[
@@ -742,10 +754,8 @@ async fn ungranted_bulk_is_refused_before_it_can_probe_the_zone() {
     }
 }
 
-/// Verify that zone authorization rejects an ungranted batch even when none of its names can be
-/// parsed.
-///
-/// Such a batch produces no write targets for the per-record authorization check.
+/// Verify that zone authorization rejects an ungranted batch even when
+/// unparseable names leave the per-record check with no write targets.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn ungranted_bulk_of_unparseable_names_is_refused_not_validated() {

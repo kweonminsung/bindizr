@@ -1,14 +1,7 @@
-"""Benchmark 2 — Bulk Import.
+"""Benchmark 2: bulk-import time, records/sec, and peak memory per (system, size, path).
 
-Imports N records (per configured size) into a fresh zone and measures wall-clock
-import time, records/sec, and peak memory. Uses each adapter's `bulk_import`
-(batch APIs where available, otherwise a fixed pool of concurrent creates).
-
-Adapters that expose a second bulk-load path (Bindizr's BIND zone-file import)
-also report it as an extra `<label> (zone import)` row, so the two Bindizr
-bulk-load APIs can be compared side by side.
-
-Emits one row per (system, size[, path]).
+Load fresh zones through each adapter's batch API or fixed create-worker pool.
+Bindizr's zone-file import gets a separate `<label> (zone import)` comparison row.
 """
 from __future__ import annotations
 

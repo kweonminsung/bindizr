@@ -1,4 +1,4 @@
-use super::ConfigError;
+use super::*;
 use crate::{
     config::{
         BINDIZR_CONF_PATH, Config, DatabaseType, LogFormat, LogLevel, resolve_config_path_with_env,
@@ -8,6 +8,7 @@ use crate::{
 
 /// Deviations from the base config TOML; the default renders a minimal valid
 /// sqlite config.
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 struct TestConfigToml {
     api_listen_addr: &'static str,
     authentication_required: bool,
@@ -177,7 +178,7 @@ fn from_toml_rejects_invalid_listen_addr() {
     })
     .unwrap_err();
 
-    assert!(err.to_string().contains("Invalid Bindizr configuration"));
+    assert!(err.to_string().contains("invalid Bindizr configuration"));
 }
 
 /// Verify that `from_toml` rejects empty selected database url.
@@ -275,7 +276,7 @@ fn apply_env_overrides_rejects_invalid_values() {
 
     assert!(
         err.to_string()
-            .contains("Invalid BINDIZR_API_LISTEN_PORT environment variable")
+            .contains("invalid BINDIZR_API_LISTEN_PORT environment variable")
     );
 }
 
@@ -472,4 +473,62 @@ fn dns_validate_rejects_a_zero_zone_default() {
         matches!(error, ConfigError::ZoneDefaultZero { field: "retry" }),
         "unexpected error: {error}"
     );
+}
+
+/// Verify the canonical spelling and round-trip of every DatabaseType variant.
+#[test]
+fn database_type_spells_itself_once() {
+    for (value, expected) in [
+        (DatabaseType::MySql, "mysql"),
+        (DatabaseType::Sqlite, "sqlite"),
+        (DatabaseType::Postgres, "postgresql"),
+    ] {
+        assert_eq!(value.as_str(), expected);
+        assert_eq!(
+            serde_json::to_value(value).unwrap(),
+            serde_json::json!(expected)
+        );
+        assert_eq!(
+            serde_json::from_value::<DatabaseType>(serde_json::json!(expected)).unwrap(),
+            value
+        );
+    }
+}
+
+/// Verify the canonical spelling and round-trip of every LogFormat variant.
+#[test]
+fn log_format_spells_itself_once() {
+    for (value, expected) in [(LogFormat::Text, "text"), (LogFormat::Json, "json")] {
+        assert_eq!(value.as_str(), expected);
+        assert_eq!(
+            serde_json::to_value(value).unwrap(),
+            serde_json::json!(expected)
+        );
+        assert_eq!(
+            serde_json::from_value::<LogFormat>(serde_json::json!(expected)).unwrap(),
+            value
+        );
+    }
+}
+
+/// Verify the canonical spelling and round-trip of every LogLevel variant.
+#[test]
+fn log_level_spells_itself_once() {
+    for (value, expected) in [
+        (LogLevel::Trace, "trace"),
+        (LogLevel::Debug, "debug"),
+        (LogLevel::Info, "info"),
+        (LogLevel::Warn, "warn"),
+        (LogLevel::Error, "error"),
+    ] {
+        assert_eq!(value.as_str(), expected);
+        assert_eq!(
+            serde_json::to_value(value).unwrap(),
+            serde_json::json!(expected)
+        );
+        assert_eq!(
+            serde_json::from_value::<LogLevel>(serde_json::json!(expected)).unwrap(),
+            value
+        );
+    }
 }

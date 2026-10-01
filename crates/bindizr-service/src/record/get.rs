@@ -8,21 +8,19 @@ use super::ListedRecord;
 use crate::{
     Context,
     authorization::Caller,
-    db,
     error::ServiceError,
     model::{
         dnssec_record::DnssecRecordType,
         record::{RecordType, RecordWithZone},
     },
-    types::{
-        GetRecordResponse, GetRecordsFilter, PaginatedResponse, ZoneView, normalize_page_limit,
-        parse_setting,
-    },
+    pagination::{build_paginated_response, normalize_page_limit, parse_setting},
+    types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse, ZoneView},
     zone::{self, validation::normalize_name},
 };
 
 /// Which plane a `type` filter names: a user record type, or a derived
 /// DNSSEC type when the signed view is requested.
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 enum TypeFilter {
     Any,
     User(RecordType),
@@ -49,15 +47,12 @@ fn parse_type_filter(value: Option<&str>, view: ZoneView) -> Result<TypeFilter, 
 
 /// Every record, for the unauthenticated metrics endpoint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
-    Ok(db::record::count_by_filter(cx.db(), RecordFilter::default()).await?)
+    Ok(bindizr_db::record::count_by_filter(cx.db(), RecordFilter::default()).await?)
 }
 
-/// List records with their zone name matching `filter`, restricted to what
-/// the caller's grants carry in SQL so pagination stays database-side.
-/// Scoped callers see an unknown or invisible zone as an empty page.
-/// With `signed`, the derived DNSSEC plane pages after the user records;
-/// searches reach their names, value filters are refused, and priority filters
-/// exclude the derived plane.
+/// List records with zone names, applying caller grants and pagination in SQL.
+/// Signed records follow user records, support name search, and reject value filters.
+/// Priority filters omit signed records; unknown or invisible zones yield empty pages for scoped callers.
 pub async fn list_with_zone_by_filter(
     cx: &Context,
     caller: &Caller,
@@ -139,12 +134,12 @@ pub async fn list_with_zone_by_filter(
     };
 
     let user_total = if user_plane {
-        db::record::count_by_filter(cx.db(), record_filter.clone()).await?
+        bindizr_db::record::count_by_filter(cx.db(), record_filter.clone()).await?
     } else {
         0
     };
     let derived_total = if derived_plane {
-        db::dnssec_record::count_by_filter(cx.db(), derived_filter.clone()).await?
+        bindizr_db::dnssec_record::count_by_filter(cx.db(), derived_filter.clone()).await?
     } else {
         0
     };
@@ -153,7 +148,7 @@ pub async fn list_with_zone_by_filter(
     let mut items: Vec<ListedRecord> = Vec::new();
     if user_plane && start < user_total {
         items.extend(
-            db::record::list_by_filter_with_zone(cx.db(), record_filter)
+            bindizr_db::record::list_by_filter_with_zone(cx.db(), record_filter)
                 .await?
                 .into_iter()
                 .map(ListedRecord::User),
@@ -164,7 +159,7 @@ pub async fn list_with_zone_by_filter(
     let remaining = limit.map(|limit| limit.saturating_sub(items.len() as u32));
     if derived_plane && remaining != Some(0) {
         items.extend(
-            db::dnssec_record::list_by_filter_with_zone(
+            bindizr_db::dnssec_record::list_by_filter_with_zone(
                 cx.db(),
                 DnssecRecordFilter {
                     limit: remaining,
@@ -178,8 +173,8 @@ pub async fn list_with_zone_by_filter(
         );
     }
 
-    let items = items.iter().map(ListedRecord::to_response).collect();
-    Ok(PaginatedResponse::from_page(
+    let items = items.iter().map(GetRecordResponse::from).collect();
+    Ok(build_paginated_response(
         items,
         limit,
         offset,
@@ -194,12 +189,15 @@ pub async fn get_with_zone(
     caller: &Caller,
     record_id: RecordId,
 ) -> Result<RecordWithZone, ServiceError> {
-    let record = match db::record::get_with_zone(cx.db(), record_id).await {
+    let record = match bindizr_db::record::get_with_zone(cx.db(), record_id).await {
         Ok(Some(record)) => record,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(e) => {
             log::error!("Failed to fetch record: {}", e);
-            return Err(ServiceError::internal("Failed to fetch record"));
+            return Err(ServiceError::internal_with_source(
+                "failed to fetch record",
+                e,
+            ));
         }
     };
 

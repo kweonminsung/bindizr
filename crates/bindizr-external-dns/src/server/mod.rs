@@ -61,13 +61,8 @@ pub(crate) fn health_router(state: Arc<AppState>) -> Router {
 
 /// Serialize a webhook response with its JSON content type.
 impl IntoResponse for UpstreamError {
-    /// external-dns retries only 5xx; upstream 4xx pass through as permanent
-    /// errors and upstream 5xx / transport failures become a retryable 502.
-    ///
-    /// An unauthenticated 401 is the exception: replacing the token heals it, so it
-    /// answers 503 and the change set is retried afterwards instead of being
-    /// dropped as permanently bad. A 403 stays permanent — the token is known and
-    /// the zone is genuinely not the adapter's to write.
+    /// Map upstream 5xx and transport failures to retryable 502; pass through 4xx.
+    /// Map 401 to 503 so external-dns retries after token replacement; 403 stays permanent.
     fn into_response(self) -> Response {
         match self {
             UpstreamError::Rejected {
@@ -98,6 +93,7 @@ impl IntoResponse for UpstreamError {
     }
 }
 
+/// Encode a webhook reply as JSON under the negotiated media type.
 fn json_response<T: serde::Serialize>(value: &T) -> Response {
     match serde_json::to_string(value) {
         // external-dns compares the negotiation Content-Type byte-for-byte,
@@ -208,10 +204,7 @@ async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
 
     match state.upstream.list_records().await {
         Ok(records) => {
-            let endpoints: Vec<Endpoint> = records
-                .into_iter()
-                .map(Endpoint::from_bindizr_record)
-                .collect();
+            let endpoints: Vec<Endpoint> = records.into_iter().map(Endpoint::from).collect();
             log::info!("event=records_get endpoints={}", endpoints.len());
             json_response(&endpoints)
         }

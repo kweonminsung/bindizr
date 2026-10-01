@@ -8,16 +8,16 @@ use bindizr_core::{
         zone::ZoneId,
     },
 };
+use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
 use crate::{
-    Context, db,
-    db::LockLevel,
+    Context,
     dnssec::{self, rollover::promotable_sep_key_ids},
     error::ServiceError,
     transaction,
     types::Holddown,
-    zone::version::ChangeSubject,
+    zone::version::ChangeAttribution,
 };
 
 /// Rows one prune removed from a zone's history.
@@ -27,11 +27,8 @@ pub(crate) struct PruneSummary {
     pub(crate) version_rows: u64,
 }
 
-/// Prune one zone's journal and version rows older than `cutoff` in its own
-/// transaction, under the zone lock the history readers hold, so a reader
-/// never sees the current records under a past serial. Both tables go
-/// together: a serial pruned from one alone reads to IXFR clients as a gap
-/// or a missing SOA.
+/// Prune a zone's journal and versions before `cutoff` in one transaction under the zone lock.
+/// The shared reader lock preserves serial consistency; pruning both tables avoids IXFR gaps.
 pub(crate) async fn prune_zone_history_by_zone_id(
     cx: &Context,
     zone_id: ZoneId,
@@ -39,7 +36,7 @@ pub(crate) async fn prune_zone_history_by_zone_id(
 ) -> Result<PruneSummary, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to prune zone history").await?;
     let result = async {
-        if db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive)
+        if bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive)
             .await?
             .is_none()
         {
@@ -49,9 +46,11 @@ pub(crate) async fn prune_zone_history_by_zone_id(
             });
         }
         let journal_rows =
-            db::zone_change::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff).await?;
+            bindizr_db::zone_change::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff)
+                .await?;
         let version_rows =
-            db::zone_version::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff).await?;
+            bindizr_db::zone_version::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff)
+                .await?;
         Ok::<_, ServiceError>(PruneSummary {
             journal_rows,
             version_rows,
@@ -77,11 +76,11 @@ pub(crate) async fn resign_zone_by_zone_id(
         };
 
         if dnssec::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
-            &ChangeSubject::system(),
+            &ChangeAttribution::system(),
         )
         .await?
         .is_none()
@@ -131,11 +130,11 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
                 .await?;
         signed.keys.push(new_key);
         dnssec::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
-            &ChangeSubject::system(),
+            &ChangeAttribution::system(),
         )
         .await?;
         Ok(Some(signed.zone.name.clone()))
@@ -179,11 +178,11 @@ pub(crate) async fn promote_zsks_by_zone_id(
                 .await?;
 
         dnssec::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
-            &ChangeSubject::system(),
+            &ChangeAttribution::system(),
         )
         .await?;
         Ok(Some(signed.zone.name.clone()))
@@ -192,10 +191,8 @@ pub(crate) async fn promote_zsks_by_zone_id(
     transaction::finish_tx(tx, result, "failed to advance key rollover").await
 }
 
-/// Advance a zone's KSK/CSK rollover once the parent serves the new key's DS
-/// — what `ds-seen` otherwise waits for an operator to assert. `None` when
-/// the parent does not serve it yet or cannot be asked: waiting states, not
-/// failures.
+/// Advance KSK/CSK rollover after parent-DS confirmation.
+/// Return `None` while the DS is absent or the parent is unreachable.
 pub(crate) async fn promote_sep_keys_by_zone_id(
     cx: &Context,
     zone_id: ZoneId,
@@ -248,11 +245,11 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
         )
         .await?;
         dnssec::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
-            &ChangeSubject::system(),
+            &ChangeAttribution::system(),
         )
         .await?;
         Ok(Some(signed.zone.name.clone()))
@@ -312,7 +309,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         let mut remaining = Vec::with_capacity(signed.keys.len());
         for key in std::mem::take(&mut signed.keys) {
             if removable.contains(&key.id) {
-                db::dnssec_key::delete_tx(&mut tx, key.id).await?;
+                bindizr_db::dnssec_key::delete_tx(&mut tx, key.id).await?;
             } else {
                 remaining.push(key);
             }
@@ -320,11 +317,11 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         signed.keys = remaining;
 
         dnssec::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
-            &ChangeSubject::system(),
+            &ChangeAttribution::system(),
         )
         .await?;
         Ok(Some(signed.zone.name.clone()))

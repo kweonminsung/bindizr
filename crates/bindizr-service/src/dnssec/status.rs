@@ -2,14 +2,13 @@
 //! and the DS records the parent needs.
 
 use bindizr_core::dns::{Serial, name::ZoneName};
+use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
 use super::parent_ns_addrs::parent_ns_addr_entries;
 use crate::{
     Context, Transaction,
     authorization::Caller,
-    db,
-    db::LockLevel,
     error::ServiceError,
     model::{
         dnssec_key::{DnssecKey, DnssecKeyState},
@@ -34,8 +33,8 @@ pub async fn get_status(
     // are read together under the zone lock.
     let mut tx = transaction::begin_read_tx(cx, "failed to read DNSSEC status").await?;
     let result = async {
-        let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
-        let keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
         build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await
     }
@@ -45,12 +44,12 @@ pub async fn get_status(
 
 /// Zones serving a signed view, for the unauthenticated metrics endpoint.
 pub async fn count_signed_zones(cx: &Context) -> Result<u64, ServiceError> {
-    Ok(db::dnssec_record::count_zone_ids(cx.db()).await?)
+    Ok(bindizr_db::dnssec_record::count_zone_ids(cx.db()).await?)
 }
 
 /// Keys in `state` across every zone, for the metrics endpoint.
 pub async fn count_keys_by_state(cx: &Context, state: DnssecKeyState) -> Result<u64, ServiceError> {
-    Ok(db::dnssec_key::count_by_state(cx.db(), state).await?)
+    Ok(bindizr_db::dnssec_key::count_by_state(cx.db(), state).await?)
 }
 
 /// Count signatures inside their policy's re-sign window across every
@@ -59,13 +58,13 @@ pub async fn count_rrsigs_expiring_within_refresh(
     cx: &Context,
     now: DateTime<Utc>,
 ) -> Result<u64, ServiceError> {
-    Ok(db::dnssec_record::count_expiring_within_refresh(cx.db(), now).await?)
+    Ok(bindizr_db::dnssec_record::count_expiring_within_refresh(cx.db(), now).await?)
 }
 
 /// Signatures already past their expiration across every zone; any at all
 /// mean resolvers are failing part of one right now.
 pub async fn count_rrsigs_expired(cx: &Context, now: DateTime<Utc>) -> Result<u64, ServiceError> {
-    Ok(db::dnssec_record::count_expired_before(cx.db(), now).await?)
+    Ok(bindizr_db::dnssec_record::count_expired_before(cx.db(), now).await?)
 }
 
 /// Assemble the zone's status on the caller's transaction: the earliest
@@ -77,7 +76,7 @@ pub(crate) async fn build_status_tx(
     keys: &[DnssecKey],
     serial: Serial,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    let derived = db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let derived = bindizr_db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     let earliest_signature_expires_at = derived.iter().filter_map(|row| row.expires_at).min();
 
     // Only RRSIG rows carry an expiration, so counting those counts signatures.
@@ -94,7 +93,9 @@ pub(crate) async fn build_status_tx(
         .zip(policy)
         .map(|(expires, policy)| expires - policy.signature_refresh_days.to_duration());
 
-    let withdrawing = db::dnssec_withdrawal::get_tx(tx, zone.id).await?.is_some();
+    let withdrawing = bindizr_db::dnssec_withdrawal::get_tx(tx, zone.id)
+        .await?
+        .is_some();
 
     // The parent needs DS records only for the SEP keys the zone still wants
     // delegated trust for.
@@ -116,7 +117,7 @@ pub(crate) async fn build_status_tx(
                 state: key.state,
                 state_changed_at: key.state_changed_at,
                 eligible_at: (key.state != DnssecKeyState::Active).then_some(key.eligible_at),
-                algorithm: key.algorithm.to_string(),
+                algorithm: key.algorithm,
                 key_tag: key.key_tag,
                 dnskey: format!(
                     "{} 3 {} {}",
@@ -144,7 +145,7 @@ fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceEr
     let apex = zone
         .name
         .to_wire_name()
-        .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
+        .map_err(|e| ServiceError::internal_with_source(format!("invalid zone apex: {}", e), e))?;
     let rdata = key
         .ds_rdata(&apex, key.algorithm.ds_digest_type())
         .map_err(ServiceError::dnssec_signing_failed)?;

@@ -203,13 +203,10 @@ class BindizrAdapter(DnsAdapter):
 
     async def _post_with_retry(self, url: str, body: dict, count: int,
                                check_applied: bool = False) -> int:
-        """POST `body`, retrying transient failures. Return how many records still
-        failed (0 on success).
+        """POST a batch with transient retries and return the failed-record count.
 
-        The zone-import endpoint answers 200 with `applied=false` when validation
-        rejects the chunk and nothing is inserted, so `check_applied` reads the
-        body to catch that. Rejection is deterministic and not retried.
-        """
+        With `check_applied`, treat HTTP 200 with `applied=false` as a deterministic
+        rejection and do not retry."""
         delay = 0.05
         for attempt in range(POST_ATTEMPTS):
             try:

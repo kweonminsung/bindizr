@@ -1,21 +1,22 @@
-use bindizr_core::model::zone::ZoneId;
+use bindizr_core::model::{record::RecordId, zone::ZoneId};
 use bindizr_db::Transaction;
 use chrono::Utc;
 
 use crate::{
     Context,
     authorization::Caller,
-    db,
     error::ServiceError,
-    model::zone::Zone,
+    model::{record::Record, zone::Zone},
+    record::{PreparedRecord, normalize_record_owner_name, parse_record_request},
     serial::{generate_serial, validate_initial_serial},
     transaction,
-    types::{CreateZoneRequest, GetZoneResponse, ZoneWriteResponse},
+    types::{CreateZoneRequest, GetZoneResponse, RecordValueRequest, ZoneWriteResponse},
     zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
 };
 
-/// Create a new zone and NOTIFY the catalog zone. The zone carries its
-/// SOA and no records; its NS records are the caller's to add.
+/// Create a new zone and NOTIFY the catalog zone. The zone carries its SOA
+/// and, unless the request opts out, an apex NS record naming the MNAME, an
+/// ordinary record from then on; further NS records are the caller's to add.
 pub async fn create(
     cx: &Context,
     caller: &Caller,
@@ -26,24 +27,27 @@ pub async fn create(
     // Parent/child zones are allowed; only the same normalized zone name is rejected.
     // Names are stored normalized, so an exact lookup is enough to detect a collision.
     let name = normalize_create_zone_request(cx, create_zone_request)?.name;
-    match db::zone::get_by_name(cx.db(), &name).await {
+    match bindizr_db::zone::get_by_name(cx.db(), &name).await {
         Ok(Some(_)) => {
             log::error!("Zone with name {} already exists", name);
             return Err(ServiceError::zone_conflict(format!(
-                "Zone with name '{}' already exists",
+                "zone with name '{}' already exists",
                 name
             )));
         }
         Ok(None) => {}
         Err(e) => {
             log::error!("Failed to check existing zone: {}", e);
-            return Err(ServiceError::internal("Failed to create zone"));
+            return Err(ServiceError::internal_with_source(
+                "failed to create zone",
+                e,
+            ));
         }
     };
 
-    let mut tx = transaction::begin_tx(cx, "Failed to create zone").await?;
-    let apply_result = create_tx(cx, &mut tx, caller, create_zone_request).await;
-    let created_zone = transaction::finish_tx(tx, apply_result, "Failed to create zone").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to create zone").await?;
+    let apply_result = create_tx(&mut tx, cx, caller, create_zone_request).await;
+    let created_zone = transaction::finish_tx(tx, apply_result, "failed to create zone").await?;
 
     log::info!(
         "event=zone_create zone={} mname={} serial={} zone_id={}",
@@ -66,13 +70,11 @@ pub async fn create(
     })
 }
 
-/// Insert a zone and its first version on the caller's transaction, which
-/// lets a zone import create and fill a zone in one transaction and a dry
-/// run roll both back. [`create`] adds the duplicate pre-check and the
-/// catalog NOTIFY after commit; here UNIQUE(name) is the whole check.
+/// Insert a zone and its first version in the caller's transaction for atomic import or dry run.
+/// UNIQUE(name) catches duplicates; [`create`] adds the pre-check and post-commit catalog NOTIFY.
 pub(crate) async fn create_tx(
-    cx: &Context,
     tx: &mut Transaction<'_>,
+    cx: &Context,
     caller: &Caller,
     create_zone_request: &CreateZoneRequest,
 ) -> Result<Zone, ServiceError> {
@@ -118,23 +120,53 @@ pub(crate) async fn create_tx(
     }
 
     let name = candidate.name.clone();
-    let created_zone = db::zone::create_tx(tx, candidate).await.map_err(|e| {
-        // A create that raced past a caller's pre-check trips UNIQUE(name);
-        // the backstop reads as the same conflict.
-        if e.is_unique_violation() {
-            ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
-        } else {
-            log::error!("Failed to create zone: {}", e);
-            ServiceError::internal("Failed to create zone")
-        }
-    })?;
+    let created_zone = bindizr_db::zone::create_tx(tx, candidate)
+        .await
+        .map_err(|e| {
+            // A create that raced past a caller's pre-check trips UNIQUE(name);
+            // the backstop reads as the same conflict.
+            if e.is_unique_violation() {
+                ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
+            } else {
+                log::error!("Failed to create zone: {}", e);
+                ServiceError::internal_with_source("failed to create zone", e)
+            }
+        })?;
+
+    // The apex NS is born with the zone at its first serial, so it needs no
+    // journal row: a secondary learns a new zone by AXFR.
+    if create_zone_request.apex_ns {
+        let PreparedRecord {
+            record_type,
+            value,
+            priority,
+            ..
+        } = parse_record_request(
+            "@",
+            "NS",
+            &RecordValueRequest::Text(created_zone.mname.clone()),
+            None,
+            None,
+        )?;
+        let apex_ns = Record {
+            id: RecordId::UNWRITTEN,
+            name: normalize_record_owner_name("@", &created_zone.name)?,
+            record_type,
+            value,
+            ttl: created_zone.default_ttl,
+            priority,
+            zone_id: created_zone.id,
+            created_at: Utc::now(),
+        };
+        bindizr_db::record::create_many_tx(tx, &[apex_ns]).await?;
+    }
 
     super::save_version_tx(
-        cx,
         tx,
+        cx,
         &created_zone,
         created_zone.serial,
-        &caller.change_subject(),
+        caller.change_attribution(),
     )
     .await?;
 

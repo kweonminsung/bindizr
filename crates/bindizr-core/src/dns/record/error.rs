@@ -51,7 +51,7 @@ pub enum ParseRecordValueError {
         "MX record value must be the target host '<target>', with the priority in the priority field: {value}"
     )]
     MxShape { value: String },
-    #[error("Null MX record target '.' must use priority 0")]
+    #[error("null MX record target '.' must use priority 0")]
     NullMxPriority,
     #[error(
         "SRV record value must be '<weight> <port> <target>', with the priority in the priority field: {value}"

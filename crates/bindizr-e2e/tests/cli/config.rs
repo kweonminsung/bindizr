@@ -86,7 +86,7 @@ fn config_check_rejects_invalid_config() {
     assert_cli_failure_contains(
         &["config", "check", "--config", path],
         &output,
-        "Invalid Bindizr configuration",
+        "invalid Bindizr configuration",
     );
 }
 
@@ -126,7 +126,7 @@ async fn config_list_and_get_show_loaded_config() {
 
     let args = ["config", "get", "no.such.key"];
     let missing = app.run_cli(&args).await;
-    assert_cli_failure_contains(&args, &missing, "Unknown configuration key");
+    assert_cli_failure_contains(&args, &missing, "unknown configuration key");
 }
 
 /// Verify that config reload takes the file again and refuses what it cannot adopt.

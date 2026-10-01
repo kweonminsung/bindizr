@@ -19,7 +19,6 @@ id_newtype!(
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Zone {
     pub id: ZoneId,
-    #[sqlx(try_from = "String")]
     pub name: ZoneName,
     pub mname: String,
     /// Stored as the admin email (`admin@example.com`); rendered to the SOA
@@ -65,7 +64,7 @@ impl Zone {
 
     /// This zone's wire-format SOA RDATA at `serial`; the SOA is synthesized
     /// from zone columns, never stored as a record row.
-    pub(crate) fn soa_rdata(&self, serial: Serial) -> Result<Rdata, EncodeRdataError> {
+    pub fn soa_rdata(&self, serial: Serial) -> Result<Rdata, EncodeRdataError> {
         let rname = self.soa_mailbox()?;
         SoaRecordValue {
             mname: &self.mname,

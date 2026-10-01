@@ -1,7 +1,7 @@
 use bindizr_core::{dns::Serial, outln};
 use bindizr_service::types::{
     CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, MessageResponse,
-    PageFilter, PaginatedResponse, SecondaryCheckResponse, SecondaryResponse, SecondaryStatus,
+    PageRequest, PaginatedResponse, SecondaryCheckResponse, SecondaryResponse, SecondaryStatus,
     SecondaryTransfersResponse, UpdateSecondaryRequest,
 };
 use clap::Subcommand;
@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Subcommands for managing the secondary servers.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SecondaryCommand {
     /// Register a secondary: it receives NOTIFY and may pull zones unsigned
     /// from its address
@@ -140,7 +140,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             output,
         } => {
             let res = client::send_command::<PaginatedResponse<GetSecondaryResponse>>(
-                DaemonCommand::ListSecondaries(PageFilter { limit, offset }),
+                DaemonCommand::ListSecondaries(PageRequest { limit, offset }),
             )
             .await?;
             log::debug!("Secondary list result: {:?}", res);
@@ -213,7 +213,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             // A failed part exits non-zero, so a script can branch on it.
             if !check.is_healthy() {
                 return Err(CliError::request(format!(
-                    "Secondary '{}' failed the check",
+                    "secondary '{}' failed the check",
                     name
                 )));
             }

@@ -13,7 +13,7 @@ use bindizr_service::{
     token::{self, grant},
     types::{
         CreateGrantRequest, CreateTokenRequest, CreatedTokenResponse, DEFAULT_PAGE_LIMIT,
-        ErrorResponse, GetTokenGrantResponse, GetTokenResponse, MessageResponse, PageFilter,
+        ErrorResponse, GetTokenGrantResponse, GetTokenResponse, MessageResponse, PageRequest,
         PaginatedResponse, TokenGrantResponse, TokenResponse,
     },
     zone,
@@ -54,7 +54,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/tokens",
         tag = "Token",
         summary = "List all API tokens",
-        params(PageFilter),
+        params(PageRequest),
         description = "Lists every API token without its secret; a secret is shown once, in the create response.",
         responses(
             (status = 200, description = "All API tokens", body = PaginatedResponse<GetTokenResponse>),
@@ -66,7 +66,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 pub(crate) async fn list_tokens(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = token::list(&cx, &caller, page).await?;
@@ -96,15 +96,7 @@ pub(crate) async fn create_token(
     RequestCaller(caller): RequestCaller,
     JsonBody(body): JsonBody<CreateTokenRequest>,
 ) -> Result<Response, ApiError> {
-    let (token, secret) = token::create(
-        &cx,
-        &caller,
-        &body.name,
-        body.description.as_deref(),
-        body.expires_in_days,
-        body.global,
-    )
-    .await?;
+    let (token, secret) = token::create(&cx, &caller, &body).await?;
     let response = CreatedTokenResponse {
         token: GetTokenResponse::from(&token),
         secret,
@@ -140,7 +132,7 @@ pub(crate) async fn get_self_token(
         path = "/tokens/self/grants",
         tag = "Token",
         summary = "List the grants of the API token making the request",
-        params(PageFilter),
+        params(PageRequest),
         description = "The calling token's grants; any token may read its own. A global token holds none, so its list is empty. With authentication disabled no token is presented, so this answers 401.",
         responses(
             (status = 200, description = "The calling token's grants", body = PaginatedResponse<GetTokenGrantResponse>),
@@ -151,7 +143,7 @@ pub(crate) async fn get_self_token(
 pub(crate) async fn list_self_token_grants(
     State(cx): State<Arc<Context>>,
     AuthenticatedToken(token): AuthenticatedToken,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = grant::list_self(&cx, &token, page).await?;
@@ -211,7 +203,7 @@ pub(crate) async fn list_token_grants(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = grant::list_by_token(&cx, &caller, &params.name, page).await?;
@@ -245,16 +237,7 @@ pub(crate) async fn create_token_grant(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<CreateGrantRequest>,
 ) -> Result<Response, ApiError> {
-    let grant = grant::create(
-        &cx,
-        &caller,
-        &params.name,
-        &zone::normalize_name(&body.zone_name)?,
-        body.record_name_pattern.as_deref(),
-        body.record_types.as_deref(),
-        body.can_write,
-    )
-    .await?;
+    let grant = grant::create(&cx, &caller, &params.name, &body).await?;
     let response = TokenGrantResponse {
         token_grant: GetTokenGrantResponse::from(&grant),
     };
@@ -314,7 +297,7 @@ pub(crate) async fn list_zone_token_grants(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response =

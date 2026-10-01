@@ -31,7 +31,7 @@ fn max_records(dns_cx: &Context) -> usize {
 
 /// Everything a full transfer serves for one zone: the user records and the
 /// derived DNSSEC plane (empty for an unsigned zone).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CachedTransferContent {
     pub(crate) records: Arc<Vec<Record>>,
     pub(crate) dnssec_records: Arc<Vec<DnssecRecord>>,
@@ -46,7 +46,7 @@ impl CachedTransferContent {
 
 /// One zone's transfer as cached: the serial it was built at, its content,
 /// and what the budget and the LRU order read.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct CachedTransfer {
     serial: Serial,
     content: CachedTransferContent,
@@ -57,15 +57,14 @@ struct CachedTransfer {
 
 /// The DNS front end's transfer cache: one cached transfer per zone, behind
 /// one lock, within the record budget `dns.transfer_cache.max_records` sets.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct TransferCache {
     entries: Mutex<Entries>,
 }
 
-/// What the lock guards: the cached transfers by zone id, their record total
-/// against the budget, and the clock recency is measured on. Lock-free, so
-/// the eviction rules are unit-tested as they are.
-#[derive(Debug, Default)]
+/// Transfer-cache entries, record budget, and recency clock; the enclosing
+/// cache owns the lock so eviction can be tested independently.
+#[derive(Debug, Default, Clone)]
 struct Entries {
     zones: HashMap<ZoneId, CachedTransfer>,
     records: usize,
@@ -76,9 +75,7 @@ struct Entries {
 impl TransferCache {
     /// An empty cache.
     pub(crate) fn new() -> Self {
-        TransferCache {
-            entries: Mutex::new(Entries::default()),
-        }
+        Self::default()
     }
 
     /// Lock the cache, recovering a poisoned lock because panics cannot leave
@@ -125,10 +122,8 @@ impl TransferCache {
     }
 }
 
-/// The transfer content of the zone `zone_name` names, as far as `key`
-/// may read it, from cache when one is configured and fresh. The zone and
-/// the grant are decided on one locked row; a hit serves the content of
-/// that row's serial.
+/// Load authorized transfer content, reusing cached data for the locked zone's serial.
+/// Decide the zone and key grant together under that lock.
 pub(crate) async fn authorize_transfer_content_by_name(
     dns_cx: &DnsContext,
     zone_name: &ZoneName,

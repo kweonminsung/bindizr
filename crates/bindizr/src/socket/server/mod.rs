@@ -53,14 +53,14 @@ pub(crate) enum BindSocketError {
     #[error("{0}")]
     InUse(#[source] io::Error),
     /// Every candidate path failed, each with its reason.
-    #[error("Failed to bind the daemon Unix socket ({})", failures.iter().map(|(path, e)| format!("'{path}': {e}")).collect::<Vec<_>>().join("; "))]
+    #[error("failed to bind the daemon Unix socket ({})", failures.iter().map(|(path, e)| format!("'{path}': {e}")).collect::<Vec<_>>().join("; "))]
     Unavailable { failures: Vec<(String, io::Error)> },
 }
 
 /// Why the bound socket could not be served.
 #[derive(Debug, Error)]
 pub(crate) enum ServeSocketError {
-    #[error("Failed to read the daemon's uid: {0}")]
+    #[error("failed to read the daemon's uid: {0}")]
     ReadUid(#[source] io::Error),
 }
 
@@ -107,7 +107,7 @@ async fn handle_client(socket_cx: &SocketContext, stream: UnixStream) {
             Err(e) => {
                 log::error!("Failed to parse command: {}", e);
                 encode_error(&ServiceError::invalid_input(format!(
-                    "Failed to parse command: {}",
+                    "failed to parse command: {}",
                     e
                 )))
             }
@@ -119,12 +119,8 @@ async fn handle_client(socket_cx: &SocketContext, stream: UnixStream) {
     }
 }
 
-/// Serve control commands on an already-bound socket until `shutdown` fires,
-/// admitting only the daemon's own user and root.
-///
-/// The daemon removes the socket file once everything has drained: `bindizr
-/// stop` waits for it to disappear, so removing it earlier would report a stop
-/// that is still in progress.
+/// Serve control commands for the daemon's user and root until `shutdown` fires.
+/// Remove the socket only after draining: `bindizr stop` uses its disappearance as completion.
 pub(crate) fn serve(
     socket_cx: Arc<SocketContext>,
     listener: UnixListener,
@@ -391,8 +387,8 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             name,
             limit,
             offset,
-            scope,
-        } => encode_response(zone::list_zone_versions(cx, &name, limit, offset, scope).await),
+            filter,
+        } => encode_response(zone::list_zone_versions(cx, &name, limit, offset, filter).await),
         DaemonCommand::GetZoneVersion { name, serial } => {
             encode_response(zone::get_zone_version(cx, &name, serial).await)
         }
@@ -427,8 +423,8 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::DeleteRecord { id, run } => {
             encode_response(record::delete_record(cx, id, run).await)
         }
-        DaemonCommand::DeleteRecordsMatching(filter) => {
-            encode_response(record::delete_records_matching(cx, &filter).await)
+        DaemonCommand::DeleteRecordsMatching(request) => {
+            encode_response(record::delete_records_matching(cx, &request).await)
         }
         DaemonCommand::EnableDnssec { zone_name, request } => {
             encode_response(dnssec::enable_dnssec(cx, &zone_name, &request).await)
@@ -476,7 +472,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
 fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, ServiceError>) -> String {
     match result {
         Ok(response) => serde_json::to_string(&response).unwrap_or_else(|_| {
-            encode_error(&ServiceError::internal("Failed to serialize response"))
+            encode_error(&ServiceError::internal("failed to serialize response"))
         }),
         Err(e) => encode_error(&e),
     }
@@ -484,7 +480,7 @@ fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, Servic
 
 /// Encode a service error as one JSON line.
 fn encode_error(err: &ServiceError) -> String {
-    serde_json::to_string(&ErrorResponse::new(err)).unwrap_or_else(|_| {
+    serde_json::to_string(&ErrorResponse::from(err)).unwrap_or_else(|_| {
         r#"{"error":"Failed to serialize error response","code":"INTERNAL"}"#.to_string()
     })
 }

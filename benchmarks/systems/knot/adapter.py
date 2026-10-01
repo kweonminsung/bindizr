@@ -1,10 +1,7 @@
-"""Knot DNS adapter — RFC 2136 dynamic updates against a Knot primary.
+"""Knot primary adapter using `nsupdate`, comparable with the BIND9+nsupdate adapter.
 
-Knot is a full participant: it has a real write plane (DDNS) and keeps a journal,
-so it serves true IXFR deltas as well as AXFR. Writes go through `nsupdate`, the
-same mechanism as the BIND9+nsupdate system, which makes the two directly
-comparable; bulk loads batch many updates into one UPDATE transaction, which is
-how an operator would actually load a zone over DDNS.
+Bulk loads batch records into one UPDATE transaction. Knot's journal supports
+IXFR deltas as well as AXFR, so it participates in every benchmark.
 """
 from __future__ import annotations
 
@@ -121,13 +118,9 @@ class KnotAdapter(DnsAdapter):
         return  # the zone is declared in knot.conf
 
     async def delete_zone(self, zone: str) -> None:
-        """Drop the zone contents and reload the pristine zone file.
+        """Purge zone contents and reload the seed file; DDNS cannot remove the configured zone.
 
-        The zone itself is declared in knot.conf and cannot be removed over
-        DDNS. `+zonefile` is deliberately left out of the purge: `zonefile-sync:
-        -1` means Knot never writes back, so that file is still the seed and the
-        reload restores the bare apex from it.
-        """
+        Omit `+zonefile`: `zonefile-sync: -1` preserves the seed for restoring the apex."""
         if not self.cid:
             return
         await self._knotc("-f", "zone-purge", "+expire", "+journal", "+timers", ZONE)

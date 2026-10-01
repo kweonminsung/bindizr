@@ -1,6 +1,9 @@
 //! TSIG key and TSIG grant payloads.
 
-use bindizr_core::model::{tsig_grant::TsigGrantId, tsig_key::TsigKeyId};
+use bindizr_core::model::{
+    tsig_grant::TsigGrantId,
+    tsig_key::{TsigAlgorithm, TsigKeyId},
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -34,7 +37,7 @@ pub struct GetTsigKeyResponse {
     #[schema(example = "update-key")]
     pub name: String,
     #[schema(example = "hmac-sha256")]
-    pub algorithm: String,
+    pub algorithm: TsigAlgorithm,
     /// Whether the key may update and transfer every zone without any grant.
     #[schema(example = false)]
     pub global: bool,
@@ -47,7 +50,7 @@ impl From<&TsigKey> for GetTsigKeyResponse {
         GetTsigKeyResponse {
             id: key.id,
             name: key.name.clone(),
-            algorithm: key.algorithm.to_string(),
+            algorithm: key.algorithm,
             global: key.is_global,
             created_at: key.created_at,
         }

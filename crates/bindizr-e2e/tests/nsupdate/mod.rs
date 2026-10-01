@@ -84,6 +84,22 @@ async fn nsupdate_adds_and_deletes_records() {
             .any(|record| record["value"] == "192.0.2.10"),
         "record was not deleted"
     );
+    let (status, history) = app
+        .send_request(
+            reqwest::Method::GET,
+            &format!("/zones/{zone_name}/versions"),
+            None,
+        )
+        .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{history}");
+    assert_eq!(
+        history["items"][0]["change_source"], "nsupdate",
+        "{history}"
+    );
+    assert!(
+        history["items"][0].get("changed_by").unwrap().is_null(),
+        "{history}"
+    );
 }
 
 /// Verify that nsupdate deletes every record of a name and type.
@@ -390,7 +406,11 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
         .await;
     assert_eq!(status, reqwest::StatusCode::OK, "{body}");
     assert_eq!(body["items"][0]["change_source"], "nsupdate", "{body}");
-    assert_eq!(body["items"][0]["changed_by"], key.name, "{body}");
+    assert_eq!(
+        body["items"][0]["changed_by"],
+        serde_json::json!({"kind": "tsig_key", "name": key.name}),
+        "{body}"
+    );
 }
 
 /// Verify that a signed prerequisite needs a grant reaching what it names.

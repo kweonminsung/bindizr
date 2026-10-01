@@ -9,7 +9,7 @@ use bindizr_core::{
 };
 use chrono::Utc;
 
-use super::{CachedTransferContent, Entries};
+use super::*;
 
 const MAX_RECORDS: usize = 500_000;
 

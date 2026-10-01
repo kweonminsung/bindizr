@@ -1,15 +1,9 @@
-//! Table-creation DDL, one module per backend, run at startup to bring the
-//! schema up. The three are duplicated on purpose: each spells its own column
-//! types, index syntax, and placeholder form.
+//! Startup DDL, duplicated per backend for its types, indexes, and placeholders.
 //!
-//! Name columns hold the RFC 1035, Section 5.1 rendering, whose `\046` escape
-//! can quadruple a name inside the 255-octet wire limit, hence `VARCHAR(1024)`.
+//! RFC 1035, Section 5.1 escapes can quadruple a wire name, hence `VARCHAR(1024)`.
 //!
-//! No timestamp column carries a `DEFAULT CURRENT_TIMESTAMP`: an insert that
-//! forgets to bind one must fail rather than take the database server's clock.
-//!
-//! The `default` DNSSEC policy is seeded separately from the table statements
-//! so its `created_at` can be bound like every other timestamp.
+//! Timestamps must be bound, never defaulted to the database clock; seed the
+//! `default` DNSSEC policy separately so its `created_at` follows the same rule.
 
 pub(crate) mod mysql;
 pub(crate) mod postgres;

@@ -7,10 +7,8 @@ use axum::{
     response::{IntoResponse, Response},
     routing,
 };
-use bindizr_core::model::dnssec_key::DnssecKeyRole;
 use bindizr_service::{
     Context, dnssec,
-    error::ServiceError,
     types::{
         DnssecStatusResponse, DsCheck, EnableDnssecRequest, ErrorResponse, Holddown,
         MessageResponse, RolloverDnssecRequest, UpdateDnssecSettingsRequest,
@@ -109,14 +107,7 @@ pub(crate) async fn enable_dnssec(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<EnableDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::enable(
-        &cx,
-        &caller,
-        &zone::normalize_name(&params.name)?,
-        body.policy_name.as_deref(),
-        &body.parent_ns_addrs,
-    )
-    .await?;
+    let status = dnssec::enable(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
     Ok((StatusCode::CREATED, Json(status)).into_response())
 }
 
@@ -224,14 +215,8 @@ pub(crate) async fn start_dnssec_rollover(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<RolloverDnssecRequest>,
 ) -> Result<Response, ApiError> {
-    let role = body
-        .role
-        .as_deref()
-        .map(str::parse::<DnssecKeyRole>)
-        .transpose()
-        .map_err(ServiceError::invalid_input)?;
     let status =
-        dnssec::start_rollover(&cx, &caller, &zone::normalize_name(&params.name)?, role).await?;
+        dnssec::start_rollover(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }
 
@@ -396,13 +381,7 @@ pub(crate) async fn update_dnssec_settings(
     Path(params): Path<NameParams>,
     JsonBody(body): JsonBody<UpdateDnssecSettingsRequest>,
 ) -> Result<Response, ApiError> {
-    let status = dnssec::update_settings(
-        &cx,
-        &caller,
-        &zone::normalize_name(&params.name)?,
-        body.policy_name.as_deref(),
-        body.parent_ns_addrs.as_deref(),
-    )
-    .await?;
+    let status =
+        dnssec::update_settings(&cx, &caller, &zone::normalize_name(&params.name)?, &body).await?;
     Ok((StatusCode::OK, Json(status)).into_response())
 }

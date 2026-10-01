@@ -6,7 +6,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use super::name::{MAX_DOMAIN_LEN, classify_domain_label};
+use super::name::{LabelCharset, MAX_DOMAIN_LEN, classify_domain_label};
 
 /// The port a `host` without one is taken to serve DNS on.
 pub const DEFAULT_DNS_PORT: u16 = 53;
@@ -52,15 +52,6 @@ impl AddressTarget {
     }
 }
 
-/// Decodes the stored form, which [`AddressTarget::parse`] rendered with its
-/// port, so a row column can hold an address target directly.
-impl From<String> for AddressTarget {
-    /// Wrap an address target from its stored string representation.
-    fn from(value: String) -> Self {
-        AddressTarget::parse(&value, DEFAULT_DNS_PORT)
-    }
-}
-
 /// The stored and presentation form: `ip:port`, `[ipv6]:port`, or `host:port`.
 impl fmt::Display for AddressTarget {
     /// Write the address target in its canonical form.
@@ -102,6 +93,22 @@ where
     }
 }
 
+/// The read half: the column holds the row form, so decoding never fails.
+impl<'r, DB: sqlx::Database> sqlx::Decode<'r, DB> for AddressTarget
+where
+    &'r str: sqlx::Decode<'r, DB>,
+{
+    /// Read the row form.
+    fn decode(
+        value: <DB as sqlx::Database>::ValueRef<'r>,
+    ) -> Result<Self, sqlx::error::BoxDynError> {
+        Ok(Self::parse(
+            <&str as sqlx::Decode<'r, DB>>::decode(value)?,
+            DEFAULT_DNS_PORT,
+        ))
+    }
+}
+
 /// A wildcard listen address is not connectable; probe it via loopback.
 pub fn loopback_if_unspecified(addr: IpAddr) -> IpAddr {
     match addr {
@@ -137,7 +144,7 @@ fn is_hostname(value: &str) -> bool {
         && name.len() <= MAX_DOMAIN_LEN
         && name
             .split('.')
-            .all(|label| classify_domain_label(label, true).is_ok())
+            .all(|label| classify_domain_label(label, LabelCharset::LdhUnderscore).is_ok())
 }
 
 /// Check whether an address target includes a valid explicit port.

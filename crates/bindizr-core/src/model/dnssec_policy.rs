@@ -78,10 +78,8 @@ id_newtype!(
     PolicyId
 );
 
-/// A named bundle of signing parameters zones reference by id (BIND's
-/// `dnssec-policy`, Knot's `policy`). Key layout, algorithm, and denial mode
-/// are fixed at creation; the timing fields are editable and apply on the
-/// next signing pass.
+/// A named signing policy: key layout, algorithm, and denial mode are fixed
+/// at creation; timing changes take effect on the next signing pass.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct DnssecPolicy {
     pub id: PolicyId,
@@ -114,10 +112,8 @@ impl DnssecPolicy {
         }
     }
 
-    /// The window the per-record-set expirations spread over, so a pass does not
-    /// come due for the whole zone at once and push an IXFR the size of it.
-    /// Half the room the policy leaves, which keeps even the earliest
-    /// signature outside its own refresh window.
+    /// Spread expirations over half the available window to avoid zone-wide
+    /// re-signing while keeping the earliest signature outside its refresh window.
     pub fn expiration_jitter_secs(&self) -> i64 {
         (self.signature_validity_secs() - self.signature_refresh_secs()).max(0) / 2
     }
@@ -143,7 +139,7 @@ pub struct Days(u32);
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ConvertDaysError {
     /// Rows are stored as `i32`, so a negative one is corrupt data.
-    #[error("Invalid day count: {days}")]
+    #[error("invalid day count: {days}")]
     Negative { days: i32 },
     /// Past 2^31 - 1, which the row form cannot hold.
     #[error("day count {days} exceeds the maximum of {}", i32::MAX)]
@@ -248,5 +244,39 @@ where
         Ok(Days::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
+    }
+}
+
+/// How a zone divides DNSSEC signing responsibilities among keys.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DnssecKeyLayout {
+    Csk,
+    Split,
+}
+
+impl DnssecKeyLayout {
+    /// Interpret the stored split-key setting at a key-operation boundary.
+    pub fn from_split_keys(split_keys: bool) -> Self {
+        if split_keys { Self::Split } else { Self::Csk }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// Verify that `DnssecDenial` has one spelling across `as_str`, serde, and `FromStr`.
+    #[test]
+    fn dnssec_denial_spells_itself_once() {
+        for value in [DnssecDenial::Nsec, DnssecDenial::Nsec3] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
+            assert_eq!(
+                serde_json::from_value::<DnssecDenial>(json!(value.as_str())).unwrap(),
+                value
+            );
+            assert_eq!(value.as_str().parse::<DnssecDenial>().unwrap(), value);
+        }
     }
 }
