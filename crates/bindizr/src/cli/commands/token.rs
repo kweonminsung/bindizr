@@ -1,16 +1,14 @@
-use bindizr_core::{model::token_grant::TokenGrantId, outln};
+use bindizr_core::outln;
 use bindizr_service::types::{
-    CreateGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
-    GetTokenResponse, MessageResponse, PageRequest, PaginatedResponse, TokenGrantResponse,
+    CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, MessageResponse, PageRequest,
+    PaginatedResponse,
 };
 use clap::Subcommand;
 
 use crate::{
     cli::{
         error::CliError,
-        output::{
-            OutputFormat, TokenGrantRow, TokenRow, print_page, print_payload, print_response,
-        },
+        output::{OutputFormat, TokenRow, print_page, print_payload, print_response},
     },
     socket::{client, types::DaemonCommand},
 };
@@ -18,25 +16,24 @@ use crate::{
 /// Subcommands for managing API tokens.
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TokenCommand {
-    /// Create a new API token; the plaintext token is shown once, here
+    /// Create a new API token in a role; the plaintext token is shown once, here
     #[command(after_help = "\
 Examples:
-  bindizr token create admin --global
-  bindizr token create ci --expires-in-days 90 && bindizr token grant ci example.com")]
+  bindizr token create admin --role admin
+  bindizr token create cluster-a --role external-dns-prod --expires-in-days 90")]
     Create {
         /// Unique name (letters, digits, '.', '_', '-'); how other commands refer to it
         #[arg(value_name = "TOKEN_NAME")]
         name: String,
+        /// Role whose grants decide what the token may do (see `role grant`)
+        #[arg(long, value_name = "ROLE_NAME")]
+        role: String,
         /// Description of the token
         #[arg(long, value_name = "TEXT")]
         description: Option<String>,
         /// Days until the token expires, up to 36500 (default: never expires)
         #[arg(long, value_name = "N")]
         expires_in_days: Option<i64>,
-        /// Make the token global: it may manage every zone and the zone
-        /// plane without grants. Fixed at creation.
-        #[arg(long)]
-        global: bool,
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
@@ -64,77 +61,6 @@ Examples:
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-    /// Grant an API token record rights in a zone
-    #[command(after_help = "\
-Examples:
-  bindizr token grant deploy example.com
-  bindizr token grant deploy example.com --pattern '*.dyn' --types A,TXT
-  bindizr token grant monitoring example.com --read-only
-
-Omitted, --pattern and --types both default to '*', so the token reaches every
-record in the zone. A token may hold several grants in one zone; `token revoke
-<TOKEN_NAME> <ZONE_NAME>` takes them all back.")]
-    Grant {
-        /// Name of an existing non-global token (global tokens already cover every zone)
-        #[arg(value_name = "TOKEN_NAME")]
-        name: String,
-        /// Name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        zone: String,
-        /// Record name pattern: '*' (any), '@' (apex), '*.sub', or an exact relative name (default: '*')
-        #[arg(long, value_name = "PATTERN")]
-        pattern: Option<String>,
-        /// Allowed record types: '*' or a comma-separated list, e.g. 'A,AAAA,TXT' (default: '*')
-        #[arg(long, value_name = "TYPES")]
-        types: Option<String>,
-        /// Grant read access only; the zone stays visible, narrowed the same way
-        #[arg(long)]
-        read_only: bool,
-        /// Output format
-        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    /// List a token's grants (`zone token-grants` lists a zone's)
-    Grants {
-        /// Name of the token
-        #[arg(value_name = "TOKEN_NAME")]
-        name: String,
-        /// Maximum number of grants to return
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Number of grants to skip
-        #[arg(long)]
-        offset: Option<u64>,
-        /// Output format
-        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    /// Revoke a token's grants in a zone, or one grant by ID
-    #[command(after_help = "\
-Examples:
-  bindizr token revoke deploy example.com
-  bindizr token revoke --id 7
-
-A token can hold several grants in one zone, so the name form revokes all of
-them. --id revokes exactly one (see `token grants`).")]
-    Revoke {
-        /// Token whose grants go
-        #[arg(
-            value_name = "TOKEN_NAME",
-            required_unless_present = "id",
-            requires = "zone"
-        )]
-        name: Option<String>,
-        /// Zone the grants cover
-        #[arg(value_name = "ZONE_NAME", requires = "name")]
-        zone: Option<String>,
-        /// ID of the one grant to revoke (see `token grants`)
-        #[arg(long, value_name = "GRANT_ID", conflicts_with = "name")]
-        id: Option<i32>,
-        /// Output format
-        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
 }
 
 /// Handle the `token` subcommand by dispatching to the daemon over the socket.
@@ -144,7 +70,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             name,
             description,
             expires_in_days,
-            global,
+            role,
             output,
         } => {
             let res = client::send_command::<CreatedTokenResponse>(DaemonCommand::CreateToken(
@@ -152,7 +78,7 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                     name,
                     description,
                     expires_in_days,
-                    global,
+                    role_name: role,
                 },
             ))
             .await?;
@@ -179,81 +105,6 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
                 OutputFormat::Table => outln!("{}", res.message),
                 _ => print_payload(&res.data, output)?,
             }
-        }
-        TokenCommand::Grant {
-            name,
-            zone,
-            pattern,
-            types,
-            read_only,
-            output,
-        } => {
-            let res = client::send_command::<TokenGrantResponse>(DaemonCommand::CreateTokenGrant {
-                token_name: name,
-                request: CreateGrantRequest {
-                    zone_name: zone,
-                    record_name_pattern: pattern,
-                    record_types: types,
-                    can_write: !read_only,
-                },
-            })
-            .await?;
-            print_response(&res.data, output, |response| {
-                vec![TokenGrantRow::from(&response.token_grant)]
-            })?;
-        }
-        TokenCommand::Grants {
-            name,
-            limit,
-            offset,
-            output,
-        } => {
-            let res = client::send_command::<PaginatedResponse<GetTokenGrantResponse>>(
-                DaemonCommand::ListTokenGrants {
-                    token_name: name,
-                    page: PageRequest { limit, offset },
-                },
-            )
-            .await?;
-            print_page(&res.data, output, |item| TokenGrantRow::from(item))?;
-        }
-        // clap holds the two selectors apart.
-        TokenCommand::Revoke {
-            id: Some(id),
-            output,
-            ..
-        } => {
-            let res = client::send_command::<MessageResponse>(DaemonCommand::DeleteTokenGrant {
-                id: TokenGrantId::from(id),
-            })
-            .await?;
-            match output {
-                OutputFormat::Table => outln!("{}", res.message),
-                _ => print_payload(&res.data, output)?,
-            }
-        }
-        TokenCommand::Revoke {
-            name: Some(name),
-            zone: Some(zone),
-            output,
-            ..
-        } => {
-            let res = client::send_command::<MessageResponse>(
-                DaemonCommand::DeleteTokenGrantsByTokenAndZone {
-                    token_name: name,
-                    zone_name: zone,
-                },
-            )
-            .await?;
-            match output {
-                OutputFormat::Table => outln!("{}", res.message),
-                _ => print_payload(&res.data, output)?,
-            }
-        }
-        TokenCommand::Revoke { .. } => {
-            return Err(CliError::request(
-                "give a token name and a zone name, or --id to revoke one grant",
-            ));
         }
     }
     Ok(())

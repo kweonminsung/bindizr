@@ -8,6 +8,7 @@ mod dnssec_policy;
 mod doctor;
 mod notify;
 mod record;
+mod role;
 mod secondary;
 pub(crate) mod status;
 mod token;
@@ -272,25 +273,21 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::DeleteToken { name } => {
             encode_response(token::delete_token(cx, &name).await)
         }
-        DaemonCommand::CreateTokenGrant {
-            token_name,
-            request,
-        } => encode_response(token::create_token_grant(cx, &token_name, &request).await),
-        DaemonCommand::ListTokenGrants { token_name, page } => {
-            encode_response(token::list_token_grants(cx, &token_name, page).await)
+        DaemonCommand::CreateRole(request) => {
+            encode_response(role::create_role(cx, &request).await)
         }
-        DaemonCommand::ListZoneTokenGrants { zone_name, page } => {
-            encode_response(token::list_zone_token_grants(cx, &zone_name, page).await)
+        DaemonCommand::ListRoles(page) => encode_response(role::list_roles(cx, page).await),
+        DaemonCommand::GetRole { name } => encode_response(role::get_role(cx, &name).await),
+        DaemonCommand::DeleteRole { name } => encode_response(role::delete_role(cx, &name).await),
+        DaemonCommand::CreateRoleGrant { role_name, request } => {
+            encode_response(role::create_role_grant(cx, &role_name, &request).await)
         }
-        DaemonCommand::DeleteTokenGrant { id } => {
-            encode_response(token::delete_token_grant(cx, id).await)
+        DaemonCommand::ListRoleGrants { role_name, page } => {
+            encode_response(role::list_role_grants(cx, &role_name, page).await)
         }
-        DaemonCommand::DeleteTokenGrantsByTokenAndZone {
-            token_name,
-            zone_name,
-        } => encode_response(
-            token::delete_token_grants_by_token_and_zone(cx, &token_name, &zone_name).await,
-        ),
+        DaemonCommand::DeleteRoleGrant { role_name, id } => {
+            encode_response(role::delete_role_grant(cx, &role_name, id).await)
+        }
         DaemonCommand::CreateTsigKey(request) => {
             encode_response(tsig_key::create_tsig_key(cx, &request).await)
         }
@@ -303,24 +300,6 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::DeleteTsigKey { name } => {
             encode_response(tsig_key::delete_tsig_key(cx, &name).await)
         }
-        DaemonCommand::CreateTsigGrant { key_name, request } => {
-            encode_response(tsig_key::create_tsig_grant(cx, &key_name, &request).await)
-        }
-        DaemonCommand::ListTsigGrants { key_name, page } => {
-            encode_response(tsig_key::list_tsig_grants(cx, &key_name, page).await)
-        }
-        DaemonCommand::ListZoneTsigGrants { zone_name, page } => {
-            encode_response(tsig_key::list_zone_tsig_grants(cx, &zone_name, page).await)
-        }
-        DaemonCommand::DeleteTsigGrant { id } => {
-            encode_response(tsig_key::delete_tsig_grant(cx, id).await)
-        }
-        DaemonCommand::DeleteTsigGrantsByKeyAndZone {
-            key_name,
-            zone_name,
-        } => encode_response(
-            tsig_key::delete_tsig_grants_by_key_and_zone(cx, &key_name, &zone_name).await,
-        ),
         DaemonCommand::CreateSecondary(request) => {
             encode_response(secondary::create_secondary(cx, &request).await)
         }

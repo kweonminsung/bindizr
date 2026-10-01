@@ -156,7 +156,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
     if authentication_required {
         match token::count_all(&cx).await {
             Ok(0) => log::warn!(
-                "API authentication is on and no API tokens exist; create one with `bindizr token create admin --global`"
+                "API authentication is on and no API tokens exist; create one with `bindizr token create admin --role admin`"
             ),
             Ok(_) => {}
             Err(e) => log::warn!("Could not count API tokens: {}", e),

@@ -1,19 +1,16 @@
 use bindizr_core::{
     dns::Serial,
-    model::{
-        record::RecordId, token_grant::TokenGrantId, tsig_grant::TsigGrantId,
-        zone_version::VersionFilter,
-    },
+    model::{record::RecordId, role_grant::RoleGrantId, zone_version::VersionFilter},
 };
 use bindizr_service::types::{
-    CreateBulkRecordsRequest, CreateDnssecPolicyRequest, CreateGrantRequest, CreateRecordRequest,
-    CreateSecondaryRequest, CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest,
-    DeleteRecordsRequest, DsCheck, EnableDnssecRequest, GetRecordsFilter,
-    GetSecondaryTransfersFilter, GetZonesFilter, Holddown, ImportDnssecKeyRequest,
-    ImportZoneRequest, NotifyCheckResponse, NotifySerial, PageRequest, RolloverDnssecRequest, Run,
-    SecondaryStatusResponse, SecondaryTransferSummary, UpdateDnssecPolicyRequest,
-    UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
-    ZoneView,
+    CreateBulkRecordsRequest, CreateDnssecPolicyRequest, CreateRecordRequest,
+    CreateRoleGrantRequest, CreateRoleRequest, CreateSecondaryRequest, CreateTokenRequest,
+    CreateTsigKeyRequest, CreateZoneRequest, DeleteRecordsRequest, DsCheck, EnableDnssecRequest,
+    GetRecordsFilter, GetSecondaryTransfersFilter, GetZonesFilter, Holddown,
+    ImportDnssecKeyRequest, ImportZoneRequest, NotifyCheckResponse, NotifySerial, PageRequest,
+    RolloverDnssecRequest, Run, SecondaryStatusResponse, SecondaryTransferSummary,
+    UpdateDnssecPolicyRequest, UpdateDnssecSettingsRequest, UpdateRecordRequest,
+    UpdateSecondaryRequest, UpdateZoneRequest, ZoneView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,21 +30,6 @@ pub(crate) enum DaemonCommand {
     DeleteToken {
         name: String,
     },
-    CreateTokenGrant {
-        token_name: String,
-        request: CreateGrantRequest,
-    },
-    ListTokenGrants {
-        token_name: String,
-        page: PageRequest,
-    },
-    DeleteTokenGrant {
-        id: TokenGrantId,
-    },
-    DeleteTokenGrantsByTokenAndZone {
-        token_name: String,
-        zone_name: String,
-    },
     CreateTsigKey(CreateTsigKeyRequest),
     ListTsigKeys(PageRequest),
     GetTsigKey {
@@ -56,20 +38,25 @@ pub(crate) enum DaemonCommand {
     DeleteTsigKey {
         name: String,
     },
-    CreateTsigGrant {
-        key_name: String,
-        request: CreateGrantRequest,
+    CreateRole(CreateRoleRequest),
+    ListRoles(PageRequest),
+    GetRole {
+        name: String,
     },
-    ListTsigGrants {
-        key_name: String,
+    DeleteRole {
+        name: String,
+    },
+    CreateRoleGrant {
+        role_name: String,
+        request: CreateRoleGrantRequest,
+    },
+    ListRoleGrants {
+        role_name: String,
         page: PageRequest,
     },
-    DeleteTsigGrant {
-        id: TsigGrantId,
-    },
-    DeleteTsigGrantsByKeyAndZone {
-        key_name: String,
-        zone_name: String,
+    DeleteRoleGrant {
+        role_name: String,
+        id: RoleGrantId,
     },
     CreateSecondary(CreateSecondaryRequest),
     ListSecondaries(PageRequest),
@@ -125,14 +112,6 @@ pub(crate) enum DaemonCommand {
     },
     GetZoneStatus {
         name: String,
-    },
-    ListZoneTokenGrants {
-        zone_name: String,
-        page: PageRequest,
-    },
-    ListZoneTsigGrants {
-        zone_name: String,
-        page: PageRequest,
     },
     NotifyZone {
         zone_name: String,

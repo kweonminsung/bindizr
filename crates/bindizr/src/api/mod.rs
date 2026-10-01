@@ -11,6 +11,7 @@ mod notify;
 mod openapi;
 mod query;
 mod record;
+mod role;
 mod router;
 mod secondary;
 mod token;

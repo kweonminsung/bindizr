@@ -5,13 +5,13 @@ use bindizr_core::{
     dns::{Serial, SoaInterval, Ttl, dnssec::KeyTag},
     model::{
         api_token::TokenId, dnssec_key::DnssecKeyId, dnssec_policy::PolicyId, record::RecordId,
-        secondary::SecondaryId, token_grant::TokenGrantId, tsig_grant::TsigGrantId,
-        tsig_key::TsigKeyId, zone::ZoneId,
+        role::RoleId, role_grant::RoleGrantId, secondary::SecondaryId, tsig_key::TsigKeyId,
+        zone::ZoneId,
     },
 };
 use bindizr_service::types::{
     CreatedTokenResponse, DnssecKeyInfo, GetDnssecPolicyResponse, GetRecordResponse,
-    GetSecondaryResponse, GetTokenGrantResponse, GetTokenResponse, GetTsigGrantResponse,
+    GetRoleGrantResponse, GetRoleResponse, GetSecondaryResponse, GetTokenResponse,
     GetTsigKeyResponse, GetZoneResponse, ImportZoneResponse, RollbackZoneResponse,
     SecondaryStatusResponse, TransferResponse, TsigKeyResponse, VersionRecordResponse,
     ZoneStatusResponse, ZoneVersionResponse,
@@ -435,8 +435,8 @@ pub(crate) struct TokenRow {
     pub(crate) name: String,
     #[tabled(rename = "TOKEN")]
     pub(crate) token: String,
-    #[tabled(rename = "GLOBAL")]
-    pub(crate) global: String,
+    #[tabled(rename = "ROLE")]
+    pub(crate) role_name: String,
     #[tabled(rename = "DESCRIPTION")]
     pub(crate) description: String,
     #[tabled(rename = "CREATED-AT")]
@@ -454,7 +454,7 @@ impl From<&GetTokenResponse> for TokenRow {
             id: token.id,
             name: token.name.clone(),
             token: MISSING_CELL.to_string(),
-            global: display_yes_no(&token.global),
+            role_name: token.role_name.clone(),
             description: display_option(&token.description),
             created_at: display_time(token.created_at),
             expires_at: token
@@ -487,8 +487,8 @@ pub(crate) struct TsigKeyRow {
     pub(crate) algorithm: String,
     #[tabled(rename = "SECRET")]
     pub(crate) secret: String,
-    #[tabled(rename = "GLOBAL")]
-    pub(crate) global: String,
+    #[tabled(rename = "ROLE")]
+    pub(crate) role_name: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
@@ -501,7 +501,7 @@ impl From<&GetTsigKeyResponse> for TsigKeyRow {
             name: key.name.clone(),
             algorithm: key.algorithm.to_string(),
             secret: MISSING_CELL.to_string(),
-            global: display_yes_no(&key.global),
+            role_name: key.role_name.clone(),
             created_at: display_time(key.created_at),
         }
     }
@@ -518,76 +518,66 @@ impl From<&TsigKeyResponse> for TsigKeyRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
-pub(crate) struct TokenGrantRow {
+pub(crate) struct RoleRow {
     #[tabled(rename = "ID")]
-    pub(crate) id: TokenGrantId,
-    #[tabled(rename = "TOKEN")]
-    pub(crate) token_name: String,
-    #[tabled(rename = "ZONE")]
-    pub(crate) zone_name: String,
-    #[tabled(rename = "NAME-PATTERN")]
-    pub(crate) record_name_pattern: String,
-    #[tabled(rename = "RECORD-TYPES")]
-    pub(crate) record_types: String,
-    #[tabled(rename = "ACCESS")]
-    pub(crate) access: String,
+    pub(crate) id: RoleId,
+    #[tabled(rename = "NAME")]
+    pub(crate) name: String,
+    #[tabled(rename = "BUILTIN")]
+    pub(crate) builtin: String,
+    #[tabled(rename = "DESCRIPTION")]
+    pub(crate) description: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
 
-impl From<&GetTokenGrantResponse> for TokenGrantRow {
-    /// Build a CLI table row from the token grant response.
-    fn from(grant: &GetTokenGrantResponse) -> Self {
-        TokenGrantRow {
-            id: grant.id,
-            token_name: grant.token_name.clone(),
-            zone_name: grant.zone_name.clone(),
-            record_name_pattern: grant.record_name_pattern.clone(),
-            record_types: grant.record_types.clone(),
-            access: if grant.can_write {
-                "read-write"
-            } else {
-                "read-only"
-            }
-            .to_string(),
-            created_at: display_time(grant.created_at),
+impl From<&GetRoleResponse> for RoleRow {
+    /// Build a CLI table row from the role response.
+    fn from(role: &GetRoleResponse) -> Self {
+        RoleRow {
+            id: role.id,
+            name: role.name.clone(),
+            builtin: display_yes_no(&role.builtin),
+            description: display_option(&role.description),
+            created_at: display_time(role.created_at),
         }
     }
 }
 
+/// ZONE reads `*` for a grant covering every zone.
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
-pub(crate) struct TsigGrantRow {
+pub(crate) struct RoleGrantRow {
     #[tabled(rename = "ID")]
-    pub(crate) id: TsigGrantId,
-    #[tabled(rename = "TSIG-KEY")]
-    pub(crate) tsig_key_name: String,
+    pub(crate) id: RoleGrantId,
+    #[tabled(rename = "ROLE")]
+    pub(crate) role_name: String,
     #[tabled(rename = "ZONE")]
     pub(crate) zone_name: String,
+    #[tabled(rename = "ACTIONS")]
+    pub(crate) actions: String,
     #[tabled(rename = "NAME-PATTERN")]
     pub(crate) record_name_pattern: String,
     #[tabled(rename = "RECORD-TYPES")]
     pub(crate) record_types: String,
-    #[tabled(rename = "ACCESS")]
-    pub(crate) access: String,
     #[tabled(rename = "CREATED-AT")]
     pub(crate) created_at: String,
 }
 
-impl From<&GetTsigGrantResponse> for TsigGrantRow {
-    /// Build a CLI table row from the TSIG grant response.
-    fn from(grant: &GetTsigGrantResponse) -> Self {
-        TsigGrantRow {
+impl From<&GetRoleGrantResponse> for RoleGrantRow {
+    /// Build a CLI table row from the role grant response.
+    fn from(grant: &GetRoleGrantResponse) -> Self {
+        RoleGrantRow {
             id: grant.id,
-            tsig_key_name: grant.tsig_key_name.clone(),
-            zone_name: grant.zone_name.clone(),
+            role_name: grant.role_name.clone(),
+            zone_name: grant.zone_name.clone().unwrap_or_else(|| "*".to_string()),
+            actions: grant
+                .actions
+                .iter()
+                .map(|action| action.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
             record_name_pattern: grant.record_name_pattern.clone(),
             record_types: grant.record_types.clone(),
-            access: if grant.can_write {
-                "transfer+update"
-            } else {
-                "transfer-only"
-            }
-            .to_string(),
             created_at: display_time(grant.created_at),
         }
     }

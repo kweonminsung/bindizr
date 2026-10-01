@@ -13,7 +13,7 @@ use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 
 use super::{
-    dnssec, dnssec_policy, error::ApiError, external_dns, notify, openapi::ApiDoc, record,
+    dnssec, dnssec_policy, error::ApiError, external_dns, notify, openapi::ApiDoc, record, role,
     secondary, token, tsig_key, zone,
 };
 
@@ -30,6 +30,7 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
         .merge(secondary::routes())
         .merge(tsig_key::routes())
         .merge(token::routes())
+        .merge(role::routes())
         .merge(dnssec::routes())
         .merge(dnssec_policy::routes())
         .route("/", routing::get(handle_home));
