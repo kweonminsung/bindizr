@@ -121,10 +121,16 @@ text) or `from_server` the same way, and `skip_unsupported` alongside them.
 ## Zone history
 
 Every SOA serial has a version behind it, so a zone can be diffed and rolled
-back, and each version records who made the change: the API token or TSIG key
-it was made under (`system` for the DNSSEC scheduler, `local` for the CLI
-or a request made while authentication is disabled). The
-name is copied into the version, so it still answers after the token is gone.
+back. Each version records its source separately from the credential behind it:
+
+- `change_source`: `api`, `socket` (CLI), `nsupdate`, or `system` (DNSSEC scheduler).
+- `changed_by`: a credential object such as `{"kind":"token","name":"admin"}`
+  or `{"kind":"tsig_key","name":"updater"}`. The CLI table displays `token:admin`
+  or `tsig_key:updater`. The identity is copied, so it survives credential deletion.
+
+Socket commands, API requests with authentication disabled, unsigned updates,
+and background work have `changed_by: null` (`-` in a table). An API request
+remains `api` even when it carries no token.
 
 ```bash
 # List a zone's versions (SOA serials are a plain counter starting at 1)

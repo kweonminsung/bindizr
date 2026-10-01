@@ -63,10 +63,8 @@ pub struct ParsedZoneFile {
 }
 
 impl ParsedZoneFile {
-    /// Parse BIND zone file text relative to `zone_name`. Relative names resolve
-    /// against the origin, missing TTLs fall back to `default_ttl`, and the SOA
-    /// is kept apart in `soa` rather than stored (the zone's SOA comes from its
-    /// own fields).
+    /// Parse a BIND zone file using its origin and `default_ttl` for omitted TTLs.
+    /// Keep the SOA separately: the zone stores its fields, not an SOA record.
     pub fn parse(content: &str, zone_name: &ZoneName, default_ttl: Ttl) -> Self {
         let origin_fqdn = zone_name.to_fqdn();
 
@@ -100,10 +98,7 @@ impl ParsedZoneFile {
                     }
 
                     let record_type = match record.rtype() {
-                        // Not stored as a record; `soa` carries its fields for
-                        // a zone created from this file. Only the apex SOA is
-                        // this zone's: another owner's would hand it a foreign
-                        // serial and timers.
+                        // Only the apex SOA supplies this zone's serial and timers.
                         Rtype::SOA => {
                             if to_fqdn_lowercase(&record.owner().to_string()) != origin_fqdn {
                                 errors.push(format!(

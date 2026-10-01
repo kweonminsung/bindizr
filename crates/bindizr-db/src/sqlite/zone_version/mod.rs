@@ -24,7 +24,7 @@ use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use crate::{
     LockLevel,
     error::DatabaseError,
-    model::zone_version::{VersionFilter, ZoneVersion},
+    model::zone_version::{ChangeActor, VersionFilter, ZoneVersion},
 };
 
 /// Insert or update a zone version in the current transaction.
@@ -32,10 +32,15 @@ pub(crate) async fn upsert_tx(
     tx: &mut Transaction<'_, Sqlite>,
     version: ZoneVersion,
 ) -> Result<ZoneVersion, DatabaseError> {
+    let (changed_by_kind, changed_by_name) = version
+        .changed_by
+        .as_ref()
+        .map(ChangeActor::as_columns)
+        .unzip();
     sqlx::query(
         r#"
-        INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO zone_versions (zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(zone_id, serial)
         DO UPDATE SET
             mname = excluded.mname,
@@ -46,7 +51,8 @@ pub(crate) async fn upsert_tx(
             expire = excluded.expire,
             minimum_ttl = excluded.minimum_ttl,
             change_source = excluded.change_source,
-            changed_by = excluded.changed_by
+            changed_by_kind = excluded.changed_by_kind,
+            changed_by_name = excluded.changed_by_name
         "#,
     )
     .bind(version.zone_id)
@@ -59,7 +65,8 @@ pub(crate) async fn upsert_tx(
     .bind(version.expire)
     .bind(version.minimum_ttl)
     .bind(version.change_source.as_str())
-    .bind(&version.changed_by)
+    .bind(changed_by_kind)
+    .bind(changed_by_name)
     .bind(Utc::now())
     .execute(&mut **tx)
     .await?;
@@ -77,7 +84,7 @@ pub(crate) async fn get_by_serial(
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = ? AND serial = ?
         "#,
@@ -98,7 +105,7 @@ pub(crate) async fn list_in_serial_range(
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = ? AND serial >= ? AND serial <= ?
         "#,
@@ -125,7 +132,7 @@ pub(crate) async fn list_by_filter(
     };
     let mut query = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = ?{predicate}
         ORDER BY serial DESC
@@ -174,7 +181,7 @@ pub(crate) async fn get_by_serial_tx(
 ) -> Result<Option<ZoneVersion>, DatabaseError> {
     sqlx::query_as::<_, ZoneVersion>(
         r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
+        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
         FROM zone_versions
         WHERE zone_id = ? AND serial = ?
         "#,
@@ -210,3 +217,6 @@ pub(crate) async fn prune_by_zone_id_older_than_tx(
 
     Ok(result.rows_affected())
 }
+
+#[cfg(test)]
+mod tests;

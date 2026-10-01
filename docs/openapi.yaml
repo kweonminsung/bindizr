@@ -3738,14 +3738,39 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GetRecordResponse'
+    ChangeActor:
+      oneOf:
+      - type: object
+        required:
+        - name
+        - kind
+        properties:
+          kind:
+            type: string
+            enum:
+            - token
+          name:
+            type: string
+      - type: object
+        required:
+        - name
+        - kind
+        properties:
+          kind:
+            type: string
+            enum:
+            - tsig_key
+          name:
+            type: string
+      description: The named credential behind a change, copied so deleting it preserves the history.
     ChangeSource:
       type: string
-      description: The plane a zone version's change came through.
+      description: The request path or background process that produced a zone version.
       enum:
-      - token
+      - api
+      - socket
       - nsupdate
       - system
-      - local
     CreateBulkRecordsRequest:
       type: object
       description: Request body for bulk-inserting records into a zone.
@@ -5547,18 +5572,14 @@ components:
             properties:
               change_source:
                 $ref: '#/components/schemas/ChangeSource'
-                description: |-
-                  Which plane asked for this version: `token`, `nsupdate`, `system`
-                  (the DNSSEC scheduler), or `local` (the daemon socket, or
-                  any request while authentication is disabled).
+                description: The request path (`api`, `socket`, `nsupdate`) or background process (`system`).
               changed_by:
-                type:
-                - string
-                - 'null'
-                description: |-
-                  The API token or TSIG key the change was made under, absent where no
-                  credential stood behind it.
-                example: admin
+                oneOf:
+                - $ref: '#/components/schemas/ChangeActor'
+                  description: |-
+                    Token or TSIG key kind and name. Null for socket commands, unauthenticated
+                    API requests, unsigned updates, and background work.
+                - type: 'null'
               created_at:
                 type: string
                 format: date-time
@@ -6458,18 +6479,14 @@ components:
       properties:
         change_source:
           $ref: '#/components/schemas/ChangeSource'
-          description: |-
-            Which plane asked for this version: `token`, `nsupdate`, `system`
-            (the DNSSEC scheduler), or `local` (the daemon socket, or
-            any request while authentication is disabled).
+          description: The request path (`api`, `socket`, `nsupdate`) or background process (`system`).
         changed_by:
-          type:
-          - string
-          - 'null'
-          description: |-
-            The API token or TSIG key the change was made under, absent where no
-            credential stood behind it.
-          example: admin
+          oneOf:
+          - $ref: '#/components/schemas/ChangeActor'
+            description: |-
+              Token or TSIG key kind and name. Null for socket commands, unauthenticated
+              API requests, unsigned updates, and background work.
+          - type: 'null'
         created_at:
           type: string
           format: date-time

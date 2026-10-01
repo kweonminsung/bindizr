@@ -16,10 +16,8 @@ id_newtype!(
     DnssecRecordId
 );
 
-/// One record of a zone's derived DNSSEC plane (the signed view): the DNSKEY,
-/// NSEC, and RRSIG rows the signer generates. These are system-owned and never
-/// user data — the record API cannot create or modify them, and lists them
-/// only behind its `signed` flag.
+/// A signer-generated record in the zone's DNSSEC view.
+/// The record API exposes these read-only through its `signed` flag.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecRecord {
     pub id: DnssecRecordId,

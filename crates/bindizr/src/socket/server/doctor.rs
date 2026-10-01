@@ -24,7 +24,8 @@ pub(crate) async fn check_installation(
     let config = cx.config();
 
     // Count zones without materializing them; large tables must fit the deadline.
-    let zones_probe = zone::count(cx, &Caller::Global);
+    let caller = Caller::socket();
+    let zones_probe = zone::count(cx, &caller);
     let database = match tokio::time::timeout(DB_PROBE_TIMEOUT, zones_probe).await {
         Ok(Ok(total)) => DoctorCheck {
             status: DoctorCheckStatus::Ok,

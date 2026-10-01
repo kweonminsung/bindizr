@@ -19,7 +19,7 @@ use crate::{
     types::{CreateZoneRequest, GetZoneResponse, Run, UpdateZoneRequest, ZoneWriteResponse},
     zone::{
         validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
-        version::ChangeSubject,
+        version::ChangeAttribution,
     },
 };
 
@@ -81,7 +81,7 @@ pub async fn update(
     let updated_zone = update_locked(
         cx,
         zone_name,
-        &caller.change_subject(),
+        caller.change_attribution(),
         request.enabled,
         Run::from_dry_run(request.dry_run),
         |existing| {
@@ -131,7 +131,7 @@ pub async fn update(
 async fn update_locked(
     cx: &Context,
     zone_name: &ZoneName,
-    subject: &ChangeSubject,
+    attribution: &ChangeAttribution,
     enabled: Option<bool>,
     run: Run,
     build: impl FnOnce(&Zone) -> CreateZoneRequest,
@@ -243,7 +243,7 @@ async fn update_locked(
             })?;
 
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(&mut tx, cx, &updated_zone, new_serial, subject).await?;
+        super::save_version_tx(&mut tx, cx, &updated_zone, new_serial, attribution).await?;
 
         Ok(AppliedZoneUpdate {
             catalog_changed: existing_zone.name != updated_zone.name

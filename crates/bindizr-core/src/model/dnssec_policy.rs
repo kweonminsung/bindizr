@@ -78,10 +78,8 @@ id_newtype!(
     PolicyId
 );
 
-/// A named bundle of signing parameters zones reference by id (BIND's
-/// `dnssec-policy`, Knot's `policy`). Key layout, algorithm, and denial mode
-/// are fixed at creation; the timing fields are editable and apply on the
-/// next signing pass.
+/// A named signing policy: key layout, algorithm, and denial mode are fixed
+/// at creation; timing changes take effect on the next signing pass.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct DnssecPolicy {
     pub id: PolicyId,
@@ -114,10 +112,8 @@ impl DnssecPolicy {
         }
     }
 
-    /// The window the per-record-set expirations spread over, so a pass does not
-    /// come due for the whole zone at once and push an IXFR the size of it.
-    /// Half the room the policy leaves, which keeps even the earliest
-    /// signature outside its own refresh window.
+    /// Spread expirations over half the available window to avoid zone-wide
+    /// re-signing while keeping the earliest signature outside its refresh window.
     pub fn expiration_jitter_secs(&self) -> i64 {
         (self.signature_validity_secs() - self.signature_refresh_secs()).max(0) / 2
     }

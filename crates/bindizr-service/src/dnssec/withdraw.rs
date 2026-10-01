@@ -36,7 +36,7 @@ pub async fn withdraw(
             cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -83,7 +83,7 @@ pub async fn cancel_withdrawal(
             cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);

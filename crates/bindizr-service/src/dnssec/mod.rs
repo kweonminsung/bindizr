@@ -48,7 +48,7 @@ use crate::{
         zone::Zone,
         zone_change::{ChangeOperation, JournalRecordType, ZoneChange},
     },
-    zone::{self, version::ChangeSubject},
+    zone::{self, version::ChangeAttribution},
 };
 
 /// Backdated inception absorbs validator clock skew; one hour covers any
@@ -90,7 +90,7 @@ async fn resign_zone_tx(
     cx: &Context,
     signed: &SignedZone,
     pass: SigningPass,
-    subject: &ChangeSubject,
+    attribution: &ChangeAttribution,
 ) -> Result<Option<Serial>, ServiceError> {
     let new_serial = crate::serial::generate_serial(Some(signed.zone.serial))?;
     if !apply_signed_view_tx(
@@ -105,7 +105,7 @@ async fn resign_zone_tx(
     {
         return Ok(None);
     }
-    zone::advance_serial_tx(tx, cx, &signed.zone, new_serial, subject).await?;
+    zone::advance_serial_tx(tx, cx, &signed.zone, new_serial, attribution).await?;
     Ok(Some(new_serial))
 }
 

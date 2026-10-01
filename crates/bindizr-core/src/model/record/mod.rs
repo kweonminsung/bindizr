@@ -50,10 +50,8 @@ pub struct RecordKey {
 }
 
 impl Record {
-    /// Whether this stored record falls inside the narrowing RFC 2136,
-    /// Section 2.5.2 spells for a delete: the type, then the rdata, then the
-    /// preference. Values compare canonically and without the priority, which
-    /// MX and SRV keep in their own column and which narrows separately.
+    /// Match an RFC 2136, Section 2.5.2 delete by type, canonical value, and priority.
+    /// MX and SRV priorities narrow separately because they occupy their own column.
     pub fn matches(
         &self,
         record_type: Option<&RecordType>,
@@ -586,10 +584,8 @@ fn to_display_text(text: &str) -> String {
     out
 }
 
-/// Types whose display form is a domain name, so their values compare
-/// case-insensitively (RFC 4343). The record-filter SQL selects on this same
-/// set, which is why it is rendered from here rather than spelled out per
-/// backend.
+/// Return domain-name value types for case-insensitive comparison (RFC 4343).
+/// Record-filter SQL shares this list across backends.
 pub const NAME_LIKE_RECORD_TYPES: &[RecordType] = &[
     RecordType::Cname,
     RecordType::Dname,

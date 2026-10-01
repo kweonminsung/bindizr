@@ -1,7 +1,5 @@
-//! Stored DNS record value types — per-type parsing, validation, and
-//! canonicalization — plus their shared helpers and, in `rdata`, the one
-//! stored-columns → wire-RDATA encoding. The `RecordType` methods in
-//! `model::record` dispatch into these types.
+//! Parse and canonicalize stored record values and encode their wire RDATA.
+//! `model::record::RecordType` dispatches to the per-type implementations.
 
 mod a;
 mod aaaa;

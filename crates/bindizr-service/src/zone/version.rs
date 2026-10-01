@@ -9,31 +9,32 @@ use crate::{
     error::ServiceError,
     model::{
         zone::Zone,
-        zone_version::{ChangeSource, ZoneVersion},
+        zone_version::{ChangeActor, ChangeSource, ZoneVersion},
     },
 };
 
-/// Who a zone version is recorded as the work of; the scheduler and an
-/// unsigned update have no name to give.
+/// The origin of a version and the named credential behind it, independent of permissions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ChangeSubject {
+pub(crate) struct ChangeAttribution {
     pub(crate) source: ChangeSource,
-    pub(crate) actor: Option<String>,
+    pub(crate) actor: Option<ChangeActor>,
 }
 
-impl ChangeSubject {
+impl ChangeAttribution {
     /// An RFC 2136 update, named by the TSIG key that signed it; unsigned
     /// updates reach here only through an address ACL, which names nobody.
     pub(crate) fn nsupdate(key_name: Option<&str>) -> Self {
-        ChangeSubject {
+        ChangeAttribution {
             source: ChangeSource::Nsupdate,
-            actor: key_name.map(str::to_string),
+            actor: key_name.map(|name| ChangeActor::TsigKey {
+                name: name.to_string(),
+            }),
         }
     }
 
     /// The scheduler, acting on nobody's request.
     pub(crate) fn system() -> Self {
-        ChangeSubject {
+        ChangeAttribution {
             source: ChangeSource::System,
             actor: None,
         }
@@ -47,7 +48,7 @@ pub(crate) async fn advance_serial_tx(
     cx: &Context,
     zone: &Zone,
     new_serial: Serial,
-    subject: &ChangeSubject,
+    attribution: &ChangeAttribution,
 ) -> Result<(), ServiceError> {
     bindizr_db::zone::update_serial_tx(tx, zone.id, new_serial)
         .await
@@ -56,7 +57,7 @@ pub(crate) async fn advance_serial_tx(
             ServiceError::internal("Failed to update zone serial")
         })?;
 
-    save_version_tx(tx, cx, zone, new_serial, subject).await
+    save_version_tx(tx, cx, zone, new_serial, attribution).await
 }
 
 /// Reject DS records without an NS delegation at the same owner: a DS identifies a child
@@ -84,7 +85,7 @@ pub(crate) async fn save_version_tx(
     cx: &Context,
     zone: &Zone,
     serial: Serial,
-    subject: &ChangeSubject,
+    attribution: &ChangeAttribution,
 ) -> Result<(), ServiceError> {
     validate_delegations_tx(tx, zone.id).await?;
     bindizr_db::zone_version::upsert_tx(
@@ -103,8 +104,8 @@ pub(crate) async fn save_version_tx(
             retry: zone.retry,
             expire: zone.expire,
             minimum_ttl: zone.minimum_ttl,
-            change_source: subject.source,
-            changed_by: subject.actor.clone(),
+            change_source: attribution.source,
+            changed_by: attribution.actor.clone(),
             created_at: Utc::now(),
         },
     )

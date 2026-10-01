@@ -339,7 +339,7 @@ pub async fn rollback(
             cx,
             &restored_zone,
             new_serial,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?;
 

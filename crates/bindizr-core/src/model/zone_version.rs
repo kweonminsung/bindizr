@@ -50,13 +50,12 @@ pub struct ZoneVersion {
     pub retry: SoaInterval,
     pub expire: SoaInterval,
     pub minimum_ttl: Ttl,
-    /// Which plane asked for this version.
+    /// The request path or background process that produced this version.
     #[sqlx(try_from = "String")]
     pub change_source: ChangeSource,
-    /// The API token or TSIG key the change was made under, absent where no
-    /// credential stood behind it. Copied rather than referenced, so the
-    /// answer outlives the credential.
-    pub changed_by: Option<String>,
+    /// A snapshot of the token or TSIG key identity, independent of the request path.
+    #[sqlx(flatten, try_from = "ChangeActorColumns")]
+    pub changed_by: Option<ChangeActor>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -67,31 +66,30 @@ pub struct ParseChangeSourceError {
     pub value: String,
 }
 
-/// The plane a zone version's change came through.
+/// The request path or background process that produced a zone version.
 #[derive(
     Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum ChangeSource {
-    /// An API token, global or scoped.
-    Token,
-    /// An RFC 2136 update, named by the TSIG key that signed it.
+    /// An HTTP API request, including requests made with authentication disabled.
+    Api,
+    /// A command received over the daemon's Unix socket.
+    Socket,
+    /// An RFC 2136 update, signed or unsigned.
     Nsupdate,
     /// The DNSSEC scheduler, on nobody's request.
     System,
-    /// No credential stood behind it: the daemon socket, or any request made
-    /// while authentication is disabled.
-    Local,
 }
 
 impl ChangeSource {
     /// Return the text representation of this change source.
     pub fn as_str(self) -> &'static str {
         match self {
-            ChangeSource::Token => "token",
+            ChangeSource::Api => "api",
+            ChangeSource::Socket => "socket",
             ChangeSource::Nsupdate => "nsupdate",
             ChangeSource::System => "system",
-            ChangeSource::Local => "local",
         }
     }
 }
@@ -109,10 +107,10 @@ impl std::str::FromStr for ChangeSource {
     /// Parse the stored text of a change source.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "token" => Ok(ChangeSource::Token),
+            "api" => Ok(ChangeSource::Api),
+            "socket" => Ok(ChangeSource::Socket),
             "nsupdate" => Ok(ChangeSource::Nsupdate),
             "system" => Ok(ChangeSource::System),
-            "local" => Ok(ChangeSource::Local),
             other => Err(ParseChangeSourceError {
                 value: other.to_string(),
             }),
@@ -129,20 +127,135 @@ impl TryFrom<String> for ChangeSource {
     }
 }
 
+/// The named credential behind a change, copied so deleting it preserves the history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ChangeActor {
+    Token { name: String },
+    TsigKey { name: String },
+}
+
+impl ChangeActor {
+    /// Borrow the kind and name stored in the two attribution columns.
+    pub fn as_columns(&self) -> (&'static str, &str) {
+        match self {
+            ChangeActor::Token { name } => ("token", name),
+            ChangeActor::TsigKey { name } => ("tsig_key", name),
+        }
+    }
+}
+
+/// The nullable SQL columns decoded into one optional actor at the row boundary.
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+struct ChangeActorColumns {
+    changed_by_kind: Option<String>,
+    changed_by_name: Option<String>,
+}
+
+/// An actor's stored columns do not describe a complete, known credential.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+enum DecodeChangeActorError {
+    #[error("change actor kind and name must both be present or both be null")]
+    Incomplete,
+    #[error("unknown change actor kind '{value}'")]
+    UnknownKind { value: String },
+}
+
+impl TryFrom<ChangeActorColumns> for Option<ChangeActor> {
+    type Error = DecodeChangeActorError;
+
+    /// Decode both columns together, rejecting partial or unknown identities.
+    fn try_from(columns: ChangeActorColumns) -> Result<Self, Self::Error> {
+        match (columns.changed_by_kind, columns.changed_by_name) {
+            (None, None) => Ok(None),
+            (Some(kind), Some(name)) => match kind.as_str() {
+                "token" => Ok(Some(ChangeActor::Token { name })),
+                "tsig_key" => Ok(Some(ChangeActor::TsigKey { name })),
+                _ => Err(DecodeChangeActorError::UnknownKind { value: kind }),
+            },
+            _ => Err(DecodeChangeActorError::Incomplete),
+        }
+    }
+}
+
+impl std::fmt::Display for ChangeActor {
+    /// Show the credential kind with its name so equal names remain distinguishable.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (kind, name) = self.as_columns();
+        write!(f, "{kind}:{name}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
     use super::*;
 
+    /// The scalar columns and API object preserve the same actor kind and name.
+    #[test]
+    fn actor_columns_match_the_api_identity() {
+        for actor in [
+            ChangeActor::Token {
+                name: "admin".into(),
+            },
+            ChangeActor::TsigKey {
+                name: "admin".into(),
+            },
+        ] {
+            let (kind, name) = actor.as_columns();
+            assert_eq!(
+                serde_json::to_value(&actor).unwrap(),
+                json!({ "kind": kind, "name": name })
+            );
+            let decoded = Option::<ChangeActor>::try_from(ChangeActorColumns {
+                changed_by_kind: Some(kind.into()),
+                changed_by_name: Some(name.into()),
+            })
+            .unwrap();
+            assert_eq!(decoded, Some(actor));
+        }
+    }
+
+    /// Corrupt column pairs fail decoding instead of dropping or inventing an identity.
+    #[test]
+    fn actor_columns_decode_only_complete_known_identities() {
+        assert_eq!(
+            Option::<ChangeActor>::try_from(ChangeActorColumns {
+                changed_by_kind: None,
+                changed_by_name: None,
+            })
+            .unwrap(),
+            None
+        );
+        for (kind, name, expected) in [
+            (Some("token"), None, DecodeChangeActorError::Incomplete),
+            (None, Some("admin"), DecodeChangeActorError::Incomplete),
+            (
+                Some("unknown"),
+                Some("admin"),
+                DecodeChangeActorError::UnknownKind {
+                    value: "unknown".into(),
+                },
+            ),
+        ] {
+            let err = Option::<ChangeActor>::try_from(ChangeActorColumns {
+                changed_by_kind: kind.map(str::to_string),
+                changed_by_name: name.map(str::to_string),
+            })
+            .unwrap_err();
+            assert_eq!(err, expected);
+        }
+    }
+
     /// Verify that `ChangeSource` has one spelling across `as_str`, serde, and `FromStr`.
     #[test]
     fn change_source_spells_itself_once() {
         for value in [
-            ChangeSource::Token,
+            ChangeSource::Api,
+            ChangeSource::Socket,
             ChangeSource::Nsupdate,
             ChangeSource::System,
-            ChangeSource::Local,
         ] {
             assert_eq!(serde_json::to_value(value).unwrap(), json!(value.as_str()));
             assert_eq!(

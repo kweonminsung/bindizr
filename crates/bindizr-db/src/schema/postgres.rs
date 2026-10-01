@@ -98,8 +98,14 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             expire INTEGER NOT NULL,
             minimum_ttl INTEGER NOT NULL,
             change_source VARCHAR(16) NOT NULL,
-            changed_by VARCHAR(255),
+            changed_by_kind VARCHAR(16),
+            changed_by_name VARCHAR(255),
             created_at TIMESTAMPTZ NOT NULL,
+            CONSTRAINT chk_zone_versions_changed_by CHECK (
+                (changed_by_kind IS NULL AND changed_by_name IS NULL)
+                OR (changed_by_kind IS NOT NULL AND changed_by_name IS NOT NULL
+                    AND changed_by_kind IN ('token', 'tsig_key'))
+            ),
             UNIQUE(zone_id, serial),
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );

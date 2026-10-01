@@ -92,7 +92,7 @@ pub async fn start_rollover(
             cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -142,10 +142,8 @@ pub(crate) async fn start_algorithm_rollover_tx(
     Ok(keys)
 }
 
-/// Promote the pre-published SEP key(s) and retire the keys they replace
-/// once the parent serves their DS and the hold-down has passed;
-/// `ds_check` may take the DS on the operator's word, `holddown` may waive
-/// the wait.
+/// Promote published SEP keys and retire their predecessors after parent-DS confirmation
+/// and hold-down; `ds_check` and `holddown` select which checks the operator waives.
 pub async fn advance_rollover(
     cx: &Context,
     caller: &Caller,
@@ -199,7 +197,7 @@ pub async fn advance_rollover(
             cx,
             &signed,
             SigningPass::Refresh,
-            &caller.change_subject(),
+            caller.change_attribution(),
         )
         .await?
         .unwrap_or(signed.zone.serial);
@@ -312,10 +310,8 @@ pub(crate) async fn promote_published_keys_tx(
     Ok(updated)
 }
 
-/// The pre-published SEP keys a promotion may take; an error when no
-/// rollover is in progress, it replaces only the ZSK, or (unless
-/// `holddown` is skipped) a wait runs. `ds-seen` reports those errors; the
-/// scheduler reads them as nothing to do.
+/// Return promotable SEP keys or reject absent, ZSK-only, or still-waiting rollovers.
+/// The scheduler treats these rejections as idle; `ds-seen` reports them.
 pub(crate) fn promotable_sep_key_ids(
     signed: &SignedZone,
     holddown: Holddown,

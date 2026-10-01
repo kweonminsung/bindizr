@@ -302,6 +302,7 @@ dependencies = [
  "sqlx",
  "tempfile",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

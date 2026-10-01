@@ -33,7 +33,7 @@ async fn notify(
     target: NotifyTarget<'_>,
     serial: NotifySerial,
 ) -> Result<DaemonResponse<MessageResponse>, ServiceError> {
-    zone::notify(cx, &Caller::Global, target, serial).await?;
+    zone::notify(cx, &Caller::socket(), target, serial).await?;
     let message = build_notify_message(target, serial);
     Ok(DaemonResponse {
         message: message.clone(),

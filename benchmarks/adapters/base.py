@@ -72,12 +72,9 @@ class DnsAdapter(abc.ABC):
         ...
 
     async def bulk_import(self, zone: str, records: list[dict]) -> None:
-        """Concurrent creates via a fixed worker pool; adapters override for batch APIs.
+        """Create records concurrently, retry transient failures, and count unrecovered bulk errors.
 
-        Failures are retried — a real importer would retry transient backend
-        contention such as SQLite write locks — then counted in `bulk_errors`
-        rather than aborting the whole import.
-        """
+        Adapters may override this worker-pool fallback with a batch API."""
         self.bulk_errors = 0
         queue: asyncio.Queue[int] = asyncio.Queue()
         for i in range(len(records)):
