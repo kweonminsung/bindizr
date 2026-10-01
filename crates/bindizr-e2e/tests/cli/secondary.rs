@@ -97,6 +97,6 @@ async fn secondary_lifecycle_via_cli() {
     assert_cli_failure_contains(
         &args,
         &missing,
-        &format!("Secondary with name '{name}' not found"),
+        &format!("secondary with name '{name}' not found"),
     );
 }

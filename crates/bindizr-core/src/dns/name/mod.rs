@@ -24,10 +24,10 @@ pub fn has_whitespace_or_control(value: &str) -> bool {
 }
 
 /// Classify one label's problem, if any: non-empty, at most 63 bytes, LDH
-/// charset (plus `_` when `allow_underscore`), no leading/trailing hyphen.
+/// charset (plus `_` when `LabelCharset::LdhUnderscore`), no leading/trailing hyphen.
 pub(crate) fn classify_domain_label(
     label: &str,
-    allow_underscore: bool,
+    charset: LabelCharset,
 ) -> Result<(), ParseNameError> {
     if label.is_empty() {
         return Err(ParseNameError::EmptyLabel);
@@ -37,12 +37,13 @@ pub(crate) fn classify_domain_label(
         return Err(ParseNameError::LabelTooLong);
     }
 
-    if !label
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || (allow_underscore && c == '_'))
-    {
+    if !label.chars().all(|c| {
+        c.is_ascii_alphanumeric()
+            || c == '-'
+            || (charset == LabelCharset::LdhUnderscore && c == '_')
+    }) {
         return Err(ParseNameError::LabelCharset {
-            underscore_allowed: allow_underscore,
+            underscore_allowed: charset == LabelCharset::LdhUnderscore,
         });
     }
 
@@ -144,3 +145,10 @@ fn labels_to_wire<'a>(labels: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, 
 
 #[cfg(test)]
 mod tests;
+
+/// Character policy for an LDH label validator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LabelCharset {
+    Ldh,
+    LdhUnderscore,
+}

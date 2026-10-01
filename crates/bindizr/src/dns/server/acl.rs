@@ -22,6 +22,8 @@ const RESOLVE_FAILURE_TTL: Duration = Duration::from_secs(5);
 /// A resolver that never answers must not hold a DNS request open.
 const RESOLVE_TIMEOUT: Duration = Duration::from_secs(2);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+
 struct SecondaryAcl {
     entries: Vec<SecondaryAclEntry>,
 }

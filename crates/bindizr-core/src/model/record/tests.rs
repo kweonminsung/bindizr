@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-use super::{Record, RecordType};
+use super::*;
 use crate::{
     dns::{
         Ttl,

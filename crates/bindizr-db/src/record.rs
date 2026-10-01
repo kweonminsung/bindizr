@@ -13,7 +13,7 @@ use crate::{
     tx::TransactionKind,
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RecordFilter {
     /// Matched through a subquery on `zones.name`, so the filter still lands
     /// on `records.zone_id` and keeps the listing on `idx_records_zone_name`

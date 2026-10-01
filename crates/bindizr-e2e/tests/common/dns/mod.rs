@@ -126,7 +126,7 @@ fn is_deleted_zone_absence(record_type: u16, expected: &[Value], error: &str) ->
 }
 
 /// One answer record, as its type number and the comparison form of its rdata.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DnsAnswer {
     pub(crate) record_type: u16,
     pub(crate) value: Option<Value>,

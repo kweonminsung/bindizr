@@ -16,7 +16,7 @@ pub struct Serial(u32);
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ConvertSerialError {
     /// Rows are stored as `i32`, so a negative one is corrupt data.
-    #[error("Invalid DNS serial: {serial}")]
+    #[error("invalid DNS serial: {serial}")]
     Negative { serial: i32 },
     /// One past `i32::MAX` names nothing bindizr could have written.
     #[error("serial {serial} is beyond the stored range of {}", i32::MAX)]

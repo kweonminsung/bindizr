@@ -36,7 +36,7 @@ pub struct SoaRecordValue<'a> {
 
 impl<'a> SoaRecordValue<'a> {
     /// Encode the SOA value into wire-format record data.
-    pub(crate) fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
+    pub fn to_rdata(self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = encode_name(self.mname)?;
         rdata.extend_from_slice(&encode_name(self.rname)?);
         for field in [
@@ -183,4 +183,86 @@ fn escape_local_part(local: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+    use crate::dns::name::encode_name;
+
+    /// Verify that `from_email` escapes local part.
+    #[test]
+    fn from_email_escapes_local_part() {
+        assert_eq!(
+            SoaMailbox::from_email(r"host.master\ops@example.com")
+                .unwrap()
+                .as_str(),
+            r"host\.master\\ops.example.com."
+        );
+        assert!(SoaMailbox::from_email("hostmaster.example.com").is_err());
+        assert!(SoaMailbox::from_email("host@@example.com").is_err());
+    }
+
+    /// Verify that `to_email` round-trips.
+    #[test]
+    fn to_email_round_trips() {
+        for email in [
+            "admin@example.com",
+            "first.last@example.com",
+            "a.b.c@sub.example.com",
+            "back\\slash@example.com",
+        ] {
+            let mailbox = SoaMailbox::from_email(email).expect("email should convert to mailbox");
+            assert_eq!(
+                mailbox.to_email().expect("mailbox should convert back"),
+                email,
+                "round trip failed for mailbox '{mailbox}'"
+            );
+        }
+    }
+
+    /// Verify that to email handles plain stored mailbox.
+    #[test]
+    fn to_email_handles_plain_stored_mailbox() {
+        assert_eq!(
+            SoaMailbox::from_encoded("hostmaster.example.com.")
+                .to_email()
+                .unwrap(),
+            "hostmaster@example.com"
+        );
+        assert_eq!(
+            SoaMailbox::from_encoded("hostmaster.example.com")
+                .to_email()
+                .unwrap(),
+            "hostmaster@example.com"
+        );
+    }
+
+    /// Verify that `to_email` rejects invalid input.
+    #[test]
+    fn to_email_rejects_invalid_input() {
+        assert!(SoaMailbox::from_encoded("no-separator").to_email().is_err());
+        assert!(SoaMailbox::from_encoded(".example.com").to_email().is_err());
+        assert!(SoaMailbox::from_encoded("dangling\\").to_email().is_err());
+    }
+
+    /// Verify that SOA RDATA encodes two names followed by five counters (RFC 1035, Section
+    /// 3.3.13).
+    #[test]
+    fn encode_soa_rdata_is_names_then_five_counters() {
+        let rdata = SoaRecordValue {
+            mname: "ns1.example.com",
+            rname: "admin.example.com",
+            serial: 42,
+            refresh: 2,
+            retry: 3,
+            expire: 4,
+            minimum: 5,
+        }
+        .to_rdata()
+        .unwrap();
+        let mut expected = encode_name("ns1.example.com").unwrap();
+        expected.extend(encode_name("admin.example.com").unwrap());
+        for field in [42u32, 2, 3, 4, 5] {
+            expected.extend(field.to_be_bytes());
+        }
+        assert_eq!(rdata.as_bytes(), expected);
+    }
+}

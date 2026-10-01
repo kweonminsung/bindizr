@@ -40,7 +40,7 @@ pub async fn apply_changes(
         });
     }
 
-    let mut tx = transaction::begin_tx(cx, "Failed to apply ExternalDNS changes").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to apply ExternalDNS changes").await?;
 
     let apply_result = async {
         // Resolve authoritative zones from committed state inside the tx;
@@ -118,7 +118,7 @@ pub async fn apply_changes(
     .await;
 
     let (changed_zones, added, deleted) =
-        transaction::finish_tx(tx, apply_result, "Failed to apply ExternalDNS changes").await?;
+        transaction::finish_tx(tx, apply_result, "failed to apply ExternalDNS changes").await?;
 
     // Every affected zone must commit before any secondary is asked to transfer.
     for zone_name in &changed_zones {

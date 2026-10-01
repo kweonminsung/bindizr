@@ -20,6 +20,7 @@ use crate::{
 
 /// Which plane a `type` filter names: a user record type, or a derived
 /// DNSSEC type when the signed view is requested.
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 enum TypeFilter {
     Any,
     User(RecordType),
@@ -172,7 +173,7 @@ pub async fn list_with_zone_by_filter(
         );
     }
 
-    let items = items.iter().map(ListedRecord::to_response).collect();
+    let items = items.iter().map(GetRecordResponse::from).collect();
     Ok(build_paginated_response(
         items,
         limit,
@@ -193,7 +194,10 @@ pub async fn get_with_zone(
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(e) => {
             log::error!("Failed to fetch record: {}", e);
-            return Err(ServiceError::internal("Failed to fetch record"));
+            return Err(ServiceError::internal_with_source(
+                "failed to fetch record",
+                e,
+            ));
         }
     };
 

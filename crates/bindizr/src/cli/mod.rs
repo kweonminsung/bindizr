@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// Top-level CLI argument parser.
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone, PartialEq, Eq)]
 #[command(name = "bindizr", version, about)]
 pub(crate) struct Args {
     #[command(subcommand)]
@@ -32,7 +32,7 @@ pub(crate) struct Args {
 
 /// Top-level CLI subcommands. Declaration order is `--help` order, and it
 /// keeps `dnssec-policy` beside the `dnssec` commands that sign under it.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
     /// Start bindizr on foreground
     Start {

@@ -7,14 +7,14 @@ use axum::{
 };
 use serde_json::{Value, json};
 
-use super::{AppState, health_router, webhook_router};
+use super::*;
 use crate::{metrics::AdapterMetrics, upstream::UpstreamClient, wire::MEDIA_TYPE};
 
 /// One request the mock bindizr server saw: path, Authorization header, body.
 type RecordedRequest = (String, Option<String>, String);
 
 /// The mock bindizr server's canned responses and the requests it recorded.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct MockState {
     requests: Arc<Mutex<Vec<RecordedRequest>>>,
     domains: (u16, String),
@@ -24,6 +24,7 @@ struct MockState {
 }
 
 /// A running mock bindizr server: its address and the requests it saw.
+#[derive(Debug)]
 struct MockUpstream {
     addr: std::net::SocketAddr,
     requests: Arc<Mutex<Vec<RecordedRequest>>>,
@@ -352,7 +353,7 @@ async fn apply_changes_maps_a_rejected_token_to_a_retryable_503() {
         (200, json!({"records": []})),
         (
             401,
-            json!({"error": "Invalid API token", "code": "UNAUTHORIZED"}),
+            json!({"error": "invalid API token", "code": "UNAUTHORIZED"}),
         ),
     )
     .await;
@@ -367,7 +368,7 @@ async fn apply_changes_maps_a_rejected_token_to_a_retryable_503() {
     // external-dns retries only 5xx, and re-granting the token is meant to heal
     // the sync instead of leaving the change set dropped.
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert!(body.contains("Invalid API token"));
+    assert!(body.contains("invalid API token"));
 }
 
 /// Verify that `apply_changes` maps bindizr 5xx and unreachable to retryable 502.
@@ -378,7 +379,7 @@ async fn apply_changes_maps_bindizr_5xx_and_unreachable_to_retryable_502() {
         (200, json!({"records": []})),
         (
             500,
-            json!({"error": "Failed to apply ExternalDNS changes", "code": "INTERNAL"}),
+            json!({"error": "failed to apply ExternalDNS changes", "code": "INTERNAL"}),
         ),
     )
     .await;

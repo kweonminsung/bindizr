@@ -76,7 +76,7 @@ impl TlsaRecordValue {
     }
 
     /// The wire-format RDATA of a stored value (RFC 6698, Section 2.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
+    pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(3 + self.cert_data.len());
         rdata.push(self.cert_usage);
         rdata.push(self.selector);

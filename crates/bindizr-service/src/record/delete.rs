@@ -37,24 +37,30 @@ pub async fn delete(
         }
         Err(e) => {
             log::error!("Failed to fetch record: {}", e);
-            return Err(ServiceError::internal("Failed to fetch record"));
+            return Err(ServiceError::internal_with_source(
+                "failed to fetch record",
+                e,
+            ));
         }
     };
 
-    let mut tx = transaction::begin_tx(cx, "Failed to delete record").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to delete record").await?;
 
     let apply_result: Result<(DeleteRecordsResponse, ZoneName), ServiceError> = async {
         let zone = match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err(ServiceError::ZoneNotFound(format!(
-                    "Zone with id '{}' not found",
+                    "zone with id '{}' not found",
                     zone_id
                 )));
             }
             Err(e) => {
                 log::error!("Failed to fetch zone: {}", e);
-                return Err(ServiceError::internal("Failed to fetch zone"));
+                return Err(ServiceError::internal_with_source(
+                    "failed to fetch zone",
+                    e,
+                ));
             }
         };
 
@@ -66,7 +72,10 @@ pub async fn delete(
                 }
                 Err(e) => {
                     log::error!("Failed to fetch record: {}", e);
-                    return Err(ServiceError::internal("Failed to fetch record"));
+                    return Err(ServiceError::internal_with_source(
+                        "failed to fetch record",
+                        e,
+                    ));
                 }
             };
 
@@ -152,7 +161,7 @@ pub async fn delete(
     .await;
 
     let (response, zone_name) =
-        transaction::finish_tx(tx, apply_result, "Failed to delete record").await?;
+        transaction::finish_tx(tx, apply_result, "failed to delete record").await?;
 
     // Announce only a committed deletion, never a preview.
     if response.applied {
@@ -190,7 +199,7 @@ pub async fn delete_matching(
         _ => None,
     };
 
-    let mut tx = transaction::begin_tx(cx, "Failed to delete records").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to delete records").await?;
 
     let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
@@ -266,7 +275,7 @@ pub async fn delete_matching(
     }
     .await;
 
-    let (response, owner) = transaction::finish_tx(tx, result, "Failed to delete records").await?;
+    let (response, owner) = transaction::finish_tx(tx, result, "failed to delete records").await?;
 
     log::info!(
         "event=record_delete_matching zone={} name={} type={:?} deleted={} applied={}",

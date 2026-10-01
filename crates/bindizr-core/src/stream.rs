@@ -87,6 +87,7 @@ mod tests {
     use super::*;
 
     /// A sink whose every write fails with one kind.
+    #[derive(Debug, Clone, PartialEq, Eq, Copy)]
     struct FailingSink(ErrorKind);
 
     impl Write for FailingSink {

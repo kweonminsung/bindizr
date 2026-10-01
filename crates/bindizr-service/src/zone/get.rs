@@ -75,7 +75,7 @@ pub async fn ping(cx: &Context) -> Result<(), ServiceError> {
 pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
     let zones = bindizr_db::zone::list_all(cx.db()).await.map_err(|e| {
         log::error!("Failed to fetch zones: {}", e);
-        ServiceError::internal("Failed to fetch zones")
+        ServiceError::internal_with_source("failed to fetch zones", e)
     })?;
     Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
 }

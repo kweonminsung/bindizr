@@ -78,13 +78,13 @@ pub(crate) struct ProviderSpecificProperty {
 }
 
 /// JSON shape of external-dns `plan.Changes` (`POST /records` body).
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Changes {
     #[serde(default)]
     pub(crate) create: Vec<Endpoint>,
     #[serde(default)]
-    update_old: Vec<Endpoint>,
+    pub(crate) update_old: Vec<Endpoint>,
     #[serde(default)]
     pub(crate) update_new: Vec<Endpoint>,
     #[serde(default)]
@@ -92,7 +92,7 @@ pub(crate) struct Changes {
 }
 
 /// JSON shape of external-dns `endpoint.DomainFilter` (negotiation response).
-#[derive(Serialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(serde::Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct DomainFilter {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) include: Vec<String>,
@@ -111,7 +111,7 @@ pub(crate) struct BindizrRecord {
 }
 
 /// `POST /external-dns/changes` request body of the bindizr API.
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BindizrChanges {
     creates: Vec<BindizrRecord>,
     updates: Vec<BindizrRecordUpdate>,
@@ -120,15 +120,15 @@ pub(crate) struct BindizrChanges {
 
 /// One update of the bindizr change set: the record as stored and its
 /// replacement, paired positionally from `updateOld` and `updateNew`.
-#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BindizrRecordUpdate {
     old: BindizrRecord,
     new: BindizrRecord,
 }
 
-impl Endpoint {
+impl From<BindizrRecord> for Endpoint {
     /// An endpoint for one bindizr record; the server already sorts values.
-    pub(crate) fn from_bindizr_record(record: BindizrRecord) -> Self {
+    fn from(record: BindizrRecord) -> Self {
         Endpoint {
             dns_name: record.name,
             targets: record.values,
@@ -137,7 +137,9 @@ impl Endpoint {
             ..Endpoint::default()
         }
     }
+}
 
+impl Endpoint {
     /// Validate against what the adapter supports, yielding the parsed record
     /// type; the message becomes a permanent (4xx) error body. Mirrors the
     /// server's own validation so a bad plan fails without a round trip.

@@ -94,7 +94,7 @@ pub async fn get_version(
     serial: Serial,
 ) -> Result<VersionDetailResponse, ServiceError> {
     let serial = validate_stored_serial(serial)?;
-    let mut tx = transaction::begin_read_tx(cx, "Failed to load version").await?;
+    let mut tx = transaction::begin_read_tx(cx, "failed to load version").await?;
 
     let result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
@@ -115,7 +115,7 @@ pub async fn get_version(
     .await;
 
     let (zone, version, records) =
-        transaction::finish_tx(tx, result, "Failed to load version").await?;
+        transaction::finish_tx(tx, result, "failed to load version").await?;
     Ok(VersionDetailResponse {
         version: ZoneVersionResponse::try_from(&version)?,
         records: records
@@ -137,7 +137,7 @@ pub async fn diff_versions(
 ) -> Result<VersionDiffResponse, ServiceError> {
     let from = validate_stored_serial(from_serial)?;
     let to = to_serial.map(validate_stored_serial).transpose()?;
-    let mut tx = transaction::begin_read_tx(cx, "Failed to diff versions").await?;
+    let mut tx = transaction::begin_read_tx(cx, "failed to diff versions").await?;
 
     let result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
@@ -158,7 +158,7 @@ pub async fn diff_versions(
     }
     .await;
 
-    transaction::finish_tx(tx, result, "Failed to diff versions").await
+    transaction::finish_tx(tx, result, "failed to diff versions").await
 }
 
 /// Restore records and SOA metadata at `target_serial`, advancing to a new serial.
@@ -173,7 +173,7 @@ pub async fn rollback(
     caller.authorize_global("roll back zones")?;
     let target = validate_stored_serial(target_serial)?;
 
-    let mut tx = transaction::begin_tx(cx, "Failed to roll back zone").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to roll back zone").await?;
 
     let apply_result = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
@@ -199,7 +199,10 @@ pub async fn rollback(
         let rname = SoaMailbox::from_encoded(&version.rname)
             .to_email()
             .map_err(|e| {
-                ServiceError::internal(format!("Failed to decode version rname: {}", e))
+                ServiceError::internal_with_source(
+                    format!("failed to decode version rname: {}", e),
+                    e,
+                )
             })?;
         let restored_zone = Zone {
             id: zone.id,
@@ -358,7 +361,7 @@ pub async fn rollback(
     .await;
 
     let (response, zone_name, applied) =
-        transaction::finish_tx(tx, apply_result, "Failed to roll back zone").await?;
+        transaction::finish_tx(tx, apply_result, "failed to roll back zone").await?;
 
     // Announce only an applied rollback after its new version has committed.
     if applied {

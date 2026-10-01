@@ -32,7 +32,7 @@ use crate::shutdown::Shutdown;
 /// The caller attached by the auth middleware, or by the router's
 /// `Caller::unauthenticated_api()` layer when authentication is disabled. A request without
 /// one reached a handler outside both layers, so extraction fails closed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RequestCaller(pub(crate) Caller);
 
 impl<S> FromRequestParts<S> for RequestCaller
@@ -48,13 +48,13 @@ where
             .get::<Caller>()
             .cloned()
             .map(RequestCaller)
-            .ok_or_else(|| ApiError(ServiceError::unauthorized("Request has no caller identity")))
+            .ok_or_else(|| ApiError(ServiceError::unauthorized("request has no caller identity")))
     }
 }
 
 /// The token a request authenticated with, attached by the auth middleware;
 /// absent (so a 401) when authentication is disabled.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AuthenticatedToken(pub(crate) ApiToken);
 
 impl<S> FromRequestParts<S> for AuthenticatedToken
@@ -69,7 +69,7 @@ where
             .extensions
             .get::<AuthenticatedToken>()
             .cloned()
-            .ok_or_else(|| ApiError(ServiceError::unauthorized("Request carries no API token")))
+            .ok_or_else(|| ApiError(ServiceError::unauthorized("request carries no API token")))
     }
 }
 
@@ -80,7 +80,7 @@ const TLS_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 /// Why the HTTP API could not come up.
 #[derive(Debug, Error)]
 pub(crate) enum StartApiError {
-    #[error("Failed to bind the HTTP API to {addr}: {source}")]
+    #[error("failed to bind the HTTP API to {addr}: {source}")]
     Bind {
         addr: SocketAddr,
         #[source]
@@ -88,16 +88,16 @@ pub(crate) enum StartApiError {
     },
     /// A pair that cannot be read is permanent, so it exits as a
     /// configuration failure rather than looping through systemd's restart.
-    #[error("Failed to read the API TLS certificate '{cert_file}' and key '{key_file}': {source}")]
+    #[error("failed to read the API TLS certificate '{cert_file}' and key '{key_file}': {source}")]
     Tls {
         cert_file: String,
         key_file: String,
         #[source]
         source: std::io::Error,
     },
-    #[error("Failed to hand the HTTP API listener to the TLS server: {0}")]
+    #[error("failed to hand the HTTP API listener to the TLS server: {0}")]
     IntoStd(#[source] std::io::Error),
-    #[error("Failed to start the HTTPS API server on {addr}: {source}")]
+    #[error("failed to start the HTTPS API server on {addr}: {source}")]
     Serve {
         addr: SocketAddr,
         #[source]

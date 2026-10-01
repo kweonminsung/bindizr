@@ -6,16 +6,16 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub(crate) enum XfrError {
     /// No enabled zone carries the name: answered NOTAUTH.
-    #[error("Not authoritative for zone: {0}")]
+    #[error("not authoritative for zone: {0}")]
     NotAuth(String),
 
     /// The key that signed the request holds no grant over the zone whole.
-    #[error("Transfer refused: {0}")]
+    #[error("transfer refused: {0}")]
     Refused(String),
 
     /// The DNS plane passes no caller, so a service failure here is never a
     /// client fault: it surfaces as an infrastructure error.
-    #[error("Database error: {0}")]
+    #[error("database error: {0}")]
     Service(#[from] ServiceError),
 
     #[error("IO error: {0}")]
@@ -39,6 +39,6 @@ pub(crate) enum XfrError {
     #[error("DNS protocol error: Missing {which} SOA version for serial {serial}")]
     MissingVersion { which: &'static str, serial: Serial },
 
-    #[error("Invalid query: {0}")]
+    #[error("invalid query: {0}")]
     InvalidQuery(String),
 }

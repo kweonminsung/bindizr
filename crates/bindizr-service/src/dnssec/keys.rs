@@ -14,7 +14,7 @@ use crate::{
     error::ServiceError,
     model::{
         dnssec_key::{DnssecKey, DnssecKeyRole, DnssecKeyState},
-        dnssec_policy::DEFAULT_DNSSEC_POLICY_NAME,
+        dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecKeyLayout},
         zone::Zone,
     },
     transaction,
@@ -102,7 +102,7 @@ pub async fn import_keys(
         for pair in &request.keys {
             let key = DnssecKey::import(
                 &zone,
-                policy.split_keys,
+                DnssecKeyLayout::from_split_keys(policy.split_keys),
                 &pair.dnskey,
                 &pair.private_key,
                 now,

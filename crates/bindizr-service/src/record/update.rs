@@ -28,6 +28,7 @@ use crate::{
 
 /// The record an update locks: by id, with the zone the id form pre-read,
 /// or by name.
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 enum LockTarget<'a> {
     Id {
         record_id: RecordId,
@@ -43,6 +44,7 @@ enum LockTarget<'a> {
 
 /// The record's fields after the request has been resolved against the
 /// stored record: the owner normalized and `encoded_value` in row form.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedRecordUpdate {
     owner_name: OwnerName,
     record_type: RecordType,
@@ -121,7 +123,10 @@ pub async fn update(
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(e) => {
             log::error!("Failed to fetch record: {}", e);
-            return Err(ServiceError::internal("Failed to fetch record"));
+            return Err(ServiceError::internal_with_source(
+                "failed to fetch record",
+                e,
+            ));
         }
     };
     update_locked(
@@ -161,7 +166,7 @@ async fn update_locked(
     run: Run,
     resolve: impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError>,
 ) -> Result<RecordWriteResponse, ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "Failed to update record").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to update record").await?;
 
     let apply_result = async {
         let (zone, existing_record) = match target {
@@ -171,13 +176,16 @@ async fn update_locked(
                         Ok(Some(zone)) => zone,
                         Ok(None) => {
                             return Err(ServiceError::ZoneNotFound(format!(
-                                "Zone with id '{}' not found",
+                                "zone with id '{}' not found",
                                 zone_id
                             )));
                         }
                         Err(e) => {
                             log::error!("Failed to fetch zone: {}", e);
-                            return Err(ServiceError::internal("Failed to fetch zone"));
+                            return Err(ServiceError::internal_with_source(
+                                "failed to fetch zone",
+                                e,
+                            ));
                         }
                     };
 
@@ -194,7 +202,10 @@ async fn update_locked(
                     }
                     Err(e) => {
                         log::error!("Failed to fetch record: {}", e);
-                        return Err(ServiceError::internal("Failed to fetch record"));
+                        return Err(ServiceError::internal_with_source(
+                            "failed to fetch record",
+                            e,
+                        ));
                     }
                 };
 
@@ -277,8 +288,9 @@ async fn update_locked(
             Ok(records) => records,
             Err(e) => {
                 log::error!("Failed to load records: {}", e);
-                return Err(ServiceError::internal(
-                    "Failed to update record".to_string(),
+                return Err(ServiceError::internal_with_source(
+                    "failed to update record",
+                    e,
                 ));
             }
         };
@@ -348,7 +360,7 @@ async fn update_locked(
     .await;
 
     let (updated_record, zone_name, diff) =
-        transaction::finish_tx(tx, apply_result, "Failed to update record").await?;
+        transaction::finish_tx(tx, apply_result, "failed to update record").await?;
 
     log::info!(
         "event=record_update zone={} name={} type={} ttl={} priority={} record_id={}",

@@ -34,6 +34,7 @@ static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 static RUN_ID: OnceLock<String> = OnceLock::new();
 
 /// One bindizr under test, reached over its HTTP API and CLI, plus the DNS ports it serves.
+#[derive(Debug)]
 pub(crate) struct TestApp {
     runtime: TestRuntime,
     client: Client,
@@ -45,6 +46,7 @@ pub(crate) struct TestApp {
 }
 
 /// Config knobs for a locally spawned bindizr; `start()` uses the defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub(crate) struct TestAppOptions {
     pub(crate) authentication_required: bool,
     pub(crate) external_dns_enabled: bool,
@@ -70,6 +72,7 @@ impl Default for TestAppOptions {
 }
 
 /// Where the daemon under test runs: a process this test spawned, or the shared Compose stack.
+#[derive(Debug)]
 enum TestRuntime {
     Local { temp_dir: TempDir, child: Child },
     Compose(&'static ComposeStack),

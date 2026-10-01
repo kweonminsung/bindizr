@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// Subcommands for managing API tokens.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TokenCommand {
     /// Create a new API token; the plaintext token is shown once, here
     #[command(after_help = "\

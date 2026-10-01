@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// Subcommands for inspecting a zone's versions.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ZoneVersionCommand {
     /// List a zone's versions (serial history)
     #[command(

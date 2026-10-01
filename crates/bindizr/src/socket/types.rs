@@ -275,7 +275,7 @@ pub(crate) struct DaemonDoctorResponse {
 }
 
 /// One check's outcome.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum DoctorCheckStatus {
     Ok,
@@ -300,4 +300,47 @@ impl std::fmt::Display for DoctorCheckStatus {
 pub(crate) struct DoctorCheck {
     pub(crate) status: DoctorCheckStatus,
     pub(crate) message: String,
+}
+
+impl DoctorCheckStatus {
+    /// Return the canonical wire spelling.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Failed => "failed",
+            Self::Skipped => "skip",
+        }
+    }
+}
+
+impl serde::Serialize for DoctorCheckStatus {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify the canonical spelling and round-trip of every DoctorCheckStatus variant.
+    #[test]
+    fn doctor_check_status_spells_itself_once() {
+        for (value, expected) in [
+            (DoctorCheckStatus::Ok, "ok"),
+            (DoctorCheckStatus::Failed, "failed"),
+            (DoctorCheckStatus::Skipped, "skip"),
+        ] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<DoctorCheckStatus>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+    }
 }

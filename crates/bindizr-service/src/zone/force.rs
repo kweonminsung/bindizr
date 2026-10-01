@@ -40,7 +40,7 @@ async fn force_increment_serial_by_name(
     zone_name: &ZoneName,
     attribution: &ChangeAttribution,
 ) -> Result<Zone, ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "Failed to force increment zone serial").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to force increment zone serial").await?;
 
     let apply_result = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
@@ -56,7 +56,7 @@ async fn force_increment_serial_by_name(
         .await
         .map_err(|e| {
             log::error!("Failed to force increment zone serial: {}", e);
-            ServiceError::internal("Failed to force increment zone serial")
+            ServiceError::internal_with_source("failed to force increment zone serial", e)
         })?;
 
         // The SOA rdata carries the serial, so its signature must follow
@@ -69,7 +69,7 @@ async fn force_increment_serial_by_name(
     .await;
 
     let updated_zone =
-        transaction::finish_tx(tx, apply_result, "Failed to force increment zone serial").await?;
+        transaction::finish_tx(tx, apply_result, "failed to force increment zone serial").await?;
 
     log::info!(
         "event=zone_force_serial zone={} new_serial={} zone_id={}",

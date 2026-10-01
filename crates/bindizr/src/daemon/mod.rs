@@ -57,23 +57,23 @@ pub(crate) enum DaemonError {
     ServeSocket(#[from] ServeSocketError),
     #[error(transparent)]
     Api(#[from] StartApiError),
-    #[error("Failed to listen for {signal}: {source}")]
+    #[error("failed to listen for {signal}: {source}")]
     Signal {
         signal: &'static str,
         #[source]
         source: std::io::Error,
     },
-    #[error("The {name} stopped")]
+    #[error("the {name} stopped")]
     ServerStopped { name: &'static str },
-    #[error("The {name} failed: {source}")]
+    #[error("the {name} failed: {source}")]
     ServerFailed {
         name: &'static str,
         #[source]
         source: tokio::task::JoinError,
     },
-    #[error("Failed to locate the bindizr executable")]
+    #[error("failed to locate the bindizr executable")]
     ExecutableUnknown,
-    #[error("Failed to re-execute bindizr: {0}")]
+    #[error("failed to re-execute bindizr: {0}")]
     Reexec(#[source] std::io::Error),
 }
 
@@ -256,6 +256,7 @@ pub(crate) async fn bootstrap(config_file: Option<&str>) -> Result<(), DaemonErr
 }
 
 /// Why the lifecycle loop ended.
+#[derive(Debug)]
 enum RunResult {
     Stop,
     Restart,

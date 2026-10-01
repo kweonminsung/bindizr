@@ -1,6 +1,8 @@
 //! A zone's name, canonical by construction.
 
-use super::{ParseNameError, classify_domain_label, has_whitespace_or_control, to_fqdn};
+use super::{
+    LabelCharset, ParseNameError, classify_domain_label, has_whitespace_or_control, to_fqdn,
+};
 use crate::dns::name::MAX_DOMAIN_LEN;
 
 /// A zone's name as rows store it: lowercase, no trailing dot, LDH labels.
@@ -27,7 +29,7 @@ impl ZoneName {
             return Err(ParseNameError::TooLong);
         }
         for label in bare.split('.') {
-            classify_domain_label(label, false)?;
+            classify_domain_label(label, LabelCharset::Ldh)?;
         }
 
         Ok(Self(bare.to_ascii_lowercase()))

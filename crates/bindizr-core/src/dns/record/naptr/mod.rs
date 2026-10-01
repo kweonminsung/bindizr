@@ -49,7 +49,7 @@ impl<'a> NaptrRecordValue<'a> {
     }
 
     /// The wire-format RDATA of a stored value (RFC 3403, Section 4.1).
-    pub(crate) fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
+    pub fn to_rdata(&self) -> Result<Rdata, EncodeRdataError> {
         let mut rdata = Vec::with_capacity(4);
         rdata.extend_from_slice(&self.order.to_be_bytes());
         rdata.extend_from_slice(&self.preference.to_be_bytes());
@@ -98,7 +98,7 @@ impl<'a> NaptrRecordValue<'a> {
 
     /// A record decoded off the wire, whose character-strings are still the raw
     /// octets of RFC 3403, Section 4.1.
-    pub(crate) fn from_wire(
+    pub fn from_wire(
         order: u16,
         preference: u16,
         flags: &[u8],

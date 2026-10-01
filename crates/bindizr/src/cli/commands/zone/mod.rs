@@ -25,7 +25,7 @@ use crate::{
 };
 
 /// Subcommands for managing zones.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ZoneCommand {
     /// Create a zone
     #[command(after_help = "\
@@ -330,7 +330,7 @@ Examples:
 /// How `zone import` reconciles parsed records with the records already in the
 /// zone. Mirrors the service-layer `ImportMode`; serialized as its lowercase
 /// wire name.
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
 pub(crate) enum ImportMode {
     /// Add parsed records; records already present are left untouched
     Append,
@@ -352,7 +352,7 @@ impl From<ImportMode> for types::ImportMode {
 }
 
 /// Arguments for the `zone notify` subcommand.
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NotifyArgs {
     /// The name of the zone; omit it to notify every zone
     #[arg(value_name = "ZONE_NAME")]
@@ -541,7 +541,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 request: ImportZoneRequest {
                     content,
                     from_server,
-                    mode: mode.into(),
+                    mode: types::ImportMode::from(mode).as_str().to_owned(),
                     dry_run,
                     skip_unsupported,
                     create,

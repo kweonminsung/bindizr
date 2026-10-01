@@ -14,7 +14,7 @@ use crate::{
 
 /// A derived row's rdata is wire bytes and its type a number, so only the
 /// name half of a search reaches it, and value and priority not at all.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DnssecRecordFilter {
     /// Matched as in `RecordFilter`.
     pub zone_name: Option<ZoneName>,

@@ -108,7 +108,7 @@ impl RecordRow {
         RecordRow {
             id: record.id,
             name: record.name.clone(),
-            record_type: record.record_type.clone(),
+            record_type: record.record_type.to_string(),
             value: record.value.to_text(),
             ttl: record.ttl,
             priority: record.priority,
@@ -295,7 +295,7 @@ impl From<&VersionRecordResponse> for VersionRecordRow {
     fn from(record: &VersionRecordResponse) -> Self {
         VersionRecordRow {
             name: record.name.clone(),
-            record_type: record.record_type.clone(),
+            record_type: record.record_type.to_string(),
             value: display_record_value(&record.value),
             ttl: record.ttl,
             priority: record.priority,

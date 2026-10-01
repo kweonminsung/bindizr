@@ -10,15 +10,14 @@ use bindizr_core::{
         zone::ZoneId,
     },
 };
-use chrono::Utc;
-
-use super::{
-    change_set::{
-        ZoneChangeSet, ZoneOps, adjust_record_set, group_ops_by_zone, parse_changes_request,
-        parse_record_set_op,
-    },
-    policy::{authoritative_zone, normalize_lookup_name},
+use change_set::{
+    ZoneChangeSet, ZoneOps, adjust_record_set, group_ops_by_zone, parse_changes_request,
+    parse_record_set_op,
 };
+use chrono::Utc;
+use policy::{authoritative_zone, normalize_lookup_name};
+
+use super::*;
 use crate::{
     authorization::Caller,
     error::ErrorCode,
@@ -377,7 +376,7 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
     assert_eq!(err.code(), ErrorCode::ZoneNotFound);
     assert!(
         err.to_string()
-            .contains("No zone is authoritative for 'api.internal.example.com'"),
+            .contains("no zone is authoritative for 'api.internal.example.com'"),
         "{err}"
     );
 }

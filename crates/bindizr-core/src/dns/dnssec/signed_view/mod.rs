@@ -95,7 +95,7 @@ pub enum SigningPass {
     Full,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SignedViewParams<'a> {
     pub zone: &'a Zone,
     pub new_serial: Serial,
@@ -303,7 +303,7 @@ impl SignedViewParams<'_> {
         }
 
         // Diff the complete derived plane so unchanged rows keep their storage identity.
-        Ok(SignedViewDiff::from_planes(self.prev, new_rows))
+        Ok(SignedViewDiff::compute(self.prev, new_rows))
     }
 }
 
@@ -322,7 +322,7 @@ impl SignedViewDiff {
     }
 
     /// Compare derived record identities to find additions and removals.
-    fn from_planes(prev: &[DnssecRecord], new_rows: Vec<DnssecRecord>) -> SignedViewDiff {
+    fn compute(prev: &[DnssecRecord], new_rows: Vec<DnssecRecord>) -> SignedViewDiff {
         let mut remaining: BTreeMap<DnssecRecordKey, Vec<DnssecRecord>> = BTreeMap::new();
         for record in prev {
             remaining

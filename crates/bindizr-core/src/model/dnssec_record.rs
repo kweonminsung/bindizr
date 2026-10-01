@@ -83,7 +83,20 @@ pub enum ParseDnssecRecordTypeError {
 
 /// The record types the signer derives; rows store the wire record type number
 /// (RFC 4034).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    utoipa::ToSchema,
+)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum DnssecRecordType {
     Rrsig,
     Nsec,

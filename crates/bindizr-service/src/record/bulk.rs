@@ -34,7 +34,7 @@ use crate::{
 };
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY.
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 struct BulkTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,
@@ -207,7 +207,7 @@ pub async fn create_bulk(
 
     let mut timings = BulkTimings::default();
 
-    let mut tx = transaction::begin_tx(cx, "Failed to create records").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to create records").await?;
 
     let apply_result = async {
         let t = Instant::now();
@@ -251,8 +251,9 @@ pub async fn create_bulk(
             Ok(records) => records,
             Err(e) => {
                 log::error!("Failed to load zone records: {}", e);
-                return Err(ServiceError::internal(
-                    "Failed to create records".to_string(),
+                return Err(ServiceError::internal_with_source(
+                    "failed to create records",
+                    e,
                 ));
             }
         };
@@ -363,7 +364,7 @@ pub async fn create_bulk(
     .await;
 
     let (created_records, zone_name, diff) =
-        transaction::finish_tx(tx, apply_result, "Failed to create records").await?;
+        transaction::finish_tx(tx, apply_result, "failed to create records").await?;
 
     log::info!(
         "event=record_bulk_create zone={} count={} dry_run={}",

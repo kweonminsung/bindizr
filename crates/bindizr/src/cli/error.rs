@@ -11,12 +11,14 @@ use crate::{
 
 /// Error surfaced to the CLI user: the daemon's message plus, when the daemon
 /// sent a machine-readable code, an actionable hint derived from it.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Error)]
 #[error("{message}")]
 pub(crate) struct CliError {
     pub(crate) code: Option<ErrorCode>,
     failure: Failure,
     pub(crate) message: String,
+    #[source]
+    source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
 
 /// The kinds of failure that exit differently.
@@ -35,7 +37,7 @@ enum Failure {
 impl From<RenderOutputError> for CliError {
     /// Report the rendering failure as a failed request.
     fn from(err: RenderOutputError) -> Self {
-        CliError::request(err)
+        CliError::request_with_source(err.to_string(), err)
     }
 }
 
@@ -43,7 +45,7 @@ impl From<RenderOutputError> for CliError {
 impl From<ReadInputError> for CliError {
     /// Report the read failure as a failed request.
     fn from(err: ReadInputError) -> Self {
-        CliError::request(err)
+        CliError::request_with_source(err.to_string(), err)
     }
 }
 
@@ -62,7 +64,7 @@ impl From<DaemonError> for CliError {
         if err.is_configuration() {
             CliError::configuration(err)
         } else {
-            CliError::request(err)
+            CliError::request_with_source(err.to_string(), err)
         }
     }
 }
@@ -84,6 +86,20 @@ impl CliError {
             code: None,
             failure: Failure::Request,
             message: message.to_string(),
+            source: None,
+        }
+    }
+
+    /// Retain the local failure beneath a user-facing operation message.
+    pub(crate) fn request_with_source(
+        message: impl fmt::Display,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            code: None,
+            failure: Failure::Request,
+            message: message.to_string(),
+            source: Some(Box::new(source)),
         }
     }
 
@@ -93,26 +109,31 @@ impl CliError {
             code,
             failure: Failure::Request,
             message,
+            source: None,
         }
     }
 
     /// The daemon could not be reached. Exits distinctly so a script can
     /// retry, where a rejected request would fail the same way again.
-    pub(crate) fn daemon_unreachable(message: impl fmt::Display) -> Self {
+    pub(crate) fn daemon_unreachable(
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
         CliError {
             code: None,
             failure: Failure::Unreachable,
-            message: message.to_string(),
+            message: source.to_string(),
+            source: Some(Box::new(source)),
         }
     }
 
     /// The configuration is unusable. Exits distinctly so a supervisor can
     /// stop retrying a start that will fail the same way every time.
-    pub(crate) fn configuration(message: impl fmt::Display) -> Self {
+    pub(crate) fn configuration(source: impl std::error::Error + Send + Sync + 'static) -> Self {
         CliError {
             code: None,
             failure: Failure::Configuration,
-            message: message.to_string(),
+            message: source.to_string(),
+            source: Some(Box::new(source)),
         }
     }
 
@@ -265,6 +286,7 @@ mod tests {
                 code: Some(code),
                 failure: Failure::Request,
                 message: String::new(),
+                source: None,
             }
             .exit_code()
         };
@@ -275,7 +297,7 @@ mod tests {
         assert_eq!(code(ErrorCode::InvalidInput), EXIT_FAILURE);
         // An unreachable daemon sends no code at all, and a script retries it.
         assert_eq!(
-            CliError::daemon_unreachable("connection refused").exit_code(),
+            CliError::daemon_unreachable(std::io::Error::other("connection refused")).exit_code(),
             EXIT_UNAVAILABLE
         );
         assert_eq!(
@@ -285,7 +307,7 @@ mod tests {
         // A supervisor restarts a start that failed on a late database, and
         // gives up on one that failed on the configuration file.
         assert_eq!(
-            CliError::configuration("missing field `mname`").exit_code(),
+            CliError::configuration(std::io::Error::other("missing field `mname`")).exit_code(),
             EXIT_CONFIG
         );
     }
@@ -297,5 +319,21 @@ mod tests {
         // unit, where renumbering would mean restarting a hopeless daemon.
         assert_eq!(EXIT_CONFIG, 6, "systemd prints 6 as NOTCONFIGURED");
         assert_eq!(EXIT_UNAVAILABLE, 7, "systemd prints 7 as NOTRUNNING");
+    }
+    /// Local rendering and transport failures retain an inspectable cause.
+    #[test]
+    fn local_failure_preserves_the_source() {
+        use std::error::Error;
+        let error = CliError::request_with_source(
+            "failed to read the response",
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "socket closed"),
+        );
+        assert_eq!(error.exit_code(), EXIT_FAILURE);
+        let source = error
+            .source()
+            .unwrap()
+            .downcast_ref::<std::io::Error>()
+            .unwrap();
+        assert_eq!(source.kind(), std::io::ErrorKind::UnexpectedEof);
     }
 }

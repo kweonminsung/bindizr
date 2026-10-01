@@ -92,12 +92,11 @@ impl Record {
     }
 }
 
-/// The record set a record belongs to: its owner name and type, as text, the
-/// way a diff entry and an ExternalDNS record are named.
+/// The owner name and type identifying a record set.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RecordSetKey {
     pub name: String,
-    pub record_type: String,
+    pub record_type: RecordType,
 }
 
 /// A record without its row identity: what a [`Record`] carries besides its
@@ -142,14 +141,14 @@ impl RecordData {
 /// A [`Record`] joined with the name of its owning zone.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RecordWithZone {
-    id: RecordId,
+    pub id: RecordId,
     pub name: OwnerName,
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
-    value: String,
-    ttl: Ttl,
-    priority: Option<i32>,
-    created_at: DateTime<Utc>,
+    pub value: String,
+    pub ttl: Ttl,
+    pub priority: Option<i32>,
+    pub created_at: DateTime<Utc>,
     pub zone_id: ZoneId,
     pub zone_name: ZoneName,
 }
@@ -186,7 +185,10 @@ impl RecordWithZone {
 }
 
 /// The record types bindizr stores.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum RecordType {
     A,
     Aaaa,
@@ -215,7 +217,7 @@ impl std::fmt::Display for RecordType {
 /// wire type.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseRecordTypeError {
-    #[error("Invalid record type: {0}")]
+    #[error("invalid record type: {0}")]
     Unknown(String),
     #[error("unsupported record type: {0}")]
     Unsupported(Rtype),
@@ -628,3 +630,17 @@ fn display_last_name_field(value: &str, field_count: usize) -> String {
 
 #[cfg(test)]
 mod tests;
+
+impl Ord for RecordType {
+    /// Preserve mnemonic ordering in record lists and diffs.
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl PartialOrd for RecordType {
+    /// Compare record types by their canonical mnemonic.
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}

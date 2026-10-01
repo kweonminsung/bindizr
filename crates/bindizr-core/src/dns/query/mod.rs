@@ -191,17 +191,17 @@ pub struct TransferRecord {
 
 /// Validate one AXFR response message and collect every answer record; the
 /// caller assembles the stream (SOA-delimited per RFC 5936, Section 2.2).
-/// The `first` message must echo the question and be authoritative; later
+/// The first message must echo the question and be authoritative; later
 /// ones may omit the question (RFC 5936, Sections 2.2.1 and 2.2.2).
 pub fn extract_transfer_records(
     query_id: u16,
     qname: &Name<Vec<u8>>,
-    first: bool,
+    position: TransferMessagePosition,
     response: &[u8],
 ) -> Result<Vec<TransferRecord>, ReadResponseError> {
     use domain::rdata::AllRecordData;
 
-    let message = if first {
+    let message = if position == TransferMessagePosition::First {
         parse_authoritative_answer(query_id, qname, Rtype::AXFR, response)?
     } else if parse_response(query_id, response)?
         .header_counts()
@@ -401,3 +401,10 @@ fn validate_parent_soa(
 
 #[cfg(test)]
 mod tests;
+
+/// A transfer message's position determines which header checks apply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransferMessagePosition {
+    First,
+    Following,
+}

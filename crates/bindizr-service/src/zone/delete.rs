@@ -20,7 +20,7 @@ pub async fn delete(
 ) -> Result<DeleteZoneResponse, ServiceError> {
     caller.authorize_global("delete zones")?;
 
-    let mut tx = transaction::begin_tx(cx, "Failed to delete zone").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to delete zone").await?;
 
     let apply_result: Result<_, ServiceError> = async {
         // Locked lookup so a raced double-delete reports 404, not success.
@@ -53,14 +53,14 @@ pub async fn delete(
             .await
             .map_err(|e| {
                 log::error!("Failed to delete zone: {}", e);
-                ServiceError::internal("Failed to delete zone")
+                ServiceError::internal_with_source("failed to delete zone", e)
             })?;
         log::info!("event=zone_delete zone={} zone_id={}", zone.name, zone.id);
         Ok(response)
     }
     .await;
 
-    let response = transaction::finish_tx(tx, apply_result, "Failed to delete zone").await?;
+    let response = transaction::finish_tx(tx, apply_result, "failed to delete zone").await?;
 
     // Send catalog NOTIFY so secondaries drop the removed zone
     let config = cx.config();

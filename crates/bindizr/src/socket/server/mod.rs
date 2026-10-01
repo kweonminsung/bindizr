@@ -53,14 +53,14 @@ pub(crate) enum BindSocketError {
     #[error("{0}")]
     InUse(#[source] io::Error),
     /// Every candidate path failed, each with its reason.
-    #[error("Failed to bind the daemon Unix socket ({})", failures.iter().map(|(path, e)| format!("'{path}': {e}")).collect::<Vec<_>>().join("; "))]
+    #[error("failed to bind the daemon Unix socket ({})", failures.iter().map(|(path, e)| format!("'{path}': {e}")).collect::<Vec<_>>().join("; "))]
     Unavailable { failures: Vec<(String, io::Error)> },
 }
 
 /// Why the bound socket could not be served.
 #[derive(Debug, Error)]
 pub(crate) enum ServeSocketError {
-    #[error("Failed to read the daemon's uid: {0}")]
+    #[error("failed to read the daemon's uid: {0}")]
     ReadUid(#[source] io::Error),
 }
 
@@ -107,7 +107,7 @@ async fn handle_client(socket_cx: &SocketContext, stream: UnixStream) {
             Err(e) => {
                 log::error!("Failed to parse command: {}", e);
                 encode_error(&ServiceError::invalid_input(format!(
-                    "Failed to parse command: {}",
+                    "failed to parse command: {}",
                     e
                 )))
             }
@@ -472,7 +472,7 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
 fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, ServiceError>) -> String {
     match result {
         Ok(response) => serde_json::to_string(&response).unwrap_or_else(|_| {
-            encode_error(&ServiceError::internal("Failed to serialize response"))
+            encode_error(&ServiceError::internal("failed to serialize response"))
         }),
         Err(e) => encode_error(&e),
     }

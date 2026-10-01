@@ -18,7 +18,7 @@ use crate::{
 
 /// Subcommands for managing DNSSEC policies, the named signing-parameter
 /// bundles zones sign under.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DnssecPolicyCommand {
     /// Create a DNSSEC policy (omitted options take the built-in defaults)
     #[command(after_help = "\

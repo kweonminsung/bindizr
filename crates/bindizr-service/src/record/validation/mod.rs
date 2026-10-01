@@ -88,7 +88,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
         priority,
     ) {
         return Err(ServiceError::record_conflict(format!(
-            "Record '{}' {} '{}' already exists in this zone",
+            "record '{}' {} '{}' already exists in this zone",
             stored_name, record_type, value
         )));
     }
@@ -105,7 +105,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
 
         if (adding_null_mx && has_existing_mx) || (!adding_null_mx && has_existing_null_mx) {
             return Err(ServiceError::record_conflict(format!(
-                "Null MX record for '{}' cannot coexist with other MX records",
+                "null MX record for '{}' cannot coexist with other MX records",
                 stored_name
             )));
         }
@@ -114,7 +114,7 @@ pub(crate) fn validate_record_add_constraints_normalized(
     if !records_at_name.is_empty() {
         if *record_type == RecordType::Cname {
             return Err(ServiceError::record_conflict(format!(
-                "Another record with name '{}' already exists in this zone, so CNAME cannot be used",
+                "another record with name '{}' already exists in this zone, so CNAME cannot be used",
                 stored_name
             )));
         }
@@ -210,7 +210,7 @@ pub(crate) async fn validate_add_tx(
             .await
             .map_err(|e| {
                 log::error!("Failed to load records: {}", e);
-                ServiceError::internal("Failed to load records")
+                ServiceError::internal_with_source("failed to load records", e)
             })?;
 
     if has_matching_rdata(records_at_name.iter(), record_type, value, priority) {

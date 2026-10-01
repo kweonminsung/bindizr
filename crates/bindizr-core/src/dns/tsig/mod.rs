@@ -117,6 +117,7 @@ pub(crate) fn signature_len(signer: &TransferSigner) -> usize {
 
 /// Store holding the one key the request names, or nothing when that key is
 /// unknown so validation yields the BADKEY error response.
+#[derive(Debug)]
 struct DbKeyStore(Option<Arc<Key>>);
 
 impl KeyStore for DbKeyStore {

@@ -207,7 +207,7 @@ async fn hidden_and_absent_zones_read_alike_whatever_the_spelling() {
     let absent_zone = app.zone_name("absent.com");
     for zone in [&hidden_zone, &absent_zone] {
         let spelled = format!("{}.", zone.to_uppercase());
-        let expected = json!(format!("Zone with name '{zone}' not found"));
+        let expected = json!(format!("zone with name '{zone}' not found"));
 
         let (status, body) = app
             .send_request(Method::GET, &format!("/zones/{spelled}"), None)
