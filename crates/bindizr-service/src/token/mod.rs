@@ -1,6 +1,8 @@
 //! Creates, lists, and revokes API tokens.
 
-use bindizr_core::model::api_token::TokenId;
+use std::collections::HashMap;
+
+use bindizr_core::model::{api_token::TokenId, role::RoleId, role_grant::Action};
 use chrono::{DateTime, Duration, Utc};
 use rand::{RngExt, distr::Alphanumeric};
 use ring::digest::{SHA256, digest};
@@ -11,6 +13,7 @@ use crate::{
     authorization::Caller,
     model::api_token::ApiToken,
     pagination::build_page,
+    role,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
     types::{CreateTokenRequest, GetTokenResponse, PageRequest, PaginatedResponse},
 };
@@ -23,15 +26,16 @@ pub(crate) fn hash_token(token: &str) -> String {
     hex::encode(digest(&SHA256, token.as_bytes()))
 }
 
-/// Create an API token; the secret comes back beside it, shown this once.
+/// Create an API token in the request's role; the secret is shown this once.
 pub async fn create(
     cx: &Context,
     caller: &Caller,
     request: &CreateTokenRequest,
-) -> Result<(ApiToken, String), ServiceError> {
-    caller.authorize_global("manage API tokens")?;
+) -> Result<(GetTokenResponse, String), ServiceError> {
+    caller.authorize_action(Action::AccessManage)?;
 
     let name = normalize_token_name(&request.name)?;
+    let role = role::lookup_by_name(cx, &request.role_name).await?;
     let description =
         normalize_description(request.description.as_deref(), ServiceError::invalid_input)?;
     let expires_at = normalize_expires_at(request.expires_in_days)?;
@@ -59,7 +63,7 @@ pub async fn create(
             name: name.clone(),
             token: token_hash,
             description,
-            is_global: request.global,
+            role_id: role.id,
             expires_at,
             created_at: Utc::now(),
             last_used_at: None,
@@ -71,12 +75,17 @@ pub async fn create(
         // backstop reads as the same conflict.
         if e.is_unique_violation() {
             ServiceError::token_conflict(&name)
+        } else if e.is_foreign_key_violation() {
+            ServiceError::role_not_found(&role.name)
         } else {
             e.into()
         }
     })?;
 
-    Ok((created, raw_token))
+    Ok((
+        GetTokenResponse::from_token(&created, &role.name),
+        raw_token,
+    ))
 }
 
 /// List all API tokens.
@@ -85,14 +94,33 @@ pub async fn list(
     caller: &Caller,
     page: PageRequest,
 ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
-    caller.authorize_global("manage API tokens")?;
+    caller.authorize_action(Action::AccessManage)?;
 
     let tokens = bindizr_db::api_token::list_all(cx.db()).await?;
+    let role_names: HashMap<RoleId, String> = bindizr_db::role::list_all(cx.db())
+        .await?
+        .into_iter()
+        .map(|role| (role.id, role.name))
+        .collect();
     build_page(
-        tokens.iter().map(GetTokenResponse::from).collect(),
+        tokens
+            .iter()
+            .map(|token| {
+                let role_name = role_names.get(&token.role_id).map_or("", String::as_str);
+                GetTokenResponse::from_token(token, role_name)
+            })
+            .collect(),
         page.limit,
         page.offset,
     )
+}
+
+/// Describe `token` with its role's name; any token may read itself.
+pub async fn get_self(cx: &Context, token: &ApiToken) -> Result<GetTokenResponse, ServiceError> {
+    let role = bindizr_db::role::get(cx.db(), token.role_id)
+        .await?
+        .ok_or_else(|| ServiceError::role_not_found(token.role_id))?;
+    Ok(GetTokenResponse::from_token(token, &role.name))
 }
 
 /// The number of API tokens, read for the daemon's startup hint.
@@ -103,7 +131,7 @@ pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
 /// Delete the API token with the given name, returning `NotFound` if it
 /// is absent.
 pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
-    caller.authorize_global("manage API tokens")?;
+    caller.authorize_action(Action::AccessManage)?;
 
     let token = lookup_by_name(cx, name).await?;
 
@@ -111,7 +139,7 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 }
 
 /// Load an API token by name or return a not-found error.
-pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceError> {
+async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceError> {
     bindizr_db::api_token::get_by_name(cx.db(), &normalize_token_name(name)?)
         .await?
         .ok_or_else(|| ServiceError::token_not_found(name))
@@ -145,8 +173,6 @@ fn normalize_expires_at(
     // Within the cap neither the duration nor the date can overflow.
     Ok(Some(Utc::now() + Duration::days(days)))
 }
-
-pub mod grant;
 
 #[cfg(test)]
 mod tests {

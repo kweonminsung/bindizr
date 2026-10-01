@@ -13,7 +13,7 @@ use bindizr_core::{
         name::has_whitespace_or_control,
         tsig::TsigSigningKey,
     },
-    model::{secondary::SecondaryId, tsig_key::TsigKeyId},
+    model::{role_grant::Action, secondary::SecondaryId, tsig_key::TsigKeyId},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -42,7 +42,7 @@ pub async fn create(
     caller: &Caller,
     request: &CreateSecondaryRequest,
 ) -> Result<GetSecondaryResponse, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryManage)?;
 
     let name = normalize_secondary_name(&request.name)?;
     let address = normalize_secondary_address(&request.address)?;
@@ -104,7 +104,7 @@ pub async fn list(
     caller: &Caller,
     page: PageRequest,
 ) -> Result<PaginatedResponse<GetSecondaryResponse>, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryRead)?;
 
     let secondaries = bindizr_db::secondary::list_all(cx.db()).await?;
     // One statement names every key rather than one per secondary.
@@ -137,7 +137,7 @@ pub async fn get(
     caller: &Caller,
     name: &str,
 ) -> Result<GetSecondaryResponse, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryRead)?;
     let secondary = lookup_by_name(cx, name).await?;
     build_response(cx, secondary).await
 }
@@ -150,7 +150,7 @@ pub async fn update(
     name: &str,
     request: UpdateSecondaryRequest,
 ) -> Result<GetSecondaryResponse, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryManage)?;
 
     let name = normalize_secondary_name(name)?;
     let address = request
@@ -227,7 +227,7 @@ pub async fn check(
     caller: &Caller,
     name: &str,
 ) -> Result<SecondaryCheckResponse, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryManage)?;
     let secondary = lookup_by_name(cx, name).await?;
 
     let config = cx.config();
@@ -275,7 +275,7 @@ pub async fn list_transfers(
     name: &str,
     filter: GetSecondaryTransfersFilter,
 ) -> Result<SecondaryTransfersResponse, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryRead)?;
     let secondary = lookup_by_name(cx, name).await?;
     let limit = normalize_page_limit(filter.limit)? as usize;
     let zone_filter = filter
@@ -325,7 +325,7 @@ async fn resolved_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
 
 /// Delete a secondary by name.
 pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryManage)?;
 
     let secondary = lookup_by_name(cx, name).await?;
     Ok(bindizr_db::secondary::delete(cx.db(), secondary.id).await?)

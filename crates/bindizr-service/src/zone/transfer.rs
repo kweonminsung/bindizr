@@ -8,8 +8,7 @@ use crate::{
     Context, Transaction,
     error::ServiceError,
     model::{dnssec_record::DnssecRecord, record::Record, tsig_key::TsigKey, zone::Zone},
-    transaction,
-    tsig_key::grant,
+    transaction, tsig_key,
 };
 
 /// The outcome of asking to transfer a zone: what may be read, or the answer
@@ -19,7 +18,7 @@ pub enum TransferAccess<T> {
     Granted(T),
     /// No enabled zone carries the name: NOTAUTH.
     NotAuth,
-    /// The key holds no grant over the whole zone: REFUSED, signed by it.
+    /// The key's role holds no `zone:transfer` reaching the zone: REFUSED, signed by it.
     Refused(String),
 }
 
@@ -83,8 +82,8 @@ pub async fn authorize_transfer_content_by_name(
     transaction::finish_tx(tx, result, "failed to load transfer content").await
 }
 
-/// Share-lock the enabled zone by name and, for a scoped key, the grants
-/// that must cover it whole.
+/// Share-lock the enabled zone by name and, for a signed request, the grants
+/// of the key's role that must permit the transfer.
 async fn authorize_transfer_tx(
     tx: &mut Transaction<'_>,
     zone_name: &ZoneName,
@@ -94,10 +93,10 @@ async fn authorize_transfer_tx(
         return Ok(TransferAccess::NotAuth);
     };
     if let Some(key) = key
-        && !grant::authorize_whole_zone_tx(tx, &zone, key).await?
+        && !tsig_key::authorize_transfer_tx(tx, &zone, key).await?
     {
         return Ok(TransferAccess::Refused(format!(
-            "TSIG key '{}' is not granted zone '{}' whole",
+            "TSIG key '{}' is not granted 'zone:transfer' in zone '{}'",
             key.name, zone.name
         )));
     }

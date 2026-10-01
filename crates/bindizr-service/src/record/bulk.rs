@@ -5,7 +5,7 @@ use bindizr_core::{
         Serial, Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::{record::RecordId, zone::ZoneId},
+    model::{record::RecordId, role_grant::Action, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -223,6 +223,7 @@ pub async fn create_bulk(
                 normalize_record_owner_name(&p.owner_name, &zone.name)
                     .ok()
                     .map(|name| RecordWrite {
+                        action: Action::RecordCreate,
                         relative_name: name,
                         record_type: Some(&p.record_type),
                     })

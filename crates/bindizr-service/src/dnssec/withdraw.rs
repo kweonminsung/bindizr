@@ -1,7 +1,10 @@
 //! The RFC 8078 DS withdrawal: publishing the delete CDS/CDNSKEY pair that
 //! asks a CDS-consuming parent to drop the zone's DS, and taking it back.
 
-use bindizr_core::dns::{dnssec::SigningPass, name::ZoneName};
+use bindizr_core::{
+    dns::{dnssec::SigningPass, name::ZoneName},
+    model::role_grant::Action,
+};
 use bindizr_db::LockLevel;
 
 use super::status::build_status_tx;
@@ -16,11 +19,16 @@ pub async fn withdraw(
     caller: &Caller,
     zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
-
     let mut tx = transaction::begin_tx(cx, "failed to withdraw the parent DS").await?;
     let result = async {
-        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let signed = super::get_signed_zone_tx(
+            &mut tx,
+            caller,
+            Action::DnssecManage,
+            zone_name,
+            LockLevel::Exclusive,
+        )
+        .await?;
         if bindizr_db::dnssec_withdrawal::get_tx(&mut tx, signed.zone.id)
             .await?
             .is_some()
@@ -65,11 +73,16 @@ pub async fn cancel_withdrawal(
     caller: &Caller,
     zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
-
     let mut tx = transaction::begin_tx(cx, "failed to cancel the DS withdrawal").await?;
     let result = async {
-        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let signed = super::get_signed_zone_tx(
+            &mut tx,
+            caller,
+            Action::DnssecManage,
+            zone_name,
+            LockLevel::Exclusive,
+        )
+        .await?;
         if bindizr_db::dnssec_withdrawal::get_tx(&mut tx, signed.zone.id)
             .await?
             .is_none()

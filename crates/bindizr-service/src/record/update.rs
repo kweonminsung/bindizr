@@ -3,7 +3,7 @@ use bindizr_core::{
         Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::{record::RecordId, zone::ZoneId},
+    model::{record::RecordId, role_grant::Action, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
 
@@ -255,18 +255,20 @@ async fn update_locked(
 
         let resolved = resolve(&zone, &existing_record)?;
 
-        // An update is a delete plus an add, so both the stored identity
-        // and the requested one must be granted.
+        // An update moves a record from its stored identity to the requested
+        // one, so `record:update` must reach both.
         caller
             .authorize_record_writes_tx(
                 &mut tx,
                 &zone,
                 &[
                     RecordWrite {
+                        action: Action::RecordUpdate,
                         relative_name: existing_record.name.clone(),
                         record_type: Some(&existing_record.record_type),
                     },
                     RecordWrite {
+                        action: Action::RecordUpdate,
                         relative_name: resolved.owner_name.clone(),
                         record_type: Some(&resolved.record_type),
                     },

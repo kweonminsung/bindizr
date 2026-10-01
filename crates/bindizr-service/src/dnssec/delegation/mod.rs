@@ -1,9 +1,12 @@
 //! The parent side of a signed zone: asking its nameservers for the DS.
 
-use bindizr_core::dns::{
-    dnssec::{DS_DIGEST_TYPES, KeyTag},
-    name::ZoneName,
-    query::DsRecordSet,
+use bindizr_core::{
+    dns::{
+        dnssec::{DS_DIGEST_TYPES, KeyTag},
+        name::ZoneName,
+        query::DsRecordSet,
+    },
+    model::role_grant::Action,
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -30,11 +33,16 @@ pub async fn check_ds(
     caller: &Caller,
     zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
-
     let mut tx = transaction::begin_read_tx(cx, "failed to check the parent DS").await?;
     let result: Result<_, ServiceError> = async {
-        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let signed = super::get_signed_zone_tx(
+            &mut tx,
+            caller,
+            Action::DnssecRead,
+            zone_name,
+            LockLevel::Shared,
+        )
+        .await?;
         let status = build_status_tx(
             &mut tx,
             &signed.zone,

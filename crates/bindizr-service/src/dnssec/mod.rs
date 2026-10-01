@@ -21,7 +21,7 @@ use bindizr_core::{
         dnssec::{SignedViewParams, SigningPass},
         name::ZoneName,
     },
-    model::{dnssec_record::DnssecRecordId, zone::ZoneId},
+    model::{dnssec_record::DnssecRecordId, role_grant::Action, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
@@ -41,6 +41,7 @@ pub use withdraw::{cancel_withdrawal, withdraw};
 
 use crate::{
     Context, Transaction,
+    authorization::Caller,
     error::ServiceError,
     model::{
         dnssec_key::DnssecKey,
@@ -144,14 +145,17 @@ async fn lookup_zone_policy_tx(
     })
 }
 
-/// Load the zone (locked at `lock_level`) together with its policy and
-/// signing keys; a zone with no keys reads as not DNSSEC-enabled.
-async fn lookup_signed_zone_tx(
+/// Load the zone (locked at `lock_level`), authorized for `action`, with its
+/// policy and keys; a zone with no keys reads as not DNSSEC-enabled.
+async fn get_signed_zone_tx(
     tx: &mut Transaction<'_>,
+    caller: &Caller,
+    action: Action,
     zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<SignedZone, ServiceError> {
     let zone = zone::lookup_by_name_tx(tx, zone_name, lock_level).await?;
+    caller.authorize_zone_action(action, &zone)?;
     let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
@@ -160,7 +164,7 @@ async fn lookup_signed_zone_tx(
     Ok(SignedZone { zone, policy, keys })
 }
 
-/// The scheduler's form of [`lookup_signed_zone_tx`]: `None` when the
+/// The scheduler's form of [`get_signed_zone_tx`]: `None` when the
 /// zone was deleted or unsigned since its id was listed.
 async fn find_signed_zone_by_id_tx(
     tx: &mut Transaction<'_>,

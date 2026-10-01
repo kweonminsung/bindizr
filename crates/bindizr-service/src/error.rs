@@ -2,7 +2,7 @@ use std::fmt;
 
 use bindizr_core::{
     dns::{Serial, dnssec::KeyTag},
-    model::{record::RecordId, token_grant::TokenGrantId, tsig_grant::TsigGrantId},
+    model::{record::RecordId, role_grant::RoleGrantId},
 };
 use thiserror::Error;
 
@@ -33,8 +33,10 @@ pub enum ErrorCode {
     TsigKeyNotFound,
     TsigKeyConflict,
     TsigKeyInUse,
-    TsigGrantNotFound,
-    TokenGrantNotFound,
+    RoleNotFound,
+    RoleConflict,
+    RoleInUse,
+    RoleGrantNotFound,
     DnssecAlreadyEnabled,
     DnssecNotEnabled,
     DnssecRolloverInProgress,
@@ -77,8 +79,10 @@ impl ErrorCode {
             ErrorCode::TsigKeyNotFound => "TSIG_KEY_NOT_FOUND",
             ErrorCode::TsigKeyConflict => "TSIG_KEY_CONFLICT",
             ErrorCode::TsigKeyInUse => "TSIG_KEY_IN_USE",
-            ErrorCode::TsigGrantNotFound => "TSIG_GRANT_NOT_FOUND",
-            ErrorCode::TokenGrantNotFound => "TOKEN_GRANT_NOT_FOUND",
+            ErrorCode::RoleNotFound => "ROLE_NOT_FOUND",
+            ErrorCode::RoleConflict => "ROLE_CONFLICT",
+            ErrorCode::RoleInUse => "ROLE_IN_USE",
+            ErrorCode::RoleGrantNotFound => "ROLE_GRANT_NOT_FOUND",
             ErrorCode::DnssecAlreadyEnabled => "DNSSEC_ALREADY_ENABLED",
             ErrorCode::DnssecNotEnabled => "DNSSEC_NOT_ENABLED",
             ErrorCode::DnssecRolloverInProgress => "DNSSEC_ROLLOVER_IN_PROGRESS",
@@ -150,9 +154,13 @@ pub enum ServiceError {
     #[error("{0}")]
     TsigKeyInUse(String),
     #[error("{0}")]
-    TsigGrantNotFound(String),
+    RoleNotFound(String),
     #[error("{0}")]
-    TokenGrantNotFound(String),
+    RoleConflict(String),
+    #[error("{0}")]
+    RoleInUse(String),
+    #[error("{0}")]
+    RoleGrantNotFound(String),
     #[error("{0}")]
     DnssecAlreadyEnabled(String),
     #[error("{0}")]
@@ -222,8 +230,10 @@ impl ServiceError {
             ServiceError::TsigKeyNotFound(_) => ErrorCode::TsigKeyNotFound,
             ServiceError::TsigKeyConflict(_) => ErrorCode::TsigKeyConflict,
             ServiceError::TsigKeyInUse(_) => ErrorCode::TsigKeyInUse,
-            ServiceError::TsigGrantNotFound(_) => ErrorCode::TsigGrantNotFound,
-            ServiceError::TokenGrantNotFound(_) => ErrorCode::TokenGrantNotFound,
+            ServiceError::RoleNotFound(_) => ErrorCode::RoleNotFound,
+            ServiceError::RoleConflict(_) => ErrorCode::RoleConflict,
+            ServiceError::RoleInUse(_) => ErrorCode::RoleInUse,
+            ServiceError::RoleGrantNotFound(_) => ErrorCode::RoleGrantNotFound,
             ServiceError::DnssecAlreadyEnabled(_) => ErrorCode::DnssecAlreadyEnabled,
             ServiceError::DnssecNotEnabled(_) => ErrorCode::DnssecNotEnabled,
             ServiceError::DnssecRolloverInProgress(_) => ErrorCode::DnssecRolloverInProgress,
@@ -407,24 +417,31 @@ impl ServiceError {
         ServiceError::TsigKeyConflict(format!("TSIG key with name '{}' already exists", name))
     }
 
-    /// Build an error explaining that grants still reference a TSIG key.
-    pub fn tsig_key_in_use(name: impl fmt::Display, grant_count: u64) -> Self {
-        ServiceError::TsigKeyInUse(format!(
-            "TSIG key '{}' still holds {} grant{}",
+    /// Build an error naming the missing role.
+    pub fn role_not_found(name: impl fmt::Display) -> Self {
+        ServiceError::RoleNotFound(format!("role with name '{}' not found", name))
+    }
+
+    /// Build an error for a role name already in use.
+    pub fn role_conflict(name: impl fmt::Display) -> Self {
+        ServiceError::RoleConflict(format!("role with name '{}' already exists", name))
+    }
+
+    /// Build an error explaining that credentials still authenticate into a role.
+    pub fn role_in_use(name: impl fmt::Display, tokens: u64, keys: u64) -> Self {
+        ServiceError::RoleInUse(format!(
+            "role '{}' is still held by {} API token{} and {} TSIG key{}",
             name,
-            grant_count,
-            if grant_count == 1 { "" } else { "s" }
+            tokens,
+            if tokens == 1 { "" } else { "s" },
+            keys,
+            if keys == 1 { "" } else { "s" }
         ))
     }
 
-    /// Build an error identifying the missing TSIG grant.
-    pub fn tsig_grant_not_found(id: TsigGrantId) -> Self {
-        ServiceError::TsigGrantNotFound(format!("TSIG grant with id '{}' not found", id))
-    }
-
-    /// Build an error identifying the missing token grant.
-    pub fn token_grant_not_found(id: TokenGrantId) -> Self {
-        ServiceError::TokenGrantNotFound(format!("token grant with id '{}' not found", id))
+    /// Build an error identifying the missing role grant.
+    pub fn role_grant_not_found(id: RoleGrantId) -> Self {
+        ServiceError::RoleGrantNotFound(format!("role grant with id '{}' not found", id))
     }
 
     /// Build an error for enabling DNSSEC on an already signed zone.
@@ -603,8 +620,10 @@ mod tests {
             (ErrorCode::TsigKeyNotFound, "TSIG_KEY_NOT_FOUND"),
             (ErrorCode::TsigKeyConflict, "TSIG_KEY_CONFLICT"),
             (ErrorCode::TsigKeyInUse, "TSIG_KEY_IN_USE"),
-            (ErrorCode::TsigGrantNotFound, "TSIG_GRANT_NOT_FOUND"),
-            (ErrorCode::TokenGrantNotFound, "TOKEN_GRANT_NOT_FOUND"),
+            (ErrorCode::RoleNotFound, "ROLE_NOT_FOUND"),
+            (ErrorCode::RoleConflict, "ROLE_CONFLICT"),
+            (ErrorCode::RoleInUse, "ROLE_IN_USE"),
+            (ErrorCode::RoleGrantNotFound, "ROLE_GRANT_NOT_FOUND"),
             (ErrorCode::DnssecAlreadyEnabled, "DNSSEC_ALREADY_ENABLED"),
             (ErrorCode::DnssecNotEnabled, "DNSSEC_NOT_ENABLED"),
             (

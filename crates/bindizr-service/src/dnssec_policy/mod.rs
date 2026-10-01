@@ -2,7 +2,10 @@
 //! Partial updates lock the policy row; creates and deletes rely on constraints.
 //! Zone signing consumes these policies in `dnssec`.
 
-use bindizr_core::model::dnssec_policy::{Days, PolicyId};
+use bindizr_core::model::{
+    dnssec_policy::{Days, PolicyId},
+    role_grant::Action,
+};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
@@ -36,7 +39,7 @@ pub async fn create(
     caller: &Caller,
     request: CreateDnssecPolicyRequest,
 ) -> Result<DnssecPolicy, ServiceError> {
-    caller.authorize_global("manage DNSSEC policies")?;
+    caller.authorize_action(Action::DnssecManage)?;
 
     let name = normalize_policy_name(&request.name)?;
     let algorithm = match request.algorithm.as_deref() {
@@ -102,7 +105,7 @@ pub async fn list(
     caller: &Caller,
     page: PageRequest,
 ) -> Result<PaginatedResponse<GetDnssecPolicyResponse>, ServiceError> {
-    caller.authorize_global("manage DNSSEC policies")?;
+    caller.authorize_action(Action::DnssecRead)?;
 
     let policies = bindizr_db::dnssec_policy::list_all(cx.db()).await?;
     build_page(
@@ -114,7 +117,7 @@ pub async fn list(
 
 /// Load a named DNSSEC policy for an authorized caller.
 pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<DnssecPolicy, ServiceError> {
-    caller.authorize_global("manage DNSSEC policies")?;
+    caller.authorize_action(Action::DnssecRead)?;
 
     lookup_by_name(cx, name).await
 }
@@ -137,7 +140,7 @@ pub async fn update(
     name: &str,
     request: UpdateDnssecPolicyRequest,
 ) -> Result<DnssecPolicy, ServiceError> {
-    caller.authorize_global("manage DNSSEC policies")?;
+    caller.authorize_action(Action::DnssecManage)?;
     let name = normalize_policy_name(name)?;
 
     // Read and write under the row lock, or two partial updates would
@@ -181,7 +184,7 @@ pub async fn update(
 /// Delete a policy by name; refused for the built-in `default` and while
 /// any zone signs under it.
 pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
-    caller.authorize_global("manage DNSSEC policies")?;
+    caller.authorize_action(Action::DnssecManage)?;
 
     let policy = lookup_by_name(cx, name).await?;
     // `enable` and `keys import` fall back to it by name.

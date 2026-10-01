@@ -2,7 +2,10 @@
 
 use std::fmt::Write as _;
 
-use bindizr_core::dns::name::{ZoneName, to_fqdn};
+use bindizr_core::{
+    dns::name::{ZoneName, to_fqdn},
+    model::role_grant::Action,
+};
 use bindizr_db::LockLevel;
 
 use crate::{
@@ -27,7 +30,7 @@ pub async fn export(
     let mut tx = transaction::begin_read_tx(cx, "failed to export zone").await?;
     let load_result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-        caller.authorize_zone_unrestricted(&zone)?;
+        caller.authorize_zone_unrestricted(Action::RecordRead, &zone)?;
         let records = bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let derived = if view == ZoneView::Signed {
             bindizr_db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?
