@@ -9,13 +9,18 @@ mod update;
 mod validation;
 
 pub use bulk::create_bulk;
-pub(crate) use bulk::{create_with_changes_tx, delete_with_changes_tx, update_with_changes_tx};
+pub(crate) use bulk::{
+    PreparedRecord, create_with_changes_tx, delete_with_changes_tx, parse_record_request,
+    update_with_changes_tx,
+};
 pub use create::create;
 pub use delete::{delete, delete_matching};
 pub use get::{count_all, get_with_zone, list_with_zone_by_filter};
 pub use import::import_zone;
 pub use update::{update, update_by_name};
-pub(crate) use validation::{AddResult, validate_add_tx, validate_record_name_in_zone};
+pub(crate) use validation::{
+    AddResult, normalize_record_owner_name, validate_add_tx, validate_record_name_in_zone,
+};
 
 use crate::{
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},

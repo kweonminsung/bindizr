@@ -130,10 +130,20 @@ pub struct CreateZoneRequest {
     /// Free-text note for operators, at most 255 characters.
     #[schema(example = "customer A, migrated 2026-01")]
     pub description: Option<String>,
+    /// Start the zone with an apex NS record naming the SOA MNAME; false
+    /// leaves every NS record to the caller.
+    #[serde(default = "default_apex_ns")]
+    #[schema(example = true)]
+    pub apex_ns: bool,
     /// Validate and report the change without writing it.
     #[serde(default)]
     #[schema(example = false)]
     pub dry_run: bool,
+}
+
+/// Create the apex NS record when a request leaves the choice out.
+fn default_apex_ns() -> bool {
+    true
 }
 
 /// Query filters and pagination for listing zones.

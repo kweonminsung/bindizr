@@ -3990,6 +3990,12 @@ components:
       - mname
       - rname
       properties:
+        apex_ns:
+          type: boolean
+          description: |-
+            Start the zone with an apex NS record naming the SOA MNAME; false
+            leaves every NS record to the caller.
+          example: true
         default_ttl:
           type:
           - integer
