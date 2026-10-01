@@ -4026,6 +4026,7 @@ components:
           description: |-
             Start the zone with an apex NS record naming the SOA MNAME; false
             leaves every NS record to the caller.
+          default: true
           example: true
         default_ttl:
           type:
@@ -5033,6 +5034,13 @@ components:
       enum:
       - healthy
       - unhealthy
+    ImportMode:
+      type: string
+      description: How parsed records are reconciled with the records already in the zone.
+      enum:
+      - append
+      - upsert
+      - replace
     ImportSummary:
       type: object
       description: |-
@@ -5108,10 +5116,9 @@ components:
             from over AXFR; its SOA and DNSSEC-derived records are dropped.
           example: 192.0.2.1:53
         mode:
-          type: string
+          $ref: '#/components/schemas/ImportMode'
           description: 'Reconciliation mode: `append` (default), `upsert`, or `replace`.'
           default: append
-          example: append
         skip_unsupported:
           type: boolean
           description: |-

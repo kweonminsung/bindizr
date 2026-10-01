@@ -35,7 +35,7 @@ pub struct ImportZoneRequest {
     pub from_server: Option<String>,
     /// Reconciliation mode: `append` (default), `upsert`, or `replace`.
     #[serde(default = "default_import_mode")]
-    #[schema(default = "append", example = "append")]
+    #[schema(value_type = ImportMode, default = "append", example = "append")]
     pub mode: String,
     /// When true, parse and validate without applying any change.
     #[serde(default)]
