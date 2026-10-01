@@ -1,4 +1,4 @@
-use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::{api_token::TokenId, role::RoleId};
 use chrono::Utc;
 use sqlx::{MySql, Pool};
 
@@ -14,14 +14,14 @@ pub(crate) async fn create(
     let now = Utc::now();
     let result = sqlx::query(
         r#"
-        INSERT INTO api_tokens (name, token, description, is_global, expires_at, created_at)
+        INSERT INTO api_tokens (name, token, description, role_id, expires_at, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
     "#,
     )
     .bind(&token.name)
     .bind(&token.token)
     .bind(&token.description)
-    .bind(token.is_global)
+    .bind(token.role_id)
     .bind(token.expires_at)
     .bind(now)
     .execute(&mut *conn)
@@ -41,7 +41,7 @@ pub(crate) async fn get_by_name(
     let mut conn = pool.acquire().await?;
 
     let row = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens WHERE name = ?"
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE name = ?"
     )
     .bind(name)
     .fetch_optional(&mut *conn)
@@ -59,7 +59,7 @@ pub(crate) async fn get_by_token(
     let mut conn = pool.acquire().await?;
 
     let row = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens WHERE token = ?"
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE token = ?"
     )
     .bind(token)
     .fetch_optional(&mut *conn)
@@ -74,7 +74,7 @@ pub(crate) async fn list_all(pool: &Pool<MySql>) -> Result<Vec<ApiToken>, Databa
     let mut conn = pool.acquire().await?;
 
     let rows = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC, id DESC"
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC, id DESC"
     )
     .fetch_all(&mut *conn)
     .await
@@ -114,4 +114,19 @@ pub(crate) async fn delete(pool: &Pool<MySql>, id: TokenId) -> Result<(), Databa
         .await?;
 
     Ok(())
+}
+
+/// Count the API tokens authenticating into a role: the in-use check before a role delete.
+pub(crate) async fn count_by_role_id(
+    pool: &Pool<MySql>,
+    role_id: RoleId,
+) -> Result<u64, DatabaseError> {
+    let mut conn = pool.acquire().await?;
+
+    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM api_tokens WHERE role_id = ?")
+        .bind(role_id)
+        .fetch_one(&mut *conn)
+        .await?;
+
+    Ok(count as u64)
 }

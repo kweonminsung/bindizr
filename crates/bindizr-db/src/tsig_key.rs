@@ -1,4 +1,4 @@
-use bindizr_core::model::tsig_key::TsigKeyId;
+use bindizr_core::model::{role::RoleId, tsig_key::TsigKeyId};
 
 use crate::{Backend, Db, error::DatabaseError, model::tsig_key::TsigKey, mysql, postgres, sqlite};
 
@@ -44,5 +44,14 @@ pub async fn delete(db: &Db, id: TsigKeyId) -> Result<(), DatabaseError> {
         Backend::MySql(pool) => mysql::tsig_key::delete(pool, id).await,
         Backend::Postgres(pool) => postgres::tsig_key::delete(pool, id).await,
         Backend::Sqlite(pool) => sqlite::tsig_key::delete(pool, id).await,
+    }
+}
+
+/// Count the TSIG keys authenticating into a role: the in-use check before a role delete.
+pub async fn count_by_role_id(db: &Db, role_id: RoleId) -> Result<u64, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::tsig_key::count_by_role_id(pool, role_id).await,
+        Backend::Postgres(pool) => postgres::tsig_key::count_by_role_id(pool, role_id).await,
+        Backend::Sqlite(pool) => sqlite::tsig_key::count_by_role_id(pool, role_id).await,
     }
 }

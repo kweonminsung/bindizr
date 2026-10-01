@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use thiserror::Error;
 
+use crate::model::role::RoleId;
+
 /// A TSIG algorithm name outside the HMACs bindizr signs with.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("unsupported TSIG algorithm '{value}' (supported: {})", TsigAlgorithm::supported_names().join(", "))]
@@ -86,8 +88,8 @@ id_newtype!(
 );
 
 /// A TSIG credential whose wire `name` identifies it for updates and transfers.
-/// Rights come from [`super::tsig_grant::TsigGrant`]; `is_global`, fixed at creation,
-/// permits updates and transfers in every zone without grants.
+/// Rights come from its role's [`super::role_grant::RoleGrant`] rows; a key
+/// that only signs outbound NOTIFY names a role with none.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TsigKey {
     pub id: TsigKeyId,
@@ -95,7 +97,7 @@ pub struct TsigKey {
     #[sqlx(try_from = "String")]
     pub algorithm: TsigAlgorithm,
     pub secret: String,
-    pub is_global: bool,
+    pub role_id: RoleId,
     pub created_at: DateTime<Utc>,
 }
 

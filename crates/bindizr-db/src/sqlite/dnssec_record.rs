@@ -247,8 +247,8 @@ pub(crate) async fn list_by_filter_with_zone(
           )
           AND (
                 ? IS NULL
-                OR EXISTS (SELECT 1 FROM token_grants p
-                           WHERE p.api_token_id = ? AND p.zone_id = d.zone_id
+                OR EXISTS (SELECT 1 FROM role_grants p
+                           WHERE p.role_id = ? AND (p.zone_id IS NULL OR p.zone_id = d.zone_id)
                              AND {grant_match})
           )
         -- every type at one name shares d.name, so without d.id a plan change
@@ -274,8 +274,8 @@ pub(crate) async fn list_by_filter_with_zone(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(filter.scope_token_id)
-    .bind(filter.scope_token_id)
+    .bind(filter.scope_role_id)
+    .bind(filter.scope_role_id)
     .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
     .bind(
         filter
@@ -321,8 +321,8 @@ pub(crate) async fn count_by_filter(
           )
           AND (
                 ? IS NULL
-                OR EXISTS (SELECT 1 FROM token_grants p
-                           WHERE p.api_token_id = ? AND p.zone_id = d.zone_id
+                OR EXISTS (SELECT 1 FROM role_grants p
+                           WHERE p.role_id = ? AND (p.zone_id IS NULL OR p.zone_id = d.zone_id)
                              AND {grant_match})
           )
         "#
@@ -344,8 +344,8 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(filter.scope_token_id)
-    .bind(filter.scope_token_id)
+    .bind(filter.scope_role_id)
+    .bind(filter.scope_role_id)
     .fetch_one(&mut *conn)
     .await?;
 
