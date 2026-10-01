@@ -51,7 +51,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -94,7 +94,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -144,7 +144,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -200,7 +200,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -256,7 +256,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -390,7 +390,7 @@ paths:
       tags:
       - ExternalDNS
       summary: List the names ExternalDNS may manage
-      description: 'The ExternalDNS domain filter the calling token''s grants come to: every zone name for a global token, otherwise one name per writable grant — the zone where the grant covers every name, the granted subtree where it does not. Each entry covers itself and everything under it, so a grant narrowed by record type or to one exact name reads wider here than it is.'
+      description: 'The ExternalDNS domain filter the calling token''s role comes to: every zone name with authentication disabled, otherwise one name per grant that creates or deletes records — the zone where the grant covers every name, the granted subtree where it does not. Each entry covers itself and everything under it, so a grant narrowed by record type or to one exact name reads wider here than it is.'
       operationId: list_external_dns_domains
       responses:
         '200':
@@ -486,7 +486,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -681,7 +681,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: The token's grants do not allow this record write
+          description: The token's role does not permit this record write
           content:
             application/json:
               schema:
@@ -834,7 +834,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: The token's grants do not allow this record write
+          description: The token's role does not permit this record write
           content:
             application/json:
               schema:
@@ -942,7 +942,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: The token's grants do not allow this record write
+          description: The token's role does not permit this record write
           content:
             application/json:
               schema:
@@ -1004,7 +1004,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: The token's grants do not allow this record write
+          description: The token's role does not permit this record write
           content:
             application/json:
               schema:
@@ -1017,6 +1017,393 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Record conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /roles:
+    get:
+      tags:
+      - Role
+      summary: List all roles
+      operationId: list_roles
+      parameters:
+      - name: limit
+        in: query
+        description: Items per page; the HTTP API defaults it, the daemon socket does not.
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+      responses:
+        '200':
+          description: All roles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse_GetRoleResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Role
+      summary: Create a role
+      description: Creates a role with no grants. API tokens and TSIG keys authenticate into a role, and its grants decide what they may do.
+      operationId: create_role
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+        required: true
+      responses:
+        '201':
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A role with the same name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /roles/{name}:
+    get:
+      tags:
+      - Role
+      summary: Get a specific role
+      operationId: get_role
+      parameters:
+      - name: name
+        in: path
+        description: The name of the role.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Role not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - Role
+      summary: Delete a role
+      description: Deletes a role and its grants. Refused for the built-in `admin` role and while an API token or TSIG key still authenticates into it.
+      operationId: delete_role
+      parameters:
+      - name: name
+        in: path
+        description: The name of the role.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Role deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: The built-in role cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Role not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: An API token or TSIG key still holds the role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /roles/{name}/grants:
+    get:
+      tags:
+      - Role
+      summary: List a role's grants
+      operationId: list_role_grants
+      parameters:
+      - name: name
+        in: path
+        description: The name of the role.
+        required: true
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Grants per page; defaults to 50.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+      - name: offset
+        in: query
+        description: Number of grants to skip.
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      responses:
+        '200':
+          description: The role's grants
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse_GetRoleGrantResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Role not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Role
+      summary: Grant a role actions
+      description: Grants the role actions in the named zone, or in every zone when `zone_name` is omitted. The record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list) narrow its `record:*` actions only. The built-in `admin` role cannot be changed.
+      operationId: create_role_grant
+      parameters:
+      - name: name
+        in: path
+        description: The name of the role.
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleGrantRequest'
+        required: true
+      responses:
+        '201':
+          description: Role grant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleGrantResponse'
+        '400':
+          description: Bad request, invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Role or zone not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported media type, expected JSON request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /roles/{name}/grants/{id}:
+    delete:
+      tags:
+      - Role
+      summary: Revoke one of a role's grants
+      operationId: delete_role_grant
+      parameters:
+      - name: name
+        in: path
+        description: The name of the role.
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        description: The id of the grant to revoke.
+        required: true
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: Role grant revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: The built-in role cannot be changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller's role does not permit this
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Role or grant not found
           content:
             application/json:
               schema:
@@ -1069,7 +1456,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1112,7 +1499,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1162,7 +1549,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1218,7 +1605,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1274,7 +1661,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1319,7 +1706,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1385,7 +1772,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1438,7 +1825,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1453,7 +1840,7 @@ paths:
       tags:
       - Token
       summary: Create an API token
-      description: Creates an API token and returns its secret, the one time it is shown. A scoped token (the default) acts only on the zones it is later granted; `global` makes it cover every zone and the zone plane, fixed at creation.
+      description: Creates an API token in a role and returns its secret, the one time it is shown. The role's grants decide what the token may do.
       operationId: create_token
       requestBody:
         content:
@@ -1481,7 +1868,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1534,8 +1921,8 @@ paths:
     get:
       tags:
       - Token
-      summary: List the grants of the API token making the request
-      description: The calling token's grants; any token may read its own. A global token holds none, so its list is empty. With authentication disabled no token is presented, so this answers 401.
+      summary: List the grants of the calling API token's role
+      description: The grants of the calling token's role; any token may read its own. With authentication disabled no token is presented, so this answers 401.
       operationId: list_self_token_grants
       parameters:
       - name: limit
@@ -1564,7 +1951,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetTokenGrantResponse'
+                $ref: '#/components/schemas/PaginatedResponse_GetRoleGrantResponse'
         '401':
           description: Unauthorized, or no token presented
           content:
@@ -1582,7 +1969,7 @@ paths:
       tags:
       - Token
       summary: Delete an API token
-      description: Deletes an API token; its grants go with it.
+      description: Deletes an API token; its role and the role's grants stay.
       operationId: delete_token
       parameters:
       - name: name
@@ -1605,187 +1992,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Token not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /tokens/{name}/grants:
-    get:
-      tags:
-      - Token
-      summary: List an API token's grants
-      operationId: list_token_grants
-      parameters:
-      - name: name
-        in: path
-        description: The name of the API token.
-        required: true
-        schema:
-          type: string
-      - name: limit
-        in: query
-        description: Grants per page; defaults to 50.
-        required: false
-        schema:
-          type: integer
-          format: int32
-          maximum: 1000
-          minimum: 1
-      - name: offset
-        in: query
-        description: Number of grants to skip.
-        required: false
-        schema:
-          type: integer
-          format: int64
-          minimum: 0
-      responses:
-        '200':
-          description: The token's grants
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetTokenGrantResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Token not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    post:
-      tags:
-      - Token
-      summary: Grant an API token record rights in a zone
-      description: 'Grants the token record-plane rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Global tokens are rejected: they already cover every zone and never carry grants.'
-      operationId: create_token_grant
-      parameters:
-      - name: name
-        in: path
-        description: The name of the API token.
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateGrantRequest'
-        required: true
-      responses:
-        '201':
-          description: Token grant created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TokenGrantResponse'
-        '400':
-          description: Bad request, invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Token or zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /tokens/{name}/grants/{id}:
-    delete:
-      tags:
-      - Token
-      summary: Revoke one of an API token's grants
-      operationId: delete_token_grant
-      parameters:
-      - name: name
-        in: path
-        description: The name of the API token.
-        required: true
-        schema:
-          type: string
-      - name: id
-        in: path
-        description: The id of the grant to revoke.
-        required: true
-        schema:
-          type: integer
-          format: int32
-      responses:
-        '200':
-          description: Token grant revoked
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Token or grant not found
           content:
             application/json:
               schema:
@@ -1838,7 +2051,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1853,7 +2066,7 @@ paths:
       tags:
       - TSIG
       summary: Create a TSIG key
-      description: Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). Setting `global` permits updates and transfers for every zone without grants. The response includes the secret.
+      description: Creates a TSIG key. When `secret` is omitted a random secret is generated; when provided it must be valid base64 (imports an existing key). The key authenticates into `role_name`, whose grants decide what updates and transfers it may sign. The response includes the secret.
       operationId: create_tsig_key
       requestBody:
         content:
@@ -1881,7 +2094,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1932,7 +2145,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1953,7 +2166,7 @@ paths:
       tags:
       - TSIG
       summary: Delete a TSIG key
-      description: Deletes a TSIG key. Refused while it still holds grants.
+      description: Deletes a TSIG key. Refused while it still signs a secondary's NOTIFY.
       operationId: delete_tsig_key
       parameters:
       - name: name
@@ -1976,7 +2189,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -1988,181 +2201,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: TSIG key still holds grants
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /tsig-keys/{name}/grants:
-    get:
-      tags:
-      - TSIG
-      summary: List a TSIG key's grants
-      operationId: list_tsig_grants
-      parameters:
-      - name: name
-        in: path
-        description: The name of the TSIG key.
-        required: true
-        schema:
-          type: string
-      - name: limit
-        in: query
-        description: Grants per page; defaults to 50.
-        required: false
-        schema:
-          type: integer
-          format: int32
-          maximum: 1000
-          minimum: 1
-      - name: offset
-        in: query
-        description: Number of grants to skip.
-        required: false
-        schema:
-          type: integer
-          format: int64
-          minimum: 0
-      responses:
-        '200':
-          description: The key's grants
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetTsigGrantResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: TSIG key not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    post:
-      tags:
-      - TSIG
-      summary: Grant a TSIG key update and transfer rights in a zone
-      description: 'Grants update rights in the named zone, optionally restricted by record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list). Unrestricted name/type grants also allow transfers; `can_write=false` grants transfers only. Global keys are rejected: they already cover every zone and never carry grants.'
-      operationId: create_tsig_grant
-      parameters:
-      - name: name
-        in: path
-        description: The name of the TSIG key.
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateGrantRequest'
-        required: true
-      responses:
-        '201':
-          description: TSIG grant created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TsigGrantResponse'
-        '400':
-          description: Bad request, invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: TSIG key or zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '415':
-          description: Unsupported media type, expected JSON request body
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /tsig-keys/{name}/grants/{id}:
-    delete:
-      tags:
-      - TSIG
-      summary: Revoke one of a TSIG key's grants
-      operationId: delete_tsig_grant
-      parameters:
-      - name: name
-        in: path
-        description: The name of the TSIG key.
-        required: true
-        schema:
-          type: string
-      - name: id
-        in: path
-        description: The id of the grant to revoke.
-        required: true
-        schema:
-          type: integer
-          format: int32
-      responses:
-        '200':
-          description: TSIG grant revoked
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: TSIG key or grant not found
+          description: TSIG key still signs a secondary's NOTIFY
           content:
             application/json:
               schema:
@@ -2375,7 +2414,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -2476,7 +2515,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -2538,7 +2577,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -2583,7 +2622,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -2639,7 +2678,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -2707,7 +2746,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -2769,7 +2808,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -2820,7 +2859,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -2883,7 +2922,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -2958,7 +2997,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -3009,7 +3048,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -3066,7 +3105,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -3122,7 +3161,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -3230,7 +3269,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -3298,7 +3337,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required to bump a serial or to notify the catalog zone
+          description: The caller's role does not permit 'zone:update' there; the catalog zone and every zone need it in all zones
           content:
             application/json:
               schema:
@@ -3338,128 +3377,6 @@ paths:
                 $ref: '#/components/schemas/ZoneStatusResponse'
         '401':
           description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/token-grants:
-    get:
-      tags:
-      - Token
-      summary: List the API token grants that apply to a zone
-      operationId: list_zone_token_grants
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      - name: limit
-        in: query
-        description: Grants per page; defaults to 50.
-        required: false
-        schema:
-          type: integer
-          format: int32
-          maximum: 1000
-          minimum: 1
-      - name: offset
-        in: query
-        description: Number of grants to skip.
-        required: false
-        schema:
-          type: integer
-          format: int64
-          minimum: 0
-      responses:
-        '200':
-          description: Grants covering the zone
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetTokenGrantResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Zone not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /zones/{name}/tsig-grants:
-    get:
-      tags:
-      - TSIG
-      summary: List the TSIG grants that apply to a zone
-      operationId: list_zone_tsig_grants
-      parameters:
-      - name: name
-        in: path
-        description: The name of the DNS zone.
-        required: true
-        schema:
-          type: string
-      - name: limit
-        in: query
-        description: Grants per page; defaults to 50.
-        required: false
-        schema:
-          type: integer
-          format: int32
-          maximum: 1000
-          minimum: 1
-      - name: offset
-        in: query
-        description: Number of grants to skip.
-        required: false
-        schema:
-          type: integer
-          format: int64
-          minimum: 0
-      responses:
-        '200':
-          description: Grants covering the zone
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedResponse_GetTsigGrantResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: A global API token is required
           content:
             application/json:
               schema:
@@ -3688,7 +3605,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: A global API token is required
+          description: The caller's role does not permit this
           content:
             application/json:
               schema:
@@ -3713,6 +3630,24 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
+    Action:
+      type: string
+      description: One operation a grant permits, spelled `<resource>:<action>`.
+      enum:
+      - zone:read
+      - zone:create
+      - zone:update
+      - zone:delete
+      - zone:transfer
+      - record:read
+      - record:create
+      - record:update
+      - record:delete
+      - dnssec:read
+      - dnssec:manage
+      - secondary:read
+      - secondary:manage
+      - access:manage
     BulkRecordsResponse:
       type: object
       description: |-
@@ -3858,40 +3793,6 @@ components:
           example: 90
           minimum: 0
       additionalProperties: false
-    CreateGrantRequest:
-      type: object
-      description: |-
-        Request body for granting a credential record rights in a zone: an API
-        token's HTTP writes, or a TSIG key's updates and transfers.
-      required:
-      - zone_name
-      properties:
-        can_write:
-          type: boolean
-          description: |-
-            Whether the grant carries write rights. A read-only grant still makes
-            the zone visible to a token, narrowed the same way, and over a whole
-            zone still lets a key transfer it. Defaults to true.
-          example: true
-        record_name_pattern:
-          type:
-          - string
-          - 'null'
-          description: |-
-            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative name.
-            Defaults to `*`.
-          example: '*.dyn'
-        record_types:
-          type:
-          - string
-          - 'null'
-          description: '`*` or a comma-separated list of record types. Defaults to `*`.'
-          example: A,AAAA,TXT
-        zone_name:
-          type: string
-          description: Name of an existing zone.
-          example: example.com
-      additionalProperties: false
     CreateRecordRequest:
       type: object
       description: Request body for creating a record in a named zone.
@@ -3933,6 +3834,64 @@ components:
           type: string
           example: example.com
       additionalProperties: false
+    CreateRoleGrantRequest:
+      type: object
+      description: Request body for granting a role actions in one zone or every zone.
+      required:
+      - actions
+      properties:
+        actions:
+          type: array
+          items:
+            type: string
+          description: The actions the grant permits, as `<resource>:<action>`.
+          example:
+          - record:read
+          - record:create
+          - record:update
+          - record:delete
+        record_name_pattern:
+          type:
+          - string
+          - 'null'
+          description: |-
+            `*` (any name), `@` (apex), `*.sub` (subtree) or an exact relative
+            name. Constrains `record:*` actions only. Defaults to `*`.
+          example: '*.apps'
+        record_types:
+          type:
+          - string
+          - 'null'
+          description: |-
+            `*` or a comma-separated list of record types. Constrains `record:*`
+            actions only. Defaults to `*`.
+          example: A,AAAA,CNAME,TXT
+        zone_name:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Name of an existing zone; omit to cover every zone, including later ones.
+            `zone:create`, `secondary:*` and `access:manage` need every zone.
+          example: example.com
+      additionalProperties: false
+    CreateRoleRequest:
+      type: object
+      description: Request body for creating a role.
+      required:
+      - name
+      properties:
+        description:
+          type:
+          - string
+          - 'null'
+          description: At most 255 characters.
+          example: ExternalDNS in the prod clusters
+        name:
+          type: string
+          description: 'Letters, digits, `.`, `_`, and `-`: one URL path segment.'
+          example: external-dns-prod
+      additionalProperties: false
     CreateSecondaryRequest:
       type: object
       description: Request body for registering a secondary.
@@ -3960,6 +3919,7 @@ components:
       description: Request body for creating an API token.
       required:
       - name
+      - role_name
       properties:
         description:
           type:
@@ -3974,22 +3934,21 @@ components:
           format: int64
           description: Days until expiry, 1 to 36500; omit for a token that never expires.
           example: 90
-        global:
-          type: boolean
-          description: |-
-            Make the token global: it may manage every zone and the zone plane.
-            Fixed at creation.
-          example: false
         name:
           type: string
           description: 'Letters, digits, `.`, `_`, and `-`: one URL path segment.'
           example: external-dns
+        role_name:
+          type: string
+          description: The role whose grants decide what the token may do.
+          example: external-dns-prod
       additionalProperties: false
     CreateTsigKeyRequest:
       type: object
       description: Request body for creating a TSIG key. Omitting `secret` generates one.
       required:
       - name
+      - role_name
       properties:
         algorithm:
           type:
@@ -3997,15 +3956,15 @@ components:
           - 'null'
           description: Defaults to `hmac-sha256`; also accepts `hmac-sha384` and `hmac-sha512`.
           example: hmac-sha256
-        global:
-          type: boolean
-          description: |-
-            Make the key global: it may update and transfer every zone without
-            any grant. Fixed at creation.
-          example: false
         name:
           type: string
           example: update-key
+        role_name:
+          type: string
+          description: |-
+            The role whose grants decide what the key may sign; a NOTIFY-only key
+            may name one without grants.
+          example: rfc2136-legacy
         secret:
           type:
           - string
@@ -4532,8 +4491,10 @@ components:
       - TSIG_KEY_NOT_FOUND
       - TSIG_KEY_CONFLICT
       - TSIG_KEY_IN_USE
-      - TSIG_GRANT_NOT_FOUND
-      - TOKEN_GRANT_NOT_FOUND
+      - ROLE_NOT_FOUND
+      - ROLE_CONFLICT
+      - ROLE_IN_USE
+      - ROLE_GRANT_NOT_FOUND
       - DNSSEC_ALREADY_ENABLED
       - DNSSEC_NOT_ENABLED
       - DNSSEC_ROLLOVER_IN_PROGRESS
@@ -4791,6 +4752,70 @@ components:
         zone_name:
           type: string
           example: example.com
+    GetRoleGrantResponse:
+      type: object
+      description: API representation of a role grant.
+      required:
+      - id
+      - role_name
+      - actions
+      - record_name_pattern
+      - record_types
+      - created_at
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: integer
+          format: int32
+          example: 1
+        record_name_pattern:
+          type: string
+          example: '*.apps'
+        record_types:
+          type: string
+          example: A,AAAA,CNAME,TXT
+        role_name:
+          type: string
+          example: external-dns-prod
+        zone_name:
+          type:
+          - string
+          - 'null'
+          description: The zone the grant covers; `null` covers every zone.
+          example: example.com
+    GetRoleResponse:
+      type: object
+      description: API representation of a role.
+      required:
+      - id
+      - name
+      - builtin
+      - created_at
+      properties:
+        builtin:
+          type: boolean
+          description: Whether this is the built-in `admin` role, which can be neither changed nor deleted.
+          example: false
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type:
+          - string
+          - 'null'
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: external-dns-prod
     GetSecondaryResponse:
       type: object
       description: API representation of a secondary.
@@ -4823,47 +4848,13 @@ components:
           - 'null'
           description: The TSIG key NOTIFY to this server is signed with, if any.
           example: notify-key
-    GetTokenGrantResponse:
-      type: object
-      description: API representation of a token grant.
-      required:
-      - id
-      - token_name
-      - zone_name
-      - record_name_pattern
-      - record_types
-      - can_write
-      - created_at
-      properties:
-        can_write:
-          type: boolean
-          example: true
-        created_at:
-          type: string
-          format: date-time
-        id:
-          type: integer
-          format: int32
-          example: 1
-        record_name_pattern:
-          type: string
-          example: '*.dyn'
-        record_types:
-          type: string
-          example: A,AAAA,TXT
-        token_name:
-          type: string
-          example: external-dns
-        zone_name:
-          type: string
-          example: example.com
     GetTokenResponse:
       type: object
       description: API representation of an API token; never carries the secret.
       required:
       - id
       - name
-      - global
+      - role_name
       - created_at
       properties:
         created_at:
@@ -4878,10 +4869,6 @@ components:
           - string
           - 'null'
           format: date-time
-        global:
-          type: boolean
-          description: Whether the token may manage every zone and the zone plane.
-          example: false
         id:
           type: integer
           format: int32
@@ -4894,40 +4881,10 @@ components:
         name:
           type: string
           example: external-dns
-    GetTsigGrantResponse:
-      type: object
-      description: API representation of a TSIG grant.
-      required:
-      - id
-      - tsig_key_name
-      - zone_name
-      - record_name_pattern
-      - record_types
-      - can_write
-      - created_at
-      properties:
-        can_write:
-          type: boolean
-          example: true
-        created_at:
+        role_name:
           type: string
-          format: date-time
-        id:
-          type: integer
-          format: int32
-          example: 1
-        record_name_pattern:
-          type: string
-          example: '*.dyn'
-        record_types:
-          type: string
-          example: A,AAAA,TXT
-        tsig_key_name:
-          type: string
-          example: update-key
-        zone_name:
-          type: string
-          example: example.com
+          description: The role the token authenticates into.
+          example: external-dns-prod
     GetTsigKeyResponse:
       type: object
       description: API representation of a TSIG key; never carries the secret.
@@ -4935,7 +4892,7 @@ components:
       - id
       - name
       - algorithm
-      - global
+      - role_name
       - created_at
       properties:
         algorithm:
@@ -4943,10 +4900,6 @@ components:
         created_at:
           type: string
           format: date-time
-        global:
-          type: boolean
-          description: Whether the key may update and transfer every zone without any grant.
-          example: false
         id:
           type: integer
           format: int32
@@ -4954,6 +4907,10 @@ components:
         name:
           type: string
           example: update-key
+        role_name:
+          type: string
+          description: The role the key authenticates into.
+          example: rfc2136-legacy
     GetZoneResponse:
       type: object
       description: API representation of a zone.
@@ -5296,6 +5253,92 @@ components:
                 example: example.com
         pagination:
           $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetRoleGrantResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a role grant.
+            required:
+            - id
+            - role_name
+            - actions
+            - record_name_pattern
+            - record_types
+            - created_at
+            properties:
+              actions:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Action'
+              created_at:
+                type: string
+                format: date-time
+              id:
+                type: integer
+                format: int32
+                example: 1
+              record_name_pattern:
+                type: string
+                example: '*.apps'
+              record_types:
+                type: string
+                example: A,AAAA,CNAME,TXT
+              role_name:
+                type: string
+                example: external-dns-prod
+              zone_name:
+                type:
+                - string
+                - 'null'
+                description: The zone the grant covers; `null` covers every zone.
+                example: example.com
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    PaginatedResponse_GetRoleResponse:
+      type: object
+      description: A page of items together with its pagination metadata.
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API representation of a role.
+            required:
+            - id
+            - name
+            - builtin
+            - created_at
+            properties:
+              builtin:
+                type: boolean
+                description: Whether this is the built-in `admin` role, which can be neither changed nor deleted.
+                example: false
+              created_at:
+                type: string
+                format: date-time
+              description:
+                type:
+                - string
+                - 'null'
+              id:
+                type: integer
+                format: int32
+                example: 1
+              name:
+                type: string
+                example: external-dns-prod
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetSecondaryResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -5339,51 +5382,6 @@ components:
                 example: notify-key
         pagination:
           $ref: '#/components/schemas/Pagination'
-    PaginatedResponse_GetTokenGrantResponse:
-      type: object
-      description: A page of items together with its pagination metadata.
-      required:
-      - items
-      - pagination
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-            description: API representation of a token grant.
-            required:
-            - id
-            - token_name
-            - zone_name
-            - record_name_pattern
-            - record_types
-            - can_write
-            - created_at
-            properties:
-              can_write:
-                type: boolean
-                example: true
-              created_at:
-                type: string
-                format: date-time
-              id:
-                type: integer
-                format: int32
-                example: 1
-              record_name_pattern:
-                type: string
-                example: '*.dyn'
-              record_types:
-                type: string
-                example: A,AAAA,TXT
-              token_name:
-                type: string
-                example: external-dns
-              zone_name:
-                type: string
-                example: example.com
-        pagination:
-          $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetTokenResponse:
       type: object
       description: A page of items together with its pagination metadata.
@@ -5399,7 +5397,7 @@ components:
             required:
             - id
             - name
-            - global
+            - role_name
             - created_at
             properties:
               created_at:
@@ -5414,10 +5412,6 @@ components:
                 - string
                 - 'null'
                 format: date-time
-              global:
-                type: boolean
-                description: Whether the token may manage every zone and the zone plane.
-                example: false
               id:
                 type: integer
                 format: int32
@@ -5430,51 +5424,10 @@ components:
               name:
                 type: string
                 example: external-dns
-        pagination:
-          $ref: '#/components/schemas/Pagination'
-    PaginatedResponse_GetTsigGrantResponse:
-      type: object
-      description: A page of items together with its pagination metadata.
-      required:
-      - items
-      - pagination
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-            description: API representation of a TSIG grant.
-            required:
-            - id
-            - tsig_key_name
-            - zone_name
-            - record_name_pattern
-            - record_types
-            - can_write
-            - created_at
-            properties:
-              can_write:
-                type: boolean
-                example: true
-              created_at:
+              role_name:
                 type: string
-                format: date-time
-              id:
-                type: integer
-                format: int32
-                example: 1
-              record_name_pattern:
-                type: string
-                example: '*.dyn'
-              record_types:
-                type: string
-                example: A,AAAA,TXT
-              tsig_key_name:
-                type: string
-                example: update-key
-              zone_name:
-                type: string
-                example: example.com
+                description: The role the token authenticates into.
+                example: external-dns-prod
         pagination:
           $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetTsigKeyResponse:
@@ -5493,7 +5446,7 @@ components:
             - id
             - name
             - algorithm
-            - global
+            - role_name
             - created_at
             properties:
               algorithm:
@@ -5501,10 +5454,6 @@ components:
               created_at:
                 type: string
                 format: date-time
-              global:
-                type: boolean
-                description: Whether the key may update and transfer every zone without any grant.
-                example: false
               id:
                 type: integer
                 format: int32
@@ -5512,6 +5461,10 @@ components:
               name:
                 type: string
                 example: update-key
+              role_name:
+                type: string
+                description: The role the key authenticates into.
+                example: rfc2136-legacy
         pagination:
           $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetZoneResponse:
@@ -5879,6 +5832,22 @@ components:
           example: false
         record:
           $ref: '#/components/schemas/GetRecordResponse'
+    RoleGrantResponse:
+      type: object
+      description: A single role grant wrapped in a response envelope.
+      required:
+      - role_grant
+      properties:
+        role_grant:
+          $ref: '#/components/schemas/GetRoleGrantResponse'
+    RoleResponse:
+      type: object
+      description: A single role wrapped in a response envelope.
+      required:
+      - role
+      properties:
+        role:
+          $ref: '#/components/schemas/GetRoleResponse'
     RollbackSummary:
       type: object
       description: |-
@@ -6092,14 +6061,6 @@ components:
           items:
             $ref: '#/components/schemas/TransferResponse'
           description: Newest first, at most the requested `limit`.
-    TokenGrantResponse:
-      type: object
-      description: A single token grant wrapped in a response envelope.
-      required:
-      - token_grant
-      properties:
-        token_grant:
-          $ref: '#/components/schemas/GetTokenGrantResponse'
     TokenResponse:
       type: object
       description: 'One token without its secret: the self lookup.'
@@ -6218,14 +6179,6 @@ components:
       - hmac-sha256
       - hmac-sha384
       - hmac-sha512
-    TsigGrantResponse:
-      type: object
-      description: A single TSIG grant wrapped in a response envelope.
-      required:
-      - tsig_grant
-      properties:
-        tsig_grant:
-          $ref: '#/components/schemas/GetTsigGrantResponse'
     TsigKeyResponse:
       type: object
       description: 'A key with its secret: the create and get responses.'
@@ -6626,9 +6579,11 @@ tags:
 - name: Secondary
   description: 'The secondary servers: each receives NOTIFY, may pull zones unsigned from its address, and is probed for the serial it serves.'
 - name: TSIG
-  description: Manage TSIG keys and the zone grants each holds for nsupdate.
+  description: Manage TSIG keys, each authenticating nsupdate and transfers into a role.
 - name: Token
-  description: API tokens and the zone grants each holds.
+  description: API tokens, each authenticating into a role.
+- name: Role
+  description: 'Roles and their grants: the actions API tokens and TSIG keys holding a role may perform.'
 - name: DNSSEC
   description: 'DNSSEC policies (the signing-parameter bundles zones sign under) and per-zone signing: enable, disable, status, DS records for the parent zone and the parent''s check of them, key rollover, and re-signing.'
 - name: ExternalDNS

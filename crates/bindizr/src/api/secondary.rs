@@ -52,7 +52,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         responses(
             (status = 200, description = "All secondaries", body = PaginatedResponse<GetSecondaryResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
@@ -78,7 +78,7 @@ pub(crate) async fn list_secondaries(
             (status = 201, description = "Secondary registered successfully", body = SecondaryResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 409, description = "A secondary with the same name or address already exists", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -106,7 +106,7 @@ pub(crate) async fn create_secondary(
         responses(
             (status = 200, description = "The secondary", body = SecondaryResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -136,7 +136,7 @@ pub(crate) async fn get_secondary(
             (status = 200, description = "Secondary updated successfully", body = SecondaryResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),
             (status = 409, description = "Another secondary already has the address", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
@@ -167,7 +167,7 @@ pub(crate) async fn update_secondary(
         responses(
             (status = 200, description = "Secondary deleted successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -197,7 +197,7 @@ pub(crate) async fn delete_secondary(
         responses(
             (status = 200, description = "What the secondary answered", body = SecondaryCheckResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Secondary not found", body = ErrorResponse),
             (status = 500, description = "Internal server error, including Bindizr's own DNS listener not answering", body = ErrorResponse)
         )
@@ -226,7 +226,7 @@ pub(crate) async fn check_secondary(
         (status = 200, description = "The transfers served", body = SecondaryTransfersResponse),
         (status = 400, description = "Invalid query parameters", body = ErrorResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "A global API token is required", body = ErrorResponse),
+        (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
         (status = 404, description = "Secondary not found", body = ErrorResponse)
     )
 )]

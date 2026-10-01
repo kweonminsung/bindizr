@@ -31,8 +31,8 @@ pub(crate) fn http_status(code: ErrorCode) -> StatusCode {
         | ErrorCode::VersionNotFound
         | ErrorCode::SecondaryNotFound
         | ErrorCode::TsigKeyNotFound
-        | ErrorCode::TsigGrantNotFound
-        | ErrorCode::TokenGrantNotFound
+        | ErrorCode::RoleNotFound
+        | ErrorCode::RoleGrantNotFound
         | ErrorCode::DnssecPolicyNotFound => StatusCode::NOT_FOUND,
         ErrorCode::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
         ErrorCode::ZoneConflict
@@ -41,6 +41,8 @@ pub(crate) fn http_status(code: ErrorCode) -> StatusCode {
         | ErrorCode::SecondaryConflict
         | ErrorCode::TsigKeyConflict
         | ErrorCode::TsigKeyInUse
+        | ErrorCode::RoleConflict
+        | ErrorCode::RoleInUse
         | ErrorCode::DnssecAlreadyEnabled
         | ErrorCode::DnssecNotEnabled
         | ErrorCode::DnssecRolloverInProgress

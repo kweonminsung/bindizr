@@ -1,7 +1,7 @@
 //! Who may transfer a zone: the key that signed the request, or — when it
 //! carried no TSIG — the address ACL a deployment with no keys keeps using.
 //! A real zone's grant is decided in the service beside the row it serves;
-//! the virtual catalog zone, which holds no grants, is gated here.
+//! the virtual catalog zone, which has no row, is gated here.
 
 use std::net::IpAddr;
 
@@ -57,8 +57,8 @@ pub(crate) struct TransferIdentity {
 }
 
 /// Authenticate a transfer request: verify its TSIG under the key it names, or
-/// admit an unsigned one by the address ACL. The catalog zone is virtual and
-/// holds no grants, so only the ACL or a global key reaches it.
+/// admit an unsigned one by the address ACL. The catalog zone is virtual, so
+/// only the ACL or an all-zones `zone:transfer` grant reaches it.
 pub(crate) async fn authenticate_transfer(
     dns_cx: &DnsContext,
     query_data: &[u8],
@@ -110,14 +110,21 @@ pub(crate) async fn authenticate_transfer(
     let signer =
         verify_tsig_sequence(query_data, Some(domain_key)).map_err(TransferRefusal::from)?;
 
-    if cx.config().dns.is_catalog_zone(zone_name) && !key.is_global {
-        return Err(TransferRefusal::refused(
-            format!(
-                "TSIG key '{}' is not granted zone '{}' whole",
-                key.name, zone_name
-            ),
-            Some(signer),
-        ));
+    if cx.config().dns.is_catalog_zone(zone_name) {
+        let granted = tsig_key::authorize_catalog_transfer(cx, &key)
+            .await
+            .map_err(|e| {
+                TransferRefusal::refused(format!("failed to load TSIG grants: {}", e), None)
+            })?;
+        if !granted {
+            return Err(TransferRefusal::refused(
+                format!(
+                    "TSIG key '{}' is not granted 'zone:transfer' in every zone",
+                    key.name
+                ),
+                Some(signer),
+            ));
+        }
     }
     Ok(TransferIdentity {
         key: Some(key),
