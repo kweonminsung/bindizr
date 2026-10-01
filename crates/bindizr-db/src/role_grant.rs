@@ -24,6 +24,15 @@ pub async fn get(db: &Db, id: RoleGrantId) -> Result<Option<RoleGrant>, Database
 }
 
 /// Every grant of a role; drives what a credential authenticating into it may
+/// List every role's grants.
+pub async fn list_all(db: &Db) -> Result<Vec<RoleGrant>, DatabaseError> {
+    match &db.0 {
+        Backend::MySql(pool) => mysql::role_grant::list_all(pool).await,
+        Backend::Postgres(pool) => postgres::role_grant::list_all(pool).await,
+        Backend::Sqlite(pool) => sqlite::role_grant::list_all(pool).await,
+    }
+}
+
 /// see.
 pub async fn list_by_role_id(db: &Db, role_id: RoleId) -> Result<Vec<RoleGrant>, DatabaseError> {
     match &db.0 {

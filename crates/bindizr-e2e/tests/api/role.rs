@@ -149,6 +149,100 @@ async fn role_grant_lifecycle_over_http() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Verify that a role's tokens and keys are listed by role, counted on the
+/// role, and named when they keep it from being deleted.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_roles_credentials_are_listed_counted_and_named() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
+
+    let (role_name, _) = app.create_scoped_api_token().await;
+    let key_name = format!("{role_name}-key");
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/tsig-keys",
+            Some(json!({ "name": key_name, "role_name": role_name })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/roles/{role_name}/grants"),
+            Some(json!({ "actions": ["zone:read"] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // The admin token sits in another role, so only the filtered listing
+    // leaves it out.
+    let (status, body) = app.send_request(Method::GET, "/tokens", None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["pagination"]["total"].as_u64().unwrap() >= 2, "{body}");
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/tokens?role_name={role_name}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["pagination"]["total"], 1, "{body}");
+    assert_eq!(body["items"][0]["name"], json!(role_name));
+    let (status, body) = app
+        .send_request(
+            Method::GET,
+            &format!("/tsig-keys?role_name={role_name}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["pagination"]["total"], 1, "{body}");
+    assert_eq!(body["items"][0]["name"], json!(key_name));
+    let (status, body) = app
+        .send_request(Method::GET, "/tsig-keys?role_name=admin", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["pagination"]["total"], 0, "{body}");
+    let (status, body) = app
+        .send_request(Method::GET, "/tokens?role_name=no-such-role", None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+
+    let (status, body) = app
+        .send_request(Method::GET, &format!("/roles/{role_name}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["role"]["grant_count"], 1, "{body}");
+    assert_eq!(body["role"]["token_count"], 1, "{body}");
+    assert_eq!(body["role"]["tsig_key_count"], 1, "{body}");
+    let (status, body) = app.send_request(Method::GET, "/roles", None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let listed = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["name"] == json!(role_name))
+        .unwrap_or_else(|| panic!("{body}"));
+    assert_eq!(listed["grant_count"], 1, "{body}");
+    assert_eq!(listed["token_count"], 1, "{body}");
+    assert_eq!(listed["tsig_key_count"], 1, "{body}");
+
+    let (status, body) = app
+        .send_request(Method::DELETE, &format!("/roles/{role_name}"), None)
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    let error = body["error"].as_str().unwrap();
+    assert!(
+        error.contains(&format!("API token {role_name}"))
+            && error.contains(&format!("TSIG key {key_name}")),
+        "{error}"
+    );
+}
+
 /// Verify that tokens self grants lists the grants of the bearer's role.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]

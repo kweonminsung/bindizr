@@ -92,17 +92,19 @@ pub(crate) async fn delete(pool: &Pool<Postgres>, id: TsigKeyId) -> Result<(), D
     Ok(())
 }
 
-/// Count the TSIG keys authenticating into a role: the in-use check before a role delete.
-pub(crate) async fn count_by_role_id(
+/// List the TSIG keys authenticating into a role.
+pub(crate) async fn list_by_role_id(
     pool: &Pool<Postgres>,
     role_id: RoleId,
-) -> Result<u64, DatabaseError> {
+) -> Result<Vec<TsigKey>, DatabaseError> {
     let mut conn = pool.acquire().await?;
 
-    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM tsig_keys WHERE role_id = $1")
-        .bind(role_id)
-        .fetch_one(&mut *conn)
-        .await?;
+    let rows = sqlx::query_as::<_, TsigKey>(
+        "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE role_id = $1 ORDER BY name",
+    )
+    .bind(role_id)
+    .fetch_all(&mut *conn)
+    .await?;
 
-    Ok(count as u64)
+    Ok(rows)
 }

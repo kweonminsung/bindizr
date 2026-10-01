@@ -3,7 +3,7 @@
 use bindizr_core::{
     dns::name::ZoneName,
     model::{
-        role::{Role, RoleId},
+        role::RoleId,
         role_grant::{Action, RoleGrant, RoleGrantId},
     },
 };
@@ -34,20 +34,16 @@ pub struct GetRoleResponse {
     /// Whether this is the built-in `admin` role, which can be neither changed nor deleted.
     #[schema(example = false)]
     pub builtin: bool,
+    /// The grants the role holds.
+    #[schema(example = 2)]
+    pub grant_count: u64,
+    /// The API tokens authenticating into the role.
+    #[schema(example = 3)]
+    pub token_count: u64,
+    /// The TSIG keys authenticating into the role.
+    #[schema(example = 0)]
+    pub tsig_key_count: u64,
     pub created_at: DateTime<Utc>,
-}
-
-impl From<&Role> for GetRoleResponse {
-    /// Build a role response from the stored role.
-    fn from(role: &Role) -> Self {
-        GetRoleResponse {
-            id: role.id,
-            name: role.name.clone(),
-            description: role.description.clone(),
-            builtin: role.is_builtin(),
-            created_at: role.created_at,
-        }
-    }
 }
 
 /// A single role wrapped in a response envelope.

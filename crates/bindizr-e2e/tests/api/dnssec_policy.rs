@@ -27,6 +27,7 @@ async fn dnssec_policy_create_read_update_delete() {
     assert_eq!(status, StatusCode::CREATED);
     let policy = &body["dnssec_policy"];
     assert_eq!(policy["name"], policy_name);
+    assert_eq!(policy["builtin"], false);
     assert_eq!(policy["algorithm"], "ed25519");
     assert_eq!(policy["denial"], "nsec3");
     assert_eq!(policy["split_keys"], false);
@@ -127,6 +128,7 @@ async fn dnssec_policy_create_read_update_delete() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["dnssec_policy"]["name"], "default");
+    assert_eq!(body["dnssec_policy"]["builtin"], true);
 }
 
 /// Verify an assigned DNSSEC policy becomes deletable after DNSSEC is disabled.

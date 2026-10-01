@@ -1,7 +1,7 @@
 use bindizr_core::outln;
 use bindizr_service::types::{
-    CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, MessageResponse, PageRequest,
-    PaginatedResponse,
+    CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, MessageResponse, PaginatedResponse,
+    TokenFilter,
 };
 use clap::Subcommand;
 
@@ -38,9 +38,12 @@ Examples:
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
-    /// List all API tokens
+    /// List API tokens, every one or one role's
     #[command(alias = "ls")]
     List {
+        /// Only the API tokens authenticating into this role
+        #[arg(long, value_name = "ROLE_NAME")]
+        role: Option<String>,
         /// Maximum number of tokens to return
         #[arg(long)]
         limit: Option<u32>,
@@ -86,12 +89,17 @@ pub(crate) async fn handle_command(subcommand: TokenCommand) -> Result<(), CliEr
             print_response(&res.data, output, |created| vec![TokenRow::from(created)])?;
         }
         TokenCommand::List {
+            role,
             limit,
             offset,
             output,
         } => {
             let res = client::send_command::<PaginatedResponse<GetTokenResponse>>(
-                DaemonCommand::ListTokens(PageRequest { limit, offset }),
+                DaemonCommand::ListTokens(TokenFilter {
+                    role_name: role,
+                    limit,
+                    offset,
+                }),
             )
             .await?;
             log::debug!("Token list result: {:?}", res);

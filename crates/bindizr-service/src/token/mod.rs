@@ -15,7 +15,7 @@ use crate::{
     pagination::build_page,
     role,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
-    types::{CreateTokenRequest, GetTokenResponse, PageRequest, PaginatedResponse},
+    types::{CreateTokenRequest, GetTokenResponse, PaginatedResponse, TokenFilter},
 };
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
@@ -88,15 +88,21 @@ pub async fn create(
     ))
 }
 
-/// List all API tokens.
+/// List the API tokens, every one or one role's.
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    page: PageRequest,
+    filter: &TokenFilter,
 ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
     caller.authorize_action(Action::AccessManage)?;
 
-    let tokens = bindizr_db::api_token::list_all(cx.db()).await?;
+    let tokens = match &filter.role_name {
+        Some(role_name) => {
+            let role = role::lookup_by_name(cx, role_name).await?;
+            bindizr_db::api_token::list_by_role_id(cx.db(), role.id).await?
+        }
+        None => bindizr_db::api_token::list_all(cx.db()).await?,
+    };
     let role_names: HashMap<RoleId, String> = bindizr_db::role::list_all(cx.db())
         .await?
         .into_iter()
@@ -110,8 +116,8 @@ pub async fn list(
                 GetTokenResponse::from_token(token, role_name)
             })
             .collect(),
-        page.limit,
-        page.offset,
+        filter.limit,
+        filter.offset,
     )
 }
 

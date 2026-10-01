@@ -59,11 +59,11 @@ pub async fn delete(db: &Db, id: TokenId) -> Result<(), DatabaseError> {
     }
 }
 
-/// Count the API tokens authenticating into a role: the in-use check before a role delete.
-pub async fn count_by_role_id(db: &Db, role_id: RoleId) -> Result<u64, DatabaseError> {
+/// List the API tokens authenticating into a role.
+pub async fn list_by_role_id(db: &Db, role_id: RoleId) -> Result<Vec<ApiToken>, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::api_token::count_by_role_id(pool, role_id).await,
-        Backend::Postgres(pool) => postgres::api_token::count_by_role_id(pool, role_id).await,
-        Backend::Sqlite(pool) => sqlite::api_token::count_by_role_id(pool, role_id).await,
+        Backend::MySql(pool) => mysql::api_token::list_by_role_id(pool, role_id).await,
+        Backend::Postgres(pool) => postgres::api_token::list_by_role_id(pool, role_id).await,
+        Backend::Sqlite(pool) => sqlite::api_token::list_by_role_id(pool, role_id).await,
     }
 }

@@ -1787,18 +1787,22 @@ paths:
     get:
       tags:
       - Token
-      summary: List all API tokens
-      description: Lists every API token without its secret; a secret is shown once, in the create response.
+      summary: List API tokens
+      description: Lists API tokens without their secrets, every one or only those authenticating into `role_name`; a secret is shown once, in the create response.
       operationId: list_tokens
       parameters:
+      - name: role_name
+        in: query
+        description: Only the API tokens authenticating into this role.
+        required: false
+        schema:
+          type: string
       - name: limit
         in: query
         description: Items per page; the HTTP API defaults it, the daemon socket does not.
         required: false
         schema:
-          type:
-          - integer
-          - 'null'
+          type: integer
           format: int32
           maximum: 1000
           minimum: 1
@@ -1806,9 +1810,7 @@ paths:
         in: query
         required: false
         schema:
-          type:
-          - integer
-          - 'null'
+          type: integer
           format: int64
           minimum: 0
       responses:
@@ -2013,18 +2015,22 @@ paths:
     get:
       tags:
       - TSIG
-      summary: List all TSIG keys
-      description: Lists every TSIG key without its secret. Fetch a single key to read the secret.
+      summary: List TSIG keys
+      description: Lists TSIG keys without their secrets, every one or only those authenticating into `role_name`. Fetch a single key to read the secret.
       operationId: list_tsig_keys
       parameters:
+      - name: role_name
+        in: query
+        description: Only the TSIG keys authenticating into this role.
+        required: false
+        schema:
+          type: string
       - name: limit
         in: query
         description: Items per page; the HTTP API defaults it, the daemon socket does not.
         required: false
         schema:
-          type:
-          - integer
-          - 'null'
+          type: integer
           format: int32
           maximum: 1000
           minimum: 1
@@ -2032,9 +2038,7 @@ paths:
         in: query
         required: false
         schema:
-          type:
-          - integer
-          - 'null'
+          type: integer
           format: int64
           minimum: 0
       responses:
@@ -4684,6 +4688,7 @@ components:
       required:
       - id
       - name
+      - builtin
       - algorithm
       - denial
       - split_keys
@@ -4694,6 +4699,10 @@ components:
       properties:
         algorithm:
           $ref: '#/components/schemas/DnssecAlgorithm'
+        builtin:
+          type: boolean
+          description: Whether this is the built-in `default` policy, which cannot be deleted.
+          example: true
         created_at:
           type: string
           format: date-time
@@ -4816,6 +4825,9 @@ components:
       - id
       - name
       - builtin
+      - grant_count
+      - token_count
+      - tsig_key_count
       - created_at
       properties:
         builtin:
@@ -4829,6 +4841,12 @@ components:
           type:
           - string
           - 'null'
+        grant_count:
+          type: integer
+          format: int64
+          description: The grants the role holds.
+          example: 2
+          minimum: 0
         id:
           type: integer
           format: int32
@@ -4836,6 +4854,18 @@ components:
         name:
           type: string
           example: external-dns-prod
+        token_count:
+          type: integer
+          format: int64
+          description: The API tokens authenticating into the role.
+          example: 3
+          minimum: 0
+        tsig_key_count:
+          type: integer
+          format: int64
+          description: The TSIG keys authenticating into the role.
+          example: 0
+          minimum: 0
     GetSecondaryResponse:
       type: object
       description: API representation of a secondary.
@@ -5172,6 +5202,7 @@ components:
             required:
             - id
             - name
+            - builtin
             - algorithm
             - denial
             - split_keys
@@ -5182,6 +5213,10 @@ components:
             properties:
               algorithm:
                 $ref: '#/components/schemas/DnssecAlgorithm'
+              builtin:
+                type: boolean
+                description: Whether this is the built-in `default` policy, which cannot be deleted.
+                example: true
               created_at:
                 type: string
                 format: date-time
@@ -5337,6 +5372,9 @@ components:
             - id
             - name
             - builtin
+            - grant_count
+            - token_count
+            - tsig_key_count
             - created_at
             properties:
               builtin:
@@ -5350,6 +5388,12 @@ components:
                 type:
                 - string
                 - 'null'
+              grant_count:
+                type: integer
+                format: int64
+                description: The grants the role holds.
+                example: 2
+                minimum: 0
               id:
                 type: integer
                 format: int32
@@ -5357,6 +5401,18 @@ components:
               name:
                 type: string
                 example: external-dns-prod
+              token_count:
+                type: integer
+                format: int64
+                description: The API tokens authenticating into the role.
+                example: 3
+                minimum: 0
+              tsig_key_count:
+                type: integer
+                format: int64
+                description: The TSIG keys authenticating into the role.
+                example: 0
+                minimum: 0
         pagination:
           $ref: '#/components/schemas/Pagination'
     PaginatedResponse_GetSecondaryResponse:

@@ -47,11 +47,11 @@ pub async fn delete(db: &Db, id: TsigKeyId) -> Result<(), DatabaseError> {
     }
 }
 
-/// Count the TSIG keys authenticating into a role: the in-use check before a role delete.
-pub async fn count_by_role_id(db: &Db, role_id: RoleId) -> Result<u64, DatabaseError> {
+/// List the TSIG keys authenticating into a role.
+pub async fn list_by_role_id(db: &Db, role_id: RoleId) -> Result<Vec<TsigKey>, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::tsig_key::count_by_role_id(pool, role_id).await,
-        Backend::Postgres(pool) => postgres::tsig_key::count_by_role_id(pool, role_id).await,
-        Backend::Sqlite(pool) => sqlite::tsig_key::count_by_role_id(pool, role_id).await,
+        Backend::MySql(pool) => mysql::tsig_key::list_by_role_id(pool, role_id).await,
+        Backend::Postgres(pool) => postgres::tsig_key::list_by_role_id(pool, role_id).await,
+        Backend::Sqlite(pool) => sqlite::tsig_key::list_by_role_id(pool, role_id).await,
     }
 }
