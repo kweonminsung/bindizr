@@ -49,7 +49,7 @@ it; a name that no longer resolves to it refuses its next transfer.
 
 The address authorizes a secondary by where it connects from, which is all a
 loopback pair needs. A transfer signed with a TSIG key is authorized by the
-key instead — see [TSIG Keys](tsig-keys.md#signing-zone-transfers) — but
+key instead — see [Signing zone transfers](advanced.md#signing-zone-transfers) — but
 NOTIFY still goes only to the registered secondaries, so a keyed secondary is
 registered all the same.
 
@@ -67,8 +67,8 @@ Every NOTIFY to that server is then signed with the key and the signature on
 its answer checked, so a server that accepts NOTIFY only under a key can be
 fed: `allow-notify { key notify-key; }` in BIND, `allow-notify: 10.0.0.5
 notify-key` in NSD, a `notify` ACL with the key in Knot. The key is a TSIG
-key like any other — see [TSIG Keys](tsig-keys.md) — and needs no grant,
-since a NOTIFY carries no zone data; the same key may also sign the
+key like any other — see [Access Control](access-control.md#tsig-keys) — and
+its role needs no grant, since a NOTIFY carries no zone data; the same key may also sign the
 transfers. A key a secondary signs with cannot be deleted until the
 secondary is moved off it.
 
@@ -124,7 +124,7 @@ $ bindizr secondary transfers ns2
 ZONE            TRANSFER     SERIAL  ADDRESS     AT                    ERROR
 example.com     IXFR delta   42      10.0.0.14   2026-09-28T09:41:05Z  -
 example.net     AXFR         7       10.0.0.14   2026-09-28T09:40:58Z  -
-internal.test   refused      -       10.0.0.14   2026-09-28T09:40:58Z  no grant for the zone
+internal.test   refused      -       10.0.0.14   2026-09-28T09:40:58Z  TSIG key 'xfr-key' is not granted 'zone:transfer' in zone 'internal.test'
 3 zones: 1 IXFR delta, 0 IXFR full, 1 AXFR, 1 refused, 0 failed
 ```
 

@@ -28,6 +28,9 @@ pub(crate) use dns::{
 use verify::{PreviousDnsKey, to_fqdn};
 
 /// The most a listing returns in one call; the HTTP API refuses more.
+/// Every record action, the grant a test role needs to read and change a zone's records.
+pub(crate) const RECORD_ACTIONS: &str = "record:read,record:create,record:update,record:delete";
+
 const RECORD_PAGE_LIMIT: u32 = 1000;
 const DNS_VERIFICATION_ENV: &str = "BINDIZR_E2E_VERIFY_DNS";
 static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
@@ -115,19 +118,21 @@ impl TestApp {
         self.auth_token = Some(token);
     }
 
-    /// Create a global API token over the daemon socket (which needs no HTTP
-    /// auth) and return its `(name, plaintext token)`.
+    /// Create an API token in the built-in `admin` role over the daemon socket
+    /// (which needs no HTTP auth) and return its `(name, plaintext token)`.
     pub(crate) async fn create_api_token(&self) -> (String, String) {
-        let name = format!("{}-global", self.namespace);
-        self.create_token_with(&["token", "create", &name, "--global"])
+        let name = format!("{}-admin", self.namespace);
+        self.create_token_with(&["token", "create", &name, "--role", "admin"])
             .await
     }
 
-    /// Create a scoped API token and return its `(name, plaintext token)`;
-    /// grant zones with `token grant`.
+    /// Create a role without grants and a token in it, both named alike, and
+    /// return the `(name, plaintext token)`; grant the role with `role grant`.
     pub(crate) async fn create_scoped_api_token(&self) -> (String, String) {
         let name = format!("{}-scoped", self.namespace);
-        self.create_token_with(&["token", "create", &name]).await
+        self.run_cli_success(&["role", "create", &name]).await;
+        self.create_token_with(&["token", "create", &name, "--role", &name])
+            .await
     }
 
     /// Create a test API token using the supplied CLI options.

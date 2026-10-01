@@ -75,10 +75,28 @@ Examples:
   bindizr role grant acme --zone example.com --actions record:create,record:delete \\
     --pattern '_acme-challenge' --types TXT
 
-Actions: zone:read, zone:create, zone:update, zone:delete, zone:transfer,
-record:read, record:create, record:update, record:delete, dnssec:read,
-dnssec:manage, secondary:read, secondary:manage, access:manage.
---pattern and --types narrow the record:* actions only.")]
+Actions:
+  zone:read         read a zone's status and version history
+  zone:create       create zones (every zone only)
+  zone:update       change a zone's settings, send NOTIFY, roll back a version
+  zone:delete       delete zones
+  zone:transfer     answer a TSIG-signed AXFR/IXFR (TSIG keys only)
+  record:read       list and read records; with no --pattern or --types, also
+                    export the zone and read its versions and diffs
+  record:create     add records, including by import, nsupdate and ExternalDNS
+  record:update     change a record in place
+  record:delete     delete records, including by nsupdate and ExternalDNS
+  dnssec:read       read DNSSEC status and check the parent DS; in every zone,
+                    also read signing policies
+  dnssec:manage     enable, disable and re-sign, manage keys and rollovers; in
+                    every zone, also change signing policies
+  secondary:read    list secondaries and their transfers (every zone only)
+  secondary:manage  register, change, check and remove secondaries (every zone only)
+  access:manage     manage roles, API tokens and TSIG keys (every zone only);
+                    equivalent to admin, since its holder can grant itself anything
+
+--pattern and --types narrow the record:* actions only. A grant permits its
+actions together; a role permits what any one of its grants does.")]
     Grant {
         /// Name of the role
         #[arg(value_name = "ROLE_NAME")]

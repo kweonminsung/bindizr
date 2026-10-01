@@ -47,15 +47,22 @@ transfers refused.
 
 The registered address authorizes a secondary by where it connects from,
 which is all a loopback pair needs. Where the secondary is elsewhere, give it a TSIG
-key: create one with
-[`bindizr tsig-key create <name> --global`](../cli/tsig-keys.md), then name it
-on the secondary's primary reference. Bindizr answers under that key and each
-server page shows the syntax.
+key in a role that holds `zone:transfer` in every zone, then name it on the
+secondary's primary reference. Bindizr answers under that key and each server
+page shows the syntax.
 
-!!! note "`--global` is required, not a convenience"
+```bash
+$ bindizr role create secondaries
+$ bindizr role grant secondaries --actions zone:transfer
+$ bindizr tsig-key create xfr-key --role secondaries
+```
 
-    A scoped key is granted zones you created, and the catalog zone is not
-    one of them: a catalog transfer signed by a scoped key is refused.
+!!! note "The grant must cover every zone"
+
+    Leave out `--zone`: a grant naming one zone does not reach the catalog
+    zone, and a catalog transfer signed by a key without `zone:transfer` in
+    every zone is refused. See
+    [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig).
 
 !!! warning "PowerDNS does not sign member transfers"
 

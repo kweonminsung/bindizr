@@ -107,20 +107,25 @@ nav:
       - Knot DNS: secondaries/knot.md
       - NSD: secondaries/nsd.md
       - PowerDNS: secondaries/powerdns.md
-  - Configuration: configuration.md
+  - Configuration:
+      - Overview: configuration.md
+      - Advanced: configuration/advanced.md
   - DNSSEC:
       - Overview: dnssec/index.md
       - Policies: dnssec/policies.md
       - Key Rollover: dnssec/rollover.md
       - Key Import and Export: dnssec/keys.md
-  - ExternalDNS: external-dns.md
+      - Advanced: dnssec/advanced.md
+  - ExternalDNS:
+      - Setup: external-dns.md
+      - Advanced: external-dns/advanced.md
   - CLI:
       - Commands: cli/index.md
       - Zones and Records: cli/zones.md
       - Secondaries: cli/secondaries.md
       - Dynamic Updates: cli/nsupdate.md
-      - TSIG Keys: cli/tsig-keys.md
-      - API Tokens: cli/tokens.md
+      - Access Control: cli/access-control.md
+      - Advanced: cli/advanced.md
   - HTTP API:
       - Overview: http-api/index.md
       - Prometheus Metrics: http-api/metrics.md

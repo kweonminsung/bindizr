@@ -28,20 +28,20 @@ messages you will meet with what to do.
 | `Secondary unreachable` | doctor, `zone status` | The address it was registered with is wrong, or a firewall sits between Bindizr and the secondary; `bindizr secondary check <name>` shows what the address resolves to and what the server answered. |
 | `Secondary out of sync` | doctor, `zone status` | The secondary has not pulled the current serial: the catalog zone's for `doctor`, a member zone's for `zone status`, so the two can disagree for the moment a transfer takes. Persisting, BIND's log names the reason it refused or deferred the transfer. |
 | `NOTIFY rejected` | doctor | BIND's `allow-notify` does not admit Bindizr's address (the setup script adds `allow-notify { any; }`), or it requires a key the secondary was not registered with — see [Signed NOTIFY](cli/secondaries.md#signed-notify). |
-| A secondary's transfer is `REFUSED` | BIND's log, `bindizr_xfr_total{result="refused"}` | The secondary is not registered or is disabled (`bindizr secondary list`), its address changed since it was registered (register it by [hostname](cli/secondaries.md#addresses) instead), or it signs with a key Bindizr does not know — see [TSIG Keys](cli/tsig-keys.md#signing-zone-transfers). |
+| A secondary's transfer is `REFUSED` | BIND's log, `bindizr_xfr_total{result="refused"}` | The secondary is not registered or is disabled (`bindizr secondary list`), its address changed since it was registered (register it by [hostname](cli/secondaries.md#addresses) instead), or it signs with a key Bindizr does not know or whose role lacks `zone:transfer` for the zone — see [Signing zone transfers](cli/advanced.md#signing-zone-transfers). |
 
 ## The HTTP API
 
 | Symptom | Fix |
 | --- | --- |
-| Every request answers `401` | Authentication is on and no valid token was sent. Create the first one on the daemon host: `sudo bindizr token create admin --global`; `bindizr status` shows whether authentication is on. |
-| `404` for a zone that exists | The token is scoped and not granted that zone: `bindizr token grant <TOKEN> <zone>` — see [API Tokens](cli/tokens.md). |
-| `403` on a write | The write falls outside the token's grant (its record-name pattern, types, or `--read-only`). |
+| Every request answers `401` | Authentication is on and no valid token was sent. Create the first one on the daemon host: `sudo bindizr token create admin --role admin`; `bindizr status` shows whether authentication is on. |
+| `404` for a zone that exists | No grant of the token's role reaches that zone: `bindizr role grant <ROLE> --zone <zone> --actions …` — see [Access Control](cli/access-control.md). `GET /tokens/self/grants` lists what the token holds. |
+| `403` on a write | The zone is visible but no grant of the token's role covers the operation: the action is missing, or the record falls outside its name pattern or types. See [what an operation needs](cli/advanced.md#what-an-operation-needs). |
 | `503` from `/health` | The database did not answer within the probe's timeout; see the database row above. |
 
 ## Dynamic updates and DNSSEC
 
 | Symptom | Fix |
 | --- | --- |
-| `unsigned NSUPDATE refused` | Sign the request with a TSIG key Bindizr knows and that is granted the zone — see [Dynamic Updates](cli/nsupdate.md). Turning off `dns.nsupdate_tsig_required` is for testing only. |
+| `unsigned NSUPDATE refused` | Sign the request with a TSIG key Bindizr knows, whose role covers the records the update touches — see [Dynamic Updates](cli/nsupdate.md). Turning off `dns.nsupdate_tsig_required` is for testing only. |
 | `dnssec disable` refused | The parent still serves the zone's DS, or could not be asked. Remove the DS at the parent and wait out its TTL, or pass `--skip-ds-check` when the parent is known to be clear — see [DNSSEC](dnssec/index.md). |

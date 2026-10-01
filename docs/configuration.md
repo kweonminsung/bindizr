@@ -126,10 +126,10 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate_tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
-| `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](#batching-notify) |
+| `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](configuration/advanced.md#batching-notify) |
 | `BINDIZR_DNS_NOTIFY_RETRIES` | `dns.notify.retries` | |
 | `BINDIZR_DNS_NOTIFY_TIMEOUT_SECS` | `dns.notify.timeout_secs` | |
-| `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer_cache.max_records` | `0` caches nothing; see [Sizing the transfer cache](#sizing-the-transfer-cache) |
+| `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer_cache.max_records` | `0` caches nothing; see [Sizing the transfer cache](configuration/advanced.md#sizing-the-transfer-cache) |
 | `BINDIZR_DNS_ZONE_DEFAULTS_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
 | `BINDIZR_DNS_ZONE_DEFAULTS_REFRESH` | `dns.zone_defaults.refresh` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_RETRY` | `dns.zone_defaults.retry` | |
@@ -149,33 +149,5 @@ The secondaries are not in this file. They are registered at runtime with
 and take effect on the next NOTIFY or transfer — see
 [Secondaries](cli/secondaries.md).
 
-## Batching NOTIFY
-
-`dns.notify.batch_ms` decides what happens on the write path once a change is
-committed.
-
-`0` (the default)
-:   Every change sends its own NOTIFY before the write is answered. Lowest
-    latency to visibility.
-
-a window in milliseconds
-:   The write is answered at commit; changes to the same zone inside the
-    window collapse into one NOTIFY, sent from a queue. Worth it when many
-    records change at once.
-
-## Sizing the transfer cache
-
-`dns.transfer_cache.max_records` counts records, not bytes, so converting a
-memory budget takes one step. A cached record costs roughly:
-
-| Record | Cost |
-| --- | --- |
-| `A` with a short name | 130 bytes |
-| `TXT` with a 255-byte value | 375 bytes |
-| `TXT` carrying a DKIM key | 860 bytes |
-
-The default of 500,000 records is about 64 MiB of plain address records, more
-where large `TXT` values or a signed zone's derived records dominate. Watch
-`bindizr_zone_cache_records` against the limit and
-`bindizr_zone_cache_evictions_total`: evictions rising beside a low hit ratio in
-`bindizr_zone_cache_lookups_total` mean the working set does not fit.
+When to batch NOTIFY and how to size the transfer cache is in
+[Advanced Configuration](configuration/advanced.md).

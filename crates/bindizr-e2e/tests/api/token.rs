@@ -16,9 +16,9 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     let (first_token_name, first_token) = app.create_api_token().await;
     app.set_auth_token(first_token.clone());
 
-    // The zone-name prefix keeps token names unique in compose mode.
+    // The zone-name prefix keeps token and role names unique in compose mode.
     let scoped_name = app.zone_name("http-scoped");
-    let global_name = app.zone_name("http-global");
+    let admin_name = app.zone_name("http-admin");
     let zone_body = |name: &str| {
         json!({
             "name": name,
@@ -28,22 +28,40 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         })
     };
 
+    // A token needs a role that exists.
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            "/tokens",
+            Some(json!({ "name": scoped_name, "role_name": scoped_name })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, body) = app
+        .send_request(Method::POST, "/roles", Some(json!({ "name": scoped_name })))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     let (status, body) = app
         .send_request(
             Method::POST,
             "/tokens",
-            Some(json!({ "name": scoped_name, "description": "created over HTTP" })),
+            Some(json!({
+                "name": scoped_name,
+                "role_name": scoped_name,
+                "description": "created over HTTP",
+            })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["token"]["name"], json!(scoped_name));
-    assert_eq!(body["token"]["global"], false);
+    assert_eq!(body["token"]["role_name"], json!(scoped_name));
     let scoped_secret = body["secret"]
         .as_str()
         .expect("create response carries the secret")
         .to_string();
 
-    // The new token authenticates, and is scoped: no zone plane.
+    // The new token authenticates, and its role holds no grant yet.
     app.set_auth_token(scoped_secret.clone());
     let (status, _) = app
         .send_request(
@@ -59,20 +77,20 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         .send_request(
             Method::POST,
             "/tokens",
-            Some(json!({ "name": global_name, "global": true })),
+            Some(json!({ "name": admin_name, "role_name": "admin" })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    assert_eq!(body["token"]["global"], true);
-    let global_secret = body["secret"].as_str().unwrap().to_string();
+    assert_eq!(body["token"]["role_name"], "admin");
+    let admin_secret = body["secret"].as_str().unwrap().to_string();
 
-    // A global token minted over HTTP holds the zone plane.
-    app.set_auth_token(global_secret);
+    // A token in the built-in role minted over HTTP may create zones.
+    app.set_auth_token(admin_secret);
     let (status, _) = app
         .send_request(
             Method::POST,
             "/zones",
-            Some(zone_body(&app.zone_name("global-zone"))),
+            Some(zone_body(&app.zone_name("admin-zone"))),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -81,7 +99,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
     let (status, body) = app.send_request(Method::GET, "/tokens", None).await;
     assert_eq!(status, StatusCode::OK);
     let tokens = body["items"].as_array().unwrap();
-    for name in [&first_token_name, &scoped_name, &global_name] {
+    for name in [&first_token_name, &scoped_name, &admin_name] {
         assert!(
             tokens.iter().any(|token| token["name"] == json!(name)),
             "{name} missing from {body}"
@@ -108,7 +126,7 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         .send_request(
             Method::POST,
             "/tokens",
-            Some(json!({ "name": scoped_name })),
+            Some(json!({ "name": scoped_name, "role_name": "admin" })),
         )
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -118,7 +136,11 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         .send_request(
             Method::POST,
             "/tokens",
-            Some(json!({ "name": app.zone_name("never"), "expires_in_days": i64::MAX })),
+            Some(json!({
+                "name": app.zone_name("never"),
+                "role_name": "admin",
+                "expires_in_days": i64::MAX,
+            })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -126,7 +148,11 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
         .send_request(
             Method::POST,
             "/tokens",
-            Some(json!({ "name": app.zone_name("verbose"), "description": "x".repeat(256) })),
+            Some(json!({
+                "name": app.zone_name("verbose"),
+                "role_name": "admin",
+                "description": "x".repeat(256),
+            })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -143,12 +169,12 @@ async fn tokens_are_created_listed_and_deleted_over_http() {
 
     app.set_auth_token(first_token);
     let (status, _) = app
-        .send_request(Method::DELETE, &format!("/tokens/{global_name}"), None)
+        .send_request(Method::DELETE, &format!("/tokens/{admin_name}"), None)
         .await;
     assert_eq!(status, StatusCode::OK);
 }
 
-/// Verify that scoped token cannot manage tokens.
+/// Verify that a token whose role lacks `access:manage` cannot manage tokens or roles.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
 async fn scoped_token_cannot_manage_tokens() {
@@ -157,8 +183,8 @@ async fn scoped_token_cannot_manage_tokens() {
         ..Default::default()
     })
     .await;
-    let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token);
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.set_auth_token(scoped_token);
 
@@ -166,7 +192,15 @@ async fn scoped_token_cannot_manage_tokens() {
         .send_request(
             Method::POST,
             "/tokens",
-            Some(json!({ "name": app.zone_name("escalation") })),
+            Some(json!({ "name": app.zone_name("escalation"), "role_name": "admin" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = app
+        .send_request(
+            Method::POST,
+            &format!("/roles/{scoped_name}/grants"),
+            Some(json!({ "actions": ["access:manage"] })),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -190,18 +224,18 @@ async fn tokens_self_describes_the_bearer() {
         ..Default::default()
     })
     .await;
-    let (global_name, global_token) = app.create_api_token().await;
+    let (admin_name, admin_token) = app.create_api_token().await;
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
 
-    for (name, token, global) in [
-        (global_name, global_token, true),
-        (scoped_name, scoped_token, false),
+    for (name, token, role) in [
+        (admin_name, admin_token, "admin".to_string()),
+        (scoped_name.clone(), scoped_token, scoped_name),
     ] {
         app.set_auth_token(token);
         let (status, body) = app.send_request(Method::GET, "/tokens/self", None).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["token"]["name"], json!(name));
-        assert_eq!(body["token"]["global"], json!(global));
+        assert_eq!(body["token"]["role_name"], json!(role));
         assert!(body.get("secret").is_none(), "{body}");
     }
 }

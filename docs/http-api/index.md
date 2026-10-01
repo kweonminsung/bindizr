@@ -71,16 +71,16 @@ Every other failure answers the usual `{"error", "code"}` envelope.
 Bootstrap the first token with the CLI:
 
 ```bash
-$ bindizr token create admin --global
+$ bindizr token create admin --role admin
 ```
 
 Every token is created through the CLI or through `POST /tokens` with a token
 that already exists, so the first one is always `bindizr token create` on the
 daemon host — in the container or pod when that is where Bindizr runs.
 
-Tokens are scoped by default and act only on the zones they are
-[granted](../cli/tokens.md); `--global` covers every zone and the
-zone plane.
+Every token names one [role](../cli/access-control.md), whose grants decide
+which zones it sees and what it may do there; the built-in `admin` role covers
+everything.
 
 Then include it in the `Authorization` header:
 
@@ -88,13 +88,14 @@ Then include it in the `Authorization` header:
 $ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:3000/zones
 ```
 
-From there a global token manages tokens over HTTP as well — `POST /tokens`
-returns the new secret once, `GET /tokens` lists them, `DELETE /tokens/{name}`
-revokes one. `GET /tokens/self` describes the token a request carries —
-name, scope, expiry, never the secret — and `GET /tokens/self/grants` lists
-the grants it holds; both work for scoped tokens too. The CLI stays the
-recovery path: if every global token is lost, create a new one on the daemon
-host.
+From there a token whose role has `access:manage` manages access over HTTP
+as well — `POST /roles` and `POST /roles/{name}/grants` define roles,
+`POST /tokens` (with a `role_name`) returns a new secret once, `GET /tokens`
+lists tokens, `DELETE /tokens/{name}` revokes one. Any token may read itself:
+`GET /tokens/self` describes the token a request carries — name, `role_name`,
+expiry, never the secret — and `GET /tokens/self/grants` lists its role's
+grants. The CLI stays the recovery path: if every token that could manage
+access is lost, create a new one on the daemon host.
 
 Setting `api.authentication_required = false` disables the check entirely — only
 sensible when Bindizr is bound to a loopback address or an otherwise trusted

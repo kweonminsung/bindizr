@@ -91,7 +91,7 @@ credentials and the service reads it as the `bindizr` user.
 $ sudo systemctl start bindizr
 
 # Create an admin API token. The CLI runs as the service user, so it needs sudo.
-$ sudo bindizr token create admin --global
+$ sudo bindizr token create admin --role admin
 
 # Register the secondary from step 3: it receives NOTIFY and may pull zones from
 # this address. See Secondaries under CLI for a server elsewhere.

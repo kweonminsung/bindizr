@@ -102,7 +102,7 @@ pattern as well as the catalog zone, so member transfers are signed too:
 key:
     name: "xfr-key"
     algorithm: hmac-sha256
-    secret: "<base64 secret from bindizr tsig-key create --global>"
+    secret: "<base64 secret from bindizr tsig-key create>"
 
 pattern:
     name: "catalog-member"
@@ -129,5 +129,5 @@ that has to arrive first.
 instead. Bindizr sends NOTIFY unsigned otherwise, so requiring a key it was
 not given would reject it.
 
-See [TSIG Keys](../cli/tsig-keys.md) for creating the key and granting it the
-zones it may transfer.
+See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
+for creating the key in a role that holds `zone:transfer` in every zone.

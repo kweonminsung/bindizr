@@ -1,7 +1,7 @@
 # CLI Commands
 
 Bindizr provides a command-line interface for managing the DNS synchronization
-service, its zone data, access control (API tokens, TSIG keys), and DNSSEC.
+service, its zone data, access control (roles, API tokens, TSIG keys), and DNSSEC.
 `bindizr help` lists everything; this page covers the commands you reach for
 most and points to the pages that cover the rest.
 
@@ -18,8 +18,9 @@ Kubernetes. There is no remote mode.
 | `completion`, `man` | The shell completion scripts and the man page | this page |
 | `zone`, `record` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | [Zones and Records](zones.md) |
 | `secondary` | The secondary servers: who receives NOTIFY and may pull zones | [Secondaries](secondaries.md) |
-| `token` | API tokens and the zones each is granted over HTTP | [API Tokens](tokens.md) |
-| `tsig-key` | TSIG keys and the zones each is granted for nsupdate | [TSIG Keys](tsig-keys.md), [Dynamic Updates](nsupdate.md) |
+| `role` | Roles and the grants that decide what their tokens and keys may do | [Access Control](access-control.md) |
+| `token` | API tokens, each authenticating into one role | [Access Control](access-control.md#api-tokens) |
+| `tsig-key` | TSIG keys, each authenticating into one role, for nsupdate and transfers | [Access Control](access-control.md#tsig-keys), [Dynamic Updates](nsupdate.md) |
 | `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec/index.md) |
 
 Every command that reports something prints a table and takes `-o json` or
@@ -93,6 +94,6 @@ without parsing the message.
 | `2` | Usage error, such as an unknown command or a missing argument |
 | `3` | Not found: no such zone, record, token, version, key, or policy |
 | `4` | Conflict: the name is taken, or the object is in use or in the wrong state |
-| `5` | Denied: the token is missing, invalid, or lacks a grant |
+| `5` | Denied: the token is missing, invalid, or its role lacks a grant |
 | `6` | The configuration file is unusable, so running the same command again changes nothing |
 | `7` | Unavailable: the daemon is not running, so the command never reached it |
