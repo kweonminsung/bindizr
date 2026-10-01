@@ -77,7 +77,7 @@ every member transfer the template derives from that remote:
 key:
   - id: xfr-key
     algorithm: hmac-sha256
-    secret: <base64 secret from bindizr tsig-key create --global>
+    secret: <base64 secret from bindizr tsig-key create>
 ```
 
 Then add `key` to the `bindizr` remote declared above — Knot refuses a repeated
@@ -94,5 +94,5 @@ remote:
 Leave the `acl` matching on address alone: Bindizr sends NOTIFY unsigned, so an
 ACL that demanded the key would reject it.
 
-See [TSIG Keys](../cli/tsig-keys.md) for creating the key and granting it the
-zones it may transfer.
+See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
+for creating the key in a role that holds `zone:transfer` in every zone.

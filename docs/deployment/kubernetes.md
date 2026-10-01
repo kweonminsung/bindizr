@@ -100,7 +100,7 @@ pod:
 
 ```bash
 $ kubectl exec -n bindizr deploy/bindizr-bindizr-chart -- \
-  bindizr token create admin --global
+  bindizr token create admin --role admin
 ```
 
 The secret is printed once and cannot be shown again, so a lost token is
@@ -112,8 +112,8 @@ $ kubectl port-forward -n bindizr svc/bindizr-bindizr-chart-api 8000:8000
 $ curl -H "Authorization: Bearer $BINDIZR_TOKEN" http://127.0.0.1:8000/zones
 ```
 
-Hand out further tokens from this one, each scoped to the zones it needs —
-see [API Tokens](../cli/tokens.md). Clients that update zones themselves
+Hand out further tokens from this one, each in a role granted only what it
+needs — see [Access Control](../cli/access-control.md). Clients that update zones themselves
 (cert-manager's DNS-01 solver, a DHCP server) sign with a TSIG key instead,
 created over the HTTP API with this token — see
 [Dynamic Updates](../cli/nsupdate.md#the-first-key).

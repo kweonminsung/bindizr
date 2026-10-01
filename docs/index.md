@@ -62,7 +62,9 @@ Open-source control plane for authoritative DNS
 
 - **DNS NOTIFY**: Notify secondaries after each change, with configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
 
-- **nsupdate (Dynamic Update)**: RFC 2136 dynamic updates with TSIG-signed requests, managed TSIG keys, and per-zone grants.
+- **nsupdate (Dynamic Update)**: RFC 2136 dynamic updates with TSIG-signed requests and managed TSIG keys.
+
+- **Role-Based Access Control**: API tokens and TSIG keys each authenticate into a role whose grants set the zones, actions, record names, and record types it may touch — see [Access Control](cli/access-control.md).
 
 - **DNSSEC**: Named signing policies (algorithm, NSEC/NSEC3, CSK or KSK/ZSK, timing), automatic signing and re-signing, key rollovers (ZSK rolls scheduled and promoted automatically, CSK/KSK rolls confirmed by the operator), BIND-format key import/export, and RFC 8078 DS withdrawal — see [DNSSEC](dnssec/index.md).
 

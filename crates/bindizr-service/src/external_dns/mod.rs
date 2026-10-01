@@ -40,6 +40,13 @@ pub fn adjust_records(
     Ok(ExternalDnsAdjustResponse { records })
 }
 
+/// What one ExternalDNS sync does in a domain: read ownership records, add, delete.
+const SYNC_ACTIONS: [Action; 3] = [
+    Action::RecordRead,
+    Action::RecordCreate,
+    Action::RecordDelete,
+];
+
 /// List manageable subtrees as ExternalDNS domain filters.
 /// Narrow grants contribute their subtree so planning stays within apply permissions.
 pub async fn list_managed_domains(
@@ -62,14 +69,15 @@ pub async fn list_managed_domains(
             .collect());
     };
 
-    // Deduplicated and ordered: two grants can name one domain. A grant that
-    // cannot write records leaves ExternalDNS nothing to do.
+    // Deduplicated and ordered: two grants can name one domain. A grant
+    // missing a sync action would only fail every sync it reaches.
     let mut domains = BTreeSet::new();
     for zone in &zones {
         for grant in grants.iter().filter(|grant| {
             grant.zone_scope.covers(zone.id)
-                && (grant.actions.contains(Action::RecordCreate)
-                    || grant.actions.contains(Action::RecordDelete))
+                && SYNC_ACTIONS
+                    .iter()
+                    .all(|action| grant.actions.contains(*action))
         }) {
             domains.insert(policy::normalize_lookup_name(&pattern_domain(
                 &grant.record_name_pattern,

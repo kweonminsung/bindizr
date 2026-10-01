@@ -26,7 +26,26 @@ pub struct ParseActionError {
     pub value: String,
 }
 
-/// One operation a grant permits, spelled `<resource>:<action>`.
+/// One operation a grant permits, spelled `<resource>:<action>`:
+///
+/// - `zone:read` — read a zone's status and version history
+/// - `zone:create` — create zones; every zone only
+/// - `zone:update` — change a zone's settings, send NOTIFY, roll back a version
+/// - `zone:delete` — delete zones
+/// - `zone:transfer` — answer a TSIG-signed AXFR/IXFR; TSIG keys only
+/// - `record:read` — list and read records; with no name or type limit, also
+///   export the zone and read its versions and diffs
+/// - `record:create` — add records, including by import, nsupdate and ExternalDNS
+/// - `record:update` — change a record in place
+/// - `record:delete` — delete records, including by nsupdate and ExternalDNS
+/// - `dnssec:read` — read DNSSEC status and check the parent DS; in every zone,
+///   also read signing policies
+/// - `dnssec:manage` — enable, disable and re-sign, manage keys and rollovers;
+///   in every zone, also change signing policies
+/// - `secondary:read` — list secondaries and the transfers served them; every zone only
+/// - `secondary:manage` — register, change, check and remove secondaries; every zone only
+/// - `access:manage` — manage roles, API tokens and TSIG keys; every zone only,
+///   and equivalent to admin since its holder can grant itself anything
 #[derive(
     Debug,
     Clone,
@@ -49,7 +68,6 @@ pub enum Action {
     ZoneUpdate,
     #[serde(rename = "zone:delete")]
     ZoneDelete,
-    /// Serve the zone whole over AXFR/IXFR to a TSIG-signed request.
     #[serde(rename = "zone:transfer")]
     ZoneTransfer,
     #[serde(rename = "record:read")]
@@ -68,8 +86,6 @@ pub enum Action {
     SecondaryRead,
     #[serde(rename = "secondary:manage")]
     SecondaryManage,
-    /// Administer tokens, TSIG keys and roles; its holder can grant itself
-    /// anything, so it is equivalent to admin.
     #[serde(rename = "access:manage")]
     AccessManage,
 }

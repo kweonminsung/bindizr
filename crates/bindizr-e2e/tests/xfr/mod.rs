@@ -10,7 +10,7 @@ use serial_test::serial;
 
 use crate::common::{
     TestApp, TransferOutcome, axfr,
-    dns::nsupdate::{SigningKey, create_tsig_key},
+    dns::nsupdate::{KeyRole, SigningKey, create_tsig_key},
     wait_for_any_dns_record,
 };
 
@@ -92,7 +92,7 @@ async fn a_signed_transfer_answers_under_the_key_that_asked() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
-    let key = create_tsig_key(&app, "xfr-global-key", true).await;
+    let key = create_tsig_key(&app, "xfr-admin-key", KeyRole::Admin).await;
 
     // `axfr` verifies every envelope's MAC, so an unsigned answer — which BIND
     // discards as "expected a TSIG" — fails here rather than passing silently.
@@ -100,10 +100,10 @@ async fn a_signed_transfer_answers_under_the_key_that_asked() {
     assert!(outcome.records() >= 3);
 }
 
-/// Verify that a key transfers only the zones it is granted whole.
+/// Verify that a key transfers only the zones its role grants `zone:transfer` in.
 #[tokio::test]
 #[serial]
-async fn a_key_transfers_only_the_zones_it_is_granted_whole() {
+async fn a_key_transfers_only_the_zones_its_role_may_transfer() {
     let app = transfer_app().await;
     let granted = app.create_test_zone().await;
     let granted = granted["name"].as_str().unwrap();
@@ -112,17 +112,26 @@ async fn a_key_transfers_only_the_zones_it_is_granted_whole() {
     let ungranted = app.zone_name("ungranted.example");
     app.create_zone_cli(&ungranted, "3600").await;
 
-    let key = create_tsig_key(&app, "xfr-scoped-key", false).await;
-    app.run_cli_success(&["tsig-key", "grant", &key.name, granted])
-        .await;
-    // A grant over part of a zone cannot hand the zone over whole.
+    let key = create_tsig_key(&app, "xfr-scoped-key", KeyRole::Own).await;
     app.run_cli_success(&[
-        "tsig-key",
+        "role",
         "grant",
         &key.name,
+        "--zone",
+        granted,
+        "--actions",
+        "zone:transfer",
+    ])
+    .await;
+    // Reading a zone's records is not transferring it.
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &key.name,
+        "--zone",
         &narrowed,
-        "--pattern",
-        "*.dyn",
+        "--actions",
+        "record:read",
     ])
     .await;
 
@@ -142,11 +151,19 @@ async fn a_transfer_only_grant_pulls_the_zone_without_changing_it() {
     let app = transfer_app().await;
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
-    let key = create_tsig_key(&app, "xfr-read-only-key", false).await;
-    app.run_cli_success(&["tsig-key", "grant", &key.name, zone_name, "--read-only"])
-        .await;
+    let key = create_tsig_key(&app, "xfr-transfer-key", KeyRole::Own).await;
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &key.name,
+        "--zone",
+        zone_name,
+        "--actions",
+        "zone:transfer",
+    ])
+    .await;
 
-    let outcome = axfr(app.dns_port(), zone_name, Some(&key)).expect("read-only AXFR");
+    let outcome = axfr(app.dns_port(), zone_name, Some(&key)).expect("transfer-only AXFR");
     assert!(outcome.records() >= 3);
 
     // The same key must not be able to write what it just read.

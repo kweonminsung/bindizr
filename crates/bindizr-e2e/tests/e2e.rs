@@ -10,10 +10,9 @@ mod api {
     mod notify;
     mod openapi;
     mod record;
+    mod role;
     mod secondary;
     mod token;
-    mod token_grant;
-    mod tsig_grant;
     mod tsig_key;
     mod zone;
 }
@@ -27,6 +26,7 @@ mod cli {
     mod doctor;
     mod notify;
     mod record;
+    mod role;
     mod secondary;
     mod token;
     mod tsig_key;

@@ -133,7 +133,7 @@ that address, which covers the catalog zone and every member zone alike:
 ```text
 key "xfr-key" {
     algorithm hmac-sha256;
-    secret "<base64 secret from bindizr tsig-key create --global>";
+    secret "<base64 secret from bindizr tsig-key create>";
 };
 
 server 10.0.0.5 {
@@ -141,5 +141,5 @@ server 10.0.0.5 {
 };
 ```
 
-See [TSIG Keys](../cli/tsig-keys.md) for creating the key and granting it the
-zones it may transfer.
+See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
+for creating the key in a role that holds `zone:transfer` in every zone.

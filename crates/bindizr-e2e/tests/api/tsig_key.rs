@@ -13,7 +13,7 @@ async fn tsig_key_create_read_delete() {
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": "update-key" })),
+            Some(json!({ "role_name": "admin", "name": "update-key" })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -40,7 +40,7 @@ async fn tsig_key_create_read_delete() {
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": "update-key" })),
+            Some(json!({ "role_name": "admin", "name": "update-key" })),
         )
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -67,10 +67,11 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
             Method::POST,
             "/tsig-keys",
             Some(json!({
-                "name": "imported-key",
-                "algorithm": "hmac-sha512",
-                "secret": "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=",
-            })),
+                           "role_name": "admin",
+            "name": "imported-key",
+                           "algorithm": "hmac-sha512",
+                           "secret": "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=",
+                       })),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -84,7 +85,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": "bad-secret", "secret": "not base64!!" })),
+            Some(json!({ "role_name": "admin", "name": "bad-secret", "secret": "not base64!!" })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -94,7 +95,7 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": "short-secret", "secret": "c2VjcmV0" })),
+            Some(json!({ "role_name": "admin", "name": "short-secret", "secret": "c2VjcmV0" })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -105,65 +106,45 @@ async fn tsig_key_imports_existing_secret_and_algorithm() {
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": "bad-alg", "algorithm": "hmac-md5" })),
+            Some(json!({ "role_name": "admin", "name": "bad-alg", "algorithm": "hmac-md5" })),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-/// Verify creation and deletion of globally authorized TSIG keys.
+/// Verify that a TSIG key names its role, which must exist.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn global_tsig_key_lifecycle() {
+async fn tsig_key_names_its_role() {
     let app = TestApp::start().await;
 
-    let (status, body) = app
+    let (status, _) = app
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": "global-key", "global": true })),
+            Some(json!({ "name": "roleless-key", "role_name": "no-such-role" })),
         )
         .await;
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["tsig_key"]["global"], true);
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     let (status, body) = app
         .send_request(
             Method::POST,
             "/tsig-keys",
-            Some(json!({ "name": "scoped-key" })),
+            Some(json!({ "name": "admin-key", "role_name": "admin" })),
         )
         .await;
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["tsig_key"]["global"], false);
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["tsig_key"]["role_name"], "admin");
 
     let (status, body) = app.send_request(Method::GET, "/tsig-keys", None).await;
     assert_eq!(status, StatusCode::OK);
     let keys = body["items"].as_array().unwrap();
-    let global = keys.iter().find(|k| k["name"] == "global-key").unwrap();
-    assert_eq!(global["global"], true);
-
-    // A global key already covers every zone, so it cannot be granted one.
-    let zone_name = app.zone_name("global-key.example");
-    app.create_named_zone(&zone_name).await;
+    let key = keys.iter().find(|k| k["name"] == "admin-key").unwrap();
+    assert_eq!(key["role_name"], "admin");
 
     let (status, _) = app
-        .send_request(
-            Method::POST,
-            "/tsig-keys/global-key/grants",
-            Some(json!({ "zone_name": zone_name })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-
-    // A global key holds no grants, so it deletes without a guard.
-    let (status, _) = app
-        .send_request(Method::DELETE, "/tsig-keys/global-key", None)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
-    let (status, _) = app
-        .send_request(Method::DELETE, "/tsig-keys/scoped-key", None)
+        .send_request(Method::DELETE, "/tsig-keys/admin-key", None)
         .await;
     assert_eq!(status, StatusCode::OK);
 }
