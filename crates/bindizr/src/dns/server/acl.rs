@@ -80,7 +80,7 @@ struct CachedAddrs {
 
 /// The hostnames the ACL resolved lately, so a transfer request waits on the
 /// resolver once per window rather than once per query.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct ResolvedAddrs {
     cache: Mutex<HashMap<String, CachedAddrs>>,
 }
@@ -88,9 +88,7 @@ pub(crate) struct ResolvedAddrs {
 impl ResolvedAddrs {
     /// An empty resolution cache.
     pub(crate) fn new() -> Self {
-        ResolvedAddrs {
-            cache: Mutex::new(HashMap::new()),
-        }
+        Self::default()
     }
 
     /// Return cached address resolutions for an ACL hostname.

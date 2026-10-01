@@ -1,12 +1,8 @@
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, Pool, Sqlite, Transaction};
 
-/// Hides serials whose journal carries only signer-generated changes
-/// (re-signs, rollovers). Serials with user changes, serials with no journal
-/// at all (zone creation, forced bumps), and the current serial stay listed.
-///
-/// Takes one extra `?` bind of the zone id, keeping the current-serial
-/// subquery uncorrelated.
+/// Exclude signer-only serials; retain user changes, unjournaled serials, and the current serial.
+/// Bind one extra zone id to keep the current-serial subquery uncorrelated.
 const USER_CHANGES_FILTER: &str = r#"
               AND (
                   zone_versions.serial = (SELECT zones.serial FROM zones WHERE zones.id = ?)
@@ -116,7 +112,7 @@ pub(crate) async fn list_in_serial_range(
 }
 
 /// List zone versions for a zone.
-pub(crate) async fn list(
+pub(crate) async fn list_by_scope(
     pool: &Pool<Sqlite>,
     zone_id: ZoneId,
     scope: VersionScope,
@@ -149,7 +145,7 @@ pub(crate) async fn list(
 }
 
 /// Count zone versions using the requested change filter.
-pub(crate) async fn count(
+pub(crate) async fn count_by_scope(
     pool: &Pool<Sqlite>,
     zone_id: ZoneId,
     scope: VersionScope,

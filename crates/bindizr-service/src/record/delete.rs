@@ -136,7 +136,7 @@ pub async fn delete(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, &caller.change_subject()).await?;
 
         log::info!(
             "event=record_delete zone={} name={} type={} value={} record_id={}",
@@ -193,8 +193,7 @@ pub async fn delete_matching(
 
     let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
-        let zone =
-            zone::get_visible_by_name_tx(&mut tx, caller, &zone_name, LockLevel::Exclusive).await?;
+        let zone = zone::get_by_name_tx(&mut tx, caller, &zone_name, LockLevel::Exclusive).await?;
         let owner = normalize_record_owner_name(&filter.name, &zone.name)?;
 
         // Authorize the request, not the rows it matches: an answer that
@@ -259,7 +258,7 @@ pub async fn delete_matching(
         super::delete_with_changes_tx(&mut tx, zone.id, new_serial, &matched).await?;
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Once for the whole set, so IXFR consumers see one step.
-        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, &caller.change_subject()).await?;
 
         Ok((response, owner))
     }

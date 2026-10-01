@@ -1,13 +1,8 @@
-//! Caller identity and zone-scope authorization. Scoped tokens are the HTTP
-//! twin of non-global TSIG keys: record-plane only, within their
-//! `token_grants` rows matched by the nsupdate pattern/type rules.
-//! Invisible zones read as 404, denied writes as 403.
+//! Authorize scoped tokens through record-plane grants using nsupdate pattern/type rules.
+//! Invisible zones read as 404; denied writes as 403.
 //!
-//! Every service operation a front end can reach takes a [`Caller`] and
-//! decides its own authorization; a transport never gates on its own. The
-//! daemon socket is reachable only by the local daemon owner, so it passes
-//! [`Caller::Global`]. Operations serving the DNS protocol plane (transfers,
-//! NOTIFY, nsupdate) take no caller — that plane authorizes by ACL and TSIG.
+//! Management entry points authorize their [`Caller`]; the local socket passes
+//! [`Caller::Global`]. DNS operations authorize through ACL and TSIG instead.
 
 use std::sync::Arc;
 
@@ -29,10 +24,8 @@ use crate::{
     zone::version::ChangeSubject,
 };
 
-/// The identity a request acts as. The daemon socket and disabled
-/// authentication act as `Global`, behind no credential at all; a token
-/// carries the name a change is recorded under, and a scoped one its grants,
-/// preloaded once per request by the auth middleware.
+/// Request identity: `Global` for the local socket or disabled authentication;
+/// otherwise a token with its audit name and scoped grants loaded by auth middleware.
 #[derive(Debug, Clone)]
 pub enum Caller {
     Global,
@@ -142,10 +135,8 @@ impl Caller {
         }
     }
 
-    /// Authorize record-plane writes in `zone`, share-locking the caller's
-    /// grants inside the transaction so a concurrent revocation waits for
-    /// this mutation instead of racing it. An ungranted zone reads as
-    /// `NotFound`, so a write cannot probe zone existence either.
+    /// Authorize record writes, share-locking grants so revocation waits for the mutation.
+    /// Return `NotFound` for ungranted zones to prevent existence probes.
     pub(crate) async fn authorize_record_writes_tx(
         &self,
         tx: &mut Transaction<'_>,

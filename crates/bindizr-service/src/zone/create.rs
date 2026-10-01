@@ -43,7 +43,7 @@ pub async fn create(
     };
 
     let mut tx = transaction::begin_tx(cx, "Failed to create zone").await?;
-    let apply_result = create_tx(cx, &mut tx, caller, create_zone_request).await;
+    let apply_result = create_tx(&mut tx, cx, caller, create_zone_request).await;
     let created_zone = transaction::finish_tx(tx, apply_result, "Failed to create zone").await?;
 
     log::info!(
@@ -67,13 +67,11 @@ pub async fn create(
     })
 }
 
-/// Insert a zone and its first version on the caller's transaction, which
-/// lets a zone import create and fill a zone in one transaction and a dry
-/// run roll both back. [`create`] adds the duplicate pre-check and the
-/// catalog NOTIFY after commit; here UNIQUE(name) is the whole check.
+/// Insert a zone and its first version in the caller's transaction for atomic import or dry run.
+/// UNIQUE(name) catches duplicates; [`create`] adds the pre-check and post-commit catalog NOTIFY.
 pub(crate) async fn create_tx(
-    cx: &Context,
     tx: &mut Transaction<'_>,
+    cx: &Context,
     caller: &Caller,
     create_zone_request: &CreateZoneRequest,
 ) -> Result<Zone, ServiceError> {
@@ -161,8 +159,8 @@ pub(crate) async fn create_tx(
     }
 
     super::save_version_tx(
-        cx,
         tx,
+        cx,
         &created_zone,
         created_zone.serial,
         &caller.change_subject(),

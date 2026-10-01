@@ -27,12 +27,13 @@ use crate::{
         record::{Record, RecordData, RecordKey},
         zone::Zone,
     },
+    pagination::{build_paginated_response, normalize_page_limit},
     record::{self, validate_record_add_constraints_normalized, validate_record_name_in_zone},
     serial::{generate_serial, validate_stored_serial},
     transaction,
     types::{
         PaginatedResponse, RollbackSummary, RollbackZoneResponse, Run, VersionDetailResponse,
-        VersionDiffResponse, VersionRecordResponse, ZoneVersionResponse, normalize_page_limit,
+        VersionDiffResponse, VersionRecordResponse, ZoneVersionResponse,
     },
 };
 
@@ -62,9 +63,9 @@ pub async fn list_versions(
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
     let zone = super::get_by_name(cx, caller, zone_name).await?;
 
-    let total = bindizr_db::zone_version::count(cx.db(), zone.id, scope).await?;
+    let total = bindizr_db::zone_version::count_by_scope(cx.db(), zone.id, scope).await?;
     let effective_limit = normalize_page_limit(limit)?;
-    let versions = bindizr_db::zone_version::list(
+    let versions = bindizr_db::zone_version::list_by_scope(
         cx.db(),
         zone.id,
         scope,
@@ -77,7 +78,7 @@ pub async fn list_versions(
         .map(ZoneVersionResponse::try_from)
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(PaginatedResponse::from_page(
+    Ok(build_paginated_response(
         items,
         Some(effective_limit),
         offset,
@@ -96,8 +97,7 @@ pub async fn get_version(
     let mut tx = transaction::begin_read_tx(cx, "Failed to load version").await?;
 
     let result = async {
-        let zone =
-            super::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
+        let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
         caller.authorize_zone_unrestricted(&zone)?;
         let version = bindizr_db::zone_version::get_by_serial_tx(
             &mut tx,
@@ -140,8 +140,7 @@ pub async fn diff_versions(
     let mut tx = transaction::begin_read_tx(cx, "Failed to diff versions").await?;
 
     let result = async {
-        let zone =
-            super::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
+        let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
         caller.authorize_zone_unrestricted(&zone)?;
         let to = to.unwrap_or(zone.serial);
 
@@ -162,10 +161,8 @@ pub async fn diff_versions(
     transaction::finish_tx(tx, result, "Failed to diff versions").await
 }
 
-/// Roll a zone back to the state captured at `target_serial`. The records
-/// and SOA metadata return to that serial's state while the zone's
-/// serial advances to a new value (serials never go backward). The zone
-/// name is not part of a version and is never restored.
+/// Restore records and SOA metadata at `target_serial`, advancing to a new serial.
+/// Versions exclude the zone name, so rollback preserves it.
 pub async fn rollback(
     cx: &Context,
     caller: &Caller,
@@ -179,7 +176,7 @@ pub async fn rollback(
     let mut tx = transaction::begin_tx(cx, "Failed to roll back zone").await?;
 
     let apply_result = async {
-        let zone = super::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
         if target.as_u32() < 1 || target >= zone.serial {
             return Err(ServiceError::invalid_input(format!(
@@ -338,8 +335,8 @@ pub async fn rollback(
         // never restored (derived journal rows are skipped on rewind).
         dnssec::sign_zone_tx(&mut tx, &restored_zone, new_serial).await?;
         super::save_version_tx(
-            cx,
             &mut tx,
+            cx,
             &restored_zone,
             new_serial,
             &caller.change_subject(),

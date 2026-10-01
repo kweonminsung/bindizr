@@ -1,10 +1,7 @@
-"""Knot DNS adapter — RFC 2136 dynamic updates against a Knot primary.
+"""Knot primary adapter using `nsupdate`, comparable with the BIND9+nsupdate adapter.
 
-Knot is a full participant: it has a real write plane (DDNS) and keeps a journal,
-so it serves true IXFR deltas as well as AXFR. Writes go through `nsupdate`, the
-same mechanism as the BIND9+nsupdate system, which makes the two directly
-comparable; bulk loads batch many updates into one UPDATE transaction, which is
-how an operator would actually load a zone over DDNS.
+Bulk loads batch records into one UPDATE transaction. Knot's journal supports
+IXFR deltas as well as AXFR, so it participates in every benchmark.
 """
 from __future__ import annotations
 

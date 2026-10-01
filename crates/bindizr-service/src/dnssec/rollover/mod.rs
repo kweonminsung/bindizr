@@ -49,7 +49,7 @@ pub async fn start_rollover(
     let result = async {
         // Select a role only after ruling out an existing rollover under the zone lock.
         let mut signed =
-            super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         if signed
             .keys
             .iter()
@@ -88,8 +88,8 @@ pub async fn start_rollover(
         signed.keys.push(new_key);
 
         let new_serial = super::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
             &caller.change_subject(),
@@ -158,7 +158,7 @@ pub async fn advance_rollover(
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
     let result = async {
         let mut signed =
-            super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+            super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let awaiting = promotable_sep_key_ids(&signed, holddown)?;
         // The answer that confirms the DS also says how long resolvers
         // cache it — the wait the key it replaces must outlive.
@@ -195,8 +195,8 @@ pub async fn advance_rollover(
                 .await?;
 
         let new_serial = super::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
             &caller.change_subject(),

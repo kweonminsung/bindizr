@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use super::secondary::TransferResponse;
-use crate::{dns_client::probe::ProbeError, model::zone::Zone, notify::NotifyTarget};
+use crate::{model::zone::Zone, notify::NotifyTarget};
 
 /// Which records a zone reads back as: the user records alone, or with the
 /// derived DNSSEC records bindizr generates.
@@ -358,42 +358,6 @@ pub struct SecondaryStatusResponse {
 }
 
 impl SecondaryStatusResponse {
-    /// Classify a probed SOA serial against the serial Bindizr serves; a
-    /// probe error reads as `unreachable`, an answer with nothing to compare
-    /// it to as `reachable`.
-    pub fn from_probe(
-        address: String,
-        expected_serial: Option<Serial>,
-        result: Result<Serial, ProbeError>,
-    ) -> Self {
-        match result {
-            Ok(visible) => {
-                let status = match expected_serial {
-                    Some(expected) => match visible.cmp(&expected) {
-                        std::cmp::Ordering::Equal => SecondaryStatus::InSync,
-                        std::cmp::Ordering::Less => SecondaryStatus::Lagging,
-                        std::cmp::Ordering::Greater => SecondaryStatus::Ahead,
-                    },
-                    None => SecondaryStatus::Reachable,
-                };
-                SecondaryStatusResponse {
-                    address,
-                    status,
-                    visible_serial: Some(visible),
-                    error: None,
-                    last_transfer: None,
-                }
-            }
-            Err(error) => SecondaryStatusResponse {
-                address,
-                status: SecondaryStatus::Unreachable,
-                visible_serial: None,
-                error: Some(error.to_string()),
-                last_transfer: None,
-            },
-        }
-    }
-
     /// Whether the probed secondary serial matches this status's zone serial.
     pub fn is_in_sync(&self) -> bool {
         self.status == SecondaryStatus::InSync

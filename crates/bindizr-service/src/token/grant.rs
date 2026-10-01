@@ -20,7 +20,8 @@ use crate::{
         api_token::ApiToken,
         token_grant::{TokenGrant, TokenGrantWithNames},
     },
-    types::{CreateGrantRequest, GetTokenGrantResponse, PageFilter, PaginatedResponse, build_page},
+    pagination::build_page,
+    types::{CreateGrantRequest, GetTokenGrantResponse, PageFilter, PaginatedResponse},
     zone,
 };
 

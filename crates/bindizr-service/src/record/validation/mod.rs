@@ -191,11 +191,9 @@ pub(crate) enum AddResult {
     Duplicate,
 }
 
-/// Validate an add against conflicting records loaded within the caller's
-/// transaction, reporting an rdata-identical record as
-/// [`AddResult::Duplicate`] rather than rejecting it — RFC 2136,
-/// Section 3.4.2.2 makes it a silent no-op. The API paths call the
-/// validator directly, where the same case stays a conflict.
+/// Validate an add against records loaded in the caller's transaction.
+/// Identical RDATA yields [`AddResult::Duplicate`] per RFC 2136, Section 3.4.2.2;
+/// API callers use the validator directly and report the duplicate as a conflict.
 pub(crate) async fn validate_add_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,

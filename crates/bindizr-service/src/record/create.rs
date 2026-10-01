@@ -49,7 +49,7 @@ pub async fn create(
     let mut tx = transaction::begin_tx(cx, "Failed to create record").await?;
 
     let apply_result = async {
-        let zone = zone::get_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
 
         caller
             .authorize_record_writes_tx(
@@ -139,7 +139,7 @@ pub async fn create(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, &caller.change_subject()).await?;
 
         Ok::<(Record, ZoneName, RecordDiff), ServiceError>((created_record, zone.name, diff))
     }

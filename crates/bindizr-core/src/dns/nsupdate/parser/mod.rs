@@ -42,11 +42,8 @@ pub struct UpdateRecord {
     pub rdata_start: usize,
 }
 
-/// The request's TSIG record, reduced to what the update flow needs: the key
-/// name for the DB lookup and the fudge echoed in the response. Cryptographic
-/// validation re-reads the full record via `domain::tsig`; parsing here still
-/// rejects structurally invalid TSIG records with FORMERR (RFC 8945, Section 5.2) before
-/// that happens.
+/// TSIG key name for lookup and fudge for the response; `domain::tsig` verifies the full record.
+/// Parsing rejects malformed TSIG records with FORMERR (RFC 8945, Section 5.2).
 #[derive(Debug, Clone)]
 pub struct TsigRecord {
     pub name: String,

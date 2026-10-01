@@ -199,8 +199,8 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
             // Bump the serial and version it so secondaries detect the change via
             // SOA/NOTIFY and can serve it as an IXFR delta.
             zone::advance_serial_tx(
-                cx,
                 &mut tx,
+                cx,
                 &zone,
                 new_serial,
                 &ChangeSubject::nsupdate(update.key.as_ref().map(|key| key.name.as_str())),

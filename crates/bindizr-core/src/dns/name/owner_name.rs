@@ -4,10 +4,8 @@ use super::{
     MAX_DNS_LABEL_LEN, MAX_DOMAIN_LEN, ParseNameError, ZoneName, has_whitespace_or_control,
 };
 
-/// A record's owner name as its decoded labels, relative to its zone; the apex
-/// is the empty label list. A `.` inside a label is data, so no spelling can
-/// make one label read as two. Labels are lowercased on construction, so the
-/// derived `Eq`/`Hash` fold case (RFC 4343).
+/// Decoded zone-relative labels; the apex is empty and in-label dots remain data.
+/// Construction lowercases labels for case-insensitive `Eq`/`Hash` (RFC 4343).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OwnerName(Vec<String>);
 
@@ -59,9 +57,9 @@ impl OwnerName {
         }
     }
 
-    /// Parse a name that is already absolute, so a name outside `zone` is an
-    /// error instead of being qualified by appending the zone. Callers whose
-    /// input carries no trailing dot (lookup form, wire owners) need this.
+    /// Parse an absolute name, rejecting names outside `zone` without qualification.
+    /// The caller guarantees an absolute name even without a trailing dot;
+    /// relative client input belongs to [`Self::parse_in_zone`].
     pub fn parse_absolute_in_zone(
         input: &str,
         zone_name: &ZoneName,

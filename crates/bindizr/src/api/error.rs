@@ -75,7 +75,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (
             http_status(self.0.code()),
-            Json(ErrorResponse::new(&self.0)),
+            Json(ErrorResponse::from(&self.0)),
         )
             .into_response()
     }

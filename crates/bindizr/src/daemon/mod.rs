@@ -273,11 +273,8 @@ impl RunResult {
     }
 }
 
-/// Stop accepting work, then give in-flight requests and queued NOTIFYs a
-/// bounded time to finish.
-///
-/// In-flight zone transfers are not waited on: they run in tasks of their own,
-/// and a cut transfer is one the secondary discards and retries.
+/// Stop accepting work and drain requests and queued NOTIFYs within the shutdown timeout.
+/// Detached zone transfers are not awaited; secondaries discard and retry interrupted transfers.
 async fn drain(shutdown: &Shutdown, mut servers: Servers, notify_worker: queue::NotifyWorker) {
     shutdown.trigger();
 

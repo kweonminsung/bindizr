@@ -1,12 +1,6 @@
-//! SOA serial-number generation: a plain monotonic counter.
-//!
-//! Serials start at 1 and advance by exactly one on every zone mutation; the
-//! "when" of a serial comes from `zone_versions.created_at`, not from the
-//! serial itself. An explicit serial supplied at zone creation (e.g. when
-//! taking over a zone whose secondaries already track a serial) simply becomes
-//! the starting point and the counter continues from there. Stops at
-//! `i32::MAX` because IXFR encodes serials as `u32` and rejects negatives, so
-//! wrapping is not an option.
+//! SOA serials start at 1 (or the supplied initial value) and increment once per mutation.
+//! Time comes from `zone_versions.created_at`. Stop at `i32::MAX` to keep the row
+//! representation nonnegative and convertible to the IXFR wire serial without wrapping.
 
 use bindizr_core::dns::Serial;
 

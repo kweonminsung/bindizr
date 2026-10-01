@@ -60,11 +60,8 @@ pub(crate) async fn generate_catalog_zone(
     Ok((catalog_zone, member_zones))
 }
 
-/// Hash the sorted member names, so the catalog serial advances only when
-/// membership changes.
-///
-/// A member's serial stays out: re-transferring the catalog re-provisions
-/// nothing, so hashing it would turn every record write into a catalog change.
+/// Hash sorted member names so only membership changes advance the catalog serial.
+/// Exclude member serials: record writes do not require catalog re-provisioning.
 fn catalog_digest(member_zones: &[String]) -> String {
     // Names are canonical, so sorting needs no case folding.
     let mut members = member_zones.to_vec();

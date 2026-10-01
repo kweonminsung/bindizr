@@ -119,12 +119,8 @@ async fn handle_client(socket_cx: &SocketContext, stream: UnixStream) {
     }
 }
 
-/// Serve control commands on an already-bound socket until `shutdown` fires,
-/// admitting only the daemon's own user and root.
-///
-/// The daemon removes the socket file once everything has drained: `bindizr
-/// stop` waits for it to disappear, so removing it earlier would report a stop
-/// that is still in progress.
+/// Serve control commands for the daemon's user and root until `shutdown` fires.
+/// Remove the socket only after draining: `bindizr stop` uses its disappearance as completion.
 pub(crate) fn serve(
     socket_cx: Arc<SocketContext>,
     listener: UnixListener,
@@ -484,7 +480,7 @@ fn encode_response<T: serde::Serialize>(result: Result<DaemonResponse<T>, Servic
 
 /// Encode a service error as one JSON line.
 fn encode_error(err: &ServiceError) -> String {
-    serde_json::to_string(&ErrorResponse::new(err)).unwrap_or_else(|_| {
+    serde_json::to_string(&ErrorResponse::from(err)).unwrap_or_else(|_| {
         r#"{"error":"Failed to serialize error response","code":"INTERNAL"}"#.to_string()
     })
 }

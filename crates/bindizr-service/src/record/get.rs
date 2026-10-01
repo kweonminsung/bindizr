@@ -13,10 +13,8 @@ use crate::{
         dnssec_record::DnssecRecordType,
         record::{RecordType, RecordWithZone},
     },
-    types::{
-        GetRecordResponse, GetRecordsFilter, PaginatedResponse, ZoneView, normalize_page_limit,
-        parse_setting,
-    },
+    pagination::{build_paginated_response, normalize_page_limit, parse_setting},
+    types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse, ZoneView},
     zone::{self, validation::normalize_name},
 };
 
@@ -51,12 +49,9 @@ pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
     Ok(bindizr_db::record::count_by_filter(cx.db(), RecordFilter::default()).await?)
 }
 
-/// List records with their zone name matching `filter`, restricted to what
-/// the caller's grants carry in SQL so pagination stays database-side.
-/// Scoped callers see an unknown or invisible zone as an empty page.
-/// With `signed`, the derived DNSSEC plane pages after the user records;
-/// searches reach their names, value filters are refused, and priority filters
-/// exclude the derived plane.
+/// List records with zone names, applying caller grants and pagination in SQL.
+/// Signed records follow user records, support name search, and reject value filters.
+/// Priority filters omit signed records; unknown or invisible zones yield empty pages for scoped callers.
 pub async fn list_with_zone_by_filter(
     cx: &Context,
     caller: &Caller,
@@ -178,7 +173,7 @@ pub async fn list_with_zone_by_filter(
     }
 
     let items = items.iter().map(ListedRecord::to_response).collect();
-    Ok(PaginatedResponse::from_page(
+    Ok(build_paginated_response(
         items,
         limit,
         offset,

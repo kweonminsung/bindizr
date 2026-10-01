@@ -181,8 +181,8 @@ async fn reconcile_zone_file(
                     })?;
                 created = true;
                 zone::create_tx(
-                    cx,
                     &mut tx,
+                    cx,
                     caller,
                     &build_create_zone_request(zone_name, &soa)?,
                 )
@@ -434,7 +434,7 @@ async fn reconcile_zone_file(
             let t = Instant::now();
             dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
             // Advance the serial once so IXFR consumers detect the import.
-            zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, subject).await?;
+            zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, subject).await?;
             timings.serial_ms = elapsed_ms(t);
         }
 

@@ -1,7 +1,5 @@
-//! ExternalDNS provider integration: authoritative zone matching and atomic
-//! record set change application behind the `/external-dns` HTTP API (consumed by
-//! the bindizr-external-dns adapter). Which zones a caller may see and change
-//! is decided by its token's grants, like every other endpoint.
+//! Match authoritative zones and apply atomic changes for the ExternalDNS adapter.
+//! Token grants control visibility and writes through `/external-dns`.
 
 mod apply;
 mod change_set;
@@ -44,11 +42,8 @@ pub fn adjust_records(
     Ok(ExternalDnsAdjustResponse { records })
 }
 
-/// The names the caller may manage, as an ExternalDNS domain filter spells
-/// them: a name, and everything under it. A grant narrowed to a subtree
-/// contributes that subtree, not its zone, so ExternalDNS plans inside what
-/// the apply accepts rather than failing the whole sync on the first record
-/// outside it.
+/// List manageable subtrees as ExternalDNS domain filters.
+/// Narrow grants contribute their subtree so planning stays within apply permissions.
 pub async fn list_managed_domains(
     cx: &Context,
     caller: &Caller,

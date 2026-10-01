@@ -24,7 +24,7 @@ pub async fn delete(
 
     let apply_result: Result<_, ServiceError> = async {
         // Locked lookup so a raced double-delete reports 404, not success.
-        let zone = super::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
         // Counted for the report, not acted on, so they run unlocked.
         let records = bindizr_db::record::count_by_filter(
@@ -35,7 +35,8 @@ pub async fn delete(
             },
         )
         .await?;
-        let versions = bindizr_db::zone_version::count(cx.db(), zone.id, VersionScope::All).await?;
+        let versions =
+            bindizr_db::zone_version::count_by_scope(cx.db(), zone.id, VersionScope::All).await?;
 
         let response = DeleteZoneResponse {
             applied: !run.is_dry_run(),

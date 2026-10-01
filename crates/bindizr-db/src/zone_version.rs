@@ -60,7 +60,7 @@ pub async fn list_in_serial_range(
 
 /// List the versions of a zone that `scope` covers, newest serial first,
 /// paginated; the current serial is always listed.
-pub async fn list(
+pub async fn list_by_scope(
     db: &Db,
     zone_id: ZoneId,
     scope: VersionScope,
@@ -69,23 +69,29 @@ pub async fn list(
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
     match &db.0 {
         Backend::MySql(pool) => {
-            mysql::zone_version::list(pool, zone_id, scope, limit, offset).await
+            mysql::zone_version::list_by_scope(pool, zone_id, scope, limit, offset).await
         }
         Backend::Postgres(pool) => {
-            postgres::zone_version::list(pool, zone_id, scope, limit, offset).await
+            postgres::zone_version::list_by_scope(pool, zone_id, scope, limit, offset).await
         }
         Backend::Sqlite(pool) => {
-            sqlite::zone_version::list(pool, zone_id, scope, limit, offset).await
+            sqlite::zone_version::list_by_scope(pool, zone_id, scope, limit, offset).await
         }
     }
 }
 
 /// Count the versions of a zone that `scope` covers.
-pub async fn count(db: &Db, zone_id: ZoneId, scope: VersionScope) -> Result<u64, DatabaseError> {
+pub async fn count_by_scope(
+    db: &Db,
+    zone_id: ZoneId,
+    scope: VersionScope,
+) -> Result<u64, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::zone_version::count(pool, zone_id, scope).await,
-        Backend::Postgres(pool) => postgres::zone_version::count(pool, zone_id, scope).await,
-        Backend::Sqlite(pool) => sqlite::zone_version::count(pool, zone_id, scope).await,
+        Backend::MySql(pool) => mysql::zone_version::count_by_scope(pool, zone_id, scope).await,
+        Backend::Postgres(pool) => {
+            postgres::zone_version::count_by_scope(pool, zone_id, scope).await
+        }
+        Backend::Sqlite(pool) => sqlite::zone_version::count_by_scope(pool, zone_id, scope).await,
     }
 }
 
