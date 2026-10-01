@@ -8,7 +8,7 @@ use crate::{
     error::DatabaseError,
     model::record::{Record, RecordType, RecordWithZone},
     mysql, postgres,
-    sql::{RecordSort, SortOrder},
+    sql::{RecordSortField, SortOrder},
     sqlite,
     tx::TransactionKind,
 };
@@ -33,7 +33,7 @@ pub struct RecordFilter {
     /// `token_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
     pub scope_token_id: Option<TokenId>,
-    pub sort: RecordSort,
+    pub sort: RecordSortField,
     pub order: SortOrder,
     pub limit: Option<u32>,
     pub offset: Option<u64>,

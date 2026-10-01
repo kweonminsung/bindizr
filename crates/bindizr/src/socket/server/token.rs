@@ -6,7 +6,7 @@ use bindizr_service::{
     token::{self, grant},
     types::{
         CreateGrantRequest, CreateTokenRequest, CreatedTokenResponse, GetTokenGrantResponse,
-        GetTokenResponse, MessageResponse, PageFilter, PaginatedResponse, TokenGrantResponse,
+        GetTokenResponse, MessageResponse, PageRequest, PaginatedResponse, TokenGrantResponse,
     },
     zone,
 };
@@ -31,7 +31,7 @@ pub(crate) async fn create_token(
 /// List the requested tokens.
 pub(crate) async fn list_tokens(
     cx: &Context,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTokenResponse>>, ServiceError> {
     let response = token::list(cx, &Caller::Global, page).await?;
     Ok(DaemonResponse {
@@ -72,7 +72,7 @@ pub(crate) async fn create_token_grant(
 pub(crate) async fn list_token_grants(
     cx: &Context,
     token_name: &str,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTokenGrantResponse>>, ServiceError> {
     let response = grant::list_by_token(cx, &Caller::Global, token_name, page).await?;
     Ok(DaemonResponse {
@@ -85,7 +85,7 @@ pub(crate) async fn list_token_grants(
 pub(crate) async fn list_zone_token_grants(
     cx: &Context,
     zone_name: &str,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTokenGrantResponse>>, ServiceError> {
     let response =
         grant::list_by_zone(cx, &Caller::Global, &zone::normalize_name(zone_name)?, page).await?;

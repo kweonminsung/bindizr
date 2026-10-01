@@ -1,4 +1,4 @@
-use bindizr_core::{dns::name::ZoneName, model::zone_version::VersionScope};
+use bindizr_core::{dns::name::ZoneName, model::zone_version::VersionFilter};
 use bindizr_db::{LockLevel, record::RecordFilter};
 
 use crate::{
@@ -36,7 +36,7 @@ pub async fn delete(
         )
         .await?;
         let versions =
-            bindizr_db::zone_version::count_by_scope(cx.db(), zone.id, VersionScope::All).await?;
+            bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, VersionFilter::All).await?;
 
         let response = DeleteZoneResponse {
             applied: !run.is_dry_run(),

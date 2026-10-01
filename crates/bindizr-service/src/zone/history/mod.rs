@@ -11,7 +11,7 @@ use bindizr_core::{
         name::{OwnerName, ZoneName},
         record::SoaMailbox,
     },
-    model::{record::RecordId, zone_version::VersionScope},
+    model::{record::RecordId, zone_version::VersionFilter},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -52,23 +52,23 @@ async fn validate_serial_diffable_tx(
     Ok(())
 }
 
-/// List the versions `scope` covers, newest serial first.
+/// List the versions `filter` covers, newest serial first.
 pub async fn list_versions(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
     limit: Option<u32>,
     offset: Option<u64>,
-    scope: VersionScope,
+    filter: VersionFilter,
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
     let zone = super::get_by_name(cx, caller, zone_name).await?;
 
-    let total = bindizr_db::zone_version::count_by_scope(cx.db(), zone.id, scope).await?;
+    let total = bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, filter).await?;
     let effective_limit = normalize_page_limit(limit)?;
-    let versions = bindizr_db::zone_version::list_by_scope(
+    let versions = bindizr_db::zone_version::list_by_filter(
         cx.db(),
         zone.id,
-        scope,
+        filter,
         effective_limit,
         offset.unwrap_or(0),
     )

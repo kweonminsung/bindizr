@@ -3503,7 +3503,7 @@ paths:
           minimum: 0
       - name: include_signer_serials
         in: query
-        description: Include signer-only serials (DNSSEC re-signs and rollovers); by default only serials with user changes, plus the current serial, are listed.
+        description: Include past serials with only derived DNSSEC changes. By default these are hidden; the current serial and serials without journal entries remain visible.
         required: false
         schema:
           type: boolean

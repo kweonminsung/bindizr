@@ -28,7 +28,7 @@ use crate::{
     text::{MAX_COLUMN_TEXT_LEN, normalize_identifier},
     transaction, transfer, tsig_key,
     types::{
-        CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, PageFilter,
+        CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, PageRequest,
         PaginatedResponse, SecondaryCheckResponse, SecondaryTransfersResponse, TransferResponse,
         TransferSummary, UpdateSecondaryRequest,
     },
@@ -102,7 +102,7 @@ pub async fn create(
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetSecondaryResponse>, ServiceError> {
     caller.authorize_global("manage secondaries")?;
 

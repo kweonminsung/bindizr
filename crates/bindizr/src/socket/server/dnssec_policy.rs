@@ -5,7 +5,7 @@ use bindizr_service::{
     error::ServiceError,
     types::{
         CreateDnssecPolicyRequest, DnssecPolicyResponse, GetDnssecPolicyResponse, MessageResponse,
-        PageFilter, PaginatedResponse, UpdateDnssecPolicyRequest,
+        PageRequest, PaginatedResponse, UpdateDnssecPolicyRequest,
     },
 };
 
@@ -28,7 +28,7 @@ pub(crate) async fn create_dnssec_policy(
 /// List the requested DNSSEC policies.
 pub(crate) async fn list_dnssec_policies(
     cx: &Context,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetDnssecPolicyResponse>>, ServiceError> {
     let response = dnssec_policy::list(cx, &Caller::Global, page).await?;
     Ok(DaemonResponse {

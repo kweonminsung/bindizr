@@ -1,7 +1,7 @@
 use bindizr_core::{dns::Serial, outln};
 use bindizr_service::types::{
     CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, MessageResponse,
-    PageFilter, PaginatedResponse, SecondaryCheckResponse, SecondaryResponse, SecondaryStatus,
+    PageRequest, PaginatedResponse, SecondaryCheckResponse, SecondaryResponse, SecondaryStatus,
     SecondaryTransfersResponse, UpdateSecondaryRequest,
 };
 use clap::Subcommand;
@@ -140,7 +140,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             output,
         } => {
             let res = client::send_command::<PaginatedResponse<GetSecondaryResponse>>(
-                DaemonCommand::ListSecondaries(PageFilter { limit, offset }),
+                DaemonCommand::ListSecondaries(PageRequest { limit, offset }),
             )
             .await?;
             log::debug!("Secondary list result: {:?}", res);

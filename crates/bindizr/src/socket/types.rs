@@ -2,15 +2,15 @@ use bindizr_core::{
     dns::Serial,
     model::{
         record::RecordId, token_grant::TokenGrantId, tsig_grant::TsigGrantId,
-        zone_version::VersionScope,
+        zone_version::VersionFilter,
     },
 };
 use bindizr_service::types::{
     CreateBulkRecordsRequest, CreateDnssecPolicyRequest, CreateGrantRequest, CreateRecordRequest,
     CreateSecondaryRequest, CreateTokenRequest, CreateTsigKeyRequest, CreateZoneRequest,
-    DeleteRecordsFilter, DsCheck, EnableDnssecRequest, GetRecordsFilter,
+    DeleteRecordsRequest, DsCheck, EnableDnssecRequest, GetRecordsFilter,
     GetSecondaryTransfersFilter, GetZonesFilter, Holddown, ImportDnssecKeyRequest,
-    ImportZoneRequest, NotifyCheckResponse, NotifySerial, PageFilter, RolloverDnssecRequest, Run,
+    ImportZoneRequest, NotifyCheckResponse, NotifySerial, PageRequest, RolloverDnssecRequest, Run,
     SecondaryStatusResponse, SecondaryTransferSummary, UpdateDnssecPolicyRequest,
     UpdateDnssecSettingsRequest, UpdateRecordRequest, UpdateSecondaryRequest, UpdateZoneRequest,
     ZoneView,
@@ -30,7 +30,7 @@ pub(crate) enum DaemonCommand {
     Shutdown,
     Restart,
     CreateToken(CreateTokenRequest),
-    ListTokens(PageFilter),
+    ListTokens(PageRequest),
     DeleteToken {
         name: String,
     },
@@ -40,7 +40,7 @@ pub(crate) enum DaemonCommand {
     },
     ListTokenGrants {
         token_name: String,
-        page: PageFilter,
+        page: PageRequest,
     },
     DeleteTokenGrant {
         id: TokenGrantId,
@@ -50,7 +50,7 @@ pub(crate) enum DaemonCommand {
         zone_name: String,
     },
     CreateTsigKey(CreateTsigKeyRequest),
-    ListTsigKeys(PageFilter),
+    ListTsigKeys(PageRequest),
     GetTsigKey {
         name: String,
     },
@@ -63,7 +63,7 @@ pub(crate) enum DaemonCommand {
     },
     ListTsigGrants {
         key_name: String,
-        page: PageFilter,
+        page: PageRequest,
     },
     DeleteTsigGrant {
         id: TsigGrantId,
@@ -73,7 +73,7 @@ pub(crate) enum DaemonCommand {
         zone_name: String,
     },
     CreateSecondary(CreateSecondaryRequest),
-    ListSecondaries(PageFilter),
+    ListSecondaries(PageRequest),
     GetSecondary {
         name: String,
     },
@@ -92,7 +92,7 @@ pub(crate) enum DaemonCommand {
         filter: GetSecondaryTransfersFilter,
     },
     CreateDnssecPolicy(CreateDnssecPolicyRequest),
-    ListDnssecPolicies(PageFilter),
+    ListDnssecPolicies(PageRequest),
     GetDnssecPolicy {
         name: String,
     },
@@ -129,11 +129,11 @@ pub(crate) enum DaemonCommand {
     },
     ListZoneTokenGrants {
         zone_name: String,
-        page: PageFilter,
+        page: PageRequest,
     },
     ListZoneTsigGrants {
         zone_name: String,
-        page: PageFilter,
+        page: PageRequest,
     },
     NotifyZone {
         zone_name: String,
@@ -146,7 +146,7 @@ pub(crate) enum DaemonCommand {
         name: String,
         limit: Option<u32>,
         offset: Option<u64>,
-        scope: VersionScope,
+        filter: VersionFilter,
     },
     GetZoneVersion {
         name: String,
@@ -184,7 +184,7 @@ pub(crate) enum DaemonCommand {
         id: RecordId,
         run: Run,
     },
-    DeleteRecordsMatching(DeleteRecordsFilter),
+    DeleteRecordsMatching(DeleteRecordsRequest),
     EnableDnssec {
         zone_name: String,
         request: EnableDnssecRequest,

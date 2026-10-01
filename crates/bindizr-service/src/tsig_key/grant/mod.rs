@@ -22,7 +22,7 @@ use crate::{
         zone::Zone,
     },
     pagination::build_page,
-    types::{CreateGrantRequest, GetTsigGrantResponse, PageFilter, PaginatedResponse},
+    types::{CreateGrantRequest, GetTsigGrantResponse, PageRequest, PaginatedResponse},
     zone,
 };
 
@@ -84,7 +84,7 @@ pub async fn list_by_key(
     cx: &Context,
     caller: &Caller,
     key_name: &str,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
@@ -118,7 +118,7 @@ pub async fn list_by_zone(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTsigGrantResponse>, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 

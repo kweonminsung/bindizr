@@ -164,14 +164,14 @@ pub struct UpdateRecordRequest {
     pub dry_run: bool,
 }
 
-/// Which records a conditional delete removes, narrowing from a whole name
-/// down to one record, as RFC 2136, Section 2.5.2 spells the same three forms.
+/// Request to delete matching records or preview the deletion, narrowing from
+/// a whole name to one record as in RFC 2136, Section 2.5.2.
 /// `zone_name` and `name` are both required: without a name this would be a
 /// second, quieter way to empty a zone, which `DELETE /zones/{name}` owns.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
-pub struct DeleteRecordsFilter {
+pub struct DeleteRecordsRequest {
     #[schema(example = "example.com")]
     pub zone_name: String,
     /// Owner name relative to the zone, or `@` for the apex.
