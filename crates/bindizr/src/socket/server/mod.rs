@@ -387,8 +387,8 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
             name,
             limit,
             offset,
-            scope,
-        } => encode_response(zone::list_zone_versions(cx, &name, limit, offset, scope).await),
+            filter,
+        } => encode_response(zone::list_zone_versions(cx, &name, limit, offset, filter).await),
         DaemonCommand::GetZoneVersion { name, serial } => {
             encode_response(zone::get_zone_version(cx, &name, serial).await)
         }
@@ -423,8 +423,8 @@ async fn handle_command(socket_cx: &SocketContext, command: DaemonCommand) -> St
         DaemonCommand::DeleteRecord { id, run } => {
             encode_response(record::delete_record(cx, id, run).await)
         }
-        DaemonCommand::DeleteRecordsMatching(filter) => {
-            encode_response(record::delete_records_matching(cx, &filter).await)
+        DaemonCommand::DeleteRecordsMatching(request) => {
+            encode_response(record::delete_records_matching(cx, &request).await)
         }
         DaemonCommand::EnableDnssec { zone_name, request } => {
             encode_response(dnssec::enable_dnssec(cx, &zone_name, &request).await)

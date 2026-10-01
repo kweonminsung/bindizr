@@ -7,10 +7,10 @@ use utoipa::{IntoParams, ToSchema};
 /// socket applies none: the CLI reads whole tables.
 pub const DEFAULT_PAGE_LIMIT: u32 = 50;
 
-/// The query window of a listing that takes no other filter.
+/// Requested pagination window for a listing with no row predicates.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
 #[serde(deny_unknown_fields)]
-pub struct PageFilter {
+pub struct PageRequest {
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
     #[schema(example = 50)]
     pub limit: Option<u32>,

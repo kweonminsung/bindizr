@@ -11,7 +11,7 @@ use bindizr_service::{
     Context, dnssec_policy,
     types::{
         CreateDnssecPolicyRequest, DEFAULT_PAGE_LIMIT, DnssecPolicyResponse, ErrorResponse,
-        GetDnssecPolicyResponse, MessageResponse, PageFilter, PaginatedResponse,
+        GetDnssecPolicyResponse, MessageResponse, PageRequest, PaginatedResponse,
         UpdateDnssecPolicyRequest,
     },
 };
@@ -47,7 +47,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/dnssec-policies",
         tag = "DNSSEC",
         summary = "List all DNSSEC policies",
-        params(PageFilter),
+        params(PageRequest),
         description = "Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC, 14-day signatures re-signed with 5 days left) is seeded at startup.",
         responses(
             (status = 200, description = "All DNSSEC policies", body = PaginatedResponse<GetDnssecPolicyResponse>),
@@ -59,7 +59,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 pub(crate) async fn list_dnssec_policies(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = dnssec_policy::list(&cx, &caller, page).await?;

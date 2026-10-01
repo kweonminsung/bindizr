@@ -191,7 +191,7 @@ each rule says which spelling is this project's.
   transfer row); a `bool` that selects what the function does is a
   two-variant enum named for the choice — `Run::DryRun`, `ZoneView::Signed`,
   `DsCheck::Skip`, `Holddown::Skip`, `NotifySerial::Bump`,
-  `VersionScope::All`, `SigningPass::Full` — so `zone::delete(&cx, &caller,
+  `VersionFilter::All`, `SigningPass::Full` — so `zone::delete(&cx, &caller,
   &name, Run::DryRun)` reads without the signature, three or more such
   choices on one call are one struct of named fields, and two stay two
   parameters (`advance_rollover(…, DsCheck::Skip, Holddown::Skip)`). The
@@ -470,6 +470,47 @@ than returning anything.
 
 ## Naming
 
+### Type names — facts, selectors, and choices
+
+Name a type for its domain subject and responsibility, not whether Rust spells
+it as a struct or enum. Read its variants, fields, and call sites before choosing
+a suffix. A domain noun that already states the choice (`Run`, `DsCheck`,
+`Holddown`, `SigningPass`) needs no generic suffix added to it.
+
+| Role | Name | Boundary |
+| --- | --- | --- |
+| Which rows match | `<Subject>Filter` | An enum selects a predicate; a struct combines predicates. Neither is a `Scope` merely because it narrows a query. |
+| Which resources a caller may access | `<Subject>Scope`, `scope_<key>` | Authorization boundary, such as `scope_token_id`; ordinary search criteria are filters. |
+| Which representation of an entity to read | `<Subject>View` | `ZoneView` selects plain or DNSSEC-derived content; it is not an arbitrary history filter. |
+| How an operation executes | `<Operation>Mode` | `ImportMode` chooses append/upsert/replace behavior, not the origin of existing rows. |
+| Reusable rules governing operations | `<Subject>Policy` | A named bundle such as `DnssecPolicy`, not a one-call boolean switch. |
+| Where a change came from | `<Subject>Source` | Recorded provenance, such as `ChangeSource`; `changed_by` identifies the token or key, not which history to show. |
+| What an operation acts on | `<Operation>Target` | A destination or resource identity (`NotifyTarget`, `LockTarget`), not its execution mode. |
+| Which column and direction to sort | `<Subject>SortField`, `SortOrder` | Keep the field separate from the ascending/descending choice. |
+| A pagination window alone | `PageRequest` | Limit/offset choose a page, not matching rows; response metadata is `Pagination`. |
+| A whole operation's input | `<Operation><Subject>Request` | Selection plus mutation controls such as `dry_run` is a request (`DeleteRecordsRequest`), not merely a filter. |
+| Transport extraction or grouped arguments | `<Subject>Query`, `<Subject>Params`, `<Subject>Options` | `Query` is HTTP query extraction; `Params`/`Options` group an existing operation's inputs, not a substitute for a more specific role. |
+
+A listing filter may carry sorting and pagination beside its predicates; do not
+split it solely to enforce the suffix. A pagination-only type is still a
+`PageRequest`. A request stays a request when HTTP carries it in query parameters
+or the daemon socket carries it as a payload. External protocol names and
+dependency-owned types retain their own vocabulary.
+
+Variants state the actual predicate or behavior. Do not name a content selector
+for an assumed actor (`UserChanges`), an unspecified judgment (`Relevant`), or a
+default that may change. `VersionFilter::ExcludePastSignerOnly` excludes past
+versions whose nonempty journal contains only derived DNSSEC changes; the current
+version and versions without journal entries remain. `All` includes every stored
+version.
+This is a content filter, independent of `change_source` and `changed_by`.
+
+Use the same role in parameters, fields, SQL constants, and function selectors:
+`filter: VersionFilter`, `list_by_filter`, `count_by_filter`. A name change does
+not authorize changing the predicate, permission boundary, or execution behavior.
+For outcome and lifecycle names (`Result`, `Status`, `State`), follow
+*Who decides what*; for enum spellings, follow *Presentation*.
+
 ### Data-access functions — `bindizr-db`
 
 A data-access function performs one query or row operation; a batch may
@@ -548,8 +589,9 @@ lifecycle operations, outside the entity-query grammar.
   would leave two functions of one module distinguishable only by their
   signatures — which is why the two-sided policy tables spell everything.
   A non-column selector names the input that defines its predicates:
-  `_by_filter` for a struct of optional predicates, `_by_scope` for a typed
-  query scope (`VersionScope`). Its contract spells the selected rows.
+  `_by_filter` for a predicate selector, whether a struct (`RecordFilter`) or
+  an enum (`VersionFilter`). `_by_scope` is reserved for an actual authorization
+  scope input. The contract spells the selected rows and retained exceptions.
 - `_with_<join>` — the result carries joined data
   (`record::get_with_zone`); never a filter or semi-join.
 - `_<predicate>` — a comparison or relation filter as `<subject>_<comparison>`

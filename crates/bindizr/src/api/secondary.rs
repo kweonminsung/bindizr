@@ -11,7 +11,7 @@ use bindizr_service::{
     Context, secondary,
     types::{
         CreateSecondaryRequest, DEFAULT_PAGE_LIMIT, ErrorResponse, GetSecondaryResponse,
-        GetSecondaryTransfersFilter, MessageResponse, PageFilter, PaginatedResponse,
+        GetSecondaryTransfersFilter, MessageResponse, PageRequest, PaginatedResponse,
         SecondaryCheckResponse, SecondaryResponse, SecondaryTransfersResponse,
         UpdateSecondaryRequest,
     },
@@ -47,7 +47,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/secondaries",
         tag = "Secondary",
         summary = "List all secondaries",
-        params(PageFilter),
+        params(PageRequest),
         description = "Lists every registered secondary, disabled ones included. An enabled secondary receives NOTIFY for every zone, may pull zones unsigned from its address, and is probed for the serial it serves.",
         responses(
             (status = 200, description = "All secondaries", body = PaginatedResponse<GetSecondaryResponse>),
@@ -59,7 +59,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 pub(crate) async fn list_secondaries(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = secondary::list(&cx, &caller, page).await?;

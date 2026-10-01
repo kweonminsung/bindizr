@@ -1,4 +1,4 @@
-use bindizr_core::{dns::Serial, model::zone_version::VersionScope};
+use bindizr_core::{dns::Serial, model::zone_version::VersionFilter};
 use bindizr_service::{
     Context,
     authorization::Caller,
@@ -128,7 +128,7 @@ pub(crate) async fn list_zone_versions(
     name: &str,
     limit: Option<u32>,
     offset: Option<u64>,
-    scope: VersionScope,
+    filter: VersionFilter,
 ) -> Result<DaemonResponse<PaginatedResponse<ZoneVersionResponse>>, ServiceError> {
     let response = zone::list_versions(
         cx,
@@ -136,7 +136,7 @@ pub(crate) async fn list_zone_versions(
         &zone::normalize_name(name)?,
         limit,
         offset,
-        scope,
+        filter,
     )
     .await?;
     Ok(DaemonResponse {

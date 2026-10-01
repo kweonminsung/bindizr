@@ -1,6 +1,6 @@
 use bindizr_core::{model::record::RecordId, out, outln};
 use bindizr_service::types::{
-    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsRequest,
     DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, PaginatedResponse, Pagination,
     RecordItem, RecordResponse, RecordValueRequest, RecordWriteResponse, Run, UpdateRecordRequest,
 };
@@ -564,7 +564,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             ..
         } => {
             let response = client::send_command::<DeleteRecordsResponse>(
-                DaemonCommand::DeleteRecordsMatching(DeleteRecordsFilter {
+                DaemonCommand::DeleteRecordsMatching(DeleteRecordsRequest {
                     zone_name: zone,
                     name,
                     record_type,

@@ -13,7 +13,7 @@ use bindizr_service::{
     tsig_key::{self, grant},
     types::{
         CreateGrantRequest, CreateTsigKeyRequest, DEFAULT_PAGE_LIMIT, ErrorResponse,
-        GetTsigGrantResponse, GetTsigKeyResponse, MessageResponse, PageFilter, PaginatedResponse,
+        GetTsigGrantResponse, GetTsigKeyResponse, MessageResponse, PageRequest, PaginatedResponse,
         TsigGrantResponse, TsigKeyResponse,
     },
     zone,
@@ -53,7 +53,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/tsig-keys",
         tag = "TSIG",
         summary = "List all TSIG keys",
-        params(PageFilter),
+        params(PageRequest),
         description = "Lists every TSIG key without its secret. Fetch a single key to read the secret.",
         responses(
             (status = 200, description = "All TSIG keys", body = PaginatedResponse<GetTsigKeyResponse>),
@@ -65,7 +65,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
 pub(crate) async fn list_tsig_keys(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = tsig_key::list(&cx, &caller, page).await?;
@@ -182,7 +182,7 @@ pub(crate) async fn list_tsig_grants(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response = grant::list_by_key(&cx, &caller, &params.name, page).await?;
@@ -276,7 +276,7 @@ pub(crate) async fn list_zone_tsig_grants(
     State(cx): State<Arc<Context>>,
     RequestCaller(caller): RequestCaller,
     Path(params): Path<NameParams>,
-    Query(mut page): Query<PageFilter>,
+    Query(mut page): Query<PageRequest>,
 ) -> Result<Response, ApiError> {
     page.limit = page.limit.or(Some(DEFAULT_PAGE_LIMIT));
     let response =

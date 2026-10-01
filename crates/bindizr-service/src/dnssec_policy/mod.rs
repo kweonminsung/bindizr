@@ -18,7 +18,7 @@ use crate::{
     text::normalize_identifier,
     transaction,
     types::{
-        CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageFilter, PaginatedResponse,
+        CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageRequest, PaginatedResponse,
         UpdateDnssecPolicyRequest,
     },
 };
@@ -100,7 +100,7 @@ pub async fn create(
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetDnssecPolicyResponse>, ServiceError> {
     caller.authorize_global("manage DNSSEC policies")?;
 

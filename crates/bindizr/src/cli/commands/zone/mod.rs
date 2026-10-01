@@ -7,7 +7,7 @@ use bindizr_core::{dns::Serial, errln, out, outln};
 use bindizr_service::types::{
     self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetTokenGrantResponse,
     GetTsigGrantResponse, GetZoneResponse, GetZonesFilter, ImportZoneRequest, ImportZoneResponse,
-    MessageResponse, NotifySerial, PageFilter, PaginatedResponse, Run, UpdateZoneRequest,
+    MessageResponse, NotifySerial, PageRequest, PaginatedResponse, Run, UpdateZoneRequest,
     ZoneResponse, ZoneStatusResponse, ZoneView, ZoneWriteResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
@@ -600,7 +600,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client::send_command::<PaginatedResponse<GetTokenGrantResponse>>(
                 DaemonCommand::ListZoneTokenGrants {
                     zone_name: name,
-                    page: PageFilter { limit, offset },
+                    page: PageRequest { limit, offset },
                 },
             )
             .await?;
@@ -615,7 +615,7 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
             let response = client::send_command::<PaginatedResponse<GetTsigGrantResponse>>(
                 DaemonCommand::ListZoneTsigGrants {
                     zone_name: name,
-                    page: PageFilter { limit, offset },
+                    page: PageRequest { limit, offset },
                 },
             )
             .await?;

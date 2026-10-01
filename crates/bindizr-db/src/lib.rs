@@ -38,7 +38,7 @@ pub mod zone_version;
 use bindizr_core::config;
 pub use bindizr_core::model;
 use error::DatabaseError;
-pub use sql::{ParseSortError, RecordSort, SortOrder, ZoneSort};
+pub use sql::{ParseSortError, RecordSortField, SortOrder, ZoneSortField};
 use tx::TransactionKind;
 pub use tx::{LockLevel, Transaction};
 

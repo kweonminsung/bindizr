@@ -156,7 +156,7 @@ where
 #[cfg(test)]
 mod tests {
     use axum::{body::Body, extract::FromRequest, http::Request};
-    use bindizr_service::types::{CreateRecordRequest, DeleteRecordsFilter};
+    use bindizr_service::types::{CreateRecordRequest, DeleteRecordsRequest};
 
     use super::*;
 
@@ -171,7 +171,7 @@ mod tests {
             .unwrap()
             .into_parts();
 
-        let Err(error) = Query::<DeleteRecordsFilter>::from_request_parts(&mut parts, &()).await
+        let Err(error) = Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &()).await
         else {
             panic!("an unknown query key must be rejected");
         };
@@ -193,7 +193,7 @@ mod tests {
             .into_parts();
 
         let Ok(Query(filter)) =
-            Query::<DeleteRecordsFilter>::from_request_parts(&mut parts, &()).await
+            Query::<DeleteRecordsRequest>::from_request_parts(&mut parts, &()).await
         else {
             panic!("the spelled-out filter must parse");
         };

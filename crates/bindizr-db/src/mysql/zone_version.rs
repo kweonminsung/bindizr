@@ -1,9 +1,9 @@
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
-/// Exclude signer-only serials; retain user changes, unjournaled serials, and the current serial.
+/// Exclude past versions whose nonempty journal contains only derived changes.
 /// Bind one extra zone id to keep the current-serial subquery uncorrelated.
-const USER_CHANGES_FILTER: &str = r#"
+const EXCLUDE_PAST_SIGNER_ONLY_FILTER: &str = r#"
               AND (
                   zone_versions.serial = (SELECT zones.serial FROM zones WHERE zones.id = ?)
                   OR EXISTS (
@@ -24,7 +24,7 @@ use bindizr_core::{dns::Serial, model::zone::ZoneId};
 use crate::{
     LockLevel,
     error::DatabaseError,
-    model::zone_version::{VersionScope, ZoneVersion},
+    model::zone_version::{VersionFilter, ZoneVersion},
 };
 
 /// Insert or update a zone version in the current transaction.
@@ -111,28 +111,28 @@ pub(crate) async fn list_in_serial_range(
 }
 
 /// List zone versions for a zone.
-pub(crate) async fn list_by_scope(
+pub(crate) async fn list_by_filter(
     pool: &Pool<MySql>,
     zone_id: ZoneId,
-    scope: VersionScope,
+    filter: VersionFilter,
     limit: u32,
     offset: u64,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
-    let filter = match scope {
-        VersionScope::UserChanges => USER_CHANGES_FILTER,
-        VersionScope::All => "",
+    let predicate = match filter {
+        VersionFilter::ExcludePastSignerOnly => EXCLUDE_PAST_SIGNER_ONLY_FILTER,
+        VersionFilter::All => "",
     };
     let mut query = sqlx::query_as::<_, ZoneVersion>(AssertSqlSafe(format!(
         r#"
         SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by, created_at
         FROM zone_versions
-        WHERE zone_id = ?{filter}
+        WHERE zone_id = ?{predicate}
         ORDER BY serial DESC
         LIMIT ? OFFSET ?
         "#
     )))
     .bind(zone_id);
-    if scope == VersionScope::UserChanges {
+    if filter == VersionFilter::ExcludePastSignerOnly {
         query = query.bind(zone_id);
     }
     query
@@ -144,20 +144,20 @@ pub(crate) async fn list_by_scope(
 }
 
 /// Count zone versions using the requested change filter.
-pub(crate) async fn count_by_scope(
+pub(crate) async fn count_by_filter(
     pool: &Pool<MySql>,
     zone_id: ZoneId,
-    scope: VersionScope,
+    filter: VersionFilter,
 ) -> Result<u64, DatabaseError> {
-    let filter = match scope {
-        VersionScope::UserChanges => USER_CHANGES_FILTER,
-        VersionScope::All => "",
+    let predicate = match filter {
+        VersionFilter::ExcludePastSignerOnly => EXCLUDE_PAST_SIGNER_ONLY_FILTER,
+        VersionFilter::All => "",
     };
     let mut query = sqlx::query_scalar(AssertSqlSafe(format!(
-        "SELECT COUNT(*) FROM zone_versions WHERE zone_id = ?{filter}"
+        "SELECT COUNT(*) FROM zone_versions WHERE zone_id = ?{predicate}"
     )))
     .bind(zone_id);
-    if scope == VersionScope::UserChanges {
+    if filter == VersionFilter::ExcludePastSignerOnly {
         query = query.bind(zone_id);
     }
     let count: i64 = query.fetch_one(pool).await?;

@@ -6,7 +6,7 @@ use bindizr_service::{
     tsig_key::{self, grant},
     types::{
         CreateGrantRequest, CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse,
-        MessageResponse, PageFilter, PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
+        MessageResponse, PageRequest, PaginatedResponse, TsigGrantResponse, TsigKeyResponse,
     },
     zone,
 };
@@ -28,7 +28,7 @@ pub(crate) async fn create_tsig_key(
 /// List the requested TSIG keys.
 pub(crate) async fn list_tsig_keys(
     cx: &Context,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTsigKeyResponse>>, ServiceError> {
     let response = tsig_key::list(cx, &Caller::Global, page).await?;
     Ok(DaemonResponse {
@@ -81,7 +81,7 @@ pub(crate) async fn create_tsig_grant(
 pub(crate) async fn list_tsig_grants(
     cx: &Context,
     key_name: &str,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTsigGrantResponse>>, ServiceError> {
     let response = grant::list_by_key(cx, &Caller::Global, key_name, page).await?;
     Ok(DaemonResponse {
@@ -94,7 +94,7 @@ pub(crate) async fn list_tsig_grants(
 pub(crate) async fn list_zone_tsig_grants(
     cx: &Context,
     zone_name: &str,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetTsigGrantResponse>>, ServiceError> {
     let response =
         grant::list_by_zone(cx, &Caller::Global, &zone::normalize_name(zone_name)?, page).await?;

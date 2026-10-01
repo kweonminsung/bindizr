@@ -5,7 +5,7 @@ use bindizr_service::{
     error::ServiceError,
     record,
     types::{
-        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
+        BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsRequest,
         DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, PaginatedResponse,
         RecordResponse, RecordWriteResponse, Run, UpdateRecordRequest,
     },
@@ -139,9 +139,9 @@ pub(crate) async fn delete_record(
 /// Delete records matching the requested owner, type, and value filters.
 pub(crate) async fn delete_records_matching(
     cx: &Context,
-    filter: &DeleteRecordsFilter,
+    request: &DeleteRecordsRequest,
 ) -> Result<DaemonResponse<DeleteRecordsResponse>, ServiceError> {
-    let response = record::delete_matching(cx, &Caller::Global, filter).await?;
+    let response = record::delete_matching(cx, &Caller::Global, request).await?;
     Ok(DaemonResponse {
         message: if response.dry_run {
             format!("{} record(s) would be deleted", response.deleted)

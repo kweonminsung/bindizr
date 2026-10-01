@@ -21,7 +21,7 @@ use crate::{
         token_grant::{TokenGrant, TokenGrantWithNames},
     },
     pagination::build_page,
-    types::{CreateGrantRequest, GetTokenGrantResponse, PageFilter, PaginatedResponse},
+    types::{CreateGrantRequest, GetTokenGrantResponse, PageRequest, PaginatedResponse},
     zone,
 };
 
@@ -83,7 +83,7 @@ pub async fn list_by_token(
     cx: &Context,
     caller: &Caller,
     token_name: &str,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
     caller.authorize_global("manage token grants")?;
 
@@ -96,7 +96,7 @@ pub async fn list_by_token(
 pub async fn list_self(
     cx: &Context,
     token: &ApiToken,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
     let grants = bindizr_db::token_grant::list_by_token_id(cx.db(), token.id).await?;
 
@@ -134,7 +134,7 @@ pub async fn list_by_zone(
     cx: &Context,
     caller: &Caller,
     zone_name: &ZoneName,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
     caller.authorize_global("manage token grants")?;
 

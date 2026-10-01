@@ -12,7 +12,7 @@ use crate::{
     model::tsig_key::{TsigAlgorithm, TsigKey},
     pagination::build_page,
     text::MAX_COLUMN_TEXT_LEN,
-    types::{CreateTsigKeyRequest, GetTsigKeyResponse, PageFilter, PaginatedResponse},
+    types::{CreateTsigKeyRequest, GetTsigKeyResponse, PageRequest, PaginatedResponse},
 };
 
 /// Byte length of generated secrets; matches `tsig-keygen`'s default for
@@ -76,7 +76,7 @@ pub async fn create(
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 

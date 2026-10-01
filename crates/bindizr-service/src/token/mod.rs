@@ -12,7 +12,7 @@ use crate::{
     model::api_token::ApiToken,
     pagination::build_page,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
-    types::{CreateTokenRequest, GetTokenResponse, PageFilter, PaginatedResponse},
+    types::{CreateTokenRequest, GetTokenResponse, PageRequest, PaginatedResponse},
 };
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).
@@ -83,7 +83,7 @@ pub async fn create(
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
     caller.authorize_global("manage API tokens")?;
 

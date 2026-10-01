@@ -34,10 +34,10 @@ pub use external_dns::{
 };
 pub use grant::CreateGrantRequest;
 pub use import::{ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse};
-pub use pagination::{DEFAULT_PAGE_LIMIT, PageFilter, PaginatedResponse, Pagination};
+pub use pagination::{DEFAULT_PAGE_LIMIT, PageRequest, PaginatedResponse, Pagination};
 pub(crate) use record::build_display_value;
 pub use record::{
-    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsFilter,
+    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsRequest,
     DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, RecordItem, RecordResponse,
     RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
 };

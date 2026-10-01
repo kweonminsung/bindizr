@@ -15,7 +15,7 @@ use crate::{
     model::record::{Record, RecordData},
     serial::generate_serial,
     transaction,
-    types::{DeleteRecordsFilter, DeleteRecordsResponse, GetRecordResponse, Run},
+    types::{DeleteRecordsRequest, DeleteRecordsResponse, GetRecordResponse, Run},
     zone::{self, diff::build_record_diff, validation::normalize_name},
 };
 
@@ -160,30 +160,30 @@ pub async fn delete(
 
     Ok(response)
 }
-/// Delete every record matching `filter` in one transaction. Row by row
+/// Delete every record selected by `request` in one transaction. Row by row
 /// would bump the serial once each and serve the half-removed set in
 /// between.
 pub async fn delete_matching(
     cx: &Context,
     caller: &Caller,
-    filter: &DeleteRecordsFilter,
+    request: &DeleteRecordsRequest,
 ) -> Result<DeleteRecordsResponse, ServiceError> {
-    let zone_name = normalize_name(&filter.zone_name)?;
-    let record_type = filter
+    let zone_name = normalize_name(&request.zone_name)?;
+    let record_type = request
         .record_type
         .as_deref()
         .map(parse_record_type)
         .transpose()?;
-    if filter.value.is_some() && record_type.is_none() {
+    if request.value.is_some() && record_type.is_none() {
         return Err(ServiceError::invalid_input(
             "value narrows a record within one type, so record_type is required with it",
         ));
     }
     // Encoded the way a create encodes it, so a value finds the row it made.
-    let match_value = match (&filter.value, record_type.as_ref()) {
+    let match_value = match (&request.value, record_type.as_ref()) {
         (Some(value), Some(record_type)) => Some(
             value
-                .to_encoded_value(record_type, filter.priority)
+                .to_encoded_value(record_type, request.priority)
                 .map_err(ServiceError::invalid_input)?,
         ),
         _ => None,
@@ -194,7 +194,7 @@ pub async fn delete_matching(
     let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
         let zone = zone::get_by_name_tx(&mut tx, caller, &zone_name, LockLevel::Exclusive).await?;
-        let owner = normalize_record_owner_name(&filter.name, &zone.name)?;
+        let owner = normalize_record_owner_name(&request.name, &zone.name)?;
 
         // Authorize the request, not the rows it matches: an answer that
         // depended on the match would reveal what lies outside the grant.
@@ -218,7 +218,7 @@ pub async fn delete_matching(
                 record.matches(
                     record_type.as_ref(),
                     match_value.as_deref(),
-                    filter.priority,
+                    request.priority,
                 )
             })
             .cloned()
@@ -240,8 +240,8 @@ pub async fn delete_matching(
             .collect();
 
         let response = DeleteRecordsResponse {
-            applied: !filter.dry_run,
-            dry_run: filter.dry_run,
+            applied: !request.dry_run,
+            dry_run: request.dry_run,
             deleted: matched.len() as u64,
             records: matched
                 .iter()

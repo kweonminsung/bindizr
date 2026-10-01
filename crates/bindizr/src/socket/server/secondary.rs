@@ -5,7 +5,7 @@ use bindizr_service::{
     secondary,
     types::{
         CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, MessageResponse,
-        PageFilter, PaginatedResponse, SecondaryCheckResponse, SecondaryResponse,
+        PageRequest, PaginatedResponse, SecondaryCheckResponse, SecondaryResponse,
         SecondaryTransfersResponse, UpdateSecondaryRequest,
     },
 };
@@ -27,7 +27,7 @@ pub(crate) async fn create_secondary(
 /// List the requested secondaries.
 pub(crate) async fn list_secondaries(
     cx: &Context,
-    page: PageFilter,
+    page: PageRequest,
 ) -> Result<DaemonResponse<PaginatedResponse<GetSecondaryResponse>>, ServiceError> {
     let response = secondary::list(cx, &Caller::Global, page).await?;
     Ok(DaemonResponse {
