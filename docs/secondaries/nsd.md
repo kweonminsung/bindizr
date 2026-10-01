@@ -1,7 +1,7 @@
 # NSD
 
 Catalog zones need **NSD 4.9 or newer**; Bindizr's interoperability run covers
-4.12.
+4.14. An older NSD takes each zone by hand; see [NSD before 4.9](#nsd-before-49).
 
 ## 1. Register the secondary in Bindizr
 
@@ -94,6 +94,23 @@ pattern:
 Bindizr's [benchmark suite](https://github.com/kweonminsung/bindizr/tree/main/benchmarks)
 measures both: 1050ms versus 6.7ms p50 visibility, and 700 bytes versus 55KB
 for a single-record change on a 1000-record zone.
+
+## NSD before 4.9
+
+An NSD without catalog zone support, such as the 4.6 Debian 12 ships, takes
+each zone as its own `zone:` entry; the interoperability run covers 4.6,
+signed and unsigned, with changes arriving as IXFR deltas:
+
+```text
+zone:
+    name: "example.com"
+    zonefile: "example.com.zone"
+    allow-notify: 127.0.0.1 NOKEY
+    request-xfr: 127.0.0.1@5300 NOKEY
+```
+
+A zone created in Bindizr later needs its own entry, and a deleted one its
+entry removed. Signing works as below, on each zone's `request-xfr`.
 
 ## Sign the transfers
 

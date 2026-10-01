@@ -79,7 +79,8 @@ user or root.
 Follow the [BIND setup](../secondaries/bind.md) to register the secondary
 and configure its catalog zone. Its example uses the same local ports as this
 guide. For another server, follow [Knot DNS](../secondaries/knot.md),
-[NSD](../secondaries/nsd.md), or [PowerDNS](../secondaries/powerdns.md).
+[NSD](../secondaries/nsd.md), [PowerDNS](../secondaries/powerdns.md), or
+[another server](../secondaries/index.md).
 
 After restarting the secondary, check the installation:
 
