@@ -2,7 +2,7 @@ use bindizr_core::dns::name::ZoneName;
 use bindizr_db::LockLevel;
 
 use crate::{
-    Context, db, dnssec, error::ServiceError, model::zone::Zone, notify::NotifyTarget,
+    Context, dnssec, error::ServiceError, model::zone::Zone, notify::NotifyTarget,
     serial::generate_serial, transaction, zone::version::ChangeSubject,
 };
 
@@ -45,7 +45,7 @@ async fn force_increment_serial_by_name(
         let zone = super::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
         let new_serial = generate_serial(Some(zone.serial))?;
-        let updated_zone = db::zone::update_tx(
+        let updated_zone = bindizr_db::zone::update_tx(
             &mut tx,
             Zone {
                 serial: new_serial,

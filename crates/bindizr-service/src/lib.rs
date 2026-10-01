@@ -25,5 +25,5 @@ pub mod types;
 pub mod zone;
 
 pub(crate) use bindizr_core::model;
-pub(crate) use bindizr_db::{self as db, Transaction};
+pub(crate) use bindizr_db::Transaction;
 pub use context::Context;

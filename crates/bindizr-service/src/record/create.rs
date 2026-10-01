@@ -9,7 +9,7 @@ use super::{
 use crate::{
     Context,
     authorization::{Caller, RecordWrite},
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::record::{Record, RecordData},
     serial::generate_serial,
@@ -64,18 +64,22 @@ pub async fn create(
 
         // Only records sharing the owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name =
-            match db::record::list_by_name_tx(&mut tx, zone.id, &owner_name, LockLevel::Exclusive)
-                .await
-            {
-                Ok(records) => records,
-                Err(e) => {
-                    log::error!("Failed to check existing records: {}", e);
-                    return Err(ServiceError::internal(
-                        "Failed to create record".to_string(),
-                    ));
-                }
-            };
+        let records_at_name = match bindizr_db::record::list_by_name_tx(
+            &mut tx,
+            zone.id,
+            &owner_name,
+            LockLevel::Exclusive,
+        )
+        .await
+        {
+            Ok(records) => records,
+            Err(e) => {
+                log::error!("Failed to check existing records: {}", e);
+                return Err(ServiceError::internal(
+                    "Failed to create record".to_string(),
+                ));
+            }
+        };
 
         // Fixed at write time: a later zone TTL change will not move it.
         let ttl = ttl.unwrap_or(zone.default_ttl);

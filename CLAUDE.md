@@ -342,9 +342,10 @@ in rendered text is always a label boundary. That is what lets the
 record-filter SQL compare owner names as text under a bytewise collation,
 match a grant's subtree with `LIKE`, and concatenate them into FQDNs.
 
-The row form is the type's, not a caller's: `from_row` decodes it and
-`sqlx::Encode` renders it, so bind an `OwnerName` itself rather than a string
-you produced. `Display` is the presentation form, whose apex is `@` and not
+The row form is the type's, not a caller's: `from_row` decodes it, behind
+the type's `sqlx::Decode`, and `sqlx::Encode` renders it, so bind an
+`OwnerName` itself rather than a string you produced; no `From<String>`
+exists to build one unparsed. `Display` is the presentation form, whose apex is `@` and not
 the empty string a row holds. A `ZoneName` and a secondary's `AddressTarget`
 (`host:port`, the port spelled out and the host lowercase) are rows the same
 way: parsed once by the service, bound as themselves, and read back typed,
@@ -922,7 +923,9 @@ request) while the test's meaningful **data and assertions stay inline at the
 call site** — and only for blocks that are large or repeated many times and
 change in lockstep. Small struct-literal fixtures (`test_record()`-style) stay
 local to each test file even when several files have near-identical copies; do
-**not** collect them into shared fixture modules.
+**not** collect them into shared fixture modules. A test helper's error may
+be a `String`: nothing matches on it, and a typed error would be one more
+fixture.
 
 Import/export rules for shared helpers (narrowest visibility that compiles,
 never bare `pub`):

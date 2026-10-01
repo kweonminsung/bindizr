@@ -60,14 +60,6 @@ impl ZoneName {
     }
 }
 
-/// Decodes the stored form, so a row column can hold a zone name directly.
-impl From<String> for ZoneName {
-    /// Wrap a zone name from its stored string representation.
-    fn from(value: String) -> Self {
-        Self::from_row(&value)
-    }
-}
-
 /// Binding renders the stored form, so a query never compares a spelling
 /// the parser did not produce.
 impl<DB: sqlx::Database> sqlx::Type<DB> for ZoneName
@@ -95,6 +87,21 @@ where
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
         self.0.encode_by_ref(buf)
+    }
+}
+
+/// The read half: the column holds the row form, so decoding never fails.
+impl<'r, DB: sqlx::Database> sqlx::Decode<'r, DB> for ZoneName
+where
+    &'r str: sqlx::Decode<'r, DB>,
+{
+    /// Read the row form.
+    fn decode(
+        value: <DB as sqlx::Database>::ValueRef<'r>,
+    ) -> Result<Self, sqlx::error::BoxDynError> {
+        Ok(Self::from_row(<&str as sqlx::Decode<'r, DB>>::decode(
+            value,
+        )?))
     }
 }
 

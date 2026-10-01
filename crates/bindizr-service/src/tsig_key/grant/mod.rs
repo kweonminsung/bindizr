@@ -13,7 +13,6 @@ use chrono::Utc;
 use crate::{
     Context, Transaction,
     authorization::Caller,
-    db,
     error::ServiceError,
     grant_pattern::{normalize_pattern, normalize_types},
     model::{
@@ -49,7 +48,7 @@ pub async fn create(
     let record_name_pattern = normalize_pattern(request.record_name_pattern.as_deref())?;
     let record_types = normalize_types(request.record_types.as_deref())?;
 
-    let grant = db::tsig_grant::create(
+    let grant = bindizr_db::tsig_grant::create(
         cx.db(),
         TsigGrant {
             id: TsigGrantId::UNWRITTEN,
@@ -89,9 +88,9 @@ pub async fn list_by_key(
     caller.authorize_global("manage TSIG keys and grants")?;
 
     let key = super::lookup_by_name(cx, key_name).await?;
-    let grants = db::tsig_grant::list_by_key_id(cx.db(), key.id).await?;
+    let grants = bindizr_db::tsig_grant::list_by_key_id(cx.db(), key.id).await?;
 
-    let zone_names: HashMap<ZoneId, String> = db::zone::list_all(cx.db())
+    let zone_names: HashMap<ZoneId, String> = bindizr_db::zone::list_all(cx.db())
         .await?
         .into_iter()
         .map(|zone| (zone.id, zone.name.to_string()))
@@ -123,9 +122,9 @@ pub async fn list_by_zone(
     caller.authorize_global("manage TSIG keys and grants")?;
 
     let zone = zone::lookup_by_name(cx, zone_name).await?;
-    let grants = db::tsig_grant::list_by_zone_id(cx.db(), zone.id).await?;
+    let grants = bindizr_db::tsig_grant::list_by_zone_id(cx.db(), zone.id).await?;
 
-    let key_names: HashMap<TsigKeyId, String> = db::tsig_key::list_all(cx.db())
+    let key_names: HashMap<TsigKeyId, String> = bindizr_db::tsig_key::list_all(cx.db())
         .await?
         .into_iter()
         .map(|key| (key.id, key.name))
@@ -161,9 +160,13 @@ pub(crate) async fn authorize_whole_zone_tx(
     if key.is_global {
         return Ok(true);
     }
-    let grants =
-        db::tsig_grant::list_by_zone_id_and_key_id_tx(tx, zone.id, key.id, LockLevel::Shared)
-            .await?;
+    let grants = bindizr_db::tsig_grant::list_by_zone_id_and_key_id_tx(
+        tx,
+        zone.id,
+        key.id,
+        LockLevel::Shared,
+    )
+    .await?;
     Ok(has_whole_zone_grant(&grants))
 }
 
@@ -178,12 +181,12 @@ pub async fn revoke(
     caller.authorize_global("manage TSIG keys and grants")?;
 
     let key = super::lookup_by_name(cx, key_name).await?;
-    let grant = db::tsig_grant::get(cx.db(), grant_id)
+    let grant = bindizr_db::tsig_grant::get(cx.db(), grant_id)
         .await?
         .filter(|grant| grant.tsig_key_id == key.id)
         .ok_or_else(|| ServiceError::tsig_grant_not_found(grant_id))?;
 
-    Ok(db::tsig_grant::delete(cx.db(), grant.id).await?)
+    Ok(bindizr_db::tsig_grant::delete(cx.db(), grant.id).await?)
 }
 
 /// Revoke every grant `key_name` holds in `zone_name`, returning how many
@@ -200,7 +203,7 @@ pub async fn revoke_by_key_and_zone(
     let key = super::lookup_by_name(cx, key_name).await?;
     let zone = zone::lookup_by_name(cx, zone_name).await?;
 
-    Ok(db::tsig_grant::delete_by_key_id_and_zone_id(cx.db(), key.id, zone.id).await?)
+    Ok(bindizr_db::tsig_grant::delete_by_key_id_and_zone_id(cx.db(), key.id, zone.id).await?)
 }
 
 /// Revoke a grant by its id, which identifies the row on its own.
@@ -211,11 +214,11 @@ pub async fn revoke_by_id(
 ) -> Result<(), ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let grant = db::tsig_grant::get(cx.db(), grant_id)
+    let grant = bindizr_db::tsig_grant::get(cx.db(), grant_id)
         .await?
         .ok_or_else(|| ServiceError::tsig_grant_not_found(grant_id))?;
 
-    Ok(db::tsig_grant::delete(cx.db(), grant.id).await?)
+    Ok(bindizr_db::tsig_grant::delete(cx.db(), grant.id).await?)
 }
 
 /// Whether any grant authorizes an update of `record_type` at the relative

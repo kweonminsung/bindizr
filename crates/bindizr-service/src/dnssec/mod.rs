@@ -27,6 +27,7 @@ use bindizr_core::{
     },
     model::{dnssec_record::DnssecRecordId, zone::ZoneId},
 };
+use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 pub use delegation::check_ds;
 pub(crate) use delegation::probe_delegation;
@@ -43,8 +44,7 @@ pub use status::{
 pub use withdraw::{cancel_withdrawal, withdraw};
 
 use crate::{
-    Context, Transaction, db,
-    db::LockLevel,
+    Context, Transaction,
     error::ServiceError,
     model::{
         dnssec_key::DnssecKey,
@@ -77,7 +77,7 @@ pub(crate) async fn sign_zone_tx(
     zone: &Zone,
     new_serial: Serial,
 ) -> Result<(), ServiceError> {
-    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Ok(());
     }
@@ -123,7 +123,7 @@ async fn find_zone_policy_tx(
     let Some(policy_id) = zone.dnssec_policy_id else {
         return Ok(None);
     };
-    db::dnssec_policy::get_tx(tx, policy_id, LockLevel::Unlocked)
+    bindizr_db::dnssec_policy::get_tx(tx, policy_id, LockLevel::Unlocked)
         .await?
         .map(Some)
         .ok_or_else(|| {
@@ -156,7 +156,7 @@ async fn get_signed_zone_tx(
     lock_level: LockLevel,
 ) -> Result<SignedZone, ServiceError> {
     let zone = zone::get_by_name_tx(tx, zone_name, lock_level).await?;
-    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
     }
@@ -171,10 +171,10 @@ async fn find_signed_zone_by_id_tx(
     zone_id: ZoneId,
     lock_level: LockLevel,
 ) -> Result<Option<SignedZone>, ServiceError> {
-    let Some(zone) = db::zone::get_tx(tx, zone_id, lock_level).await? else {
+    let Some(zone) = bindizr_db::zone::get_tx(tx, zone_id, lock_level).await? else {
         return Ok(None);
     };
-    let keys = db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Ok(None);
     }
@@ -194,10 +194,12 @@ async fn apply_signed_view_tx(
     pass: SigningPass,
 ) -> Result<bool, ServiceError> {
     // Read both planes under the zone lock so the diff uses one consistent state.
-    let records = db::record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
-    let prev = db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let records = bindizr_db::record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
+    let prev = bindizr_db::dnssec_record::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
 
-    let withdraw_parent_ds = db::dnssec_withdrawal::get_tx(tx, zone.id).await?.is_some();
+    let withdraw_parent_ds = bindizr_db::dnssec_withdrawal::get_tx(tx, zone.id)
+        .await?
+        .is_some();
 
     let now = Utc::now();
     let diff = SignedViewParams {
@@ -240,7 +242,7 @@ async fn apply_signed_view_tx(
             continue;
         };
         if signed_ttl > key.max_signed_ttl {
-            db::dnssec_key::update_max_signed_ttl_tx(tx, key.id, signed_ttl).await?;
+            bindizr_db::dnssec_key::update_max_signed_ttl_tx(tx, key.id, signed_ttl).await?;
         }
     }
 
@@ -276,10 +278,10 @@ async fn apply_signed_view_tx(
     }
 
     // The derived rows and their IXFR journal commit in the caller's transaction.
-    db::zone_change::create_many_tx(tx, &changes).await?;
+    bindizr_db::zone_change::create_many_tx(tx, &changes).await?;
     let removed_ids: Vec<DnssecRecordId> = diff.removed.iter().map(|row| row.id).collect();
-    db::dnssec_record::delete_many_tx(tx, &removed_ids).await?;
-    db::dnssec_record::create_many_tx(tx, &diff.added).await?;
+    bindizr_db::dnssec_record::delete_many_tx(tx, &removed_ids).await?;
+    bindizr_db::dnssec_record::create_many_tx(tx, &diff.added).await?;
     Ok(true)
 }
 

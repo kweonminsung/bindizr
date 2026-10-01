@@ -19,7 +19,6 @@ id_newtype!(
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Zone {
     pub id: ZoneId,
-    #[sqlx(try_from = "String")]
     pub name: ZoneName,
     pub mname: String,
     /// Stored as the admin email (`admin@example.com`); rendered to the SOA

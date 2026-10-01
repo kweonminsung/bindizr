@@ -20,7 +20,6 @@ pub struct ZoneChange {
     pub serial: Serial,
     #[sqlx(try_from = "String")]
     pub operation: ChangeOperation,
-    #[sqlx(try_from = "String")]
     pub record_name: OwnerName,
     #[sqlx(try_from = "String")]
     pub record_type: JournalRecordType,

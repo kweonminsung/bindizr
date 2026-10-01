@@ -164,7 +164,6 @@ pub struct TransferWithZone {
     pub serial: Option<Serial>,
     pub served_at: DateTime<Utc>,
     pub error: Option<String>,
-    #[sqlx(try_from = "String")]
     pub zone_name: ZoneName,
 }
 

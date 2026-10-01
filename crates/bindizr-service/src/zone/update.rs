@@ -7,7 +7,7 @@ use bindizr_db::LockLevel;
 use crate::{
     Context,
     authorization::Caller,
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::{
         zone::Zone,
@@ -149,7 +149,8 @@ async fn update_locked(
         // A longer zone name lengthens every record's wire name, so the
         // records must still fit under it or the zone stops transferring.
         if validated.name != existing_zone.name {
-            let records = db::record::list_tx(&mut tx, zone_id, LockLevel::Unlocked).await?;
+            let records =
+                bindizr_db::record::list_tx(&mut tx, zone_id, LockLevel::Unlocked).await?;
             for record in &records {
                 validate_record_name_in_zone(&record.name, &validated.name)?;
             }
@@ -169,7 +170,7 @@ async fn update_locked(
         // deadlocks); renames that race past it hit the UNIQUE(name)
         // backstop, which maps to the same conflict error.
         if validated.name != existing_zone.name {
-            match db::zone::get_by_name(cx.db(), &validated.name).await {
+            match bindizr_db::zone::get_by_name(cx.db(), &validated.name).await {
                 Ok(Some(zone)) if zone.id != zone_id => {
                     log::error!("Zone with name {} already exists", validated.name);
                     return Err(ServiceError::zone_conflict(format!(
@@ -215,22 +216,24 @@ async fn update_locked(
         }
 
         let name = candidate.name.clone();
-        let updated_zone = db::zone::update_tx(&mut tx, candidate).await.map_err(|e| {
-            // A rename that raced past the pre-check above trips
-            // UNIQUE(name); the backstop reads as the same conflict.
-            if e.is_unique_violation() {
-                ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
-            } else {
-                log::error!("Failed to update zone: {}", e);
-                ServiceError::internal("Failed to update zone")
-            }
-        })?;
+        let updated_zone = bindizr_db::zone::update_tx(&mut tx, candidate)
+            .await
+            .map_err(|e| {
+                // A rename that raced past the pre-check above trips
+                // UNIQUE(name); the backstop reads as the same conflict.
+                if e.is_unique_violation() {
+                    ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
+                } else {
+                    log::error!("Failed to update zone: {}", e);
+                    ServiceError::internal("Failed to update zone")
+                }
+            })?;
 
         // Journal the SOA and signature changes under the zone update's serial,
         // then save the version that future IXFR and rollback reads will use.
         let changes = soa_replacement_changes(&existing_zone, &updated_zone, new_serial)?;
 
-        db::zone_change::create_many_tx(&mut tx, &changes)
+        bindizr_db::zone_change::create_many_tx(&mut tx, &changes)
             .await
             .map_err(|e| {
                 log::error!("Failed to create zone changes: {}", e);

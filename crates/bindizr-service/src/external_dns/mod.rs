@@ -18,7 +18,6 @@ use bindizr_db::{record::RecordFilter, zone::ZoneFilter};
 use crate::{
     Context,
     authorization::Caller,
-    db,
     error::ServiceError,
     grant_pattern::pattern_domain,
     model::record::RecordSetKey,
@@ -54,7 +53,7 @@ pub async fn list_managed_domains(
     cx: &Context,
     caller: &Caller,
 ) -> Result<Vec<String>, ServiceError> {
-    let zones = db::zone::list_by_filter(
+    let zones = bindizr_db::zone::list_by_filter(
         cx.db(),
         ZoneFilter {
             scope_token_id: caller.scope_token_id(),
@@ -102,7 +101,7 @@ pub async fn list_records(
     loop {
         // Folded as they arrive, so the rows never sit beside the group
         // they build. The query's name-and-id order is total, so pages tile.
-        let rows = db::record::list_by_filter_with_zone(
+        let rows = bindizr_db::record::list_by_filter_with_zone(
             cx.db(),
             RecordFilter {
                 scope_token_id: caller.scope_token_id(),

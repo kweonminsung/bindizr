@@ -28,7 +28,6 @@ id_newtype!(
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct Record {
     pub id: RecordId,
-    #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
@@ -146,7 +145,6 @@ impl RecordData {
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct RecordWithZone {
     id: RecordId,
-    #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "String")]
     pub record_type: RecordType,
@@ -155,7 +153,6 @@ pub struct RecordWithZone {
     priority: Option<i32>,
     created_at: DateTime<Utc>,
     pub zone_id: ZoneId,
-    #[sqlx(try_from = "String")]
     pub zone_name: ZoneName,
 }
 

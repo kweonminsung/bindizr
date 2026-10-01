@@ -52,15 +52,6 @@ impl AddressTarget {
     }
 }
 
-/// Decodes the stored form, which [`AddressTarget::parse`] rendered with its
-/// port, so a row column can hold an address target directly.
-impl From<String> for AddressTarget {
-    /// Wrap an address target from its stored string representation.
-    fn from(value: String) -> Self {
-        AddressTarget::parse(&value, DEFAULT_DNS_PORT)
-    }
-}
-
 /// The stored and presentation form: `ip:port`, `[ipv6]:port`, or `host:port`.
 impl fmt::Display for AddressTarget {
     /// Write the address target in its canonical form.
@@ -99,6 +90,22 @@ where
         buf: &mut <DB as sqlx::Database>::ArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
         self.to_string().encode_by_ref(buf)
+    }
+}
+
+/// The read half: the column holds the row form, so decoding never fails.
+impl<'r, DB: sqlx::Database> sqlx::Decode<'r, DB> for AddressTarget
+where
+    &'r str: sqlx::Decode<'r, DB>,
+{
+    /// Read the row form.
+    fn decode(
+        value: <DB as sqlx::Database>::ValueRef<'r>,
+    ) -> Result<Self, sqlx::error::BoxDynError> {
+        Ok(Self::parse(
+            <&str as sqlx::Decode<'r, DB>>::decode(value)?,
+            DEFAULT_DNS_PORT,
+        ))
     }
 }
 

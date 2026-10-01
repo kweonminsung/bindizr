@@ -13,7 +13,7 @@ use super::validation::{
 use crate::{
     Context,
     authorization::{Caller, RecordWrite},
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::{
         record::{Record, RecordData, RecordType},
@@ -116,7 +116,7 @@ pub async fn update(
 ) -> Result<RecordWriteResponse, ServiceError> {
     // Non-locking read for the zone_id, so the tx locks zone before record
     // (the create/bulk/import order); the reverse can deadlock.
-    let zone_id = match db::record::get(cx.db(), record_id).await {
+    let zone_id = match bindizr_db::record::get(cx.db(), record_id).await {
         Ok(Some(record)) => record.zone_id,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
         Err(e) => {
@@ -166,31 +166,37 @@ async fn update_locked(
     let apply_result = async {
         let (zone, existing_record) = match target {
             LockTarget::Id { record_id, zone_id } => {
-                let zone = match db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
-                    Ok(Some(zone)) => zone,
-                    Ok(None) => {
-                        return Err(ServiceError::ZoneNotFound(format!(
-                            "Zone with id '{}' not found",
-                            zone_id
-                        )));
-                    }
-                    Err(e) => {
-                        log::error!("Failed to fetch zone: {}", e);
-                        return Err(ServiceError::internal("Failed to fetch zone"));
-                    }
-                };
-
-                let existing_record =
-                    match db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
-                        Ok(Some(record)) if record.zone_id == zone.id => record,
-                        Ok(Some(_)) | Ok(None) => {
-                            return Err(ServiceError::record_not_found(record_id));
+                let zone =
+                    match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
+                        Ok(Some(zone)) => zone,
+                        Ok(None) => {
+                            return Err(ServiceError::ZoneNotFound(format!(
+                                "Zone with id '{}' not found",
+                                zone_id
+                            )));
                         }
                         Err(e) => {
-                            log::error!("Failed to fetch record: {}", e);
-                            return Err(ServiceError::internal("Failed to fetch record"));
+                            log::error!("Failed to fetch zone: {}", e);
+                            return Err(ServiceError::internal("Failed to fetch zone"));
                         }
                     };
+
+                let existing_record = match bindizr_db::record::get_tx(
+                    &mut tx,
+                    record_id,
+                    LockLevel::Exclusive,
+                )
+                .await
+                {
+                    Ok(Some(record)) if record.zone_id == zone.id => record,
+                    Ok(Some(_)) | Ok(None) => {
+                        return Err(ServiceError::record_not_found(record_id));
+                    }
+                    Err(e) => {
+                        log::error!("Failed to fetch record: {}", e);
+                        return Err(ServiceError::internal("Failed to fetch record"));
+                    }
+                };
 
                 // A record the caller's grants do not reach reads as 404,
                 // as it does on GET, so ids cannot be probed.
@@ -212,14 +218,18 @@ async fn update_locked(
 
                 // Count only what the caller can see, so the count never
                 // reports rows their grants do not reach.
-                let mut matched: Vec<Record> =
-                    db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)
-                        .await?
-                        .into_iter()
-                        .filter(|record| {
-                            caller.sees_record(zone.id, &record.name, Some(&record.record_type))
-                        })
-                        .collect();
+                let mut matched: Vec<Record> = bindizr_db::record::list_by_name_tx(
+                    &mut tx,
+                    zone.id,
+                    &owner,
+                    LockLevel::Exclusive,
+                )
+                .await?
+                .into_iter()
+                .filter(|record| {
+                    caller.sees_record(zone.id, &record.name, Some(&record.record_type))
+                })
+                .collect();
 
                 match matched.len() {
                     1 => (zone, matched.remove(0)),
@@ -257,7 +267,7 @@ async fn update_locked(
             .await?;
         // Only records sharing the new owner name can conflict, so load just
         // those instead of the whole zone.
-        let records_at_name = match db::record::list_by_name_tx(
+        let records_at_name = match bindizr_db::record::list_by_name_tx(
             &mut tx,
             zone.id,
             &resolved.owner_name,
@@ -296,7 +306,7 @@ async fn update_locked(
         let mut framed = records_at_name.clone();
         if candidate.name != existing_record.name {
             framed.extend(
-                db::record::list_by_name_tx(
+                bindizr_db::record::list_by_name_tx(
                     &mut tx,
                     zone.id,
                     &existing_record.name,

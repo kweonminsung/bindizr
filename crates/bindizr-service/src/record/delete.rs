@@ -10,7 +10,7 @@ use super::validation::{normalize_record_owner_name, parse_record_type};
 use crate::{
     Context,
     authorization::{Caller, RecordWrite},
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::record::{Record, RecordData},
     serial::generate_serial,
@@ -30,7 +30,7 @@ pub async fn delete(
 ) -> Result<DeleteRecordsResponse, ServiceError> {
     // Resolve zone_id with a non-locking read so the tx locks zone before
     // record (the create/bulk/import order); the reverse can deadlock.
-    let zone_id = match db::record::get(cx.db(), record_id).await {
+    let zone_id = match bindizr_db::record::get(cx.db(), record_id).await {
         Ok(Some(record)) => record.zone_id,
         Ok(None) => {
             return Err(ServiceError::record_not_found(record_id));
@@ -44,7 +44,7 @@ pub async fn delete(
     let mut tx = transaction::begin_tx(cx, "Failed to delete record").await?;
 
     let apply_result: Result<(DeleteRecordsResponse, ZoneName), ServiceError> = async {
-        let zone = match db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
+        let zone = match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
             Ok(Some(zone)) => zone,
             Ok(None) => {
                 return Err(ServiceError::ZoneNotFound(format!(
@@ -59,7 +59,7 @@ pub async fn delete(
         };
 
         let existing_record =
-            match db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
+            match bindizr_db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
                 Ok(Some(record)) if record.zone_id == zone.id => record,
                 Ok(Some(_)) | Ok(None) => {
                     return Err(ServiceError::record_not_found(record_id));
@@ -91,7 +91,7 @@ pub async fn delete(
             .await?;
 
         // The owner's rows frame the diff, as they do for every change.
-        let records_at_name = db::record::list_by_name_tx(
+        let records_at_name = bindizr_db::record::list_by_name_tx(
             &mut tx,
             zone.id,
             &existing_record.name,
@@ -211,7 +211,8 @@ pub async fn delete_matching(
             .await?;
 
         let records_at_name =
-            db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive).await?;
+            bindizr_db::record::list_by_name_tx(&mut tx, zone.id, &owner, LockLevel::Exclusive)
+                .await?;
         let matched: Vec<Record> = records_at_name
             .iter()
             .filter(|record| {

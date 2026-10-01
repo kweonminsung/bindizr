@@ -27,7 +27,7 @@ use super::{
 use crate::{
     Context,
     authorization::Caller,
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::record::{Record, RecordType},
     serial::{generate_serial, validate_initial_serial},
@@ -293,7 +293,7 @@ async fn reconcile_zone_file(
                     desired.iter().map(|d| d.stored_name.clone()).collect();
                 names.sort();
                 names.dedup();
-                db::record::list_by_names_tx(
+                bindizr_db::record::list_by_names_tx(
                     &mut tx,
                     zone.id,
                     &names,
@@ -302,7 +302,7 @@ async fn reconcile_zone_file(
                 .await
             }
             ImportMode::Replace | ImportMode::Upsert => {
-                db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await
+                bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await
             }
         }
         .map_err(|e| {

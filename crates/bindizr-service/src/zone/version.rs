@@ -5,7 +5,7 @@ use bindizr_core::{
 use chrono::Utc;
 
 use crate::{
-    Context, Transaction, db,
+    Context, Transaction,
     error::ServiceError,
     model::{
         zone::Zone,
@@ -49,7 +49,7 @@ pub(crate) async fn advance_serial_tx(
     new_serial: Serial,
     subject: &ChangeSubject,
 ) -> Result<(), ServiceError> {
-    db::zone::update_serial_tx(tx, zone.id, new_serial)
+    bindizr_db::zone::update_serial_tx(tx, zone.id, new_serial)
         .await
         .map_err(|e| {
             log::error!("Failed to update zone serial: {}", e);
@@ -65,7 +65,7 @@ async fn validate_delegations_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
 ) -> Result<(), ServiceError> {
-    let orphaned = db::record::get_ds_name_without_ns_tx(tx, zone_id).await?;
+    let orphaned = bindizr_db::record::get_ds_name_without_ns_tx(tx, zone_id).await?;
     if let Some(name) = orphaned.as_deref() {
         let name = if name.is_empty() { "@" } else { name };
         return Err(ServiceError::record_conflict(format!(
@@ -87,7 +87,7 @@ pub(crate) async fn save_version_tx(
     subject: &ChangeSubject,
 ) -> Result<(), ServiceError> {
     validate_delegations_tx(tx, zone.id).await?;
-    db::zone_version::upsert_tx(
+    bindizr_db::zone_version::upsert_tx(
         tx,
         ZoneVersion {
             id: ZoneVersionId::UNWRITTEN,
@@ -126,7 +126,7 @@ pub async fn find_version_by_serial(
     zone_id: ZoneId,
     serial: Serial,
 ) -> Result<Option<ZoneVersion>, ServiceError> {
-    Ok(db::zone_version::get_by_serial(cx.db(), zone_id, serial).await?)
+    Ok(bindizr_db::zone_version::get_by_serial(cx.db(), zone_id, serial).await?)
 }
 
 /// Fetch every SOA version for a zone with serial in `[from_serial, to_serial]`.
@@ -136,5 +136,8 @@ pub async fn list_versions_in_serial_range(
     from_serial: Serial,
     to_serial: Serial,
 ) -> Result<Vec<ZoneVersion>, ServiceError> {
-    Ok(db::zone_version::list_in_serial_range(cx.db(), zone_id, from_serial, to_serial).await?)
+    Ok(
+        bindizr_db::zone_version::list_in_serial_range(cx.db(), zone_id, from_serial, to_serial)
+            .await?,
+    )
 }

@@ -15,13 +15,12 @@ use bindizr_core::{
     },
     model::{secondary::SecondaryId, tsig_key::TsigKeyId},
 };
+use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use crate::{
     Context,
     authorization::Caller,
-    db,
-    db::LockLevel,
     dns_client::{notify, probe, resolve_address_entry},
     error::ServiceError,
     model::{secondary::Secondary, tsig_key::TsigKey},
@@ -53,20 +52,23 @@ pub async fn create(
     };
 
     // Friendly pre-checks; the UNIQUE backstops cover the race.
-    if db::secondary::get_by_name(cx.db(), &name).await?.is_some() {
+    if bindizr_db::secondary::get_by_name(cx.db(), &name)
+        .await?
+        .is_some()
+    {
         return Err(ServiceError::secondary_conflict(format!(
             "Secondary with name '{}' already exists",
             name
         )));
     }
-    if let Some(other) = db::secondary::get_by_address(cx.db(), &address).await? {
+    if let Some(other) = bindizr_db::secondary::get_by_address(cx.db(), &address).await? {
         return Err(ServiceError::secondary_conflict(format!(
             "Secondary with address '{}' already exists (name '{}')",
             address, other.name
         )));
     }
 
-    let secondary = db::secondary::create(
+    let secondary = bindizr_db::secondary::create(
         cx.db(),
         Secondary {
             id: SecondaryId::UNWRITTEN,
@@ -103,9 +105,9 @@ pub async fn list(
 ) -> Result<PaginatedResponse<GetSecondaryResponse>, ServiceError> {
     caller.authorize_global("manage secondaries")?;
 
-    let secondaries = db::secondary::list_all(cx.db()).await?;
+    let secondaries = bindizr_db::secondary::list_all(cx.db()).await?;
     // One statement names every key rather than one per secondary.
-    let key_names: HashMap<TsigKeyId, String> = db::tsig_key::list_all(cx.db())
+    let key_names: HashMap<TsigKeyId, String> = bindizr_db::tsig_key::list_all(cx.db())
         .await?
         .into_iter()
         .map(|key| (key.id, key.name))
@@ -168,7 +170,7 @@ pub async fn update(
     };
     // Friendly pre-check; the UNIQUE(address) backstop covers the race.
     if let Some(address) = &address
-        && let Some(other) = db::secondary::get_by_address(cx.db(), address).await?
+        && let Some(other) = bindizr_db::secondary::get_by_address(cx.db(), address).await?
         && other.name != name
     {
         return Err(ServiceError::secondary_conflict(format!(
@@ -181,12 +183,12 @@ pub async fn update(
     // each restore the field the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update secondary").await?;
     let result: Result<_, ServiceError> = async {
-        let secondary = db::secondary::get_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
+        let secondary = bindizr_db::secondary::get_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
             .await?
             .ok_or_else(|| ServiceError::secondary_not_found(&name))?;
 
         let address = address.unwrap_or_else(|| secondary.address.clone());
-        db::secondary::update_tx(
+        bindizr_db::secondary::update_tx(
             &mut tx,
             Secondary {
                 address: address.clone(),
@@ -325,13 +327,13 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
     caller.authorize_global("manage secondaries")?;
 
     let secondary = lookup_by_name(cx, name).await?;
-    Ok(db::secondary::delete(cx.db(), secondary.id).await?)
+    Ok(bindizr_db::secondary::delete(cx.db(), secondary.id).await?)
 }
 
 /// The enabled secondaries, for the DNS plane, which takes no caller.
 /// Read per use, so a change takes effect on the next NOTIFY or transfer.
 pub async fn list_enabled(cx: &Context) -> Result<Vec<Secondary>, ServiceError> {
-    Ok(db::secondary::list_all(cx.db())
+    Ok(bindizr_db::secondary::list_all(cx.db())
         .await?
         .into_iter()
         .filter(|secondary| secondary.enabled)
@@ -355,9 +357,11 @@ pub(crate) async fn notify_signing_key(
 /// The stored key a secondary's NOTIFY is signed with, if any.
 async fn notify_key(cx: &Context, secondary: &Secondary) -> Result<Option<TsigKey>, ServiceError> {
     match secondary.notify_tsig_key_id {
-        Some(id) => Ok(Some(db::tsig_key::get(cx.db(), id).await?.ok_or_else(
-            || ServiceError::internal(format!("TSIG key {} is missing", id)),
-        )?)),
+        Some(id) => Ok(Some(
+            bindizr_db::tsig_key::get(cx.db(), id)
+                .await?
+                .ok_or_else(|| ServiceError::internal(format!("TSIG key {} is missing", id)))?,
+        )),
         None => Ok(None),
     }
 }
@@ -377,7 +381,7 @@ async fn to_response(
 /// Fetch one secondary by name, unchecked.
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<Secondary, ServiceError> {
     let name = normalize_secondary_name(name)?;
-    db::secondary::get_by_name(cx.db(), &name)
+    bindizr_db::secondary::get_by_name(cx.db(), &name)
         .await?
         .ok_or_else(|| ServiceError::secondary_not_found(&name))
 }
