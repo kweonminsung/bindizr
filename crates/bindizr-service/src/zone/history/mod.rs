@@ -11,7 +11,7 @@ use bindizr_core::{
         name::{OwnerName, ZoneName},
         record::SoaMailbox,
     },
-    model::{record::RecordId, zone_version::VersionFilter},
+    model::{record::RecordId, role_grant::Action, zone_version::VersionFilter},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -62,6 +62,7 @@ pub async fn list_versions(
     filter: VersionFilter,
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
     let zone = super::get_by_name(cx, caller, zone_name).await?;
+    caller.authorize_zone_action(Action::ZoneRead, &zone)?;
 
     let total = bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, filter).await?;
     let effective_limit = normalize_page_limit(limit)?;
@@ -98,7 +99,7 @@ pub async fn get_version(
 
     let result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-        caller.authorize_zone_unrestricted(&zone)?;
+        caller.authorize_zone_unrestricted(Action::RecordRead, &zone)?;
         let version = bindizr_db::zone_version::get_by_serial_tx(
             &mut tx,
             zone.id,
@@ -141,7 +142,7 @@ pub async fn diff_versions(
 
     let result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-        caller.authorize_zone_unrestricted(&zone)?;
+        caller.authorize_zone_unrestricted(Action::RecordRead, &zone)?;
         let to = to.unwrap_or(zone.serial);
 
         validate_serial_diffable_tx(&mut tx, &zone, from).await?;
@@ -170,13 +171,16 @@ pub async fn rollback(
     target_serial: Serial,
     run: Run,
 ) -> Result<RollbackZoneResponse, ServiceError> {
-    caller.authorize_global("roll back zones")?;
     let target = validate_stored_serial(target_serial)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to roll back zone").await?;
 
     let apply_result = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        // A rollback rewrites the zone's SOA and its records whole.
+        caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
+        caller.authorize_zone_unrestricted(Action::RecordCreate, &zone)?;
+        caller.authorize_zone_unrestricted(Action::RecordDelete, &zone)?;
 
         if target.as_u32() < 1 || target >= zone.serial {
             return Err(ServiceError::invalid_input(format!(

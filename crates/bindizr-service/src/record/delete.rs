@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use bindizr_core::{
     dns::name::{OwnerName, ZoneName},
-    model::record::RecordId,
+    model::{record::RecordId, role_grant::Action},
 };
 use bindizr_db::LockLevel;
 
@@ -93,6 +93,7 @@ pub async fn delete(
                 &mut tx,
                 &zone,
                 &[RecordWrite {
+                    action: Action::RecordDelete,
                     relative_name: existing_record.name.clone(),
                     record_type: Some(&existing_record.record_type),
                 }],
@@ -212,6 +213,7 @@ pub async fn delete_matching(
                 &mut tx,
                 &zone,
                 &[RecordWrite {
+                    action: Action::RecordDelete,
                     relative_name: owner.clone(),
                     record_type: record_type.as_ref(),
                 }],

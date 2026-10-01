@@ -1,7 +1,10 @@
 //! Assembling the status a signed zone reports: its policy, key inventory,
 //! and the DS records the parent needs.
 
-use bindizr_core::dns::{Serial, name::ZoneName};
+use bindizr_core::{
+    dns::{Serial, name::ZoneName},
+    model::role_grant::Action,
+};
 use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
@@ -27,13 +30,12 @@ pub async fn get_status(
     caller: &Caller,
     zone_name: &ZoneName,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
-
     // The DS records are derived from the apex name and the keys, so they
     // are read together under the zone lock.
     let mut tx = transaction::begin_read_tx(cx, "failed to read DNSSEC status").await?;
     let result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        caller.authorize_zone_action(Action::DnssecRead, &zone)?;
         let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let policy = super::find_zone_policy_tx(&mut tx, &zone).await?;
         build_status_tx(&mut tx, &zone, policy.as_ref(), &keys, zone.serial).await

@@ -5,13 +5,12 @@ mod common;
 mod dnssec;
 mod dnssec_policy;
 mod external_dns;
-mod grant;
 mod import;
 mod pagination;
 mod record;
+mod role;
 mod secondary;
 mod token;
-mod token_grant;
 mod tsig;
 mod version;
 mod zone;
@@ -32,7 +31,6 @@ pub use external_dns::{
     ExternalDnsChangesResponse, ExternalDnsDomainsResponse, ExternalDnsRecord,
     ExternalDnsRecordUpdate, ExternalDnsRecordsResponse,
 };
-pub use grant::CreateGrantRequest;
 pub use import::{
     ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse, ParseImportModeError,
 };
@@ -43,17 +41,17 @@ pub use record::{
     DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, RecordItem, RecordResponse,
     RecordTypeResponse, RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
 };
+pub use role::{
+    CreateRoleGrantRequest, CreateRoleRequest, GetRoleGrantResponse, GetRoleResponse,
+    RoleGrantResponse, RoleResponse,
+};
 pub use secondary::{
     CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, NotifyCheckResponse,
     SecondaryCheckResponse, SecondaryResponse, SecondaryTransferSummary,
     SecondaryTransfersResponse, TransferResponse, TransferSummary, UpdateSecondaryRequest,
 };
 pub use token::{CreateTokenRequest, CreatedTokenResponse, GetTokenResponse, TokenResponse};
-pub use token_grant::{GetTokenGrantResponse, TokenGrantResponse};
-pub use tsig::{
-    CreateTsigKeyRequest, GetTsigGrantResponse, GetTsigKeyResponse, TsigGrantResponse,
-    TsigKeyResponse,
-};
+pub use tsig::{CreateTsigKeyRequest, GetTsigKeyResponse, TsigKeyResponse};
 pub use version::{
     RecordChange, RecordDiff, RecordDiffEntry, RecordDiffSummary, RecordDiffValue, RollbackSummary,
     RollbackZoneResponse, VersionDetailResponse, VersionDiffResponse, VersionRecordResponse,

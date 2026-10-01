@@ -13,6 +13,7 @@ pub(crate) mod grant_pattern;
 pub mod notify;
 mod pagination;
 pub mod record;
+pub mod role;
 pub mod secondary;
 pub(crate) mod serial;
 pub(crate) mod text;

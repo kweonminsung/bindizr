@@ -1,4 +1,4 @@
-use bindizr_core::model::{record::RecordId, zone::ZoneId};
+use bindizr_core::model::{record::RecordId, role_grant::Action, zone::ZoneId};
 use bindizr_db::Transaction;
 use chrono::Utc;
 
@@ -22,7 +22,7 @@ pub async fn create(
     caller: &Caller,
     create_zone_request: &CreateZoneRequest,
 ) -> Result<ZoneWriteResponse, ServiceError> {
-    caller.authorize_global("create zones")?;
+    caller.authorize_action(Action::ZoneCreate)?;
 
     // Parent/child zones are allowed; only the same normalized zone name is rejected.
     // Names are stored normalized, so an exact lookup is enough to detect a collision.
@@ -78,7 +78,7 @@ pub(crate) async fn create_tx(
     caller: &Caller,
     create_zone_request: &CreateZoneRequest,
 ) -> Result<Zone, ServiceError> {
-    caller.authorize_global("create zones")?;
+    caller.authorize_action(Action::ZoneCreate)?;
 
     let validated = normalize_create_zone_request(cx, create_zone_request)?;
     let defaults = &cx.config().dns.zone_defaults;

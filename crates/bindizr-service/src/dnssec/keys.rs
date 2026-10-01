@@ -1,7 +1,10 @@
 //! Importing and exporting raw key material in BIND key-file form. Reached
 //! only over the daemon socket: private keys never transit the HTTP API.
 
-use bindizr_core::dns::{dnssec::SigningPass, name::ZoneName};
+use bindizr_core::{
+    dns::{dnssec::SigningPass, name::ZoneName},
+    model::role_grant::Action,
+};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
@@ -30,14 +33,18 @@ pub async fn export_keys(
     caller: &Caller,
     zone_name: &ZoneName,
 ) -> Result<ExportDnssecKeysResponse, ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
-
     // One locked transaction: a rename cannot split the rendered name
     // from the keys.
     let mut tx = transaction::begin_read_tx(cx, "failed to export DNSSEC keys").await?;
     let result = async {
-        let SignedZone { zone, keys, .. } =
-            super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let SignedZone { zone, keys, .. } = super::get_signed_zone_tx(
+            &mut tx,
+            caller,
+            Action::DnssecManage,
+            zone_name,
+            LockLevel::Shared,
+        )
+        .await?;
         Ok(ExportDnssecKeysResponse {
             zone_name: zone.name.as_str().to_string(),
             keys: keys
@@ -72,7 +79,6 @@ pub async fn import_keys(
     zone_name: &ZoneName,
     request: ImportDnssecKeyRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
     if request.keys.is_empty() {
         return Err(ServiceError::invalid_input("no key pair to import"));
     }
@@ -86,6 +92,7 @@ pub async fn import_keys(
     let mut tx = transaction::begin_tx(cx, "failed to import DNSSEC keys").await?;
     let result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        caller.authorize_zone_action(Action::DnssecManage, &zone)?;
         if !bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked)
             .await?
             .is_empty()

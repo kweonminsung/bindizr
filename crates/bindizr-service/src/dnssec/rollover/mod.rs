@@ -7,7 +7,7 @@ use bindizr_core::{
         dnssec::{KeyTag, SigningPass},
         name::ZoneName,
     },
-    model::dnssec_key::DnssecKeyId,
+    model::{dnssec_key::DnssecKeyId, role_grant::Action},
 };
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
@@ -37,7 +37,6 @@ pub async fn start_rollover(
     zone_name: &ZoneName,
     request: &RolloverDnssecRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
     let role = request
         .role
         .as_deref()
@@ -48,8 +47,14 @@ pub async fn start_rollover(
     let mut tx = transaction::begin_tx(cx, "failed to start key rollover").await?;
     let result = async {
         // Select a role only after ruling out an existing rollover under the zone lock.
-        let mut signed =
-            super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let mut signed = super::get_signed_zone_tx(
+            &mut tx,
+            caller,
+            Action::DnssecManage,
+            zone_name,
+            LockLevel::Exclusive,
+        )
+        .await?;
         if signed
             .keys
             .iter()
@@ -151,12 +156,16 @@ pub async fn advance_rollover(
     ds_check: DsCheck,
     holddown: Holddown,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
-
     let mut tx = transaction::begin_tx(cx, "failed to advance key rollover").await?;
     let result = async {
-        let mut signed =
-            super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let mut signed = super::get_signed_zone_tx(
+            &mut tx,
+            caller,
+            Action::DnssecManage,
+            zone_name,
+            LockLevel::Exclusive,
+        )
+        .await?;
         let awaiting = promotable_sep_key_ids(&signed, holddown)?;
         // The answer that confirms the DS also says how long resolvers
         // cache it — the wait the key it replaces must outlive.

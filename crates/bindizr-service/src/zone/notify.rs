@@ -1,5 +1,7 @@
 //! Manual NOTIFY orchestration; delivery goes through the registered sender.
 
+use bindizr_core::model::role_grant::Action;
+
 use crate::{
     Context, authorization::Caller, error::ServiceError, notify::NotifyTarget, types::NotifySerial,
 };
@@ -12,28 +14,23 @@ pub async fn notify(
     target: NotifyTarget<'_>,
     serial: NotifySerial,
 ) -> Result<(), ServiceError> {
-    // Forcing bumps zone serials — a zone-plane mutation, not just a NOTIFY.
-    if serial == NotifySerial::Bump {
-        caller.authorize_global("force a NOTIFY")?;
-    }
     match target {
-        // The virtual catalog zone has no row: nothing to bump, and no
-        // zone grant can cover it, so only a global caller may notify it.
+        // The virtual catalog zone has no row to bump and lists every zone.
         NotifyTarget::Zone(name) if cx.config().dns.is_catalog_zone(name.as_str()) => {
-            caller.authorize_global("send NOTIFY for the catalog zone")?;
+            caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
                 log::info!("Skipping forced serial increment for virtual catalog zone");
             }
         }
-        // Resolving the zone for `caller` is also the visibility check.
         NotifyTarget::Zone(name) => {
-            super::get_by_name(cx, caller, name).await?;
+            let zone = super::lookup_by_name(cx, name).await?;
+            caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
             if serial == NotifySerial::Bump {
                 super::force_increment_serial(cx, target, caller.change_attribution()).await?;
             }
         }
         NotifyTarget::All => {
-            caller.authorize_global("send NOTIFY for all zones")?;
+            caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {
                 super::force_increment_serial(cx, target, caller.change_attribution()).await?;
             }

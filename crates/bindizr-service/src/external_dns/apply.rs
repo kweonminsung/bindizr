@@ -1,7 +1,7 @@
 //! Applying an ExternalDNS change set atomically and idempotently; the change
 //! set itself is computed in `change_set`.
 
-use bindizr_core::dns::name::OwnerName;
+use bindizr_core::{dns::name::OwnerName, model::role_grant::Action};
 use bindizr_db::LockLevel;
 
 use super::change_set::{ZoneChangeSet, group_ops_by_zone, parse_changes_request};
@@ -61,11 +61,12 @@ pub async fn apply_changes(
 
             // Authorize the requested operations before idempotent pairs cancel;
             // a no-op must not bypass grants or reveal existing records.
-            let writes: Vec<RecordWrite<'_>> = ops
-                .adds
-                .iter()
-                .chain(ops.dels.iter())
-                .map(|op| RecordWrite {
+            let adds = ops.adds.iter().map(|op| (Action::RecordCreate, op));
+            let dels = ops.dels.iter().map(|op| (Action::RecordDelete, op));
+            let writes: Vec<RecordWrite<'_>> = adds
+                .chain(dels)
+                .map(|(action, op)| RecordWrite {
+                    action,
                     relative_name: op.name.clone(),
                     record_type: Some(&op.record_type),
                 })

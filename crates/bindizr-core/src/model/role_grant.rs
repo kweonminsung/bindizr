@@ -113,6 +113,25 @@ impl Action {
         }
     }
 
+    /// Whether the action targets nothing a zone owns, so only an all-zones grant carries it.
+    pub fn needs_all_zones(self) -> bool {
+        matches!(
+            self,
+            Action::ZoneCreate
+                | Action::SecondaryRead
+                | Action::SecondaryManage
+                | Action::AccessManage
+        )
+    }
+
+    /// Whether a grant's name and type constraints narrow this action.
+    pub fn is_record_action(self) -> bool {
+        matches!(
+            self,
+            Action::RecordRead | Action::RecordCreate | Action::RecordUpdate | Action::RecordDelete
+        )
+    }
+
     /// The names an action parses from, for messages that list them.
     pub fn supported_names() -> Vec<&'static str> {
         Self::ALL.iter().map(|action| action.as_str()).collect()

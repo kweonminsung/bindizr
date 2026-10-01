@@ -1,4 +1,7 @@
-use bindizr_core::{dns::name::ZoneName, model::record::RecordId};
+use bindizr_core::{
+    dns::name::ZoneName,
+    model::{record::RecordId, role_grant::Action},
+};
 use bindizr_db::LockLevel;
 use chrono::Utc;
 
@@ -56,6 +59,7 @@ pub async fn create(
                 &mut tx,
                 &zone,
                 &[RecordWrite {
+                    action: Action::RecordCreate,
                     relative_name: owner_name.clone(),
                     record_type: Some(&record_type),
                 }],

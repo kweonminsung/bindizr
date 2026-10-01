@@ -14,7 +14,7 @@ use bindizr_core::{
         record::SoaMailbox,
         zonefile::{ParsedZoneFile, ZoneFileSoa, ZoneFileValue},
     },
-    model::{record::RecordId, zone::ZoneId},
+    model::{record::RecordId, role_grant::Action, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -29,7 +29,10 @@ use crate::{
     authorization::Caller,
     dnssec,
     error::ServiceError,
-    model::record::{Record, RecordType},
+    model::{
+        record::{Record, RecordType},
+        zone::Zone,
+    },
     serial::{generate_serial, validate_initial_serial},
     time::elapsed_ms,
     transaction,
@@ -105,7 +108,6 @@ pub async fn import_zone(
     zone_name: &ZoneName,
     request: &ImportZoneRequest,
 ) -> Result<ImportZoneResponse, ServiceError> {
-    caller.authorize_global("import zone files")?;
     let mode = request
         .mode
         .parse::<ImportMode>()
@@ -120,11 +122,14 @@ pub async fn import_zone(
                     "from_server must name one server as host[:port]",
                 ));
             }
-            // The zone's existence precedes the outbound fetch, so a
-            // mistyped name cannot start a transfer. With `create` there is
-            // no zone yet, and the transfer itself refuses an unknown one.
-            if !request.create {
-                zone::lookup_by_name(cx, zone_name).await?;
+            // Checked before the outbound fetch so neither a mistyped name nor
+            // an unauthorized role starts a transfer; the transaction decides
+            // again. With `create` there is no zone yet.
+            if request.create {
+                caller.authorize_action(Action::ZoneCreate)?;
+            } else {
+                let zone = zone::lookup_by_name(cx, zone_name).await?;
+                authorize_import(caller, mode, &zone)?;
             }
             let content = crate::dns_client::axfr::fetch_zone_file(server, zone_name)
                 .await
@@ -143,6 +148,18 @@ pub async fn import_zone(
         }
     };
     reconcile_zone_file(cx, caller, zone_name, &content, request, mode).await
+}
+
+/// Authorize each record action the import mode performs over the zone whole.
+fn authorize_import(caller: &Caller, mode: ImportMode, zone: &Zone) -> Result<(), ServiceError> {
+    let actions: &[Action] = match mode {
+        ImportMode::Append => &[Action::RecordCreate],
+        ImportMode::Upsert | ImportMode::Replace => &[Action::RecordCreate, Action::RecordDelete],
+    };
+    for action in actions {
+        caller.authorize_zone_unrestricted(*action, zone)?;
+    }
+    Ok(())
 }
 
 /// Preview or apply a zone-file reconciliation in its own transaction; a
@@ -193,6 +210,7 @@ async fn reconcile_zone_file(
             }
             (None, false) => return Err(ServiceError::zone_not_found(zone_name)),
         };
+        authorize_import(caller, mode, &zone)?;
         timings.load_zone_ms = elapsed_ms(t);
 
         let t = Instant::now();
