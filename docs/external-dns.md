@@ -17,7 +17,7 @@ Validated against external-dns **v0.21.0**.
 
 ## 1. Enable the provider API
 
-On the Bindizr server:
+On the Bindizr server, enable the provider API and restart the daemon:
 
 ```toml
 [api]
@@ -26,19 +26,17 @@ external_dns_enabled = true
 
 ## 2. Create a role and a token
 
-Give a role the record rights ExternalDNS needs in the zones it should manage:
-all three of `record:read`, `record:create`, and `record:delete`. One sync
-reads ownership records, adds, and deletes as one transaction, so a grant
-missing any of them is left out of the domain filter entirely; ExternalDNS
-never uses `record:update`. The zones must already exist — ExternalDNS never
-creates or deletes zones. Then create the adapter's token in that role:
+Create the target zones first. Give the adapter one grant containing all
+three required actions: `record:read`, `record:create`, and `record:delete`.
+ExternalDNS manages records in existing zones; it does not create zones.
 
 ```bash
-$ bindizr role create external-dns-prod
-$ bindizr role grant external-dns-prod --zone example.com \
+bindizr role create external-dns-prod
+bindizr role grant external-dns-prod --zone example.com \
     --actions record:read,record:create,record:delete
-$ bindizr token create cluster-a --role external-dns-prod
-$ kubectl -n external-dns create secret generic bindizr-external-dns \
+bindizr token create cluster-a --role external-dns-prod
+kubectl create namespace external-dns
+kubectl -n external-dns create secret generic bindizr-external-dns \
     --from-literal=api-token=<token>
 ```
 
@@ -53,8 +51,13 @@ filter imposes — see
 
 ## 3. Add the adapter
 
-It runs as a second container in the external-dns Deployment; the default
-webhook URL (`http://localhost:8888`) already points at it:
+Add the following containers to an existing ExternalDNS Deployment in the
+`external-dns` namespace. This is a pod-template excerpt; retain the
+Deployment's labels, selector, service account, and Kubernetes RBAC.
+Replace `--bindizr-url` with your Bindizr API Service URL (for the Helm
+quickstart, `http://bindizr-bindizr-chart-api.bindizr.svc:8000`).
+
+The default webhook URL, `http://localhost:8888`, points at the adapter:
 
 ```yaml
 apiVersion: apps/v1
@@ -76,7 +79,7 @@ spec:
           image: kweonminsung/bindizr:latest
           command: ["bindizr-external-dns"]
           args:
-            - --bindizr-url=http://bindizr.bindizr.svc:8000
+            - --bindizr-url=http://bindizr-bindizr-chart-api.bindizr.svc:8000
           env:
             - name: BINDIZR_API_TOKEN
               valueFrom:
@@ -91,21 +94,23 @@ spec:
               port: 8080
 ```
 
-`/healthz` asks Bindizr with the adapter's own token, so a token that was
-rotated away, or whose role reaches no zone, turns the sidecar unready instead of
-leaving it green while every sync fails. Every adapter flag, and running it
-outside the external-dns pod, is in the
+`/healthz` checks that Bindizr accepts the token and exposes manageable names.
+It reports the sidecar unready if either check fails. All flags and standalone
+deployment options are in the
 [Adapter reference](external-dns/advanced.md#adapter-reference).
 
 ## 4. Annotate a resource
 
-The record appears in Bindizr:
+Add a hostname annotation to an Ingress, matching `--source=ingress` above:
 
 ```yaml
 metadata:
   annotations:
     external-dns.alpha.kubernetes.io/hostname: app.example.com
 ```
+
+For Service annotations, also enable `--source=service`. After a sync, inspect
+the result with `bindizr record list example.com` and query your secondary.
 
 Which record types are accepted, how a sync applies, and how zones are matched
 is in [What to expect](external-dns/advanced.md#what-to-expect).

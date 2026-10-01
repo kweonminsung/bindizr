@@ -193,7 +193,7 @@ pub(crate) async fn sign_zone(
         path = "/zones/{name}/dnssec/rollover",
         tag = "DNSSEC",
         summary = "Start a key rollover for a zone",
-        description = "Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`policy` in `PUT /zones/{name}/dnssec`), which double-signs the zone through the transition (RFC 6840, Section 5.11).",
+        description = "Pre-publishes a same-algorithm replacement key (RFC 7583) that signs no zone data until promoted; `role` selects the key for split-key zones. To change the algorithm, move the zone to a policy of the new algorithm (`policy_name` in `PUT /zones/{name}/dnssec`), which double-signs the zone through the transition (RFC 6840, Section 5.11).",
         params(
             ("name" = String, Path, description = "The name of the DNS zone.")
         ),

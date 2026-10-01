@@ -1,14 +1,13 @@
 # Benchmarks
 
-Bindizr, paired with each secondary it supports — BIND, Knot DNS, NSD, and
-PowerDNS — measured against PowerDNS Authoritative, Technitium DNS, Knot DNS,
-CoreDNS, and plain BIND (nsupdate / rndc) on identical hardware, datasets, and
-container limits — the suite lives in
-[benchmarks/](https://github.com/kweonminsung/bindizr/blob/main/benchmarks/README.md).
-Every figure is the mean of 5 runs on an 8-core AMD Ryzen 7 9800X3D, each
-container capped at 4 CPU / 4 GB.
+These results compare Bindizr with each supported secondary against standalone
+DNS servers on the same hardware, datasets, and container limits. Figures are
+the mean of five runs on an 8-core AMD Ryzen 7 9800X3D, with each container
+capped at 4 CPU / 4 GB. See the
+[benchmark suite](https://github.com/kweonminsung/bindizr/blob/main/benchmarks/README.md)
+for the methodology and commands.
 
-## No overhead on the query path
+## Query throughput { #no-overhead-on-the-query-path }
 
 ![DNS query throughput: CoreDNS 59,916 QPS, Bindizr + BIND 59,397 against Native BIND 59,904, Bindizr + NSD 58,114, Bindizr + PowerDNS 56,949 against PowerDNS 56,988, Bindizr + Knot DNS 40,211 against Knot DNS 40,408, Technitium 12,072](assets/benchmarks/b08_query_throughput_light.svg#only-light)
 ![DNS query throughput: CoreDNS 59,916 QPS, Bindizr + BIND 59,397 against Native BIND 59,904, Bindizr + NSD 58,114, Bindizr + PowerDNS 56,949 against PowerDNS 56,988, Bindizr + Knot DNS 40,211 against Knot DNS 40,408, Technitium 12,072](assets/benchmarks/b08_query_throughput_dark.svg#only-dark)
@@ -37,10 +36,10 @@ agree within 5%.
 ![IXFR transfer size in a 100,000-record zone: Bindizr moves 736 B for 1 change up to 558 KB for 10,000 changes, while PowerDNS moves about 5.5 MB regardless of the change count](assets/benchmarks/b05_ixfr_size_light.svg#only-light)
 ![IXFR transfer size in a 100,000-record zone: Bindizr moves 736 B for 1 change up to 558 KB for 10,000 changes, while PowerDNS moves about 5.5 MB regardless of the change count](assets/benchmarks/b05_ixfr_size_dark.svg#only-dark)
 
-A version per SOA serial means an IXFR carries only what changed: **736 B for a
+The IXFR journal lets a transfer carry only what changed: **736 B for a
 single change in a 100,000-record zone**, where the full zone is 5.5 MB. BIND,
-Knot DNS, and NSD secondaries re-serve that delta byte for byte; PowerDNS,
-standalone or as the secondary, answers the same request with the entire zone.
+Knot DNS, and NSD secondaries re-serve that delta byte for byte in the tested
+configurations; PowerDNS answers the same request with the entire zone.
 Knot DNS and Technitium standalone track the Bindizr curve.
 
 ## Write path

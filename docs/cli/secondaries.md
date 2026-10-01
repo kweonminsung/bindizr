@@ -1,44 +1,40 @@
 # Secondaries
 
-The secondaries are the servers Bindizr feeds. A registered secondary
-receives NOTIFY for every zone, may pull zones unsigned from its address, and
-is probed by `zone status` and `doctor` for the serial it serves. One list
-decides all three, so a server that hears a change is also the one allowed to
-pull it. The list lives in the database beside the zones and is managed at
-runtime: a change takes effect on the next NOTIFY or transfer, with no reload.
+Register each secondary so it receives NOTIFY, may transfer zones unsigned
+from its address, and appears in `zone status` and `doctor`. Changes take
+effect on the next NOTIFY or transfer without a reload.
 
 ```bash
 # Register a secondary by name and host[:port]; 53 is the port when left out
-$ bindizr secondary create ns2 --address 10.0.0.14
-$ bindizr secondary create ns3 --address ns3.example.net:53
+bindizr secondary create ns2 --address 10.0.0.14
+bindizr secondary create ns3 --address ns3.example.net:53
 
 # List them, disabled ones included
-$ bindizr secondary list
+bindizr secondary list
 
 # Show one
-$ bindizr secondary get ns2
+bindizr secondary get ns2
 
 # Move it, or stop feeding it without forgetting it
-$ bindizr secondary update ns2 --address 10.0.0.15
-$ bindizr secondary update ns2 --enabled false
+bindizr secondary update ns2 --address 10.0.0.15
+bindizr secondary update ns2 --enabled false
 
 # Ask one what it serves and whether it takes a NOTIFY
-$ bindizr secondary check ns2
+bindizr secondary check ns2
 
 # Forget it
-$ bindizr secondary delete ns2
+bindizr secondary delete ns2
 ```
 
-A secondary Bindizr does not know gets no NOTIFY and has its transfers
-refused, which is the first thing to check when a new server never picks up
-a zone — see [Troubleshooting](../troubleshooting.md#secondaries).
+A secondary that is not registered receives no NOTIFY and cannot transfer
+unsigned. Check registration first when a new server does not pick up a zone;
+see [Troubleshooting](../troubleshooting.md#secondaries).
 
 ## Addresses
 
-An address is `host[:port]` — `192.0.2.7`, `[2001:db8::7]:53`,
-`ns2.example.net:53`. It is stored with the port spelled out and a hostname
-lowercased, so one server has one row however it is written; registering an
-address a second time, under another name, is refused.
+Use `host[:port]`, such as `192.0.2.7`, `[2001:db8::7]:53`, or
+`ns2.example.net:53`. Port 53 is the default. Equivalent addresses cannot be
+registered twice under different names.
 
 A hostname is resolved when used, not when registered, so a changed address
 is picked up on its own, within a minute. Where the address is not stable, a
@@ -58,9 +54,9 @@ registered all the same.
 NOTIFY goes out unsigned unless the secondary is registered with a key:
 
 ```bash
-$ bindizr secondary create ns2 --address 10.0.0.14 --notify-key notify-key
-$ bindizr secondary update ns2 --notify-key notify-key
-$ bindizr secondary update ns2 --notify-key ""        # unsigned again
+bindizr secondary create ns2 --address 10.0.0.14 --notify-key notify-key
+bindizr secondary update ns2 --notify-key notify-key
+bindizr secondary update ns2 --notify-key ""        # unsigned again
 ```
 
 Every NOTIFY to that server is then signed with the key and the signature on
@@ -80,11 +76,9 @@ or one being replaced whose address should stay on record.
 
 ## Checking a secondary
 
-Each section above is something that can go wrong on its own: a name that
-stopped resolving, a serial the server never pulled, a key it does not
-accept. `bindizr secondary check <name>` asks one server about all of them,
-the questions `doctor` asks every enabled one, and prints one line per
-answer:
+`bindizr secondary check <name>` checks address resolution, catalog
+synchronization, and NOTIFY acceptance. It also works on a disabled secondary,
+so you can check one before enabling it again:
 
 ```text
 $ bindizr secondary check ns2
@@ -95,18 +89,11 @@ NOTIFY to 10.0.0.14:53: accepted
 Transfers: 12 zones: 11 IXFR delta, 0 IXFR full, 1 AXFR, 0 refused, 0 failed
 ```
 
-The first line is what is registered, the second what the address resolves
-to right now, which is where a pod that moved shows up. The catalog line
-compares the serial the secondary serves with the one Bindizr serves,
-reported as `in sync`, `lagging`, `ahead`, or `unreachable` exactly as
-`zone status` does per zone; when Bindizr's own listener did not answer,
-the report says so on a line of its own and the secondary's serial stands
-alone as `reachable`. The NOTIFY is a real one for the catalog zone, signed
-with the secondary's key when it has one, so a key the server does not
-accept shows up here. A disabled secondary can be checked too, which is how
-to see whether it is ready before enabling it again. The last line
-summarizes [what it pulled](#what-it-pulled); it is information, not a
-verdict.
+The catalog status compares the two serials: `in sync`, `lagging`, `ahead`,
+or `unreachable`. If Bindizr's listener cannot be queried, a responding
+secondary is reported only as `reachable`. The check sends a real catalog
+NOTIFY, signed when a key is configured. Transfer counts summarize
+[what it pulled](#what-it-pulled); they do not determine the check result.
 
 The command exits non-zero when any line fails, so a script can branch on
 it; `-o json` carries the same fields.

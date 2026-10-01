@@ -1,10 +1,9 @@
 # Troubleshooting
 
-`bindizr doctor` is the first stop: each line names one piece of the
-installation, and it runs the database and port checks itself when the daemon
-is down. `bindizr secondary check <name>` repeats its secondary lines for one
-server, with the address the name resolves to. The tables below pair the
-messages you will meet with what to do.
+Start with `bindizr doctor`. It checks the database, listeners, and secondary
+catalog synchronization, and can diagnose startup problems while the daemon
+is stopped. Use `bindizr secondary check <name>` to investigate one server.
+On a package install, run these commands with `sudo`.
 
 ## The daemon
 
@@ -13,21 +12,22 @@ messages you will meet with what to do.
 | `Is the bindizr daemon running?` | any CLI command | Start it: `sudo systemctl start bindizr`, or `bindizr start` in the foreground. `journalctl -u bindizr` shows why a start failed. |
 | `Bindizr is already running.` | `bindizr start` | Another daemon is running. Stop it with `bindizr stop` or `systemctl stop bindizr` rather than starting a second one. |
 | `Permission denied on the daemon socket` | any CLI command | Run the CLI as the daemon's user: `sudo bindizr …` on a package install, `docker exec` / `kubectl exec` in a container. |
-| `The daemon at '/tmp/bindizr/bindizr.sock' runs as uid …` | any CLI command | The socket the CLI reached belongs to a daemon another user is running, or left behind. Run the CLI as that user, or remove the socket as that user. |
+| `The daemon at '/tmp/bindizr/bindizr.sock' runs as uid …` | any CLI command | Run the CLI as the daemon's user or root. Remove a stale socket only after confirming its daemon has stopped. |
 | `unknown field \`…\`` | start, `config check` | A mistyped configuration key; the message lists the keys the section accepts. |
 | `… connection failed (check database.mysql.url)` | start, doctor | The key the message names is wrong, or the database is unreachable from this host. `bindizr doctor` repeats the connection without the daemon. |
 | `Address already in use` / `DNS port in use` | start, doctor | The secondary on the same host holds the port. Keep `dns.listen_port` off 53 (the package default is 5300) and point the secondary's catalog zone at that port. |
-| `these settings are fixed while bindizr runs` | `config reload` | `[api]`, `[database]`, and the DNS listen address and port need a restart: `sudo systemctl restart bindizr`. |
-| `duplicate key value violates unique constraint "pg_type_typname_nsp_index"` | first start on PostgreSQL | Two replicas set up the database at once on the first start and PostgreSQL let only one create the tables; the other exits and finds them on its restart. Harmless, and gone after the first start. |
+| `these settings are fixed while bindizr runs` | `config reload` | `[api]`, `[database]`, the DNS listen address and port, and the catalog name require a restart. See [Reloading](configuration.md#reloading). |
+| `duplicate key value violates unique constraint "pg_type_typname_nsp_index"` | first start on PostgreSQL | Two replicas tried to initialize the schema at once. Let the failed replica restart after initialization finishes. If failures continue, inspect its startup and database logs. |
 
 ## Secondaries
 
 | Symptom | Where | Fix |
 | --- | --- | --- |
-| A secondary never picks up a new zone | `bindizr zone status`, the secondary's log | A secondary learns zones from `catalog.bindizr`. `bindizr secondary check <name>` tells whether it is registered at all, has reached the catalog serial, and accepts a NOTIFY; past that, its log names why the catalog transfer failed, and `bindizr zone notify` resends NOTIFY for every zone. [Secondary Servers](secondaries/index.md) has each server's command for inspecting a zone. |
+| A secondary never picks up a new zone | `zone status`, secondary logs | Run `bindizr secondary list` and `bindizr secondary check <name>`. Confirm registration and the catalog configuration in [Secondary Servers](secondaries/index.md), then retry with `bindizr zone notify`. |
+| Catalog is in sync, but a zone returns `SERVFAIL` | `zone status`, secondary logs | Check `bindizr secondary transfers <name> --zone <zone>`. A member transfer or zone load can fail independently of the catalog. Confirm the zone has apex NS records; BIND logs `has no NS records` when they are missing. |
 | `Secondary unreachable` | doctor, `zone status` | The address it was registered with is wrong, or a firewall sits between Bindizr and the secondary; `bindizr secondary check <name>` shows what the address resolves to and what the server answered. |
 | `Secondary out of sync` | doctor, `zone status` | The secondary has not pulled the current serial: the catalog zone's for `doctor`, a member zone's for `zone status`, so the two can disagree for the moment a transfer takes. Persisting, BIND's log names the reason it refused or deferred the transfer. |
-| `NOTIFY rejected` | doctor | BIND's `allow-notify` does not admit Bindizr's address (the setup script adds `allow-notify { any; }`), or it requires a key the secondary was not registered with — see [Signed NOTIFY](cli/secondaries.md#signed-notify). |
+| `NOTIFY rejected` | doctor | Allow Bindizr's source address in the secondary's NOTIFY ACL. If the secondary requires TSIG, register it with the matching `--notify-key`; see [Signed NOTIFY](cli/secondaries.md#signed-notify). |
 | A secondary's transfer is `REFUSED` | BIND's log, `bindizr_xfr_total{result="refused"}` | The secondary is not registered or is disabled (`bindizr secondary list`), its address changed since it was registered (register it by [hostname](cli/secondaries.md#addresses) instead), or it signs with a key Bindizr does not know or whose role lacks `zone:transfer` for the zone — see [Signing zone transfers](cli/advanced.md#signing-zone-transfers). |
 
 ## The HTTP API

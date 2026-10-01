@@ -19,8 +19,8 @@ a window in milliseconds
 
 ## Sizing the transfer cache
 
-`dns.transfer_cache.max_records` counts records, not bytes, so converting a
-memory budget takes one step. A cached record costs roughly:
+`dns.transfer_cache.max_records` limits the record count. Approximate memory
+costs depend on the record contents:
 
 | Record | Cost |
 | --- | --- |
