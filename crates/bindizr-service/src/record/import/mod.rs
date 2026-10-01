@@ -74,6 +74,7 @@ fn build_create_zone_request(
 }
 
 /// Outcome of the transactional part of a zone-file import.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct AppliedImport {
     response: ImportZoneResponse,
     zone_name: ZoneName,
@@ -84,7 +85,7 @@ struct AppliedImport {
 
 /// Per-stage timings, emitted as one debug summary after commit + NOTIFY;
 /// `db_write_ms`/`serial_ms` stay zero on a dry run or no-op.
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 struct ImportTimings {
     load_zone_ms: f64,
     load_existing_ms: f64,
@@ -105,6 +106,10 @@ pub async fn import_zone(
     request: &ImportZoneRequest,
 ) -> Result<ImportZoneResponse, ServiceError> {
     caller.authorize_global("import zone files")?;
+    let mode = request
+        .mode
+        .parse::<ImportMode>()
+        .map_err(ServiceError::invalid_input)?;
 
     let content: Cow<'_, str> = match (&request.content, &request.from_server) {
         (Some(content), None) => Cow::Borrowed(content.as_str()),
@@ -137,7 +142,7 @@ pub async fn import_zone(
             return Err(ServiceError::invalid_input("give content or from_server"));
         }
     };
-    reconcile_zone_file(cx, caller, zone_name, &content, request).await
+    reconcile_zone_file(cx, caller, zone_name, &content, request, mode).await
 }
 
 /// Preview or apply a zone-file reconciliation in its own transaction; a
@@ -149,15 +154,15 @@ async fn reconcile_zone_file(
     zone_name: &ZoneName,
     content: &str,
     request: &ImportZoneRequest,
+    mode: ImportMode,
 ) -> Result<ImportZoneResponse, ServiceError> {
     let attribution = caller.change_attribution();
     let run = Run::from_dry_run(request.dry_run);
-    let mode = request.mode;
     let t_total = Instant::now();
 
     let mut timings = ImportTimings::default();
 
-    let mut tx = transaction::begin_tx(cx, "Failed to import zone file").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to import zone file").await?;
 
     let apply_result: Result<AppliedImport, ServiceError> = async {
         let t = Instant::now();
@@ -307,7 +312,7 @@ async fn reconcile_zone_file(
         }
         .map_err(|e| {
             log::error!("Failed to load zone records: {}", e);
-            ServiceError::internal("Failed to import zone file")
+            ServiceError::internal_with_source("failed to import zone file", e)
         })?;
         timings.load_existing_ms = elapsed_ms(t);
 
@@ -468,7 +473,7 @@ async fn reconcile_zone_file(
     } = if discard {
         transaction::discard_tx(tx, apply_result).await?
     } else {
-        transaction::finish_tx(tx, apply_result, "Failed to import zone file").await?
+        transaction::finish_tx(tx, apply_result, "failed to import zone file").await?
     };
 
     log::info!(

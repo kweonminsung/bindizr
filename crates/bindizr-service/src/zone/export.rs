@@ -24,7 +24,7 @@ pub async fn export(
 ) -> Result<String, ServiceError> {
     // Read the zone and records in one locked transaction so the export is a
     // single consistent view, not stale SOA metadata with newer records.
-    let mut tx = transaction::begin_read_tx(cx, "Failed to export zone").await?;
+    let mut tx = transaction::begin_read_tx(cx, "failed to export zone").await?;
     let load_result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
         caller.authorize_zone_unrestricted(&zone)?;
@@ -38,7 +38,7 @@ pub async fn export(
     }
     .await;
     let (zone, mut records, mut derived) =
-        transaction::finish_tx(tx, load_result, "Failed to export zone").await?;
+        transaction::finish_tx(tx, load_result, "failed to export zone").await?;
 
     let origin = zone.name.to_fqdn();
     let mut out = String::new();
@@ -47,9 +47,9 @@ pub async fn export(
 
     // SOA carries names as absolute FQDNs so they are not read as relative
     // to $ORIGIN. `soa_mailbox` already escapes the local part per RFC 1035.
-    let mailbox = zone
-        .soa_mailbox()
-        .map_err(|e| ServiceError::internal(format!("Failed to render SOA mailbox: {e}")))?;
+    let mailbox = zone.soa_mailbox().map_err(|e| {
+        ServiceError::internal_with_source(format!("failed to render SOA mailbox: {e}"), e)
+    })?;
     out.push_str(&format!(
         "@\t{}\tIN\tSOA\t{} {} {} {} {} {} {}\n",
         zone.default_ttl,

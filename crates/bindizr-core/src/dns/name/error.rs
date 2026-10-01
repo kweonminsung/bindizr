@@ -38,7 +38,7 @@ pub enum ParseNameError {
 
 /// A presentation-form name that could not become wire labels.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("Invalid domain name '{name}': {source}")]
+#[error("invalid domain name '{name}': {source}")]
 pub struct EncodeNameError {
     pub name: String,
     #[source]

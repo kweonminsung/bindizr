@@ -46,7 +46,7 @@ pub async fn create(
         .map(validate_record_ttl)
         .transpose()?;
 
-    let mut tx = transaction::begin_tx(cx, "Failed to create record").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to create record").await?;
 
     let apply_result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, &zone_name, LockLevel::Exclusive).await?;
@@ -75,8 +75,9 @@ pub async fn create(
             Ok(records) => records,
             Err(e) => {
                 log::error!("Failed to check existing records: {}", e);
-                return Err(ServiceError::internal(
-                    "Failed to create record".to_string(),
+                return Err(ServiceError::internal_with_source(
+                    "failed to create record",
+                    e,
                 ));
             }
         };
@@ -134,7 +135,7 @@ pub async fn create(
         .pop()
         .ok_or_else(|| {
             log::error!("Record insert returned no row");
-            ServiceError::internal("Failed to create record")
+            ServiceError::internal("record insert returned no row")
         })?;
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
@@ -147,7 +148,7 @@ pub async fn create(
     .await;
 
     let (created_record, zone_name, diff) =
-        transaction::finish_tx(tx, apply_result, "Failed to create record").await?;
+        transaction::finish_tx(tx, apply_result, "failed to create record").await?;
 
     log::info!(
         "event=record_create dry_run={} zone={} name={} type={} ttl={} priority={} record_id={}",

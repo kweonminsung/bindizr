@@ -21,7 +21,7 @@ pub(crate) async fn create_tx(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
-    .bind(zone.name.as_str())
+    .bind(&zone.name)
     .bind(&zone.mname)
     .bind(&zone.rname)
     .bind(zone.default_ttl)
@@ -299,7 +299,7 @@ pub(crate) async fn update_tx(
         WHERE id = ?
         "#,
     )
-    .bind(zone.name.as_str())
+    .bind(&zone.name)
     .bind(&zone.mname)
     .bind(&zone.rname)
     .bind(zone.default_ttl)

@@ -8,9 +8,9 @@ use thiserror::Error;
 /// Why a daemon response could not be rendered.
 #[derive(Debug, Error)]
 pub(crate) enum RenderOutputError {
-    #[error("Failed to serialize to YAML: {0}")]
+    #[error("failed to serialize to YAML: {0}")]
     Yaml(#[source] serde_norway::Error),
-    #[error("Failed to serialize to JSON: {0}")]
+    #[error("failed to serialize to JSON: {0}")]
     Json(#[source] serde_json::Error),
 }
 

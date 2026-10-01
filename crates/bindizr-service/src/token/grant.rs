@@ -65,7 +65,7 @@ pub async fn create(
         // The zone or token can go between the lookups above and this insert;
         // the FK reports it.
         if e.is_foreign_key_violation() {
-            ServiceError::ZoneNotFound("Zone or token no longer exists".to_string())
+            ServiceError::ZoneNotFound("zone or token no longer exists".to_string())
         } else {
             e.into()
         }

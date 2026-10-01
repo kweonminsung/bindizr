@@ -89,12 +89,12 @@ impl From<JsonRejection> for ApiError {
         let error = match rejection {
             JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
                 ServiceError::InvalidJsonBody(format!(
-                    "Invalid JSON body: {}",
+                    "invalid JSON body: {}",
                     rejection.body_text()
                 ))
             }
             JsonRejection::MissingJsonContentType(_) => ServiceError::UnsupportedMediaType(
-                "Unsupported media type: expected 'Content-Type: application/json'".to_string(),
+                "unsupported media type: expected 'Content-Type: application/json'".to_string(),
             ),
             // A body over DefaultBodyLimit arrives as a BytesRejection; it is a
             // client size error, so keep axum's status instead of reporting 500.
@@ -102,11 +102,11 @@ impl From<JsonRejection> for ApiError {
                 if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE =>
             {
                 ServiceError::PayloadTooLarge(format!(
-                    "Request body exceeds the {} MiB limit",
+                    "request body exceeds the {} MiB limit",
                     MAX_UPLOAD_BODY_BYTES / (1024 * 1024)
                 ))
             }
-            _ => ServiceError::internal("Failed to read request body"),
+            _ => ServiceError::internal("failed to read request body"),
         };
 
         ApiError(error)
@@ -114,7 +114,7 @@ impl From<JsonRejection> for ApiError {
 }
 
 /// `axum::extract::Query` whose rejection renders as [`ErrorResponse`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Query<T>(pub(crate) T);
 
 impl<T, S> FromRequestParts<S> for Query<T>
@@ -134,7 +134,7 @@ where
 }
 
 /// `axum::extract::Path` with the same treatment as [`Query`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Path<T>(pub(crate) T);
 
 impl<T, S> FromRequestParts<S> for Path<T>

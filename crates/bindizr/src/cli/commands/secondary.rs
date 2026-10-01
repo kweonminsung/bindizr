@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Subcommands for managing the secondary servers.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SecondaryCommand {
     /// Register a secondary: it receives NOTIFY and may pull zones unsigned
     /// from its address
@@ -213,7 +213,7 @@ pub(crate) async fn handle_command(subcommand: SecondaryCommand) -> Result<(), C
             // A failed part exits non-zero, so a script can branch on it.
             if !check.is_healthy() {
                 return Err(CliError::request(format!(
-                    "Secondary '{}' failed the check",
+                    "secondary '{}' failed the check",
                     name
                 )));
             }

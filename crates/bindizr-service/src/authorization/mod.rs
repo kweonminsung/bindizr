@@ -268,13 +268,14 @@ async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, S
         Ok(Some(token)) => token,
         Ok(None) => {
             return Err(ServiceError::invalid_token(
-                "Invalid or expired token".to_string(),
+                "invalid or expired token".to_string(),
             ));
         }
         Err(e) => {
             log::error!("Failed to validate token: {}", e);
-            return Err(ServiceError::internal(
-                "Failed to validate token".to_string(),
+            return Err(ServiceError::internal_with_source(
+                "failed to validate token",
+                e,
             ));
         }
     };
@@ -282,7 +283,7 @@ async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, S
     if let Some(expires_at) = &stored_token.expires_at
         && Utc::now() >= *expires_at
     {
-        return Err(ServiceError::invalid_token("Token has expired"));
+        return Err(ServiceError::invalid_token("token has expired"));
     }
 
     let stamp_is_fresh = stored_token.last_used_at.is_some_and(|last_used| {
@@ -302,7 +303,7 @@ async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, S
     .await
     .map_err(|e| {
         log::error!("Failed to update last_used_at: {}", e);
-        ServiceError::internal("Failed to update last_used_at")
+        ServiceError::internal_with_source("failed to update last_used_at", e)
     })?;
 
     Ok(updated_token)

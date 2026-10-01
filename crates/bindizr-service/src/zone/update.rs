@@ -24,6 +24,7 @@ use crate::{
 };
 
 /// Outcome of the transactional part of a zone update.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct AppliedZoneUpdate {
     zone: Zone,
     /// Whether the update changed what the catalog publishes: its members are
@@ -136,7 +137,7 @@ async fn update_locked(
     run: Run,
     build: impl FnOnce(&Zone) -> CreateZoneRequest,
 ) -> Result<Zone, ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "Failed to update zone").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to update zone").await?;
 
     let apply_result: Result<AppliedZoneUpdate, ServiceError> = async {
         // Lock the zone row so the serial computed below stays ahead of
@@ -176,14 +177,17 @@ async fn update_locked(
                 Ok(Some(zone)) if zone.id != zone_id => {
                     log::error!("Zone with name {} already exists", validated.name);
                     return Err(ServiceError::zone_conflict(format!(
-                        "Zone with name '{}' already exists",
+                        "zone with name '{}' already exists",
                         validated.name
                     )));
                 }
                 Ok(_) => {}
                 Err(e) => {
                     log::error!("Failed to check existing zone: {}", e);
-                    return Err(ServiceError::internal("Failed to update zone"));
+                    return Err(ServiceError::internal_with_source(
+                        "failed to update zone",
+                        e,
+                    ));
                 }
             }
         }
@@ -227,7 +231,7 @@ async fn update_locked(
                     ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
                 } else {
                     log::error!("Failed to update zone: {}", e);
-                    ServiceError::internal("Failed to update zone")
+                    ServiceError::internal_with_source("failed to update zone", e)
                 }
             })?;
 
@@ -239,7 +243,7 @@ async fn update_locked(
             .await
             .map_err(|e| {
                 log::error!("Failed to create zone changes: {}", e);
-                ServiceError::internal("Failed to create zone change")
+                ServiceError::internal_with_source("failed to create zone change", e)
             })?;
 
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
@@ -258,7 +262,7 @@ async fn update_locked(
         zone: updated_zone,
         catalog_changed,
         new_serial,
-    } = transaction::finish_tx(tx, apply_result, "Failed to update zone").await?;
+    } = transaction::finish_tx(tx, apply_result, "failed to update zone").await?;
 
     log::info!(
         "event=zone_update zone={} previous_name={} new_serial={} zone_id={}",

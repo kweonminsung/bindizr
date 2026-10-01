@@ -26,11 +26,11 @@ pub async fn advance_catalog_serial(
     digest: &str,
     base_serial: Serial,
 ) -> Result<Serial, ServiceError> {
-    let mut tx = transaction::begin_tx(cx, "Failed to update catalog state").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to update catalog state").await?;
 
     let apply_result = bindizr_db::catalog_zone::upsert_tx(&mut tx, name, digest, base_serial)
         .await
         .map_err(ServiceError::from);
 
-    transaction::finish_tx(tx, apply_result, "Failed to update catalog state").await
+    transaction::finish_tx(tx, apply_result, "failed to update catalog state").await
 }

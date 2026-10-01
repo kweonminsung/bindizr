@@ -118,7 +118,7 @@ pub async fn list_records(
             grouped
                 .entry(RecordSetKey {
                     name,
-                    record_type: record.record_type.to_string(),
+                    record_type: record.record_type,
                 })
                 .or_default()
                 .entry(record.ttl)
@@ -140,7 +140,7 @@ pub async fn list_records(
                 values.sort();
                 ExternalDnsRecord {
                     name: key.name.clone(),
-                    record_type: key.record_type.clone(),
+                    record_type: key.record_type.as_str().to_owned(),
                     ttl: Some(i32::from(ttl)),
                     values,
                 }

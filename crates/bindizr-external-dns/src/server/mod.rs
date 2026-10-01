@@ -204,10 +204,7 @@ async fn list_records(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
 
     match state.upstream.list_records().await {
         Ok(records) => {
-            let endpoints: Vec<Endpoint> = records
-                .into_iter()
-                .map(Endpoint::from_bindizr_record)
-                .collect();
+            let endpoints: Vec<Endpoint> = records.into_iter().map(Endpoint::from).collect();
             log::info!("event=records_get endpoints={}", endpoints.len());
             json_response(&endpoints)
         }

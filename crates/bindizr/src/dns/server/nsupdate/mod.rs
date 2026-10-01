@@ -21,11 +21,11 @@ use crate::dns::{error::XfrError, server::DnsContext};
 /// Why an UPDATE was not answered, for the listener's log.
 #[derive(Debug, Error)]
 pub(crate) enum NsupdateError {
-    #[error("Failed to build NSUPDATE TCP response")]
+    #[error("failed to build NSUPDATE TCP response")]
     BuildResponse,
-    #[error("Failed to write NSUPDATE TCP response: {0}")]
+    #[error("failed to write NSUPDATE TCP response: {0}")]
     WriteTcp(#[source] XfrError),
-    #[error("Failed to write NSUPDATE UDP response: {0}")]
+    #[error("failed to write NSUPDATE UDP response: {0}")]
     SendUdp(#[source] std::io::Error),
 }
 

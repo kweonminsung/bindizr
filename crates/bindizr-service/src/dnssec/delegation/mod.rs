@@ -85,7 +85,7 @@ fn build_delegation_info(
     let apex = zone
         .name
         .to_wire_name()
-        .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
+        .map_err(|e| ServiceError::internal_with_source(format!("invalid zone apex: {}", e), e))?;
 
     let mut delegation_keys = Vec::new();
     for key in keys.iter().filter(|key| key.role.is_sep()) {

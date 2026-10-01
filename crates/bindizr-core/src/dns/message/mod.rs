@@ -25,7 +25,7 @@ use crate::dns::{
 /// Why a response could not be composed, signed, or framed.
 #[derive(Debug, Error)]
 pub enum EncodeMessageError {
-    #[error("Invalid raw rdata: {0}")]
+    #[error("invalid raw rdata: {0}")]
     RawRdata(#[source] LibraryError),
     #[error(transparent)]
     Owner(#[from] WireNameError),
@@ -41,15 +41,15 @@ pub enum EncodeMessageError {
     MissingValue,
     #[error("DNS message exceeded maximum size without answers")]
     NoAnswers,
-    #[error("Single DNS answer is too large: {len} bytes")]
+    #[error("single DNS answer is too large: {len} bytes")]
     AnswerTooLarge { len: usize },
-    #[error("Message too large: {len} bytes")]
+    #[error("message too large: {len} bytes")]
     TooLarge { len: usize },
-    #[error("Failed to compose the question: {0}")]
+    #[error("failed to compose the question: {0}")]
     ComposeQuestion(#[source] LibraryError),
-    #[error("Failed to compose an answer: {0}")]
+    #[error("failed to compose an answer: {0}")]
     ComposeAnswer(#[source] LibraryError),
-    #[error("Failed to sign the response: {0}")]
+    #[error("failed to sign the response: {0}")]
     Sign(#[source] LibraryError),
 }
 
@@ -76,6 +76,7 @@ impl Overflow {
 
 /// A record already composed into wire bytes, pushed back through `domain`'s
 /// builder so a message can carry a section it did not compose.
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 struct ComposedRecord<'a>(&'a [u8]);
 
 impl ComposeRecord for ComposedRecord<'_> {
@@ -128,7 +129,7 @@ impl DnsMessageBuilder {
     }
 
     /// Adds an answer from wire-format RDATA bytes, with no per-type parser.
-    pub(crate) fn add_raw_rdata(
+    pub fn add_raw_rdata(
         &mut self,
         owner: Name<Vec<u8>>,
         record_type: u16,

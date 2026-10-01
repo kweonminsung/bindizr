@@ -354,6 +354,7 @@ dependencies = [
  "rand",
  "ring",
  "serde",
+ "serde_json",
  "thiserror",
  "tokio",
  "utoipa",

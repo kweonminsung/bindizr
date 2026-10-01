@@ -54,7 +54,7 @@ pub(crate) async fn advance_serial_tx(
         .await
         .map_err(|e| {
             log::error!("Failed to update zone serial: {}", e);
-            ServiceError::internal("Failed to update zone serial")
+            ServiceError::internal_with_source("failed to update zone serial", e)
         })?;
 
     save_version_tx(tx, cx, zone, new_serial, attribution).await
@@ -112,7 +112,7 @@ pub(crate) async fn save_version_tx(
     .await
     .map_err(|e| {
         log::error!("Failed to save SOA version: {}", e);
-        ServiceError::internal("Failed to save SOA version")
+        ServiceError::internal_with_source("failed to save SOA version", e)
     })?;
 
     // Every serial-advancing path funnels through this version write.

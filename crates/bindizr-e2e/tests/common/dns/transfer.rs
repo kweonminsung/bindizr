@@ -18,7 +18,7 @@ use crate::common::dns::nsupdate::SigningKey;
 
 /// What a zone transfer returned: the records it carried, or the RCODE that
 /// refused it.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub(crate) enum TransferOutcome {
     Records(usize),
     Refused(Rcode),

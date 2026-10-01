@@ -44,7 +44,7 @@ fn watch(servers: &mut Servers, name: &'static str, task: JoinHandle<std::io::Re
 /// Parse arguments, start both listeners, and serve until interrupted.
 pub async fn execute() {
     let cli = config::Cli::parse();
-    let adapter_config = config::AdapterConfig::from_cli(cli).unwrap_or_else(|e| {
+    let adapter_config = config::AdapterConfig::load(cli).unwrap_or_else(|e| {
         errln!("Error: {}", e);
         std::process::exit(EXIT_CONFIG);
     });

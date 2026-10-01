@@ -22,7 +22,7 @@ use crate::{
 };
 
 /// Subcommands for managing a zone's DNSSEC signing.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DnssecCommand {
     /// Enable DNSSEC: generate the signing key(s) a policy prescribes and
     /// sign the zone
@@ -141,7 +141,7 @@ the chain, and a new algorithm starts a rollover."
 }
 
 /// Subcommands for rolling a zone's signing keys.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DnssecRolloverCommand {
     /// Publish a replacement key with the same algorithm. After the publish
     /// wait, the scheduler promotes ZSKs automatically and CSK/KSKs once the
@@ -194,7 +194,7 @@ still caching the previous keys fail until the hold-down would have expired.")]
 }
 
 /// Subcommands for a zone's DS withdrawal.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DnssecWithdrawCommand {
     /// Publish the delete pair (`CDS 0 0 0 00`) to request DS removal
     /// from a parent that processes CDS records

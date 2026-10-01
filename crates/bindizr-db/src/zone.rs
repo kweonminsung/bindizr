@@ -14,7 +14,7 @@ use crate::{
     tx::TransactionKind,
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ZoneFilter {
     pub name: Option<String>,
     pub id: Option<ZoneId>,

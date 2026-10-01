@@ -139,7 +139,7 @@ pub struct Days(u32);
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ConvertDaysError {
     /// Rows are stored as `i32`, so a negative one is corrupt data.
-    #[error("Invalid day count: {days}")]
+    #[error("invalid day count: {days}")]
     Negative { days: i32 },
     /// Past 2^31 - 1, which the row form cannot hold.
     #[error("day count {days} exceeds the maximum of {}", i32::MAX)]
@@ -244,6 +244,20 @@ where
         Ok(Days::try_from(<i32 as sqlx::Decode<'r, DB>>::decode(
             value,
         )?)?)
+    }
+}
+
+/// How a zone divides DNSSEC signing responsibilities among keys.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DnssecKeyLayout {
+    Csk,
+    Split,
+}
+
+impl DnssecKeyLayout {
+    /// Interpret the stored split-key setting at a key-operation boundary.
+    pub fn from_split_keys(split_keys: bool) -> Self {
+        if split_keys { Self::Split } else { Self::Csk }
     }
 }
 

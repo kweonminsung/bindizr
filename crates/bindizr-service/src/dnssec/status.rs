@@ -145,7 +145,7 @@ fn build_ds_info(zone: &Zone, key: &DnssecKey) -> Result<DnssecDsInfo, ServiceEr
     let apex = zone
         .name
         .to_wire_name()
-        .map_err(|e| ServiceError::internal(format!("invalid zone apex: {}", e)))?;
+        .map_err(|e| ServiceError::internal_with_source(format!("invalid zone apex: {}", e), e))?;
     let rdata = key
         .ds_rdata(&apex, key.algorithm.ds_digest_type())
         .map_err(ServiceError::dnssec_signing_failed)?;

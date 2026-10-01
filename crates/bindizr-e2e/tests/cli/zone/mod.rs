@@ -72,7 +72,7 @@ async fn zone_create_read_delete() {
     assert_cli_failure_contains(
         &args,
         &missing,
-        &format!("Zone with name '{zone_name}' not found"),
+        &format!("zone with name '{zone_name}' not found"),
     );
 }
 

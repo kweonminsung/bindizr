@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// Subcommands for managing TSIG update and transfer credentials.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TsigKeyCommand {
     /// Create a TSIG key (generates a secret unless one is provided)
     Create {

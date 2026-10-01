@@ -13,6 +13,7 @@ use crate::{
     dns::{LibraryError, Ttl, dnssec::KeyTag},
     model::{
         dnssec_key::{DnssecAlgorithm, DnssecKey, DnssecKeyId, DnssecKeyRole, DnssecKeyState},
+        dnssec_policy::DnssecKeyLayout,
         zone::Zone,
     },
 };
@@ -105,6 +106,7 @@ fn parse_bind_key_time(
 
 /// Where an imported key stands in its rollover: the state it is in, when it
 /// entered it, and when it may move on.
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 struct DnssecKeyPhase {
     state: DnssecKeyState,
     state_changed_at: DateTime<Utc>,
@@ -175,7 +177,7 @@ impl DnssecKey {
     /// key layout for its role and the private file's timing for its rollover state.
     pub fn import(
         zone: &Zone,
-        split_keys: bool,
+        layout: DnssecKeyLayout,
         dnskey_record: &str,
         private_key: &str,
         now: DateTime<Utc>,
@@ -217,11 +219,11 @@ impl DnssecKey {
             .map_err(ImportKeyError::PublicKeyNotBase64)?;
 
         // Interpret the SEP flag using the zone's CSK or split-key layout.
-        let role = match (flags, split_keys) {
-            (257, false) => DnssecKeyRole::Csk,
-            (257, true) => DnssecKeyRole::Ksk,
-            (256, true) => DnssecKeyRole::Zsk,
-            (256, false) => return Err(ImportKeyError::ZskInCskLayout),
+        let role = match (flags, layout) {
+            (257, DnssecKeyLayout::Csk) => DnssecKeyRole::Csk,
+            (257, DnssecKeyLayout::Split) => DnssecKeyRole::Ksk,
+            (256, DnssecKeyLayout::Split) => DnssecKeyRole::Zsk,
+            (256, DnssecKeyLayout::Csk) => return Err(ImportKeyError::ZskInCskLayout),
             _ => return Err(ImportKeyError::UnsupportedFlags { flags }),
         };
 

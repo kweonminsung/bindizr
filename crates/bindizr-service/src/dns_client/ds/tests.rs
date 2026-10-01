@@ -18,7 +18,7 @@ const RTYPE_SOA: u16 = 6;
 /// What a fake server answers to every question: DS records at the qname,
 /// the same but truncated over UDP so only TCP carries them, NXDOMAIN, or
 /// nothing at all.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Answer {
     Ds { aa: bool, records: Vec<(u16, u32)> },
     DsTruncatedOverUdp { records: Vec<(u16, u32)> },

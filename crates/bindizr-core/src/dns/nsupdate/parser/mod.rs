@@ -21,7 +21,7 @@ use crate::{
 const DNS_HEADER_LEN: usize = 12;
 
 /// A parsed UPDATE message: its zone, prerequisites, updates, and TSIG.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateRequest {
     pub zone_name: String,
     pub prerequisites: Vec<UpdateRecord>,
@@ -32,7 +32,7 @@ pub struct UpdateRequest {
 /// One record from the prerequisite or update section. `rdata_start` locates the
 /// rdata in the original message so compressed names inside it can be decoded
 /// lazily by the update flow.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateRecord {
     pub name: String,
     pub record_type: Rtype,
@@ -44,7 +44,7 @@ pub struct UpdateRecord {
 
 /// TSIG key name for lookup and fudge for the response; `domain::tsig` verifies the full record.
 /// Parsing rejects malformed TSIG records with FORMERR (RFC 8945, Section 5.2).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TsigRecord {
     pub name: String,
     pub fudge: u16,
@@ -54,17 +54,17 @@ pub struct TsigRecord {
 pub enum ParseUpdateError {
     #[error("DNS message is too short")]
     TooShort,
-    #[error("Not a DNS UPDATE opcode")]
+    #[error("not a DNS UPDATE opcode")]
     InvalidOpcode,
-    #[error("Invalid DNS UPDATE header")]
+    #[error("invalid DNS UPDATE header")]
     InvalidHeader,
-    #[error("Invalid DNS UPDATE zone section")]
+    #[error("invalid DNS UPDATE zone section")]
     InvalidZoneSection,
-    #[error("Invalid compressed domain name")]
+    #[error("invalid compressed domain name")]
     InvalidName,
-    #[error("Invalid record in UPDATE section")]
+    #[error("invalid record in UPDATE section")]
     InvalidRecord,
-    #[error("Invalid TSIG record")]
+    #[error("invalid TSIG record")]
     InvalidTsig,
     /// The record's RDATA does not parse as its type, or does not fill RDLENGTH.
     #[error("invalid {record_type} rdata")]

@@ -3,11 +3,11 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::error::ServiceError;
+use crate::error::{ErrorCode, ServiceError};
 
 /// Whether a previewable write goes through, or only reports what it
 /// would do.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Run {
     Apply,
@@ -34,7 +34,7 @@ pub struct MessageResponse {
 }
 
 /// Whether the API can serve requests: its database answered a probe.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthStatus {
     Healthy,
@@ -50,26 +50,10 @@ pub struct HealthResponse {
 /// Generic error response: a plain description plus a machine-readable code.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct ErrorResponse {
-    #[schema(example = "Zone with name 'example.com' not found")]
+    #[schema(example = "zone with name 'example.com' not found")]
     pub error: String,
-    /// One of `INVALID_INPUT`, `INVALID_ZONE_FIELD`, `INVALID_RECORD_NAME`,
-    /// `INVALID_RECORD_VALUE`, `INVALID_JSON_BODY`, `UNAUTHORIZED`,
-    /// `INVALID_TOKEN`, `FORBIDDEN`, `ENDPOINT_NOT_FOUND`,
-    /// `METHOD_NOT_ALLOWED`, `ZONE_NOT_FOUND`, `RECORD_NOT_FOUND`,
-    /// `TOKEN_NOT_FOUND`, `VERSION_NOT_FOUND`, `SECONDARY_NOT_FOUND`,
-    /// `TSIG_KEY_NOT_FOUND`,
-    /// `TSIG_GRANT_NOT_FOUND`, `TOKEN_GRANT_NOT_FOUND`,
-    /// `DNSSEC_POLICY_NOT_FOUND`, `ZONE_CONFLICT`, `RECORD_CONFLICT`,
-    /// `TOKEN_CONFLICT`, `SECONDARY_CONFLICT`, `TSIG_KEY_CONFLICT`,
-    /// `TSIG_KEY_IN_USE`,
-    /// `DNSSEC_POLICY_CONFLICT`, `DNSSEC_POLICY_IN_USE`,
-    /// `DNSSEC_ALREADY_ENABLED`, `DNSSEC_NOT_ENABLED`,
-    /// `DNSSEC_ROLLOVER_IN_PROGRESS`, `DNSSEC_NO_ROLLOVER_IN_PROGRESS`,
-    /// `DNSSEC_DS_PUBLISHED`, `DNSSEC_DS_NOT_PUBLISHED`,
-    /// `DNSSEC_DS_UNVERIFIED`, `PAYLOAD_TOO_LARGE`,
-    /// `UNSUPPORTED_MEDIA_TYPE`, `DNSSEC_SIGNING_FAILED`, `INTERNAL`.
-    #[schema(example = "ZONE_NOT_FOUND", pattern = "^[A-Z_]+$")]
-    pub code: String,
+    /// Machine-readable failure classification.
+    pub code: ErrorCode,
 }
 
 impl From<&ServiceError> for ErrorResponse {
@@ -77,7 +61,81 @@ impl From<&ServiceError> for ErrorResponse {
     fn from(err: &ServiceError) -> Self {
         ErrorResponse {
             error: err.to_string(),
-            code: err.code().as_str().to_string(),
+            code: err.code(),
+        }
+    }
+}
+
+impl Run {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Apply => "apply",
+            Self::DryRun => "dry_run",
+        }
+    }
+}
+
+impl serde::Serialize for Run {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl HealthStatus {
+    /// Return the canonical wire spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Healthy => "healthy",
+            Self::Unhealthy => "unhealthy",
+        }
+    }
+}
+
+impl serde::Serialize for HealthStatus {
+    /// Serialize through the canonical spelling used by the wire contract.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify the canonical spelling and round-trip of every Run variant.
+    #[test]
+    fn run_spells_itself_once() {
+        for (value, expected) in [(Run::Apply, "apply"), (Run::DryRun, "dry_run")] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<Run>(serde_json::json!(expected)).unwrap(),
+                value
+            );
+        }
+    }
+
+    /// Verify the canonical spelling and round-trip of every HealthStatus variant.
+    #[test]
+    fn health_status_spells_itself_once() {
+        for (value, expected) in [
+            (HealthStatus::Healthy, "healthy"),
+            (HealthStatus::Unhealthy, "unhealthy"),
+        ] {
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::json!(expected)
+            );
+            assert_eq!(
+                serde_json::from_value::<HealthStatus>(serde_json::json!(expected)).unwrap(),
+                value
+            );
         }
     }
 }

@@ -6,7 +6,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use super::name::{MAX_DOMAIN_LEN, classify_domain_label};
+use super::name::{LabelCharset, MAX_DOMAIN_LEN, classify_domain_label};
 
 /// The port a `host` without one is taken to serve DNS on.
 pub const DEFAULT_DNS_PORT: u16 = 53;
@@ -144,7 +144,7 @@ fn is_hostname(value: &str) -> bool {
         && name.len() <= MAX_DOMAIN_LEN
         && name
             .split('.')
-            .all(|label| classify_domain_label(label, true).is_ok())
+            .all(|label| classify_domain_label(label, LabelCharset::LdhUnderscore).is_ok())
 }
 
 /// Check whether an address target includes a valid explicit port.

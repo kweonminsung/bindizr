@@ -58,13 +58,13 @@ pub async fn create(
         .is_some()
     {
         return Err(ServiceError::secondary_conflict(format!(
-            "Secondary with name '{}' already exists",
+            "secondary with name '{}' already exists",
             name
         )));
     }
     if let Some(other) = bindizr_db::secondary::get_by_address(cx.db(), &address).await? {
         return Err(ServiceError::secondary_conflict(format!(
-            "Secondary with address '{}' already exists (name '{}')",
+            "secondary with address '{}' already exists (name '{}')",
             address, other.name
         )));
     }
@@ -85,7 +85,7 @@ pub async fn create(
         // The UNIQUE(name) / UNIQUE(address) backstop for the pre-checks above.
         if e.is_unique_violation() {
             ServiceError::secondary_conflict(format!(
-                "Secondary with name '{}' or address '{}' already exists",
+                "secondary with name '{}' or address '{}' already exists",
                 name, address
             ))
         } else {
@@ -139,7 +139,7 @@ pub async fn get(
 ) -> Result<GetSecondaryResponse, ServiceError> {
     caller.authorize_global("manage secondaries")?;
     let secondary = lookup_by_name(cx, name).await?;
-    to_response(cx, secondary).await
+    build_response(cx, secondary).await
 }
 
 /// Change a secondary's address, enabled flag, or NOTIFY key; an empty
@@ -175,7 +175,7 @@ pub async fn update(
         && other.name != name
     {
         return Err(ServiceError::secondary_conflict(format!(
-            "Secondary with address '{}' already exists (name '{}')",
+            "secondary with address '{}' already exists (name '{}')",
             address, other.name
         )));
     }
@@ -206,7 +206,7 @@ pub async fn update(
             // The UNIQUE(address) backstop for the pre-check above.
             if e.is_unique_violation() {
                 ServiceError::secondary_conflict(format!(
-                    "Secondary with address '{}' already exists",
+                    "secondary with address '{}' already exists",
                     address
                 ))
             } else {
@@ -216,7 +216,7 @@ pub async fn update(
     }
     .await;
     let secondary = transaction::finish_tx(tx, result, "failed to update secondary").await?;
-    to_response(cx, secondary).await
+    build_response(cx, secondary).await
 }
 
 /// Check one secondary, enabled or not: resolve its address, compare the
@@ -255,7 +255,7 @@ pub async fn check(
     let transfers = transfer_summary(cx, &secondary).await?;
 
     Ok(SecondaryCheckResponse {
-        secondary: to_response(cx, secondary).await?,
+        secondary: build_response(cx, secondary).await?,
         addresses,
         resolve_error,
         catalog_zone_name: catalog_zone.to_string(),
@@ -349,7 +349,10 @@ pub(crate) async fn notify_signing_key(
 ) -> Result<Option<TsigSigningKey>, ServiceError> {
     match notify_key(cx, secondary).await? {
         Some(key) => key.to_domain_key().map(Some).map_err(|e| {
-            ServiceError::internal(format!("NOTIFY key '{}' is unusable: {:?}", key.name, e))
+            ServiceError::internal_with_source(
+                format!("NOTIFY key '{}' is unusable: {:?}", key.name, e),
+                e,
+            )
         }),
         None => Ok(None),
     }
@@ -368,7 +371,7 @@ async fn notify_key(cx: &Context, secondary: &Secondary) -> Result<Option<TsigKe
 }
 
 /// The API form of a secondary, naming its NOTIFY key.
-async fn to_response(
+async fn build_response(
     cx: &Context,
     secondary: Secondary,
 ) -> Result<GetSecondaryResponse, ServiceError> {

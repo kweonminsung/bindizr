@@ -47,7 +47,7 @@ impl From<NotifyError> for ServiceError {
 
 /// Send a DNS NOTIFY for one zone, or for every zone, aggregating per-zone
 /// failures. Enumerating the zones is this layer's call, not the client's.
-pub async fn send_notify(cx: &Context, target: NotifyTarget<'_>) -> Result<(), NotifyError> {
+pub(crate) async fn send_notify(cx: &Context, target: NotifyTarget<'_>) -> Result<(), NotifyError> {
     let NotifyTarget::Zone(zone_name) = target else {
         let zones = crate::zone::list(cx).await?;
         let mut failures = Vec::new();

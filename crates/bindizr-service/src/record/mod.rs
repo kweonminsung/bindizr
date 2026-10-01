@@ -29,22 +29,22 @@ use crate::{
 
 /// One row of the records listing: a user record or, behind the `signed`
 /// flag, a row of the derived DNSSEC plane.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum ListedRecord {
     User(RecordWithZone),
     Derived(DnssecRecordWithZone),
 }
 
-impl ListedRecord {
+impl From<&ListedRecord> for GetRecordResponse {
     /// Render the row for the API: a user record keeps its id, a derived
     /// DNSSEC row carries none and renders its RDATA in presentation form.
-    fn to_response(&self) -> GetRecordResponse {
-        match self {
+    fn from(record: &ListedRecord) -> Self {
+        match record {
             ListedRecord::User(record) => GetRecordResponse::from(record),
             ListedRecord::Derived(row) => GetRecordResponse {
                 id: None,
                 name: row.name.to_fqdn(&row.zone_name),
-                record_type: row.record_type.to_string(),
+                record_type: row.record_type.into(),
                 value: RecordValueRequest::Text(row.rdata.to_presentation(row.record_type)),
                 ttl: row.ttl,
                 priority: None,

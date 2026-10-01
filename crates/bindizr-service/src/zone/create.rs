@@ -31,20 +31,23 @@ pub async fn create(
         Ok(Some(_)) => {
             log::error!("Zone with name {} already exists", name);
             return Err(ServiceError::zone_conflict(format!(
-                "Zone with name '{}' already exists",
+                "zone with name '{}' already exists",
                 name
             )));
         }
         Ok(None) => {}
         Err(e) => {
             log::error!("Failed to check existing zone: {}", e);
-            return Err(ServiceError::internal("Failed to create zone"));
+            return Err(ServiceError::internal_with_source(
+                "failed to create zone",
+                e,
+            ));
         }
     };
 
-    let mut tx = transaction::begin_tx(cx, "Failed to create zone").await?;
+    let mut tx = transaction::begin_tx(cx, "failed to create zone").await?;
     let apply_result = create_tx(&mut tx, cx, caller, create_zone_request).await;
-    let created_zone = transaction::finish_tx(tx, apply_result, "Failed to create zone").await?;
+    let created_zone = transaction::finish_tx(tx, apply_result, "failed to create zone").await?;
 
     log::info!(
         "event=zone_create zone={} mname={} serial={} zone_id={}",
@@ -126,7 +129,7 @@ pub(crate) async fn create_tx(
                 ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
             } else {
                 log::error!("Failed to create zone: {}", e);
-                ServiceError::internal("Failed to create zone")
+                ServiceError::internal_with_source("failed to create zone", e)
             }
         })?;
 

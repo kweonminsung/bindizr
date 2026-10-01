@@ -105,6 +105,7 @@ pub(crate) async fn evaluate_prerequisites_tx(
 }
 
 /// The records a prerequisite names at one owner and type, as value and priority.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct WantedRecordSet<'a> {
     owner: OwnerName,
     record_type: RecordType,
