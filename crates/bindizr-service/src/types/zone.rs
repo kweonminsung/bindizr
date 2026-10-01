@@ -133,7 +133,7 @@ pub struct CreateZoneRequest {
     /// Start the zone with an apex NS record naming the SOA MNAME; false
     /// leaves every NS record to the caller.
     #[serde(default = "default_apex_ns")]
-    #[schema(example = true)]
+    #[schema(default = true, example = true)]
     pub apex_ns: bool,
     /// Validate and report the change without writing it.
     #[serde(default)]
