@@ -19,7 +19,7 @@ use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
 
 use crate::{
-    Context, Transaction, db,
+    Context, Transaction,
     error::ServiceError,
     model::{
         api_token::ApiToken, record::RecordType, token_grant::TokenGrant, zone::Zone,
@@ -87,7 +87,7 @@ impl Caller {
             };
             return Ok((caller, token));
         }
-        let grants = db::token_grant::list_by_token_id(cx.db(), token.id).await?;
+        let grants = bindizr_db::token_grant::list_by_token_id(cx.db(), token.id).await?;
         let caller = Caller::Token {
             id: token.id,
             name: token.name.as_str().into(),
@@ -155,7 +155,7 @@ impl Caller {
         match self {
             Caller::Global | Caller::GlobalToken { .. } => Ok(()),
             Caller::Token { id, .. } => {
-                let grants = db::token_grant::list_by_zone_id_and_token_id_tx(
+                let grants = bindizr_db::token_grant::list_by_zone_id_and_token_id_tx(
                     tx,
                     zone.id,
                     *id,
@@ -242,7 +242,7 @@ const LAST_USED_STAMP_INTERVAL_SECS: i64 = 60;
 /// Validate an API token, rejecting expired tokens and stamping `last_used_at`.
 async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, ServiceError> {
     let token_hash = hash_token(token_str);
-    let stored_token = match db::api_token::get_by_token(cx.db(), &token_hash).await {
+    let stored_token = match bindizr_db::api_token::get_by_token(cx.db(), &token_hash).await {
         Ok(Some(token)) => token,
         Ok(None) => {
             return Err(ServiceError::invalid_token(
@@ -270,7 +270,7 @@ async fn authenticate_token(cx: &Context, token_str: &str) -> Result<ApiToken, S
         return Ok(stored_token);
     }
 
-    let updated_token = db::api_token::update(
+    let updated_token = bindizr_db::api_token::update(
         cx.db(),
         ApiToken {
             last_used_at: Some(Utc::now()),

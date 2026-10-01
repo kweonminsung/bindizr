@@ -21,7 +21,7 @@ use super::{diff::build_record_diff, update::soa_replacement_changes};
 use crate::{
     Context, Transaction,
     authorization::Caller,
-    db, dnssec,
+    dnssec,
     error::ServiceError,
     model::{
         record::{Record, RecordData, RecordKey},
@@ -45,7 +45,7 @@ async fn validate_serial_diffable_tx(
     if serial == zone.serial {
         return Ok(());
     }
-    db::zone_version::get_by_serial_tx(tx, zone.id, serial, LockLevel::Unlocked)
+    bindizr_db::zone_version::get_by_serial_tx(tx, zone.id, serial, LockLevel::Unlocked)
         .await?
         .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
     Ok(())
@@ -62,9 +62,9 @@ pub async fn list_versions(
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
     let zone = super::get_by_name(cx, caller, zone_name).await?;
 
-    let total = db::zone_version::count(cx.db(), zone.id, scope).await?;
+    let total = bindizr_db::zone_version::count(cx.db(), zone.id, scope).await?;
     let effective_limit = normalize_page_limit(limit)?;
-    let versions = db::zone_version::list(
+    let versions = bindizr_db::zone_version::list(
         cx.db(),
         zone.id,
         scope,
@@ -99,10 +99,14 @@ pub async fn get_version(
         let zone =
             super::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
         caller.authorize_zone_unrestricted(&zone)?;
-        let version =
-            db::zone_version::get_by_serial_tx(&mut tx, zone.id, serial, LockLevel::Unlocked)
-                .await?
-                .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
+        let version = bindizr_db::zone_version::get_by_serial_tx(
+            &mut tx,
+            zone.id,
+            serial,
+            LockLevel::Unlocked,
+        )
+        .await?
+        .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
 
         let records = list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?;
 
@@ -183,10 +187,14 @@ pub async fn rollback(
                 target, zone.serial
             )));
         }
-        let version =
-            db::zone_version::get_by_serial_tx(&mut tx, zone.id, target, LockLevel::Unlocked)
-                .await?
-                .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
+        let version = bindizr_db::zone_version::get_by_serial_tx(
+            &mut tx,
+            zone.id,
+            target,
+            LockLevel::Unlocked,
+        )
+        .await?
+        .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), target))?;
 
         let new_serial = generate_serial(Some(zone.serial))?;
         // SOA metadata comes back from the version; identity and creation
@@ -215,7 +223,8 @@ pub async fn rollback(
         };
         let soa_changed = zone.soa_metadata_differs(&restored_zone);
 
-        let current_records = db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
+        let current_records =
+            bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Exclusive).await?;
         let target_records =
             rewind_records_to_serial_tx(&mut tx, zone.id, target, zone.serial).await?;
 
@@ -316,11 +325,11 @@ pub async fn rollback(
         }
 
         // Restore metadata and records as a new version in this transaction.
-        db::zone::update_tx(&mut tx, restored_zone.clone()).await?;
+        bindizr_db::zone::update_tx(&mut tx, restored_zone.clone()).await?;
 
         if soa_changed {
             let changes = soa_replacement_changes(&zone, &restored_zone, new_serial)?;
-            db::zone_change::create_many_tx(&mut tx, &changes).await?;
+            bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
         }
 
         record::delete_with_changes_tx(&mut tx, zone.id, new_serial, &dels).await?;

@@ -5,13 +5,13 @@ use bindizr_core::dns::{
     name::ZoneName,
     query::DsRecordSet,
 };
+use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::status::build_status_tx;
 use crate::{
     Context,
     authorization::Caller,
-    db::LockLevel,
     dns_client::ds::{ParentDs, probe_parent_ds},
     dnssec::SignedZone,
     error::ServiceError,

@@ -9,7 +9,6 @@ use super::error::ServiceError;
 use crate::{
     Context,
     authorization::Caller,
-    db,
     model::api_token::ApiToken,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
     types::{CreateTokenRequest, GetTokenResponse, PageFilter, PaginatedResponse, build_page},
@@ -37,7 +36,10 @@ pub async fn create(
     let expires_at = normalize_expires_at(request.expires_in_days)?;
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
-    if db::api_token::get_by_name(cx.db(), &name).await?.is_some() {
+    if bindizr_db::api_token::get_by_name(cx.db(), &name)
+        .await?
+        .is_some()
+    {
         return Err(ServiceError::token_conflict(&name));
     }
 
@@ -49,7 +51,7 @@ pub async fn create(
 
     let token_hash = hash_token(&raw_token);
 
-    let created = db::api_token::create(
+    let created = bindizr_db::api_token::create(
         cx.db(),
         ApiToken {
             id: TokenId::UNWRITTEN,
@@ -84,7 +86,7 @@ pub async fn list(
 ) -> Result<PaginatedResponse<GetTokenResponse>, ServiceError> {
     caller.authorize_global("manage API tokens")?;
 
-    let tokens = db::api_token::list_all(cx.db()).await?;
+    let tokens = bindizr_db::api_token::list_all(cx.db()).await?;
     build_page(
         tokens.iter().map(GetTokenResponse::from).collect(),
         page.limit,
@@ -94,7 +96,7 @@ pub async fn list(
 
 /// The number of API tokens, read for the daemon's startup hint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
-    Ok(db::api_token::list_all(cx.db()).await?.len() as u64)
+    Ok(bindizr_db::api_token::list_all(cx.db()).await?.len() as u64)
 }
 
 /// Delete the API token with the given name, returning `NotFound` if it
@@ -104,12 +106,12 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     let token = lookup_by_name(cx, name).await?;
 
-    Ok(db::api_token::delete(cx.db(), token.id).await?)
+    Ok(bindizr_db::api_token::delete(cx.db(), token.id).await?)
 }
 
 /// Load an API token by name or return a not-found error.
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<ApiToken, ServiceError> {
-    db::api_token::get_by_name(cx.db(), &normalize_token_name(name)?)
+    bindizr_db::api_token::get_by_name(cx.db(), &normalize_token_name(name)?)
         .await?
         .ok_or_else(|| ServiceError::token_not_found(name))
 }

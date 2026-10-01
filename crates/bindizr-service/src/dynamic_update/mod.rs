@@ -20,7 +20,7 @@ use prerequisite::evaluate_prerequisites_tx;
 use thiserror::Error;
 
 use crate::{
-    Context, Transaction, db, dnssec,
+    Context, Transaction, dnssec,
     error::ServiceError,
     model::{
         record::{Record, RecordType},
@@ -249,9 +249,13 @@ async fn authorize_key_tx(
 
     // Share-lock the grants so a concurrent revocation waits for this
     // transaction instead of racing it.
-    let grants =
-        db::tsig_grant::list_by_zone_id_and_key_id_tx(tx, zone.id, key.id, LockLevel::Shared)
-            .await?;
+    let grants = bindizr_db::tsig_grant::list_by_zone_id_and_key_id_tx(
+        tx,
+        zone.id,
+        key.id,
+        LockLevel::Shared,
+    )
+    .await?;
 
     if grants.is_empty() {
         return Err(DynamicUpdateError::Refused(format!(
@@ -396,7 +400,7 @@ async fn delete_matching_tx(
     let owner = parse_update_owner(name, &zone.name)?;
     // Only records at the owner name can match, so lock just those.
     let owner_records =
-        db::record::list_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive).await?;
+        bindizr_db::record::list_by_name_tx(tx, zone.id, &owner, LockLevel::Exclusive).await?;
 
     let matched: Vec<Record> = owner_records
         .iter()

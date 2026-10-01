@@ -8,11 +8,11 @@ use bindizr_core::{
         zone::ZoneId,
     },
 };
+use bindizr_db::LockLevel;
 use chrono::{DateTime, Utc};
 
 use crate::{
-    Context, db,
-    db::LockLevel,
+    Context,
     dnssec::{self, rollover::promotable_sep_key_ids},
     error::ServiceError,
     transaction,
@@ -39,7 +39,7 @@ pub(crate) async fn prune_zone_history_by_zone_id(
 ) -> Result<PruneSummary, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to prune zone history").await?;
     let result = async {
-        if db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive)
+        if bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive)
             .await?
             .is_none()
         {
@@ -49,9 +49,11 @@ pub(crate) async fn prune_zone_history_by_zone_id(
             });
         }
         let journal_rows =
-            db::zone_change::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff).await?;
+            bindizr_db::zone_change::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff)
+                .await?;
         let version_rows =
-            db::zone_version::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff).await?;
+            bindizr_db::zone_version::prune_by_zone_id_older_than_tx(&mut tx, zone_id, cutoff)
+                .await?;
         Ok::<_, ServiceError>(PruneSummary {
             journal_rows,
             version_rows,
@@ -312,7 +314,7 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         let mut remaining = Vec::with_capacity(signed.keys.len());
         for key in std::mem::take(&mut signed.keys) {
             if removable.contains(&key.id) {
-                db::dnssec_key::delete_tx(&mut tx, key.id).await?;
+                bindizr_db::dnssec_key::delete_tx(&mut tx, key.id).await?;
             } else {
                 remaining.push(key);
             }

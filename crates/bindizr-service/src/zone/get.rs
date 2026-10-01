@@ -9,7 +9,6 @@ use bindizr_db::{
 use crate::{
     Context, Transaction,
     authorization::Caller,
-    db,
     error::ServiceError,
     model::{zone::Zone, zone_change::ZoneChange},
     serial::validate_stored_serial,
@@ -25,7 +24,7 @@ pub(crate) async fn find_served_by_name_tx(
     zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, ServiceError> {
-    Ok(db::zone::get_by_name_tx(tx, zone_name, lock_level)
+    Ok(bindizr_db::zone::get_by_name_tx(tx, zone_name, lock_level)
         .await?
         .filter(|zone| zone.enabled))
 }
@@ -38,7 +37,7 @@ pub(crate) async fn find_by_name_tx(
     zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, ServiceError> {
-    Ok(db::zone::get_by_name_tx(tx, zone_name, lock_level).await?)
+    Ok(bindizr_db::zone::get_by_name_tx(tx, zone_name, lock_level).await?)
 }
 
 /// Count journal rows in `(from_serial, to_serial]` for the IXFR size estimate.
@@ -48,7 +47,10 @@ pub async fn count_changes_between_serials(
     from_serial: Serial,
     to_serial: Serial,
 ) -> Result<u64, ServiceError> {
-    Ok(db::zone_change::count_between_serials(cx.db(), zone_id, from_serial, to_serial).await?)
+    Ok(
+        bindizr_db::zone_change::count_between_serials(cx.db(), zone_id, from_serial, to_serial)
+            .await?,
+    )
 }
 
 /// Journal rows in `(from_serial, to_serial]`, ordered by serial then row id.
@@ -58,18 +60,21 @@ pub async fn list_changes_between_serials(
     from_serial: Serial,
     to_serial: Serial,
 ) -> Result<Vec<ZoneChange>, ServiceError> {
-    Ok(db::zone_change::list_between_serials(cx.db(), zone_id, from_serial, to_serial).await?)
+    Ok(
+        bindizr_db::zone_change::list_between_serials(cx.db(), zone_id, from_serial, to_serial)
+            .await?,
+    )
 }
 
 /// Cheap database round-trip (limit-1 zones probe), for health checks.
 pub async fn ping(cx: &Context) -> Result<(), ServiceError> {
-    Ok(db::zone::ping(cx.db()).await?)
+    Ok(bindizr_db::zone::ping(cx.db()).await?)
 }
 
 /// The zones the DNS plane serves: the catalog's membership and the NOTIFY
 /// fan-out read it.
 pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
-    let zones = db::zone::list_all(cx.db()).await.map_err(|e| {
+    let zones = bindizr_db::zone::list_all(cx.db()).await.map_err(|e| {
         log::error!("Failed to fetch zones: {}", e);
         ServiceError::internal("Failed to fetch zones")
     })?;
@@ -78,12 +83,12 @@ pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
 
 /// Every zone, for the unauthenticated metrics endpoint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
-    Ok(db::zone::count_by_filter(cx.db(), ZoneFilter::default()).await?)
+    Ok(bindizr_db::zone::count_by_filter(cx.db(), ZoneFilter::default()).await?)
 }
 
 /// Count the zones visible to `caller`.
 pub async fn count(cx: &Context, caller: &Caller) -> Result<u64, ServiceError> {
-    Ok(db::zone::count_by_filter(
+    Ok(bindizr_db::zone::count_by_filter(
         cx.db(),
         ZoneFilter {
             scope_token_id: caller.scope_token_id(),
@@ -130,8 +135,8 @@ pub async fn list_by_filter(
         offset,
     };
 
-    let total = db::zone::count_by_filter(cx.db(), zone_filter.clone()).await?;
-    let zones = db::zone::list_by_filter(cx.db(), zone_filter).await?;
+    let total = bindizr_db::zone::count_by_filter(cx.db(), zone_filter.clone()).await?;
+    let zones = bindizr_db::zone::list_by_filter(cx.db(), zone_filter).await?;
     let items = zones.iter().map(GetZoneResponse::from).collect();
     Ok(PaginatedResponse::from_page(items, limit, offset, total))
 }
@@ -154,7 +159,7 @@ pub(crate) async fn lookup_by_name(
     cx: &Context,
     zone_name: &ZoneName,
 ) -> Result<Zone, ServiceError> {
-    db::zone::get_by_name(cx.db(), zone_name)
+    bindizr_db::zone::get_by_name(cx.db(), zone_name)
         .await?
         .ok_or_else(|| ServiceError::zone_not_found(zone_name))
 }
@@ -181,7 +186,7 @@ pub(crate) async fn get_by_name_tx(
     zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<Zone, ServiceError> {
-    db::zone::get_by_name_tx(tx, zone_name, lock_level)
+    bindizr_db::zone::get_by_name_tx(tx, zone_name, lock_level)
         .await?
         .ok_or_else(|| ServiceError::zone_not_found(zone_name))
 }
@@ -192,7 +197,7 @@ pub async fn count_transfer_records(
     cx: &Context,
     zone_name: &ZoneName,
 ) -> Result<u64, ServiceError> {
-    let records = db::record::count_by_filter(
+    let records = bindizr_db::record::count_by_filter(
         cx.db(),
         RecordFilter {
             zone_name: Some(zone_name.clone()),
@@ -201,7 +206,7 @@ pub async fn count_transfer_records(
     )
     .await?;
 
-    let dnssec_records = db::dnssec_record::count_by_filter(
+    let dnssec_records = bindizr_db::dnssec_record::count_by_filter(
         cx.db(),
         DnssecRecordFilter {
             zone_name: Some(zone_name.clone()),

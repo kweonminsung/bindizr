@@ -5,7 +5,6 @@ use chrono::Utc;
 use crate::{
     Context,
     authorization::Caller,
-    db,
     error::ServiceError,
     model::zone::Zone,
     serial::{generate_serial, validate_initial_serial},
@@ -26,7 +25,7 @@ pub async fn create(
     // Parent/child zones are allowed; only the same normalized zone name is rejected.
     // Names are stored normalized, so an exact lookup is enough to detect a collision.
     let name = normalize_create_zone_request(cx, create_zone_request)?.name;
-    match db::zone::get_by_name(cx.db(), &name).await {
+    match bindizr_db::zone::get_by_name(cx.db(), &name).await {
         Ok(Some(_)) => {
             log::error!("Zone with name {} already exists", name);
             return Err(ServiceError::zone_conflict(format!(
@@ -118,16 +117,18 @@ pub(crate) async fn create_tx(
     }
 
     let name = candidate.name.clone();
-    let created_zone = db::zone::create_tx(tx, candidate).await.map_err(|e| {
-        // A create that raced past a caller's pre-check trips UNIQUE(name);
-        // the backstop reads as the same conflict.
-        if e.is_unique_violation() {
-            ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
-        } else {
-            log::error!("Failed to create zone: {}", e);
-            ServiceError::internal("Failed to create zone")
-        }
-    })?;
+    let created_zone = bindizr_db::zone::create_tx(tx, candidate)
+        .await
+        .map_err(|e| {
+            // A create that raced past a caller's pre-check trips UNIQUE(name);
+            // the backstop reads as the same conflict.
+            if e.is_unique_violation() {
+                ServiceError::zone_conflict(format!("zone with name '{}' already exists", name))
+            } else {
+                log::error!("Failed to create zone: {}", e);
+                ServiceError::internal("Failed to create zone")
+            }
+        })?;
 
     super::save_version_tx(
         cx,

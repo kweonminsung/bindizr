@@ -12,7 +12,7 @@ use bindizr_core::{
 use bindizr_db::LockLevel;
 
 use crate::{
-    Transaction, db,
+    Transaction,
     error::ServiceError,
     model::{
         record::{Record, RecordType},
@@ -208,7 +208,7 @@ pub(crate) async fn validate_add_tx(
     // Only records sharing the owner name can conflict, so load just those
     // instead of the whole zone.
     let records_at_name =
-        db::record::list_by_name_tx(tx, zone.id, owner_name, LockLevel::Exclusive)
+        bindizr_db::record::list_by_name_tx(tx, zone.id, owner_name, LockLevel::Exclusive)
             .await
             .map_err(|e| {
                 log::error!("Failed to load records: {}", e);

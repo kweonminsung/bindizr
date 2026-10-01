@@ -98,6 +98,7 @@ impl IntoResponse for UpstreamError {
     }
 }
 
+/// Encode a webhook reply as JSON under the negotiated media type.
 fn json_response<T: serde::Serialize>(value: &T) -> Response {
     match serde_json::to_string(value) {
         // external-dns compares the negotiation Content-Type byte-for-byte,

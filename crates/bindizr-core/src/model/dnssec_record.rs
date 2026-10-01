@@ -24,7 +24,6 @@ id_newtype!(
 pub struct DnssecRecord {
     pub id: DnssecRecordId,
     pub zone_id: ZoneId,
-    #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "i32")]
     pub record_type: DnssecRecordType,
@@ -66,14 +65,12 @@ impl DnssecRecord {
 /// returns it.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 pub struct DnssecRecordWithZone {
-    #[sqlx(try_from = "String")]
     pub name: OwnerName,
     #[sqlx(try_from = "i32")]
     pub record_type: DnssecRecordType,
     pub ttl: Ttl,
     pub rdata: Rdata,
     pub zone_id: ZoneId,
-    #[sqlx(try_from = "String")]
     pub zone_name: ZoneName,
 }
 

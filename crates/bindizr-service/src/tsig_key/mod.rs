@@ -8,7 +8,6 @@ use rand::RngExt;
 use crate::{
     Context,
     authorization::Caller,
-    db,
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
     text::MAX_COLUMN_TEXT_LEN,
@@ -42,11 +41,14 @@ pub async fn create(
     };
 
     // Friendly pre-check; the UNIQUE(name) backstop covers the race.
-    if db::tsig_key::get_by_name(cx.db(), &name).await?.is_some() {
+    if bindizr_db::tsig_key::get_by_name(cx.db(), &name)
+        .await?
+        .is_some()
+    {
         return Err(ServiceError::tsig_key_conflict(&name));
     }
 
-    db::tsig_key::create(
+    bindizr_db::tsig_key::create(
         cx.db(),
         TsigKey {
             id: TsigKeyId::UNWRITTEN,
@@ -77,7 +79,7 @@ pub async fn list(
 ) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
     caller.authorize_global("manage TSIG keys and grants")?;
 
-    let keys = db::tsig_key::list_all(cx.db()).await?;
+    let keys = bindizr_db::tsig_key::list_all(cx.db()).await?;
     build_page(
         keys.iter().map(GetTsigKeyResponse::from).collect(),
         page.limit,
@@ -96,7 +98,7 @@ pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<TsigKey, S
 /// service-internal use; front ends go through [`get`].
 pub(crate) async fn lookup_by_name(cx: &Context, name: &str) -> Result<TsigKey, ServiceError> {
     let name = normalize_key_name(name)?;
-    db::tsig_key::get_by_name(cx.db(), &name)
+    bindizr_db::tsig_key::get_by_name(cx.db(), &name)
         .await?
         .ok_or_else(|| ServiceError::tsig_key_not_found(&name))
 }
@@ -108,7 +110,7 @@ pub async fn find_by_wire_name(cx: &Context, name: &str) -> Result<Option<TsigKe
     let Ok(name) = normalize_key_name(name) else {
         return Ok(None);
     };
-    Ok(db::tsig_key::get_by_name(cx.db(), &name).await?)
+    Ok(bindizr_db::tsig_key::get_by_name(cx.db(), &name).await?)
 }
 
 /// Delete a TSIG key by name; refused while it still holds grants or
@@ -118,11 +120,12 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     let key = lookup_by_name(cx, name).await?;
 
-    let grant_count = db::tsig_grant::count_by_key_id(cx.db(), key.id).await?;
+    let grant_count = bindizr_db::tsig_grant::count_by_key_id(cx.db(), key.id).await?;
     if grant_count > 0 {
         return Err(ServiceError::tsig_key_in_use(&key.name, grant_count));
     }
-    let secondary_count = db::secondary::count_by_notify_tsig_key_id(cx.db(), key.id).await?;
+    let secondary_count =
+        bindizr_db::secondary::count_by_notify_tsig_key_id(cx.db(), key.id).await?;
     if secondary_count > 0 {
         return Err(ServiceError::TsigKeyInUse(format!(
             "TSIG key '{}' still signs NOTIFY for {} secondar{}",
@@ -132,17 +135,19 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
         )));
     }
 
-    db::tsig_key::delete(cx.db(), key.id).await.map_err(|e| {
-        // A grant or secondary that took the key between the counts above and
-        // this delete trips the FK: the same in-use conflict.
-        if e.is_foreign_key_violation() {
-            ServiceError::TsigKeyInUse(
-                "TSIG key is still referenced by zone TSIG grants or secondaries".to_string(),
-            )
-        } else {
-            e.into()
-        }
-    })
+    bindizr_db::tsig_key::delete(cx.db(), key.id)
+        .await
+        .map_err(|e| {
+            // A grant or secondary that took the key between the counts above and
+            // this delete trips the FK: the same in-use conflict.
+            if e.is_foreign_key_violation() {
+                ServiceError::TsigKeyInUse(
+                    "TSIG key is still referenced by zone TSIG grants or secondaries".to_string(),
+                )
+            } else {
+                e.into()
+            }
+        })
 }
 
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so

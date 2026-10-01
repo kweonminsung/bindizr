@@ -1,12 +1,15 @@
 use bindizr_core::dns::{Serial, name::ZoneName};
 
-use crate::{Context, db, error::ServiceError, transaction};
+use crate::{Context, error::ServiceError, transaction};
 
 /// Refuse to start while a stored zone holds the configured catalog zone
 /// name, which a write would be rejected for taking.
 pub async fn validate_catalog_zone_name(cx: &Context) -> Result<(), ServiceError> {
     let name = &cx.config().dns.catalog_zone_name;
-    if db::zone::get_by_name(cx.db(), name).await?.is_some() {
+    if bindizr_db::zone::get_by_name(cx.db(), name)
+        .await?
+        .is_some()
+    {
         return Err(ServiceError::zone_conflict(format!(
             "zone '{}' has the name dns.catalog_zone_name gives the catalog; rename either one",
             name
@@ -25,7 +28,7 @@ pub async fn advance_catalog_serial(
 ) -> Result<Serial, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "Failed to update catalog state").await?;
 
-    let apply_result = db::catalog_zone::upsert_tx(&mut tx, name, digest, base_serial)
+    let apply_result = bindizr_db::catalog_zone::upsert_tx(&mut tx, name, digest, base_serial)
         .await
         .map_err(ServiceError::from);
 

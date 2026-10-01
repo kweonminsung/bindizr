@@ -14,7 +14,7 @@ use self::steps::{
     prune_zone_history_by_zone_id, resign_zone_by_zone_id, start_zsk_rollover_by_zone_id,
 };
 use crate::{
-    Context, db,
+    Context,
     model::dnssec_key::{DnssecKeyRole, DnssecKeyState},
 };
 
@@ -77,7 +77,7 @@ async fn run_scheduler_pass(cx: &Context) {
     let retention_days = config.dns.zone_history_retention_days;
     if retention_days > 0 {
         let cutoff = Utc::now() - Duration::days(i64::from(retention_days));
-        match db::zone::list_all(cx.db()).await {
+        match bindizr_db::zone::list_all(cx.db()).await {
             Ok(zones) => {
                 let (mut journal_rows, mut version_rows) = (0u64, 0u64);
                 for zone in zones {
@@ -113,7 +113,9 @@ async fn run_scheduler_pass(cx: &Context) {
     }
 
     // Refresh expiring signatures even when the zone's user records have not changed.
-    match db::dnssec_record::list_zone_ids_expiring_within_refresh(cx.db(), Utc::now()).await {
+    match bindizr_db::dnssec_record::list_zone_ids_expiring_within_refresh(cx.db(), Utc::now())
+        .await
+    {
         Ok(zone_ids) => {
             for zone_id in zone_ids {
                 match resign_zone_by_zone_id(cx, zone_id).await {
@@ -137,7 +139,7 @@ async fn run_scheduler_pass(cx: &Context) {
 
     // ZSK rollover needs no parent interaction, so a policy lifetime lets
     // the scheduler start it too; CSK rollover stays the operator's.
-    match db::dnssec_key::list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
+    match bindizr_db::dnssec_key::list_zone_ids_by_role_and_state_entered_beyond_zsk_lifetime(
         cx.db(),
         DnssecKeyRole::Zsk,
         DnssecKeyState::Active,
@@ -171,7 +173,7 @@ async fn run_scheduler_pass(cx: &Context) {
     }
 
     // The hold-down stamped at publication is the only gate ZSK promotion has.
-    match db::dnssec_key::list_by_state_eligible_before(
+    match bindizr_db::dnssec_key::list_by_state_eligible_before(
         cx.db(),
         DnssecKeyState::Published,
         Utc::now(),
@@ -233,7 +235,7 @@ async fn run_scheduler_pass(cx: &Context) {
     }
 
     // Remove retired keys after the hold-down for cached signed data has elapsed.
-    match db::dnssec_key::list_by_state_eligible_before(
+    match bindizr_db::dnssec_key::list_by_state_eligible_before(
         cx.db(),
         DnssecKeyState::Retired,
         Utc::now(),

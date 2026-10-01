@@ -5,14 +5,13 @@ use bindizr_core::{
     dns::{dnssec::SigningPass, name::ZoneName},
     model::dnssec_key::DnssecKey,
 };
+use bindizr_db::LockLevel;
 use chrono::Utc;
 
 use super::{parent_ns_addrs::normalize_parent_ns_addrs, status::build_status_tx};
 use crate::{
     Context,
     authorization::Caller,
-    db,
-    db::LockLevel,
     dnssec::SignedZone,
     dnssec_policy::normalize_policy_name,
     error::ServiceError,
@@ -74,23 +73,29 @@ pub async fn enable(
     let result = async {
         // Check the unsigned state under the same lock used to install the keys.
         let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        let existing_keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let existing_keys =
+            bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         if !existing_keys.is_empty() {
             return Err(ServiceError::dnssec_already_enabled(zone.name.as_str()));
         }
-        db::zone::update_parent_ns_addrs_tx(&mut tx, zone.id, Some(parent_ns_addrs.as_str()))
-            .await?;
+        bindizr_db::zone::update_parent_ns_addrs_tx(
+            &mut tx,
+            zone.id,
+            Some(parent_ns_addrs.as_str()),
+        )
+        .await?;
         let zone = Zone {
             parent_ns_addrs: Some(parent_ns_addrs),
             ..zone
         };
         // Shared: a concurrent delete of the policy must wait for the FK
         // reference this transaction is about to write.
-        let policy = db::dnssec_policy::get_by_name_tx(&mut tx, &policy_name, LockLevel::Shared)
-            .await?
-            .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
+        let policy =
+            bindizr_db::dnssec_policy::get_by_name_tx(&mut tx, &policy_name, LockLevel::Shared)
+                .await?
+                .ok_or_else(|| ServiceError::dnssec_policy_not_found(&policy_name))?;
 
-        db::zone::update_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id)).await?;
+        bindizr_db::zone::update_dnssec_policy_id_tx(&mut tx, zone.id, Some(policy.id)).await?;
         let zone = Zone {
             dnssec_policy_id: Some(policy.id),
             ..zone
@@ -114,7 +119,7 @@ pub async fn enable(
                 now,
             )
             .map_err(ServiceError::dnssec_signing_failed)?;
-            keys.push(db::dnssec_key::create_tx(&mut tx, key).await?);
+            keys.push(bindizr_db::dnssec_key::create_tx(&mut tx, key).await?);
         }
         let signed = SignedZone { zone, policy, keys };
 
@@ -178,7 +183,7 @@ pub async fn update_settings(
         let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let zone = match parent_ns_addrs {
             Some(parent_ns_addrs) => {
-                db::zone::update_parent_ns_addrs_tx(
+                bindizr_db::zone::update_parent_ns_addrs_tx(
                     &mut tx,
                     zone.id,
                     Some(parent_ns_addrs.as_str()),
@@ -191,7 +196,7 @@ pub async fn update_settings(
             }
             None => zone,
         };
-        let keys = db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let keys = bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
 
         // Parent addresses alone change no served records and need no re-signing.
         let Some(policy_name) = &policy_name else {
@@ -203,9 +208,10 @@ pub async fn update_settings(
             return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
         }
         let current = super::get_zone_policy_tx(&mut tx, &zone).await?;
-        let target = db::dnssec_policy::get_by_name_tx(&mut tx, policy_name, LockLevel::Shared)
-            .await?
-            .ok_or_else(|| ServiceError::dnssec_policy_not_found(policy_name))?;
+        let target =
+            bindizr_db::dnssec_policy::get_by_name_tx(&mut tx, policy_name, LockLevel::Shared)
+                .await?
+                .ok_or_else(|| ServiceError::dnssec_policy_not_found(policy_name))?;
 
         // Selecting the current policy leaves the existing signed view intact.
         if target.id == current.id {
@@ -220,7 +226,7 @@ pub async fn update_settings(
         } else {
             keys
         };
-        db::zone::update_dnssec_policy_id_tx(&mut tx, zone.id, Some(target.id)).await?;
+        bindizr_db::zone::update_dnssec_policy_id_tx(&mut tx, zone.id, Some(target.id)).await?;
         let signed = SignedZone {
             zone: Zone {
                 dnssec_policy_id: Some(target.id),
@@ -285,7 +291,8 @@ pub async fn disable(
         }
 
         let derived =
-            db::dnssec_record::list_tx(&mut tx, signed.zone.id, LockLevel::Unlocked).await?;
+            bindizr_db::dnssec_record::list_tx(&mut tx, signed.zone.id, LockLevel::Unlocked)
+                .await?;
 
         let new_serial = generate_serial(Some(signed.zone.serial))?;
         // Journal a DEL for every derived row; they carry wire RDATA, not
@@ -305,11 +312,11 @@ pub async fn disable(
                 derived: true,
             })
             .collect();
-        db::zone_change::create_many_tx(&mut tx, &changes).await?;
-        db::dnssec_record::delete_by_zone_id_tx(&mut tx, signed.zone.id).await?;
-        db::dnssec_key::delete_by_zone_id_tx(&mut tx, signed.zone.id).await?;
-        db::dnssec_withdrawal::delete_tx(&mut tx, signed.zone.id).await?;
-        db::zone::update_dnssec_policy_id_tx(&mut tx, signed.zone.id, None).await?;
+        bindizr_db::zone_change::create_many_tx(&mut tx, &changes).await?;
+        bindizr_db::dnssec_record::delete_by_zone_id_tx(&mut tx, signed.zone.id).await?;
+        bindizr_db::dnssec_key::delete_by_zone_id_tx(&mut tx, signed.zone.id).await?;
+        bindizr_db::dnssec_withdrawal::delete_tx(&mut tx, signed.zone.id).await?;
+        bindizr_db::zone::update_dnssec_policy_id_tx(&mut tx, signed.zone.id, None).await?;
         zone::advance_serial_tx(
             cx,
             &mut tx,

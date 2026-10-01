@@ -14,7 +14,6 @@ use chrono::Utc;
 use crate::{
     Context,
     authorization::Caller,
-    db,
     error::ServiceError,
     grant_pattern::{normalize_pattern, normalize_types},
     model::{
@@ -48,7 +47,7 @@ pub async fn create(
     let record_name_pattern = normalize_pattern(request.record_name_pattern.as_deref())?;
     let record_types = normalize_types(request.record_types.as_deref())?;
 
-    let grant = db::token_grant::create(
+    let grant = bindizr_db::token_grant::create(
         cx.db(),
         TokenGrant {
             id: TokenGrantId::UNWRITTEN,
@@ -98,10 +97,10 @@ pub async fn list_self(
     token: &ApiToken,
     page: PageFilter,
 ) -> Result<PaginatedResponse<GetTokenGrantResponse>, ServiceError> {
-    let grants = db::token_grant::list_by_token_id(cx.db(), token.id).await?;
+    let grants = bindizr_db::token_grant::list_by_token_id(cx.db(), token.id).await?;
 
     // Any token reaches this, so read only its granted zones.
-    let zone_names: HashMap<ZoneId, String> = db::zone::list_by_filter(
+    let zone_names: HashMap<ZoneId, String> = bindizr_db::zone::list_by_filter(
         cx.db(),
         ZoneFilter {
             scope_token_id: Some(token.id),
@@ -139,9 +138,9 @@ pub async fn list_by_zone(
     caller.authorize_global("manage token grants")?;
 
     let zone = zone::lookup_by_name(cx, zone_name).await?;
-    let grants = db::token_grant::list_by_zone_id(cx.db(), zone.id).await?;
+    let grants = bindizr_db::token_grant::list_by_zone_id(cx.db(), zone.id).await?;
 
-    let token_names: HashMap<TokenId, String> = db::api_token::list_all(cx.db())
+    let token_names: HashMap<TokenId, String> = bindizr_db::api_token::list_all(cx.db())
         .await?
         .into_iter()
         .map(|token| (token.id, token.name))
@@ -177,12 +176,12 @@ pub async fn revoke(
     caller.authorize_global("manage token grants")?;
 
     let token = super::lookup_by_name(cx, token_name).await?;
-    let grant = db::token_grant::get(cx.db(), grant_id)
+    let grant = bindizr_db::token_grant::get(cx.db(), grant_id)
         .await?
         .filter(|grant| grant.api_token_id == token.id)
         .ok_or_else(|| ServiceError::token_grant_not_found(grant_id))?;
 
-    Ok(db::token_grant::delete(cx.db(), grant.id).await?)
+    Ok(bindizr_db::token_grant::delete(cx.db(), grant.id).await?)
 }
 
 /// Revoke every grant `token_name` holds in `zone_name`, returning how
@@ -199,7 +198,7 @@ pub async fn revoke_by_token_and_zone(
     let token = super::lookup_by_name(cx, token_name).await?;
     let zone = zone::lookup_by_name(cx, zone_name).await?;
 
-    Ok(db::token_grant::delete_by_token_id_and_zone_id(cx.db(), token.id, zone.id).await?)
+    Ok(bindizr_db::token_grant::delete_by_token_id_and_zone_id(cx.db(), token.id, zone.id).await?)
 }
 
 /// Revoke a grant by its id, which identifies the row on its own.
@@ -210,9 +209,9 @@ pub async fn revoke_by_id(
 ) -> Result<(), ServiceError> {
     caller.authorize_global("manage token grants")?;
 
-    let grant = db::token_grant::get(cx.db(), grant_id)
+    let grant = bindizr_db::token_grant::get(cx.db(), grant_id)
         .await?
         .ok_or_else(|| ServiceError::token_grant_not_found(grant_id))?;
 
-    Ok(db::token_grant::delete(cx.db(), grant.id).await?)
+    Ok(bindizr_db::token_grant::delete(cx.db(), grant.id).await?)
 }

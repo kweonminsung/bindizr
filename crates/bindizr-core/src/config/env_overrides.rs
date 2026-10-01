@@ -148,6 +148,7 @@ where
     })
 }
 
+/// Parse an environment override into the field's type, naming the variable on failure.
 fn parse_env_value<T>(name: &'static str, value: &str) -> Result<T, ConfigError>
 where
     T: std::str::FromStr,

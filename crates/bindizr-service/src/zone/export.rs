@@ -8,7 +8,6 @@ use bindizr_db::LockLevel;
 use crate::{
     Context,
     authorization::Caller,
-    db,
     error::ServiceError,
     model::{dnssec_record::DnssecRecord, record::Record, zone::Zone},
     transaction,
@@ -33,9 +32,9 @@ pub async fn export(
         let zone =
             super::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
         caller.authorize_zone_unrestricted(&zone)?;
-        let records = db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
+        let records = bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let derived = if view == ZoneView::Signed {
-            db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?
+            bindizr_db::dnssec_record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?
         } else {
             Vec::new()
         };

@@ -15,7 +15,6 @@ pub struct Secondary {
     pub id: SecondaryId,
     pub name: String,
     /// A hostname is resolved when used, not when stored.
-    #[sqlx(try_from = "String")]
     pub address: AddressTarget,
     /// Disabled: no NOTIFY, no unsigned transfer, no probe; still registered.
     pub enabled: bool,
