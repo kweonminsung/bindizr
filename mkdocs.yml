@@ -103,10 +103,17 @@ nav:
       - Migrating an Existing Primary: deployment/migrating.md
   - Secondary Servers:
       - Overview: secondaries/index.md
-      - BIND: secondaries/bind.md
-      - Knot DNS: secondaries/knot.md
-      - NSD: secondaries/nsd.md
-      - PowerDNS: secondaries/powerdns.md
+      - Catalog Zone:
+          - BIND: secondaries/bind.md
+          - Knot DNS: secondaries/knot.md
+          - NSD: secondaries/nsd.md
+          - PowerDNS: secondaries/powerdns.md
+          - Technitium DNS: secondaries/technitium.md
+      - Per-Zone:
+          - Windows Server DNS: secondaries/windows.md
+          - YADIFA: secondaries/yadifa.md
+          - Unbound: secondaries/unbound.md
+          - CoreDNS: secondaries/coredns.md
   - Configuration:
       - Overview: configuration.md
       - Advanced: configuration/advanced.md

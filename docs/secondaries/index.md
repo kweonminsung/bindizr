@@ -2,26 +2,50 @@
 
 A secondary answers client DNS queries using zones transferred from Bindizr.
 It follows Bindizr's **catalog zone** to discover which zones to serve and
-receives NOTIFY when their records change.
+receives NOTIFY when their records change. A server without catalog zone
+support can still be a secondary; each zone is then declared on it by hand.
+
+![DNS servers verified as Bindizr secondaries](../assets/secondaries.svg)
 
 The examples below assume Bindizr listens on `127.0.0.1:5300` and the
 secondary on port 53. For servers on different hosts, use reachable addresses
 and allow DNS traffic between them over TCP and UDP.
 
+## Catalog zone secondaries
+
+These learn every zone from the catalog: create a zone in Bindizr and it
+appears on them, delete it and it goes away.
+
 | | Catalog zones | Verified on | Notes |
 | --- | --- | --- | --- |
-| [BIND](bind.md) | 9.18 or newer | 9.20 | |
-| [Knot DNS](knot.md) | 3.1 or newer | 3.4 | |
-| [NSD](nsd.md) | 4.9 or newer | 4.12 | |
-| [PowerDNS](powerdns.md) | 4.7 or newer | 4.9 | AXFR only; [does not sign member transfers](powerdns.md#tsig-does-not-reach-member-zones) |
+| [BIND](bind.md) | 9.18 or newer | 9.18, 9.20 | |
+| [Knot DNS](knot.md) | 3.1 or newer | 3.2, 3.4, 3.5, 3.6 | |
+| [NSD](nsd.md) | 4.9 or newer | 4.14 | |
+| [PowerDNS](powerdns.md) | 4.7 or newer | 4.7, 4.8, 4.9, 5.0, 5.1 | AXFR only; [does not sign member transfers](powerdns.md#tsig-does-not-reach-member-zones) |
+| [Technitium DNS](technitium.md) | Secondary Catalog zone | 15.5 | |
+
+## Per-zone secondaries
+
+These transfer, take NOTIFY, and serve the zones they are given, but do not
+read the catalog, so each zone Bindizr serves is added on the server.
+
+| | Verified on | Notes |
+| --- | --- | --- |
+| [Windows Server DNS](windows.md) | 2019, 2022, 2025 | No TSIG for zone transfers |
+| [YADIFA](yadifa.md) | 2.6 | |
+| [NSD before 4.9](nsd.md#nsd-before-49) | 4.6 | |
+| [Unbound](unbound.md) | 1.25 | No TSIG; [changes arrive on SOA refresh](unbound.md#changes-arrive-on-the-soa-refresh) |
+| [CoreDNS](coredns.md) | 1.14 | AXFR only, no TSIG; [NSEC3-signed zones refused](coredns.md#nsec3-signed-zones-are-refused) |
 
 "Verified on" is the version Bindizr's own interoperability run covers:
-catalog provisioning, NOTIFY-driven updates, record and zone deletion, and
-TSIG-signed transfers.
+initial transfer of a zone spanning several messages, NOTIFY-driven updates
+as IXFR deltas where the server asks for them, record deletion, a
+DNSSEC-signed zone, TSIG-signed transfers where the server supports them, and,
+for catalog zone secondaries, zone creation and deletion.
 
 ## What the secondary has to do
 
-Two things, whatever the implementation:
+A catalog zone secondary does two things, whatever the implementation:
 
 1. **Transfer the catalog zone from Bindizr.** `dns.catalog_zone_name` names it
    — `catalog.bindizr` unless you changed it — and the secondary declares it
@@ -39,6 +63,11 @@ NOTIFY or unsigned transfers. Set the same `dns.catalog_zone_name` in Bindizr
 and the secondary; independent Bindizr deployments feeding one secondary need
 distinct catalog names. See [Secondaries CLI](../cli/secondaries.md) and
 [Configuration](../configuration.md).
+
+A per-zone secondary declares each zone instead, with Bindizr as its primary,
+and is registered the same way. Bindizr still sends it NOTIFY for the catalog
+zone, which it refuses or leaves unanswered, so `secondary check` reports a
+failure for it; the zones it does serve are unaffected.
 
 ## Signing the transfers
 
@@ -63,8 +92,8 @@ bindizr tsig-key create xfr-key --role secondaries
 
 !!! warning "PowerDNS does not sign member transfers"
 
-    BIND, Knot, and NSD reuse the catalog zone's key for the member zones that
-    catalog provisions. PowerDNS does not — see
+    BIND, Knot, NSD, and Technitium reuse the catalog zone's key for the
+    member zones that catalog provisions. PowerDNS does not — see
     [PowerDNS](powerdns.md#tsig-does-not-reach-member-zones).
 
 Bindizr logs every transfer with `signed=true` or `signed=false`, so whether a
