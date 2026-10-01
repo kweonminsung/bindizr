@@ -10,10 +10,8 @@ pub(crate) fn normalize_lookup_name(name: &str) -> Result<String, ServiceError> 
         .map_err(|e| ServiceError::invalid_record_name(format!("record name {}", e)))
 }
 
-/// Most-specific existing zone authoritative for `name` (lookup form),
-/// honoring DNS label boundaries. Matching runs over all zones before any
-/// authorization, so a name in a denied subzone never falls back to a
-/// granted parent zone.
+/// Find the most-specific authoritative zone by label boundaries before
+/// authorization, so a denied subzone cannot fall back to a granted parent.
 pub(crate) fn authoritative_zone<'a>(
     zones: &'a [Zone],
     name: &str,

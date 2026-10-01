@@ -178,9 +178,7 @@ async fn find_signed_zone_by_id_tx(
     Ok(Some(SignedZone { zone, policy, keys }))
 }
 
-/// Apply the signed DNSSEC view and journal its changes under the held zone lock.
-///
-/// Returns whether anything changed.
+/// Apply and journal the signed view under the zone lock, reporting whether it changed.
 async fn apply_signed_view_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,

@@ -208,10 +208,8 @@ pub struct DnsConfig {
     /// falls back to AXFR.
     #[serde(default = "default_zone_history_retention_days")]
     pub zone_history_retention_days: u32,
-    /// Seconds between passes of the background scheduler: signature renewal,
-    /// key rollover steps, and zone history pruning. `0` runs no pass on this
-    /// instance; every instance runs the whole pass, so all but one may turn
-    /// it off, but not all.
+    /// Seconds between scheduler passes for signing, rollover, and history pruning.
+    /// 0 disables this instance; at least one instance must run the scheduler.
     #[serde(default = "default_scheduler_interval_secs")]
     pub scheduler_interval_secs: u64,
     /// Require a TSIG signature on RFC 2136 updates.
@@ -506,9 +504,8 @@ impl Config {
         if self.dns.listen_port != next.dns.listen_port {
             fixed.push("dns.listen_port".to_string());
         }
-        // Every secondary names the catalog zone in its own configuration, and
-        // the stored catalog row is keyed by that name: renaming it live would
-        // strand both.
+        // Renaming the catalog live would strand its stored row and the
+        // secondaries configured to request its old name.
         if self.dns.catalog_zone_name != next.dns.catalog_zone_name {
             fixed.push("dns.catalog_zone_name".to_string());
         }

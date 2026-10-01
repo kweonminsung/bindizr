@@ -202,9 +202,8 @@ async fn run_scheduler_pass(cx: &Context) {
                 }
             }
 
-            // A SEP key also needs its DS at the parent, so this asks. A
-            // parent that consumes the CDS bindizr publishes installs it
-            // itself.
+            // SEP promotion requires parent DS confirmation; CDS-aware parents
+            // may install the published DS automatically.
             let mut zone_ids: Vec<ZoneId> = keys
                 .iter()
                 .filter(|key| key.role.is_sep())

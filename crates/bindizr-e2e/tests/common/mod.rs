@@ -342,10 +342,8 @@ impl TestApp {
         self.run_cli_with_input(args, None).await
     }
 
-    /// Run the CLI, optionally piping `input` to its stdin (for `-` file args).
-    ///
-    /// After selected zone/record commands succeed, wait for configured secondary
-    /// DNS answers to match the API.
+    /// Run the CLI with optional stdin; after selected zone/record writes,
+    /// wait for configured secondaries to match the API.
     pub(crate) async fn run_cli_with_input(
         &self,
         args: &[&str],

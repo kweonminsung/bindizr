@@ -17,9 +17,8 @@ use bindizr_service::types::{
 };
 use serde::{Deserialize, Serialize};
 
-/// A command sent to the daemon over the Unix socket, carrying its payload.
-/// The CLI serializes one and the daemon deserializes the same type, so a
-/// renamed field breaks at compile time.
+/// A daemon command and its payload, shared by CLI serialization
+/// and daemon deserialization.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "command", content = "data", rename_all = "snake_case")]
 pub(crate) enum DaemonCommand {

@@ -365,12 +365,9 @@ fn zone_name_parse_rejects_malformed_names() {
     }
 }
 
-/// Verify that every accepted owner name survives storage and wire encoding unchanged.
-///
-/// The apex sentinel and decimal whitespace escapes exercise the two encodings this invariant
-/// depends on.
+/// Verify that apex, escaped, and relative owners survive storage and presentation round trips.
 #[test]
-fn every_accepted_owner_name_survives_storage_and_the_wire() {
+fn accepted_owner_names_round_trip_through_storage_and_presentation() {
     let zone = zone();
 
     for input in [
@@ -384,12 +381,9 @@ fn every_accepted_owner_name_survives_storage_and_the_wire() {
         r"a\\b",
         r"\064",
         r"\@",
-        r"host\032name",
         "A1.Test.Example.Com.",
     ] {
-        let Ok(owner) = OwnerName::parse_in_zone(input, &zone) else {
-            continue;
-        };
+        let owner = OwnerName::parse_in_zone(input, &zone).unwrap();
 
         assert_eq!(
             OwnerName::from_row(&owner.to_stored()),
@@ -399,7 +393,7 @@ fn every_accepted_owner_name_survives_storage_and_the_wire() {
         assert_eq!(
             OwnerName::parse_absolute_in_zone(&owner.to_fqdn(&zone), &zone).as_ref(),
             Ok(&owner),
-            "wire round trip for {input:?}"
+            "presentation round trip for {input:?}"
         );
     }
 }
@@ -442,10 +436,8 @@ fn owner_name_admits_a_maximum_length_name() {
     );
 }
 
-/// Verify that owner names escape master-file metacharacters.
-///
-/// Unescaped metacharacters would terminate the owner field or comment out the rest of the
-/// record.
+/// Verify that master-file metacharacters are escaped so they cannot terminate
+/// the owner field or comment out the record.
 #[test]
 fn owner_name_escapes_master_file_metacharacters() {
     let zone = ZoneName::parse("example.com").unwrap();
@@ -462,10 +454,8 @@ fn owner_name_escapes_master_file_metacharacters() {
     }
 }
 
-/// Verify that the longest escaped owner name fits the database column.
-///
-/// The wire limit bounds decoded labels, so the schema must also allow for their presentation
-/// escapes.
+/// Verify that the schema holds the longest escaped owner name; the wire limit
+/// bounds decoded labels rather than their longer presentation form.
 #[test]
 fn worst_case_stored_form_fits_the_schema_column_width() {
     const SCHEMA_COLUMN_WIDTH: usize = 1024;
@@ -511,9 +501,8 @@ fn encode_name_produces_length_prefixed_labels() {
     );
 }
 
-/// Verify that encoding keeps an escaped dot inside one label (RFC 1035, Section 5.1).
-///
-/// SOA mailboxes with a dotted local part rely on this label boundary.
+/// Verify that escaped dots stay inside a label (RFC 1035, Section 5.1),
+/// as required by SOA mailboxes with dotted local parts.
 #[test]
 fn encode_name_keeps_escaped_dots_in_one_label() {
     assert_eq!(

@@ -1,12 +1,12 @@
+use std::os::unix::fs::MetadataExt;
+
 use serde_json::json;
 
 use super::*;
 
-/// Verify that a command payload of the wrong shape is refused as a whole,
-/// instead of a wrongly typed field silently defaulting.
+/// Verify that invalid command fields are rejected instead of silently defaulting.
 #[test]
 fn command_rejects_wrongly_typed_fields() {
-    // Absent optional fields deserialize as their defaults...
     let ok: DaemonCommand = serde_json::from_value(json!({
         "command": "create_tsig_key",
         "data": { "name": "k", "algorithm": null, "secret": null },
@@ -14,9 +14,7 @@ fn command_rejects_wrongly_typed_fields() {
     .unwrap();
     assert!(matches!(ok, DaemonCommand::CreateTsigKey(request) if !request.global));
 
-    // ...but a present field of the wrong type is rejected instead of being
-    // dropped, which would generate a secret instead of importing one, or
-    // apply a rollback the caller asked to preview.
+    // Defaulting invalid input could generate an unwanted key or apply a preview.
     serde_json::from_value::<DaemonCommand>(json!({
         "command": "create_tsig_key",
         "data": { "name": "k", "secret": 123 },
@@ -69,8 +67,7 @@ async fn prepare_socket_path_creates_parent_directory() {
     assert!(Path::new(socket_path).parent().unwrap().exists());
 }
 
-/// Verify that a bound socket is owner-only and that an accepted connection
-/// carries the peer's uid, which is what `serve` admits or refuses on.
+/// Verify owner-only socket permissions and the UID used for peer authorization.
 #[tokio::test]
 async fn accepted_connection_reports_the_peer_uid() {
     let dir = tempfile::tempdir().unwrap();
@@ -78,15 +75,17 @@ async fn accepted_connection_reports_the_peer_uid() {
     let socket_path = socket_path.to_str().unwrap();
 
     let listener = bind_socket(socket_path).await.unwrap();
-    let mode = std::fs::metadata(socket_path).unwrap().permissions().mode();
-    assert_eq!(mode & 0o777, 0o600);
+    let metadata = std::fs::metadata(socket_path).unwrap();
+    assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+    let own_uid = read_own_uid().unwrap();
+    assert_eq!(own_uid, metadata.uid());
 
     let (client, accepted) = tokio::join!(UnixStream::connect(socket_path), listener.accept());
     // macOS reports no credentials once the peer has hung up, so the client
     // stays open while the daemon side asks.
     let _client = client.unwrap();
     let (stream, _) = accepted.unwrap();
-    assert_eq!(stream.peer_cred().unwrap().uid(), read_own_uid().unwrap());
+    assert_eq!(stream.peer_cred().unwrap().uid(), own_uid);
 }
 
 /// Verify that `prepare_socket_path` removes stale socket.

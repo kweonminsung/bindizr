@@ -55,10 +55,8 @@ fn normalize_pattern_canonicalizes_escapes_and_rejects_malformed_ones() {
     }
 }
 
-/// Verify rejection of wildcard grant labels, including escaped spellings.
-///
-/// Normalizing `\042` to `*` would widen a literal-owner grant into a match-all or subtree
-/// grant.
+/// Verify that escaped wildcards cannot widen a literal-owner grant
+/// into a match-all or subtree grant.
 #[test]
 fn rejects_a_wildcard_label_however_it_is_spelled() {
     for pattern in [r"\042", r"\042.sub", r"\042x", r"a\042b", "a*b", "*x"] {
@@ -84,9 +82,8 @@ fn an_escaped_at_stays_a_literal_owner() {
     assert!(!matches_name(&pattern, &OwnerName::apex()));
 }
 
-/// Verify that an escaped trailing dot remains part of a relative label.
-///
-/// A text-only trailing-dot check would mistake the single label `a.` for an absolute name.
+/// Verify that an escaped trailing dot stays in its relative label
+/// instead of being mistaken for the root.
 #[test]
 fn an_escaped_dot_is_label_data_not_a_root_marker() {
     assert_eq!(normalize_pattern(Some(r"a\.")).unwrap(), r"a\046");

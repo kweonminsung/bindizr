@@ -242,10 +242,9 @@ fn tsig_error(query_data: &[u8], err: ServerError<Arc<Key>>) -> TsigError {
     };
 
     let error = err.error();
-    // `domain` folds a MAC mismatch into FORMERR (`ValidationError::BadSig`
-    // has no arm in `server_request`, through at least 0.12.2), but the parser
-    // already validated the TSIG structure, so FORMERR here can only mean a
-    // bad signature — which RFC 8945, Section 5.3.2 requires reporting as BADSIG.
+    // `domain::tsig::server_request` maps bad MACs to FORMERR through 0.12.2.
+    // The parser already checked TSIG structure, so report BADSIG here
+    // as RFC 8945, Section 5.3.2 requires.
     let response = if error == TsigRcode::FORMERR {
         build_unsigned_error(&msg, TsigRcode::BADSIG)
     } else {

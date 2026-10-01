@@ -170,9 +170,8 @@ pub async fn delete(
 
     Ok(response)
 }
-/// Delete every record selected by `request` in one transaction. Row by row
-/// would bump the serial once each and serve the half-removed set in
-/// between.
+/// Delete the selected records atomically, advancing the serial once
+/// so secondaries cannot observe a partly removed set.
 pub async fn delete_matching(
     cx: &Context,
     caller: &Caller,

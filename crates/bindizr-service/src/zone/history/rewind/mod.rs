@@ -36,10 +36,8 @@ pub(crate) async fn rewind_records_to_serial_tx(
     Ok(undo_changes(records, &changes))
 }
 
-/// Undo `changes` — ordered by (serial, id) ascending — newest-first over
-/// `records`, yielding the zone as it stood before them. A change the live
-/// rows cannot explain is logged and passed over: a history that no longer
-/// adds up must not block a rollback.
+/// Undo ascending `(serial, id)` changes newest-first over the current records.
+/// Log and skip unexplained changes so inconsistent history cannot block rollback.
 fn undo_changes(records: Vec<Record>, changes: &[ZoneChange]) -> Vec<RecordData> {
     let mut state: HashMap<RecordKey, Vec<RecordData>> = HashMap::new();
     for record in records {

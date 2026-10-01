@@ -65,9 +65,8 @@ impl ZoneSortField {
         }
     }
 
-    /// The `ORDER BY` a zone listing pages under. The id follows the sort
-    /// column so the order is total: rows tied on it would otherwise be free
-    /// to swap between pages, dropping or repeating one.
+    /// Build a zone listing order with id as the tie-breaker, preventing tied
+    /// rows from moving between pages.
     pub(crate) fn order_by_sql(self, order: SortOrder) -> String {
         format!("ORDER BY {} {}, id", self.column(), order.as_str())
     }

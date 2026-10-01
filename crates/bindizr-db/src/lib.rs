@@ -42,9 +42,8 @@ pub use sql::{ParseSortError, RecordSortField, SortOrder, ZoneSortField};
 use tx::TransactionKind;
 pub use tx::{LockLevel, Transaction};
 
-/// The database the daemon connected to: one pool on one of the three
-/// backends. Every query is a root function taking it (`zone::get_by_name`)
-/// and matching the backend to reach the same-named function holding the SQL.
+/// One backend connection pool, passed to entity functions such as
+/// `zone::get_by_name` that dispatch to backend-specific SQL.
 #[derive(Debug)]
 pub struct Db(Backend);
 

@@ -1,6 +1,4 @@
-//! SQL fragments shared by the per-backend filter queries, rendered from the
-//! core types so no backend can drift. The two that carry a vocabulary of
-//! their own live beside this one.
+//! Shared SQL filter fragments rendered from core types.
 
 mod grant;
 mod sort;

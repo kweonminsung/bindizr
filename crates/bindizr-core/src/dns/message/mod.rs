@@ -183,9 +183,8 @@ impl DnsMessageBuilder {
         self.answers_len = 0;
     }
 
-    /// Buffer one answer. When it would push the message past the TCP size
-    /// limit, the answers buffered before it are returned as a ready frame and
-    /// the new answer stays buffered for the next one.
+    /// Buffer one answer; on overflow, return the preceding answers as a TCP
+    /// frame and retain this answer for the next frame.
     pub fn add_answer_or_overflow<F>(&mut self, add_answer: F) -> Result<Option<Vec<u8>>, Overflow>
     where
         F: FnOnce(&mut DnsMessageBuilder) -> Result<(), EncodeMessageError>,

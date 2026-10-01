@@ -265,10 +265,8 @@ fn decode_label(label: Vec<u8>) -> Result<String, ParseNameError> {
     Ok(label)
 }
 
-/// Classify a decoded owner label consistently across name constructors.
-///
-/// Owner labels may contain `_` and `*`; reject whitespace and control octets even when
-/// supplied through `\DDD` escapes.
+/// Validate decoded owner labels, allowing `_` and `*` but rejecting whitespace
+/// and control octets even when supplied through `\DDD` escapes.
 fn classify_owner_label(label: &str) -> Result<(), ParseNameError> {
     if label.is_empty() {
         return Err(ParseNameError::EmptyLabel);

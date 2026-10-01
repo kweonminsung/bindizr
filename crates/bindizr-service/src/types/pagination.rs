@@ -13,6 +13,7 @@ pub const DEFAULT_PAGE_LIMIT: u32 = 50;
 pub struct PageRequest {
     /// Items per page; the HTTP API defaults it, the daemon socket does not.
     #[schema(example = 50)]
+    #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
     #[schema(example = 0)]
     pub offset: Option<u64>,

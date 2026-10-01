@@ -436,9 +436,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
             output,
             ..
         } => {
-            // A name can hold several records, so this is the listing filtered
-            // to one owner. It defines no paging flags and promises every
-            // record at the name, so the pages are walked here.
+            // This command promises every record at the owner, so traverse all pages.
             let mut items: Vec<GetRecordResponse> = Vec::new();
             let mut offset = 0u64;
             let total = loop {

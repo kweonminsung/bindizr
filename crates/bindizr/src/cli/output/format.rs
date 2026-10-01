@@ -41,9 +41,7 @@ where
     Ok(())
 }
 
-/// Print one page of a listing as JSON or YAML, or as a table with a row
-/// per item plus the count it left out, so a page is not mistaken for the
-/// whole listing.
+/// Print a page as JSON, YAML, or a table that also reports omitted items.
 pub(crate) fn print_page<T, U>(
     page: &PaginatedResponse<T>,
     format: OutputFormat,

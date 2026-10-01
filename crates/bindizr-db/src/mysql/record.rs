@@ -186,9 +186,8 @@ pub(crate) async fn list_by_names_tx(
     if names.is_empty() {
         return Ok(Vec::new());
     }
-    // Only same-name rows can conflict, so lock just those.
-    // One round-trip per chunk; keep it large (chunk size dominated bulk-import
-    // time). 5000 is well under the 65535 placeholder limit.
+    // Lock only conflicting names; 5000-name chunks reduce round trips
+    // without reaching MySQL's 65535-placeholder limit.
     const CHUNK: usize = 5000;
     let mut out = Vec::new();
     for chunk in names.chunks(CHUNK) {

@@ -21,9 +21,7 @@ pub(crate) fn normalize_page_limit(limit: Option<u32>) -> Result<u32, ServiceErr
     }
 }
 
-/// Read a listing's sort or order from the request, or take the default. The
-/// vocabulary lives with the enum the query renders from, so two listings
-/// cannot drift apart on a spelling.
+/// Parse a listing's sort or order using its query enum, or take the default.
 pub(crate) fn parse_setting<T>(value: Option<&str>) -> Result<T, ServiceError>
 where
     T: Default + std::str::FromStr<Err = ParseSortError>,
@@ -54,9 +52,8 @@ pub(crate) fn build_paginated_response<T>(
     }
 }
 
-/// A page of a whole collection, cut here rather than in SQL. For the
-/// management tables — tokens, keys, policies, grants — which a deployment
-/// counts in tens, so a count query per listing would buy nothing.
+/// Page small management collections in memory, avoiding separate
+/// count queries for tokens, keys, policies, and grants.
 pub(crate) fn build_page<T>(
     items: Vec<T>,
     limit: Option<u32>,

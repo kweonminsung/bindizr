@@ -108,9 +108,8 @@ pub(crate) async fn read_tcp_message(
     Ok(message)
 }
 
-/// Send one UDP DNS message and wait for a single response, with `timeout`
-/// applied to both directions. `what` names the operation in error messages
-/// (e.g. "NOTIFY").
+/// Exchange one UDP DNS message, timing out each direction and naming
+/// the operation with `what` in errors.
 pub(crate) async fn exchange_over_udp(
     server_addr: SocketAddr,
     timeout: Duration,

@@ -218,10 +218,8 @@ pub(crate) fn normalize_policy_name(value: &str) -> Result<String, ServiceError>
     normalize_identifier(value, "DNSSEC policy name", MAX_POLICY_NAME_LEN)
 }
 
-/// Validate signature validity, refresh, and key lifetime settings.
-///
-/// The refresh window must be shorter than validity, or every scheduler pass would re-sign
-/// the zone.
+/// Validate signing timings, requiring refresh below validity so the scheduler
+/// does not re-sign on every pass.
 fn validate_timing(
     signature_validity_days: u32,
     signature_refresh_days: u32,

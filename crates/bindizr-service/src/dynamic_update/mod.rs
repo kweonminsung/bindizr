@@ -228,10 +228,8 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
     Ok(changed)
 }
 
-/// Authorize an authenticated request: global keys may do anything, other
-/// keys need a grant reaching every prerequisite and every update record. `key`
-/// is `None` for an accepted unsigned request, which skips authorization
-/// entirely.
+/// Authorize every prerequisite and update against the TSIG key's grants;
+/// global keys and accepted unsigned requests need none.
 async fn authorize_key_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,

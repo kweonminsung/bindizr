@@ -207,6 +207,7 @@ pub struct GetZonesFilter {
     /// Zones per page; defaults to 50 when omitted, 1000 is the largest page
     /// accepted.
     #[schema(example = 50)]
+    #[param(minimum = 1, maximum = 1000)]
     pub limit: Option<u32>,
     /// Number of zones to skip.
     #[schema(example = 0)]

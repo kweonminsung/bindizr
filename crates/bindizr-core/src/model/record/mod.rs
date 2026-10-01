@@ -607,10 +607,8 @@ pub const EXTERNAL_DNS_RECORD_TYPES: &[RecordType] = &[
     RecordType::Txt,
 ];
 
-/// Render the trailing domain-name field of a stored record value.
-///
-/// Priority is a separate column: MX stores only the target, and SRV stores weight, port, and
-/// target.
+/// Render the stored trailing domain name; MX priority is stored separately,
+/// and SRV retains only weight, port, and target in its value.
 fn display_last_name_field(value: &str, field_count: usize) -> String {
     let mut fields = value
         .split_whitespace()

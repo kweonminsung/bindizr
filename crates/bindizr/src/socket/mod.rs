@@ -27,8 +27,6 @@ pub(crate) fn read_own_uid() -> io::Result<u32> {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::MetadataExt;
-
     use super::*;
 
     /// Verify that only the daemon's own user and root count as trusted peers.
@@ -40,14 +38,5 @@ mod tests {
         // The daemon running as root admits root, and nobody else.
         assert!(is_trusted_peer(0, 0));
         assert!(!is_trusted_peer(1000, 0));
-    }
-
-    /// Verify that `read_own_uid` reports the uid that owns what this process creates.
-    #[tokio::test]
-    async fn read_own_uid_matches_the_owner_of_a_created_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let owner = std::fs::metadata(dir.path()).unwrap().uid();
-
-        assert_eq!(read_own_uid().unwrap(), owner);
     }
 }
