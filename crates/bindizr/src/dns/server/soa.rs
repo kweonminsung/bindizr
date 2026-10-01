@@ -1,12 +1,12 @@
 //! Serves SOA queries over TCP and UDP, used by secondaries to poll the
-//! primary's serial.
+//! primary's serial, and a UDP IXFR, which the SOA alone answers.
 
 use std::net::{IpAddr, SocketAddr};
 
 use bindizr_core::{
     dns::{
         message,
-        message::{Rcode, Rtype},
+        message::Rcode,
         tsig::{RequestSignature, TransferSigner, request_signature},
     },
     metrics::SoaResult,
@@ -44,7 +44,8 @@ pub(crate) async fn handle_tcp_soa(
     Ok(())
 }
 
-/// Answer an SOA query over UDP, counted as the TCP one is.
+/// Answer an SOA query or an IXFR over UDP with the zone's SOA, counted as
+/// the TCP SOA query is.
 pub(crate) async fn handle_udp_soa(
     dns_cx: &DnsContext,
     socket: &UdpSocket,
@@ -97,10 +98,16 @@ async fn handle_soa_request(
         }
     };
 
-    log::info!("SOA query for zone {:?} from {}", zone_name_str, client_ip);
+    log::info!(
+        "{} query for zone {:?} from {}",
+        query.qtype,
+        zone_name_str,
+        client_ip
+    );
 
+    // The question is echoed as asked: SOA, or a UDP IXFR answered by it.
     let build = |signer: Option<TransferSigner>| {
-        let builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, Rtype::SOA);
+        let builder = message::DnsMessageBuilder::new(query.query_id, &query.qname, query.qtype);
         match signer {
             Some(signer) => builder.sign_with(signer),
             None => builder,

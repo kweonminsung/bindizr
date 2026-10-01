@@ -350,7 +350,9 @@ async fn dispatch_udp_query(
         return;
     }
 
-    if query.qtype == Rtype::SOA {
+    // RFC 1995, Section 2: a UDP IXFR gets the current SOA alone, sending a
+    // client that is behind to TCP; Windows DNS asks this way after NOTIFY.
+    if matches!(query.qtype, Rtype::SOA | Rtype::IXFR) {
         if let Err(e) =
             server::soa::handle_udp_soa(dns_cx, socket, client_addr, &query, query_data).await
         {
