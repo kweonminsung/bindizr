@@ -37,7 +37,7 @@ pub async fn export_keys(
     let mut tx = transaction::begin_read_tx(cx, "failed to export DNSSEC keys").await?;
     let result = async {
         let SignedZone { zone, keys, .. } =
-            super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+            super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         Ok(ExportDnssecKeysResponse {
             zone_name: zone.name.as_str().to_string(),
             keys: keys
@@ -85,7 +85,7 @@ pub async fn import_keys(
 
     let mut tx = transaction::begin_tx(cx, "failed to import DNSSEC keys").await?;
     let result = async {
-        let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         if !bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked)
             .await?
             .is_empty()
@@ -162,8 +162,8 @@ pub async fn import_keys(
         };
 
         let new_serial = super::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
             &caller.change_subject(),

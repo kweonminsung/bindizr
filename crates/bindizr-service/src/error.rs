@@ -150,10 +150,8 @@ impl ErrorCode {
     }
 }
 
-/// Error returned by the service layer: one variant per [`ErrorCode`], each
-/// carrying the plain, user-facing message the error payload shows beside
-/// the code. What a transport makes of a code — an HTTP status, an RCODE, an
-/// exit code — is the transport's table, not this type's.
+/// Service failure with one variant per [`ErrorCode`] and a user-facing message.
+/// Each transport maps the code to its own HTTP status, RCODE, or exit code.
 #[derive(Debug, Error)]
 pub enum ServiceError {
     #[error("{0}")]
@@ -399,9 +397,7 @@ impl ServiceError {
         ))
     }
 
-    /// Build an error for an owner name holding several records where only
-    /// one may be touched. The message names the id rather than a front end's
-    /// flag, because every transport reaches this.
+    /// Report an ambiguous owner name, asking for a record id in transport-neutral terms.
     pub(crate) fn record_name_ambiguous(
         zone_name: impl std::fmt::Display,
         name: impl std::fmt::Display,

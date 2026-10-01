@@ -16,13 +16,9 @@ id_newtype!(
     TsigGrantId
 );
 
-/// Grants one TSIG key rights over part of one zone, in the spirit of BIND's
-/// `update-policy` and `allow-transfer`. Global keys bypass grants and hold no
-/// rows here.
-///
-/// `record_name_pattern` matches the owner name relative to the zone — `*`,
-/// `@`, `*.sub`, or an exact relative name — and `record_types` is `*` or a
-/// comma-separated list of type mnemonics.
+/// A TSIG key's rights within one zone; global keys bypass grants and hold no rows here.
+/// `record_name_pattern` is `*`, `@`, `*.sub`, or an exact relative name;
+/// `record_types` is `*` or comma-separated type mnemonics.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TsigGrant {
     pub id: TsigGrantId,

@@ -1,7 +1,5 @@
-//! Stored record columns → wire-format RDATA. [`EncodedRdata::from_columns`]
-//! is the one stored-columns → wire-RDATA mapping: the XFR encoder and the
-//! DNSSEC signer both consume it, so the bytes a signature covers are
-//! byte-identical to the bytes a transfer serves.
+//! [`EncodedRdata::from_columns`] maps stored columns to wire RDATA for both
+//! XFR and DNSSEC, keeping transferred bytes identical to signed bytes.
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 

@@ -1,8 +1,6 @@
-//! The signed view: the derived DNSSEC plane a zone's records imply, computed
-//! whole and diffed against the stored plane. Signatures are reused while
-//! their record set, signer set, and validity are unchanged, so the diff — the
-//! IXFR delta — carries only real changes; a rollover state transition
-//! re-signs exactly the affected record sets through the same digests.
+//! Compute the DNSSEC plane and diff it against storage for IXFR.
+//! Reuse signatures while their record set, signer set, and validity are unchanged;
+//! rollovers re-sign only the affected sets.
 
 mod input;
 #[cfg(test)]

@@ -213,7 +213,7 @@ pub async fn create_bulk(
 
     let apply_result = async {
         let t = Instant::now();
-        let zone = zone::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         timings.load_zone_ms = elapsed_ms(t);
 
         // Authorize before loading existing record rows so an ungranted caller
@@ -352,7 +352,7 @@ pub async fn create_bulk(
         let t = Instant::now();
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the batch.
-        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, &caller.change_subject()).await?;
         timings.serial_ms = elapsed_ms(t);
 
         Ok::<(Vec<Record>, ZoneName, RecordDiff), ServiceError>((

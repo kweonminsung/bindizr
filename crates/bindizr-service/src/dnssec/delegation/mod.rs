@@ -34,7 +34,7 @@ pub async fn check_ds(
 
     let mut tx = transaction::begin_read_tx(cx, "failed to check the parent DS").await?;
     let result: Result<_, ServiceError> = async {
-        let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
+        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Shared).await?;
         let status = build_status_tx(
             &mut tx,
             &signed.zone,
@@ -67,10 +67,8 @@ pub(crate) async fn probe_delegation(
     build_delegation_info(&signed.zone, &signed.keys, parent)
 }
 
-/// Match the parent's answers against the zone's SEP keys. Refusal and
-/// promotion read them in opposite directions — a DS at any one server blocks
-/// a disable, promotion waits for every one — so a parent still propagating
-/// the change cannot move the zone the unsafe way in either direction.
+/// Match parent answers against SEP keys: any DS blocks disabling, all servers must confirm promotion.
+/// This keeps both transitions safe while parent changes propagate.
 fn build_delegation_info(
     zone: &Zone,
     keys: &[DnssecKey],

@@ -88,10 +88,8 @@ pub(crate) async fn handle_ixfr(
         return send_soa_response(stream, query, &current_soa, identity.signer.take()).await;
     }
 
-    // Plain comparison, not the RFC 1982 serial arithmetic RFC 1995 assumes:
-    // bindizr's serials stop at i32::MAX and never wrap, so mod-2^32 ordering
-    // could only matter for a client holding a larger serial from a previous
-    // primary, which needs a reload there rather than an IXFR.
+    // Serials never wrap, so ordinary ordering replaces RFC 1982 arithmetic.
+    // A larger serial inherited from another primary requires a secondary reload.
     if client_serial > Serial::from(current_serial.as_u32()) {
         log::warn!(
             "IXFR: Client serial {} > current serial {}, falling back to AXFR",
@@ -101,10 +99,8 @@ pub(crate) async fn handle_ixfr(
         return axfr::handle_axfr(dns_cx, stream, query, client_ip, Rtype::IXFR, identity).await;
     }
 
-    // RFC 1995, Section 2 lets a server answer with a full transfer once the
-    // incremental one stops being smaller; counting first also keeps a
-    // long-absent secondary from pulling its whole absence into memory. Rows,
-    // not bytes: summing lengths would read the rows this decides whether to read.
+    // RFC 1995, Section 2 permits a full transfer when IXFR is no smaller.
+    // Count rows before loading history; measuring bytes would require loading it first.
     let delta_rows =
         zone::count_changes_between_serials(cx, zone.id, client_serial, current_serial).await?;
     if delta_rows >= zone::count_transfer_records(cx, &zone.name).await? {

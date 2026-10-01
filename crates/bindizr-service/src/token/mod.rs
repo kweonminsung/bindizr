@@ -10,8 +10,9 @@ use crate::{
     Context,
     authorization::Caller,
     model::api_token::ApiToken,
+    pagination::build_page,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
-    types::{CreateTokenRequest, GetTokenResponse, PageFilter, PaginatedResponse, build_page},
+    types::{CreateTokenRequest, GetTokenResponse, PageFilter, PaginatedResponse},
 };
 
 /// A century: inside every backend's timestamp range (MySQL DATETIME ends at 9999).

@@ -141,7 +141,8 @@ async fn update_locked(
     let apply_result: Result<AppliedZoneUpdate, ServiceError> = async {
         // Lock the zone row so the serial computed below stays ahead of
         // concurrent record mutations and nsupdate on the same zone.
-        let existing_zone = super::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let existing_zone =
+            super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         let zone_id = existing_zone.id;
 
         let request = build(&existing_zone);
@@ -242,7 +243,7 @@ async fn update_locked(
             })?;
 
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(cx, &mut tx, &updated_zone, new_serial, subject).await?;
+        super::save_version_tx(&mut tx, cx, &updated_zone, new_serial, subject).await?;
 
         Ok(AppliedZoneUpdate {
             catalog_changed: existing_zone.name != updated_zone.name

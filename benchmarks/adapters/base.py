@@ -1,15 +1,8 @@
-"""Common adapter interface every system-under-test implements.
+"""Common adapter contract for running identical workloads across DNS systems.
 
-A benchmark runner talks only to this interface, so the same workload runs
-unchanged against Bindizr, PowerDNS, Technitium, and BIND9+nsupdate/rndc.
-
-Semantics notes:
-- `create_record` returns an opaque handle (id or name) used by get/update/delete.
-- For systems without a REST record API (BIND9+nsupdate/rndc) the handle is the
-  record name; update/delete operate by name.
-- `dns_endpoint()` returns (host, port) of a resolver that answers queries for
-  the managed zone — for Bindizr this is its secondary (BIND9, Knot DNS, NSD,
-  or PowerDNS), proving the control plane is outside the data plane.
+`create_record` returns an opaque get/update/delete handle: an id, or a record
+name for BIND9 adapters. `dns_endpoint()` returns the zone's answering server;
+for Bindizr, that is the secondary, keeping queries outside the control plane.
 """
 from __future__ import annotations
 

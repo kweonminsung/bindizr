@@ -10,8 +10,9 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     model::tsig_key::{TsigAlgorithm, TsigKey},
+    pagination::build_page,
     text::MAX_COLUMN_TEXT_LEN,
-    types::{CreateTsigKeyRequest, GetTsigKeyResponse, PageFilter, PaginatedResponse, build_page},
+    types::{CreateTsigKeyRequest, GetTsigKeyResponse, PageFilter, PaginatedResponse},
 };
 
 /// Byte length of generated secrets; matches `tsig-keygen`'s default for

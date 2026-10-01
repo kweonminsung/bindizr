@@ -20,7 +20,7 @@ pub async fn withdraw(
 
     let mut tx = transaction::begin_tx(cx, "failed to withdraw the parent DS").await?;
     let result = async {
-        let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         if bindizr_db::dnssec_withdrawal::get_tx(&mut tx, signed.zone.id)
             .await?
             .is_some()
@@ -32,8 +32,8 @@ pub async fn withdraw(
         bindizr_db::dnssec_withdrawal::create_tx(&mut tx, signed.zone.id).await?;
 
         let new_serial = super::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
             &caller.change_subject(),
@@ -69,7 +69,7 @@ pub async fn cancel_withdrawal(
 
     let mut tx = transaction::begin_tx(cx, "failed to cancel the DS withdrawal").await?;
     let result = async {
-        let signed = super::get_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         if bindizr_db::dnssec_withdrawal::get_tx(&mut tx, signed.zone.id)
             .await?
             .is_none()
@@ -79,8 +79,8 @@ pub async fn cancel_withdrawal(
         bindizr_db::dnssec_withdrawal::delete_tx(&mut tx, signed.zone.id).await?;
 
         let new_serial = super::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
             &caller.change_subject(),

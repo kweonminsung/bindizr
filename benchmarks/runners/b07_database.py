@@ -1,15 +1,8 @@
-"""Benchmark 7 — Database Performance (Bindizr backends).
+"""Benchmark 7: compare CRUD-lite and bulk imports across Bindizr's three backends.
 
-Runs the same CRUD-lite workload against Bindizr backed by SQLite, MySQL, and
-PostgreSQL in turn, comparing create/read TPS, latency, and resource use. Each
-backend then runs a bulk-import comparison (`db_bulk_sizes`, e.g. 10k/100k)
-to measure throughput scaling with zone size.
-
-This runner is special: it builds and tears down its own Bindizr adapters (one
-per backend), so the orchestrator invokes it with `adapter=None`.
-
-Emits CRUD-lite rows ({backend, create_tps, ...}) and bulk rows
-({backend, size, import_secs, ...}); the report renders them as two tables.
+Measure create/read TPS, latency, resources, and bulk scaling over `db_bulk_sizes`.
+The runner owns adapter setup/teardown (`adapter=None`); CRUD and bulk results
+form separate report tables, keyed by backend and by (backend, size).
 """
 from __future__ import annotations
 

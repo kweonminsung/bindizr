@@ -14,11 +14,8 @@ use crate::{
     types::ZoneView,
 };
 
-/// Render a zone and its records as a BIND master file (RFC 1035). The
-/// unsigned output round-trips through `zone import`, which manages the
-/// SOA itself and so ignores the SOA line on the way back in; `signed`
-/// appends the derived DNSSEC records as an inspection artifact, not an
-/// import input.
+/// Render a BIND master file (RFC 1035); unsigned output round-trips through `zone import`.
+/// Import manages SOA separately. Signed output adds derived DNSSEC records for inspection only.
 pub async fn export(
     cx: &Context,
     caller: &Caller,
@@ -29,8 +26,7 @@ pub async fn export(
     // single consistent view, not stale SOA metadata with newer records.
     let mut tx = transaction::begin_read_tx(cx, "Failed to export zone").await?;
     let load_result = async {
-        let zone =
-            super::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
+        let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
         caller.authorize_zone_unrestricted(&zone)?;
         let records = bindizr_db::record::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         let derived = if view == ZoneView::Signed {

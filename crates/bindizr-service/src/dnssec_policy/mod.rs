@@ -14,11 +14,12 @@ use crate::{
         dnssec_key::DnssecAlgorithm,
         dnssec_policy::{DEFAULT_DNSSEC_POLICY_NAME, DnssecDenial, DnssecPolicy},
     },
+    pagination::build_page,
     text::normalize_identifier,
     transaction,
     types::{
         CreateDnssecPolicyRequest, GetDnssecPolicyResponse, PageFilter, PaginatedResponse,
-        UpdateDnssecPolicyRequest, build_page,
+        UpdateDnssecPolicyRequest,
     },
 };
 

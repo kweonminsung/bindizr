@@ -85,11 +85,9 @@ id_newtype!(
     TsigKeyId
 );
 
-/// A TSIG credential for updates and transfers; `name` is its wire name.
-/// Zone rights come from [`super::tsig_grant::TsigGrant`] rows.
-///
-/// `is_global` is fixed at creation: a global key may update and transfer
-/// every zone without any grant.
+/// A TSIG credential whose wire `name` identifies it for updates and transfers.
+/// Rights come from [`super::tsig_grant::TsigGrant`]; `is_global`, fixed at creation,
+/// permits updates and transfers in every zone without grants.
 #[derive(Debug, PartialEq, Eq, Clone, FromRow)]
 pub struct TsigKey {
     pub id: TsigKeyId,

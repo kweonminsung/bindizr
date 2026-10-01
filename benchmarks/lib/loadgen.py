@@ -1,12 +1,7 @@
-"""Closed-loop async load generator.
+"""Run `step(seq)` with fixed concurrency, measuring latency after an unmeasured warmup.
 
-A fixed pool of `concurrency` workers repeatedly invoke an async `step(seq)`
-coroutine as fast as they can for `duration_secs`. Latency of each call is timed
-and recorded; a leading `warmup_secs` window is executed but not measured.
-
-Closed-loop (fixed concurrency) is chosen over open-loop because the systems
-under test have wildly different endpoints/payloads and we compare them under an
-identical, bounded client load rather than chasing each system's raw ceiling.
+A closed loop gives systems with different endpoints and payloads the same
+bounded client load for `duration_secs`.
 """
 from __future__ import annotations
 

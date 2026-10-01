@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-"""Measure single-record create TPS as the target zone grows.
+"""Measure create TPS after bulk prepopulation at increasing zone sizes, with NOTIFY off.
 
-The per-write conflict lookup scans the owner's existing records; without an
-index on records(zone_id, name) that is O(zone size) per write, so create TPS
-should fall as the prepopulated zone grows. With the index it should stay flat.
-
-Runs the Bindizr adapter directly (notify off, so we isolate the DB write path),
-prepopulating each size via the bulk API and then timing single creates.
+The records(zone_id, name) index should keep owner-conflict lookups independent
+of zone size; without it, each write scans the zone.
 """
 from __future__ import annotations
 

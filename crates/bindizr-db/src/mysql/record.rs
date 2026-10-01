@@ -161,7 +161,7 @@ pub(crate) async fn list_by_name_tx(
 }
 
 /// Find an owner with a DS record but no NS delegation in the current transaction.
-pub(crate) async fn get_ds_name_without_ns_tx(
+pub(crate) async fn find_name_ds_without_ns_tx(
     tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,
 ) -> Result<Option<String>, DatabaseError> {

@@ -21,7 +21,8 @@ use crate::{
         tsig_key::TsigKey,
         zone::Zone,
     },
-    types::{CreateGrantRequest, GetTsigGrantResponse, PageFilter, PaginatedResponse, build_page},
+    pagination::build_page,
+    types::{CreateGrantRequest, GetTsigGrantResponse, PageFilter, PaginatedResponse},
     zone,
 };
 

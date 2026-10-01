@@ -1,12 +1,8 @@
-"""CoreDNS adapter — authoritative zone served from a file the adapter rewrites.
+"""CoreDNS adapter: rewrite the zone file and await the `file` plugin's `reload 1s` poll.
 
-CoreDNS has no management API and no RFC 2136 dynamic update, so writes work the
-way CoreDNS is actually operated: rewrite the zone file and let the `file` plugin
-pick it up on its mtime poll (`reload 1s` in the Corefile). There is no immediate
-reload signal (no `rndc reload` equivalent), so every write costs up to one poll
-interval. That reload latency — not record throughput — dominates CoreDNS's
-write-path numbers, which is why it only joins the bulk benchmark (where the cost
-is paid once for the whole set) and not the per-record CRUD/propagation ones.
+There is no management API, RFC 2136 update, or immediate reload signal.
+Benchmark bulk writes only: per-record CRUD and propagation would measure the
+poll interval instead of record throughput.
 """
 from __future__ import annotations
 

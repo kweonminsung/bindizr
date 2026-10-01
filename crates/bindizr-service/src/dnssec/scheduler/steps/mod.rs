@@ -27,11 +27,8 @@ pub(crate) struct PruneSummary {
     pub(crate) version_rows: u64,
 }
 
-/// Prune one zone's journal and version rows older than `cutoff` in its own
-/// transaction, under the zone lock the history readers hold, so a reader
-/// never sees the current records under a past serial. Both tables go
-/// together: a serial pruned from one alone reads to IXFR clients as a gap
-/// or a missing SOA.
+/// Prune a zone's journal and versions before `cutoff` in one transaction under the zone lock.
+/// The shared reader lock preserves serial consistency; pruning both tables avoids IXFR gaps.
 pub(crate) async fn prune_zone_history_by_zone_id(
     cx: &Context,
     zone_id: ZoneId,
@@ -79,8 +76,8 @@ pub(crate) async fn resign_zone_by_zone_id(
         };
 
         if dnssec::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
             &ChangeSubject::system(),
@@ -133,8 +130,8 @@ pub(crate) async fn start_zsk_rollover_by_zone_id(
                 .await?;
         signed.keys.push(new_key);
         dnssec::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
             &ChangeSubject::system(),
@@ -181,8 +178,8 @@ pub(crate) async fn promote_zsks_by_zone_id(
                 .await?;
 
         dnssec::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
             &ChangeSubject::system(),
@@ -250,8 +247,8 @@ pub(crate) async fn promote_sep_keys_by_zone_id(
         )
         .await?;
         dnssec::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
             &ChangeSubject::system(),
@@ -322,8 +319,8 @@ pub(crate) async fn prune_retired_keys_by_zone_id(
         signed.keys = remaining;
 
         dnssec::resign_zone_tx(
-            cx,
             &mut tx,
+            cx,
             &signed,
             SigningPass::Refresh,
             &ChangeSubject::system(),

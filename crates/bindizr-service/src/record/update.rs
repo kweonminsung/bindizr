@@ -212,8 +212,7 @@ async fn update_locked(
             }
             LockTarget::Name { zone_name, name } => {
                 let zone =
-                    zone::get_visible_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive)
-                        .await?;
+                    zone::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive).await?;
                 let owner = normalize_record_owner_name(name, &zone.name)?;
 
                 // Count only what the caller can see, so the count never
@@ -341,7 +340,7 @@ async fn update_locked(
 
         dnssec::sign_zone_tx(&mut tx, &zone, new_serial).await?;
         // Advance the serial once so IXFR consumers detect the change
-        zone::advance_serial_tx(cx, &mut tx, &zone, new_serial, &caller.change_subject()).await?;
+        zone::advance_serial_tx(&mut tx, cx, &zone, new_serial, &caller.change_subject()).await?;
 
         Ok::<(Record, ZoneName, RecordDiff), ServiceError>((updated_record, zone_name, diff))
     }

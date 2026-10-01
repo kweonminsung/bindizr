@@ -1,14 +1,10 @@
-//! DNSSEC zone signing: key management and rollover, the signed-view hook
-//! every zone-data mutation runs before its serial bump, and the scheduler.
-//! Whether a zone is signed is carried by its key rows, the parameters it
-//! signs under by the policy `zones.dnssec_policy_id` names;
-//! every transition journals its delta so secondaries follow via IXFR.
+//! DNSSEC keys, rollover, scheduling, and the signing hook run before each serial bump.
+//! Key rows indicate signing state; `zones.dnssec_policy_id` selects its parameters.
+//! Every transition journals its delta for IXFR.
 //!
-//! Promotion waits for the publish TTL and, for SEP keys, parent DS confirmation
-//! by the scheduler or `ds-seen`. Retired keys remain until their cache deadlines.
-//! A parent probe runs inside the transaction that acts on its answer, under
-//! the zone lock, so the answer is about the keys and parent it then moves;
-//! `dns.notify.timeout_secs` bounds each exchange.
+//! Promotion waits for publish TTL and SEP parent-DS confirmation (scheduler or `ds-seen`);
+//! retired keys stay until cache expiry. Parent probes run under the acting transaction's
+//! zone lock to keep their inputs current; `dns.notify.timeout_secs` bounds each exchange.
 
 mod delegation;
 mod keys;
@@ -81,7 +77,7 @@ pub(crate) async fn sign_zone_tx(
     if keys.is_empty() {
         return Ok(());
     }
-    let policy = get_zone_policy_tx(tx, zone).await?;
+    let policy = lookup_zone_policy_tx(tx, zone).await?;
     apply_signed_view_tx(tx, zone, &policy, new_serial, &keys, SigningPass::Refresh).await?;
     Ok(())
 }
@@ -90,8 +86,8 @@ pub(crate) async fn sign_zone_tx(
 /// same serial/IXFR mechanics as any record change; `None` (serial kept)
 /// when nothing needed replacing.
 async fn resign_zone_tx(
-    cx: &Context,
     tx: &mut Transaction<'_>,
+    cx: &Context,
     signed: &SignedZone,
     pass: SigningPass,
     subject: &ChangeSubject,
@@ -109,7 +105,7 @@ async fn resign_zone_tx(
     {
         return Ok(None);
     }
-    zone::advance_serial_tx(cx, tx, &signed.zone, new_serial, subject).await?;
+    zone::advance_serial_tx(tx, cx, &signed.zone, new_serial, subject).await?;
     Ok(Some(new_serial))
 }
 
@@ -136,7 +132,7 @@ async fn find_zone_policy_tx(
 
 /// The policy a signed zone signs under; a signed zone without one is a
 /// broken invariant, never a caller error.
-async fn get_zone_policy_tx(
+async fn lookup_zone_policy_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
 ) -> Result<DnssecPolicy, ServiceError> {
@@ -150,21 +146,21 @@ async fn get_zone_policy_tx(
 
 /// Load the zone (locked at `lock_level`) together with its policy and
 /// signing keys; a zone with no keys reads as not DNSSEC-enabled.
-async fn get_signed_zone_tx(
+async fn lookup_signed_zone_tx(
     tx: &mut Transaction<'_>,
     zone_name: &ZoneName,
     lock_level: LockLevel,
 ) -> Result<SignedZone, ServiceError> {
-    let zone = zone::get_by_name_tx(tx, zone_name, lock_level).await?;
+    let zone = zone::lookup_by_name_tx(tx, zone_name, lock_level).await?;
     let keys = bindizr_db::dnssec_key::list_tx(tx, zone.id, LockLevel::Unlocked).await?;
     if keys.is_empty() {
         return Err(ServiceError::dnssec_not_enabled(zone.name.as_str()));
     }
-    let policy = get_zone_policy_tx(tx, &zone).await?;
+    let policy = lookup_zone_policy_tx(tx, &zone).await?;
     Ok(SignedZone { zone, policy, keys })
 }
 
-/// The scheduler's form of [`get_signed_zone_tx`]: `None` when the
+/// The scheduler's form of [`lookup_signed_zone_tx`]: `None` when the
 /// zone was deleted or unsigned since its id was listed.
 async fn find_signed_zone_by_id_tx(
     tx: &mut Transaction<'_>,
@@ -178,7 +174,7 @@ async fn find_signed_zone_by_id_tx(
     if keys.is_empty() {
         return Ok(None);
     }
-    let policy = get_zone_policy_tx(tx, &zone).await?;
+    let policy = lookup_zone_policy_tx(tx, &zone).await?;
     Ok(Some(SignedZone { zone, policy, keys }))
 }
 

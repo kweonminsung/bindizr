@@ -42,7 +42,7 @@ async fn force_increment_serial_by_name(
     let mut tx = transaction::begin_tx(cx, "Failed to force increment zone serial").await?;
 
     let apply_result = async {
-        let zone = super::get_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
 
         let new_serial = generate_serial(Some(zone.serial))?;
         let updated_zone = bindizr_db::zone::update_tx(
@@ -61,7 +61,7 @@ async fn force_increment_serial_by_name(
         // The SOA rdata carries the serial, so its signature must follow
         // every bump — forced ones included.
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(cx, &mut tx, &updated_zone, new_serial, subject).await?;
+        super::save_version_tx(&mut tx, cx, &updated_zone, new_serial, subject).await?;
 
         Ok::<Zone, ServiceError>(updated_zone)
     }

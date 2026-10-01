@@ -1,8 +1,5 @@
-//! Writing to stdout and stderr without dying on a closed pipe.
-//!
-//! `println!` panics when the reader stops early, which would make
-//! `record list | head` exit 101 and `start 2>&1 | grep -m1 …` take the daemon
-//! down. Everything bindizr prints goes through here instead.
+//! Write all bindizr output without panicking on a closed pipe.
+//! Early readers such as `head` must not crash a command or the daemon.
 
 use std::{
     io::{ErrorKind, Write},

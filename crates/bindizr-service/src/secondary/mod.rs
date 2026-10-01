@@ -24,12 +24,13 @@ use crate::{
     dns_client::{notify, probe, resolve_address_entry},
     error::ServiceError,
     model::{secondary::Secondary, tsig_key::TsigKey},
+    pagination::{build_page, normalize_page_limit},
     text::{MAX_COLUMN_TEXT_LEN, normalize_identifier},
     transaction, transfer, tsig_key,
     types::{
         CreateSecondaryRequest, GetSecondaryResponse, GetSecondaryTransfersFilter, PageFilter,
         PaginatedResponse, SecondaryCheckResponse, SecondaryTransfersResponse, TransferResponse,
-        TransferSummary, UpdateSecondaryRequest, build_page, normalize_page_limit,
+        TransferSummary, UpdateSecondaryRequest,
     },
     zone,
 };

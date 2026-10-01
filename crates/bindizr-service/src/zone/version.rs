@@ -43,8 +43,8 @@ impl ChangeSubject {
 /// Advance the zone serial so IXFR consumers detect the change, and
 /// version it in the same transaction.
 pub(crate) async fn advance_serial_tx(
-    cx: &Context,
     tx: &mut Transaction<'_>,
+    cx: &Context,
     zone: &Zone,
     new_serial: Serial,
     subject: &ChangeSubject,
@@ -56,7 +56,7 @@ pub(crate) async fn advance_serial_tx(
             ServiceError::internal("Failed to update zone serial")
         })?;
 
-    save_version_tx(cx, tx, zone, new_serial, subject).await
+    save_version_tx(tx, cx, zone, new_serial, subject).await
 }
 
 /// Reject DS records without an NS delegation at the same owner: a DS identifies a child
@@ -65,7 +65,7 @@ async fn validate_delegations_tx(
     tx: &mut Transaction<'_>,
     zone_id: ZoneId,
 ) -> Result<(), ServiceError> {
-    let orphaned = bindizr_db::record::get_ds_name_without_ns_tx(tx, zone_id).await?;
+    let orphaned = bindizr_db::record::find_name_ds_without_ns_tx(tx, zone_id).await?;
     if let Some(name) = orphaned.as_deref() {
         let name = if name.is_empty() { "@" } else { name };
         return Err(ServiceError::record_conflict(format!(
@@ -80,8 +80,8 @@ async fn validate_delegations_tx(
 /// Every mutation path ends here, so the cross-row invariants are
 /// checked once, against the final state, order-independently.
 pub(crate) async fn save_version_tx(
-    cx: &Context,
     tx: &mut Transaction<'_>,
+    cx: &Context,
     zone: &Zone,
     serial: Serial,
     subject: &ChangeSubject,

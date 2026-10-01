@@ -57,7 +57,7 @@ struct CachedTransfer {
 
 /// The DNS front end's transfer cache: one cached transfer per zone, behind
 /// one lock, within the record budget `dns.transfer_cache.max_records` sets.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct TransferCache {
     entries: Mutex<Entries>,
 }
@@ -76,9 +76,7 @@ struct Entries {
 impl TransferCache {
     /// An empty cache.
     pub(crate) fn new() -> Self {
-        TransferCache {
-            entries: Mutex::new(Entries::default()),
-        }
+        Self::default()
     }
 
     /// Lock the cache, recovering a poisoned lock because panics cannot leave

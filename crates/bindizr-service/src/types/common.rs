@@ -72,9 +72,9 @@ pub struct ErrorResponse {
     pub code: String,
 }
 
-impl ErrorResponse {
+impl From<&ServiceError> for ErrorResponse {
     /// Build an error response from a service error's code and message.
-    pub fn new(err: &ServiceError) -> Self {
+    fn from(err: &ServiceError) -> Self {
         ErrorResponse {
             error: err.to_string(),
             code: err.code().as_str().to_string(),
