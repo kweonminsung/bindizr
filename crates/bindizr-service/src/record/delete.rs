@@ -79,9 +79,10 @@ pub async fn delete(
                 }
             };
 
-        // A record the caller's grants do not reach reads as 404, as it
-        // does on GET, so ids cannot be probed.
-        if !caller.sees_record(
+        // A record the caller may neither read nor delete reads as 404, as
+        // it does on GET, so ids cannot be probed.
+        if !caller.reaches_record(
+            Action::RecordDelete,
             zone.id,
             &existing_record.name,
             Some(&existing_record.record_type),

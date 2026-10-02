@@ -1049,3 +1049,81 @@ async fn a_record_read_grant_reads_the_zone_but_cannot_change_it() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+/// Verify that a grant without `record:read` still finds, by id, the records
+/// its write actions cover, and nothing else.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_write_only_grant_changes_the_records_it_covers() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
+
+    let zone_name = app.zone_name("example.com");
+    app.create_named_zone(&zone_name).await;
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "other", "TXT", "not yours")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let outside_id = body["record"]["id"].as_i64().unwrap();
+
+    // An ACME-style client: it writes its challenge records and reads nothing.
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &scoped_name,
+        "--zone",
+        &zone_name,
+        "--actions",
+        "record:create,record:update,record:delete",
+        "--pattern",
+        "_acme-challenge",
+        "--types",
+        "TXT",
+    ])
+    .await;
+    app.set_auth_token(scoped_token);
+
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            "/records",
+            Some(record_body(&zone_name, "_acme-challenge", "TXT", "token-1")),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let record_id = body["record"]["id"].as_i64().unwrap();
+
+    // Reading stays refused; changing what the grant covers does not.
+    let (status, _) = app
+        .send_request(Method::GET, &format!("/records/{record_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &format!("/records/{record_id}"),
+            Some(json!({ "value": "token-2" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = app
+        .send_request(Method::DELETE, &format!("/records/{record_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // A record outside the grant stays hidden, so its id cannot be probed.
+    let (status, _) = app
+        .send_request(Method::DELETE, &format!("/records/{outside_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

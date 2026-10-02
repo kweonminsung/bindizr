@@ -183,6 +183,44 @@ fn visible(caller: &Caller, name: &str, record_type: Option<&RecordType>) -> boo
     caller.sees_record(ZoneId::from(1), &OwnerName::from_row(name), record_type)
 }
 
+/// Verify that `reaches_record` lets a write-only grant find the records it
+/// may change, and nothing else.
+#[test]
+fn reaches_record_admits_the_write_action_under_its_constraints() {
+    let caller = token(vec![grant(
+        &[Action::RecordDelete],
+        "_acme-challenge",
+        "TXT",
+    )]);
+    let reaches = |action, name: &str, record_type: &RecordType| {
+        caller.reaches_record(
+            action,
+            ZoneId::from(1),
+            &OwnerName::from_row(name),
+            Some(record_type),
+        )
+    };
+
+    assert!(reaches(
+        Action::RecordDelete,
+        "_acme-challenge",
+        &RecordType::Txt
+    ));
+    // Nothing beyond the grant's own targets, so ids stay unprobeable.
+    assert!(!reaches(
+        Action::RecordUpdate,
+        "_acme-challenge",
+        &RecordType::Txt
+    ));
+    assert!(!reaches(Action::RecordDelete, "www", &RecordType::Txt));
+    assert!(!reaches(
+        Action::RecordDelete,
+        "_acme-challenge",
+        &RecordType::A
+    ));
+    assert!(!visible(&caller, "_acme-challenge", Some(&RecordType::Txt)));
+}
+
 /// Verify that `sees_record` needs `record:read` and narrows like writes.
 #[test]
 fn sees_record_needs_record_read_under_matching_constraints() {
