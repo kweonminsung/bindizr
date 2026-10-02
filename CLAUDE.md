@@ -335,7 +335,9 @@ each rule says which spelling is this project's.
 - **Visibility**: a zone is visible when any grant of the role reaches it,
   whatever its actions (404 otherwise, so a scope cannot probe existence; a
   visible zone's denied operation is 403). Reading records needs `record:read`
-  covering them. A view the zone is rebuilt from — export, a stored version,
+  covering them; an update or delete finds its target by that or by its own
+  write action, so a write-only grant reaches what it may change and no more.
+  A view the zone is rebuilt from — export, a stored version,
   a diff, a zone-file import — needs a grant with no name or type constraint,
   since half a zone re-applied deletes what it left out.
 - **Each change is authorized by its kind**: a record create, update or

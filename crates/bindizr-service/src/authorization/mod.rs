@@ -216,6 +216,24 @@ impl Caller {
         }
     }
 
+    /// Whether `record:read` or the write `action` covers a record of this
+    /// name and type, so a write-only grant finds what it may change.
+    pub(crate) fn reaches_record(
+        &self,
+        action: Action,
+        zone_id: ZoneId,
+        name: &OwnerName,
+        record_type: Option<&RecordType>,
+    ) -> bool {
+        match &self.scope {
+            CallerScope::Global => true,
+            CallerScope::Role { grants, .. } => grants.iter().any(|grant| {
+                (grant.permits(Action::RecordRead, zone_id) || grant.permits(action, zone_id))
+                    && grant.matches(name, record_type)
+            }),
+        }
+    }
+
     /// Whether a `record:read` grant covers a record of this name and type.
     pub(crate) fn sees_record(
         &self,
