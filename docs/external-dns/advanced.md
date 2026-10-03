@@ -8,10 +8,11 @@ manage, how a sync is applied, and the adapter's full reference.
 `GET /external-dns/domains` builds the domain filter ExternalDNS negotiates at
 startup from the token role's grants. A grant's name enters it only when the
 role holds all three of `record:read`, `record:create`, and `record:delete`
-there, in that grant or in others of the same pattern or of `*`: one sync
-reads ownership records, adds, and deletes as one transaction, so a name
-missing any of them would only fail every sync it reaches. `record:update` is
-never used. A grant without `--zone` contributes every existing zone.
+there for a record type in common, in that grant or in others of the same
+pattern or of `*`: one sync reads ownership records, adds, and deletes as one
+transaction, so a name missing any of them would only fail every sync it
+reaches. `record:update` is never used. A grant without `--zone` contributes
+every existing zone.
 
 A grant narrowed to a subtree (`--pattern '*.k8s'`) filters to that subtree
 rather than its zone, so ExternalDNS plans inside it. A filter entry always

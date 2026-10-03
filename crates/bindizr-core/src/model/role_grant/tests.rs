@@ -118,4 +118,39 @@ fn patterns_holding_unions_grants_per_pattern() {
         vec!["*.k8s"]
     );
     assert!(grants.patterns_holding(ZoneId::from(2), &sync).is_empty());
+
+    // Split across grants, the actions must still share a record type.
+    let disjoint = RoleGrants::from(vec![
+        grant(
+            RoleZoneScope::Zone(zone),
+            &[Action::RecordRead, Action::RecordCreate],
+            "*.a",
+            "A",
+        ),
+        grant(
+            RoleZoneScope::Zone(zone),
+            &[Action::RecordDelete],
+            "*.a",
+            "TXT",
+        ),
+        grant(
+            RoleZoneScope::Zone(zone),
+            &[Action::RecordRead],
+            "*.b",
+            "A,TXT",
+        ),
+        grant(
+            RoleZoneScope::Zone(zone),
+            &[Action::RecordCreate, Action::RecordDelete],
+            "*.b",
+            "TXT",
+        ),
+    ]);
+    assert_eq!(
+        disjoint
+            .patterns_holding(zone, &sync)
+            .into_iter()
+            .collect::<Vec<_>>(),
+        vec!["*.b"]
+    );
 }

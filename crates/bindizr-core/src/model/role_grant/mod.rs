@@ -409,7 +409,8 @@ impl RoleGrants {
             .any(|grant| grant.permits(action, zone_id) && grant.is_unrestricted())
     }
 
-    /// The patterns in `zone_id` whose grants, with those of `*`, hold all `actions`.
+    /// The patterns in `zone_id` whose grants, with those of `*`, hold all
+    /// `actions` for at least one record type in common.
     pub fn patterns_holding(&self, zone_id: ZoneId, actions: &[Action]) -> BTreeSet<&str> {
         let reaching: Vec<&RoleGrant> = self
             .0
@@ -420,13 +421,42 @@ impl RoleGrants {
             .iter()
             .map(|grant| grant.record_name_pattern.as_str())
             .filter(|pattern| {
-                actions.iter().all(|&action| {
-                    reaching.iter().any(|grant| {
-                        grant.actions.contains(action)
-                            && (grant.record_name_pattern == *pattern
-                                || grant.record_name_pattern == MATCH_ANY)
-                    })
-                })
+                // `None` is every type; each action's types narrow it.
+                let mut common: Option<BTreeSet<&str>> = None;
+                for &action in actions {
+                    let granting: Vec<&&RoleGrant> = reaching
+                        .iter()
+                        .filter(|grant| {
+                            grant.actions.contains(action)
+                                && (grant.record_name_pattern == *pattern
+                                    || grant.record_name_pattern == MATCH_ANY)
+                        })
+                        .collect();
+                    if granting.is_empty() {
+                        return false;
+                    }
+                    let types = if granting.iter().any(|grant| grant.record_types == MATCH_ANY) {
+                        None
+                    } else {
+                        Some(
+                            granting
+                                .iter()
+                                .flat_map(|grant| grant.record_types.split(','))
+                                .collect(),
+                        )
+                    };
+                    common = match (common, types) {
+                        (None, types) => types,
+                        (common, None) => common,
+                        (Some(common), Some(types)) => {
+                            Some(common.intersection(&types).copied().collect())
+                        }
+                    };
+                    if common.as_ref().is_some_and(BTreeSet::is_empty) {
+                        return false;
+                    }
+                }
+                true
             })
             .collect()
     }
