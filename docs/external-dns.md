@@ -26,8 +26,9 @@ external_dns_enabled = true
 
 ## 2. Create a role and a token
 
-Create the target zones first. Give the adapter one grant containing all
-three required actions: `record:read`, `record:create`, and `record:delete`.
+Create the target zones first. Grant the adapter's role the three actions
+ExternalDNS needs, `record:read`, `record:create`, and `record:delete`, in one
+grant or several.
 ExternalDNS manages records in existing zones; it does not create zones.
 
 ```bash
