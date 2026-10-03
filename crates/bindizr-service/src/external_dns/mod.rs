@@ -10,7 +10,13 @@ mod tests;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use apply::apply_changes;
-use bindizr_core::{dns::Ttl, model::role_grant::Action};
+use bindizr_core::{
+    dns::Ttl,
+    model::{
+        grant_pattern::MATCH_ANY,
+        role_grant::{Action, RoleGrant},
+    },
+};
 use bindizr_db::{record::RecordFilter, zone::ZoneFilter};
 
 use crate::{
@@ -69,20 +75,30 @@ pub async fn list_managed_domains(
             .collect());
     };
 
-    // Deduplicated and ordered: two grants can name one domain. A grant
-    // missing a sync action would only fail every sync it reaches.
+    // Deduplicated and ordered: two grants can name one domain. Rights are
+    // the union of grants, so a pattern qualifies when the grants naming it
+    // or any name hold every sync action between them; one lacking any would
+    // only fail every sync it reaches.
     let mut domains = BTreeSet::new();
     for zone in &zones {
-        for grant in grants.iter().filter(|grant| {
-            grant.zone_scope.covers(zone.id)
-                && SYNC_ACTIONS
-                    .iter()
-                    .all(|action| grant.actions.contains(*action))
-        }) {
-            domains.insert(policy::normalize_lookup_name(&pattern_domain(
-                &grant.record_name_pattern,
-                &zone.name,
-            ))?);
+        let covering: Vec<&RoleGrant> = grants
+            .iter()
+            .filter(|grant| grant.zone_scope.covers(zone.id))
+            .collect();
+        for grant in &covering {
+            let pattern = &grant.record_name_pattern;
+            let held = |action: Action| {
+                covering.iter().any(|other| {
+                    other.actions.contains(action)
+                        && (other.record_name_pattern == *pattern
+                            || other.record_name_pattern == MATCH_ANY)
+                })
+            };
+            if SYNC_ACTIONS.into_iter().all(held) {
+                domains.insert(policy::normalize_lookup_name(&pattern_domain(
+                    pattern, &zone.name,
+                ))?);
+            }
         }
     }
     Ok(domains.into_iter().collect())
