@@ -7,7 +7,7 @@ use bindizr_core::{
     dns::name::parse_lookup_name,
     model::{
         role::RoleId,
-        role_grant::{Action, RoleZoneScope},
+        role_grant::{Action, RoleGrants},
         tsig_key::TsigKeyId,
     },
 };
@@ -256,17 +256,13 @@ pub(crate) async fn authorize_transfer_tx(
         LockLevel::Shared,
     )
     .await?;
-    Ok(grants
-        .iter()
-        .any(|grant| grant.permits(Action::ZoneTransfer, zone.id)))
+    Ok(RoleGrants::from(grants).permits(Action::ZoneTransfer, zone.id))
 }
 
 /// Whether `key` may transfer the catalog zone, which needs an all-zones `zone:transfer`.
 pub async fn authorize_catalog_transfer(cx: &Context, key: &TsigKey) -> Result<bool, ServiceError> {
     let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), key.role_id).await?;
-    Ok(grants.iter().any(|grant| {
-        grant.zone_scope == RoleZoneScope::All && grant.actions.contains(Action::ZoneTransfer)
-    }))
+    Ok(RoleGrants::from(grants).permits_everywhere(Action::ZoneTransfer))
 }
 
 #[cfg(test)]

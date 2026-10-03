@@ -6,7 +6,7 @@ use bindizr_core::{
     model::{
         api_token::{ApiToken, TokenId},
         role::RoleId,
-        role_grant::{Action, RoleGrant, RoleGrantId, RoleZoneScope},
+        role_grant::{Action, RoleGrant, RoleGrantId, RoleGrants, RoleZoneScope},
         zone::ZoneId,
     },
 };
@@ -62,7 +62,7 @@ fn all_zones(actions: &[Action]) -> RoleGrant {
 
 /// Check fixture record writes against the supplied grants.
 fn authorize(grants: &[RoleGrant], writes: &[RecordWrite<'_>]) -> Result<(), ServiceError> {
-    authorize_with_grants(grants, &test_zone(), writes)
+    authorize_with_grants(&RoleGrants::from(grants.to_vec()), &test_zone(), writes)
 }
 
 /// Build a record-create authorization target for the test.

@@ -134,7 +134,8 @@ daemon host.
 
 Over HTTP, a token with `access:manage` can manage roles and tokens.
 Any token can inspect itself with `GET /tokens/self` and its grants with
-`GET /tokens/self/grants`. See the
+`GET /tokens/self/grants`; `GET /permissions` answers what those grants come
+to, per zone, as a client deciding what to offer needs. See the
 [API Reference](https://kweonminsung.github.io/bindizr/api/) for the endpoints.
 
 ## TSIG keys

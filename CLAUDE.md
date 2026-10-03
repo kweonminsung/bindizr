@@ -325,7 +325,8 @@ each rule says which spelling is this project's.
   exact relative name; `*` or comma-separated types) constrain `record:*`
   actions only. A role's rights are the union of its grants: an operation is
   allowed when one grant covers its action, zone, name and type. There are no
-  deny rules.
+  deny rules. `RoleGrants` answers every such question; the listing SQL
+  repeats its name and type match for paging and is held to it by test.
 - **Objects no zone owns need an `All` grant**: `zone:create`, `secondary:*`,
   DNSSEC policies under `dnssec:manage`, and `access:manage`, which
   administers tokens, TSIG keys and roles — and so is equivalent to admin,

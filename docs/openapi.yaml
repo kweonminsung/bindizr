@@ -497,6 +497,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /permissions:
+    get:
+      tags:
+      - Role
+      summary: Get the caller's permissions
+      description: 'What the calling token''s role permits, computed from its grants: the actions held in every zone, including zones created later, and per zone where a zone-scoped grant adds to them. `whole_zone` lists the record actions held with no name or type limit, as export, versions, diffs, import and rollback need. With authentication disabled every action is permitted everywhere.'
+      operationId: get_permissions
+      responses:
+        '200':
+          description: The caller's permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /records:
     get:
       tags:
@@ -5715,6 +5741,39 @@ components:
           format: int64
           example: 125
           minimum: 0
+    PermissionsResponse:
+      type: object
+      description: What the caller may do across every zone, and where zone grants add to it.
+      required:
+      - all_zones
+      - zones
+      properties:
+        all_zones:
+          $ref: '#/components/schemas/PermittedActionsResponse'
+          description: Applies to any zone not listed in `zones`, and to what no zone owns.
+        zones:
+          type: array
+          items:
+            $ref: '#/components/schemas/ZonePermissionsResponse'
+    PermittedActionsResponse:
+      type: object
+      description: Actions held, and those held with no record name or type limit.
+      required:
+      - actions
+      - whole_zone
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+          description: The actions permitted.
+        whole_zone:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+          description: |-
+            Record actions with no name or type limit, as export, versions, diffs,
+            import, and rollback need.
     RecordChange:
       type: string
       description: Which way the records of one name and type differ between two serials.
@@ -6525,6 +6584,25 @@ components:
           $ref: '#/components/schemas/RecordType'
         value:
           $ref: '#/components/schemas/RecordValueRequest'
+    ZonePermissionsResponse:
+      type: object
+      description: The caller's actions in one zone that differ from its every-zone actions.
+      required:
+      - zone_name
+      - actions
+      - whole_zone
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+        whole_zone:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+        zone_name:
+          type: string
+          example: example.com
     ZoneResponse:
       type: object
       description: |-

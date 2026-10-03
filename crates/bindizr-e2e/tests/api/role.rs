@@ -1050,6 +1050,215 @@ async fn a_record_read_grant_reads_the_zone_but_cannot_change_it() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
+/// Verify that `/permissions` reports a role's every-zone actions and, per
+/// zone, what its zone-scoped grants add, with the whole-zone record actions.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn permissions_report_what_each_zone_allows() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
+
+    // The built-in role holds everything everywhere, so no zone is listed.
+    let (status, body) = app.send_request(Method::GET, "/permissions", None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["all_zones"]["actions"].as_array().unwrap().len(),
+        14,
+        "{body}"
+    );
+    assert_eq!(
+        body["all_zones"]["whole_zone"],
+        json!([
+            "record:read",
+            "record:create",
+            "record:update",
+            "record:delete"
+        ])
+    );
+    assert_eq!(body["zones"], json!([]));
+
+    let narrowed = app.zone_name("narrowed.com");
+    let whole = app.zone_name("whole.com");
+    let untouched = app.zone_name("untouched.com");
+    for zone in [&narrowed, &whole, &untouched] {
+        app.create_named_zone(zone).await;
+    }
+    let (role, scoped_token) = app.create_scoped_api_token().await;
+    for args in [
+        vec!["role", "grant", &role, "--actions", "zone:read"],
+        vec![
+            "role",
+            "grant",
+            &role,
+            "--zone",
+            &narrowed,
+            "--actions",
+            "record:read,record:create",
+            "--pattern",
+            "*.dyn",
+        ],
+        vec![
+            "role",
+            "grant",
+            &role,
+            "--zone",
+            &whole,
+            "--actions",
+            "record:read",
+        ],
+    ] {
+        app.run_cli_success(&args).await;
+    }
+    app.set_auth_token(scoped_token);
+
+    let (status, body) = app.send_request(Method::GET, "/permissions", None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["all_zones"],
+        json!({ "actions": ["zone:read"], "whole_zone": [] })
+    );
+    // Zones answering as `all_zones` are left out.
+    let mut zones = body["zones"].as_array().unwrap().clone();
+    zones.sort_by_key(|zone| zone["zone_name"].as_str().unwrap().to_string());
+    assert_eq!(
+        zones,
+        vec![
+            json!({
+                "zone_name": narrowed,
+                "actions": ["zone:read", "record:read", "record:create"],
+                "whole_zone": [],
+            }),
+            json!({
+                "zone_name": whole,
+                "actions": ["zone:read", "record:read"],
+                "whole_zone": ["record:read"],
+            }),
+        ],
+        "{body}"
+    );
+}
+
+/// Verify that the listing SQL and the per-record check agree on what each
+/// grant reaches, on whichever backend the suite runs against.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn listings_and_lookups_agree_on_what_each_grant_reaches() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token.clone());
+
+    let zone_name = app.zone_name("example.com");
+    app.create_named_zone(&zone_name).await;
+    // `evil\.sub` is one label holding a dot, not a name under `sub`
+    // (RFC 1035, Section 5.1).
+    for (name, record_type, value) in [
+        ("@", "TXT", "apex"),
+        ("www", "A", "192.0.2.1"),
+        ("sub", "A", "192.0.2.2"),
+        ("a.sub", "A", "192.0.2.3"),
+        ("a.sub", "TXT", "a"),
+        ("b.a.sub", "AAAA", "2001:db8::1"),
+        ("xsub", "A", "192.0.2.4"),
+        ("evil\\.sub", "A", "192.0.2.5"),
+        ("*.wild", "A", "192.0.2.6"),
+    ] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(record_body(&zone_name, name, record_type, value)),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{name} {record_type}: {body}");
+    }
+    let ids = |body: &serde_json::Value| -> Vec<i64> {
+        let mut ids: Vec<i64> = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|record| record["id"].as_i64())
+            .collect();
+        ids.sort_unstable();
+        ids
+    };
+    let listing = format!("/records?zone_name={zone_name}&limit=1000");
+    let (_, body) = app.send_request(Method::GET, &listing, None).await;
+    let every_id = ids(&body);
+
+    for (index, (pattern, types)) in [
+        ("*", "*"),
+        ("@", "*"),
+        ("sub", "*"),
+        ("*.sub", "*"),
+        ("*.sub", "A,AAAA"),
+        ("a.sub", "TXT"),
+        ("*.wild", "*"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let role = app.zone_name(&format!("parity{index}"));
+        app.set_auth_token(admin_token.clone());
+        app.run_cli_success(&["role", "create", &role]).await;
+        app.run_cli_success(&[
+            "role",
+            "grant",
+            &role,
+            "--zone",
+            &zone_name,
+            "--actions",
+            "record:read",
+            "--pattern",
+            pattern,
+            "--types",
+            types,
+        ])
+        .await;
+        let created = app
+            .run_cli_success(&[
+                "token", "create", &role, "--role", &role, "--output", "json",
+            ])
+            .await;
+        let created: serde_json::Value = serde_json::from_str(&created).unwrap();
+        app.set_auth_token(created["secret"].as_str().unwrap().to_string());
+
+        let (status, body) = app.send_request(Method::GET, &listing, None).await;
+        assert_eq!(status, StatusCode::OK, "{pattern} {types}: {body}");
+        let listed = ids(&body);
+        assert_eq!(
+            body["pagination"]["total"],
+            listed.len(),
+            "{pattern} {types}: the count drifts from the page"
+        );
+        let mut looked_up = Vec::new();
+        for id in &every_id {
+            let (status, _) = app
+                .send_request(Method::GET, &format!("/records/{id}"), None)
+                .await;
+            if status == StatusCode::OK {
+                looked_up.push(*id);
+            }
+        }
+        assert_eq!(
+            listed, looked_up,
+            "{pattern} {types}: listing and lookup disagree"
+        );
+        assert!(
+            pattern == "@" || !listed.is_empty(),
+            "{pattern} {types}: the fixture reaches nothing"
+        );
+    }
+}
+
 /// Verify that a grant without `record:read` still finds, by id, the records
 /// its write actions cover, and nothing else.
 #[tokio::test]

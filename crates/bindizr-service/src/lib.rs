@@ -12,6 +12,7 @@ pub mod external_dns;
 pub(crate) mod grant_pattern;
 pub mod notify;
 mod pagination;
+pub mod permission;
 pub mod record;
 pub mod role;
 pub mod secondary;
