@@ -153,4 +153,27 @@ fn patterns_holding_unions_grants_per_pattern() {
             .collect::<Vec<_>>(),
         vec!["*.b"]
     );
+
+    // An enclosing subtree lends its actions to the narrower pattern inside it.
+    let nested = RoleGrants::from(vec![
+        grant(
+            RoleZoneScope::Zone(zone),
+            &[Action::RecordRead],
+            "*.apps",
+            "*",
+        ),
+        grant(
+            RoleZoneScope::Zone(zone),
+            &[Action::RecordCreate, Action::RecordDelete],
+            "api.apps",
+            "*",
+        ),
+    ]);
+    assert_eq!(
+        nested
+            .patterns_holding(zone, &sync)
+            .into_iter()
+            .collect::<Vec<_>>(),
+        vec!["api.apps"]
+    );
 }

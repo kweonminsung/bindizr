@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::{
     dns::name::OwnerName,
     model::{
-        grant_pattern::{MATCH_ANY, matches_name, matches_types},
+        grant_pattern::{MATCH_ANY, matches_name, matches_types, pattern_covers},
         record::RecordType,
         role::RoleId,
         zone::ZoneId,
@@ -409,7 +409,7 @@ impl RoleGrants {
             .any(|grant| grant.permits(action, zone_id) && grant.is_unrestricted())
     }
 
-    /// The patterns in `zone_id` whose grants, with those of `*`, hold all
+    /// The grant patterns in `zone_id` where the grants covering them hold all
     /// `actions` for at least one record type in common.
     pub fn patterns_holding(&self, zone_id: ZoneId, actions: &[Action]) -> BTreeSet<&str> {
         let reaching: Vec<&RoleGrant> = self
@@ -428,8 +428,7 @@ impl RoleGrants {
                         .iter()
                         .filter(|grant| {
                             grant.actions.contains(action)
-                                && (grant.record_name_pattern == *pattern
-                                    || grant.record_name_pattern == MATCH_ANY)
+                                && pattern_covers(&grant.record_name_pattern, pattern)
                         })
                         .collect();
                     if granting.is_empty() {
