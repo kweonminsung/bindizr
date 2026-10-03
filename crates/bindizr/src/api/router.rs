@@ -13,8 +13,8 @@ use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 
 use super::{
-    dnssec, dnssec_policy, error::ApiError, external_dns, notify, openapi::ApiDoc, record, role,
-    secondary, token, tsig_key, zone,
+    dnssec, dnssec_policy, error::ApiError, external_dns, notify, openapi::ApiDoc, permission,
+    record, role, secondary, token, tsig_key, zone,
 };
 
 /// Build the full axum router with auth, CORS, and the optional route groups,
@@ -31,6 +31,7 @@ pub(crate) fn routes(cx: Arc<Context>) -> Router {
         .merge(tsig_key::routes())
         .merge(token::routes())
         .merge(role::routes())
+        .merge(permission::routes())
         .merge(dnssec::routes())
         .merge(dnssec_policy::routes())
         .route("/", routing::get(handle_home));
