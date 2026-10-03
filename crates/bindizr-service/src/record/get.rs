@@ -9,10 +9,7 @@ use crate::{
     Context,
     authorization::Caller,
     error::ServiceError,
-    model::{
-        dnssec_record::DnssecRecordType,
-        record::{RecordType, RecordWithZone},
-    },
+    model::{dnssec_record::DnssecRecordType, record::RecordType},
     pagination::{build_paginated_response, normalize_page_limit, parse_setting},
     types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse, ZoneView},
     zone::{self, validation::normalize_name},
@@ -173,7 +170,10 @@ pub async fn list_with_zone_by_filter(
         );
     }
 
-    let items = items.iter().map(GetRecordResponse::from).collect();
+    let items = items
+        .iter()
+        .map(|item| super::build_record_response(caller, item))
+        .collect();
     Ok(build_paginated_response(
         items,
         limit,
@@ -182,13 +182,13 @@ pub async fn list_with_zone_by_filter(
     ))
 }
 
-/// Fetch a record with its zone name by id. A record the caller's grants
-/// do not reach reads as `NotFound`, so ids cannot be probed.
-pub async fn get_with_zone(
+/// Fetch a record by id with the caller's actions on it. A record the
+/// caller cannot read reads as `NotFound`, so ids cannot be probed.
+pub async fn get(
     cx: &Context,
     caller: &Caller,
     record_id: RecordId,
-) -> Result<RecordWithZone, ServiceError> {
+) -> Result<GetRecordResponse, ServiceError> {
     let record = match bindizr_db::record::get_with_zone(cx.db(), record_id).await {
         Ok(Some(record)) => record,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
@@ -204,7 +204,10 @@ pub async fn get_with_zone(
     if !caller.sees_record(record.zone_id, &record.name, Some(&record.record_type)) {
         return Err(ServiceError::record_not_found(record_id));
     }
-    Ok(record)
+    Ok(super::build_record_response(
+        caller,
+        &ListedRecord::User(record),
+    ))
 }
 
 /// Normalize a name filter for stored-owner and FQDN comparisons.

@@ -331,14 +331,16 @@ async fn update_locked(
                 .await?,
             );
         }
-        let before: Vec<RecordData> = framed.iter().cloned().map(RecordData::from).collect();
-        let after: Vec<RecordData> = framed
-            .iter()
-            .filter(|record| record.id != existing_record.id)
-            .cloned()
-            .map(RecordData::from)
-            .chain(std::iter::once(RecordData::from(candidate.clone())))
-            .collect();
+        let before = caller.readable_records(zone.id, framed.iter().cloned().map(RecordData::from));
+        let mut after = caller.readable_records(
+            zone.id,
+            framed
+                .iter()
+                .filter(|record| record.id != existing_record.id)
+                .cloned()
+                .map(RecordData::from),
+        );
+        after.push_written(RecordData::from(candidate.clone()));
         let diff = build_record_diff(&zone, &before, &after);
 
         // The merge is resolved and validated, so a dry run stops here.
@@ -387,7 +389,15 @@ async fn update_locked(
     Ok(RecordWriteResponse {
         applied: !run.is_dry_run(),
         dry_run: run.is_dry_run(),
-        record: GetRecordResponse::from_record_and_zone_name(&updated_record, &zone_name),
+        record: GetRecordResponse::from_record(
+            &updated_record,
+            &zone_name,
+            caller.record_actions(
+                updated_record.zone_id,
+                &updated_record.name,
+                &updated_record.record_type,
+            ),
+        ),
         diff,
     })
 }

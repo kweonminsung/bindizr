@@ -157,7 +157,7 @@ fn authorize_import(caller: &Caller, mode: ImportMode, zone: &Zone) -> Result<()
         ImportMode::Upsert | ImportMode::Replace => &[Action::RecordCreate, Action::RecordDelete],
     };
     for action in actions {
-        caller.authorize_zone_unrestricted(*action, zone)?;
+        caller.authorize_whole_zone(*action, zone)?;
     }
     Ok(())
 }
@@ -413,7 +413,7 @@ async fn reconcile_zone_file(
         // Only a valid dry run needs a diff; failed validation must not preview
         // changes that cannot be applied.
         let diff = if run.is_dry_run() && errors.is_empty() {
-            plan.diff(&zone, &existing_records)
+            plan.diff(caller, &zone, &existing_records)
         } else {
             RecordDiff::default()
         };

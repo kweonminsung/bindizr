@@ -1283,6 +1283,23 @@ async fn a_write_only_grant_changes_the_records_it_covers() {
         .await;
     assert_eq!(status, StatusCode::CREATED);
     let outside_id = body["record"]["id"].as_i64().unwrap();
+    // Neighbours at the challenge name the grant cannot read: their values must
+    // stay out of every response the write-only role gets.
+    for (record_type, value) in [("TXT", "neighbour-secret"), ("A", "192.0.2.77")] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(record_body(
+                    &zone_name,
+                    "_acme-challenge",
+                    record_type,
+                    value,
+                )),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
 
     // An ACME-style client: it writes its challenge records and reads nothing.
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
@@ -1311,6 +1328,18 @@ async fn a_write_only_grant_changes_the_records_it_covers() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let record_id = body["record"]["id"].as_i64().unwrap();
+    let leaks = |body: &serde_json::Value| {
+        let text = body.to_string();
+        text.contains("neighbour-secret") || text.contains("192.0.2.77")
+    };
+    assert!(!leaks(&body), "create revealed a neighbour: {body}");
+    let mut dry_run = record_body(&zone_name, "_acme-challenge", "TXT", "probe");
+    dry_run["dry_run"] = json!(true);
+    let (status, body) = app
+        .send_request(Method::POST, "/records", Some(dry_run))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(!leaks(&body), "a dry run revealed a neighbour: {body}");
 
     // Reading stays refused; changing what the grant covers does not.
     let (status, _) = app
@@ -1325,14 +1354,222 @@ async fn a_write_only_grant_changes_the_records_it_covers() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(!leaks(&body), "update revealed a neighbour: {body}");
     let (status, body) = app
         .send_request(Method::DELETE, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(!leaks(&body), "delete revealed a neighbour: {body}");
 
     // A record outside the grant stays hidden, so its id cannot be probed.
     let (status, _) = app
         .send_request(Method::DELETE, &format!("/records/{outside_id}"), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Verify that no response a restricted role can get, from any record,
+/// zone, version, import or ExternalDNS route, carries a record it cannot
+/// read: the oracle for the whole class, not one response at a time.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn no_response_reveals_a_record_the_role_cannot_read() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
+
+    let zone_name = app.zone_name("example.com");
+    app.create_named_zone(&zone_name).await;
+    // Every unreadable record carries a marker in its name or value; the
+    // readable `www` proves the sweep reads something.
+    let mut secret_ids = Vec::new();
+    for (name, record_type, value) in [
+        ("_acme-challenge", "TXT", "leak-marker-challenge"),
+        ("_acme-challenge", "A", "192.0.2.201"),
+        ("leak-marker-vault", "TXT", "kept"),
+        ("www", "A", "192.0.2.10"),
+    ] {
+        let (status, body) = app
+            .send_request(
+                Method::POST,
+                "/records",
+                Some(record_body(&zone_name, name, record_type, value)),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        if name != "www" {
+            secret_ids.push(body["record"]["id"].as_i64().unwrap());
+        }
+    }
+    let serial = app.read_zone_serial(&zone_name).await;
+
+    // A challenge writer that reads only `www`, and a whole-zone creator
+    // that reads nothing: the two shapes a write outruns its read in.
+    let (challenge_role, challenge_token) = app.create_scoped_api_token().await;
+    for (actions, pattern, types) in [
+        (
+            "record:create,record:update,record:delete",
+            "_acme-challenge",
+            "TXT",
+        ),
+        ("record:read", "www", "A"),
+    ] {
+        app.run_cli_success(&[
+            "role",
+            "grant",
+            &challenge_role,
+            "--zone",
+            &zone_name,
+            "--actions",
+            actions,
+            "--pattern",
+            pattern,
+            "--types",
+            types,
+        ])
+        .await;
+    }
+    let creator_role = format!("{}-creator", app.namespace());
+    app.run_cli_success(&["role", "create", &creator_role])
+        .await;
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &creator_role,
+        "--zone",
+        &zone_name,
+        "--actions",
+        "zone:read,record:create",
+    ])
+    .await;
+    let created: serde_json::Value = serde_json::from_str(
+        &app.run_cli_success(&[
+            "token",
+            "create",
+            &creator_role,
+            "--role",
+            &creator_role,
+            "--output",
+            "json",
+        ])
+        .await,
+    )
+    .unwrap();
+    let creator_token = created["secret"].as_str().unwrap().to_string();
+
+    let zone = &zone_name;
+    let mut requests: Vec<(Method, String, Option<serde_json::Value>)> = vec![
+        (Method::GET, "/zones".into(), None),
+        (Method::GET, format!("/zones/{zone}"), None),
+        (Method::GET, format!("/zones/{zone}/export"), None),
+        (Method::GET, format!("/zones/{zone}/versions"), None),
+        (
+            Method::GET,
+            format!("/zones/{zone}/versions/{serial}"),
+            None,
+        ),
+        (
+            Method::GET,
+            format!("/zones/{zone}/versions/diff?from=1"),
+            None,
+        ),
+        (Method::GET, format!("/zones/{zone}/dnssec"), None),
+        (Method::GET, "/records".into(), None),
+        (Method::GET, format!("/records?zone_name={zone}"), None),
+        (Method::GET, "/records?search=leak".into(), None),
+        (
+            Method::GET,
+            format!("/records?zone_name={zone}&name=_acme-challenge"),
+            None,
+        ),
+        (Method::GET, "/permissions".into(), None),
+        (Method::GET, "/tokens/self/grants".into(), None),
+        (Method::GET, "/external-dns/domains".into(), None),
+        (Method::GET, "/external-dns/records".into(), None),
+        (
+            Method::POST,
+            "/records".into(),
+            Some(json!({
+                "zone_name": zone, "name": "_acme-challenge", "type": "TXT",
+                "value": "probe", "dry_run": true,
+            })),
+        ),
+        (
+            Method::POST,
+            "/records".into(),
+            Some(record_body(zone, "_acme-challenge", "TXT", "token-1")),
+        ),
+        (
+            Method::POST,
+            "/records/bulk".into(),
+            Some(json!({
+                "zone_name": zone,
+                "records": [{ "name": "_acme-challenge", "type": "TXT", "value": "token-2" }],
+                "dry_run": true,
+            })),
+        ),
+        (
+            Method::DELETE,
+            format!("/records?zone_name={zone}&name=_acme-challenge&type=TXT&dry_run=true"),
+            None,
+        ),
+        (
+            Method::POST,
+            format!("/zones/{zone}/import"),
+            Some(json!({
+                // Joining an existing set puts that set on both sides of the diff.
+                "content": format!(
+                    "$ORIGIN {zone}.\n$TTL 3600\n_acme-challenge IN TXT \"fresh\"\n"
+                ),
+                "mode": "append",
+                "dry_run": true,
+            })),
+        ),
+        (
+            Method::POST,
+            "/external-dns/changes".into(),
+            Some(json!({
+                "creates": [{
+                    "name": format!("_acme-challenge.{zone}"), "type": "TXT",
+                    "values": ["\"token-3\""],
+                }],
+            })),
+        ),
+    ];
+    for id in &secret_ids {
+        requests.push((Method::GET, format!("/records/{id}"), None));
+        requests.push((
+            Method::PUT,
+            format!("/records/{id}"),
+            Some(json!({ "value": "overwrite" })),
+        ));
+        requests.push((Method::DELETE, format!("/records/{id}"), None));
+    }
+
+    for (role, token) in [
+        (&challenge_role, challenge_token),
+        (&creator_role, creator_token),
+    ] {
+        app.set_auth_token(token);
+        let mut succeeded = 0;
+        for (method, path, body) in &requests {
+            let (status, response) = app.send_request(method.clone(), path, body.clone()).await;
+            let text = response.to_string();
+            assert!(
+                !text.contains("leak-marker") && !text.contains("192.0.2.201"),
+                "{role}: {method} {path} answered {status} with an unreadable record: {text}"
+            );
+            succeeded += usize::from(status.is_success());
+        }
+        // Equal silence from refusals would prove nothing.
+        assert!(
+            succeeded >= 8,
+            "{role}: only {succeeded} requests succeeded"
+        );
+    }
 }

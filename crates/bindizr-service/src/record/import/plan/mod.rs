@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use bindizr_core::{dns::name::OwnerName, model::record::RecordId};
 
 use crate::{
+    authorization::Caller,
     model::{
         record::{Record, RecordData},
         zone::Zone,
@@ -139,8 +140,9 @@ impl<'a> ImportPlan<'a> {
 }
 
 impl ImportPlan<'_> {
-    /// Preview against the same zone and record snapshot used to compute this plan.
-    pub(crate) fn diff(&self, zone: &Zone, existing: &[Record]) -> RecordDiff {
+    /// Preview against the same zone and record snapshot used to compute
+    /// this plan, showing the existing rows `caller` may read.
+    pub(crate) fn diff(&self, caller: &Caller, zone: &Zone, existing: &[Record]) -> RecordDiff {
         let deleted_ids: HashSet<RecordId> = self
             .dels
             .iter()
@@ -148,20 +150,25 @@ impl ImportPlan<'_> {
             .map(|r| r.id)
             .collect();
 
-        let before: Vec<RecordData> = existing.iter().cloned().map(RecordData::from).collect();
-        let mut after: Vec<RecordData> = existing
-            .iter()
-            .filter(|record| !deleted_ids.contains(&record.id))
-            .cloned()
-            .map(RecordData::from)
-            .collect();
-        after.extend(self.adds.iter().map(|add| RecordData {
-            name: add.stored_name.clone(),
-            record_type: add.prepared.record_type,
-            value: add.prepared.value.clone(),
-            ttl: add.prepared.ttl.unwrap_or(zone.default_ttl),
-            priority: add.prepared.priority,
-        }));
+        let before =
+            caller.readable_records(zone.id, existing.iter().cloned().map(RecordData::from));
+        let mut after = caller.readable_records(
+            zone.id,
+            existing
+                .iter()
+                .filter(|record| !deleted_ids.contains(&record.id))
+                .cloned()
+                .map(RecordData::from),
+        );
+        for add in &self.adds {
+            after.push_written(RecordData {
+                name: add.stored_name.clone(),
+                record_type: add.prepared.record_type,
+                value: add.prepared.value.clone(),
+                ttl: add.prepared.ttl.unwrap_or(zone.default_ttl),
+                priority: add.prepared.priority,
+            });
+        }
 
         build_record_diff(zone, &before, &after)
     }
