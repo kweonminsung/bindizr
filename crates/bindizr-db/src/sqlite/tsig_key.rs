@@ -1,4 +1,4 @@
-use bindizr_core::model::tsig_key::TsigKeyId;
+use bindizr_core::model::{role::RoleId, tsig_key::TsigKeyId};
 use chrono::Utc;
 use sqlx::{Pool, Sqlite};
 
@@ -14,14 +14,14 @@ pub(crate) async fn create(
     let now = Utc::now();
     let result = sqlx::query(
         r#"
-        INSERT INTO tsig_keys (name, algorithm, secret, is_global, created_at)
+        INSERT INTO tsig_keys (name, algorithm, secret, role_id, created_at)
         VALUES (?, ?, ?, ?, ?)
         "#,
     )
     .bind(&key.name)
     .bind(key.algorithm.as_str())
     .bind(&key.secret)
-    .bind(key.is_global)
+    .bind(key.role_id)
     .bind(now)
     .execute(&mut *conn)
     .await?;
@@ -39,7 +39,7 @@ pub(crate) async fn get(
     let mut conn = pool.acquire().await?;
 
     let key = sqlx::query_as::<_, TsigKey>(
-        "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE id = ?",
+        "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&mut *conn)
@@ -56,7 +56,7 @@ pub(crate) async fn get_by_name(
     let mut conn = pool.acquire().await?;
 
     let key = sqlx::query_as::<_, TsigKey>(
-        "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys WHERE name = ?",
+        "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE name = ?",
     )
     .bind(name)
     .fetch_optional(&mut *conn)
@@ -70,7 +70,7 @@ pub(crate) async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<TsigKey>, Databa
     let mut conn = pool.acquire().await?;
 
     let keys = sqlx::query_as::<_, TsigKey>(
-        "SELECT id, name, algorithm, secret, is_global, created_at FROM tsig_keys ORDER BY name",
+        "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys ORDER BY name",
     )
     .fetch_all(&mut *conn)
     .await?;
@@ -88,4 +88,21 @@ pub(crate) async fn delete(pool: &Pool<Sqlite>, id: TsigKeyId) -> Result<(), Dat
         .await?;
 
     Ok(())
+}
+
+/// List the TSIG keys authenticating into a role.
+pub(crate) async fn list_by_role_id(
+    pool: &Pool<Sqlite>,
+    role_id: RoleId,
+) -> Result<Vec<TsigKey>, DatabaseError> {
+    let mut conn = pool.acquire().await?;
+
+    let rows = sqlx::query_as::<_, TsigKey>(
+        "SELECT id, name, algorithm, secret, role_id, created_at FROM tsig_keys WHERE role_id = ? ORDER BY name",
+    )
+    .bind(role_id)
+    .fetch_all(&mut *conn)
+    .await?;
+
+    Ok(rows)
 }

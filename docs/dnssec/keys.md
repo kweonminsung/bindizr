@@ -24,6 +24,13 @@ zone changes keys through
 [rollover](rollover.md) instead. Both commands exist only in the CLI —
 private keys never transit the HTTP API.
 
+Set the parent name servers after import so DS checks and rollovers can run:
+
+```sh
+bindizr dnssec set example.com --parent-ns-addrs <parent-servers>
+bindizr dnssec status example.com
+```
+
 ## Handing over a zone mid-rollover
 
 A private key file carries the schedule `dnssec-keygen` and `dnssec-settime`

@@ -58,7 +58,7 @@ pub async fn list_with_zone_by_filter(
     caller: &Caller,
     filter: GetRecordsFilter,
 ) -> Result<PaginatedResponse<GetRecordResponse>, ServiceError> {
-    let scope_token_id = caller.scope_token_id();
+    let scope_role_id = caller.scope_role_id();
     let zone_name = filter
         .zone_name
         .as_deref()
@@ -71,7 +71,7 @@ pub async fn list_with_zone_by_filter(
     // Scoped callers read unknown and invisible zones alike as empty
     // pages, so skip the 404 probe.
     if let Some(name) = zone_name.as_ref()
-        && scope_token_id.is_none()
+        && scope_role_id.is_none()
     {
         zone::lookup_by_name(cx, name).await?;
     }
@@ -111,7 +111,7 @@ pub async fn list_with_zone_by_filter(
         min_priority: filter.min_priority,
         max_priority: filter.max_priority,
         search: filter.search.clone(),
-        scope_token_id,
+        scope_role_id,
         sort: parse_setting(filter.sort.as_deref())?,
         order: parse_setting(filter.order.as_deref())?,
         limit,
@@ -128,7 +128,7 @@ pub async fn list_with_zone_by_filter(
         min_ttl: filter.min_ttl,
         max_ttl: filter.max_ttl,
         search: filter.search.clone(),
-        scope_token_id,
+        scope_role_id,
         limit: None,
         offset: None,
     };

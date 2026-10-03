@@ -15,8 +15,8 @@ there.
 - **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
-- **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone grants.
-- **Scoped API Tokens** — tokens granted per zone, optionally narrowed to a record-name pattern and record types, or read-only.
+- **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests and managed keys.
+- **Role-Based Access Control** — API tokens and TSIG keys authenticate into roles whose grants set the zones, actions, record names, and record types each may touch.
 - **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
@@ -94,7 +94,7 @@ Use the CLI to inspect and manage resources:
 
 ```bash
 bindizr status
-bindizr token create admin --global
+bindizr token create admin --role admin
 bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --default-ttl 3600
 bindizr zone list
 bindizr zone import example.com db.example.com --mode upsert
@@ -102,7 +102,9 @@ bindizr zone version list example.com
 bindizr zone version diff example.com 7
 bindizr zone version rollback example.com 7 --dry-run
 bindizr dnssec enable example.com --parent-ns-addrs a.gtld-servers.net
-bindizr token grant ci example.com --types A,AAAA
+bindizr role create ci
+bindizr role grant ci --zone example.com --actions record:read,record:create,record:delete --types A,AAAA
+bindizr token create ci --role ci
 bindizr zone status example.com
 bindizr record list example.com
 bindizr record bulk-create example.com records.json

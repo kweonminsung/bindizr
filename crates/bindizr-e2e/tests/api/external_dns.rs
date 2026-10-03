@@ -6,7 +6,7 @@ use std::{
 use reqwest::{Client, Method, StatusCode, header};
 use serde_json::{Value, json};
 
-use crate::common::{TestApp, TestAppOptions, reserve_tcp_port};
+use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions, reserve_tcp_port};
 
 /// A spawned bindizr-external-dns adapter process, killed on drop.
 #[derive(Debug)]
@@ -78,8 +78,16 @@ const MEDIA_TYPE: &str = "application/external.dns.webhook+json;version=1";
 
 /// Grant the test token access to a zone.
 async fn grant_zone(app: &TestApp, zone_name: &str, token_name: &str) {
-    app.run_cli_success(&["token", "grant", token_name, zone_name])
-        .await;
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        token_name,
+        "--zone",
+        zone_name,
+        "--actions",
+        RECORD_ACTIONS,
+    ])
+    .await;
 }
 
 /// Collect values matching an owner and type from an API response.
@@ -111,18 +119,18 @@ async fn external_dns_routes_are_not_registered_when_disabled() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// Verify that external DNS domain listing reflects token grants.
+/// Verify that external DNS domain listing reflects role grants.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn external_dns_domain_listing_reflects_token_grants() {
+async fn external_dns_domain_listing_reflects_role_grants() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         external_dns_enabled: true,
         ..Default::default()
     })
     .await;
-    let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token);
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
 
     let granted_zone = app.zone_name("granted.com");
     let other_zone = app.zone_name("other.com");
@@ -132,7 +140,7 @@ async fn external_dns_domain_listing_reflects_token_grants() {
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     grant_zone(&app, &granted_zone, &scoped_name).await;
 
-    // A global token sees every zone.
+    // The built-in role sees every zone.
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
@@ -150,6 +158,63 @@ async fn external_dns_domain_listing_reflects_token_grants() {
     assert_eq!(body["domains"], json!([granted_zone]));
 }
 
+/// Verify that the domain filter unions a role's grants, so sync actions split
+/// across grants still qualify a name while a missing one keeps it out.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn external_dns_domain_listing_unions_split_grants() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        external_dns_enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
+
+    let split_zone = app.zone_name("split.com");
+    let partial_zone = app.zone_name("partial.com");
+    app.create_named_zone(&split_zone).await;
+    app.create_named_zone(&partial_zone).await;
+
+    let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
+    let grant = |zone: String, actions: &'static str, pattern: &'static str| {
+        let role = scoped_name.clone();
+        let app = &app;
+        async move {
+            app.run_cli_success(&[
+                "role",
+                "grant",
+                &role,
+                "--zone",
+                &zone,
+                "--actions",
+                actions,
+                "--pattern",
+                pattern,
+            ])
+            .await;
+        }
+    };
+    // Reading everywhere and writing in a subtree syncs that subtree.
+    grant(split_zone.clone(), "record:read", "*").await;
+    grant(split_zone.clone(), "record:create,record:delete", "*.k8s").await;
+    // Without record:delete no sync can finish, so the zone stays out.
+    grant(partial_zone.clone(), "record:read", "*").await;
+    grant(partial_zone.clone(), "record:create", "*").await;
+
+    app.set_auth_token(scoped_token);
+    let (status, body) = app
+        .send_request(Method::GET, "/external-dns/domains", None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["domains"],
+        json!([format!("k8s.{split_zone}")]),
+        "{body}"
+    );
+}
+
 /// Verify that a grant narrowed to a subtree narrows the domain filter.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -160,17 +225,20 @@ async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
         ..Default::default()
     })
     .await;
-    let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token);
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
 
     let zone_name = app.zone_name("narrowed.com");
     app.create_named_zone(&zone_name).await;
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     app.run_cli_success(&[
-        "token",
+        "role",
         "grant",
         &scoped_name,
+        "--zone",
         &zone_name,
+        "--actions",
+        RECORD_ACTIONS,
         "--pattern",
         "*.k8s",
     ])
@@ -190,17 +258,25 @@ async fn a_grant_narrowed_to_a_subtree_narrows_the_domain_filter() {
         "{body}"
     );
 
-    // A read-only grant leaves ExternalDNS nothing to write, so it stays out.
-    app.run_cli_success(&[
-        "token",
-        "grant",
-        &scoped_name,
-        &zone_name,
-        "--pattern",
-        "*.readonly",
-        "--read-only",
-    ])
-    .await;
+    // A grant missing any sync action stays out of the filter.
+    for (actions, pattern) in [
+        ("record:read", "*.readonly"),
+        ("record:create,record:delete", "*.blind"),
+        ("record:read,record:create", "*.append"),
+    ] {
+        app.run_cli_success(&[
+            "role",
+            "grant",
+            &scoped_name,
+            "--zone",
+            &zone_name,
+            "--actions",
+            actions,
+            "--pattern",
+            pattern,
+        ])
+        .await;
+    }
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
@@ -315,8 +391,8 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
         ..Default::default()
     })
     .await;
-    let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token.clone());
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token.clone());
 
     let granted_zone = app.zone_name("granted.com");
     let ungranted_zone = app.zone_name("blocked.com");
@@ -349,7 +425,7 @@ async fn external_dns_changes_reject_ungranted_zones_atomically() {
     );
 
     // Nothing was applied for the granted zone either.
-    app.set_auth_token(global_token);
+    app.set_auth_token(admin_token);
     assert_eq!(app.read_zone_serial(&granted_zone).await, base_serial);
     let (_, body) = app
         .send_request(Method::GET, "/external-dns/records", None)
@@ -367,8 +443,8 @@ async fn external_dns_never_falls_back_from_ungranted_subzone_to_granted_parent(
         ..Default::default()
     })
     .await;
-    let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token);
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
 
     let parent_zone = app.zone_name("example.com");
     let child_zone = format!("internal.{parent_zone}");
@@ -475,8 +551,8 @@ async fn adapter_serves_webhook_protocol_with_scoped_token() {
         ..Default::default()
     })
     .await;
-    let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token);
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
 
     let zone_name = app.zone_name("example.com");
     app.create_named_zone(&zone_name).await;

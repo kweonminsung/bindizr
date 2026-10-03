@@ -11,7 +11,10 @@ use bindizr_core::{
         Serial, Ttl,
         name::{OwnerName, ParseNameError, ZoneName, to_fqdn},
     },
-    model::record::RecordId,
+    model::{
+        record::RecordId,
+        role_grant::{Action, RoleGrants},
+    },
 };
 use chrono::Utc;
 use prerequisite::evaluate_prerequisites_tx;
@@ -28,7 +31,6 @@ use crate::{
     record::{self, AddResult},
     serial::generate_serial,
     transaction,
-    tsig_key::grant::{authorize_prerequisite, authorize_update},
     zone::{self, version::ChangeAttribution},
 };
 
@@ -130,6 +132,16 @@ pub enum UpdateOperation {
 }
 
 impl UpdateOperation {
+    /// The grant action this operation needs: an add creates, both deletes delete.
+    fn action(&self) -> Action {
+        match self {
+            UpdateOperation::AddRecord { .. } => Action::RecordCreate,
+            UpdateOperation::DeleteRecordSet { .. } | UpdateOperation::DeleteRecord { .. } => {
+                Action::RecordDelete
+            }
+        }
+    }
+
     /// Return the owner name targeted by this update operation.
     fn name(&self) -> &str {
         match self {
@@ -228,8 +240,8 @@ pub async fn apply(cx: &Context, update: DynamicUpdate) -> Result<bool, DynamicU
     Ok(changed)
 }
 
-/// Authorize every prerequisite and update against the TSIG key's grants;
-/// global keys and accepted unsigned requests need none.
+/// Authorize every prerequisite and update against the grants of the TSIG
+/// key's role; accepted unsigned requests need none.
 async fn authorize_key_tx(
     tx: &mut Transaction<'_>,
     zone: &Zone,
@@ -237,21 +249,24 @@ async fn authorize_key_tx(
     prerequisites: &[Prerequisite],
     updates: &[UpdateOperation],
 ) -> Result<(), DynamicUpdateError> {
-    let key = match key {
-        None => return Ok(()),
-        Some(key) if key.is_global => return Ok(()),
-        Some(key) => key,
+    let Some(key) = key else {
+        return Ok(());
     };
 
     // Share-lock the grants so a concurrent revocation waits for this
     // transaction instead of racing it.
-    let grants = bindizr_db::tsig_grant::list_by_zone_id_and_key_id_tx(
-        tx,
-        zone.id,
-        key.id,
-        LockLevel::Shared,
-    )
-    .await?;
+    let grants = RoleGrants::from(
+        bindizr_db::role_grant::list_by_role_id_covering_zone_tx(
+            tx,
+            key.role_id,
+            zone.id,
+            LockLevel::Shared,
+        )
+        .await?,
+    );
+    let permits = |action: Action, owner: &OwnerName, record_type: Option<&RecordType>| {
+        grants.covers_record(action, zone.id, owner, record_type)
+    };
 
     if grants.is_empty() {
         return Err(DynamicUpdateError::Refused(format!(
@@ -272,7 +287,7 @@ async fn authorize_key_tx(
             } => (name, Some(record_type)),
         };
         let owner = parse_update_owner(name, &zone.name)?;
-        if !authorize_prerequisite(&grants, &owner, record_type) {
+        if !permits(Action::RecordRead, &owner, record_type) {
             return Err(DynamicUpdateError::Refused(format!(
                 "TSIG key '{}' is not authorized to read '{}' ({}) in zone '{}'",
                 key.name,
@@ -285,7 +300,7 @@ async fn authorize_key_tx(
 
     for op in updates {
         let owner = parse_update_owner(op.name(), &zone.name)?;
-        if !authorize_update(&grants, &owner, op.record_type()) {
+        if !permits(op.action(), &owner, op.record_type()) {
             return Err(DynamicUpdateError::Refused(format!(
                 "TSIG key '{}' is not authorized to update '{}' ({}) in zone '{}'",
                 key.name,

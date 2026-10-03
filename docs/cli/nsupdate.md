@@ -1,56 +1,44 @@
 # Dynamic Updates (nsupdate)
 
 Bindizr supports RFC 2136-style dynamic updates through the DNS listener,
-authenticated with TSIG. Authorization is built from two pieces:
+authenticated with TSIG. The key named in the request's TSIG record says who
+is calling; the key's [role](access-control.md) says what it may change.
 
-**Keys**
-:   Standalone, reusable resources (name, HMAC algorithm, base64 secret). The
-    key name is what appears on the wire in a signed request. A key created with
-    `--global` may update every zone — including zones created later — without
-    any grant; this is fixed at creation.
-
-**Grants**
-:   Give a non-global key update rights in one zone, optionally restricted to a
-    record name pattern and record types.
-
-For each incoming update, Bindizr resolves the key named in the TSIG record and
-verifies the signature and signing time. A global key is then authorized for
-everything; for any other key, Bindizr loads its grants for the target zone
-and every record in the update must match at least one of them (name pattern and
-type). Otherwise the whole update is refused and nothing is partially applied.
+The role needs `record:read` for prerequisites, `record:create` for additions,
+and `record:delete` for deletions. If any record falls outside its grants,
+the entire update is refused.
 
 ## Example
 
+Create `example.com` first. Send updates to Bindizr's DNS listener, which uses
+port 5300 in the packaged configuration; the secondary on port 53 answers
+ordinary queries.
+
 ```bash
-# Create a key (the secret is generated and printed once; use `get` to re-read it)
-$ bindizr tsig-key create update-key
+# A role that may manage A and TXT records under dyn.example.com
+bindizr role create dyn-updates
+bindizr role grant dyn-updates --zone example.com \
+    --actions record:read,record:create,record:delete \
+    --pattern '*.dyn' --types A,TXT
 
-# Or import an existing base64 secret / pick another HMAC algorithm
-$ bindizr tsig-key create legacy-key --algorithm hmac-sha512 --secret "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU="
-
-# Or create a global key that may update every zone, including future ones,
-# without any grant. This is write access to all DNS data — use sparingly.
-$ bindizr tsig-key create admin-key --global
-
-# Grant a (non-global) key update rights in a zone (pattern/types default to '*')
-$ bindizr tsig-key grant update-key example.com
-$ bindizr tsig-key grant acme-key example.com --pattern "*" --types "TXT"
+# Create a key in that role; `tsig-key get` can retrieve its secret later
+bindizr tsig-key create update-key --role dyn-updates
 
 # Send a signed update (hmac-sha256 by default)
-$ nsupdate -y "hmac-sha256:update-key:<BASE64_SECRET>" <<EOF
-server 127.0.0.1 53
+nsupdate -y "hmac-sha256:update-key:<BASE64_SECRET>" <<EOF
+server 127.0.0.1 5300
 zone example.com
-update add sub.example.com. 300 A 1.2.3.4
+update add host.dyn.example.com. 300 A 192.0.2.1
 send
 EOF
 ```
 
 ## Unsigned requests
 
-A zone no key has been granted refuses nsupdate, except from global keys,
-which may update any zone.
+With `dns.nsupdate_tsig_required = true`, the default, an unsigned update is
+refused for every zone.
 
-!!! warning "Turning off `tsig_required` covers testing only"
+!!! warning "Unsigned updates are for testing only"
 
     `dns.nsupdate_tsig_required = false` accepts unsigned requests for every
     zone from any client that reaches the DNS listener, as
@@ -59,18 +47,19 @@ which may update any zone.
 
 ## The first key
 
-A TSIG key needs no bootstrapping of its own: with a global API token, a key
-is created over the HTTP API from anywhere.
+A TSIG key needs no bootstrapping of its own: with an API token whose role has
+`access:manage`, a key is created over the HTTP API from anywhere.
 
 ```bash
-$ curl -X POST https://bindizr:3000/tsig-keys \
+curl -X POST https://bindizr:3000/tsig-keys \
   -H "Authorization: Bearer $BINDIZR_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"name": "update-key"}'
+  -d '{"name": "update-key", "role_name": "dyn-updates"}'
 ```
 
-The secret comes back in that response, shown once; `bindizr tsig-key create
-update-key` does the same where the CLI can be run.
+The response includes the secret. Unlike an API token, a TSIG key's secret
+can be retrieved later with `GET /tsig-keys/{name}` or `bindizr tsig-key get`.
 
-A key updates only what its grants reach. `--global` (or `"is_global": true`)
-makes one that needs none, which is worth avoiding where you can grant instead.
+A key updates only what its role's grants reach. See
+[Access Control](access-control.md) for granting, and for an ACME DNS-01
+example.

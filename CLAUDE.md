@@ -209,8 +209,8 @@ each rule says which spelling is this project's.
   policy's `Days`, each with its `i32` row form and its wire or payload
   form (`u32`, `u16`) as `From`/`TryFrom` conversions and its own sqlx
   encoding, and an entity's row id beside its row (`ZoneId`, `RecordId`,
-  `TokenId`, …, one `id_newtype!` each), so `list_by_zone_id_and_key_id_tx(
-  tx, key_id, zone_id)` no longer compiles. A payload keeps its wire schema
+  `TokenId`, …, one `id_newtype!` each), so `list_by_zone_id_and_role_id_tx(
+  tx, role_id, zone_id)` no longer compiles. A payload keeps its wire schema
   through `#[schema(value_type = …)]`; a request's raw `i32`/`u32` field is
   validated into the newtype by the service (`validate_record_ttl`,
   `validate_initial_serial`, `normalize_soa_interval`). A record's
@@ -256,7 +256,7 @@ each rule says which spelling is this project's.
 - **Authorization is the service's.** A management operation a front end can
   reach takes a `Caller` after its state parameters and gates itself; a
   transport never calls
-  `authorize_global` on its own. The daemon socket passes `Caller::socket()`; an API with authentication
+  `authorize_action` on its own. The daemon socket passes `Caller::socket()`; an API with authentication
   disabled passes `Caller::unauthenticated_api()`. Both have global access,
   but their change origins remain distinct.
   Service-internal lookups that must skip visibility are `pub(crate)` under
@@ -264,10 +264,11 @@ each rule says which spelling is this project's.
   authenticates its peer by uid (`peer_cred` on both ends: the daemon's own
   user or root); the socket's file mode is a courtesy, not the boundary.
   DNS-plane operations
-  (transfers, NOTIFY, nsupdate) take no caller — ACL and TSIG authorize there.
+  (transfers, NOTIFY, nsupdate) take no caller — the ACL and the TSIG key's
+  role authorize there.
   So do operations with nothing to gate: pure request normalization
   (`external_dns::adjust_records`), a token reading itself
-  (`token::grant::list_self`, keyed by the authenticated `ApiToken`), and
+  (`token::get_self`, keyed by the authenticated `ApiToken`), and
   the aggregate counts behind the unauthenticated metrics endpoint
   (`count_all`), which expose no zone data.
 - **Transactions are the service's.** Service flows choose their lifetime
@@ -281,7 +282,7 @@ each rule says which spelling is this project's.
 - **A body is the service's to read.** The front end parses only what
   reaches it outside a body — a path or query parameter, a flag, the peer it
   authenticates into a `Caller` — and hands a body over whole, as its
-  payload type: `grant::create(&cx, &caller, &token_name, &request)`, never
+  payload type: `role::grant::create(&cx, &caller, &role_name, &request)`, never
   the request's fields one by one, so both front ends pass the same value
   and neither parses for the other.
 - **Shared management payloads are the service's.** `bindizr_service::types` is the
@@ -291,8 +292,8 @@ each rule says which spelling is this project's.
   front end, not to the shared payload layer; response types the CLI reads back derive
   `Deserialize` too. Front ends convert to their own presentation (CLI table rows),
   never re-derive the payload. One vocabulary across payloads: a field that names
-  another entity is `<entity>_name` (`zone_name`, `token_name`, `notify_key_name`,
-  `policy_name`), a serial is `u32`, a key tag `u16`, a count `u64` named
+  another entity is `<entity>_name` (`zone_name`, `token_name`, `role_name`,
+  `notify_key_name`, `policy_name`), a serial is `u32`, a key tag `u16`, a count `u64` named
   `added`/`deleted`/`unchanged` (a diff says `removed`), a fixed set of values is an
   enum with a schema — `*Result` for how one attempt turned out (`TransferResult`, the
   metrics `XfrResult`), `*Status` for what a check finds (`SecondaryStatus`,
@@ -303,6 +304,52 @@ each rule says which spelling is this project's.
   an envelope keyed by its name (`{"zone": …}`); a report (status, check, diff, import,
   rollback, the DNSSEC status) travels bare. A listing's query parameters come from its
   filter struct (`IntoParams`), never a hand-written list.
+
+### Access control — a role holds rights, a credential authenticates
+
+- **Rights belong to a `Role`; a credential only proves who is calling.** An
+  `ApiToken` and a `TsigKey` each name exactly one role (`role_id NOT NULL`)
+  and carry no rights of their own, so one role serves several tokens and
+  keys and revoking a right is one grant edit. There is no third credential
+  type, and no credential is global: the socket (`Caller::socket()`) and an
+  API without authentication (`Caller::unauthenticated_api()`) are the only
+  global callers. A key that only signs outbound NOTIFY still names a role,
+  an empty one when it needs nothing. Change attribution stays the
+  credential (`ChangeActor::Token`/`TsigKey`), never the role.
+- **A grant is a zone scope, a set of actions, and record constraints.**
+  `RoleZoneScope` is `All` (row `zone_id` NULL, covering zones created later)
+  or `Zone(ZoneId)`. `Action` is a closed enum spelled `<resource>:<action>`:
+  `zone:read|create|update|delete|transfer`, `record:read|create|update|delete`,
+  `dnssec:read|manage`, `secondary:read|manage`, `access:manage`. The name
+  pattern and type list (the `grant_pattern` grammar: `*`, `@`, `*.sub`, an
+  exact relative name; `*` or comma-separated types) constrain `record:*`
+  actions only. A role's rights are the union of its grants: an operation is
+  allowed when one grant covers its action, zone, name and type. There are no
+  deny rules. `RoleGrants` answers every such question; the listing SQL
+  repeats its name and type match for paging and is held to it by test.
+- **Objects no zone owns need an `All` grant**: `zone:create`, `secondary:*`,
+  DNSSEC policies under `dnssec:manage`, and `access:manage`, which
+  administers tokens, TSIG keys and roles — and so is equivalent to admin,
+  since its holder can grant itself anything. The built-in `admin` role (every
+  action, `All`) is ensured at startup and can be neither changed nor deleted;
+  the first token is issued over the socket with `token create --role admin`.
+- **Visibility**: a zone is visible when any grant of the role reaches it,
+  whatever its actions (404 otherwise, so a scope cannot probe existence; a
+  visible zone's denied operation is 403). Reading records needs `record:read`
+  covering them; an update or delete finds its target by that or by its own
+  write action, so a write-only grant reaches what it may change and no more.
+  Actions stay independent: a write or manage action never implies its read.
+  A role holding one without the other works through the API, as automation
+  wants; a client listing things to act on needs the read as well.
+  A view the zone is rebuilt from — export, a stored version,
+  a diff, a zone-file import — needs a grant with no name or type constraint,
+  since half a zone re-applied deletes what it left out.
+- **Each change is authorized by its kind**: a record create, update or
+  delete needs the matching `record:` action at its name and type, per change
+  in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
+  `record:read`, an add `record:create`, a delete `record:delete`, against the
+  signing key's role. A TSIG-signed transfer needs `zone:transfer` (the
+  catalog zone an `All` grant); an unsigned one is the ACL's alone.
 
 ### Transactions and locking
 
@@ -485,7 +532,7 @@ a suffix. A domain noun that already states the choice (`Run`, `DsCheck`,
 | Role | Name | Boundary |
 | --- | --- | --- |
 | Which rows match | `<Subject>Filter` | An enum selects a predicate; a struct combines predicates. Neither is a `Scope` merely because it narrows a query. |
-| Which resources a caller may access | `<Subject>Scope`, `scope_<key>` | Authorization boundary, such as `scope_token_id`; ordinary search criteria are filters. |
+| Which resources a caller may access | `<Subject>Scope`, `scope_<key>` | Authorization boundary, such as `scope_role_id`; ordinary search criteria are filters. |
 | Which representation of an entity to read | `<Subject>View` | `ZoneView` selects plain or DNSSEC-derived content; it is not an arbitrary history filter. |
 | How an operation executes | `<Operation>Mode` | `ImportMode` chooses append/upsert/replace behavior, not the origin of existing rows. |
 | Reusable rules governing operations | `<Subject>Policy` | A named bundle such as `DnssecPolicy`, not a one-call boolean switch. |
@@ -601,8 +648,8 @@ lifecycle operations, outside the entity-query grammar.
   the canonical scope still elided around it (`get_by_serial(zone_id,
   serial)`, `list_by_name_tx(tx, zone_id, name)`), pluralized when it takes
   many values of that one key (`list_by_names_tx`). Every other key path is
-  spelled in full: a non-canonical side (`list_by_token_id`,
-  `count_by_key_id`, `delete_by_zone_id_tx`), and any key set whose elision
+  spelled in full: a non-canonical side (`list_by_role_id`,
+  `count_by_role_id`, `delete_by_zone_id_tx`), and any key set whose elision
   would leave two functions of one module distinguishable only by their
   signatures — which is why the two-sided policy tables spell everything.
   A non-column selector names the input that defines its predicates:

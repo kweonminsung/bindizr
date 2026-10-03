@@ -5,20 +5,17 @@ covers 3.4.
 
 ## 1. Register the secondary in Bindizr
 
-Bindizr sends NOTIFY to, and accepts unsigned transfers from, only the
-secondaries registered with it; a Knot missing from them gets every
-transfer refused. Register it by address or hostname — see
-[Secondaries](../cli/secondaries.md) — and it is fed from the next change
-on, with no restart:
+Register the secondary's address so it receives NOTIFY and can transfer
+zones. This example uses a server on the same host, listening on port 53:
 
 ```bash
 # A Knot on this host; elsewhere, its address or hostname
-$ sudo bindizr secondary create knot --address 127.0.0.1
+sudo bindizr secondary create knot --address 127.0.0.1
 ```
 
-A [signed transfer](#sign-the-transfers) is authorized by its key, but NOTIFY
-still goes only to the registered secondaries, so a keyed secondary is
-registered all the same.
+For a remote server, use its address or hostname and Bindizr's reachable DNS
+address in the configuration below. Registration is also needed when using
+[signed transfers](#sign-the-transfers), so NOTIFY reaches the server.
 
 ## 2. Configure the catalog zone
 
@@ -54,8 +51,8 @@ zone:
 ```
 
 ```bash
-$ sudo knotc -c /etc/knot/knot.conf conf-check
-$ sudo systemctl restart knot
+sudo knotc -c /etc/knot/knot.conf conf-check
+sudo systemctl restart knot
 ```
 
 ## 3. Check a zone it learned
@@ -64,7 +61,12 @@ $ sudo systemctl restart knot
 catalog-provisioned zone from one configured by hand:
 
 ```bash
-$ sudo knotc zone-status example.com
+sudo knotc zone-status example.com
+```
+
+Example output:
+
+```text
 [example.com.] role: slave | serial: 12 | catalog: catalog.bindizr. | refresh: +22h59m46s
 ```
 
@@ -77,12 +79,11 @@ every member transfer the template derives from that remote:
 key:
   - id: xfr-key
     algorithm: hmac-sha256
-    secret: <base64 secret from bindizr tsig-key create --global>
+    secret: <base64 secret from bindizr tsig-key create>
 ```
 
-Then add `key` to the `bindizr` remote declared above — Knot refuses a repeated
-`id` with `duplicate identifier`, so this edits that block rather than adding a
-second one, and the address is wherever Bindizr listens:
+Add `key` to the existing `bindizr` remote; do not create a second remote
+with the same ID. Use the address where Bindizr listens:
 
 ```yaml
 remote:
@@ -91,8 +92,9 @@ remote:
     key: xfr-key
 ```
 
-Leave the `acl` matching on address alone: Bindizr sends NOTIFY unsigned, so an
-ACL that demanded the key would reject it.
+Keep the NOTIFY ACL matched by address unless you also register the
+secondary with `--notify-key`. See
+[Signed NOTIFY](../cli/secondaries.md#signed-notify).
 
-See [TSIG Keys](../cli/tsig-keys.md) for creating the key and granting it the
-zones it may transfer.
+See [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig)
+for creating the key in a role that holds `zone:transfer` in every zone.

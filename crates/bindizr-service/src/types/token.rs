@@ -3,7 +3,7 @@
 use bindizr_core::model::api_token::TokenId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::model::api_token::ApiToken;
 
@@ -20,11 +20,25 @@ pub struct CreateTokenRequest {
     /// Days until expiry, 1 to 36500; omit for a token that never expires.
     #[schema(example = 90)]
     pub expires_in_days: Option<i64>,
-    /// Make the token global: it may manage every zone and the zone plane.
-    /// Fixed at creation.
-    #[serde(default)]
-    #[schema(example = false)]
-    pub global: bool,
+    /// The role whose grants decide what the token may do.
+    #[schema(example = "external-dns-prod")]
+    pub role_name: String,
+}
+
+/// Query parameters of the API tokens listing: one role's, or every one.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct TokenFilter {
+    /// Only the API tokens authenticating into this role.
+    #[schema(example = "external-dns-prod")]
+    pub role_name: Option<String>,
+    /// Items per page; the HTTP API defaults it, the daemon socket does not.
+    #[schema(example = 50)]
+    #[param(minimum = 1, maximum = 1000)]
+    pub limit: Option<u32>,
+    #[schema(example = 0)]
+    pub offset: Option<u64>,
 }
 
 /// API representation of an API token; never carries the secret.
@@ -35,22 +49,22 @@ pub struct GetTokenResponse {
     #[schema(example = "external-dns")]
     pub name: String,
     pub description: Option<String>,
-    /// Whether the token may manage every zone and the zone plane.
-    #[schema(example = false)]
-    pub global: bool,
+    /// The role the token authenticates into.
+    #[schema(example = "external-dns-prod")]
+    pub role_name: String,
     pub created_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
     pub last_used_at: Option<DateTime<Utc>>,
 }
 
-impl From<&ApiToken> for GetTokenResponse {
-    /// Build a token response without exposing its stored hash.
-    fn from(token: &ApiToken) -> Self {
+impl GetTokenResponse {
+    /// Build a token response with its role's name, without exposing its stored hash.
+    pub(crate) fn from_token(token: &ApiToken, role_name: &str) -> Self {
         GetTokenResponse {
             id: token.id,
             name: token.name.clone(),
             description: token.description.clone(),
-            global: token.is_global,
+            role_name: role_name.to_string(),
             created_at: token.created_at,
             expires_at: token.expires_at,
             last_used_at: token.last_used_at,

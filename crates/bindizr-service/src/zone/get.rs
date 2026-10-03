@@ -90,7 +90,7 @@ pub async fn count(cx: &Context, caller: &Caller) -> Result<u64, ServiceError> {
     Ok(bindizr_db::zone::count_by_filter(
         cx.db(),
         ZoneFilter {
-            scope_token_id: caller.scope_token_id(),
+            scope_role_id: caller.scope_role_id(),
             ..ZoneFilter::default()
         },
     )
@@ -104,7 +104,7 @@ pub async fn list_by_filter(
     caller: &Caller,
     filter: GetZonesFilter,
 ) -> Result<PaginatedResponse<GetZoneResponse>, ServiceError> {
-    let scope_token_id = caller.scope_token_id();
+    let scope_role_id = caller.scope_role_id();
     let limit = Some(normalize_page_limit(filter.limit)?);
     let offset = filter.offset;
     let serial = filter.serial.map(validate_stored_serial).transpose()?;
@@ -127,7 +127,7 @@ pub async fn list_by_filter(
         signed: filter.signed,
         enabled: filter.enabled,
         search: filter.search,
-        scope_token_id,
+        scope_role_id,
         sort: parse_setting(filter.sort.as_deref())?,
         order: parse_setting(filter.order.as_deref())?,
         limit,

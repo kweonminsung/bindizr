@@ -1,12 +1,12 @@
 # Secondary Servers
 
-A secondary is the name server clients actually query. Bindizr is its
-primary: it keeps the zone data, hands it over by zone transfer (AXFR sends
-a whole zone, IXFR the changes since a serial), and sends a NOTIFY whenever
-a zone changed. Which zones to hold, the secondary learns from Bindizr's
-**catalog zone** (RFC 9432): a zone whose records list the other zones. All
-of that is standard DNS, so the secondary can be any server that understands
-catalog zones.
+A secondary answers client DNS queries using zones transferred from Bindizr.
+It follows Bindizr's **catalog zone** to discover which zones to serve and
+receives NOTIFY when their records change.
+
+The examples below assume Bindizr listens on `127.0.0.1:5300` and the
+secondary on port 53. For servers on different hosts, use reachable addresses
+and allow DNS traffic between them over TCP and UDP.
 
 | | Catalog zones | Verified on | Notes |
 | --- | --- | --- | --- |
@@ -34,28 +34,32 @@ Create a zone in Bindizr and it appears in the catalog; the secondary picks it
 up on the NOTIFY that follows, with no configuration of its own. Delete the
 zone and it goes away the same way.
 
-Bindizr's side is two things, and the first is the one a new setup
-forgets: a secondary Bindizr does not know gets no NOTIFY and has its
-transfers refused.
-
-| | What it does |
-| --- | --- |
-| `bindizr secondary create` | Registers who receives NOTIFY and may pull a zone unsigned: a name and a `host[:port]`, a hostname resolved when used — see [Secondaries](../cli/secondaries.md) |
-| `dns.catalog_zone_name` | The catalog zone's name, in [Configuration](../configuration.md). A secondary holds one zone per name, so two Bindizr instances feeding one secondary need two names |
+Register the secondary with `bindizr secondary create` before expecting
+NOTIFY or unsigned transfers. Set the same `dns.catalog_zone_name` in Bindizr
+and the secondary; independent Bindizr deployments feeding one secondary need
+distinct catalog names. See [Secondaries CLI](../cli/secondaries.md) and
+[Configuration](../configuration.md).
 
 ## Signing the transfers
 
 The registered address authorizes a secondary by where it connects from,
 which is all a loopback pair needs. Where the secondary is elsewhere, give it a TSIG
-key: create one with
-[`bindizr tsig-key create <name> --global`](../cli/tsig-keys.md), then name it
-on the secondary's primary reference. Bindizr answers under that key and each
-server page shows the syntax.
+key in a role that holds `zone:transfer` in every zone, then name it on the
+secondary's primary reference. Bindizr answers under that key and each server
+page shows the syntax.
 
-!!! note "`--global` is required, not a convenience"
+```bash
+bindizr role create secondaries
+bindizr role grant secondaries --actions zone:transfer
+bindizr tsig-key create xfr-key --role secondaries
+```
 
-    A scoped key is granted zones you created, and the catalog zone is not
-    one of them: a catalog transfer signed by a scoped key is refused.
+!!! note "The grant must cover every zone"
+
+    Leave out `--zone`: a grant naming one zone does not reach the catalog
+    zone, and a catalog transfer signed by a key without `zone:transfer` in
+    every zone is refused. See
+    [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig).
 
 !!! warning "PowerDNS does not sign member transfers"
 
@@ -72,11 +76,13 @@ XFR TCP query: zone="example.com", qtype=Rtype::AXFR, from=10.0.0.14, signed=fal
 
 ## Checking that it worked
 
-`bindizr zone status <zone>` reports the serial each secondary serves next to
-Bindizr's own, `bindizr doctor` probes every enabled secondary for the
-catalog zone, `bindizr secondary check <name>` asks one server the same and
-sends it a NOTIFY, and `bindizr secondary transfers <name>` lists what Bindizr
-served it — AXFR, IXFR, or a refusal — see
-[Checking a secondary](../cli/secondaries.md#checking-a-secondary). All three
-work regardless of which implementation answers. Each server page also gives
-that server's own command for inspecting a zone it learned from the catalog.
+| Command | Checks |
+| --- | --- |
+| `bindizr doctor` | Installation health and catalog synchronization |
+| `bindizr zone status <zone>` | The member zone's serial on each secondary |
+| `bindizr secondary check <name>` | One secondary's catalog serial and NOTIFY acceptance |
+| `bindizr secondary transfers <name>` | Latest transfers, refusals, and failures |
+
+A synchronized catalog does not guarantee that every member zone loaded.
+Check the zone's status as well; each server page includes its own inspection
+command. See [Checking a secondary](../cli/secondaries.md#checking-a-secondary).

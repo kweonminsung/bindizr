@@ -54,7 +54,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/external-dns/domains",
         tag = "ExternalDNS",
         summary = "List the names ExternalDNS may manage",
-        description = "The ExternalDNS domain filter the calling token's grants come to: every zone name for a global token, otherwise one name per writable grant — the zone where the grant covers every name, the granted subtree where it does not. Each entry covers itself and everything under it, so a grant narrowed by record type or to one exact name reads wider here than it is.",
+        description = "Returns every existing zone name when authentication is disabled. Otherwise, includes zones or subtrees covered by a grant containing all three actions: `record:read`, `record:create`, and `record:delete`. Entries are deduplicated. Each entry includes its descendants, so record-type and exact-name restrictions still need to be enforced when changes are applied.",
         responses(
             (status = 200, description = "Manageable names", body = ExternalDnsDomainsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),

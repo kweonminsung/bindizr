@@ -1,5 +1,7 @@
-//! The narrowing a token grant puts on the records a listing may return,
+//! The narrowing a role grant puts on the records a listing may return,
 //! rendered once for every backend's filter queries.
+
+use bindizr_core::model::role_grant::Action;
 
 use super::apex_owner_sql;
 
@@ -28,13 +30,17 @@ fn like_escaped_sql(expression: &str) -> String {
     escaped
 }
 
-/// Build a grant condition for row `p` and record `alias`; `None` selects the derived DNSSEC plane.
-/// Subtree text matching is safe because stored in-label dots render as `\046`.
+/// Build a grant condition for row `p` and record `alias`: the grant permits
+/// `record:read` and its constraints cover the record; `None` selects the
+/// derived DNSSEC plane. Subtree text matching is safe because stored in-label
+/// dots render as `\046`.
 pub(crate) fn grant_record_match_sql(
     alias: &str,
     record_type_column: Option<&str>,
     concat: impl Fn(&[&str]) -> String,
 ) -> String {
+    let actions = concat(&["','", "p.actions", "','"]);
+    let read = format!("{actions} LIKE '%,{},%'", Action::RecordRead.as_str());
     let apex = apex_owner_sql();
     let suffix = "SUBSTR(p.record_name_pattern, 3)";
     let under = concat(&["'%.'", &like_escaped_sql(suffix)]);
@@ -54,7 +60,7 @@ pub(crate) fn grant_record_match_sql(
             format!("(p.record_types = '*' OR {haystack} LIKE {needle})")
         }
     };
-    format!("{name} AND {types}")
+    format!("{read} AND {name} AND {types}")
 }
 
 #[cfg(test)]
@@ -66,6 +72,7 @@ mod tests {
     fn a_grant_pattern_narrows_by_name_and_type() {
         let sql = grant_record_match_sql("r", Some("record_type"), concat_pipes);
 
+        assert!(sql.starts_with("',' || p.actions || ',' LIKE '%,record:read,%' AND "));
         assert!(sql.contains("p.record_name_pattern = '*'"));
         assert!(sql.contains("r.name = ''"));
         // The backslash a stored name carries is data, not a LIKE escape.

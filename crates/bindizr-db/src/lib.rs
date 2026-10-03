@@ -21,13 +21,13 @@ pub mod error;
 mod mysql;
 mod postgres;
 pub mod record;
+pub mod role;
+pub mod role_grant;
 mod schema;
 pub mod secondary;
 mod sql;
 mod sqlite;
-pub mod token_grant;
 pub mod transfer;
-pub mod tsig_grant;
 pub mod tsig_key;
 mod tx;
 mod utils;
@@ -35,12 +35,21 @@ pub mod zone;
 pub mod zone_change;
 pub mod zone_version;
 
-use bindizr_core::config;
 pub use bindizr_core::model;
+use bindizr_core::{
+    config,
+    model::{
+        role::Role,
+        role_grant::{Action, ActionSet},
+    },
+};
 use error::DatabaseError;
 pub use sql::{ParseSortError, RecordSortField, SortOrder, ZoneSortField};
 use tx::TransactionKind;
 pub use tx::{LockLevel, Transaction};
+
+/// What the built-in role is described as.
+const ADMIN_ROLE_DESCRIPTION: &str = "every action in every zone";
 
 /// One backend connection pool, passed to entity functions such as
 /// `zone::get_by_name` that dispatch to backend-specific SQL.
@@ -274,7 +283,7 @@ impl Backend {
 }
 
 impl Db {
-    /// Run this backend's creation statements and seed the built-in policy.
+    /// Run this backend's creation statements and seed the built-in policy and role.
     async fn create_tables(&self) -> Result<(), DatabaseError> {
         match &self.0 {
             Backend::MySql(pool) => {
@@ -288,6 +297,29 @@ impl Db {
                 let seed = schema::mysql::default_policy_seed();
                 sqlx::query(seed)
                     .bind(Utc::now())
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to execute query '{}': {}", seed, e);
+                        DatabaseError::from(e)
+                    })?;
+                let seed = schema::mysql::admin_role_seed();
+                sqlx::query(seed)
+                    .bind(Role::ADMIN)
+                    .bind(ADMIN_ROLE_DESCRIPTION)
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to execute query '{}': {}", seed, e);
+                        DatabaseError::from(e)
+                    })?;
+                let seed = schema::mysql::admin_grant_seed();
+                sqlx::query(seed)
+                    .bind(ActionSet::from_iter(Action::ALL))
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
                     .execute(&mut *conn)
                     .await
                     .map_err(|e| {
@@ -312,6 +344,29 @@ impl Db {
                         log::error!("Failed to execute query '{}': {}", seed, e);
                         DatabaseError::from(e)
                     })?;
+                let seed = schema::postgres::admin_role_seed();
+                sqlx::query(seed)
+                    .bind(Role::ADMIN)
+                    .bind(ADMIN_ROLE_DESCRIPTION)
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to execute query '{}': {}", seed, e);
+                        DatabaseError::from(e)
+                    })?;
+                let seed = schema::postgres::admin_grant_seed();
+                sqlx::query(seed)
+                    .bind(ActionSet::from_iter(Action::ALL))
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to execute query '{}': {}", seed, e);
+                        DatabaseError::from(e)
+                    })?;
             }
             Backend::Sqlite(pool) => {
                 let mut conn = pool.acquire().await?;
@@ -324,6 +379,29 @@ impl Db {
                 let seed = schema::sqlite::default_policy_seed();
                 sqlx::query(seed)
                     .bind(Utc::now())
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to execute query '{}': {}", seed, e);
+                        DatabaseError::from(e)
+                    })?;
+                let seed = schema::sqlite::admin_role_seed();
+                sqlx::query(seed)
+                    .bind(Role::ADMIN)
+                    .bind(ADMIN_ROLE_DESCRIPTION)
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        log::error!("Failed to execute query '{}': {}", seed, e);
+                        DatabaseError::from(e)
+                    })?;
+                let seed = schema::sqlite::admin_grant_seed();
+                sqlx::query(seed)
+                    .bind(ActionSet::from_iter(Action::ALL))
+                    .bind(Utc::now())
+                    .bind(Role::ADMIN)
                     .execute(&mut *conn)
                     .await
                     .map_err(|e| {

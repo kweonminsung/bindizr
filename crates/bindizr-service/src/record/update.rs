@@ -3,7 +3,7 @@ use bindizr_core::{
         Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::{record::RecordId, zone::ZoneId},
+    model::{record::RecordId, role_grant::Action, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
 
@@ -207,9 +207,10 @@ async fn update_locked(
                     }
                 };
 
-                // A record the caller's grants do not reach reads as 404,
-                // as it does on GET, so ids cannot be probed.
-                if !caller.sees_record(
+                // A record the caller may neither read nor update reads as
+                // 404, as it does on GET, so ids cannot be probed.
+                if !caller.reaches_record(
+                    Action::RecordUpdate,
                     zone.id,
                     &existing_record.name,
                     Some(&existing_record.record_type),
@@ -224,8 +225,7 @@ async fn update_locked(
                     zone::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive).await?;
                 let owner = normalize_record_owner_name(name, &zone.name)?;
 
-                // Count only what the caller can see, so the count never
-                // reports rows their grants do not reach.
+                // Count only what the caller may read or update.
                 let mut matched: Vec<Record> = bindizr_db::record::list_by_name_tx(
                     &mut tx,
                     zone.id,
@@ -235,7 +235,12 @@ async fn update_locked(
                 .await?
                 .into_iter()
                 .filter(|record| {
-                    caller.sees_record(zone.id, &record.name, Some(&record.record_type))
+                    caller.reaches_record(
+                        Action::RecordUpdate,
+                        zone.id,
+                        &record.name,
+                        Some(&record.record_type),
+                    )
                 })
                 .collect();
 
@@ -255,18 +260,20 @@ async fn update_locked(
 
         let resolved = resolve(&zone, &existing_record)?;
 
-        // An update is a delete plus an add, so both the stored identity
-        // and the requested one must be granted.
+        // An update moves a record from its stored identity to the requested
+        // one, so `record:update` must reach both.
         caller
             .authorize_record_writes_tx(
                 &mut tx,
                 &zone,
                 &[
                     RecordWrite {
+                        action: Action::RecordUpdate,
                         relative_name: existing_record.name.clone(),
                         record_type: Some(&existing_record.record_type),
                     },
                     RecordWrite {
+                        action: Action::RecordUpdate,
                         relative_name: resolved.owner_name.clone(),
                         record_type: Some(&resolved.record_type),
                     },

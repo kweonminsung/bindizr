@@ -11,31 +11,30 @@ Environment variables are applied **after** the file is parsed, so they win
 over anything the file sets.
 
 ```bash
-$ bindizr config check            # validate a file without starting
-$ bindizr config list             # show what the running daemon loaded
-$ bindizr config reload           # re-read the file in the running daemon
+bindizr config check            # validate a file without starting
+bindizr config list             # show what the running daemon loaded
+bindizr config reload           # re-read the file in the running daemon
 ```
 
 ## Reloading
 
-`bindizr config reload`, `systemctl reload bindizr`, or `SIGHUP` to the
-daemon re-reads the file and applies it without a restart. What a running process cannot adopt is refused
-**whole** — the file is not partly applied — so the running configuration
-always describes the running process:
+Use `bindizr config reload`, `systemctl reload bindizr`, or `SIGHUP` to apply
+reloadable settings. If any fixed setting changes, the entire reload is
+rejected and the current configuration stays active.
 
-| | |
+| Settings | Reload behavior |
 | --- | --- |
-| Reloadable | the whole `[dns]` section and `[logging]` |
-| Fixed while running | the `[api]` and `[database]` sections, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name` |
+| `[logging]` and `[dns]` except the three settings below | Reloadable |
+| `[api]`, `[database]`, `dns.listen_addr`, `dns.listen_port`, `dns.catalog_zone_name` | Restart required |
 
 A reload names the sections it changed; a refusal names the settings that
 would need a restart and leaves the running configuration alone.
 
 ## Configuration file
 
-For manual installation, create the configuration file and adjust the values to
-match your environment. Commented-out keys show their default and can be left
-out; a key Bindizr does not know is an error, so `config check` catches a typo.
+Packages install this configuration file. For other installations, create it
+and adjust the values. Commented settings are optional; unknown keys are
+rejected by `config check`.
 
 ```toml title="/etc/bindizr/bindizr.conf.toml"
 [api]
@@ -45,8 +44,8 @@ authentication_required = true # Require an API token; `bindizr token create` ma
 metrics_enabled = true        # Prometheus metrics at /metrics (unauthenticated)
 external_dns_enabled = false  # ExternalDNS provider API at /external-dns
 openapi_enabled = false       # OpenAPI document at /openapi.json and /openapi.yaml (unauthenticated)
-# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # Set both to serve HTTPS; without them the HTTP API is
-# tls_key_file = "/etc/bindizr/tls/tls.key"   # unencrypted and its tokens travel in the clear
+# tls_cert_file = "/etc/bindizr/tls/tls.crt"  # Set both TLS files to serve HTTPS
+# tls_key_file = "/etc/bindizr/tls/tls.key"
 
 [database]
 type = "sqlite"               # sqlite, mysql, or postgresql
@@ -63,9 +62,7 @@ url = "postgresql://user:password@hostname:port/database"
 [dns]
 listen_addr = "127.0.0.1"
 listen_port = 5300            # UDP and TCP; 53 is left to BIND on the same host
-# catalog_zone_name = "catalog.bindizr"  # The RFC 9432 catalog zone secondaries follow. A secondary
-                              # holds one zone per name, so two primaries feeding one secondary need
-                              # two names. Fixed while bindizr runs.
+# catalog_zone_name = "catalog.bindizr"  # Must match the secondary's catalog configuration
 nsupdate_tsig_required = true  # RFC 2136 updates must be TSIG-signed; false admits anyone
 # zone_history_retention_days = 365 # Days of history kept for rollback and secondary catch-up (0 = forever)
 # scheduler_interval_secs = 3600    # Seconds between background passes: signing, key rollover, history pruning
@@ -95,9 +92,9 @@ A reserved character in the user, password, or database of a database `url`
 Bindizr decodes the components before connecting. The Helm chart encodes
 the credentials it assembles from the bundled database's `auth` values.
 
-Whether a zone is signed, and the signing parameters it uses, are not
-configuration: enable DNSSEC per zone under a DNSSEC policy managed through
-the HTTP API or CLI — see [DNSSEC](dnssec/index.md).
+Use distinct catalog names for independent Bindizr deployments feeding the
+same secondary. Configure [TLS](http-api/index.md#tls) before exposing the API
+off-host. Signing settings are managed per zone through [DNSSEC](dnssec/index.md).
 
 ## Environment variables
 
@@ -126,10 +123,10 @@ A variable is `BINDIZR_` plus the key's path in upper case with `_` for `.`:
 | `BINDIZR_DNS_NSUPDATE_TSIG_REQUIRED` | `dns.nsupdate_tsig_required` | `false` is testing only; see [Dynamic Updates](cli/nsupdate.md#unsigned-requests) |
 | `BINDIZR_DNS_ZONE_HISTORY_RETENTION_DAYS` | `dns.zone_history_retention_days` | `0` keeps history forever |
 | `BINDIZR_DNS_SCHEDULER_INTERVAL_SECS` | `dns.scheduler_interval_secs` | `0` runs no scheduler pass on this instance |
-| `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](#batching-notify) |
+| `BINDIZR_DNS_NOTIFY_BATCH_MS` | `dns.notify.batch_ms` | see [Batching NOTIFY](configuration/advanced.md#batching-notify) |
 | `BINDIZR_DNS_NOTIFY_RETRIES` | `dns.notify.retries` | |
 | `BINDIZR_DNS_NOTIFY_TIMEOUT_SECS` | `dns.notify.timeout_secs` | |
-| `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer_cache.max_records` | `0` caches nothing; see [Sizing the transfer cache](#sizing-the-transfer-cache) |
+| `BINDIZR_DNS_TRANSFER_CACHE_MAX_RECORDS` | `dns.transfer_cache.max_records` | `0` caches nothing; see [Sizing the transfer cache](configuration/advanced.md#sizing-the-transfer-cache) |
 | `BINDIZR_DNS_ZONE_DEFAULTS_TTL` | `dns.zone_defaults.ttl` | answers an omitted `default_ttl` on zone creation |
 | `BINDIZR_DNS_ZONE_DEFAULTS_REFRESH` | `dns.zone_defaults.refresh` | |
 | `BINDIZR_DNS_ZONE_DEFAULTS_RETRY` | `dns.zone_defaults.retry` | |
@@ -149,33 +146,5 @@ The secondaries are not in this file. They are registered at runtime with
 and take effect on the next NOTIFY or transfer — see
 [Secondaries](cli/secondaries.md).
 
-## Batching NOTIFY
-
-`dns.notify.batch_ms` decides what happens on the write path once a change is
-committed.
-
-`0` (the default)
-:   Every change sends its own NOTIFY before the write is answered. Lowest
-    latency to visibility.
-
-a window in milliseconds
-:   The write is answered at commit; changes to the same zone inside the
-    window collapse into one NOTIFY, sent from a queue. Worth it when many
-    records change at once.
-
-## Sizing the transfer cache
-
-`dns.transfer_cache.max_records` counts records, not bytes, so converting a
-memory budget takes one step. A cached record costs roughly:
-
-| Record | Cost |
-| --- | --- |
-| `A` with a short name | 130 bytes |
-| `TXT` with a 255-byte value | 375 bytes |
-| `TXT` carrying a DKIM key | 860 bytes |
-
-The default of 500,000 records is about 64 MiB of plain address records, more
-where large `TXT` values or a signed zone's derived records dominate. Watch
-`bindizr_zone_cache_records` against the limit and
-`bindizr_zone_cache_evictions_total`: evictions rising beside a low hit ratio in
-`bindizr_zone_cache_lookups_total` mean the working set does not fit.
+When to batch NOTIFY and how to size the transfer cache is in
+[Advanced Configuration](configuration/advanced.md).
