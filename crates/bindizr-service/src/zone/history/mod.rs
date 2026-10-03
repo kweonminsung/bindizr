@@ -99,7 +99,7 @@ pub async fn get_version(
 
     let result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-        caller.authorize_zone_unrestricted(Action::RecordRead, &zone)?;
+        let read = caller.authorize_whole_zone_read(&zone)?;
         let version = bindizr_db::zone_version::get_by_serial_tx(
             &mut tx,
             zone.id,
@@ -109,7 +109,9 @@ pub async fn get_version(
         .await?
         .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
 
-        let records = list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?;
+        let records = read.readable_records(
+            list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?,
+        );
 
         Ok::<_, ServiceError>((zone, version, records))
     }
@@ -120,6 +122,7 @@ pub async fn get_version(
     Ok(VersionDetailResponse {
         version: ZoneVersionResponse::try_from(&version)?,
         records: records
+            .as_slice()
             .iter()
             .map(|record| VersionRecordResponse::from_record_and_zone_name(record, &zone.name))
             .collect(),
@@ -142,7 +145,7 @@ pub async fn diff_versions(
 
     let result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-        caller.authorize_zone_unrestricted(Action::RecordRead, &zone)?;
+        let read = caller.authorize_whole_zone_read(&zone)?;
         let to = to.unwrap_or(zone.serial);
 
         validate_serial_diffable_tx(&mut tx, &zone, from).await?;
@@ -154,7 +157,11 @@ pub async fn diff_versions(
         Ok::<_, ServiceError>(VersionDiffResponse {
             from_serial,
             to_serial: to,
-            diff: build_record_diff(&zone, &from_records, &to_records),
+            diff: build_record_diff(
+                &zone,
+                &read.readable_records(from_records),
+                &read.readable_records(to_records),
+            ),
         })
     }
     .await;
@@ -179,8 +186,8 @@ pub async fn rollback(
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         // A rollback rewrites the zone's SOA and its records whole.
         caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
-        caller.authorize_zone_unrestricted(Action::RecordCreate, &zone)?;
-        caller.authorize_zone_unrestricted(Action::RecordDelete, &zone)?;
+        caller.authorize_whole_zone(Action::RecordCreate, &zone)?;
+        caller.authorize_whole_zone(Action::RecordDelete, &zone)?;
 
         if target.as_u32() < 1 || target >= zone.serial {
             return Err(ServiceError::invalid_input(format!(

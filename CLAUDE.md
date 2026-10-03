@@ -344,6 +344,17 @@ each rule says which spelling is this project's.
   A view the zone is rebuilt from — export, a stored version,
   a diff, a zone-file import — needs a grant with no name or type constraint,
   since half a zone re-applied deletes what it left out.
+- **A response shows only what the caller may read.** Existing rows reach a
+  response — a write's diff, a delete's listing, a version — only as
+  `authorization::ReadableRecords`, built by `Caller::readable_records`
+  (dropping what no `record:read` grant covers) or a `WholeZoneRead` from
+  `authorize_whole_zone_read`; `push_written` adds the caller's own writes.
+  A new response carrying rows takes a `ReadableRecords`, not a filter at
+  its site.
+  Every record response carries the caller's `actions` on it, so a client
+  offers what the service allows without re-implementing grant matching.
+  The e2e `no_response_reveals_a_record_the_role_cannot_read` sweeps every
+  route as restricted roles; a new route that returns records joins it.
 - **Each change is authorized by its kind**: a record create, update or
   delete needs the matching `record:` action at its name and type, per change
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs

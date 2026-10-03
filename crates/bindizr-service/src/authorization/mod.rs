@@ -21,7 +21,7 @@ use crate::{
     error::ServiceError,
     model::{
         api_token::ApiToken,
-        record::RecordType,
+        record::{Record, RecordData, RecordType},
         zone::Zone,
         zone_version::{ChangeActor, ChangeSource},
     },
@@ -50,6 +50,71 @@ pub(crate) struct RecordWrite<'a> {
     pub(crate) action: Action,
     pub(crate) relative_name: OwnerName,
     pub(crate) record_type: Option<&'a RecordType>,
+}
+
+/// A record as grants see it: an owner name and a type.
+pub(crate) trait GrantedRecord {
+    /// The owner name, relative to its zone (stored form).
+    fn name(&self) -> &OwnerName;
+
+    /// The record's type.
+    fn record_type(&self) -> &RecordType;
+}
+
+impl GrantedRecord for Record {
+    /// The stored owner name.
+    fn name(&self) -> &OwnerName {
+        &self.name
+    }
+
+    /// The stored type.
+    fn record_type(&self) -> &RecordType {
+        &self.record_type
+    }
+}
+
+impl GrantedRecord for RecordData {
+    /// The owner name.
+    fn name(&self) -> &OwnerName {
+        &self.name
+    }
+
+    /// The type.
+    fn record_type(&self) -> &RecordType {
+        &self.record_type
+    }
+}
+
+/// Rows of one zone the caller may read. A response renders existing rows
+/// only from this type, built by [`Caller::readable_records`] or a
+/// [`WholeZoneRead`], so a flow cannot show a row it never checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReadableRecords<T>(Vec<T>);
+
+impl<T> ReadableRecords<T> {
+    /// Add a row the caller is writing: what it sends is its own to see.
+    pub(crate) fn push_written(&mut self, row: T) {
+        self.0.push(row);
+    }
+
+    /// The rows.
+    pub(crate) fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+}
+
+/// Proof that the caller may read a zone's records whole, from
+/// [`Caller::authorize_whole_zone_read`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WholeZoneRead {
+    _proof: (),
+}
+
+impl WholeZoneRead {
+    /// Every row of the zone, unfiltered: the proof covers them all.
+    pub(crate) fn readable_records<T>(self, rows: Vec<T>) -> ReadableRecords<T> {
+        ReadableRecords(rows)
+    }
 }
 
 impl Caller {
@@ -226,9 +291,54 @@ impl Caller {
         })
     }
 
+    /// The rows a `record:read` grant covers; the rest are dropped, so a
+    /// write-only grant learns what it writes and nothing already there.
+    pub(crate) fn readable_records<T: GrantedRecord>(
+        &self,
+        zone_id: ZoneId,
+        rows: impl IntoIterator<Item = T>,
+    ) -> ReadableRecords<T> {
+        ReadableRecords(
+            rows.into_iter()
+                .filter(|row| self.sees_record(zone_id, row.name(), Some(row.record_type())))
+                .collect(),
+        )
+    }
+
+    /// The record actions the caller may take on one record, so a client
+    /// offers exactly the ones the service would allow.
+    pub(crate) fn record_actions(
+        &self,
+        zone_id: ZoneId,
+        name: &OwnerName,
+        record_type: &RecordType,
+    ) -> Vec<Action> {
+        [
+            Action::RecordRead,
+            Action::RecordUpdate,
+            Action::RecordDelete,
+        ]
+        .into_iter()
+        .filter(|&action| {
+            self.grants()
+                .is_none_or(|grants| grants.covers_record(action, zone_id, name, Some(record_type)))
+        })
+        .collect()
+    }
+
+    /// Authorize reading the zone's records whole, handing back the proof
+    /// that renders them unfiltered.
+    pub(crate) fn authorize_whole_zone_read(
+        &self,
+        zone: &Zone,
+    ) -> Result<WholeZoneRead, ServiceError> {
+        self.authorize_whole_zone(Action::RecordRead, zone)?;
+        Ok(WholeZoneRead { _proof: () })
+    }
+
     /// Authorize `action` over the zone whole. A view the zone is rebuilt from
     /// cannot be narrowed: half a zone re-applied deletes what it left out.
-    pub(crate) fn authorize_zone_unrestricted(
+    pub(crate) fn authorize_whole_zone(
         &self,
         action: Action,
         zone: &Zone,

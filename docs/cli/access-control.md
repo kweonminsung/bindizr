@@ -105,6 +105,10 @@ deny rules. How grants combine, and what each operation needs, is in
 | `secondary:manage` | Creating, updating, deleting, and checking secondaries — needs every zone |
 | `access:manage` | Tokens, TSIG keys, and roles — needs every zone |
 
+A response never carries a record the role cannot read: a write's preview
+shows the records it changes and the readable ones beside them, and every
+record in a response lists the record `actions` the token may take on it.
+
 Actions marked "needs every zone" are carried only by a grant without
 `--zone`. `access:manage` amounts to `admin` — see
 [Actions that need every zone](advanced.md#actions-that-need-every-zone).

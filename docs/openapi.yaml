@@ -4773,7 +4773,15 @@ components:
       - ttl
       - zone_id
       - zone_name
+      - actions
       properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+          description: |-
+            The record actions the caller may take on this record; empty on a
+            derived DNSSEC row.
         id:
           type:
           - integer
@@ -5298,7 +5306,15 @@ components:
             - ttl
             - zone_id
             - zone_name
+            - actions
             properties:
+              actions:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Action'
+                description: |-
+                  The record actions the caller may take on this record; empty on a
+                  derived DNSSEC row.
               id:
                 type:
                 - integer

@@ -336,10 +336,12 @@ pub async fn create_bulk(
 
             // `after` = existing plus the inserts, so an insert into an
             // existing record set reads as `changed`, not a bare `added`.
-            let before: Vec<RecordData> =
-                before_records.into_iter().map(RecordData::from).collect();
+            let before =
+                caller.readable_records(zone.id, before_records.into_iter().map(RecordData::from));
             let mut after = before.clone();
-            after.extend(to_insert.iter().cloned().map(RecordData::from));
+            for record in &to_insert {
+                after.push_written(RecordData::from(record.clone()));
+            }
             let diff = build_record_diff(&zone, &before, &after);
             return Ok((to_insert, zone.name, diff));
         }
@@ -401,7 +403,13 @@ pub async fn create_bulk(
 
     let records = created_records
         .iter()
-        .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone_name))
+        .map(|record| {
+            GetRecordResponse::from_record(
+                record,
+                &zone_name,
+                caller.record_actions(record.zone_id, &record.name, &record.record_type),
+            )
+        })
         .collect();
     Ok(BulkRecordsResponse {
         applied: !run.is_dry_run(),

@@ -240,32 +240,26 @@ fn sees_record_needs_record_read_under_matching_constraints() {
     assert!(!visible(&write_only, "app", Some(&RecordType::A)));
 }
 
-/// Verify that `authorize_zone_unrestricted` rejects a constrained grant.
+/// Verify that `authorize_whole_zone` rejects a constrained grant.
 #[test]
-fn authorize_zone_unrestricted_rejects_a_constrained_grant() {
+fn authorize_whole_zone_rejects_a_constrained_grant() {
     let zone = test_zone();
     let read = Action::RecordRead;
 
-    assert!(
-        Caller::socket()
-            .authorize_zone_unrestricted(read, &zone)
-            .is_ok()
-    );
+    assert!(Caller::socket().authorize_whole_zone(read, &zone).is_ok());
     assert!(
         token(vec![grant(&[read], "*", "*")])
-            .authorize_zone_unrestricted(read, &zone)
+            .authorize_whole_zone(read, &zone)
             .is_ok()
     );
 
     let err = token(vec![grant(&[read], "*.dyn", "*")])
-        .authorize_zone_unrestricted(read, &zone)
+        .authorize_whole_zone(read, &zone)
         .unwrap_err();
     assert_eq!(err.code(), ErrorCode::Forbidden);
 
     // A zone with no grant at all keeps reading as absent.
-    let err = token(vec![])
-        .authorize_zone_unrestricted(read, &zone)
-        .unwrap_err();
+    let err = token(vec![]).authorize_whole_zone(read, &zone).unwrap_err();
     assert_eq!(err.code(), ErrorCode::ZoneNotFound);
 }
 

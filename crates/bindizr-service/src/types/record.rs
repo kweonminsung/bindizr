@@ -7,14 +7,14 @@ use bindizr_core::{
         name::ZoneName,
         record::{ParseRecordValueError, TxtContent, TxtRecordValue},
     },
-    model::{dnssec_record::DnssecRecordType, record::RecordId, zone::ZoneId},
+    model::{dnssec_record::DnssecRecordType, record::RecordId, role_grant::Action, zone::ZoneId},
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use utoipa::{IntoParams, ToSchema};
 
 use super::version::RecordDiff;
-use crate::model::record::{Record, RecordType, RecordWithZone};
+use crate::model::record::{Record, RecordType};
 
 /// A request value that has no record-row form.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -302,11 +302,15 @@ pub struct GetRecordResponse {
     pub zone_id: ZoneId,
     #[schema(example = "example.com")]
     pub zone_name: String,
+    /// The record actions the caller may take on this record; empty on a
+    /// derived DNSSEC row.
+    pub actions: Vec<Action>,
 }
 
 impl GetRecordResponse {
-    /// Build a response from a [`Record`], rendering owner/value as display names within `zone_name`.
-    pub(crate) fn from_record_and_zone_name(record: &Record, zone_name: &ZoneName) -> Self {
+    /// Build a response from a [`Record`], rendering owner/value as display
+    /// names within `zone_name`, with the `actions` the caller holds on it.
+    pub(crate) fn from_record(record: &Record, zone_name: &ZoneName, actions: Vec<Action>) -> Self {
         GetRecordResponse {
             id: record.id.written(),
             name: record.name.to_fqdn(zone_name),
@@ -316,14 +320,8 @@ impl GetRecordResponse {
             priority: record.priority,
             zone_id: record.zone_id,
             zone_name: zone_name.to_string(),
+            actions,
         }
-    }
-}
-
-impl From<&RecordWithZone> for GetRecordResponse {
-    /// Build a record response using the record and its zone metadata.
-    fn from(record: &RecordWithZone) -> Self {
-        Self::from_record_and_zone_name(&record.record(), &record.zone_name)
     }
 }
 

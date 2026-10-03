@@ -109,26 +109,36 @@ pub async fn delete(
             LockLevel::Exclusive,
         )
         .await?;
-        let before: Vec<RecordData> = records_at_name
-            .iter()
-            .cloned()
-            .map(RecordData::from)
-            .collect();
-        let after: Vec<RecordData> = records_at_name
-            .iter()
-            .filter(|record| record.id != existing_record.id)
-            .cloned()
-            .map(RecordData::from)
-            .collect();
+        let before = caller.readable_records(
+            zone.id,
+            records_at_name.iter().cloned().map(RecordData::from),
+        );
+        let after = caller.readable_records(
+            zone.id,
+            records_at_name
+                .iter()
+                .filter(|record| record.id != existing_record.id)
+                .cloned()
+                .map(RecordData::from),
+        );
 
         let response = DeleteRecordsResponse {
             applied: !run.is_dry_run(),
             dry_run: run.is_dry_run(),
             deleted: 1,
-            records: vec![GetRecordResponse::from_record_and_zone_name(
-                &existing_record,
-                &zone.name,
-            )],
+            // Only what the caller may read is listed back.
+            records: caller
+                .readable_records(zone.id, [existing_record.clone()])
+                .as_slice()
+                .iter()
+                .map(|record| {
+                    GetRecordResponse::from_record(
+                        record,
+                        &zone.name,
+                        caller.record_actions(zone.id, &record.name, &record.record_type),
+                    )
+                })
+                .collect(),
             diff: build_record_diff(&zone, &before, &after),
         };
         if run.is_dry_run() {
@@ -238,26 +248,35 @@ pub async fn delete_matching(
 
         // Build the preview from the validated rows; dry runs and empty matches
         // return it before any records or serials are written.
-        let before: Vec<RecordData> = records_at_name
-            .iter()
-            .cloned()
-            .map(RecordData::from)
-            .collect();
+        let before = caller.readable_records(
+            zone.id,
+            records_at_name.iter().cloned().map(RecordData::from),
+        );
         let removed: HashSet<RecordId> = matched.iter().map(|record| record.id).collect();
-        let after: Vec<RecordData> = records_at_name
-            .iter()
-            .filter(|record| !removed.contains(&record.id))
-            .cloned()
-            .map(RecordData::from)
-            .collect();
+        let after = caller.readable_records(
+            zone.id,
+            records_at_name
+                .iter()
+                .filter(|record| !removed.contains(&record.id))
+                .cloned()
+                .map(RecordData::from),
+        );
 
         let response = DeleteRecordsResponse {
             applied: !request.dry_run,
             dry_run: request.dry_run,
             deleted: matched.len() as u64,
-            records: matched
+            records: caller
+                .readable_records(zone.id, matched.iter().cloned())
+                .as_slice()
                 .iter()
-                .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone.name))
+                .map(|record| {
+                    GetRecordResponse::from_record(
+                        record,
+                        &zone.name,
+                        caller.record_actions(zone.id, &record.name, &record.record_type),
+                    )
+                })
                 .collect(),
             diff: build_record_diff(&zone, &before, &after),
         };
