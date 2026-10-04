@@ -47,7 +47,7 @@ pub async fn create(
 
     let mut tx = transaction::begin_tx(cx, "failed to create zone").await?;
     let apply_result = async {
-        let caller = caller.lock_grants_tx(&mut tx).await?;
+        let caller = caller.reauthenticate_tx(&mut tx).await?;
         create_tx(&mut tx, cx, &caller, create_zone_request).await
     }
     .await;
@@ -76,7 +76,7 @@ pub async fn create(
 
 /// Insert a zone and its first version in the caller's transaction for atomic import or dry run.
 /// UNIQUE(name) catches duplicates; [`create`] adds the pre-check and post-commit catalog NOTIFY.
-/// `caller` holds the grants [`Caller::lock_grants_tx`] reloaded in `tx`.
+/// `caller` holds the grants [`Caller::reauthenticate_tx`] reloaded in `tx`.
 pub(crate) async fn create_tx(
     tx: &mut Transaction<'_>,
     cx: &Context,

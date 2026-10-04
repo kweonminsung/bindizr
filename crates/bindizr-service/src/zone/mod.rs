@@ -32,7 +32,8 @@ pub use history::{diff_versions, get_version, list_versions, rollback};
 pub use notify::notify;
 pub use status::get_status;
 pub use transfer::{
-    TransferAccess, TransferContent, authorize_transfer_by_name, authorize_transfer_content_by_name,
+    TransferAccess, TransferContent, authorize_catalog_content, authorize_transfer_by_name,
+    authorize_transfer_content_by_name,
 };
 pub use update::update;
 pub use validation::normalize_name;

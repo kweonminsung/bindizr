@@ -220,7 +220,7 @@ async fn update_locked(
                             ));
                         }
                     };
-                let caller = caller.lock_grants_tx(&mut tx).await?;
+                let caller = caller.reauthenticate_tx(&mut tx).await?;
 
                 let existing_record = match bindizr_db::record::get_tx(
                     &mut tx,
@@ -258,7 +258,7 @@ async fn update_locked(
             LockTarget::Name { zone_name, name } => {
                 let zone =
                     zone::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive).await?;
-                let caller = caller.lock_grants_tx(&mut tx).await?;
+                let caller = caller.reauthenticate_tx(&mut tx).await?;
                 let owner = normalize_record_owner_name(name, &zone.name)?;
 
                 // Count only what the caller may read or update.

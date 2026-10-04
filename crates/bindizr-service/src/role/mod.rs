@@ -14,6 +14,7 @@ use crate::{
     error::ServiceError,
     pagination::build_page,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
+    transaction,
     types::{CreateRoleRequest, GetRoleResponse, PageRequest, PaginatedResponse},
 };
 
@@ -37,25 +38,34 @@ pub async fn create(
         return Err(ServiceError::role_conflict(&name));
     }
 
-    let role = bindizr_db::role::create(
-        cx.db(),
-        Role {
-            id: RoleId::UNWRITTEN,
-            name: name.clone(),
-            description,
-            created_at: Utc::now(),
-        },
-    )
-    .await
-    .map_err(|e| {
-        // A create that raced past the pre-check trips UNIQUE(name); the
-        // backstop reads as the same conflict.
-        if e.is_unique_violation() {
-            ServiceError::role_conflict(&name)
-        } else {
-            e.into()
-        }
-    })?;
+    let mut tx = transaction::begin_tx(cx, "failed to create role").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::AccessManage)?;
+        bindizr_db::role::create_tx(
+            &mut tx,
+            Role {
+                id: RoleId::UNWRITTEN,
+                name: name.clone(),
+                description,
+                created_at: Utc::now(),
+            },
+        )
+        .await
+        .map_err(|e| {
+            // A create that raced past the pre-check trips UNIQUE(name); the
+            // backstop reads as the same conflict.
+            if e.is_unique_violation() {
+                ServiceError::role_conflict(&name)
+            } else {
+                e.into()
+            }
+        })
+    }
+    .await;
+    let role = transaction::finish_tx(tx, result, "failed to create role").await?;
     Ok(GetRoleResponse {
         id: role.id,
         builtin: role.is_builtin(),
@@ -156,20 +166,29 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
         return Err(ServiceError::role_in_use(&role.name, &tokens, &keys));
     }
 
-    bindizr_db::role::delete(cx.db(), role.id)
-        .await
-        .map_err(|e| {
-            // A credential that took the role between the counts above and
-            // this delete trips the FK: the same in-use conflict.
-            if e.is_foreign_key_violation() {
-                ServiceError::RoleInUse(format!(
-                    "role '{}' is still held by an API token or TSIG key",
-                    role.name
-                ))
-            } else {
-                e.into()
-            }
-        })
+    let mut tx = transaction::begin_tx(cx, "failed to delete role").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::AccessManage)?;
+        bindizr_db::role::delete_tx(&mut tx, role.id)
+            .await
+            .map_err(|e| {
+                // A credential that took the role between the counts above and
+                // this delete trips the FK: the same in-use conflict.
+                if e.is_foreign_key_violation() {
+                    ServiceError::RoleInUse(format!(
+                        "role '{}' is still held by an API token or TSIG key",
+                        role.name
+                    ))
+                } else {
+                    e.into()
+                }
+            })
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to delete role").await
 }
 
 /// Load a role by name or return a not-found error.

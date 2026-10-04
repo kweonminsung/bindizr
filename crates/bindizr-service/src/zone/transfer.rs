@@ -56,6 +56,32 @@ pub async fn authorize_transfer_by_name(
 
 /// Both record planes of the zone `zone_name` names, read under the share
 /// lock that decides whether `key` may transfer it, so the serial, the
+/// Authorize a catalog transfer and load its member zones in one read
+/// transaction; a TSIG key needs `zone:transfer` in all zones, while the ACL
+/// alone admits an unsigned one.
+pub async fn authorize_catalog_content(
+    cx: &Context,
+    key: Option<&TsigKey>,
+) -> Result<TransferAccess<Vec<Zone>>, ServiceError> {
+    let mut tx = transaction::begin_read_tx(cx, "failed to load catalog content").await?;
+    let result = async {
+        if let Some(key) = key
+            && !tsig_key::authorize_catalog_transfer_tx(&mut tx, key).await?
+        {
+            return Ok(TransferAccess::Refused(format!(
+                "TSIG key '{}' is not granted 'zone:transfer' in all zones",
+                key.name
+            )));
+        }
+        let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
+        Ok(TransferAccess::Granted(
+            zones.into_iter().filter(|zone| zone.enabled).collect(),
+        ))
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to load catalog content").await
+}
+
 /// signatures, and the grant all describe one row.
 pub async fn authorize_transfer_content_by_name(
     cx: &Context,

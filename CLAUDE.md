@@ -394,11 +394,13 @@ One locking model covers the service layer; keep new code on it:
   `bindizr_db::zone::get_by_name_tx` / `get_tx` beneath it, `FOR UPDATE`) **before** any
   record rows — that order is the deadlock rule. Authorization, validation, and conflict
   checks decide on rows loaded inside that transaction, never on an earlier unlocked
-  read — grants included: right after the zone row, `Caller::lock_grants_tx` reloads
-  the role's grants share-locked, so a revocation waits for the mutation, and every
-  later check runs on them. A management update with a transaction (a policy, a
-  secondary) does the same; a single-statement management write decides on the
-  request's grants. `lookup_by_name_tx` is the unchecked tx lookup; the caller-gated tx
+  read — the credential included: right after the zone row, `Caller::reauthenticate_tx`
+  re-reads the token and its role's grants share-locked for every later check, so
+  deleting a credential or revoking a grant waits for work in flight and refuses all
+  after it. Every write runs in a transaction, management writes included; a TSIG
+  transfer or update re-reads its key and grants the same way, the catalog's included.
+  A read without a transaction, or an outbound NOTIFY or probe, decides on the
+  request's credential. `lookup_by_name_tx` is the unchecked tx lookup; the caller-gated tx
   read is `get_by_name_tx`, with its `Caller` argument as in the non-tx form. - Outside
   the transaction belong: pure input parsing/normalization, non-locking pre-reads done
   only to learn the lock target (commented at each site), friendly duplicate pre-checks
@@ -408,9 +410,10 @@ One locking model covers the service layer; keep new code on it:
   be internally consistent (zone export, version detail, version diff)
   takes a transaction plus the zone lock. Paginated listings run count and
   page as plain statements; drift between the two is accepted.
-- **Single-statement management writes** (tokens, TSIG keys, policies) take
-  no transaction: UNIQUE/FK constraints backstop their check-then-act races,
-  read as friendly conflicts where the service calls the statement.
+- **Management writes** (tokens, TSIG keys, roles, grants, policies,
+  secondaries) are one statement in a transaction that re-authenticates the
+  caller: UNIQUE/FK constraints backstop their check-then-act races, read as
+  friendly conflicts where the service calls the statement.
 - MySQL and PostgreSQL use READ COMMITTED with row locks and constraints.
   SQLite uses WAL: mutations begin IMMEDIATE to reserve the database writer,
   and read-only transactions begin DEFERRED to read a consistent snapshot.

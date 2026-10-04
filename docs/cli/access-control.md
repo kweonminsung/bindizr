@@ -76,8 +76,9 @@ bindizr role grants challenge-txt
 bindizr role revoke challenge-txt <GRANT_ID>
 ```
 
-A revocation waits for changes already under way and refuses every one after
-it, a long import from another server included.
+Revoking a grant, or deleting a token or TSIG key, waits for changes already
+under way and refuses every one after it, a long import from another server
+included.
 
 `--pattern` is `*` (any name, the default), `@` (the apex), `*.sub` (`sub`
 and every name under it), or an exact name relative to the zone. `--types` is

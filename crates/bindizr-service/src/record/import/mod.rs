@@ -197,7 +197,7 @@ async fn reconcile_zone_file(
         let mut created = false;
         let existing = zone::find_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         // The fetch above may have run long; the grants decide as they stand now.
-        let caller = &caller.lock_grants_tx(&mut tx).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
         let zone = match (existing, request.create) {
             (Some(zone), _) => zone,
             // Created in this transaction, so a dry run rolls it back with

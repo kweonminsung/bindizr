@@ -252,6 +252,14 @@ async fn authorize_key_tx(
     let Some(key) = key else {
         return Ok(());
     };
+    // The key that signed may have been deleted since; locked, a deletion
+    // waits for this transaction.
+    let Some(key) = bindizr_db::tsig_key::get_tx(tx, key.id, LockLevel::Shared).await? else {
+        return Err(DynamicUpdateError::Refused(format!(
+            "TSIG key '{}' no longer exists",
+            key.name
+        )));
+    };
 
     // Share-lock the grants so a concurrent revocation waits for this
     // transaction instead of racing it.

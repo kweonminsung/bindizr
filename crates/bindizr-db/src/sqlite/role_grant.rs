@@ -5,12 +5,10 @@ use sqlx::{Pool, Sqlite, Transaction};
 use crate::{LockLevel, error::DatabaseError, model::role_grant::RoleGrant};
 
 /// Insert a role grant.
-pub(crate) async fn create(
-    pool: &Pool<Sqlite>,
+pub(crate) async fn create_tx(
+    tx: &mut Transaction<'_, Sqlite>,
     mut grant: RoleGrant,
 ) -> Result<RoleGrant, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
     let now = Utc::now();
     let result = sqlx::query(
         r#"
@@ -24,7 +22,7 @@ pub(crate) async fn create(
     .bind(&grant.record_name_pattern)
     .bind(&grant.record_types)
     .bind(now)
-    .execute(&mut *conn)
+    .execute(&mut **tx)
     .await?;
 
     grant.id = RoleGrantId::from(result.last_insert_rowid() as i32);
@@ -116,12 +114,13 @@ pub(crate) async fn list_by_role_id_covering_zone_tx(
 }
 
 /// Delete a role grant by ID.
-pub(crate) async fn delete(pool: &Pool<Sqlite>, id: RoleGrantId) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn delete_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    id: RoleGrantId,
+) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM role_grants WHERE id = ?")
         .bind(id)
-        .execute(&mut *conn)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())

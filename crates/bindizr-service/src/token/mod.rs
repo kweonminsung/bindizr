@@ -15,6 +15,7 @@ use crate::{
     pagination::build_page,
     role,
     text::{MAX_COLUMN_TEXT_LEN, normalize_description, normalize_identifier},
+    transaction,
     types::{CreateTokenRequest, GetTokenResponse, PaginatedResponse, TokenFilter},
 };
 
@@ -56,31 +57,40 @@ pub async fn create(
 
     let token_hash = hash_token(&raw_token);
 
-    let created = bindizr_db::api_token::create(
-        cx.db(),
-        ApiToken {
-            id: TokenId::UNWRITTEN,
-            name: name.clone(),
-            token: token_hash,
-            description,
-            role_id: role.id,
-            expires_at,
-            created_at: Utc::now(),
-            last_used_at: None,
-        },
-    )
-    .await
-    .map_err(|e| {
-        // A create that raced past the pre-check trips UNIQUE(name); the
-        // backstop reads as the same conflict.
-        if e.is_unique_violation() {
-            ServiceError::token_conflict(&name)
-        } else if e.is_foreign_key_violation() {
-            ServiceError::role_not_found(&role.name)
-        } else {
-            e.into()
-        }
-    })?;
+    let mut tx = transaction::begin_tx(cx, "failed to create token").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::AccessManage)?;
+        bindizr_db::api_token::create_tx(
+            &mut tx,
+            ApiToken {
+                id: TokenId::UNWRITTEN,
+                name: name.clone(),
+                token: token_hash,
+                description,
+                role_id: role.id,
+                expires_at,
+                created_at: Utc::now(),
+                last_used_at: None,
+            },
+        )
+        .await
+        .map_err(|e| {
+            // A create that raced past the pre-check trips UNIQUE(name); the
+            // backstop reads as the same conflict.
+            if e.is_unique_violation() {
+                ServiceError::token_conflict(&name)
+            } else if e.is_foreign_key_violation() {
+                ServiceError::role_not_found(&role.name)
+            } else {
+                e.into()
+            }
+        })
+    }
+    .await;
+    let created = transaction::finish_tx(tx, result, "failed to create token").await?;
 
     Ok((
         GetTokenResponse::from_token(&created, &role.name),
@@ -141,7 +151,16 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
 
     let token = lookup_by_name(cx, name).await?;
 
-    Ok(bindizr_db::api_token::delete(cx.db(), token.id).await?)
+    let mut tx = transaction::begin_tx(cx, "failed to delete token").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::AccessManage)?;
+        Ok(bindizr_db::api_token::delete_tx(&mut tx, token.id).await?)
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to delete token").await
 }
 
 /// Load an API token by name or return a not-found error.

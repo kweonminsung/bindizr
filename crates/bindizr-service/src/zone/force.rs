@@ -45,7 +45,7 @@ async fn force_increment_serial_by_name(
     let apply_result = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
         caller
-            .lock_grants_tx(&mut tx)
+            .reauthenticate_tx(&mut tx)
             .await?
             .authorize_zone_action(Action::ZoneUpdate, &zone)?;
 

@@ -1,16 +1,14 @@
 use bindizr_core::model::{api_token::TokenId, role::RoleId};
 use chrono::Utc;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{AssertSqlSafe, Pool, Postgres, Row, Transaction};
 
-use crate::{error::DatabaseError, model::api_token::ApiToken};
+use crate::{LockLevel, error::DatabaseError, model::api_token::ApiToken};
 
 /// Insert an API token.
-pub(crate) async fn create(
-    pool: &Pool<Postgres>,
+pub(crate) async fn create_tx(
+    tx: &mut Transaction<'_, Postgres>,
     mut token: ApiToken,
 ) -> Result<ApiToken, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
     let now = Utc::now();
     let result = sqlx::query(
         r#"
@@ -25,13 +23,30 @@ pub(crate) async fn create(
     .bind(token.role_id)
     .bind(token.expires_at)
     .bind(now)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut **tx)
     .await?;
 
     token.id = TokenId::from(result.get::<i32, _>(0));
     token.created_at = now;
 
     Ok(token)
+}
+
+/// An API token by id in the current transaction.
+pub(crate) async fn get_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    id: TokenId,
+    lock_level: LockLevel,
+) -> Result<Option<ApiToken>, DatabaseError> {
+    let row = sqlx::query_as::<_, ApiToken>(AssertSqlSafe(format!(
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = $1{}",
+        lock_level.clause(),
+    )))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(row)
 }
 
 /// Find an API token by name.
@@ -109,12 +124,13 @@ pub(crate) async fn update(
 }
 
 /// Delete an API token by ID.
-pub(crate) async fn delete(pool: &Pool<Postgres>, id: TokenId) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn delete_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    id: TokenId,
+) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM api_tokens WHERE id = $1")
         .bind(id)
-        .execute(&mut *conn)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())

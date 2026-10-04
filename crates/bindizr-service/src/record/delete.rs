@@ -64,7 +64,7 @@ pub async fn delete(
             }
         };
 
-        let caller = &caller.lock_grants_tx(&mut tx).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
 
         let existing_record =
             match bindizr_db::record::get_tx(&mut tx, record_id, LockLevel::Exclusive).await {
@@ -214,7 +214,7 @@ pub async fn delete_matching(
     let result: Result<(DeleteRecordsResponse, OwnerName), ServiceError> = async {
         // Resolve matches and authorization under the zone lock, including previews.
         let zone = zone::get_by_name_tx(&mut tx, caller, &zone_name, LockLevel::Exclusive).await?;
-        let caller = &caller.lock_grants_tx(&mut tx).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
         let owner = normalize_record_owner_name(&request.name, &zone.name)?;
 
         // Authorize the request, not the rows it matches: an answer that
