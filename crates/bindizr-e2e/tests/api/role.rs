@@ -1346,11 +1346,28 @@ async fn a_write_only_grant_changes_the_records_it_covers() {
         .send_request(Method::GET, &format!("/records/{record_id}"), None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+    // A partial update would inherit fields the grant cannot read.
     let (status, body) = app
         .send_request(
             Method::PUT,
             &format!("/records/{record_id}"),
             Some(json!({ "value": "token-2" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|message| message.contains("missing: name, type, ttl")),
+        "{body}"
+    );
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &format!("/records/{record_id}"),
+            Some(json!({
+                "name": "_acme-challenge", "type": "TXT", "value": "token-2", "ttl": 3600,
+            })),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1543,11 +1560,18 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
     ];
     for id in &secret_ids {
         requests.push((Method::GET, format!("/records/{id}"), None));
-        requests.push((
-            Method::PUT,
-            format!("/records/{id}"),
-            Some(json!({ "value": "overwrite" })),
-        ));
+        // A partial update would echo the fields it inherits.
+        for body in [
+            json!({ "dry_run": true }),
+            json!({ "ttl": 60 }),
+            json!({ "value": "overwrite" }),
+            json!({
+                "name": "_acme-challenge", "type": "TXT", "value": "overwrite", "ttl": 60,
+                "dry_run": true,
+            }),
+        ] {
+            requests.push((Method::PUT, format!("/records/{id}"), Some(body)));
+        }
         requests.push((Method::DELETE, format!("/records/{id}"), None));
     }
 
