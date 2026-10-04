@@ -6,7 +6,10 @@ use domain::base::iana::{Class, Rtype};
 use ring::hmac;
 
 use super::*;
-use crate::{dns::nsupdate::parser::tests::minimal_update_with_ztype, model::tsig_key::TsigKeyId};
+use crate::{
+    dns::nsupdate::parser::tests::minimal_update_with_ztype,
+    model::{role::RoleId, tsig_key::TsigKeyId},
+};
 
 const SECRET: &[u8] = b"a-very-secret-test-key-material!";
 
@@ -17,7 +20,7 @@ pub(crate) fn test_key(algorithm: TsigAlgorithm) -> TsigKey {
         name: "update-key".to_string(),
         algorithm,
         secret: base64::engine::general_purpose::STANDARD.encode(SECRET),
-        is_global: false,
+        role_id: RoleId::from(1),
         created_at: Utc::now(),
     }
 }

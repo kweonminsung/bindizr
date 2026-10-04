@@ -35,8 +35,8 @@ Bindizr owns the zone data and the transfer path; any secondary that consumes a 
 - **Zone Transfers (AXFR/IXFR)** — automatic SOA serial management and an optional per-serial transfer cache. A zone served elsewhere moves over in one command.
 - **Automatic Zone Provisioning** — DNS Catalog Zones (RFC 9432) let secondaries discover created and deleted zones without configuration changes.
 - **DNS NOTIFY** — configurable retries and timeouts, plus an optional batching window that collapses a burst into one NOTIFY per zone.
-- **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests, managed keys, and per-zone grants.
-- **Scoped API Tokens** — tokens granted per zone, optionally narrowed to a record-name pattern and record types, or read-only.
+- **nsupdate (Dynamic Update)** — RFC 2136 dynamic updates with TSIG-signed requests and managed keys.
+- **Role-Based Access Control** — API tokens and TSIG keys authenticate into roles whose grants set the zones, actions, record names, and record types each may touch.
 - **DNSSEC** — named signing policies, automatic signing and re-signing, automatic ZSK and operator-confirmed CSK/KSK rollovers, BIND-format key import/export, and a parent-DS check before a zone goes insecure.
 - **ExternalDNS Provider** — a webhook adapter that lets Kubernetes ExternalDNS manage records in opted-in zones through the authenticated API.
 - **Zone Versions** — a version per serial, with diffs between serials and rollback.
@@ -111,7 +111,7 @@ API authentication is on by default for Kubernetes and package installs — the 
 stack ships with it off. Create a token before calling the HTTP API:
 
 ```bash
-$ sudo bindizr token create admin --global
+$ sudo bindizr token create admin --role admin
 ```
 
 ## Documentation

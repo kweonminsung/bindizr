@@ -48,11 +48,11 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         tag = "DNSSEC",
         summary = "List all DNSSEC policies",
         params(PageRequest),
-        description = "Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC, 14-day signatures re-signed with 5 days left) is seeded at startup.",
+        description = "Lists every DNSSEC policy: the named signing-parameter bundles zones sign under. A `default` policy (ECDSA P-256 CSK, NSEC3, 14-day signatures re-signed with 5 days left) is seeded at startup.",
         responses(
             (status = 200, description = "All DNSSEC policies", body = PaginatedResponse<GetDnssecPolicyResponse>),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
@@ -78,7 +78,7 @@ pub(crate) async fn list_dnssec_policies(
             (status = 201, description = "DNSSEC policy created successfully", body = DnssecPolicyResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 409, description = "A DNSSEC policy with the same name already exists", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -108,7 +108,7 @@ pub(crate) async fn create_dnssec_policy(
         responses(
             (status = 200, description = "The DNSSEC policy", body = DnssecPolicyResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "DNSSEC policy not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -140,7 +140,7 @@ pub(crate) async fn get_dnssec_policy(
             (status = 200, description = "DNSSEC policy updated", body = DnssecPolicyResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "DNSSEC policy not found", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -173,7 +173,7 @@ pub(crate) async fn update_dnssec_policy(
             (status = 200, description = "DNSSEC policy deleted successfully", body = MessageResponse),
             (status = 400, description = "The built-in default policy cannot be deleted", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "DNSSEC policy not found", body = ErrorResponse),
             (status = 409, description = "DNSSEC policy is still used by signed zones", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)

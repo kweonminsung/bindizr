@@ -5,15 +5,12 @@ interoperability run covers 4.9.
 
 ## 1. Register the secondary in Bindizr
 
-Bindizr sends NOTIFY to, and accepts unsigned transfers from, only the
-secondaries registered with it; a PowerDNS missing from them gets every
-transfer refused. Register it by address or hostname — see
-[Secondaries](../cli/secondaries.md) — and it is fed from the next change
-on, with no restart:
+Register the secondary's address so it receives NOTIFY and can transfer
+zones. This example uses a server on the same host, listening on port 53:
 
 ```bash
 # A PowerDNS on this host; elsewhere, its address or hostname
-$ sudo bindizr secondary create powerdns --address 127.0.0.1
+sudo bindizr secondary create powerdns --address 127.0.0.1
 ```
 
 PowerDNS signs only the catalog transfer (see
@@ -32,9 +29,9 @@ allow-notify-from=127.0.0.1
 ```
 
 ```bash
-$ sudo pdnsutil create-secondary-zone catalog.bindizr 127.0.0.1:5300
-$ sudo pdnsutil set-kind catalog.bindizr consumer
-$ sudo systemctl restart pdns
+sudo pdnsutil create-secondary-zone catalog.bindizr 127.0.0.1:5300
+sudo pdnsutil set-kind catalog.bindizr consumer
+sudo systemctl restart pdns
 ```
 
 PowerDNS creates each member zone with the catalog's primary, so nothing
@@ -43,7 +40,12 @@ further is needed for the zones themselves.
 ## 3. Check a zone it learned
 
 ```bash
-$ sudo pdnsutil list-member-zones catalog.bindizr
+sudo pdnsutil list-member-zones catalog.bindizr
+```
+
+Example output:
+
+```text
 example.com
 ```
 
@@ -68,20 +70,18 @@ A TSIG key attaches to a PowerDNS zone through that zone's
 `AXFR-MASTER-TSIG` metadata:
 
 ```bash
-$ sudo pdnsutil import-tsig-key xfr-key hmac-sha256 "<base64 secret>"
-$ sudo pdnsutil activate-tsig-key catalog.bindizr xfr-key secondary
+sudo pdnsutil import-tsig-key xfr-key hmac-sha256 "<base64 secret>"
+sudo pdnsutil activate-tsig-key catalog.bindizr xfr-key secondary
 ```
 
-That signs the **catalog** transfer only. PowerDNS creates the member zones
-without copying the metadata, so every member transfer goes out unsigned.
-Setting it by hand on a member zone works —
+In the verified PowerDNS 4.9 setup, this signs the **catalog** transfer only.
+Member zones do not inherit the metadata. You can set it on an existing member:
 
 ```bash
-$ sudo pdnsutil set-meta example.com AXFR-MASTER-TSIG xfr-key
+sudo pdnsutil set-meta example.com AXFR-MASTER-TSIG xfr-key
 ```
 
-— but those zones appear on their own as the catalog grows, so there is no
-point at which to do it.
+Apply it to each new member if you require signed member transfers.
 
 **With PowerDNS, treat the registered address as the only thing authorizing
 a member transfer.** Bindizr logs each transfer with `signed=true` or

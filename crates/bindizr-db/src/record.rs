@@ -1,6 +1,6 @@
 use bindizr_core::{
     dns::name::{OwnerName, ZoneName},
-    model::{api_token::TokenId, record::RecordId, zone::ZoneId},
+    model::{record::RecordId, role::RoleId, zone::ZoneId},
 };
 
 use crate::{
@@ -29,10 +29,10 @@ pub struct RecordFilter {
     pub min_priority: Option<i32>,
     pub max_priority: Option<i32>,
     pub search: Option<String>,
-    /// Restrict to zones granted to this token, joined against
-    /// `token_grants` in SQL so the bind count stays fixed; `None` is
+    /// Restrict to what this role's grants reach, joined against
+    /// `role_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
-    pub scope_token_id: Option<TokenId>,
+    pub scope_role_id: Option<RoleId>,
     pub sort: RecordSortField,
     pub order: SortOrder,
     pub limit: Option<u32>,
@@ -164,6 +164,15 @@ pub async fn list_by_filter_with_zone(
         Backend::MySql(pool) => mysql::record::list_by_filter_with_zone(pool, filter).await,
         Backend::Postgres(pool) => postgres::record::list_by_filter_with_zone(pool, filter).await,
         Backend::Sqlite(pool) => sqlite::record::list_by_filter_with_zone(pool, filter).await,
+    }
+}
+
+/// How many records a zone holds, in the caller's transaction.
+pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::record::count_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::record::count_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::record::count_tx(tx, zone_id).await,
     }
 }
 

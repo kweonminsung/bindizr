@@ -1,5 +1,5 @@
 //! Match authoritative zones and apply atomic changes for the ExternalDNS adapter.
-//! Token grants control visibility and writes through `/external-dns`.
+//! Role grants control visibility and writes through `/external-dns`.
 
 mod apply;
 mod change_set;
@@ -10,7 +10,7 @@ mod tests;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use apply::apply_changes;
-use bindizr_core::dns::Ttl;
+use bindizr_core::{dns::Ttl, model::role_grant::Action};
 use bindizr_db::{record::RecordFilter, zone::ZoneFilter};
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
     authorization::Caller,
     error::ServiceError,
     grant_pattern::pattern_domain,
-    model::record::RecordSetKey,
+    model::record::{EXTERNAL_DNS_RECORD_TYPES, RecordSetKey},
     types::{ExternalDnsAdjustRequest, ExternalDnsAdjustResponse, ExternalDnsRecord},
 };
 
@@ -40,6 +40,13 @@ pub fn adjust_records(
     Ok(ExternalDnsAdjustResponse { records })
 }
 
+/// What one ExternalDNS sync does in a domain: read ownership records, add, delete.
+const SYNC_ACTIONS: [Action; 3] = [
+    Action::RecordRead,
+    Action::RecordCreate,
+    Action::RecordDelete,
+];
+
 /// List manageable subtrees as ExternalDNS domain filters.
 /// Narrow grants contribute their subtree so planning stays within apply permissions.
 pub async fn list_managed_domains(
@@ -49,7 +56,7 @@ pub async fn list_managed_domains(
     let zones = bindizr_db::zone::list_by_filter(
         cx.db(),
         ZoneFilter {
-            scope_token_id: caller.scope_token_id(),
+            scope_role_id: caller.scope_role_id(),
             ..ZoneFilter::default()
         },
     )
@@ -62,24 +69,21 @@ pub async fn list_managed_domains(
             .collect());
     };
 
-    // Deduplicated and ordered: two grants can name one domain. A
-    // read-only grant leaves ExternalDNS nothing to do, so it stays out.
+    // Deduplicated and ordered: two grants can name one domain. A pattern
+    // lacking a sync action for every type the provider writes would fail
+    // every sync it reaches.
     let mut domains = BTreeSet::new();
     for zone in &zones {
-        for grant in grants
-            .iter()
-            .filter(|grant| grant.zone_id == zone.id && grant.can_write)
-        {
+        for pattern in grants.patterns_holding(zone.id, &SYNC_ACTIONS, EXTERNAL_DNS_RECORD_TYPES) {
             domains.insert(policy::normalize_lookup_name(&pattern_domain(
-                &grant.record_name_pattern,
-                &zone.name,
+                pattern, &zone.name,
             ))?);
         }
     }
     Ok(domains.into_iter().collect())
 }
 
-/// Records of every zone the caller may manage, restricted to the
+/// Records of all zones the caller may manage, restricted to the
 /// ExternalDNS-supported record types: one per name and type, with absolute
 /// owner names and sorted presentation-form values.
 pub async fn list_records(
@@ -97,7 +101,7 @@ pub async fn list_records(
         let rows = bindizr_db::record::list_by_filter_with_zone(
             cx.db(),
             RecordFilter {
-                scope_token_id: caller.scope_token_id(),
+                scope_role_id: caller.scope_role_id(),
                 limit: Some(RECORD_READ_PAGE),
                 offset: Some(offset),
                 ..RecordFilter::default()

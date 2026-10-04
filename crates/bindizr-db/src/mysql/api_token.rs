@@ -1,36 +1,51 @@
-use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::{api_token::TokenId, role::RoleId};
 use chrono::Utc;
-use sqlx::{MySql, Pool};
+use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 
-use crate::{error::DatabaseError, model::api_token::ApiToken};
+use crate::{LockLevel, error::DatabaseError, model::api_token::ApiToken};
 
 /// Insert an API token.
-pub(crate) async fn create(
-    pool: &Pool<MySql>,
+pub(crate) async fn create_tx(
+    tx: &mut Transaction<'_, MySql>,
     mut token: ApiToken,
 ) -> Result<ApiToken, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
     let now = Utc::now();
     let result = sqlx::query(
         r#"
-        INSERT INTO api_tokens (name, token, description, is_global, expires_at, created_at)
+        INSERT INTO api_tokens (name, token, description, role_id, expires_at, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
     "#,
     )
     .bind(&token.name)
     .bind(&token.token)
     .bind(&token.description)
-    .bind(token.is_global)
+    .bind(token.role_id)
     .bind(token.expires_at)
     .bind(now)
-    .execute(&mut *conn)
+    .execute(&mut **tx)
     .await?;
 
     token.id = TokenId::from(result.last_insert_id() as i32);
     token.created_at = now;
 
     Ok(token)
+}
+
+/// An API token by id in the current transaction.
+pub(crate) async fn get_tx(
+    tx: &mut Transaction<'_, MySql>,
+    id: TokenId,
+    lock_level: LockLevel,
+) -> Result<Option<ApiToken>, DatabaseError> {
+    let row = sqlx::query_as::<_, ApiToken>(AssertSqlSafe(format!(
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE id = ?{}",
+        lock_level.clause(),
+    )))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(row)
 }
 
 /// Find an API token by name.
@@ -41,7 +56,7 @@ pub(crate) async fn get_by_name(
     let mut conn = pool.acquire().await?;
 
     let row = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens WHERE name = ?"
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE name = ?"
     )
     .bind(name)
     .fetch_optional(&mut *conn)
@@ -59,7 +74,7 @@ pub(crate) async fn get_by_token(
     let mut conn = pool.acquire().await?;
 
     let row = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens WHERE token = ?"
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE token = ?"
     )
     .bind(token)
     .fetch_optional(&mut *conn)
@@ -74,7 +89,7 @@ pub(crate) async fn list_all(pool: &Pool<MySql>) -> Result<Vec<ApiToken>, Databa
     let mut conn = pool.acquire().await?;
 
     let rows = sqlx::query_as::<_, ApiToken>(
-        "SELECT id, name, token, description, is_global, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC, id DESC"
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC, id DESC"
     )
     .fetch_all(&mut *conn)
     .await
@@ -105,13 +120,31 @@ pub(crate) async fn update(pool: &Pool<MySql>, token: ApiToken) -> Result<ApiTok
 }
 
 /// Delete an API token by ID.
-pub(crate) async fn delete(pool: &Pool<MySql>, id: TokenId) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn delete_tx(
+    tx: &mut Transaction<'_, MySql>,
+    id: TokenId,
+) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM api_tokens WHERE id = ?")
         .bind(id)
-        .execute(&mut *conn)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())
+}
+
+/// List the API tokens authenticating into a role.
+pub(crate) async fn list_by_role_id(
+    pool: &Pool<MySql>,
+    role_id: RoleId,
+) -> Result<Vec<ApiToken>, DatabaseError> {
+    let mut conn = pool.acquire().await?;
+
+    let rows = sqlx::query_as::<_, ApiToken>(
+        "SELECT id, name, token, description, role_id, expires_at, created_at, last_used_at FROM api_tokens WHERE role_id = ? ORDER BY created_at DESC, id DESC",
+    )
+    .bind(role_id)
+    .fetch_all(&mut *conn)
+    .await?;
+
+    Ok(rows)
 }

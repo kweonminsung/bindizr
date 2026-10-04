@@ -14,8 +14,8 @@ use crate::{
     cli::{
         commands::{
             config::ConfigCommand, dnssec::DnssecCommand, dnssec_policy::DnssecPolicyCommand,
-            record::RecordCommand, secondary::SecondaryCommand, token::TokenCommand,
-            tsig_key::TsigKeyCommand, zone::ZoneCommand,
+            record::RecordCommand, role::RoleCommand, secondary::SecondaryCommand,
+            token::TokenCommand, tsig_key::TsigKeyCommand, zone::ZoneCommand,
         },
         output::OutputFormat,
     },
@@ -87,12 +87,17 @@ pub(crate) enum Command {
         #[command(subcommand)]
         subcommand: SecondaryCommand,
     },
-    /// Manage API tokens and the zones each may change over HTTP
+    /// Manage roles: the grants API tokens and TSIG keys act under
+    Role {
+        #[command(subcommand)]
+        subcommand: RoleCommand,
+    },
+    /// Manage API tokens, each authenticating into a role
     Token {
         #[command(subcommand)]
         subcommand: TokenCommand,
     },
-    /// Manage TSIG keys and their zone update and transfer rights
+    /// Manage TSIG keys, each authenticating nsupdate and transfers into a role
     TsigKey {
         #[command(subcommand)]
         subcommand: TsigKeyCommand,
@@ -143,6 +148,7 @@ pub async fn execute() {
         Command::Zone { subcommand } => commands::zone::handle_command(subcommand).await,
         Command::Record { subcommand } => commands::record::handle_command(subcommand).await,
         Command::Secondary { subcommand } => commands::secondary::handle_command(subcommand).await,
+        Command::Role { subcommand } => commands::role::handle_command(subcommand).await,
         Command::Token { subcommand } => commands::token::handle_command(subcommand).await,
         Command::TsigKey { subcommand } => commands::tsig_key::handle_command(subcommand).await,
         Command::DnssecPolicy { subcommand } => {

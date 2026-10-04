@@ -1,7 +1,7 @@
 //! Who may transfer a zone: the key that signed the request, or — when it
 //! carried no TSIG — the address ACL a deployment with no keys keeps using.
 //! A real zone's grant is decided in the service beside the row it serves;
-//! the virtual catalog zone, which holds no grants, is gated here.
+//! the virtual catalog zone, which has no row, is gated here.
 
 use std::net::IpAddr;
 
@@ -57,18 +57,19 @@ pub(crate) struct TransferIdentity {
 }
 
 /// Authenticate a transfer request: verify its TSIG under the key it names, or
-/// admit an unsigned one by the address ACL. The catalog zone is virtual and
-/// holds no grants, so only the ACL or a global key reaches it.
+/// admit an unsigned one by the address ACL. What the key may read is decided
+/// where the content is loaded, the catalog's included.
 pub(crate) async fn authenticate_transfer(
     dns_cx: &DnsContext,
     query_data: &[u8],
     client_ip: IpAddr,
-    zone_name: &str,
 ) -> Result<TransferIdentity, TransferRefusal> {
     let cx = dns_cx.daemon();
     let key_name = match request_signature(query_data) {
         RequestSignature::Key(key_name) => key_name,
         RequestSignature::Absent => {
+            // An address is no credential the content transaction re-reads:
+            // removing a secondary refuses later transfers, not one admitted.
             return match acl::is_client_allowed(dns_cx, client_ip).await {
                 Ok(true) => Ok(TransferIdentity {
                     key: None,
@@ -110,15 +111,6 @@ pub(crate) async fn authenticate_transfer(
     let signer =
         verify_tsig_sequence(query_data, Some(domain_key)).map_err(TransferRefusal::from)?;
 
-    if cx.config().dns.is_catalog_zone(zone_name) && !key.is_global {
-        return Err(TransferRefusal::refused(
-            format!(
-                "TSIG key '{}' is not granted zone '{}' whole",
-                key.name, zone_name
-            ),
-            Some(signer),
-        ));
-    }
     Ok(TransferIdentity {
         key: Some(key),
         signer: Some(signer),

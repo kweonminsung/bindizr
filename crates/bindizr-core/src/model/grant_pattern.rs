@@ -27,6 +27,24 @@ pub fn matches_name(pattern: &str, name: &OwnerName) -> bool {
     *name == OwnerName::from_row(pattern)
 }
 
+/// Whether every name `inner` matches, `outer` matches too.
+pub fn pattern_covers(outer: &str, inner: &str) -> bool {
+    if outer == MATCH_ANY {
+        return true;
+    }
+    if inner == MATCH_ANY {
+        return false;
+    }
+    match inner.strip_prefix("*.") {
+        // Only a subtree at or above it covers a subtree.
+        Some(root) => outer.strip_prefix("*.").is_some_and(|outer_root| {
+            OwnerName::from_row(root).is_same_or_under(&OwnerName::from_row(outer_root))
+        }),
+        None if inner == OwnerName::APEX => matches_name(outer, &OwnerName::apex()),
+        None => matches_name(outer, &OwnerName::from_row(inner)),
+    }
+}
+
 /// Check whether a grant's type filter permits the requested record type.
 pub fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
     if types == MATCH_ANY {
@@ -43,7 +61,7 @@ pub fn matches_types(types: &str, record_type: Option<&RecordType>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::matches_name;
+    use super::{matches_name, pattern_covers};
     use crate::dns::name::OwnerName;
 
     /// Verify that pattern matching covers all forms.
@@ -72,5 +90,21 @@ mod tests {
         // `a\.sub` is the single label `a.sub`, not a name under `sub`.
         assert!(!matches_name("*.sub", &OwnerName::from_row(r"a\.sub")));
         assert!(matches_name("*.sub", &OwnerName::from_row(r"a\.b.sub")));
+    }
+
+    /// Verify that a pattern covers another only when every name of the
+    /// inner one matches the outer, compared by label.
+    #[test]
+    fn pattern_covers_compares_by_label() {
+        assert!(pattern_covers("*", "*.apps"));
+        assert!(pattern_covers("*.apps", "api.apps"));
+        assert!(pattern_covers("*.apps", "*.k8s.apps"));
+        assert!(pattern_covers("*.apps", "apps"));
+        assert!(pattern_covers("api.apps", "api.apps"));
+        assert!(!pattern_covers("api.apps", "*.api.apps"));
+        assert!(!pattern_covers("*.apps", "xapps"));
+        assert!(!pattern_covers("*.apps", "*"));
+        assert!(!pattern_covers("@", "www"));
+        assert!(pattern_covers("@", "@"));
     }
 }

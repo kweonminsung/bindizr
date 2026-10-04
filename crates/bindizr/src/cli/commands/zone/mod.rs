@@ -5,10 +5,10 @@ mod version;
 
 use bindizr_core::{dns::Serial, errln, out, outln};
 use bindizr_service::types::{
-    self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetTokenGrantResponse,
-    GetTsigGrantResponse, GetZoneResponse, GetZonesFilter, ImportZoneRequest, ImportZoneResponse,
-    MessageResponse, NotifySerial, PageRequest, PaginatedResponse, Run, UpdateZoneRequest,
-    ZoneResponse, ZoneStatusResponse, ZoneView, ZoneWriteResponse,
+    self, CreateZoneRequest, DeleteZoneResponse, ExportZoneFileResponse, GetZoneResponse,
+    GetZonesFilter, ImportZoneRequest, ImportZoneResponse, MessageResponse, NotifySerial,
+    PaginatedResponse, Run, UpdateZoneRequest, ZoneResponse, ZoneStatusResponse, ZoneView,
+    ZoneWriteResponse,
 };
 use clap::{Args, Subcommand, ValueEnum};
 pub(crate) use version::ZoneVersionCommand;
@@ -17,8 +17,8 @@ use crate::{
     cli::{
         error::CliError,
         output::{
-            ImportSummaryRow, OutputFormat, SecondaryStatusRow, TokenGrantRow, TsigGrantRow,
-            ZoneRow, print_page, print_payload, print_response, print_table, render_change_preview,
+            ImportSummaryRow, OutputFormat, SecondaryStatusRow, ZoneRow, print_page, print_payload,
+            print_response, print_table, render_change_preview,
         },
     },
     socket::{client, types::DaemonCommand},
@@ -280,45 +280,13 @@ bindizr generates rather than stores as editable records.")]
         output: OutputFormat,
     },
 
-    /// Send NOTIFY messages to secondary servers for a zone, or for every zone
+    /// Send NOTIFY messages to secondary servers for a zone, or for all zones
     #[command(after_help = "\
 Examples:
   bindizr zone notify example.com
-  bindizr zone notify                 # every zone
-  bindizr zone notify --bump-serial   # every zone, transferring even where nothing changed")]
+  bindizr zone notify                 # all zones
+  bindizr zone notify --bump-serial   # all zones, transferring even where nothing changed")]
     Notify(NotifyArgs),
-
-    /// List the API token grants that apply to a zone
-    TokenGrants {
-        /// The name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        name: String,
-        /// Maximum number of grants to return
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Number of grants to skip
-        #[arg(long)]
-        offset: Option<u64>,
-        /// Output format
-        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-
-    /// List the TSIG key grants that apply to a zone
-    TsigGrants {
-        /// The name of the zone
-        #[arg(value_name = "ZONE_NAME")]
-        name: String,
-        /// Maximum number of grants to return
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Number of grants to skip
-        #[arg(long)]
-        offset: Option<u64>,
-        /// Output format
-        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
 
     /// Inspect or roll back a zone's versions (serial history)
     Version {
@@ -354,7 +322,7 @@ impl From<ImportMode> for types::ImportMode {
 /// Arguments for the `zone notify` subcommand.
 #[derive(Args, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NotifyArgs {
-    /// The name of the zone; omit it to notify every zone
+    /// The name of the zone; omit it to notify all zones
     #[arg(value_name = "ZONE_NAME")]
     name: Option<String>,
 
@@ -590,36 +558,6 @@ pub(crate) async fn handle_command(subcommand: ZoneCommand) -> Result<(), CliErr
                 return Ok(());
             }
             print_table(SecondaryStatusRow::rows_from_status(status));
-        }
-        ZoneCommand::TokenGrants {
-            name,
-            limit,
-            offset,
-            output,
-        } => {
-            let response = client::send_command::<PaginatedResponse<GetTokenGrantResponse>>(
-                DaemonCommand::ListZoneTokenGrants {
-                    zone_name: name,
-                    page: PageRequest { limit, offset },
-                },
-            )
-            .await?;
-            print_page(&response.data, output, |item| TokenGrantRow::from(item))?;
-        }
-        ZoneCommand::TsigGrants {
-            name,
-            limit,
-            offset,
-            output,
-        } => {
-            let response = client::send_command::<PaginatedResponse<GetTsigGrantResponse>>(
-                DaemonCommand::ListZoneTsigGrants {
-                    zone_name: name,
-                    page: PageRequest { limit, offset },
-                },
-            )
-            .await?;
-            print_page(&response.data, output, |item| TsigGrantRow::from(item))?;
         }
         ZoneCommand::Notify(args) => {
             // The daemon has a command for each.

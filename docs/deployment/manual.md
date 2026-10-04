@@ -1,8 +1,7 @@
 # Manual Installation
 
-For package-based installation on a VM or bare-metal host. This installs a
-name server, installs the Bindizr binary or package, configures that server as
-a secondary using the catalog zone, and starts Bindizr as a system service.
+Install Bindizr and a BIND secondary on the same Linux host, then create and
+query a zone. The package uses SQLite and a systemd service by default.
 
 ## 1. Install a name server
 
@@ -13,14 +12,14 @@ BIND is what the rest of this page installs.
 === "Debian (Ubuntu, etc.)"
 
     ```bash
-    $ sudo apt-get update
-    $ sudo apt-get install sudo ufw dnsutils bind9
+    sudo apt-get update
+    sudo apt-get install dnsutils bind9
     ```
 
 === "Red Hat (Fedora, CentOS, etc.)"
 
     ```bash
-    $ sudo yum install bind bind-utils
+    sudo yum install bind bind-utils
     ```
 
 ## 2. Download Bindizr and install
@@ -36,72 +35,56 @@ To build the binary yourself instead, see [Building from Source](source.md).
 
     ```bash
     # Install using dpkg (bindizr_*_arm64.deb on arm64)
-    $ sudo dpkg -i bindizr_*_amd64.deb
+    sudo dpkg -i bindizr_*_amd64.deb
 
     # Verify installation
-    $ bindizr
+    bindizr --version
     ```
 
 === "Red Hat Packages (RPM)"
 
     ```bash
     # Install the .rpm package (bindizr-*.aarch64.rpm on arm64)
-    $ sudo rpm -i bindizr-*.x86_64.rpm
+    sudo rpm -i bindizr-*.x86_64.rpm
 
     # Verify installation
-    $ bindizr
+    bindizr --version
     ```
 
-## 3. Configure the secondary
-
-The secondary learns which zones exist from `catalog.bindizr`, a zone
-Bindizr serves whose records list the other zones (RFC 9432). That is what
-makes this hands-off from here on: create or delete a zone via the HTTP API or
-CLI and the secondary picks it up, with no configuration of its own. Any
-server that understands catalog zones will do, so the secondary does not
-have to be BIND.
-
-Follow the page for the server you installed in step 1, using Bindizr's
-packaged defaults — DNS on `127.0.0.1` port 5300, leaving 53 to the secondary.
-Its first step, registering the secondary in Bindizr, needs the daemon
-running, so it is done in step 5 below:
-
-- [BIND](../secondaries/bind.md)
-- [Knot DNS](../secondaries/knot.md)
-- [NSD](../secondaries/nsd.md)
-- [PowerDNS](../secondaries/powerdns.md)
-
-[Secondary Servers](../secondaries/index.md) covers what the setup has in
-common, signing the transfers with TSIG, and which versions support catalog
-zones.
-
-## 4. Configure Bindizr options
+## 3. Configure Bindizr
 
 The package installs `/etc/bindizr/bindizr.conf.toml` ready to run: SQLite at
-`/var/lib/bindizr/bindizr.db` (the file and its directory are created on the
-first start) and zone transfers on port 5300, leaving 53 to the secondary. For MySQL or PostgreSQL, set
-`database.type` and that backend's `url`; see [Configuration](../configuration.md)
-for every option. The file is `0640 root:bindizr` because it carries database
-credentials and the service reads it as the `bindizr` user.
+`/var/lib/bindizr/bindizr.db` and DNS on `127.0.0.1:5300`, leaving port 53
+to the secondary. For MySQL or PostgreSQL, set `database.type` and that
+backend's `url`; see [Configuration](../configuration.md).
 
-## 5. Start the Bindizr service
+The service reads the configuration as the `bindizr` user. Keep its installed
+ownership and permissions (`0640 root:bindizr`) when editing it.
+
+## 4. Start Bindizr
 
 ```bash
 # Start Bindizr service (the package already enabled it at boot)
-$ sudo systemctl start bindizr
+sudo systemctl start bindizr
 
-# Create an admin API token. The CLI runs as the service user, so it needs sudo.
-$ sudo bindizr token create admin --global
-
-# Register the secondary from step 3: it receives NOTIFY and may pull zones from
-# this address. See Secondaries under CLI for a server elsewhere.
-$ sudo bindizr secondary create local --address 127.0.0.1
+# Create and save an admin API token; its secret is shown once.
+sudo bindizr token create admin --role admin
 ```
 
-Then confirm the whole path works end to end:
+Use `sudo` for CLI commands on a package install: they require the daemon's
+user or root.
+
+## 5. Configure the secondary
+
+Follow the [BIND setup](../secondaries/bind.md) to register the secondary
+and configure its catalog zone. Its example uses the same local ports as this
+guide. For another server, follow [Knot DNS](../secondaries/knot.md),
+[NSD](../secondaries/nsd.md), or [PowerDNS](../secondaries/powerdns.md).
+
+After restarting the secondary, check the installation:
 
 ```bash
-$ sudo bindizr doctor
+sudo bindizr doctor
 ```
 
 A failing line names the piece; [Troubleshooting](../troubleshooting.md) has
@@ -112,15 +95,15 @@ the fix for the common ones.
 ```bash
 # The zone starts with an apex NS record naming ns1.example.com, which a
 # secondary needs before it will load the zone; --no-apex-ns leaves that to you.
-$ sudo bindizr zone create example.com --mname ns1.example.com --rname admin@example.com
-$ sudo bindizr record create example.com www --type A --value 192.0.2.1
+sudo bindizr zone create example.com --mname ns1.example.com --rname admin@example.com
+sudo bindizr record create example.com www --type A --value 192.0.2.1
 
 # The secondary learned the zone through the catalog and pulled it; it answers on 53
-$ dig @127.0.0.1 www.example.com A +short
-192.0.2.1
+dig @127.0.0.1 www.example.com A +short
+# Expected answer: 192.0.2.1
 
 # Which serial each secondary serves, against Bindizr's
-$ sudo bindizr zone status example.com
+sudo bindizr zone status example.com
 ```
 
 The package also installs shell completions and `man bindizr`, so the command

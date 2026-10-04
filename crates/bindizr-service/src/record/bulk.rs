@@ -5,7 +5,7 @@ use bindizr_core::{
         Serial, Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::{record::RecordId, zone::ZoneId},
+    model::{record::RecordId, role_grant::Action, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -27,8 +27,8 @@ use crate::{
     transaction,
     ttl::validate_record_ttl,
     types::{
-        BulkRecordsResponse, CreateBulkRecordsRequest, GetRecordResponse, RecordDiff,
-        RecordValueRequest, Run,
+        BulkRecordsResponse, CreateBulkRecordsRequest, GetRecordResponse, RecordDiff, RecordValue,
+        Run,
     },
     zone::{self, diff::build_record_diff},
 };
@@ -48,7 +48,7 @@ struct BulkTimings {
 /// is kept raw so the constraint validator can normalize it against the zone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PreparedRecord {
-    pub(crate) owner_name: String,
+    pub(crate) raw_name: String,
     pub(crate) record_type: RecordType,
     pub(crate) value: String,
     pub(crate) ttl: Option<Ttl>,
@@ -59,7 +59,7 @@ pub(crate) struct PreparedRecord {
 pub(crate) fn parse_record_request(
     name: &str,
     record_type: &str,
-    value: &RecordValueRequest,
+    value: &RecordValue,
     ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Result<PreparedRecord, ServiceError> {
@@ -71,7 +71,7 @@ pub(crate) fn parse_record_request(
         .map_err(ServiceError::invalid_record_value)?;
 
     Ok(PreparedRecord {
-        owner_name: name.to_string(),
+        raw_name: name.to_string(),
         record_type,
         value,
         ttl,
@@ -212,6 +212,7 @@ pub async fn create_bulk(
     let apply_result = async {
         let t = Instant::now();
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
         timings.load_zone_ms = elapsed_ms(t);
 
         // Authorize before loading existing record rows so an ungranted caller
@@ -220,17 +221,16 @@ pub async fn create_bulk(
         let writes: Vec<RecordWrite<'_>> = prepared
             .iter()
             .filter_map(|p| {
-                normalize_record_owner_name(&p.owner_name, &zone.name)
+                normalize_record_owner_name(&p.raw_name, &zone.name)
                     .ok()
                     .map(|name| RecordWrite {
+                        action: Action::RecordCreate,
                         relative_name: name,
                         record_type: Some(&p.record_type),
                     })
             })
             .collect();
-        caller
-            .authorize_record_writes_tx(&mut tx, &zone, &writes)
-            .await?;
+        caller.authorize_record_writes(&zone, &writes)?;
 
         // Only records whose owner name appears in the batch can conflict, so
         // load just those instead of the whole zone.
@@ -286,7 +286,7 @@ pub async fn create_bulk(
         let t = Instant::now();
         let mut to_insert = Vec::with_capacity(prepared.len());
         for prepared_record in &prepared {
-            let owner_name = normalize_record_owner_name(&prepared_record.owner_name, &zone.name)?;
+            let owner_name = normalize_record_owner_name(&prepared_record.raw_name, &zone.name)?;
 
             let records_at_name = records_by_name.entry(owner_name.clone()).or_default();
 
@@ -318,27 +318,28 @@ pub async fn create_bulk(
         }
         timings.build_records_ms = elapsed_ms(t);
 
-        if run.is_dry_run() {
-            // Mirror `validate_delegations_tx` against the simulated final
-            // state: an insert-only batch can only violate it at names it
-            // touches, and those are all indexed here.
-            for (name, rows) in &records_by_name {
-                if rows.iter().any(|r| r.record_type == RecordType::Ds)
-                    && !rows.iter().any(|r| r.record_type == RecordType::Ns)
-                {
-                    return Err(ServiceError::record_conflict(format!(
-                        "DS records at '{}' require delegation NS records at the same name",
-                        name
-                    )));
-                }
+        // Mirror `validate_delegations_tx`, naming the owner it leaves
+        // unnamed: an insert-only batch breaks it only at names it touches.
+        for (name, rows) in &records_by_name {
+            if rows.iter().any(|r| r.record_type == RecordType::Ds)
+                && !rows.iter().any(|r| r.record_type == RecordType::Ns)
+            {
+                return Err(ServiceError::record_conflict(format!(
+                    "DS records at '{}' require delegation NS records at the same name",
+                    name
+                )));
             }
+        }
 
+        if run.is_dry_run() {
             // `after` = existing plus the inserts, so an insert into an
             // existing record set reads as `changed`, not a bare `added`.
-            let before: Vec<RecordData> =
-                before_records.into_iter().map(RecordData::from).collect();
+            let before =
+                caller.readable_records(zone.id, before_records.into_iter().map(RecordData::from));
             let mut after = before.clone();
-            after.extend(to_insert.iter().cloned().map(RecordData::from));
+            for record in &to_insert {
+                after.push_written(RecordData::from(record.clone()));
+            }
             let diff = build_record_diff(&zone, &before, &after);
             return Ok((to_insert, zone.name, diff));
         }
@@ -400,7 +401,13 @@ pub async fn create_bulk(
 
     let records = created_records
         .iter()
-        .map(|record| GetRecordResponse::from_record_and_zone_name(record, &zone_name))
+        .map(|record| {
+            GetRecordResponse::from_record(
+                record,
+                &zone_name,
+                caller.record_actions(record.zone_id, &record.name, &record.record_type),
+            )
+        })
         .collect();
     Ok(BulkRecordsResponse {
         applied: !run.is_dry_run(),

@@ -1,34 +1,52 @@
 //! Manages TSIG credentials shared by update and transfer authentication.
 
+use std::collections::HashMap;
+
 use base64::Engine;
-use bindizr_core::{dns::name::parse_lookup_name, model::tsig_key::TsigKeyId};
+use bindizr_core::{
+    dns::name::parse_lookup_name,
+    model::{
+        role::RoleId,
+        role_grant::{Action, RoleGrants},
+        tsig_key::TsigKeyId,
+    },
+};
+use bindizr_db::LockLevel;
 use chrono::Utc;
 use rand::RngExt;
 
 use crate::{
-    Context,
+    Context, Transaction,
     authorization::Caller,
     error::ServiceError,
-    model::tsig_key::{TsigAlgorithm, TsigKey},
+    model::{
+        tsig_key::{TsigAlgorithm, TsigKey},
+        zone::Zone,
+    },
     pagination::build_page,
+    role,
     text::MAX_COLUMN_TEXT_LEN,
-    types::{CreateTsigKeyRequest, GetTsigKeyResponse, PageRequest, PaginatedResponse},
+    transaction,
+    types::{
+        CreateTsigKeyRequest, GetTsigKeyResponse, PaginatedResponse, TsigKeyFilter, TsigKeyResponse,
+    },
 };
 
 /// Byte length of generated secrets; matches `tsig-keygen`'s default for
 /// HMAC-SHA256 and is sufficient entropy for the larger algorithms too.
 const GENERATED_SECRET_LEN: usize = 32;
 
-/// Create a TSIG key. When `secret` is omitted a random one is generated;
-/// when provided it must be valid, non-empty base64 (an imported key).
+/// Create a TSIG key in the request's role. An omitted `secret` is generated;
+/// a given one must be valid, non-empty base64 (an imported key).
 pub async fn create(
     cx: &Context,
     caller: &Caller,
     request: &CreateTsigKeyRequest,
-) -> Result<TsigKey, ServiceError> {
-    caller.authorize_global("manage TSIG keys and grants")?;
+) -> Result<TsigKeyResponse, ServiceError> {
+    caller.authorize_action(Action::AccessManage)?;
 
     let name = normalize_key_name(&request.name)?;
+    let role = role::lookup_by_name(cx, &request.role_name).await?;
     let algorithm = request
         .algorithm
         .as_deref()
@@ -49,50 +67,87 @@ pub async fn create(
         return Err(ServiceError::tsig_key_conflict(&name));
     }
 
-    bindizr_db::tsig_key::create(
-        cx.db(),
-        TsigKey {
-            id: TsigKeyId::UNWRITTEN,
-            name: name.clone(),
-            algorithm,
-            secret,
-            is_global: request.global,
-            created_at: Utc::now(),
-        },
-    )
-    .await
-    .map_err(|e| {
-        // A create that raced past the pre-check trips UNIQUE(name); the
-        // backstop reads as the same conflict.
-        if e.is_unique_violation() {
-            ServiceError::tsig_key_conflict(&name)
-        } else {
-            e.into()
-        }
-    })
+    let mut tx = transaction::begin_tx(cx, "failed to create TSIG key").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::AccessManage)?;
+        bindizr_db::tsig_key::create_tx(
+            &mut tx,
+            TsigKey {
+                id: TsigKeyId::UNWRITTEN,
+                name: name.clone(),
+                algorithm,
+                secret,
+                role_id: role.id,
+                created_at: Utc::now(),
+            },
+        )
+        .await
+        .map_err(|e| {
+            // A create that raced past the pre-check trips UNIQUE(name); the
+            // backstop reads as the same conflict.
+            if e.is_unique_violation() {
+                ServiceError::tsig_key_conflict(&name)
+            } else if e.is_foreign_key_violation() {
+                ServiceError::role_not_found(&role.name)
+            } else {
+                e.into()
+            }
+        })
+    }
+    .await;
+    let key = transaction::finish_tx(tx, result, "failed to create TSIG key").await?;
+
+    Ok(TsigKeyResponse::from_key(&key, &role.name))
 }
 
-/// List all TSIG keys.
+/// List the TSIG keys, every one or one role's.
 pub async fn list(
     cx: &Context,
     caller: &Caller,
-    page: PageRequest,
+    filter: &TsigKeyFilter,
 ) -> Result<PaginatedResponse<GetTsigKeyResponse>, ServiceError> {
-    caller.authorize_global("manage TSIG keys and grants")?;
+    caller.authorize_action(Action::AccessManage)?;
 
-    let keys = bindizr_db::tsig_key::list_all(cx.db()).await?;
+    let keys = match &filter.role_name {
+        Some(role_name) => {
+            let role = role::lookup_by_name(cx, role_name).await?;
+            bindizr_db::tsig_key::list_by_role_id(cx.db(), role.id).await?
+        }
+        None => bindizr_db::tsig_key::list_all(cx.db()).await?,
+    };
+    let role_names: HashMap<RoleId, String> = bindizr_db::role::list_all(cx.db())
+        .await?
+        .into_iter()
+        .map(|role| (role.id, role.name))
+        .collect();
     build_page(
-        keys.iter().map(GetTsigKeyResponse::from).collect(),
-        page.limit,
-        page.offset,
+        keys.iter()
+            .map(|key| {
+                let role_name = role_names.get(&key.role_id).map_or("", String::as_str);
+                GetTsigKeyResponse::from_key(key, role_name)
+            })
+            .collect(),
+        filter.limit,
+        filter.offset,
     )
 }
 
 /// Fetch one TSIG key by name, including its secret.
-pub async fn get(cx: &Context, caller: &Caller, name: &str) -> Result<TsigKey, ServiceError> {
-    caller.authorize_global("manage TSIG keys and grants")?;
+pub async fn get(
+    cx: &Context,
+    caller: &Caller,
+    name: &str,
+) -> Result<TsigKeyResponse, ServiceError> {
+    caller.authorize_action(Action::AccessManage)?;
 
-    lookup_by_name(cx, name).await
+    let key = lookup_by_name(cx, name).await?;
+    let role = bindizr_db::role::get(cx.db(), key.role_id)
+        .await?
+        .ok_or_else(|| ServiceError::role_not_found(key.role_id))?;
+    Ok(TsigKeyResponse::from_key(&key, &role.name))
 }
 
 /// Fetch one TSIG key by name. This is the unchecked lookup for
@@ -114,17 +169,12 @@ pub async fn find_by_wire_name(cx: &Context, name: &str) -> Result<Option<TsigKe
     Ok(bindizr_db::tsig_key::get_by_name(cx.db(), &name).await?)
 }
 
-/// Delete a TSIG key by name; refused while it still holds grants or
-/// signs a secondary's NOTIFY.
+/// Delete a TSIG key by name; refused while it signs a secondary's NOTIFY.
 pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
-    caller.authorize_global("manage TSIG keys and grants")?;
+    caller.authorize_action(Action::AccessManage)?;
 
     let key = lookup_by_name(cx, name).await?;
 
-    let grant_count = bindizr_db::tsig_grant::count_by_key_id(cx.db(), key.id).await?;
-    if grant_count > 0 {
-        return Err(ServiceError::tsig_key_in_use(&key.name, grant_count));
-    }
     let secondary_count =
         bindizr_db::secondary::count_by_notify_tsig_key_id(cx.db(), key.id).await?;
     if secondary_count > 0 {
@@ -136,19 +186,28 @@ pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), Ser
         )));
     }
 
-    bindizr_db::tsig_key::delete(cx.db(), key.id)
-        .await
-        .map_err(|e| {
-            // A grant or secondary that took the key between the counts above and
-            // this delete trips the FK: the same in-use conflict.
-            if e.is_foreign_key_violation() {
-                ServiceError::TsigKeyInUse(
-                    "TSIG key is still referenced by zone TSIG grants or secondaries".to_string(),
-                )
-            } else {
-                e.into()
-            }
-        })
+    let mut tx = transaction::begin_tx(cx, "failed to delete TSIG key").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::AccessManage)?;
+        bindizr_db::tsig_key::delete_tx(&mut tx, key.id)
+            .await
+            .map_err(|e| {
+                // A secondary that took the key between the count above and this
+                // delete trips the FK: the same in-use conflict.
+                if e.is_foreign_key_violation() {
+                    ServiceError::TsigKeyInUse(
+                        "TSIG key still signs NOTIFY for a secondary".to_string(),
+                    )
+                } else {
+                    e.into()
+                }
+            })
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to delete TSIG key").await
 }
 
 /// Normalize a TSIG key name: it travels in the TSIG record's NAME field, so
@@ -202,7 +261,40 @@ fn generate_secret() -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
-pub mod grant;
+/// Whether `key` still exists and its role permits `zone:transfer` in `zone`,
+/// read in the transfer's own snapshot (share-locked where the backend locks
+/// rows), so the content it serves is what the key could read then.
+pub(crate) async fn authorize_transfer_tx(
+    tx: &mut Transaction<'_>,
+    zone: &Zone,
+    key: &TsigKey,
+) -> Result<bool, ServiceError> {
+    let Some(key) = bindizr_db::tsig_key::get_tx(tx, key.id, LockLevel::Shared).await? else {
+        return Ok(false);
+    };
+    let grants = bindizr_db::role_grant::list_by_role_id_covering_zone_tx(
+        tx,
+        key.role_id,
+        zone.id,
+        LockLevel::Shared,
+    )
+    .await?;
+    Ok(RoleGrants::from(grants).permits(Action::ZoneTransfer, zone.id))
+}
+
+/// Whether `key` still exists with the all-zones `zone:transfer` the catalog
+/// needs, share-locking the key and its grants as for a zone's transfer.
+pub(crate) async fn authorize_catalog_transfer_tx(
+    tx: &mut Transaction<'_>,
+    key: &TsigKey,
+) -> Result<bool, ServiceError> {
+    let Some(key) = bindizr_db::tsig_key::get_tx(tx, key.id, LockLevel::Shared).await? else {
+        return Ok(false);
+    };
+    let grants =
+        bindizr_db::role_grant::list_by_role_id_tx(tx, key.role_id, LockLevel::Shared).await?;
+    Ok(RoleGrants::from(grants).permits_all_zones(Action::ZoneTransfer))
+}
 
 #[cfg(test)]
 mod tests {

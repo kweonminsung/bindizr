@@ -43,12 +43,12 @@ pub(crate) struct NotifyQuery {
         tag = "Notify",
         summary = "Send DNS NOTIFY messages for all zones",
         params(
-            ("bump_serial" = Option<bool>, Query, description = "Bump every zone's serial first, so secondaries transfer even when nothing changed.")
+            ("bump_serial" = Option<bool>, Query, description = "Bump all zones' serials first, so secondaries transfer even when nothing changed.")
         ),
         responses(
             (status = 200, description = "DNS NOTIFY sent successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
 )]
@@ -78,7 +78,7 @@ pub(crate) async fn notify_all_zones(
         responses(
             (status = 200, description = "DNS NOTIFY sent successfully", body = MessageResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required to bump a serial or to notify the catalog zone", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit 'zone:update' there; notifying the catalog zone or all zones needs it in all zones", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )

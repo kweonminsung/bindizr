@@ -1,6 +1,9 @@
-use bindizr_core::dns::{
-    Serial,
-    name::{OwnerName, ZoneName},
+use bindizr_core::{
+    dns::{
+        Serial,
+        name::{OwnerName, ZoneName},
+    },
+    model::role_grant::Action,
 };
 use bindizr_db::LockLevel;
 
@@ -17,10 +20,7 @@ use crate::{
     serial::generate_serial,
     transaction,
     types::{CreateZoneRequest, GetZoneResponse, Run, UpdateZoneRequest, ZoneWriteResponse},
-    zone::{
-        validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
-        version::ChangeAttribution,
-    },
+    zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
 };
 
 /// Outcome of the transactional part of a zone update.
@@ -72,7 +72,6 @@ pub async fn update(
     zone_name: &ZoneName,
     request: &UpdateZoneRequest,
 ) -> Result<ZoneWriteResponse, ServiceError> {
-    caller.authorize_global("update zones")?;
     // The serial is a system-managed version counter, never set on update.
     if request.serial.is_some() {
         return Err(ServiceError::invalid_input(
@@ -82,7 +81,7 @@ pub async fn update(
     let updated_zone = update_locked(
         cx,
         zone_name,
-        caller.change_attribution(),
+        caller,
         request.enabled,
         Run::from_dry_run(request.dry_run),
         |existing| {
@@ -132,7 +131,7 @@ pub async fn update(
 async fn update_locked(
     cx: &Context,
     zone_name: &ZoneName,
-    attribution: &ChangeAttribution,
+    caller: &Caller,
     enabled: Option<bool>,
     run: Run,
     build: impl FnOnce(&Zone) -> CreateZoneRequest,
@@ -144,10 +143,18 @@ async fn update_locked(
         // concurrent record mutations and nsupdate on the same zone.
         let existing_zone =
             super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
+        caller.authorize_zone_action(Action::ZoneUpdate, &existing_zone)?;
         let zone_id = existing_zone.id;
 
         let request = build(&existing_zone);
         let validated = normalize_create_zone_request(cx, &request)?;
+
+        // A new name is `zone:create`'s to give, and its all-zones grant sees
+        // all zones, so the conflict below reveals nothing.
+        if validated.name != existing_zone.name {
+            caller.authorize_action(Action::ZoneCreate)?;
+        }
 
         // A longer zone name lengthens every record's wire name, so the
         // records must still fit under it or the zone stops transferring.
@@ -155,7 +162,16 @@ async fn update_locked(
             let records =
                 bindizr_db::record::list_tx(&mut tx, zone_id, LockLevel::Unlocked).await?;
             for record in &records {
-                validate_record_name_in_zone(&record.name, &validated.name)?;
+                validate_record_name_in_zone(&record.name, &validated.name).map_err(|e| {
+                    if caller.sees_record(zone_id, &record.name, Some(&record.record_type)) {
+                        e
+                    } else {
+                        ServiceError::invalid_record_name(format!(
+                            "a record of the zone would not fit under zone '{}'",
+                            validated.name
+                        ))
+                    }
+                })?;
             }
         }
 
@@ -247,7 +263,14 @@ async fn update_locked(
             })?;
 
         dnssec::sign_zone_tx(&mut tx, &updated_zone, new_serial).await?;
-        super::save_version_tx(&mut tx, cx, &updated_zone, new_serial, attribution).await?;
+        super::save_version_tx(
+            &mut tx,
+            cx,
+            &updated_zone,
+            new_serial,
+            caller.change_attribution(),
+        )
+        .await?;
 
         Ok(AppliedZoneUpdate {
             catalog_changed: existing_zone.name != updated_zone.name

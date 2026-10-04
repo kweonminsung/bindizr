@@ -13,7 +13,7 @@ from any source (allow-notify { any; }).
 The HTTP API answers 401 until a token exists. Create the first one with:
 
   kubectl exec -n {{ .Release.Namespace }} deploy/{{ include "bindizr-chart.fullname" . }} -- \
-    bindizr token create admin --global
+    bindizr token create admin --role admin
 
 Send it as `Authorization: Bearer <token>`; the secret is shown once.
 {{- end }}

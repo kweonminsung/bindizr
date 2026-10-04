@@ -264,8 +264,8 @@ pub(crate) async fn list_by_filter_with_zone(
         )
           AND (
                 $30::INT4 IS NULL
-                OR EXISTS (SELECT 1 FROM token_grants p
-                           WHERE p.api_token_id = $30 AND p.zone_id = r.zone_id
+                OR EXISTS (SELECT 1 FROM role_grants p
+                           WHERE p.role_id = $30 AND (p.zone_id IS NULL OR p.zone_id = r.zone_id)
                              AND {grant_match})
           )
         {order_by}
@@ -306,12 +306,25 @@ pub(crate) async fn list_by_filter_with_zone(
             .map(|offset| i64::try_from(offset).unwrap_or(i64::MAX))
             .unwrap_or(0),
     )
-    .bind(filter.scope_token_id)
+    .bind(filter.scope_role_id)
     .bind(value_exact)
     .fetch_all(&mut *conn)
     .await?;
 
     Ok(records)
+}
+
+/// Count a zone's records in the current transaction.
+pub(crate) async fn count_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+) -> Result<u64, DatabaseError> {
+    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM records WHERE zone_id = $1")
+        .bind(zone_id)
+        .fetch_one(&mut **tx)
+        .await?;
+
+    Ok(count as u64)
 }
 
 /// Count records matching the filter.
@@ -359,8 +372,8 @@ pub(crate) async fn count_by_filter(
         )
           AND (
                 $28::INT4 IS NULL
-                OR EXISTS (SELECT 1 FROM token_grants p
-                           WHERE p.api_token_id = $28 AND p.zone_id = r.zone_id
+                OR EXISTS (SELECT 1 FROM role_grants p
+                           WHERE p.role_id = $28 AND (p.zone_id IS NULL OR p.zone_id = r.zone_id)
                              AND {grant_match})
           )
         "#
@@ -392,7 +405,7 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(filter.scope_token_id)
+    .bind(filter.scope_role_id)
     .bind(value_exact)
     .fetch_one(&mut *conn)
     .await?;

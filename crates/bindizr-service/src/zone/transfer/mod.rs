@@ -4,12 +4,15 @@
 use bindizr_core::dns::name::ZoneName;
 use bindizr_db::LockLevel;
 
+mod delta;
+
+pub use delta::{TransferDelta, authorize_transfer_delta_by_name};
+
 use crate::{
     Context, Transaction,
     error::ServiceError,
     model::{dnssec_record::DnssecRecord, record::Record, tsig_key::TsigKey, zone::Zone},
-    transaction,
-    tsig_key::grant,
+    transaction, tsig_key,
 };
 
 /// The outcome of asking to transfer a zone: what may be read, or the answer
@@ -19,7 +22,7 @@ pub enum TransferAccess<T> {
     Granted(T),
     /// No enabled zone carries the name: NOTAUTH.
     NotAuth,
-    /// The key holds no grant over the whole zone: REFUSED, signed by it.
+    /// The key's role holds no `zone:transfer` reaching the zone: REFUSED, signed by it.
     Refused(String),
 }
 
@@ -55,6 +58,32 @@ pub async fn authorize_transfer_by_name(
     transaction::finish_tx(tx, result, "failed to authorize the transfer").await
 }
 
+/// Authorize a catalog transfer and load its member zones in one read
+/// transaction; a TSIG key needs `zone:transfer` in all zones, while the ACL
+/// alone admits an unsigned one.
+pub async fn authorize_catalog_content(
+    cx: &Context,
+    key: Option<&TsigKey>,
+) -> Result<TransferAccess<Vec<Zone>>, ServiceError> {
+    let mut tx = transaction::begin_read_tx(cx, "failed to load catalog content").await?;
+    let result = async {
+        if let Some(key) = key
+            && !tsig_key::authorize_catalog_transfer_tx(&mut tx, key).await?
+        {
+            return Ok(TransferAccess::Refused(format!(
+                "TSIG key '{}' is not granted 'zone:transfer' in all zones",
+                key.name
+            )));
+        }
+        let zones = bindizr_db::zone::list_all_tx(&mut tx, LockLevel::Unlocked).await?;
+        Ok(TransferAccess::Granted(
+            zones.into_iter().filter(|zone| zone.enabled).collect(),
+        ))
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to load catalog content").await
+}
+
 /// Both record planes of the zone `zone_name` names, read under the share
 /// lock that decides whether `key` may transfer it, so the serial, the
 /// signatures, and the grant all describe one row.
@@ -83,8 +112,8 @@ pub async fn authorize_transfer_content_by_name(
     transaction::finish_tx(tx, result, "failed to load transfer content").await
 }
 
-/// Share-lock the enabled zone by name and, for a scoped key, the grants
-/// that must cover it whole.
+/// Share-lock the enabled zone by name and, for a signed request, the grants
+/// of the key's role that must permit the transfer.
 async fn authorize_transfer_tx(
     tx: &mut Transaction<'_>,
     zone_name: &ZoneName,
@@ -94,10 +123,10 @@ async fn authorize_transfer_tx(
         return Ok(TransferAccess::NotAuth);
     };
     if let Some(key) = key
-        && !grant::authorize_whole_zone_tx(tx, &zone, key).await?
+        && !tsig_key::authorize_transfer_tx(tx, &zone, key).await?
     {
         return Ok(TransferAccess::Refused(format!(
-            "TSIG key '{}' is not granted zone '{}' whole",
+            "TSIG key '{}' is not granted 'zone:transfer' in zone '{}'",
             key.name, zone.name
         )));
     }

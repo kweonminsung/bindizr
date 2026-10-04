@@ -207,7 +207,7 @@ pub(crate) async fn get_zone_version(
         path = "/zones/{name}/versions/{serial}/rollback",
         tag = "Zone",
         summary = "Roll a zone back to a version serial",
-        description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. With `dry_run=true` the rollback is computed and reported without applying any change.",
+        description = "Restores the zone's records and SOA metadata to the state captured at the target serial. The zone serial still advances to a new value (serials never go backward) and a single NOTIFY is sent. The zone name is not part of a version and is never changed. It needs `zone:update`, and `record:read`, `record:create` and `record:delete` with no name or type narrowing, since it reads the version it restores. With `dry_run=true` the rollback is computed and reported without applying any change.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to roll back."),
             ("serial" = u32, Path, description = "The version serial to roll back to."),
@@ -217,7 +217,7 @@ pub(crate) async fn get_zone_version(
             (status = 200, description = "Rollback result", body = RollbackZoneResponse),
             (status = 400, description = "Bad request, invalid target serial", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone or version not found", body = ErrorResponse),
             (status = 409, description = "Record conflict", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -367,7 +367,7 @@ pub(crate) async fn get_zone(
             (status = 200, description = "Dry run validated successfully, nothing applied", body = ZoneWriteResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 409, description = "A zone with the same name already exists", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
@@ -394,7 +394,7 @@ pub(crate) async fn create_zone(
         path = "/zones/{name}",
         tag = "Zone",
         summary = "Update a specific DNS zone",
-        description = "Applies the given fields and keeps the rest; a different `name` renames the zone. The serial advances by itself and cannot be set here.",
+        description = "Applies the given fields and keeps the rest; a different `name` renames the zone, which also needs `zone:create` in all zones. The serial advances by itself and cannot be set here.",
         params(
             ("name" = String, Path, description = "The name of the DNS zone to update.")
         ),
@@ -403,7 +403,7 @@ pub(crate) async fn create_zone(
             (status = 200, description = "DNS zone updated successfully", body = ZoneWriteResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 409, description = "A zone with the new name already exists", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),
@@ -434,7 +434,7 @@ pub(crate) async fn update_zone(
         responses(
             (status = 200, description = "DNS zone deleted successfully", body = DeleteZoneResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 500, description = "Internal server error", body = ErrorResponse)
         )
@@ -470,7 +470,7 @@ pub(crate) async fn delete_zone(
             (status = 200, description = "Import summary", body = ImportZoneResponse),
             (status = 400, description = "Bad request, invalid input", body = ErrorResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
-            (status = 403, description = "A global API token is required", body = ErrorResponse),
+            (status = 403, description = "The caller's role does not permit this", body = ErrorResponse),
             (status = 404, description = "Zone not found", body = ErrorResponse),
             (status = 409, description = "Record conflict", body = ErrorResponse),
             (status = 415, description = "Unsupported media type, expected JSON request body", body = ErrorResponse),

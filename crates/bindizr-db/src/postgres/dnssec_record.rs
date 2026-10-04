@@ -248,8 +248,8 @@ pub(crate) async fn list_by_filter_with_zone(
           )
           AND (
                 $18::INT4 IS NULL
-                OR EXISTS (SELECT 1 FROM token_grants p
-                           WHERE p.api_token_id = $18 AND p.zone_id = d.zone_id
+                OR EXISTS (SELECT 1 FROM role_grants p
+                           WHERE p.role_id = $18 AND (p.zone_id IS NULL OR p.zone_id = d.zone_id)
                              AND {grant_match})
           )
         -- every type at one name shares d.name, so without d.id a plan change
@@ -275,7 +275,7 @@ pub(crate) async fn list_by_filter_with_zone(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(filter.scope_token_id)
+    .bind(filter.scope_role_id)
     .bind(filter.limit.map(i64::from).unwrap_or(i64::MAX))
     .bind(
         filter
@@ -287,6 +287,20 @@ pub(crate) async fn list_by_filter_with_zone(
     .await?;
 
     Ok(records)
+}
+
+/// Count a zone's derived DNSSEC records in the current transaction.
+pub(crate) async fn count_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    zone_id: ZoneId,
+) -> Result<u64, DatabaseError> {
+    let count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM dnssec_records WHERE zone_id = $1")
+            .bind(zone_id)
+            .fetch_one(&mut **tx)
+            .await?;
+
+    Ok(count as u64)
 }
 
 /// Count derived DNSSEC records matching the filter.
@@ -321,8 +335,8 @@ pub(crate) async fn count_by_filter(
           )
           AND (
                 $18::INT4 IS NULL
-                OR EXISTS (SELECT 1 FROM token_grants p
-                           WHERE p.api_token_id = $18 AND p.zone_id = d.zone_id
+                OR EXISTS (SELECT 1 FROM role_grants p
+                           WHERE p.role_id = $18 AND (p.zone_id IS NULL OR p.zone_id = d.zone_id)
                              AND {grant_match})
           )
         "#
@@ -344,7 +358,7 @@ pub(crate) async fn count_by_filter(
     .bind(&search)
     .bind(&search)
     .bind(&search)
-    .bind(filter.scope_token_id)
+    .bind(filter.scope_role_id)
     .fetch_one(&mut *conn)
     .await?;
 

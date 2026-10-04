@@ -8,7 +8,7 @@ async fn notify_all_zones_and_one_zone() {
     let zone_name = app.zone_name("cli-notify.example");
     app.create_zone_cli(&zone_name, "3600").await;
 
-    // No zone name means every zone.
+    // No zone name means all zones.
     let all = app.run_cli_success(&["zone", "notify"]).await;
     assert!(
         all.contains("NOTIFY sent successfully for all zones"),

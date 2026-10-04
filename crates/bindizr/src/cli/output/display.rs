@@ -3,7 +3,7 @@
 //! several fields. A value with a `Display` is written with `{}` instead.
 
 use bindizr_core::model::transfer::{TransferKind, TransferResult};
-use bindizr_service::types::{RecordValueRequest, TransferResponse, TransferSummary};
+use bindizr_service::types::{RecordValue, TransferResponse, TransferSummary};
 use chrono::Utc;
 
 /// What a cell shows for a value that is absent.
@@ -36,7 +36,7 @@ pub(crate) fn display_option_time(opt: &Option<chrono::DateTime<chrono::Utc>>) -
 
 /// A record value as one listing cell, cut at `MAX_CELL_CHARS` and marked
 /// when it was; counted in characters, so a multi-byte value is not split.
-pub(crate) fn display_record_value(value: &RecordValueRequest) -> String {
+pub(crate) fn display_record_value(value: &RecordValue) -> String {
     let text = value.to_text();
     let mut chars = text.chars();
     let head: String = chars.by_ref().take(MAX_CELL_CHARS).collect();

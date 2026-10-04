@@ -17,41 +17,48 @@ Validated against external-dns **v0.21.0**.
 
 ## 1. Enable the provider API
 
-On the Bindizr server:
+On the Bindizr server, enable the provider API and restart the daemon:
 
 ```toml
 [api]
 external_dns_enabled = true
 ```
 
-## 2. Create a token and grant it the zones
+## 2. Create a role and a token
 
-Grant the zones external-dns should manage. They must already exist —
-ExternalDNS never creates or deletes zones:
+Create the target zones first. Grant the adapter's role the three actions
+ExternalDNS needs, `record:read`, `record:create`, and `record:delete`, in one
+grant or several.
+ExternalDNS manages records in existing zones; it does not create zones.
 
 ```bash
-$ bindizr token create external-dns
-$ bindizr token grant external-dns example.com
-$ kubectl -n external-dns create secret generic bindizr-external-dns \
+bindizr role create external-dns-prod
+bindizr role grant external-dns-prod --zone example.com \
+    --actions record:read,record:create,record:delete
+bindizr token create cluster-a --role external-dns-prod
+kubectl create namespace external-dns
+kubectl -n external-dns create secret generic bindizr-external-dns \
     --from-literal=api-token=<token>
 ```
 
-The token's grants become the ExternalDNS domain filter automatically; a
-global token covers every zone. See [API Tokens](cli/tokens.md).
+The role's qualifying grants become the ExternalDNS domain filter
+automatically; a grant without `--zone` covers all zones. One role can serve
+several clusters, each with a token of its own. See
+[Access Control](cli/access-control.md#externaldns).
 
-A grant narrowed to a subtree (`--pattern '*.k8s'`) filters to that subtree
-rather than its zone, so ExternalDNS plans inside it. A filter entry always
-covers the name and everything under it, which is all ExternalDNS can express:
-a grant narrowed by record type, to the apex, or to one exact name reads wider
-there than it is, and ExternalDNS will plan changes Bindizr rejects. Keep the
-type list covering what your sources produce, TXT included, or ownership
-records (`--registry=txt`) fail. A read-only grant is left out of the filter
-entirely.
+A grant narrowed by `--pattern` or `--types` works, with limits the domain
+filter imposes — see
+[How grants become the domain filter](external-dns/advanced.md#how-grants-become-the-domain-filter).
 
 ## 3. Add the adapter
 
-It runs as a second container in the external-dns Deployment; the default
-webhook URL (`http://localhost:8888`) already points at it:
+Add the following containers to an existing ExternalDNS Deployment in the
+`external-dns` namespace. This is a pod-template excerpt; retain the
+Deployment's labels, selector, service account, and Kubernetes RBAC.
+Replace `--bindizr-url` with your Bindizr API Service URL (for the Helm
+quickstart, `http://bindizr-bindizr-chart-api.bindizr.svc:8000`).
+
+The default webhook URL, `http://localhost:8888`, points at the adapter:
 
 ```yaml
 apiVersion: apps/v1
@@ -73,7 +80,7 @@ spec:
           image: kweonminsung/bindizr:latest
           command: ["bindizr-external-dns"]
           args:
-            - --bindizr-url=http://bindizr.bindizr.svc:8000
+            - --bindizr-url=http://bindizr-bindizr-chart-api.bindizr.svc:8000
           env:
             - name: BINDIZR_API_TOKEN
               valueFrom:
@@ -88,13 +95,14 @@ spec:
               port: 8080
 ```
 
-`/healthz` asks Bindizr with the adapter's own token, so a token that was
-rotated away or never granted a zone turns the sidecar unready instead of
-leaving it green while every sync fails.
+`/healthz` checks that Bindizr accepts the token and exposes manageable names.
+It reports the sidecar unready if either check fails. All flags and standalone
+deployment options are in the
+[Adapter reference](external-dns/advanced.md#adapter-reference).
 
 ## 4. Annotate a resource
 
-The record appears in Bindizr:
+Add a hostname annotation to an Ingress, matching `--source=ingress` above:
 
 ```yaml
 metadata:
@@ -102,45 +110,11 @@ metadata:
     external-dns.alpha.kubernetes.io/hostname: app.example.com
 ```
 
-## What to expect
+For Service annotations, also enable `--source=service`. After a sync, inspect
+the result with `bindizr record list example.com` and query your secondary.
 
-- **Record types**: A, AAAA, CNAME, and TXT; anything else is rejected with a
-  clear error, never silently dropped. Ownership TXT records
-  (`--registry=txt`) are stored and returned verbatim.
-- **Atomic and idempotent**: one ExternalDNS sync applies as a whole — every
-  zone in it or none — and retried requests are no-ops.
-- **SOA serials**: only zones with an actual change advance their serial, once
-  per sync, with IXFR history for secondaries.
-- **TTL**: records without a TTL use the zone's default TTL.
-- **Zone matching**: the most-specific existing zone wins
-  (`api.internal.example.com` → `internal.example.com`, never the parent).
-
-## Adapter reference
-
-| Flag | Environment variable | Default |
-| --- | --- | --- |
-| `--bindizr-url` | `BINDIZR_URL` | required |
-| `--token` | `BINDIZR_API_TOKEN` | none |
-| `--token-file` | `BINDIZR_API_TOKEN_FILE` | none (takes precedence over `--token`) |
-| `--ca-file` | `BINDIZR_CA_FILE` | none (added to the system roots; needed for a private or self-signed Bindizr certificate) |
-| `--listen-addr` | `BINDIZR_EXTERNAL_DNS_LISTEN_ADDR` | `127.0.0.1:8888` |
-| `--health-listen-addr` | `BINDIZR_EXTERNAL_DNS_HEALTH_ADDR` | `0.0.0.0:8080` |
-| `--timeout-secs` | `BINDIZR_EXTERNAL_DNS_TIMEOUT_SECS` | `8` (keep under external-dns's 10s webhook write timeout) |
-| `--log-level` | `BINDIZR_EXTERNAL_DNS_LOG_LEVEL` | `info` |
-
-The health listener serves `GET /healthz` (Bindizr answers and accepts this
-token) and `GET /metrics` (`bindizr_external_dns_requests_total`,
-`bindizr_external_dns_request_duration_seconds`).
-
-### Running standalone
-
-If the adapter cannot live in the external-dns pod, run it as its own
-Deployment with `--listen-addr 0.0.0.0:8888` and point
-`--webhook-provider-url` at its Service. The adapter→Bindizr hop stays
-authenticated, but external-dns→adapter is then plain HTTP: keep the Service
-`ClusterIP`, never expose it through an Ingress, and restrict access to the
-external-dns pods with a NetworkPolicy. The sidecar layout is the
-recommended default.
+Which record types are accepted, how a sync applies, and how zones are matched
+is in [What to expect](external-dns/advanced.md#what-to-expect).
 
 ## Troubleshooting
 
@@ -148,8 +122,8 @@ recommended default.
 | --- | --- |
 | `401` in the adapter log | Token missing, expired, or wrong |
 | `403` every sync; allowed changes never apply | The grant is restricted by record type, to the apex, or to one exact name — narrowings the domain filter cannot express — and a sync is all-or-nothing. Widen the grant, or narrow external-dns's own `--domain-filter` to what it covers |
-| `404 No zone is authoritative for '<name>'` | Either no zone covers the name, or the zone that does is not granted to the token; the two read alike so a token cannot probe for zones. Create the zone if it is missing (ExternalDNS never creates zones), otherwise grant it: `bindizr token grant <TOKEN_NAME> <zone>` |
+| `404 No zone is authoritative for '<name>'` | Either no zone covers the name, or the token's role has no grant reaching the zone that does; the two read alike so a token cannot probe for zones. Create the zone if it is missing (ExternalDNS never creates zones), otherwise grant it: `bindizr role grant <ROLE_NAME> --zone <zone> --actions record:read,record:create,record:delete` |
 | `502` from the adapter | Bindizr unreachable or 5xx; external-dns retries automatically |
-| `503 no manageable names` at startup | The token has no writable zone grants (or no zones exist yet). Grant one: `bindizr token grant <TOKEN_NAME> <zone>`; negotiation recovers on its own |
+| `503 no manageable names` at startup | The token's role has no grant holding all of `record:read`, `record:create`, and `record:delete` for a type ExternalDNS writes (A, AAAA, CNAME, TXT) in an existing zone (or no zones exist yet). Grant one: `bindizr role grant <ROLE_NAME> --zone <zone> --actions record:read,record:create,record:delete`; negotiation recovers on its own |
 | `502` although the records were applied | With `dns.notify.batch_ms = 0`, NOTIFY retries to an unreachable secondary can outlast the adapter's timeout after the change already committed. Set a `dns.notify.batch_ms` window so the write is answered at commit, or raise `--timeout-secs`; the retried sync is a no-op |
 | external-dns exits over a content-type error | The webhook URL does not point at the adapter |

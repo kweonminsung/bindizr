@@ -3,7 +3,7 @@ use bindizr_core::{
         Ttl,
         name::{OwnerName, ZoneName},
     },
-    model::{record::RecordId, zone::ZoneId},
+    model::{record::RecordId, role_grant::Action, zone::ZoneId},
 };
 use bindizr_db::LockLevel;
 
@@ -55,10 +55,44 @@ struct ResolvedRecordUpdate {
 
 /// Merge `request` onto the stored record: an omitted field keeps the
 /// record's current value. Shared, so both entry points resolve it alike.
+///
+/// An omitted field is read from the stored record, so `inherit` is that
+/// record only when the caller may read it; `None` requires every field and
+/// names nothing of the record.
 fn resolve_update(
     request: &UpdateRecordRequest,
-) -> impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError> + '_ {
-    move |zone, existing| {
+) -> impl FnOnce(&Zone, &Record, Option<&Record>) -> Result<ResolvedRecordUpdate, ServiceError> + '_
+{
+    move |zone, existing, inherit| {
+        if inherit.is_none() {
+            let mut missing = Vec::new();
+            if request.name.is_none() {
+                missing.push("name");
+            }
+            if request.record_type.is_none() {
+                missing.push("type");
+            }
+            if request.value.is_none() {
+                missing.push("value");
+            }
+            if request.ttl.is_none() {
+                missing.push("ttl");
+            }
+            let takes_priority = request
+                .record_type
+                .as_deref()
+                .and_then(|record_type| parse_record_type(record_type).ok())
+                .is_some_and(|record_type| matches!(record_type, RecordType::Mx | RecordType::Srv));
+            if takes_priority && request.priority.is_none() {
+                missing.push("priority");
+            }
+            if !missing.is_empty() {
+                return Err(ServiceError::forbidden(format!(
+                    "an update without 'record:read' on the record must give every field; missing: {}",
+                    missing.join(", ")
+                )));
+            }
+        }
         let record_type = match &request.record_type {
             Some(record_type) => parse_record_type(record_type)?,
             None => existing.record_type,
@@ -162,12 +196,12 @@ async fn update_locked(
     caller: &Caller,
     target: LockTarget<'_>,
     run: Run,
-    resolve: impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError>,
+    resolve: impl FnOnce(&Zone, &Record, Option<&Record>) -> Result<ResolvedRecordUpdate, ServiceError>,
 ) -> Result<RecordWriteResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to update record").await?;
 
     let apply_result = async {
-        let (zone, existing_record) = match target {
+        let (zone, existing_record, caller) = match target {
             LockTarget::Id { record_id, zone_id } => {
                 let zone =
                     match bindizr_db::zone::get_tx(&mut tx, zone_id, LockLevel::Exclusive).await {
@@ -186,6 +220,7 @@ async fn update_locked(
                             ));
                         }
                     };
+                let caller = caller.reauthenticate_tx(&mut tx).await?;
 
                 let existing_record = match bindizr_db::record::get_tx(
                     &mut tx,
@@ -207,9 +242,10 @@ async fn update_locked(
                     }
                 };
 
-                // A record the caller's grants do not reach reads as 404,
-                // as it does on GET, so ids cannot be probed.
-                if !caller.sees_record(
+                // A record the caller may neither read nor update reads as
+                // 404, as it does on GET, so ids cannot be probed.
+                if !caller.reaches_record(
+                    Action::RecordUpdate,
                     zone.id,
                     &existing_record.name,
                     Some(&existing_record.record_type),
@@ -217,15 +253,15 @@ async fn update_locked(
                     return Err(ServiceError::record_not_found(record_id));
                 }
 
-                (zone, existing_record)
+                (zone, existing_record, caller)
             }
             LockTarget::Name { zone_name, name } => {
                 let zone =
                     zone::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Exclusive).await?;
+                let caller = caller.reauthenticate_tx(&mut tx).await?;
                 let owner = normalize_record_owner_name(name, &zone.name)?;
 
-                // Count only what the caller can see, so the count never
-                // reports rows their grants do not reach.
+                // Count only what the caller may read or update.
                 let mut matched: Vec<Record> = bindizr_db::record::list_by_name_tx(
                     &mut tx,
                     zone.id,
@@ -235,12 +271,17 @@ async fn update_locked(
                 .await?
                 .into_iter()
                 .filter(|record| {
-                    caller.sees_record(zone.id, &record.name, Some(&record.record_type))
+                    caller.reaches_record(
+                        Action::RecordUpdate,
+                        zone.id,
+                        &record.name,
+                        Some(&record.record_type),
+                    )
                 })
                 .collect();
 
                 match matched.len() {
-                    1 => (zone, matched.remove(0)),
+                    1 => (zone, matched.remove(0), caller),
                     0 => {
                         return Err(ServiceError::record_not_found_at_name(&zone.name, &owner));
                     }
@@ -253,26 +294,35 @@ async fn update_locked(
             }
         };
 
-        let resolved = resolve(&zone, &existing_record)?;
+        let caller = &caller;
 
-        // An update is a delete plus an add, so both the stored identity
-        // and the requested one must be granted.
-        caller
-            .authorize_record_writes_tx(
-                &mut tx,
-                &zone,
-                &[
-                    RecordWrite {
-                        relative_name: existing_record.name.clone(),
-                        record_type: Some(&existing_record.record_type),
-                    },
-                    RecordWrite {
-                        relative_name: resolved.owner_name.clone(),
-                        record_type: Some(&resolved.record_type),
-                    },
-                ],
+        // Inheriting an omitted field reads the record.
+        let inherit = caller
+            .sees_record(
+                zone.id,
+                &existing_record.name,
+                Some(&existing_record.record_type),
             )
-            .await?;
+            .then_some(&existing_record);
+        let resolved = resolve(&zone, &existing_record, inherit)?;
+
+        // An update moves a record from its stored identity to the requested
+        // one, so `record:update` must reach both.
+        caller.authorize_record_writes(
+            &zone,
+            &[
+                RecordWrite {
+                    action: Action::RecordUpdate,
+                    relative_name: existing_record.name.clone(),
+                    record_type: Some(&existing_record.record_type),
+                },
+                RecordWrite {
+                    action: Action::RecordUpdate,
+                    relative_name: resolved.owner_name.clone(),
+                    record_type: Some(&resolved.record_type),
+                },
+            ],
+        )?;
         // Only records sharing the new owner name can conflict, so load just
         // those instead of the whole zone.
         let records_at_name = match bindizr_db::record::list_by_name_tx(
@@ -324,14 +374,16 @@ async fn update_locked(
                 .await?,
             );
         }
-        let before: Vec<RecordData> = framed.iter().cloned().map(RecordData::from).collect();
-        let after: Vec<RecordData> = framed
-            .iter()
-            .filter(|record| record.id != existing_record.id)
-            .cloned()
-            .map(RecordData::from)
-            .chain(std::iter::once(RecordData::from(candidate.clone())))
-            .collect();
+        let before = caller.readable_records(zone.id, framed.iter().cloned().map(RecordData::from));
+        let mut after = caller.readable_records(
+            zone.id,
+            framed
+                .iter()
+                .filter(|record| record.id != existing_record.id)
+                .cloned()
+                .map(RecordData::from),
+        );
+        after.push_written(RecordData::from(candidate.clone()));
         let diff = build_record_diff(&zone, &before, &after);
 
         // The merge is resolved and validated, so a dry run stops here.
@@ -380,7 +432,15 @@ async fn update_locked(
     Ok(RecordWriteResponse {
         applied: !run.is_dry_run(),
         dry_run: run.is_dry_run(),
-        record: GetRecordResponse::from_record_and_zone_name(&updated_record, &zone_name),
+        record: GetRecordResponse::from_record(
+            &updated_record,
+            &zone_name,
+            caller.record_actions(
+                updated_record.zone_id,
+                &updated_record.name,
+                &updated_record.record_type,
+            ),
+        ),
         diff,
     })
 }

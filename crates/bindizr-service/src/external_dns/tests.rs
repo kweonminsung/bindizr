@@ -6,7 +6,8 @@ use bindizr_core::{
     model::{
         api_token::{ApiToken, TokenId},
         record::RecordId,
-        token_grant::TokenGrantId,
+        role::RoleId,
+        role_grant::{Action, RoleGrant, RoleGrantId, RoleZoneScope},
         zone::ZoneId,
     },
 };
@@ -23,7 +24,6 @@ use crate::{
     error::ErrorCode,
     model::{
         record::{Record, RecordType},
-        token_grant::TokenGrant,
         zone::Zone,
     },
     types::{ExternalDnsChangesRequest, ExternalDnsRecord, ExternalDnsRecordUpdate},
@@ -345,18 +345,18 @@ fn group_ops_reads_a_hidden_zone_as_absent_instead_of_its_granted_parent() {
             name: "scoped".into(),
             token: String::new(),
             description: None,
-            is_global: false,
+            role_id: RoleId::from(7),
             created_at: Utc::now(),
             expires_at: None,
             last_used_at: None,
         },
-        vec![TokenGrant {
-            id: TokenGrantId::from(1),
-            zone_id: ZoneId::from(1),
-            api_token_id: TokenId::from(7),
+        vec![RoleGrant {
+            id: RoleGrantId::from(1),
+            role_id: RoleId::from(7),
+            zone_scope: RoleZoneScope::Zone(ZoneId::from(1)),
+            actions: [Action::RecordCreate].into_iter().collect(),
             record_name_pattern: "*".to_string(),
             record_types: "*".to_string(),
-            can_write: true,
             created_at: Utc::now(),
         }],
     );

@@ -8,18 +8,20 @@ reporting something that confused you all count.
 
 You need Rust 1.94 or newer and the native build dependencies — a C compiler,
 pkg-config, and the OpenSSL headers — listed per platform in
-[Building from Source](deployment/source.md). Docker is only needed for the
-end-to-end tests and the benchmark suite.
+[Building from Source](deployment/source.md). Tests use temporary SQLite
+databases and local processes by default. Docker is needed for the optional
+DNS/database integration mode and the benchmark suite.
 
 ```bash
-$ git clone https://github.com/kweonminsung/bindizr.git
-$ cd bindizr
-$ cargo build -p bindizr
-$ cargo test --workspace --all-features -- --test-threads=1
+git clone https://github.com/kweonminsung/bindizr.git
+cd bindizr
+cargo build -p bindizr
+cargo test --workspace --all-features -- --test-threads=1
 ```
 
-Tests share process-wide state, so `--test-threads=1` is required — without it
-they race and fail for reasons that have nothing to do with your change.
+Tests run single-threaded; `.cargo/config.toml` sets this for local runs,
+and the command above makes it explicit. For Docker integration tests, see
+the [end-to-end test guide](https://github.com/kweonminsung/bindizr/blob/main/crates/bindizr-e2e/README.md).
 
 `cargo +nightly fmt` formats the code (the config uses nightly-only options),
 and `cargo clippy --workspace` catches the rest.
@@ -30,18 +32,24 @@ The site is MkDocs Material, built from `docs/` in the main repository. With
 [uv](https://docs.astral.sh/uv/) there is nothing to install or activate:
 
 ```bash
-$ uv run --with-requirements docs/requirements.txt mkdocs serve
+uv run --with-requirements docs/requirements.txt mkdocs serve
 ```
 
 Or in a virtualenv, if you prefer:
 
 ```bash
-$ pip install -r docs/requirements.txt
-$ mkdocs serve
+pip install -r docs/requirements.txt
+mkdocs serve
 ```
 
 Use the pinned versions either way — CI builds with `--strict`, so a page that
 renders against a different Material release can still fail the build.
+
+Check the site and internal links before submitting:
+
+```bash
+uv run --with-requirements docs/requirements.txt mkdocs build --strict
+```
 
 Every page has an edit link in the top right that opens the corresponding file
 on GitHub.
