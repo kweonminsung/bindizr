@@ -161,7 +161,16 @@ async fn update_locked(
             let records =
                 bindizr_db::record::list_tx(&mut tx, zone_id, LockLevel::Unlocked).await?;
             for record in &records {
-                validate_record_name_in_zone(&record.name, &validated.name)?;
+                validate_record_name_in_zone(&record.name, &validated.name).map_err(|e| {
+                    if caller.sees_record(zone_id, &record.name, Some(&record.record_type)) {
+                        e
+                    } else {
+                        ServiceError::invalid_record_name(format!(
+                            "a record of the zone would not fit under zone '{}'",
+                            validated.name
+                        ))
+                    }
+                })?;
             }
         }
 

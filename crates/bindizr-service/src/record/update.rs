@@ -57,7 +57,8 @@ struct ResolvedRecordUpdate {
 /// record's current value. Shared, so both entry points resolve it alike.
 ///
 /// An omitted field is read from the stored record, so `inherit` is that
-/// record only when the caller may read it; `None` requires every field.
+/// record only when the caller may read it; `None` requires every field and
+/// names nothing of the record.
 fn resolve_update(
     request: &UpdateRecordRequest,
 ) -> impl FnOnce(&Zone, &Record, Option<&Record>) -> Result<ResolvedRecordUpdate, ServiceError> + '_
@@ -87,10 +88,7 @@ fn resolve_update(
             }
             if !missing.is_empty() {
                 return Err(ServiceError::forbidden(format!(
-                    "an update without 'record:read' on '{}' {} in zone '{}' must give every field; missing: {}",
-                    existing.name,
-                    existing.record_type,
-                    zone.name,
+                    "an update without 'record:read' on the record must give every field; missing: {}",
                     missing.join(", ")
                 )));
             }

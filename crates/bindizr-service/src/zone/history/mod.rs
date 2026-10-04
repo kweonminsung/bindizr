@@ -184,8 +184,10 @@ pub async fn rollback(
 
     let apply_result = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
-        // A rollback rewrites the zone's SOA and its records whole.
+        // A rollback rewrites the zone's SOA and its records whole, from the
+        // stored version it reads.
         caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
+        caller.authorize_whole_zone(Action::RecordRead, &zone)?;
         caller.authorize_whole_zone(Action::RecordCreate, &zone)?;
         caller.authorize_whole_zone(Action::RecordDelete, &zone)?;
 

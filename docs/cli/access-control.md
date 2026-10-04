@@ -92,10 +92,10 @@ deny rules. How grants combine, and what each operation needs, is in
 | --- | --- |
 | `zone:read` | `zone status` and the version list; a zone's details come with any grant reaching it |
 | `zone:create` | Creating zones, including `zone import --create` — needs all zones |
-| `zone:update` | Zone settings, rollback (with the record actions below), NOTIFY; renaming a zone needs `zone:create` too |
+| `zone:update` | Zone settings, rollback (with whole-zone `record:read`, `record:create` and `record:delete`), NOTIFY; a rename also needs `zone:create` |
 | `zone:delete` | Deleting zones |
 | `zone:transfer` | A TSIG-signed AXFR/IXFR of the zone |
-| `record:read` | Listing and reading records; export, version detail, and diffs |
+| `record:read` | Listing and reading records; export, version detail, diffs, and rollback |
 | `record:create` | Adding records |
 | `record:update` | Changing records in place, found by id or name without `record:read`; without it every field must be given, since an omitted one is read from the record |
 | `record:delete` | Deleting records, found by id without `record:read` |
@@ -110,7 +110,8 @@ shows the records it changes and the readable ones beside them, and every
 record in a response lists the record `actions` the token may take on it.
 A grant that writes without reading still learns what its write runs into
 — that a record exists, the TTL its name and type share, how many a delete
-matches — but never a value.
+matches — but never a value, and a change made by record id never names
+the record behind it.
 
 Actions marked "needs all zones" are carried only by a grant without
 `--zone`. `access:manage` amounts to `admin` — see

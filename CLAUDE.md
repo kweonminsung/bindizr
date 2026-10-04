@@ -351,7 +351,8 @@ each rule says which spelling is this project's.
   wants; a client listing things to act on needs the read as well.
   A view the zone is rebuilt from — export, a stored version,
   a diff, a zone-file import — needs a grant with no name or type constraint,
-  since half a zone re-applied deletes what it left out.
+  since half a zone re-applied deletes what it left out; a rollback reads
+  the version it restores, so it needs the whole-zone read too.
 - **A response shows only what the caller may read.** Existing rows reach a
   response — a write's diff, a delete's listing, a version — only as
   `authorization::ReadableRecords`, built by `Caller::readable_records`
@@ -370,9 +371,13 @@ each rule says which spelling is this project's.
   conflict within the grant's scope may say what it hit — a record exists,
   the TTL its set holds, how many a delete matched — since a role that may
   overwrite a record holds more than knowing it is there; a value is never
-  returned without `record:read`. The leak sweep marks values, which is this
-  boundary as a test. Bot findings that a conflict or a count reveals
-  existence or a TTL to a write-only role are declined.
+  returned without `record:read`. What a write touches is what its request
+  named: a stored record behind an id, or met by a whole-zone check, is
+  named only to a caller who may read it; others hear the constraint broken.
+  The leak sweep marks names and values across each role shape a write
+  outruns its read in, which is this boundary as a test. Bot findings
+  that a conflict or a count reveals existence or a TTL to a write-only role
+  are declined.
 - **Each change is authorized by its kind**: a record create, update or
   delete needs the matching `record:` action at its name and type, per change
   in a bulk or ExternalDNS batch. An nsupdate prerequisite needs
