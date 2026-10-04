@@ -20,13 +20,13 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesiredRecord {
     pub(crate) prepared: PreparedRecord,
-    pub(crate) stored_name: OwnerName,
+    pub(crate) name: OwnerName,
 }
 
 impl DesiredRecord {
     /// Whether `existing` has the desired identity; TTL is reconciled separately.
     fn matches(&self, existing: &Record) -> bool {
-        existing.name == self.stored_name
+        existing.name == self.name
             && existing.record_type == self.prepared.record_type
             && existing.has_rdata(&self.prepared.value, self.prepared.priority)
     }
@@ -64,7 +64,7 @@ impl<'a> ImportPlan<'a> {
             HashMap::with_capacity(desired.len());
         for record in desired {
             desired_by_name
-                .entry(&record.stored_name)
+                .entry(&record.name)
                 .or_default()
                 .push(record);
         }
@@ -106,7 +106,7 @@ impl<'a> ImportPlan<'a> {
             let desired_ttl = d.prepared.ttl.unwrap_or(zone.default_ttl);
             let mut present = false;
             let mut stale = false;
-            if let Some(es) = existing_by_name.get(&d.stored_name) {
+            if let Some(es) = existing_by_name.get(&d.name) {
                 for e in es {
                     if d.matches(e) {
                         present = true;
@@ -162,7 +162,7 @@ impl ImportPlan<'_> {
         );
         for add in &self.adds {
             after.push_written(RecordData {
-                name: add.stored_name.clone(),
+                name: add.name.clone(),
                 record_type: add.prepared.record_type,
                 value: add.prepared.value.clone(),
                 ttl: add.prepared.ttl.unwrap_or(zone.default_ttl),

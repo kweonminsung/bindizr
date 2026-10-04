@@ -4,7 +4,7 @@ use bindizr_core::{
 };
 use bindizr_db::{dnssec_record::DnssecRecordFilter, record::RecordFilter};
 
-use super::ListedRecord;
+use super::ServedRecord;
 use crate::{
     Context,
     authorization::Caller,
@@ -142,13 +142,13 @@ pub async fn list_with_zone_by_filter(
     };
 
     let start = offset.unwrap_or(0);
-    let mut items: Vec<ListedRecord> = Vec::new();
+    let mut items: Vec<ServedRecord> = Vec::new();
     if user_plane && start < user_total {
         items.extend(
             bindizr_db::record::list_by_filter_with_zone(cx.db(), record_filter)
                 .await?
                 .into_iter()
-                .map(ListedRecord::User),
+                .map(ServedRecord::User),
         );
     }
     // The derived plane pages after the user plane: it starts where the
@@ -166,7 +166,7 @@ pub async fn list_with_zone_by_filter(
             )
             .await?
             .into_iter()
-            .map(ListedRecord::Derived),
+            .map(ServedRecord::Derived),
         );
     }
 
@@ -206,7 +206,7 @@ pub async fn get(
     }
     Ok(super::build_record_response(
         caller,
-        &ListedRecord::User(record),
+        &ServedRecord::User(record),
     ))
 }
 

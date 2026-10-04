@@ -25,23 +25,24 @@ pub(crate) enum EncodeRecordValueError {
     Value(#[from] ParseRecordValueError),
 }
 
-/// A record value as sent by the client: a single string or TXT segments.
+/// A record value as the API spells it, in requests and responses alike:
+/// a single string or TXT segments.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(untagged)]
-pub enum RecordValueRequest {
+pub enum RecordValue {
     #[schema(example = "192.168.1.100")]
     Text(String),
     #[schema(example = json!(["hello", "world"]))]
     Segments(Vec<String>),
 }
 
-impl RecordValueRequest {
+impl RecordValue {
     /// The value as one string; TXT segments concatenate into the text they
     /// encode.
     pub fn to_text(&self) -> String {
         match self {
-            RecordValueRequest::Text(value) => value.clone(),
-            RecordValueRequest::Segments(segments) => segments.concat(),
+            RecordValue::Text(value) => value.clone(),
+            RecordValue::Segments(segments) => segments.concat(),
         }
     }
 
@@ -53,29 +54,29 @@ impl RecordValueRequest {
         priority: Option<i32>,
     ) -> Result<String, EncodeRecordValueError> {
         match (record_type, self) {
-            (RecordType::Txt, RecordValueRequest::Text(value)) => {
+            (RecordType::Txt, RecordValue::Text(value)) => {
                 Ok(TxtRecordValue::from_string(value).to_presentation())
             }
-            (RecordType::Txt, RecordValueRequest::Segments(segments)) => Ok(
+            (RecordType::Txt, RecordValue::Segments(segments)) => Ok(
                 TxtRecordValue::from_segments(segments.iter().map(String::as_str))
                     .map(|parsed| parsed.to_presentation())?,
             ),
-            (_, RecordValueRequest::Text(value)) => Ok(record_type.encoded_value(value, priority)?),
-            (_, RecordValueRequest::Segments(_)) => Err(EncodeRecordValueError::SegmentsNotTxt),
+            (_, RecordValue::Text(value)) => Ok(record_type.encoded_value(value, priority)?),
+            (_, RecordValue::Segments(_)) => Err(EncodeRecordValueError::SegmentsNotTxt),
         }
     }
 }
 
 /// A stored value as the record APIs display it: TXT decoded to string/segments,
 /// other types rendered with trailing-dot FQDNs. Priority stays a separate field.
-pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> RecordValueRequest {
+pub(crate) fn build_display_value(value: &str, record_type: &RecordType) -> RecordValue {
     if *record_type != RecordType::Txt {
-        return RecordValueRequest::Text(record_type.display_value(value));
+        return RecordValue::Text(record_type.display_value(value));
     }
     match TxtRecordValue::from_presentation(value).and_then(|rdata| rdata.to_content()) {
-        Some(TxtContent::Single(value)) => RecordValueRequest::Text(value),
-        Some(TxtContent::Segments(segments)) => RecordValueRequest::Segments(segments),
-        None => RecordValueRequest::Text(value.to_string()),
+        Some(TxtContent::Single(value)) => RecordValue::Text(value),
+        Some(TxtContent::Segments(segments)) => RecordValue::Segments(segments),
+        None => RecordValue::Text(value.to_string()),
     }
 }
 
@@ -88,7 +89,7 @@ pub struct CreateRecordRequest {
     #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
-    pub value: RecordValueRequest,
+    pub value: RecordValue,
     /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
@@ -108,13 +109,13 @@ pub struct CreateRecordRequest {
 /// request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct RecordItem {
+pub struct BulkRecordItem {
     #[schema(example = "sub")]
     pub name: String,
     #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: String,
-    pub value: RecordValueRequest,
+    pub value: RecordValue,
     /// Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
     #[schema(example = 3600)]
     pub ttl: Option<i32>,
@@ -130,7 +131,7 @@ pub struct RecordItem {
 pub struct CreateBulkRecordsRequest {
     #[schema(example = "example.com")]
     pub zone_name: String,
-    pub records: Vec<RecordItem>,
+    pub records: Vec<BulkRecordItem>,
     /// When true, parse and validate without applying any change.
     #[serde(default)]
     pub dry_run: bool,
@@ -149,7 +150,7 @@ pub struct UpdateRecordRequest {
     #[schema(example = "A")]
     pub record_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<RecordValueRequest>,
+    pub value: Option<RecordValue>,
     /// Records sharing a name and type share one TTL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 3600)]
@@ -186,7 +187,7 @@ pub struct DeleteRecordsRequest {
     /// spelled another way still matches. Requires `type`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "192.0.2.1")]
-    pub value: Option<RecordValueRequest>,
+    pub value: Option<RecordValue>,
     /// MX and SRV keep their preference in its own column, so it narrows
     /// there rather than being part of `value`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -291,9 +292,9 @@ pub struct GetRecordResponse {
     pub name: String,
     #[serde(rename = "type")]
     #[schema(example = "A")]
-    pub record_type: RecordTypeResponse,
+    pub record_type: ServedRecordType,
     #[schema(example = "192.168.1.100")]
-    pub value: RecordValueRequest,
+    pub value: RecordValue,
     #[schema(example = 3600, value_type = i32)]
     pub ttl: Ttl,
     #[schema(example = 10)]
@@ -361,15 +362,16 @@ pub struct BulkRecordsResponse {
     pub diff: RecordDiff,
 }
 
-/// A user record type or a signer-generated type returned by record listing.
+/// The type of a record the zone serves: a user record type, or a
+/// signer-generated one on a derived row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(untagged)]
-pub enum RecordTypeResponse {
+pub enum ServedRecordType {
     User(RecordType),
     Derived(DnssecRecordType),
 }
 
-impl RecordTypeResponse {
+impl ServedRecordType {
     /// Return the DNS mnemonic shared by the response and display forms.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -379,21 +381,21 @@ impl RecordTypeResponse {
     }
 }
 
-impl std::fmt::Display for RecordTypeResponse {
+impl std::fmt::Display for ServedRecordType {
     /// Display the canonical DNS mnemonic.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.pad(self.as_str())
     }
 }
 
-impl From<RecordType> for RecordTypeResponse {
+impl From<RecordType> for ServedRecordType {
     /// Wrap a stored user record type for a record response.
     fn from(value: RecordType) -> Self {
         Self::User(value)
     }
 }
 
-impl From<DnssecRecordType> for RecordTypeResponse {
+impl From<DnssecRecordType> for ServedRecordType {
     /// Wrap a generated DNSSEC record type for a record response.
     fn from(value: DnssecRecordType) -> Self {
         Self::Derived(value)
@@ -408,33 +410,30 @@ mod tests {
     #[test]
     fn record_type_response_spells_itself_once() {
         for (value, expected) in [
-            (RecordTypeResponse::from(RecordType::A), "A"),
-            (RecordTypeResponse::from(RecordType::Aaaa), "AAAA"),
-            (RecordTypeResponse::from(RecordType::Caa), "CAA"),
-            (RecordTypeResponse::from(RecordType::Cname), "CNAME"),
-            (RecordTypeResponse::from(RecordType::Dname), "DNAME"),
-            (RecordTypeResponse::from(RecordType::Ds), "DS"),
-            (RecordTypeResponse::from(RecordType::Mx), "MX"),
-            (RecordTypeResponse::from(RecordType::Naptr), "NAPTR"),
-            (RecordTypeResponse::from(RecordType::Txt), "TXT"),
-            (RecordTypeResponse::from(RecordType::Ns), "NS"),
-            (RecordTypeResponse::from(RecordType::Srv), "SRV"),
-            (RecordTypeResponse::from(RecordType::Ptr), "PTR"),
-            (RecordTypeResponse::from(RecordType::Sshfp), "SSHFP"),
-            (RecordTypeResponse::from(RecordType::Tlsa), "TLSA"),
-            (RecordTypeResponse::from(DnssecRecordType::Rrsig), "RRSIG"),
-            (RecordTypeResponse::from(DnssecRecordType::Nsec), "NSEC"),
-            (RecordTypeResponse::from(DnssecRecordType::Dnskey), "DNSKEY"),
-            (RecordTypeResponse::from(DnssecRecordType::Nsec3), "NSEC3"),
+            (ServedRecordType::from(RecordType::A), "A"),
+            (ServedRecordType::from(RecordType::Aaaa), "AAAA"),
+            (ServedRecordType::from(RecordType::Caa), "CAA"),
+            (ServedRecordType::from(RecordType::Cname), "CNAME"),
+            (ServedRecordType::from(RecordType::Dname), "DNAME"),
+            (ServedRecordType::from(RecordType::Ds), "DS"),
+            (ServedRecordType::from(RecordType::Mx), "MX"),
+            (ServedRecordType::from(RecordType::Naptr), "NAPTR"),
+            (ServedRecordType::from(RecordType::Txt), "TXT"),
+            (ServedRecordType::from(RecordType::Ns), "NS"),
+            (ServedRecordType::from(RecordType::Srv), "SRV"),
+            (ServedRecordType::from(RecordType::Ptr), "PTR"),
+            (ServedRecordType::from(RecordType::Sshfp), "SSHFP"),
+            (ServedRecordType::from(RecordType::Tlsa), "TLSA"),
+            (ServedRecordType::from(DnssecRecordType::Rrsig), "RRSIG"),
+            (ServedRecordType::from(DnssecRecordType::Nsec), "NSEC"),
+            (ServedRecordType::from(DnssecRecordType::Dnskey), "DNSKEY"),
+            (ServedRecordType::from(DnssecRecordType::Nsec3), "NSEC3"),
             (
-                RecordTypeResponse::from(DnssecRecordType::Nsec3param),
+                ServedRecordType::from(DnssecRecordType::Nsec3param),
                 "NSEC3PARAM",
             ),
-            (RecordTypeResponse::from(DnssecRecordType::Cds), "CDS"),
-            (
-                RecordTypeResponse::from(DnssecRecordType::Cdnskey),
-                "CDNSKEY",
-            ),
+            (ServedRecordType::from(DnssecRecordType::Cds), "CDS"),
+            (ServedRecordType::from(DnssecRecordType::Cdnskey), "CDNSKEY"),
         ] {
             assert_eq!(value.as_str(), expected);
             assert_eq!(value.to_string(), expected);
@@ -443,13 +442,13 @@ mod tests {
                 serde_json::json!(expected)
             );
             assert_eq!(
-                serde_json::from_value::<RecordTypeResponse>(serde_json::json!(expected)).unwrap(),
+                serde_json::from_value::<ServedRecordType>(serde_json::json!(expected)).unwrap(),
                 value
             );
         }
         for invalid in ["SOA", "ANY", "AAAAA"] {
             assert!(
-                serde_json::from_value::<RecordTypeResponse>(serde_json::json!(invalid)).is_err()
+                serde_json::from_value::<ServedRecordType>(serde_json::json!(invalid)).is_err()
             );
         }
     }

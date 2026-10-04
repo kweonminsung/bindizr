@@ -27,8 +27,8 @@ use crate::{
     transaction,
     ttl::validate_record_ttl,
     types::{
-        BulkRecordsResponse, CreateBulkRecordsRequest, GetRecordResponse, RecordDiff,
-        RecordValueRequest, Run,
+        BulkRecordsResponse, CreateBulkRecordsRequest, GetRecordResponse, RecordDiff, RecordValue,
+        Run,
     },
     zone::{self, diff::build_record_diff},
 };
@@ -48,7 +48,7 @@ struct BulkTimings {
 /// is kept raw so the constraint validator can normalize it against the zone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PreparedRecord {
-    pub(crate) owner_name: String,
+    pub(crate) raw_name: String,
     pub(crate) record_type: RecordType,
     pub(crate) value: String,
     pub(crate) ttl: Option<Ttl>,
@@ -59,7 +59,7 @@ pub(crate) struct PreparedRecord {
 pub(crate) fn parse_record_request(
     name: &str,
     record_type: &str,
-    value: &RecordValueRequest,
+    value: &RecordValue,
     ttl: Option<i32>,
     priority: Option<i32>,
 ) -> Result<PreparedRecord, ServiceError> {
@@ -71,7 +71,7 @@ pub(crate) fn parse_record_request(
         .map_err(ServiceError::invalid_record_value)?;
 
     Ok(PreparedRecord {
-        owner_name: name.to_string(),
+        raw_name: name.to_string(),
         record_type,
         value,
         ttl,
@@ -220,7 +220,7 @@ pub async fn create_bulk(
         let writes: Vec<RecordWrite<'_>> = prepared
             .iter()
             .filter_map(|p| {
-                normalize_record_owner_name(&p.owner_name, &zone.name)
+                normalize_record_owner_name(&p.raw_name, &zone.name)
                     .ok()
                     .map(|name| RecordWrite {
                         action: Action::RecordCreate,
@@ -287,7 +287,7 @@ pub async fn create_bulk(
         let t = Instant::now();
         let mut to_insert = Vec::with_capacity(prepared.len());
         for prepared_record in &prepared {
-            let owner_name = normalize_record_owner_name(&prepared_record.owner_name, &zone.name)?;
+            let owner_name = normalize_record_owner_name(&prepared_record.raw_name, &zone.name)?;
 
             let records_at_name = records_by_name.entry(owner_name.clone()).or_default();
 

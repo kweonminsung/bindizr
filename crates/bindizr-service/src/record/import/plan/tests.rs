@@ -45,9 +45,9 @@ fn existing(id: i32, name: &str, record_type: RecordType, value: &str, ttl: i32)
 /// Build a desired imported record with an optional explicit TTL.
 fn desired(name: &str, record_type: RecordType, value: &str, ttl: Option<i32>) -> DesiredRecord {
     DesiredRecord {
-        stored_name: OwnerName::parse_in_zone(name, &zone().name).unwrap(),
+        name: OwnerName::parse_in_zone(name, &zone().name).unwrap(),
         prepared: PreparedRecord {
-            owner_name: name.to_string(),
+            raw_name: name.to_string(),
             record_type,
             value: value.to_string(),
             ttl: ttl.map(|ttl| Ttl::try_from(ttl).unwrap()),

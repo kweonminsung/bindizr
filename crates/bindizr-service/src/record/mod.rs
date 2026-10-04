@@ -25,13 +25,14 @@ pub(crate) use validation::{
 use crate::{
     authorization::Caller,
     model::{dnssec_record::DnssecRecordWithZone, record::RecordWithZone},
-    types::{GetRecordResponse, RecordValueRequest},
+    types::{GetRecordResponse, RecordValue},
 };
 
-/// One row of the records listing: a user record or, behind the `signed`
-/// flag, a row of the derived DNSSEC plane.
+/// A record the zone serves, as the record API shows it: a user record or,
+/// behind the `signed` flag, a row of the derived DNSSEC plane. The SOA is
+/// the zone's own and not among them.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum ListedRecord {
+enum ServedRecord {
     User(RecordWithZone),
     Derived(DnssecRecordWithZone),
 }
@@ -39,18 +40,18 @@ enum ListedRecord {
 /// Render a listed row for the API: a user record keeps its id and the
 /// caller's actions on it, a derived DNSSEC row carries neither and renders
 /// its RDATA in presentation form.
-fn build_record_response(caller: &Caller, record: &ListedRecord) -> GetRecordResponse {
+fn build_record_response(caller: &Caller, record: &ServedRecord) -> GetRecordResponse {
     match record {
-        ListedRecord::User(record) => GetRecordResponse::from_record(
+        ServedRecord::User(record) => GetRecordResponse::from_record(
             &record.record(),
             &record.zone_name,
             caller.record_actions(record.zone_id, &record.name, &record.record_type),
         ),
-        ListedRecord::Derived(row) => GetRecordResponse {
+        ServedRecord::Derived(row) => GetRecordResponse {
             id: None,
             name: row.name.to_fqdn(&row.zone_name),
             record_type: row.record_type.into(),
-            value: RecordValueRequest::Text(row.rdata.to_presentation(row.record_type)),
+            value: RecordValue::Text(row.rdata.to_presentation(row.record_type)),
             ttl: row.ttl,
             priority: None,
             zone_id: row.zone_id,

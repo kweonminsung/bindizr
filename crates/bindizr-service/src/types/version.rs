@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::record::{RecordValueRequest, build_display_value};
+use super::record::{RecordValue, build_display_value};
 use crate::{
     error::ServiceError,
     model::{
@@ -81,7 +81,7 @@ pub struct VersionRecordResponse {
     #[serde(rename = "type")]
     #[schema(example = "A")]
     pub record_type: RecordType,
-    pub value: RecordValueRequest,
+    pub value: RecordValue,
     #[schema(example = 3600, value_type = i32)]
     pub ttl: Ttl,
     #[schema(example = 10)]
@@ -114,7 +114,7 @@ pub struct VersionDetailResponse {
 /// placement) is left to the client; the value is in display form.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
 pub struct RecordDiffValue {
-    pub value: RecordValueRequest,
+    pub value: RecordValue,
     #[schema(example = 300, value_type = i32)]
     pub ttl: Ttl,
     #[schema(example = 10)]
