@@ -1,16 +1,11 @@
-use bindizr_core::{
-    dns::{Serial, name::ZoneName},
-    model::zone::ZoneId,
-};
-use bindizr_db::{
-    LockLevel, dnssec_record::DnssecRecordFilter, record::RecordFilter, zone::ZoneFilter,
-};
+use bindizr_core::dns::name::ZoneName;
+use bindizr_db::{LockLevel, zone::ZoneFilter};
 
 use crate::{
     Context, Transaction,
     authorization::Caller,
     error::ServiceError,
-    model::{zone::Zone, zone_change::ZoneChange},
+    model::zone::Zone,
     pagination::{build_paginated_response, normalize_page_limit, parse_setting},
     serial::validate_stored_serial,
     types::{GetZoneResponse, GetZonesFilter, PaginatedResponse},
@@ -37,32 +32,6 @@ pub(crate) async fn find_by_name_tx(
     lock_level: LockLevel,
 ) -> Result<Option<Zone>, ServiceError> {
     Ok(bindizr_db::zone::get_by_name_tx(tx, zone_name, lock_level).await?)
-}
-
-/// Count journal rows in `(from_serial, to_serial]` for the IXFR size estimate.
-pub async fn count_changes_between_serials(
-    cx: &Context,
-    zone_id: ZoneId,
-    from_serial: Serial,
-    to_serial: Serial,
-) -> Result<u64, ServiceError> {
-    Ok(
-        bindizr_db::zone_change::count_between_serials(cx.db(), zone_id, from_serial, to_serial)
-            .await?,
-    )
-}
-
-/// Journal rows in `(from_serial, to_serial]`, ordered by serial then row id.
-pub async fn list_changes_between_serials(
-    cx: &Context,
-    zone_id: ZoneId,
-    from_serial: Serial,
-    to_serial: Serial,
-) -> Result<Vec<ZoneChange>, ServiceError> {
-    Ok(
-        bindizr_db::zone_change::list_between_serials(cx.db(), zone_id, from_serial, to_serial)
-            .await?,
-    )
 }
 
 /// Cheap database round-trip (limit-1 zones probe), for health checks.
@@ -187,31 +156,4 @@ pub(crate) async fn lookup_by_name_tx(
     bindizr_db::zone::get_by_name_tx(tx, zone_name, lock_level)
         .await?
         .ok_or_else(|| ServiceError::zone_not_found(zone_name))
-}
-
-/// Count both record planes for the IXFR/AXFR size comparison. These unlocked
-/// counts may drift during a write; they choose the transfer format only.
-pub async fn count_transfer_records(
-    cx: &Context,
-    zone_name: &ZoneName,
-) -> Result<u64, ServiceError> {
-    let records = bindizr_db::record::count_by_filter(
-        cx.db(),
-        RecordFilter {
-            zone_name: Some(zone_name.clone()),
-            ..RecordFilter::default()
-        },
-    )
-    .await?;
-
-    let dnssec_records = bindizr_db::dnssec_record::count_by_filter(
-        cx.db(),
-        DnssecRecordFilter {
-            zone_name: Some(zone_name.clone()),
-            ..DnssecRecordFilter::default()
-        },
-    )
-    .await?;
-
-    Ok(records + dnssec_records)
 }

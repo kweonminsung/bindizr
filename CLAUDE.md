@@ -414,10 +414,11 @@ One locking model covers the service layer; keep new code on it:
   every later one; a read authorizes and loads its content in one snapshot, so on
   SQLite, where a read holds no lock, it may finish after a revocation but serves only
   what it could read before. Every write therefore runs in a transaction, management
-  writes included; a TSIG transfer or update re-reads its key and grants the same way, the
-  catalog's included. A read without a transaction, an outbound NOTIFY or probe, and
-  an unsigned transfer (the address list as the request finds it) decide on the
-  request's credential.
+  writes included; a TSIG transfer or update re-reads its key and grants the same way,
+  and a transfer loads what it serves (AXFR records, IXFR delta, catalog members, SOA)
+  in that transaction, a cached AXFR serving its serial's content. A read without a
+  transaction, an outbound NOTIFY or probe, and an unsigned transfer (the address list
+  as the request finds it) decide on the request's credential.
 - **Reads**: one statement needs no transaction. A derived output that must
   be internally consistent (zone export, version detail, version diff)
   takes a transaction plus the zone lock. Paginated listings run count and

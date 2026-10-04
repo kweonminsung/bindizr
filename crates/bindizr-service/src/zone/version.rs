@@ -123,25 +123,3 @@ pub(crate) async fn save_version_tx(
 
     Ok(())
 }
-
-/// Fetch the SOA version recorded for a zone at the given serial, if any.
-pub async fn find_version_by_serial(
-    cx: &Context,
-    zone_id: ZoneId,
-    serial: Serial,
-) -> Result<Option<ZoneVersion>, ServiceError> {
-    Ok(bindizr_db::zone_version::get_by_serial(cx.db(), zone_id, serial).await?)
-}
-
-/// Fetch every SOA version for a zone with serial in `[from_serial, to_serial]`.
-pub async fn list_versions_in_serial_range(
-    cx: &Context,
-    zone_id: ZoneId,
-    from_serial: Serial,
-    to_serial: Serial,
-) -> Result<Vec<ZoneVersion>, ServiceError> {
-    Ok(
-        bindizr_db::zone_version::list_in_serial_range(cx.db(), zone_id, from_serial, to_serial)
-            .await?,
-    )
-}
