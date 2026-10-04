@@ -103,6 +103,11 @@ pub struct DnssecPolicy {
 }
 
 impl DnssecPolicy {
+    /// Whether this is the built-in `default` policy, which cannot be deleted.
+    pub fn is_builtin(&self) -> bool {
+        self.name == DEFAULT_DNSSEC_POLICY_NAME
+    }
+
     /// Describe the policy's key layout for validation errors.
     pub fn key_layout(&self) -> &'static str {
         if self.split_keys {

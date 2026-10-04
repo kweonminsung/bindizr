@@ -11,7 +11,7 @@ use bindizr_core::{
         name::{OwnerName, ZoneName},
         record::SoaMailbox,
     },
-    model::{record::RecordId, zone_version::VersionFilter},
+    model::{record::RecordId, role_grant::Action, zone_version::VersionFilter},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -62,6 +62,7 @@ pub async fn list_versions(
     filter: VersionFilter,
 ) -> Result<PaginatedResponse<ZoneVersionResponse>, ServiceError> {
     let zone = super::get_by_name(cx, caller, zone_name).await?;
+    caller.authorize_zone_action(Action::ZoneRead, &zone)?;
 
     let total = bindizr_db::zone_version::count_by_filter(cx.db(), zone.id, filter).await?;
     let effective_limit = normalize_page_limit(limit)?;
@@ -98,7 +99,10 @@ pub async fn get_version(
 
     let result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-        caller.authorize_zone_unrestricted(&zone)?;
+        let read = caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_whole_zone_read(&zone)?;
         let version = bindizr_db::zone_version::get_by_serial_tx(
             &mut tx,
             zone.id,
@@ -108,7 +112,9 @@ pub async fn get_version(
         .await?
         .ok_or_else(|| ServiceError::version_not_found(zone.name.as_str(), serial))?;
 
-        let records = list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?;
+        let records = read.readable_records(
+            list_records_at_serial_tx(&mut tx, zone.id, serial, zone.serial).await?,
+        );
 
         Ok::<_, ServiceError>((zone, version, records))
     }
@@ -119,6 +125,7 @@ pub async fn get_version(
     Ok(VersionDetailResponse {
         version: ZoneVersionResponse::try_from(&version)?,
         records: records
+            .as_slice()
             .iter()
             .map(|record| VersionRecordResponse::from_record_and_zone_name(record, &zone.name))
             .collect(),
@@ -141,7 +148,10 @@ pub async fn diff_versions(
 
     let result = async {
         let zone = super::get_by_name_tx(&mut tx, caller, zone_name, LockLevel::Shared).await?;
-        caller.authorize_zone_unrestricted(&zone)?;
+        let read = caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_whole_zone_read(&zone)?;
         let to = to.unwrap_or(zone.serial);
 
         validate_serial_diffable_tx(&mut tx, &zone, from).await?;
@@ -153,7 +163,11 @@ pub async fn diff_versions(
         Ok::<_, ServiceError>(VersionDiffResponse {
             from_serial,
             to_serial: to,
-            diff: build_record_diff(&zone, &from_records, &to_records),
+            diff: build_record_diff(
+                &zone,
+                &read.readable_records(from_records),
+                &read.readable_records(to_records),
+            ),
         })
     }
     .await;
@@ -170,13 +184,19 @@ pub async fn rollback(
     target_serial: Serial,
     run: Run,
 ) -> Result<RollbackZoneResponse, ServiceError> {
-    caller.authorize_global("roll back zones")?;
     let target = validate_stored_serial(target_serial)?;
 
     let mut tx = transaction::begin_tx(cx, "failed to roll back zone").await?;
 
     let apply_result = async {
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
+        // A rollback rewrites the zone's SOA and its records whole, from the
+        // stored version it reads.
+        caller.authorize_zone_action(Action::ZoneUpdate, &zone)?;
+        caller.authorize_whole_zone(Action::RecordRead, &zone)?;
+        caller.authorize_whole_zone(Action::RecordCreate, &zone)?;
+        caller.authorize_whole_zone(Action::RecordDelete, &zone)?;
 
         if target.as_u32() < 1 || target >= zone.serial {
             return Err(ServiceError::invalid_input(format!(

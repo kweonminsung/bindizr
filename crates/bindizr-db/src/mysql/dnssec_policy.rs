@@ -5,12 +5,10 @@ use sqlx::{AssertSqlSafe, MySql, Pool, Transaction};
 use crate::{LockLevel, error::DatabaseError, model::dnssec_policy::DnssecPolicy};
 
 /// Insert a DNSSEC policy.
-pub(crate) async fn create(
-    pool: &Pool<MySql>,
+pub(crate) async fn create_tx(
+    tx: &mut Transaction<'_, MySql>,
     mut policy: DnssecPolicy,
 ) -> Result<DnssecPolicy, DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
     let now = Utc::now();
     let result = sqlx::query(
         r#"
@@ -26,7 +24,7 @@ pub(crate) async fn create(
     .bind(policy.signature_refresh_days)
     .bind(policy.zsk_lifetime_days)
     .bind(now)
-    .execute(&mut *conn)
+    .execute(&mut **tx)
     .await?;
 
     policy.id = PolicyId::from(result.last_insert_id() as i32);
@@ -121,12 +119,13 @@ pub(crate) async fn update_tx(
 }
 
 /// Delete a DNSSEC policy by ID.
-pub(crate) async fn delete(pool: &Pool<MySql>, id: PolicyId) -> Result<(), DatabaseError> {
-    let mut conn = pool.acquire().await?;
-
+pub(crate) async fn delete_tx(
+    tx: &mut Transaction<'_, MySql>,
+    id: PolicyId,
+) -> Result<(), DatabaseError> {
     sqlx::query("DELETE FROM dnssec_policies WHERE id = ?")
         .bind(id)
-        .execute(&mut *conn)
+        .execute(&mut **tx)
         .await?;
 
     Ok(())

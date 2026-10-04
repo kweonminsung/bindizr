@@ -1,12 +1,9 @@
 # Migrating from an Existing Primary
 
-Bindizr takes over as the primary for zones another name server serves today.
-Nothing about the old server has to change until the last step, so each zone
-can be moved and verified on its own.
-
-The shape of the move: Bindizr pulls each zone's records over a transfer, you
-compare the result against the source, and only then do the secondaries start
-answering from Bindizr's catalog.
+Move zones by importing them over AXFR, verifying the records, then pointing
+the secondaries at Bindizr. Keep the old primary serving during verification.
+For signed zones, complete the [DNSSEC preparation](#zones-with-dnssec)
+before switching secondaries.
 
 ## 1. Let Bindizr transfer from the old primary
 
@@ -24,7 +21,7 @@ zone "example.com" {
 Check it from the Bindizr host before going further:
 
 ```bash
-$ dig @<old-primary> example.com AXFR | head
+dig @<old-primary> example.com AXFR | head
 ```
 
 ## 2. Import the zone, dry run first
@@ -39,8 +36,8 @@ replace` makes the zone match the source exactly. `--dry-run` reports what
 would change and writes nothing, not even the zone:
 
 ```bash
-$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create --dry-run
-$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create
+bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create --dry-run
+bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create
 ```
 
 A zone file written for BIND often carries record types Bindizr does not
@@ -49,15 +46,15 @@ over those lines and lists each one, so you can decide whether what it skipped
 matters:
 
 ```bash
-$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create --skip-unsupported --dry-run
+bindizr zone import example.com --from-server <old-primary>:53 --mode replace --create --skip-unsupported --dry-run
 ```
 
-Where the source has no SOA to build from, or its fields are not what you want
-to keep, create the zone yourself first and import without `--create`:
+To choose your own SOA fields, create the zone first and import without
+`--create`. Choose an initial serial consistent with the old primary:
 
 ```bash
-$ bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --serial 2026091601
-$ bindizr zone import example.com --from-server <old-primary>:53 --mode replace
+bindizr zone create example.com --mname ns1.example.com --rname admin@example.com --serial 2026091601
+bindizr zone import example.com --from-server <old-primary>:53 --mode replace
 ```
 
 ## 3. Compare before cutting over
@@ -65,13 +62,15 @@ $ bindizr zone import example.com --from-server <old-primary>:53 --mode replace
 Export what Bindizr now serves and diff it against the source:
 
 ```bash
-$ dig @<old-primary> example.com AXFR > /tmp/old.zone
-$ bindizr zone export example.com > /tmp/new.zone
-$ diff <(sort /tmp/old.zone) <(sort /tmp/new.zone)
+dig @<old-primary> example.com AXFR +noall +answer > /tmp/old.zone
+bindizr zone export example.com > /tmp/new.zone
+diff <(sort /tmp/old.zone) <(sort /tmp/new.zone)
 ```
 
-Expect the SOA line and record ordering to differ. Anything else is a record
-that did not survive the import.
+Text differences can include SOA values, name formatting, and TXT escaping.
+Compare names, types, TTLs, and values, and review any records reported as
+skipped. Repeat the import after stopping writes to the old primary so changes
+made during verification are included in the cutover.
 
 ## 4. Point the secondaries at Bindizr
 
@@ -85,25 +84,30 @@ loopback address there, then restart the secondary.
 Then confirm every secondary is serving Bindizr's serial:
 
 ```bash
-$ bindizr zone status example.com
-$ bindizr doctor
+bindizr zone status example.com
+bindizr doctor
 ```
 
-Leave the old primary running until the secondaries report Bindizr's serial;
-rolling back before that is only a matter of restoring their previous `zone`
-statements.
+Keep the old primary available until all secondaries report Bindizr's serial
+and answer the expected records. If you need to switch back, reconcile any
+changes made in Bindizr and ensure the old primary's serial is newer than
+the serial the secondaries currently serve.
 
 ## Zones with DNSSEC
 
-Import the records first, then decide between two paths:
+Import the user records first. A signed AXFR also carries generated DNSSEC
+records; use `--skip-unsupported --dry-run` to review which records the import
+omits. Before switching secondaries, choose one of these paths:
 
 - **Re-sign with Bindizr's own keys.** `bindizr dnssec enable example.com
   --parent-ns-addrs <parent name servers>` generates fresh keys, and the
-  parent's DS has to be replaced with the new one before the old keys stop
-  being published.
+  parent's DS must be coordinated with the change of signer. Do not switch
+  secondaries while the parent trusts only the old keys; account for cached
+  DS records as well.
 - **Keep the existing keys.** Import them in BIND's `K*.key` / `K*.private`
-  form with `bindizr dnssec keys import`, and the chain of trust at the parent
-  stays valid across the move.
+  form with `bindizr dnssec keys import` under a matching policy. Verify the
+  DS and signed responses before cutover; retaining the trusted keys avoids
+  changing the parent's DS.
 
 [DNSSEC](../dnssec/index.md) covers both, including what the parent must publish and
 when.

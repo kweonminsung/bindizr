@@ -82,7 +82,7 @@ async fn handle_soa_request(
     let cx = dns_cx.daemon();
     let zone_name_str = query.zone_name.as_str();
 
-    let mut identity = match authenticate_soa(dns_cx, query, client_ip, query_data).await {
+    let mut identity = match authenticate_soa(dns_cx, client_ip, query_data).await {
         Ok(identity) => identity,
         Err(refusal) => {
             log::warn!(
@@ -112,7 +112,25 @@ async fn handle_soa_request(
             "SOA query for catalog zone: {}",
             cx.config().dns.catalog_zone_name
         );
-        let (catalog_zone, _) = catalog::generate_catalog_zone(dns_cx).await?;
+        let zones = match zone::authorize_catalog_content(cx, identity.key.as_ref()).await? {
+            TransferAccess::Granted(zones) => zones,
+            TransferAccess::NotAuth => {
+                return Ok(query.signed_error_response(Rcode::NOTAUTH, identity.signer.as_mut())?)
+                    .map(|response| (response, SoaResult::NotAuth));
+            }
+            TransferAccess::Refused(reason) => {
+                log::warn!(
+                    "Refused SOA query for {:?} from {}: {}",
+                    zone_name_str,
+                    client_ip,
+                    reason
+                );
+                return TransferRefusal::refused(reason, identity.signer)
+                    .into_response(query)
+                    .map(|response| (response, SoaResult::Refused));
+            }
+        };
+        let (catalog_zone, _) = catalog::generate_catalog_zone(dns_cx, zones).await?;
         let mut builder = build(identity.signer);
         builder.add_catalog_soa(&catalog_zone, catalog_zone.serial)?;
         return Ok((builder.build()?, SoaResult::Ok));
@@ -160,7 +178,6 @@ async fn handle_soa_request(
 /// passes ahead of both gates.
 async fn authenticate_soa(
     dns_cx: &DnsContext,
-    query: &message::ParsedQuery,
     client_ip: IpAddr,
     query_data: &[u8],
 ) -> Result<TransferIdentity, TransferRefusal> {
@@ -174,5 +191,5 @@ async fn authenticate_soa(
             signer: None,
         });
     }
-    authenticate_transfer(dns_cx, query_data, client_ip, &query.zone_name).await
+    authenticate_transfer(dns_cx, query_data, client_ip).await
 }

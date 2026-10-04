@@ -21,39 +21,24 @@ pub async fn upsert_tx(
     }
 }
 
-/// Find a zone version by zone ID and serial.
-pub async fn get_by_serial(
-    db: &Db,
-    zone_id: ZoneId,
-    serial: Serial,
-) -> Result<Option<ZoneVersion>, DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::zone_version::get_by_serial(pool, zone_id, serial).await,
-        Backend::Postgres(pool) => {
-            postgres::zone_version::get_by_serial(pool, zone_id, serial).await
-        }
-        Backend::Sqlite(pool) => sqlite::zone_version::get_by_serial(pool, zone_id, serial).await,
-    }
-}
-
 /// Versions with serial in the closed interval `[from_serial, to_serial]`;
 /// an IXFR needs both endpoint SOAs, unlike the journal's half-open range.
-pub async fn list_in_serial_range(
-    db: &Db,
+pub async fn list_in_serial_range_tx(
+    tx: &mut Transaction<'_>,
     zone_id: ZoneId,
     from_serial: Serial,
     to_serial: Serial,
 ) -> Result<Vec<ZoneVersion>, DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => {
-            mysql::zone_version::list_in_serial_range(pool, zone_id, from_serial, to_serial).await
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => {
+            mysql::zone_version::list_in_serial_range_tx(tx, zone_id, from_serial, to_serial).await
         }
-        Backend::Postgres(pool) => {
-            postgres::zone_version::list_in_serial_range(pool, zone_id, from_serial, to_serial)
+        TransactionKind::Postgres(tx) => {
+            postgres::zone_version::list_in_serial_range_tx(tx, zone_id, from_serial, to_serial)
                 .await
         }
-        Backend::Sqlite(pool) => {
-            sqlite::zone_version::list_in_serial_range(pool, zone_id, from_serial, to_serial).await
+        TransactionKind::Sqlite(tx) => {
+            sqlite::zone_version::list_in_serial_range_tx(tx, zone_id, from_serial, to_serial).await
         }
     }
 }

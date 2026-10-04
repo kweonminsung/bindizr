@@ -1,4 +1,4 @@
-use bindizr_core::model::{record::RecordId, zone::ZoneId};
+use bindizr_core::model::{record::RecordId, role_grant::Action, zone::ZoneId};
 use bindizr_db::Transaction;
 use chrono::Utc;
 
@@ -10,7 +10,7 @@ use crate::{
     record::{PreparedRecord, normalize_record_owner_name, parse_record_request},
     serial::{generate_serial, validate_initial_serial},
     transaction,
-    types::{CreateZoneRequest, GetZoneResponse, RecordValueRequest, ZoneWriteResponse},
+    types::{CreateZoneRequest, GetZoneResponse, RecordValue, ZoneWriteResponse},
     zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
 };
 
@@ -22,7 +22,7 @@ pub async fn create(
     caller: &Caller,
     create_zone_request: &CreateZoneRequest,
 ) -> Result<ZoneWriteResponse, ServiceError> {
-    caller.authorize_global("create zones")?;
+    caller.authorize_action(Action::ZoneCreate)?;
 
     // Parent/child zones are allowed; only the same normalized zone name is rejected.
     // Names are stored normalized, so an exact lookup is enough to detect a collision.
@@ -46,7 +46,11 @@ pub async fn create(
     };
 
     let mut tx = transaction::begin_tx(cx, "failed to create zone").await?;
-    let apply_result = create_tx(&mut tx, cx, caller, create_zone_request).await;
+    let apply_result = async {
+        let caller = caller.reauthenticate_tx(&mut tx).await?;
+        create_tx(&mut tx, cx, &caller, create_zone_request).await
+    }
+    .await;
     let created_zone = transaction::finish_tx(tx, apply_result, "failed to create zone").await?;
 
     log::info!(
@@ -72,13 +76,14 @@ pub async fn create(
 
 /// Insert a zone and its first version in the caller's transaction for atomic import or dry run.
 /// UNIQUE(name) catches duplicates; [`create`] adds the pre-check and post-commit catalog NOTIFY.
+/// `caller` holds the grants [`Caller::reauthenticate_tx`] reloaded in `tx`.
 pub(crate) async fn create_tx(
     tx: &mut Transaction<'_>,
     cx: &Context,
     caller: &Caller,
     create_zone_request: &CreateZoneRequest,
 ) -> Result<Zone, ServiceError> {
-    caller.authorize_global("create zones")?;
+    caller.authorize_action(Action::ZoneCreate)?;
 
     let validated = normalize_create_zone_request(cx, create_zone_request)?;
     let defaults = &cx.config().dns.zone_defaults;
@@ -144,7 +149,7 @@ pub(crate) async fn create_tx(
         } = parse_record_request(
             "@",
             "NS",
-            &RecordValueRequest::Text(created_zone.mname.clone()),
+            &RecordValue::Text(created_zone.mname.clone()),
             None,
             None,
         )?;

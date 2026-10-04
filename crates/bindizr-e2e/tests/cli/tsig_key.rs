@@ -9,7 +9,9 @@ async fn tsig_key_create_list_get_delete() {
     let app = TestApp::start().await;
 
     let created = app
-        .run_cli_success(&["tsig-key", "create", "cli-key", "--output", "json"])
+        .run_cli_success(&[
+            "tsig-key", "create", "cli-key", "--role", "admin", "--output", "json",
+        ])
         .await;
     let created: Value = serde_json::from_str(&created).expect("CLI did not return valid JSON");
     assert_eq!(created["tsig_key"]["name"], "cli-key");
@@ -40,133 +42,46 @@ async fn tsig_key_create_list_get_delete() {
     assert_cli_failure_contains(&args, &missing, "TSIG key with name 'cli-key' not found");
 }
 
-/// Verify TSIG grant creation, listing, and revocation through the CLI.
+/// Verify that a TSIG key names its role, which must exist.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn tsig_key_grant_grants_revoke() {
-    let app = TestApp::start().await;
-    let zone_name = app.zone_name("cli-tsig.example");
-
-    app.create_zone_cli(&zone_name, "3600").await;
-
-    app.run_cli_success(&["tsig-key", "create", "cli-grant-key"])
-        .await;
-
-    let granted = app
-        .run_cli_success(&[
-            "tsig-key",
-            "grant",
-            "cli-grant-key",
-            &zone_name,
-            "--pattern",
-            "*.dyn",
-            "--types",
-            "A,TXT",
-            "--output",
-            "json",
-        ])
-        .await;
-    let granted: Value = serde_json::from_str(&granted).expect("CLI did not return valid JSON");
-    let granted = &granted["tsig_grant"];
-    assert_eq!(granted["tsig_key_name"], "cli-grant-key");
-    assert_eq!(granted["zone_name"], zone_name);
-    assert_eq!(granted["record_name_pattern"], "*.dyn");
-    let grant_id = granted["id"]
-        .as_i64()
-        .expect("created grant did not contain an ID")
-        .to_string();
-
-    let by_key = app
-        .run_cli_success(&["tsig-key", "grants", "cli-grant-key"])
-        .await;
-    assert!(by_key.contains(&zone_name), "{by_key}");
-    assert!(by_key.contains("*.dyn"), "{by_key}");
-    assert!(by_key.contains("A,TXT"), "{by_key}");
-
-    let by_zone = app
-        .run_cli_success(&["zone", "tsig-grants", &zone_name])
-        .await;
-    assert!(by_zone.contains("cli-grant-key"), "{by_zone}");
-
-    // The key still holds a grant, so deleting it is refused with a clear error.
-    let delete_args = ["tsig-key", "delete", "cli-grant-key"];
-    let refused = app.run_cli(&delete_args).await;
-    assert_cli_failure_contains(&delete_args, &refused, "still holds 1 grant");
-
-    let revoked = app
-        .run_cli_success(&["tsig-key", "revoke", "--id", &grant_id])
-        .await;
-    assert!(
-        revoked.contains("TSIG grant revoked successfully"),
-        "{revoked}"
-    );
-
-    app.run_cli_success(&["tsig-key", "delete", "cli-grant-key"])
-        .await;
-}
-
-/// Verify global TSIG key creation, listing, and deletion through the CLI.
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
-async fn global_tsig_key_create_list_delete() {
+async fn tsig_key_names_its_role() {
     let app = TestApp::start().await;
 
-    let args = ["tsig-key", "create", "cli-global-key", "--global"];
-    let created = app.run_cli(&args).await;
-    assert!(created.status.success(), "{created:?}");
-    let stdout = String::from_utf8(created.stdout).expect("CLI stdout was not UTF-8");
-    assert!(stdout.contains("cli-global-key"), "{stdout}");
-    // The warning goes to stderr so `--output json` stays parseable.
-    let stderr = String::from_utf8(created.stderr).expect("CLI stderr was not UTF-8");
-    assert!(
-        stderr.contains("Warning: this key can update every zone"),
-        "{stderr}"
-    );
+    let args = [
+        "tsig-key",
+        "create",
+        "cli-roleless-key",
+        "--role",
+        "no-such-role",
+    ];
+    let refused = app.run_cli(&args).await;
+    assert_cli_failure_contains(&args, &refused, "not found");
 
+    app.run_cli_success(&["role", "create", "cli-key-role"])
+        .await;
+    app.run_cli_success(&[
+        "tsig-key",
+        "create",
+        "cli-role-key",
+        "--role",
+        "cli-key-role",
+    ])
+    .await;
     let listed = app.run_cli_success(&["tsig-key", "list"]).await;
-    assert!(listed.contains("cli-global-key"));
-    assert!(listed.contains("yes"));
-
+    assert!(listed.contains("cli-key-role"), "{listed}");
     let fetched = app
-        .run_cli_success(&["tsig-key", "get", "cli-global-key", "--output", "json"])
+        .run_cli_success(&["tsig-key", "get", "cli-role-key", "--output", "json"])
         .await;
     let fetched: Value = serde_json::from_str(&fetched).expect("CLI did not return valid JSON");
-    assert_eq!(fetched["tsig_key"]["global"], true);
+    assert_eq!(fetched["tsig_key"]["role_name"], "cli-key-role");
 
-    app.run_cli_success(&["tsig-key", "delete", "cli-global-key"])
+    // A key holds its role, not the other way round.
+    let args = ["role", "delete", "cli-key-role"];
+    let refused = app.run_cli(&args).await;
+    assert_cli_failure_contains(&args, &refused, "still held");
+    app.run_cli_success(&["tsig-key", "delete", "cli-role-key"])
         .await;
-}
-
-/// Verify that `tsig-key revoke` takes a key and zone name, revoking every grant there.
-#[tokio::test]
-#[serial_test::serial(bindizr_e2e)]
-async fn tsig_key_revoke_by_name_revokes_every_grant_in_the_zone() {
-    let app = TestApp::start().await;
-    let zone_name = app.zone_name("tsig-revoke-by-name.example");
-    app.create_zone_cli(&zone_name, "3600").await;
-    app.run_cli_success(&["tsig-key", "create", "cli-revoke-key"])
-        .await;
-
-    // One key can hold several grants in one zone, each with its own name
-    // pattern, so the pair the grants were created with must revoke them all.
-    for pattern in ["*.dyn", "*.auto"] {
-        app.run_cli_success(&[
-            "tsig-key",
-            "grant",
-            "cli-revoke-key",
-            &zone_name,
-            "--pattern",
-            pattern,
-        ])
-        .await;
-    }
-
-    let revoked = app
-        .run_cli_success(&["tsig-key", "revoke", "cli-revoke-key", &zone_name])
-        .await;
-    assert!(revoked.contains("2 TSIG grant(s) revoked"), "{revoked}");
-
-    // The key holds no grant now, so deleting it is no longer refused.
-    app.run_cli_success(&["tsig-key", "delete", "cli-revoke-key"])
+    app.run_cli_success(&["role", "delete", "cli-key-role"])
         .await;
 }

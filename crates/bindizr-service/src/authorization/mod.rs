@@ -1,14 +1,18 @@
-//! Authorize scoped tokens through record-plane grants using nsupdate pattern/type rules.
-//! Invisible zones read as 404; denied writes as 403.
+//! Authorize a caller through its role's grants. Invisible zones read as 404;
+//! denied operations as 403.
 //!
 //! Management entry points authorize their [`Caller`]; the local socket passes
-//! [`Caller::socket`]. DNS operations authorize through ACL and TSIG instead.
-
-use std::sync::Arc;
+//! [`Caller::socket`]. DNS operations authorize through the ACL and the TSIG
+//! key's role instead.
 
 use bindizr_core::{
     dns::name::OwnerName,
-    model::{api_token::TokenId, zone::ZoneId},
+    model::{
+        api_token::TokenId,
+        role::RoleId,
+        role_grant::{Action, RoleGrant, RoleGrants},
+        zone::ZoneId,
+    },
 };
 use bindizr_db::LockLevel;
 use chrono::{Duration, Utc};
@@ -18,8 +22,7 @@ use crate::{
     error::ServiceError,
     model::{
         api_token::ApiToken,
-        record::RecordType,
-        token_grant::TokenGrant,
+        record::{Record, RecordData, RecordType},
         zone::Zone,
         zone_version::{ChangeActor, ChangeSource},
     },
@@ -38,18 +41,86 @@ pub struct Caller {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CallerScope {
     Global,
-    Token {
-        id: TokenId,
-        grants: Arc<[TokenGrant]>,
+    /// A role's caller, through the token that authenticated it.
+    Role {
+        id: RoleId,
+        token_id: TokenId,
+        grants: RoleGrants,
     },
 }
 
-/// One record-plane write to authorize: the owner name relative to the zone
-/// (stored form) and its type. `None` types only match unrestricted grants.
+/// One record write to authorize, its owner relative to the zone (stored form).
+/// A `None` type matches only grants that constrain no type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordWrite<'a> {
+    pub(crate) action: Action,
     pub(crate) relative_name: OwnerName,
     pub(crate) record_type: Option<&'a RecordType>,
+}
+
+/// A record as grants see it: an owner name and a type.
+pub(crate) trait GrantedRecord {
+    /// The owner name, relative to its zone (stored form).
+    fn name(&self) -> &OwnerName;
+
+    /// The record's type.
+    fn record_type(&self) -> &RecordType;
+}
+
+impl GrantedRecord for Record {
+    /// The stored owner name.
+    fn name(&self) -> &OwnerName {
+        &self.name
+    }
+
+    /// The stored type.
+    fn record_type(&self) -> &RecordType {
+        &self.record_type
+    }
+}
+
+impl GrantedRecord for RecordData {
+    /// The owner name.
+    fn name(&self) -> &OwnerName {
+        &self.name
+    }
+
+    /// The type.
+    fn record_type(&self) -> &RecordType {
+        &self.record_type
+    }
+}
+
+/// Rows of one zone the caller may read. A response renders existing rows
+/// only from this type, built by [`Caller::readable_records`] or a
+/// [`WholeZoneRead`], so a flow cannot show a row it never checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReadableRecords<T>(Vec<T>);
+
+impl<T> ReadableRecords<T> {
+    /// Add a row the caller is writing: what it sends is its own to see.
+    pub(crate) fn push_written(&mut self, row: T) {
+        self.0.push(row);
+    }
+
+    /// The rows.
+    pub(crate) fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+}
+
+/// Proof that the caller may read a zone's records whole, from
+/// [`Caller::authorize_whole_zone_read`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WholeZoneRead {
+    _proof: (),
+}
+
+impl WholeZoneRead {
+    /// Every row of the zone, unfiltered: the proof covers them all.
+    pub(crate) fn readable_records<T>(self, rows: Vec<T>) -> ReadableRecords<T> {
+        ReadableRecords(rows)
+    }
 }
 
 impl Caller {
@@ -75,16 +146,13 @@ impl Caller {
         }
     }
 
-    /// Build an API caller from an authenticated token and its loaded grants.
-    pub(crate) fn from_token(token: &ApiToken, grants: Vec<TokenGrant>) -> Self {
+    /// Build an API caller from an authenticated token and its role's loaded grants.
+    pub(crate) fn from_token(token: &ApiToken, grants: Vec<RoleGrant>) -> Self {
         Self {
-            scope: if token.is_global {
-                CallerScope::Global
-            } else {
-                CallerScope::Token {
-                    id: token.id,
-                    grants: grants.into(),
-                }
+            scope: CallerScope::Role {
+                id: token.role_id,
+                token_id: token.id,
+                grants: grants.into(),
             },
             attribution: ChangeAttribution {
                 source: ChangeSource::Api,
@@ -95,68 +163,79 @@ impl Caller {
         }
     }
 
-    /// Check whether the caller has unrestricted global access.
-    fn is_global(&self) -> bool {
-        matches!(self.scope, CallerScope::Global)
-    }
-
     /// Return the request origin and credential snapshot recorded with a mutation.
     pub(crate) fn change_attribution(&self) -> &ChangeAttribution {
         &self.attribution
     }
 
-    /// Validate a Bearer token and preload grants for read checks. Mutations
-    /// reload and lock the grants inside their transaction.
+    /// Validate a Bearer token and preload its role's grants. Record mutations
+    /// reload and lock them inside their transaction.
     pub async fn authenticate(
         cx: &Context,
         bearer_token: &str,
     ) -> Result<(Caller, ApiToken), ServiceError> {
         let token = authenticate_token(cx, bearer_token).await?;
-        let grants = if token.is_global {
-            Vec::new()
-        } else {
-            bindizr_db::token_grant::list_by_token_id(cx.db(), token.id).await?
-        };
+        let grants = bindizr_db::role_grant::list_by_role_id(cx.db(), token.role_id).await?;
         Ok((Caller::from_token(&token, grants), token))
     }
 
-    /// Reject non-global callers for zone-plane and management operations.
-    pub(crate) fn authorize_global(&self, action: &str) -> Result<(), ServiceError> {
-        if self.is_global() {
+    /// Authorize an action on something no zone owns, which only an all-zones grant carries.
+    pub(crate) fn authorize_action(&self, action: Action) -> Result<(), ServiceError> {
+        if self
+            .grants()
+            .is_none_or(|grants| grants.permits_all_zones(action))
+        {
             return Ok(());
         }
         Err(ServiceError::forbidden(format!(
-            "a global API token is required to {}",
+            "role does not permit '{}' in all zones",
             action
         )))
     }
 
-    /// The token whose grants bound the caller's visibility; `None` means
+    /// Authorize an action on one zone: 404 when no grant reaches it, 403 without `action`.
+    pub(crate) fn authorize_zone_action(
+        &self,
+        action: Action,
+        zone: &Zone,
+    ) -> Result<(), ServiceError> {
+        if self
+            .grants()
+            .is_none_or(|grants| grants.permits(action, zone.id))
+        {
+            return Ok(());
+        }
+        self.authorize_zone_visible(zone)?;
+        Err(ServiceError::forbidden(format!(
+            "role does not permit '{}' in zone '{}'",
+            action, zone.name
+        )))
+    }
+
+    /// The role whose grants bound the caller's visibility; `None` means
     /// unrestricted. List queries join it against the grants in SQL.
-    pub(crate) fn scope_token_id(&self) -> Option<TokenId> {
+    pub(crate) fn scope_role_id(&self) -> Option<RoleId> {
         match &self.scope {
             CallerScope::Global => None,
-            CallerScope::Token { id, .. } => Some(*id),
+            CallerScope::Role { id, .. } => Some(*id),
         }
     }
 
     /// The grants that bound the caller, or `None` when nothing does.
-    pub(crate) fn grants(&self) -> Option<&[TokenGrant]> {
+    pub(crate) fn grants(&self) -> Option<&RoleGrants> {
         match &self.scope {
             CallerScope::Global => None,
-            CallerScope::Token { grants, .. } => Some(grants),
+            CallerScope::Role { grants, .. } => Some(grants),
         }
     }
 
-    /// Whether the caller may see `zone_id`.
+    /// Whether the caller may see `zone_id`: any grant reaching it, whatever its actions.
     pub(crate) fn sees_zone(&self, zone_id: ZoneId) -> bool {
-        match &self.scope {
-            CallerScope::Global => true,
-            CallerScope::Token { grants, .. } => grants.iter().any(|p| p.zone_id == zone_id),
-        }
+        self.grants()
+            .is_none_or(|grants| grants.reaches_zone(zone_id))
     }
 
-    /// 404 for zones the caller cannot see, so scoped tokens cannot probe zone
+    /// 404 for zones the caller cannot see, so a role cannot probe zone
     /// existence.
     pub(crate) fn authorize_zone_visible(&self, zone: &Zone) -> Result<(), ServiceError> {
         if self.sees_zone(zone.id) {
@@ -166,85 +245,184 @@ impl Caller {
         }
     }
 
-    /// Authorize record writes, share-locking grants so revocation waits for the mutation.
-    /// Return `NotFound` for ungranted zones to prevent existence probes.
-    pub(crate) async fn authorize_record_writes_tx(
+    /// This caller authenticated again in `tx`: its token and its role's grants
+    /// re-read, share-locked where the backend locks rows. A revocation waits
+    /// for a write (SQLite's writer reservation serializes them too); a read
+    /// decides on what its own snapshot holds. Taken right after the zone row.
+    pub(crate) async fn reauthenticate_tx(
         &self,
         tx: &mut Transaction<'_>,
-        zone: &Zone,
-        writes: &[RecordWrite<'_>],
-    ) -> Result<(), ServiceError> {
+    ) -> Result<Caller, ServiceError> {
         match &self.scope {
-            CallerScope::Global => Ok(()),
-            CallerScope::Token { id, .. } => {
-                let grants = bindizr_db::token_grant::list_by_zone_id_and_token_id_tx(
+            CallerScope::Global => Ok(self.clone()),
+            CallerScope::Role { token_id, .. } => {
+                let token = bindizr_db::api_token::get_tx(tx, *token_id, LockLevel::Shared)
+                    .await?
+                    .filter(|token| {
+                        token
+                            .expires_at
+                            .is_none_or(|expires_at| Utc::now() < expires_at)
+                    })
+                    .ok_or_else(|| ServiceError::invalid_token("invalid or expired token"))?;
+                let grants = bindizr_db::role_grant::list_by_role_id_tx(
                     tx,
-                    zone.id,
-                    *id,
+                    token.role_id,
                     LockLevel::Shared,
                 )
                 .await?;
-                // Ahead of the per-write loop, which a batch resolving to no
-                // writes would otherwise pass vacuously.
-                if grants.is_empty() {
-                    return Err(ServiceError::zone_not_found(zone.name.as_str()));
-                }
-                authorize_with_grants(&grants, zone, writes)
+                Ok(Caller {
+                    scope: CallerScope::Role {
+                        id: token.role_id,
+                        token_id: token.id,
+                        grants: grants.into(),
+                    },
+                    attribution: self.attribution.clone(),
+                })
             }
         }
     }
 
-    /// Whether the caller may read a record of this name and type: a grant
-    /// narrows reads the same way it narrows writes.
+    /// Authorize record writes in `zone`; a zone no grant reaches reads as
+    /// `NotFound`.
+    pub(crate) fn authorize_record_writes(
+        &self,
+        zone: &Zone,
+        writes: &[RecordWrite<'_>],
+    ) -> Result<(), ServiceError> {
+        let Some(grants) = self.grants() else {
+            return Ok(());
+        };
+        // Ahead of the per-write loop, which a batch resolving to no writes
+        // would otherwise pass vacuously.
+        if !grants.reaches_zone(zone.id) {
+            return Err(ServiceError::zone_not_found(zone.name.as_str()));
+        }
+        authorize_with_grants(grants, zone, writes)
+    }
+
+    /// Whether `record:read` or the write `action` covers a record of this
+    /// name and type, so a write-only grant finds what it may change.
+    pub(crate) fn reaches_record(
+        &self,
+        action: Action,
+        zone_id: ZoneId,
+        name: &OwnerName,
+        record_type: Option<&RecordType>,
+    ) -> bool {
+        self.grants()
+            .is_none_or(|grants| grants.reaches_record(action, zone_id, name, record_type))
+    }
+
+    /// Whether a `record:read` grant covers a record of this name and type.
     pub(crate) fn sees_record(
         &self,
         zone_id: ZoneId,
         name: &OwnerName,
         record_type: Option<&RecordType>,
     ) -> bool {
-        match &self.scope {
-            CallerScope::Global => true,
-            CallerScope::Token { grants, .. } => grants
-                .iter()
-                .any(|grant| grant.zone_id == zone_id && grant.matches(name, record_type)),
-        }
+        self.grants().is_none_or(|grants| {
+            grants.covers_record(Action::RecordRead, zone_id, name, record_type)
+        })
     }
 
-    /// Whether the caller sees the zone whole. A view the zone is rebuilt
-    /// from — its export, a stored version, a version diff — cannot be
-    /// narrowed: half a zone re-applied deletes what it left out.
-    pub(crate) fn authorize_zone_unrestricted(&self, zone: &Zone) -> Result<(), ServiceError> {
-        let unrestricted = match &self.scope {
-            CallerScope::Global => true,
-            CallerScope::Token { grants, .. } => grants
-                .iter()
-                .any(|grant| grant.zone_id == zone.id && grant.is_unrestricted()),
-        };
-        if unrestricted {
+    /// The rows a `record:read` grant covers; the rest are dropped, so a
+    /// write-only grant learns what it writes and nothing already there.
+    pub(crate) fn readable_records<T: GrantedRecord>(
+        &self,
+        zone_id: ZoneId,
+        rows: impl IntoIterator<Item = T>,
+    ) -> ReadableRecords<T> {
+        ReadableRecords(
+            rows.into_iter()
+                .filter(|row| self.sees_record(zone_id, row.name(), Some(row.record_type())))
+                .collect(),
+        )
+    }
+
+    /// The record actions the caller may take on one record, so a client
+    /// offers exactly the ones the service would allow.
+    pub(crate) fn record_actions(
+        &self,
+        zone_id: ZoneId,
+        name: &OwnerName,
+        record_type: &RecordType,
+    ) -> Vec<Action> {
+        [
+            Action::RecordRead,
+            Action::RecordUpdate,
+            Action::RecordDelete,
+        ]
+        .into_iter()
+        .filter(|&action| {
+            self.grants()
+                .is_none_or(|grants| grants.covers_record(action, zone_id, name, Some(record_type)))
+        })
+        .collect()
+    }
+
+    /// Authorize reading the zone's records whole, handing back the proof
+    /// that renders them unfiltered.
+    pub(crate) fn authorize_whole_zone_read(
+        &self,
+        zone: &Zone,
+    ) -> Result<WholeZoneRead, ServiceError> {
+        self.authorize_whole_zone(Action::RecordRead, zone)?;
+        Ok(WholeZoneRead { _proof: () })
+    }
+
+    /// Authorize `action` over all zones whole: what a zone created later
+    /// needs, since only an all-zones grant reaches it.
+    pub(crate) fn authorize_all_whole_zones(&self, action: Action) -> Result<(), ServiceError> {
+        if self
+            .grants()
+            .is_none_or(|grants| grants.covers_all_whole_zones(action))
+        {
+            return Ok(());
+        }
+        Err(ServiceError::forbidden(format!(
+            "role does not permit '{}' over all zones whole",
+            action
+        )))
+    }
+
+    /// Authorize `action` over the zone whole. A view the zone is rebuilt from
+    /// cannot be narrowed: half a zone re-applied deletes what it left out.
+    pub(crate) fn authorize_whole_zone(
+        &self,
+        action: Action,
+        zone: &Zone,
+    ) -> Result<(), ServiceError> {
+        if self
+            .grants()
+            .is_none_or(|grants| grants.covers_whole_zone(action, zone.id))
+        {
             return Ok(());
         }
 
         self.authorize_zone_visible(zone)?;
         Err(ServiceError::forbidden(format!(
-            "API token is scoped to part of zone '{}', so it cannot read the zone whole",
-            zone.name
+            "role does not permit '{}' over zone '{}' whole",
+            action, zone.name
         )))
     }
 }
 
-/// Check whether the supplied grants cover the requested zone operation.
+/// Check whether the supplied grants cover every write's action, name and type.
 fn authorize_with_grants(
-    grants: &[TokenGrant],
+    grants: &RoleGrants,
     zone: &Zone,
     writes: &[RecordWrite<'_>],
 ) -> Result<(), ServiceError> {
     for write in writes {
-        let granted = grants
-            .iter()
-            .any(|grant| grant.can_write && grant.matches(&write.relative_name, write.record_type));
-        if !granted {
+        if !grants.covers_record(
+            write.action,
+            zone.id,
+            &write.relative_name,
+            write.record_type,
+        ) {
             return Err(ServiceError::forbidden(format!(
-                "API token is not allowed to manage '{}' {} in zone '{}'",
+                "role does not permit '{}' on '{}' {} in zone '{}'",
+                write.action,
                 write.relative_name,
                 write
                     .record_type

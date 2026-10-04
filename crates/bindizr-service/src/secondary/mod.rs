@@ -13,7 +13,7 @@ use bindizr_core::{
         name::has_whitespace_or_control,
         tsig::TsigSigningKey,
     },
-    model::{secondary::SecondaryId, tsig_key::TsigKeyId},
+    model::{role_grant::Action, secondary::SecondaryId, tsig_key::TsigKeyId},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -42,7 +42,7 @@ pub async fn create(
     caller: &Caller,
     request: &CreateSecondaryRequest,
 ) -> Result<GetSecondaryResponse, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryManage)?;
 
     let name = normalize_secondary_name(&request.name)?;
     let address = normalize_secondary_address(&request.address)?;
@@ -69,29 +69,38 @@ pub async fn create(
         )));
     }
 
-    let secondary = bindizr_db::secondary::create(
-        cx.db(),
-        Secondary {
-            id: SecondaryId::UNWRITTEN,
-            name: name.clone(),
-            address: address.clone(),
-            enabled: true,
-            notify_tsig_key_id: notify_key.as_ref().map(|key| key.id),
-            created_at: Utc::now(),
-        },
-    )
-    .await
-    .map_err(|e| {
-        // The UNIQUE(name) / UNIQUE(address) backstop for the pre-checks above.
-        if e.is_unique_violation() {
-            ServiceError::secondary_conflict(format!(
-                "secondary with name '{}' or address '{}' already exists",
-                name, address
-            ))
-        } else {
-            e.into()
-        }
-    })?;
+    let mut tx = transaction::begin_tx(cx, "failed to create secondary").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::SecondaryManage)?;
+        bindizr_db::secondary::create_tx(
+            &mut tx,
+            Secondary {
+                id: SecondaryId::UNWRITTEN,
+                name: name.clone(),
+                address: address.clone(),
+                enabled: true,
+                notify_tsig_key_id: notify_key.as_ref().map(|key| key.id),
+                created_at: Utc::now(),
+            },
+        )
+        .await
+        .map_err(|e| {
+            // The UNIQUE(name) / UNIQUE(address) backstop for the pre-checks above.
+            if e.is_unique_violation() {
+                ServiceError::secondary_conflict(format!(
+                    "secondary with name '{}' or address '{}' already exists",
+                    name, address
+                ))
+            } else {
+                e.into()
+            }
+        })
+    }
+    .await;
+    let secondary = transaction::finish_tx(tx, result, "failed to create secondary").await?;
     Ok(GetSecondaryResponse::from_secondary(
         &secondary,
         notify_key.as_ref().map(|key| key.name.as_str()),
@@ -104,7 +113,7 @@ pub async fn list(
     caller: &Caller,
     page: PageRequest,
 ) -> Result<PaginatedResponse<GetSecondaryResponse>, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryRead)?;
 
     let secondaries = bindizr_db::secondary::list_all(cx.db()).await?;
     // One statement names every key rather than one per secondary.
@@ -137,7 +146,7 @@ pub async fn get(
     caller: &Caller,
     name: &str,
 ) -> Result<GetSecondaryResponse, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryRead)?;
     let secondary = lookup_by_name(cx, name).await?;
     build_response(cx, secondary).await
 }
@@ -150,7 +159,7 @@ pub async fn update(
     name: &str,
     request: UpdateSecondaryRequest,
 ) -> Result<GetSecondaryResponse, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryManage)?;
 
     let name = normalize_secondary_name(name)?;
     let address = request
@@ -184,6 +193,10 @@ pub async fn update(
     // each restore the field the other changed.
     let mut tx = transaction::begin_tx(cx, "failed to update secondary").await?;
     let result: Result<_, ServiceError> = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::SecondaryManage)?;
         let secondary = bindizr_db::secondary::get_by_name_tx(&mut tx, &name, LockLevel::Exclusive)
             .await?
             .ok_or_else(|| ServiceError::secondary_not_found(&name))?;
@@ -227,7 +240,7 @@ pub async fn check(
     caller: &Caller,
     name: &str,
 ) -> Result<SecondaryCheckResponse, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryManage)?;
     let secondary = lookup_by_name(cx, name).await?;
 
     let config = cx.config();
@@ -275,7 +288,7 @@ pub async fn list_transfers(
     name: &str,
     filter: GetSecondaryTransfersFilter,
 ) -> Result<SecondaryTransfersResponse, ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryRead)?;
     let secondary = lookup_by_name(cx, name).await?;
     let limit = normalize_page_limit(filter.limit)? as usize;
     let zone_filter = filter
@@ -325,10 +338,19 @@ async fn resolved_ips(cx: &Context, secondary: &Secondary) -> Vec<IpAddr> {
 
 /// Delete a secondary by name.
 pub async fn delete(cx: &Context, caller: &Caller, name: &str) -> Result<(), ServiceError> {
-    caller.authorize_global("manage secondaries")?;
+    caller.authorize_action(Action::SecondaryManage)?;
 
     let secondary = lookup_by_name(cx, name).await?;
-    Ok(bindizr_db::secondary::delete(cx.db(), secondary.id).await?)
+    let mut tx = transaction::begin_tx(cx, "failed to delete secondary").await?;
+    let result = async {
+        caller
+            .reauthenticate_tx(&mut tx)
+            .await?
+            .authorize_action(Action::SecondaryManage)?;
+        Ok(bindizr_db::secondary::delete_tx(&mut tx, secondary.id).await?)
+    }
+    .await;
+    transaction::finish_tx(tx, result, "failed to delete secondary").await
 }
 
 /// The enabled secondaries, for the DNS plane, which takes no caller.

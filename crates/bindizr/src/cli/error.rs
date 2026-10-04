@@ -153,8 +153,8 @@ impl CliError {
                 | ErrorCode::VersionNotFound
                 | ErrorCode::SecondaryNotFound
                 | ErrorCode::TsigKeyNotFound
-                | ErrorCode::TsigGrantNotFound
-                | ErrorCode::TokenGrantNotFound
+                | ErrorCode::RoleNotFound
+                | ErrorCode::RoleGrantNotFound
                 | ErrorCode::DnssecPolicyNotFound
                 | ErrorCode::EndpointNotFound,
             ) => EXIT_NOT_FOUND,
@@ -165,6 +165,8 @@ impl CliError {
                 | ErrorCode::SecondaryConflict
                 | ErrorCode::TsigKeyConflict
                 | ErrorCode::TsigKeyInUse
+                | ErrorCode::RoleConflict
+                | ErrorCode::RoleInUse
                 | ErrorCode::DnssecAlreadyEnabled
                 | ErrorCode::DnssecNotEnabled
                 | ErrorCode::DnssecRolloverInProgress
@@ -216,7 +218,11 @@ impl CliError {
                 Some("Run 'bindizr dnssec-policy list' to see available policies.")
             }
             ErrorCode::TsigKeyInUse => Some(
-                "Revoke its grants ('bindizr tsig-key grants <NAME>') and move any secondary off it ('bindizr secondary update --notify-key') before deleting the key.",
+                "Move each secondary off it ('bindizr secondary update --notify-key') before deleting the key.",
+            ),
+            ErrorCode::RoleNotFound => Some("Run 'bindizr role list' to see available roles."),
+            ErrorCode::RoleInUse => Some(
+                "Delete or recreate the tokens and TSIG keys in the role ('bindizr token list', 'bindizr tsig-key list') before deleting it.",
             ),
             ErrorCode::DnssecPolicyInUse => Some(
                 "Move those zones onto another policy with 'bindizr dnssec set --policy', or disable DNSSEC on them.",
@@ -234,11 +240,8 @@ impl CliError {
                 "Check the daemon logs; 'bindizr dnssec status <NAME>' shows whether the zone is still signed.",
             ),
             ErrorCode::Internal => Some("Check the daemon logs for details."),
-            ErrorCode::TsigGrantNotFound => {
-                Some("Run 'bindizr tsig-key grants <NAME>' to see a key's grant IDs.")
-            }
-            ErrorCode::TokenGrantNotFound => {
-                Some("Run 'bindizr token grants <NAME>' to see a token's grant IDs.")
+            ErrorCode::RoleGrantNotFound => {
+                Some("Run 'bindizr role grants <NAME>' to see a role's grant IDs.")
             }
             ErrorCode::DnssecAlreadyEnabled => Some(
                 "Run 'bindizr dnssec status <NAME>' to see the settings, or 'bindizr dnssec set' to change them.",
@@ -266,6 +269,7 @@ impl CliError {
             | ErrorCode::TokenConflict
             | ErrorCode::SecondaryConflict
             | ErrorCode::TsigKeyConflict
+            | ErrorCode::RoleConflict
             | ErrorCode::DnssecPolicyConflict
             | ErrorCode::DnssecDsPublished
             | ErrorCode::DnssecDsNotPublished

@@ -77,8 +77,8 @@ async fn scoped_token_cannot_notify_the_catalog_zone() {
         ..TestAppOptions::default()
     })
     .await;
-    let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token.clone());
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token.clone());
 
     let (_, scoped_token) = app.create_scoped_api_token().await;
     app.set_auth_token(scoped_token);
@@ -88,7 +88,7 @@ async fn scoped_token_cannot_notify_the_catalog_zone() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    app.set_auth_token(global_token);
+    app.set_auth_token(admin_token);
     let (status, _) = app
         .send_request(Method::POST, "/zones/catalog.bindizr/notify", None)
         .await;

@@ -1,14 +1,11 @@
-//! TSIG key and TSIG grant payloads.
+//! TSIG key payloads.
 
-use bindizr_core::model::{
-    tsig_grant::TsigGrantId,
-    tsig_key::{TsigAlgorithm, TsigKeyId},
-};
+use bindizr_core::model::tsig_key::{TsigAlgorithm, TsigKeyId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
-use crate::model::{tsig_grant::TsigGrantWithNames, tsig_key::TsigKey};
+use crate::model::tsig_key::TsigKey;
 
 /// Request body for creating a TSIG key. Omitting `secret` generates one.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
@@ -22,11 +19,26 @@ pub struct CreateTsigKeyRequest {
     /// Existing base64 secret to import; omit to generate a random one.
     #[schema(example = "bXktMzItYnl0ZS1pbXBvcnQtc2VjcmV0LWV4YW1wbGU=")]
     pub secret: Option<String>,
-    /// Make the key global: it may update and transfer every zone without
-    /// any grant. Fixed at creation.
-    #[serde(default)]
-    #[schema(example = false)]
-    pub global: bool,
+    /// The role whose grants decide what the key may sign; a NOTIFY-only key
+    /// may name one without grants.
+    #[schema(example = "rfc2136-legacy")]
+    pub role_name: String,
+}
+
+/// Query parameters of the TSIG keys listing: one role's, or every one.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct TsigKeyFilter {
+    /// Only the TSIG keys authenticating into this role.
+    #[schema(example = "secondaries")]
+    pub role_name: Option<String>,
+    /// Items per page; the HTTP API defaults it, the daemon socket does not.
+    #[schema(example = 50)]
+    #[param(minimum = 1, maximum = 1000)]
+    pub limit: Option<u32>,
+    #[schema(example = 0)]
+    pub offset: Option<u64>,
 }
 
 /// API representation of a TSIG key; never carries the secret.
@@ -38,54 +50,21 @@ pub struct GetTsigKeyResponse {
     pub name: String,
     #[schema(example = "hmac-sha256")]
     pub algorithm: TsigAlgorithm,
-    /// Whether the key may update and transfer every zone without any grant.
-    #[schema(example = false)]
-    pub global: bool,
+    /// The role the key authenticates into.
+    #[schema(example = "rfc2136-legacy")]
+    pub role_name: String,
     pub created_at: DateTime<Utc>,
 }
 
-impl From<&TsigKey> for GetTsigKeyResponse {
-    /// Build a TSIG key response from the stored key.
-    fn from(key: &TsigKey) -> Self {
+impl GetTsigKeyResponse {
+    /// Build a TSIG key response with its role's name, without the secret.
+    pub(crate) fn from_key(key: &TsigKey, role_name: &str) -> Self {
         GetTsigKeyResponse {
             id: key.id,
             name: key.name.clone(),
             algorithm: key.algorithm,
-            global: key.is_global,
+            role_name: role_name.to_string(),
             created_at: key.created_at,
-        }
-    }
-}
-
-/// API representation of a TSIG grant.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct GetTsigGrantResponse {
-    #[schema(example = 1, value_type = i32)]
-    pub id: TsigGrantId,
-    #[schema(example = "update-key")]
-    pub tsig_key_name: String,
-    #[schema(example = "example.com")]
-    pub zone_name: String,
-    #[schema(example = "*.dyn")]
-    pub record_name_pattern: String,
-    #[schema(example = "A,AAAA,TXT")]
-    pub record_types: String,
-    #[schema(example = true)]
-    pub can_write: bool,
-    pub created_at: DateTime<Utc>,
-}
-
-impl From<&TsigGrantWithNames> for GetTsigGrantResponse {
-    /// Build a TSIG-grant response with its key and zone names.
-    fn from(grant: &TsigGrantWithNames) -> Self {
-        GetTsigGrantResponse {
-            id: grant.grant.id,
-            tsig_key_name: grant.tsig_key_name.clone(),
-            zone_name: grant.zone_name.clone(),
-            record_name_pattern: grant.grant.record_name_pattern.clone(),
-            record_types: grant.grant.record_types.clone(),
-            can_write: grant.grant.can_write,
-            created_at: grant.grant.created_at,
         }
     }
 }
@@ -98,18 +77,12 @@ pub struct TsigKeyResponse {
     pub secret: String,
 }
 
-impl From<&TsigKey> for TsigKeyResponse {
-    /// Build a TSIG key response, with its secret, from the stored key.
-    fn from(key: &TsigKey) -> Self {
+impl TsigKeyResponse {
+    /// Build a TSIG key response, with its secret and its role's name.
+    pub(crate) fn from_key(key: &TsigKey, role_name: &str) -> Self {
         TsigKeyResponse {
-            tsig_key: GetTsigKeyResponse::from(key),
+            tsig_key: GetTsigKeyResponse::from_key(key, role_name),
             secret: key.secret.clone(),
         }
     }
-}
-
-/// A single TSIG grant wrapped in a response envelope.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, ToSchema)]
-pub struct TsigGrantResponse {
-    pub tsig_grant: GetTsigGrantResponse,
 }

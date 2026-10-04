@@ -3,7 +3,9 @@ use serial_test::serial;
 
 use crate::common::{
     TestApp, TestAppOptions,
-    dns::nsupdate::{PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update, send_update},
+    dns::nsupdate::{
+        KeyRole, PrereqRecord, UpdateRecord, create_tsig_key, send_signed_update, send_update,
+    },
 };
 
 /// These drive bindizr's own DNS listener over UDP with unsigned updates, so
@@ -344,7 +346,7 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     let zone_name = app.zone_name("nsupdate-policy.example");
     app.create_zone_cli(&zone_name, "3600").await;
     let port = app.dns_port();
-    let key = create_tsig_key(&app, "nsupdate-policy-key", false).await;
+    let key = create_tsig_key(&app, "nsupdate-policy-key", KeyRole::Own).await;
 
     let add = |owner: String| UpdateRecord::AddA {
         name: owner,
@@ -364,8 +366,18 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
     assert_eq!(rcode, Rcode::REFUSED);
 
     // Granting only `a` leaves every other owner name refused.
-    app.run_cli_success(&["tsig-key", "grant", &key.name, &zone_name, "--pattern", "a"])
-        .await;
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &key.name,
+        "--zone",
+        &zone_name,
+        "--actions",
+        "record:create",
+        "--pattern",
+        "a",
+    ])
+    .await;
 
     let rcode = send_signed_update(
         port,
@@ -395,6 +407,14 @@ async fn signed_nsupdate_needs_a_grant_for_the_zone() {
         "granted update was not applied"
     );
 
+    // An add is `record:create`; deleting what it added is a separate action.
+    let delete = UpdateRecord::DeleteA {
+        name: format!("a.{zone_name}."),
+        addr: "192.0.2.60".to_string(),
+    };
+    let rcode = send_signed_update(port, &zone_name, &[], &[delete], &key).expect("send");
+    assert_eq!(rcode, Rcode::REFUSED);
+
     // The DNS plane has no API token, so the key that signed the update is
     // the name the change is recorded under.
     let (status, body) = app
@@ -421,12 +441,15 @@ async fn a_signed_prerequisite_needs_a_grant_reaching_what_it_names() {
     let zone_name = app.zone_name("nsupdate-prereq.example");
     app.create_zone_cli(&zone_name, "3600").await;
     let port = app.dns_port();
-    let key = create_tsig_key(&app, "nsupdate-prereq-key", false).await;
+    let key = create_tsig_key(&app, "nsupdate-prereq-key", KeyRole::Own).await;
     app.run_cli_success(&[
-        "tsig-key",
+        "role",
         "grant",
         &key.name,
+        "--zone",
         &zone_name,
+        "--actions",
+        "record:read,record:create",
         "--pattern",
         "*.dyn",
         "--types",

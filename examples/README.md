@@ -84,14 +84,16 @@ records in a Bindizr-managed zone. Full reference:
 helm upgrade bindizr charts -n bindizr -f examples/kind/values.yaml \
   -f examples/kind/values.external-dns.yaml   # plus values.arm.yaml on arm64
 
-# 2. Create the zone ExternalDNS will manage, and a token granted to it.
+# 2. Create the zone ExternalDNS will manage (it starts with an apex NS naming
+#    the MNAME, which BIND9 needs), a role granted the record actions there,
+#    and a token in that role.
 kubectl -n bindizr exec deploy/bindizr -- bindizr zone create example.com \
   --mname ns.example.com --rname admin@example.com --default-ttl 3600
-# BIND9 will not load a zone without apex NS records, and ExternalDNS writes none.
-kubectl -n bindizr exec deploy/bindizr -- bindizr record create example.com @ \
-  --type NS --value ns.example.com
-kubectl -n bindizr exec deploy/bindizr -- bindizr token create external-dns
-kubectl -n bindizr exec deploy/bindizr -- bindizr token grant external-dns example.com
+kubectl -n bindizr exec deploy/bindizr -- bindizr role create external-dns
+kubectl -n bindizr exec deploy/bindizr -- bindizr role grant external-dns \
+  --zone example.com --actions record:read,record:create,record:delete
+kubectl -n bindizr exec deploy/bindizr -- bindizr token create external-dns \
+  --role external-dns
 kubectl -n bindizr create secret generic bindizr-external-dns --from-literal=api-token=<token>
 
 # 3. Deploy ExternalDNS + adapter sidecar and the annotated demo Service.

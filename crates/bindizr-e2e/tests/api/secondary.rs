@@ -5,7 +5,7 @@ use crate::common::{
     TestApp, assert_cli_failure_contains,
     dns::{
         notify::{FakeSecondary, ReceivedNotify, SERVED_SERIAL},
-        nsupdate::create_tsig_key,
+        nsupdate::{KeyRole, create_tsig_key},
     },
 };
 
@@ -157,7 +157,7 @@ async fn notify_is_signed_for_a_secondary_with_a_notify_key() {
     // `domain` renders a name without its root dot.
     let expected_zone = zone_name.to_string();
 
-    let key = create_tsig_key(&app, "notify-key", false).await;
+    let key = create_tsig_key(&app, "notify-key", KeyRole::Own).await;
     let signed_receiver = FakeSecondary::start(Some(&key));
     let plain_receiver = FakeSecondary::start(None);
 
@@ -204,7 +204,7 @@ async fn notify_is_signed_for_a_secondary_with_a_notify_key() {
 
     // A server that holds another key answers with the TSIG error, which
     // the NOTIFY reports instead of an acknowledgement.
-    let other = create_tsig_key(&app, "other-key", false).await;
+    let other = create_tsig_key(&app, "other-key", KeyRole::Own).await;
     let wrong_receiver = FakeSecondary::start(Some(&other));
     let (status, body) = app
         .send_request(

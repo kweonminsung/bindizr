@@ -1,14 +1,17 @@
 # CLI Commands
 
 Bindizr provides a command-line interface for managing the DNS synchronization
-service, its zone data, access control (API tokens, TSIG keys), and DNSSEC.
+service, its zone data, access control (roles, API tokens, TSIG keys), and DNSSEC.
 `bindizr help` lists everything; this page covers the commands you reach for
 most and points to the pages that cover the rest.
 
-Every command except `start` and `config check` needs the daemon running
-and has full control over it, so it runs as the daemon's user: `sudo bindizr
-...` for a package install, or a shell inside the container for Compose and
-Kubernetes. There is no remote mode.
+Management commands connect to the local daemon and have full control.
+Run them as the daemon's user or root: `sudo bindizr ...` for a package
+install, or through `docker exec` / `kubectl exec` in a container. There is
+no remote mode; use the [HTTP API](../http-api/index.md) for remote access.
+
+`config check`, `completion`, `man`, and help work without a daemon.
+`doctor` can also diagnose an installation while the daemon is stopped.
 
 ## Command map
 
@@ -18,52 +21,50 @@ Kubernetes. There is no remote mode.
 | `completion`, `man` | The shell completion scripts and the man page | this page |
 | `zone`, `record` | Zone data: CRUD, import/export, versions, NOTIFY, secondary status | [Zones and Records](zones.md) |
 | `secondary` | The secondary servers: who receives NOTIFY and may pull zones | [Secondaries](secondaries.md) |
-| `token` | API tokens and the zones each is granted over HTTP | [API Tokens](tokens.md) |
-| `tsig-key` | TSIG keys and the zones each is granted for nsupdate | [TSIG Keys](tsig-keys.md), [Dynamic Updates](nsupdate.md) |
+| `role` | Roles and the grants that decide what their tokens and keys may do | [Access Control](access-control.md) |
+| `token` | API tokens, each authenticating into one role | [Access Control](access-control.md#api-tokens) |
+| `tsig-key` | TSIG keys, each authenticating into one role, for nsupdate and transfers | [Access Control](access-control.md#tsig-keys), [Dynamic Updates](nsupdate.md) |
 | `dnssec-policy`, `dnssec` | Signing-parameter bundles and each zone's signing state | [DNSSEC](../dnssec/index.md) |
 
-Every command that reports something prints a table and takes `-o json` or
-`-o yaml`, whose payload is the same body the HTTP API returns; `delete` and
-the one-shot actions print a message. `zone export`, `dnssec keys export`, and
-`tsig-key export` print paste-ready text instead, so none of the three takes
-`-o`. A command's result goes to stdout and its diagnostics to stderr, so a
-pipeline keeps the result clean.
+Result commands support `-o json` and `-o yaml` for scripting. Exports,
+`completion`, and `man` write their file content directly and take no `-o`.
+Results go to stdout and diagnostics to stderr.
 
 ## Service
 
 ```bash
 # Start bindizr on foreground
-$ bindizr start
+bindizr start
 
 # Start with a custom configuration file. `start`, `doctor`, and `config check`
 # all take `-c` and fall back to $BINDIZR_CONFIG_PATH
-$ bindizr start -c <FILE>
+bindizr start -c <FILE>
 
 # Stop the running daemon, or restart it in place
-$ bindizr stop
-$ bindizr restart
+bindizr stop
+bindizr restart
 
 # Whether the daemon runs, where it listens, its database and zone count, and its
 # secondaries. Exits non-zero when the database does not answer, so a health
 # check can branch on it
-$ bindizr status
+bindizr status
 
 # Check the installation end to end; without a daemon it checks the database, the
 # listen ports, and BIND's catalog setup itself
-$ bindizr doctor
+bindizr doctor
 
 # Validate a configuration file without starting bindizr (defaults to /etc/bindizr/bindizr.conf.toml)
-$ bindizr config check [-c <FILE>]
+bindizr config check [-c <FILE>]
 
 # Show the configuration loaded by the running daemon, or one value by dotted key
-$ bindizr config list
-$ bindizr config get dns.listen_port
+bindizr config list
+bindizr config get dns.listen_port
 
 # Re-read the configuration file without restarting (`systemctl reload bindizr` or SIGHUP does the same)
-$ bindizr config reload
+bindizr config reload
 
 # doctor also answers as one JSON document, for a cron job or CI check
-$ bindizr doctor -o json
+bindizr doctor -o json
 ```
 
 ## Completions and the man page
@@ -73,12 +74,12 @@ them, generated from the same command it parses with:
 
 ```bash
 # Shell completion: bash, zsh, fish, elvish, or powershell
-$ bindizr completion bash | sudo tee /usr/share/bash-completion/completions/bindizr
-$ bindizr completion zsh  | sudo tee /usr/share/zsh/site-functions/_bindizr
-$ bindizr completion fish > ~/.config/fish/completions/bindizr.fish
+bindizr completion bash | sudo tee /usr/share/bash-completion/completions/bindizr
+bindizr completion zsh  | sudo tee /usr/share/zsh/site-functions/_bindizr
+bindizr completion fish > ~/.config/fish/completions/bindizr.fish
 
 # Man page
-$ bindizr man | sudo tee /usr/share/man/man1/bindizr.1 > /dev/null
+bindizr man | sudo tee /usr/share/man/man1/bindizr.1 > /dev/null
 ```
 
 ## Exit codes
@@ -93,6 +94,6 @@ without parsing the message.
 | `2` | Usage error, such as an unknown command or a missing argument |
 | `3` | Not found: no such zone, record, token, version, key, or policy |
 | `4` | Conflict: the name is taken, or the object is in use or in the wrong state |
-| `5` | Denied: the token is missing, invalid, or lacks a grant |
+| `5` | Denied: the token is missing, invalid, or its role lacks a grant |
 | `6` | The configuration file is unusable, so running the same command again changes nothing |
 | `7` | Unavailable: the daemon is not running, so the command never reached it |

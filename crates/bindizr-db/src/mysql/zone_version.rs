@@ -75,29 +75,9 @@ pub(crate) async fn upsert_tx(
         .ok_or_else(|| DatabaseError::QueryFailed(sqlx::Error::RowNotFound))
 }
 
-/// Find a zone version by zone ID and serial.
-pub(crate) async fn get_by_serial(
-    pool: &Pool<MySql>,
-    zone_id: ZoneId,
-    serial: Serial,
-) -> Result<Option<ZoneVersion>, DatabaseError> {
-    sqlx::query_as::<_, ZoneVersion>(
-        r#"
-        SELECT id, zone_id, serial, mname, rname, default_ttl, refresh, retry, expire, minimum_ttl, change_source, changed_by_kind, changed_by_name, created_at
-        FROM zone_versions
-        WHERE zone_id = ? AND serial = ?
-        "#,
-    )
-    .bind(zone_id)
-    .bind(serial)
-    .fetch_optional(pool)
-    .await
-    .map_err(DatabaseError::from)
-}
-
 /// List zone versions in the closed interval `[from_serial, to_serial]`.
-pub(crate) async fn list_in_serial_range(
-    pool: &Pool<MySql>,
+pub(crate) async fn list_in_serial_range_tx(
+    tx: &mut Transaction<'_, MySql>,
     zone_id: ZoneId,
     from_serial: Serial,
     to_serial: Serial,
@@ -112,7 +92,7 @@ pub(crate) async fn list_in_serial_range(
     .bind(zone_id)
     .bind(from_serial)
     .bind(to_serial)
-    .fetch_all(pool)
+    .fetch_all(&mut **tx)
     .await
     .map_err(DatabaseError::from)
 }

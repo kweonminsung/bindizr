@@ -140,6 +140,8 @@ pub(crate) async fn authorize_transfer_content_by_name(
         TransferAccess::NotAuth => return Ok(TransferAccess::NotAuth),
         TransferAccess::Refused(reason) => return Ok(TransferAccess::Refused(reason)),
     };
+    // A serial's content never changes, so a hit serves the rows the
+    // authorizing transaction would have read for the serial it locked.
     if let Some(content) =
         dns_cx
             .transfer_cache

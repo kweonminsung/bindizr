@@ -1,6 +1,6 @@
 use bindizr_core::{
     dns::name::ZoneName,
-    model::{api_token::TokenId, dnssec_record::DnssecRecordId, zone::ZoneId},
+    model::{dnssec_record::DnssecRecordId, role::RoleId, zone::ZoneId},
 };
 use chrono::{DateTime, Utc};
 
@@ -27,10 +27,10 @@ pub struct DnssecRecordFilter {
     /// Partial match against the zone name, the owner name, and the FQDN —
     /// the name forms a derived row shares with a user one.
     pub search: Option<String>,
-    /// Restrict to zones granted to this token, joined against
-    /// `token_grants` in SQL so the bind count stays fixed; `None` is
+    /// Restrict to what this role's grants reach, joined against
+    /// `role_grants` in SQL so the bind count stays fixed; `None` is
     /// unrestricted.
-    pub scope_token_id: Option<TokenId>,
+    pub scope_role_id: Option<RoleId>,
     pub limit: Option<u32>,
     pub offset: Option<u64>,
 }
@@ -166,6 +166,15 @@ pub async fn list_by_filter_with_zone(
         Backend::Sqlite(pool) => {
             sqlite::dnssec_record::list_by_filter_with_zone(pool, filter).await
         }
+    }
+}
+
+/// How many derived DNSSEC records a zone holds, in the caller's transaction.
+pub async fn count_tx(tx: &mut Transaction<'_>, zone_id: ZoneId) -> Result<u64, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::dnssec_record::count_tx(tx, zone_id).await,
+        TransactionKind::Postgres(tx) => postgres::dnssec_record::count_tx(tx, zone_id).await,
+        TransactionKind::Sqlite(tx) => sqlite::dnssec_record::count_tx(tx, zone_id).await,
     }
 }
 

@@ -1,7 +1,7 @@
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 
-use crate::common::{TestApp, TestAppOptions};
+use crate::common::{RECORD_ACTIONS, TestApp, TestAppOptions};
 
 mod delegation;
 
@@ -303,25 +303,33 @@ async fn dnssec_enable_with_nsec3_and_split_keys() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-/// Verify that DNSSEC enable requires a global token.
+/// Verify that DNSSEC enable requires `dnssec:manage`.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
-async fn dnssec_enable_requires_a_global_token() {
+async fn dnssec_enable_requires_dnssec_manage() {
     let mut app = TestApp::start_with_options(TestAppOptions {
         authentication_required: true,
         ..TestAppOptions::default()
     })
     .await;
-    let (_, global_token) = app.create_api_token().await;
-    app.set_auth_token(global_token);
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token);
     let zone = app.create_test_zone().await;
     let zone_name = zone["name"].as_str().unwrap();
 
-    // Grant the zone to the scoped token so the 403 proves the global
-    // requirement, not zone invisibility (which would read as 404).
+    // Grant the zone's records so the 403 proves the missing action, not
+    // zone invisibility (which would read as 404).
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
-    app.run_cli_success(&["token", "grant", &scoped_name, zone_name])
-        .await;
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &scoped_name,
+        "--zone",
+        zone_name,
+        "--actions",
+        RECORD_ACTIONS,
+    ])
+    .await;
     app.set_auth_token(scoped_token);
 
     let (status, body) = app

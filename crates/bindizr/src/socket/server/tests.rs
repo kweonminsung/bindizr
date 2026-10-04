@@ -9,15 +9,15 @@ use super::*;
 fn command_rejects_wrongly_typed_fields() {
     let ok: DaemonCommand = serde_json::from_value(json!({
         "command": "create_tsig_key",
-        "data": { "name": "k", "algorithm": null, "secret": null },
+        "data": { "name": "k", "algorithm": null, "secret": null, "role_name": "admin" },
     }))
     .unwrap();
-    assert!(matches!(ok, DaemonCommand::CreateTsigKey(request) if !request.global));
+    assert!(matches!(ok, DaemonCommand::CreateTsigKey(request) if request.role_name == "admin"));
 
     // Defaulting invalid input could generate an unwanted key or apply a preview.
     serde_json::from_value::<DaemonCommand>(json!({
         "command": "create_tsig_key",
-        "data": { "name": "k", "secret": 123 },
+        "data": { "name": "k", "secret": 123, "role_name": "admin" },
     }))
     .unwrap_err();
     for run in [json!("true"), json!(true), json!(1)] {

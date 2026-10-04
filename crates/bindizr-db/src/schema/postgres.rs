@@ -114,16 +114,28 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_zone_versions_created ON zone_versions(created_at);
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS roles (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            description VARCHAR(255),
+            created_at TIMESTAMPTZ NOT NULL
+        );
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS api_tokens (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) UNIQUE NOT NULL,
             token VARCHAR(64) UNIQUE NOT NULL,
             description VARCHAR(255),
-            is_global BOOLEAN NOT NULL DEFAULT FALSE,
+            role_id INTEGER NOT NULL,
             created_at TIMESTAMPTZ NOT NULL,
             expires_at TIMESTAMPTZ,
-            last_used_at TIMESTAMPTZ
+            last_used_at TIMESTAMPTZ,
+            FOREIGN KEY (role_id) REFERENCES roles(id)
         );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_api_tokens_role ON api_tokens(role_id);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS catalog_zones (
@@ -144,9 +156,13 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             name VARCHAR(255) UNIQUE NOT NULL,
             algorithm VARCHAR(32) NOT NULL,
             secret VARCHAR(255) NOT NULL,
-            is_global BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at TIMESTAMPTZ NOT NULL
+            role_id INTEGER NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            FOREIGN KEY (role_id) REFERENCES roles(id)
         );
+        "#,
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_tsig_keys_role ON tsig_keys(role_id);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS secondaries (
@@ -181,42 +197,23 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         CREATE INDEX IF NOT EXISTS idx_transfers_zone ON transfers(zone_id);
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS tsig_grants (
+        CREATE TABLE IF NOT EXISTS role_grants (
             id SERIAL PRIMARY KEY,
-            zone_id INTEGER NOT NULL,
-            tsig_key_id INTEGER NOT NULL,
+            role_id INTEGER NOT NULL,
+            zone_id INTEGER NULL,
+            actions VARCHAR(512) NOT NULL,
             record_name_pattern VARCHAR(1024) NOT NULL,
             record_types VARCHAR(255) NOT NULL,
-            can_write BOOLEAN NOT NULL,
             created_at TIMESTAMPTZ NOT NULL,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id)
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
         );
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_tsig_grants_zone ON tsig_grants(zone_id);
+        CREATE INDEX IF NOT EXISTS idx_role_grants_role_zone ON role_grants(role_id, zone_id);
         "#,
         r#"
-        CREATE INDEX IF NOT EXISTS idx_tsig_grants_key ON tsig_grants(tsig_key_id);
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS token_grants (
-            id SERIAL PRIMARY KEY,
-            zone_id INTEGER NOT NULL,
-            api_token_id INTEGER NOT NULL,
-            record_name_pattern VARCHAR(1024) NOT NULL,
-            record_types VARCHAR(255) NOT NULL,
-            can_write BOOLEAN NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE
-        );
-        "#,
-        r#"
-        CREATE INDEX IF NOT EXISTS idx_token_grants_zone ON token_grants(zone_id);
-        "#,
-        r#"
-        CREATE INDEX IF NOT EXISTS idx_token_grants_token_zone ON token_grants(api_token_id, zone_id);
+        CREATE INDEX IF NOT EXISTS idx_role_grants_zone ON role_grants(zone_id);
         "#,
         r#"
         CREATE TABLE IF NOT EXISTS dnssec_keys (
@@ -268,5 +265,26 @@ pub(crate) fn default_policy_seed() -> &'static str {
         signature_refresh_days, zsk_lifetime_days, created_at)
     SELECT 'default', 13, 'nsec3', FALSE, 14, 5, 0, $1::timestamptz
     WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
+    "#
+}
+
+/// Ensure the built-in role exists. Binds its name, description and creation
+/// time, then its name again for the existence check.
+pub(crate) fn admin_role_seed() -> &'static str {
+    r#"
+    INSERT INTO roles (name, description, created_at)
+    SELECT $1, $2, $3::timestamptz
+    WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = $4);
+    "#
+}
+
+/// Give the built-in role its one grant, every action in all zones, unless it
+/// holds one. Binds the action list, the creation time and the role's name.
+pub(crate) fn admin_grant_seed() -> &'static str {
+    r#"
+    INSERT INTO role_grants (role_id, zone_id, actions, record_name_pattern, record_types, created_at)
+    SELECT r.id, NULL::integer, $1, '*', '*', $2::timestamptz FROM roles r
+    WHERE r.name = $3
+      AND NOT EXISTS (SELECT 1 FROM role_grants g WHERE g.role_id = r.id);
     "#
 }

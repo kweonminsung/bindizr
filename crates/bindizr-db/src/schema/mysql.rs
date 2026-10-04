@@ -107,15 +107,25 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
+        CREATE TABLE IF NOT EXISTS roles (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255) COLLATE utf8mb4_bin UNIQUE NOT NULL,
+            description VARCHAR(255),
+            created_at DATETIME NOT NULL
+        );
+        "#,
+        r#"
         CREATE TABLE IF NOT EXISTS api_tokens (
             id INT PRIMARY KEY AUTO_INCREMENT,
             name VARCHAR(255) UNIQUE NOT NULL,
             token VARCHAR(64) UNIQUE NOT NULL,
             description VARCHAR(255),
-            is_global BOOLEAN NOT NULL DEFAULT FALSE,
+            role_id INT NOT NULL,
             created_at DATETIME NOT NULL,
             expires_at DATETIME,
-            last_used_at DATETIME
+            last_used_at DATETIME,
+            FOREIGN KEY (role_id) REFERENCES roles(id),
+            INDEX idx_api_tokens_role (role_id)
         );
         "#,
         r#"
@@ -137,8 +147,10 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
             name VARCHAR(255) COLLATE utf8mb4_bin UNIQUE NOT NULL,
             algorithm VARCHAR(32) NOT NULL,
             secret VARCHAR(255) NOT NULL,
-            is_global BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at DATETIME NOT NULL
+            role_id INT NOT NULL,
+            created_at DATETIME NOT NULL,
+            FOREIGN KEY (role_id) REFERENCES roles(id),
+            INDEX idx_tsig_keys_role (role_id)
         );
         "#,
         r#"
@@ -170,33 +182,18 @@ pub(crate) fn table_creation_queries() -> Vec<&'static str> {
         );
         "#,
         r#"
-        CREATE TABLE IF NOT EXISTS tsig_grants (
+        CREATE TABLE IF NOT EXISTS role_grants (
             id INT PRIMARY KEY AUTO_INCREMENT,
-            zone_id INT NOT NULL,
-            tsig_key_id INT NOT NULL,
+            role_id INT NOT NULL,
+            zone_id INT NULL,
+            actions VARCHAR(512) NOT NULL,
             record_name_pattern VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
             record_types VARCHAR(255) NOT NULL,
-            can_write BOOLEAN NOT NULL,
             created_at DATETIME NOT NULL,
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            FOREIGN KEY (tsig_key_id) REFERENCES tsig_keys(id),
-            INDEX idx_tsig_grants_zone (zone_id),
-            INDEX idx_tsig_grants_key (tsig_key_id)
-        );
-        "#,
-        r#"
-        CREATE TABLE IF NOT EXISTS token_grants (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            zone_id INT NOT NULL,
-            api_token_id INT NOT NULL,
-            record_name_pattern VARCHAR(1024) COLLATE utf8mb4_bin NOT NULL,
-            record_types VARCHAR(255) NOT NULL,
-            can_write BOOLEAN NOT NULL,
-            created_at DATETIME NOT NULL,
-            FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE,
-            FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE CASCADE,
-            INDEX idx_token_grants_zone (zone_id),
-            INDEX idx_token_grants_token_zone (api_token_id, zone_id)
+            INDEX idx_role_grants_role_zone (role_id, zone_id),
+            INDEX idx_role_grants_zone (zone_id)
         );
         "#,
         r#"
@@ -243,5 +240,26 @@ pub(crate) fn default_policy_seed() -> &'static str {
         signature_refresh_days, zsk_lifetime_days, created_at)
     SELECT 'default', 13, 'nsec3', FALSE, 14, 5, 0, ? FROM DUAL
     WHERE NOT EXISTS (SELECT 1 FROM dnssec_policies WHERE name = 'default');
+    "#
+}
+
+/// Ensure the built-in role exists. Binds its name, description and creation
+/// time, then its name again for the existence check.
+pub(crate) fn admin_role_seed() -> &'static str {
+    r#"
+    INSERT INTO roles (name, description, created_at)
+    SELECT ?, ?, ? FROM DUAL
+    WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = ?);
+    "#
+}
+
+/// Give the built-in role its one grant, every action in all zones, unless it
+/// holds one. Binds the action list, the creation time and the role's name.
+pub(crate) fn admin_grant_seed() -> &'static str {
+    r#"
+    INSERT INTO role_grants (role_id, zone_id, actions, record_name_pattern, record_types, created_at)
+    SELECT r.id, NULL, ?, '*', '*', ? FROM roles r
+    WHERE r.name = ?
+      AND NOT EXISTS (SELECT 1 FROM role_grants g WHERE g.role_id = r.id);
     "#
 }

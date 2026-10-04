@@ -1,15 +1,32 @@
-use bindizr_core::model::api_token::TokenId;
+use bindizr_core::model::{api_token::TokenId, role::RoleId};
 
 use crate::{
-    Backend, Db, error::DatabaseError, model::api_token::ApiToken, mysql, postgres, sqlite,
+    Backend, Db, LockLevel, Transaction, error::DatabaseError, model::api_token::ApiToken, mysql,
+    postgres, sqlite, tx::TransactionKind,
 };
 
 /// Insert an API token.
-pub async fn create(db: &Db, token: ApiToken) -> Result<ApiToken, DatabaseError> {
-    match &db.0 {
-        Backend::MySql(pool) => mysql::api_token::create(pool, token).await,
-        Backend::Postgres(pool) => postgres::api_token::create(pool, token).await,
-        Backend::Sqlite(pool) => sqlite::api_token::create(pool, token).await,
+pub async fn create_tx(
+    tx: &mut Transaction<'_>,
+    token: ApiToken,
+) -> Result<ApiToken, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::api_token::create_tx(tx, token).await,
+        TransactionKind::Postgres(tx) => postgres::api_token::create_tx(tx, token).await,
+        TransactionKind::Sqlite(tx) => sqlite::api_token::create_tx(tx, token).await,
+    }
+}
+
+/// An API token by id inside the caller's transaction, locked at `lock_level`.
+pub async fn get_tx(
+    tx: &mut Transaction<'_>,
+    id: TokenId,
+    lock_level: LockLevel,
+) -> Result<Option<ApiToken>, DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::api_token::get_tx(tx, id, lock_level).await,
+        TransactionKind::Postgres(tx) => postgres::api_token::get_tx(tx, id, lock_level).await,
+        TransactionKind::Sqlite(tx) => sqlite::api_token::get_tx(tx, id, lock_level).await,
     }
 }
 
@@ -51,10 +68,19 @@ pub async fn update(db: &Db, token: ApiToken) -> Result<ApiToken, DatabaseError>
 }
 
 /// Delete an API token by ID.
-pub async fn delete(db: &Db, id: TokenId) -> Result<(), DatabaseError> {
+pub async fn delete_tx(tx: &mut Transaction<'_>, id: TokenId) -> Result<(), DatabaseError> {
+    match &mut tx.0 {
+        TransactionKind::MySql(tx) => mysql::api_token::delete_tx(tx, id).await,
+        TransactionKind::Postgres(tx) => postgres::api_token::delete_tx(tx, id).await,
+        TransactionKind::Sqlite(tx) => sqlite::api_token::delete_tx(tx, id).await,
+    }
+}
+
+/// List the API tokens authenticating into a role.
+pub async fn list_by_role_id(db: &Db, role_id: RoleId) -> Result<Vec<ApiToken>, DatabaseError> {
     match &db.0 {
-        Backend::MySql(pool) => mysql::api_token::delete(pool, id).await,
-        Backend::Postgres(pool) => postgres::api_token::delete(pool, id).await,
-        Backend::Sqlite(pool) => sqlite::api_token::delete(pool, id).await,
+        Backend::MySql(pool) => mysql::api_token::list_by_role_id(pool, role_id).await,
+        Backend::Postgres(pool) => postgres::api_token::list_by_role_id(pool, role_id).await,
+        Backend::Sqlite(pool) => sqlite::api_token::list_by_role_id(pool, role_id).await,
     }
 }

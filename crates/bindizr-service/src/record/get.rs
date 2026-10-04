@@ -4,15 +4,12 @@ use bindizr_core::{
 };
 use bindizr_db::{dnssec_record::DnssecRecordFilter, record::RecordFilter};
 
-use super::ListedRecord;
+use super::ServedRecord;
 use crate::{
     Context,
     authorization::Caller,
     error::ServiceError,
-    model::{
-        dnssec_record::DnssecRecordType,
-        record::{RecordType, RecordWithZone},
-    },
+    model::{dnssec_record::DnssecRecordType, record::RecordType},
     pagination::{build_paginated_response, normalize_page_limit, parse_setting},
     types::{GetRecordResponse, GetRecordsFilter, PaginatedResponse, ZoneView},
     zone::{self, validation::normalize_name},
@@ -58,7 +55,7 @@ pub async fn list_with_zone_by_filter(
     caller: &Caller,
     filter: GetRecordsFilter,
 ) -> Result<PaginatedResponse<GetRecordResponse>, ServiceError> {
-    let scope_token_id = caller.scope_token_id();
+    let scope_role_id = caller.scope_role_id();
     let zone_name = filter
         .zone_name
         .as_deref()
@@ -71,7 +68,7 @@ pub async fn list_with_zone_by_filter(
     // Scoped callers read unknown and invisible zones alike as empty
     // pages, so skip the 404 probe.
     if let Some(name) = zone_name.as_ref()
-        && scope_token_id.is_none()
+        && scope_role_id.is_none()
     {
         zone::lookup_by_name(cx, name).await?;
     }
@@ -111,7 +108,7 @@ pub async fn list_with_zone_by_filter(
         min_priority: filter.min_priority,
         max_priority: filter.max_priority,
         search: filter.search.clone(),
-        scope_token_id,
+        scope_role_id,
         sort: parse_setting(filter.sort.as_deref())?,
         order: parse_setting(filter.order.as_deref())?,
         limit,
@@ -128,7 +125,7 @@ pub async fn list_with_zone_by_filter(
         min_ttl: filter.min_ttl,
         max_ttl: filter.max_ttl,
         search: filter.search.clone(),
-        scope_token_id,
+        scope_role_id,
         limit: None,
         offset: None,
     };
@@ -145,13 +142,13 @@ pub async fn list_with_zone_by_filter(
     };
 
     let start = offset.unwrap_or(0);
-    let mut items: Vec<ListedRecord> = Vec::new();
+    let mut items: Vec<ServedRecord> = Vec::new();
     if user_plane && start < user_total {
         items.extend(
             bindizr_db::record::list_by_filter_with_zone(cx.db(), record_filter)
                 .await?
                 .into_iter()
-                .map(ListedRecord::User),
+                .map(ServedRecord::User),
         );
     }
     // The derived plane pages after the user plane: it starts where the
@@ -169,11 +166,14 @@ pub async fn list_with_zone_by_filter(
             )
             .await?
             .into_iter()
-            .map(ListedRecord::Derived),
+            .map(ServedRecord::Derived),
         );
     }
 
-    let items = items.iter().map(GetRecordResponse::from).collect();
+    let items = items
+        .iter()
+        .map(|item| super::build_record_response(caller, item))
+        .collect();
     Ok(build_paginated_response(
         items,
         limit,
@@ -182,13 +182,13 @@ pub async fn list_with_zone_by_filter(
     ))
 }
 
-/// Fetch a record with its zone name by id. A record the caller's grants
-/// do not reach reads as `NotFound`, so ids cannot be probed.
-pub async fn get_with_zone(
+/// Fetch a record by id with the caller's actions on it. A record the
+/// caller cannot read reads as `NotFound`, so ids cannot be probed.
+pub async fn get(
     cx: &Context,
     caller: &Caller,
     record_id: RecordId,
-) -> Result<RecordWithZone, ServiceError> {
+) -> Result<GetRecordResponse, ServiceError> {
     let record = match bindizr_db::record::get_with_zone(cx.db(), record_id).await {
         Ok(Some(record)) => record,
         Ok(None) => return Err(ServiceError::record_not_found(record_id)),
@@ -204,7 +204,10 @@ pub async fn get_with_zone(
     if !caller.sees_record(record.zone_id, &record.name, Some(&record.record_type)) {
         return Err(ServiceError::record_not_found(record_id));
     }
-    Ok(record)
+    Ok(super::build_record_response(
+        caller,
+        &ServedRecord::User(record),
+    ))
 }
 
 /// Normalize a name filter for stored-owner and FQDN comparisons.

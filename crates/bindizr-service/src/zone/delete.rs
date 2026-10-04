@@ -1,4 +1,7 @@
-use bindizr_core::{dns::name::ZoneName, model::zone_version::VersionFilter};
+use bindizr_core::{
+    dns::name::ZoneName,
+    model::{role_grant::Action, zone_version::VersionFilter},
+};
 use bindizr_db::{LockLevel, record::RecordFilter};
 
 use crate::{
@@ -18,13 +21,13 @@ pub async fn delete(
     zone_name: &ZoneName,
     run: Run,
 ) -> Result<DeleteZoneResponse, ServiceError> {
-    caller.authorize_global("delete zones")?;
-
     let mut tx = transaction::begin_tx(cx, "failed to delete zone").await?;
 
     let apply_result: Result<_, ServiceError> = async {
         // Locked lookup so a raced double-delete reports 404, not success.
         let zone = super::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = caller.reauthenticate_tx(&mut tx).await?;
+        caller.authorize_zone_action(Action::ZoneDelete, &zone)?;
 
         // Counted for the report, not acted on, so they run unlocked.
         let records = bindizr_db::record::count_by_filter(

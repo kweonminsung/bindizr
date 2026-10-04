@@ -54,7 +54,7 @@ pub(crate) fn routes() -> Router<Arc<Context>> {
         path = "/external-dns/domains",
         tag = "ExternalDNS",
         summary = "List the names ExternalDNS may manage",
-        description = "The ExternalDNS domain filter the calling token's grants come to: every zone name for a global token, otherwise one name per writable grant — the zone where the grant covers every name, the granted subtree where it does not. Each entry covers itself and everything under it, so a grant narrowed by record type or to one exact name reads wider here than it is.",
+        description = "Returns every existing zone name when authentication is disabled. Otherwise, includes zones or subtrees covered by a grant containing all three actions: `record:read`, `record:create`, and `record:delete`. Entries are deduplicated. Each entry includes its descendants, so record-type and exact-name restrictions still need to be enforced when changes are applied.",
         responses(
             (status = 200, description = "Manageable names", body = ExternalDnsDomainsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),
@@ -69,13 +69,13 @@ pub(crate) async fn list_external_dns_domains(
     Ok((StatusCode::OK, Json(ExternalDnsDomainsResponse { domains })).into_response())
 }
 
-/// List the records of every zone the ExternalDNS caller may manage.
+/// List the records of all zones the ExternalDNS caller may manage.
 #[utoipa::path(
         get,
         path = "/external-dns/records",
         tag = "ExternalDNS",
         summary = "List the records of every ExternalDNS-managed zone",
-        description = "Records of every zone the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.",
+        description = "Records of all zones the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.",
         responses(
             (status = 200, description = "Records of the allowed zones", body = ExternalDnsRecordsResponse),
             (status = 401, description = "Unauthorized", body = ErrorResponse),

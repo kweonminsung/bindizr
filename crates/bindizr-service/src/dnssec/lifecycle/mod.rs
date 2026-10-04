@@ -3,7 +3,7 @@
 
 use bindizr_core::{
     dns::{dnssec::SigningPass, name::ZoneName},
-    model::dnssec_key::DnssecKey,
+    model::{dnssec_key::DnssecKey, role_grant::Action},
 };
 use bindizr_db::LockLevel;
 use chrono::Utc;
@@ -58,7 +58,6 @@ pub async fn enable(
     zone_name: &ZoneName,
     request: &EnableDnssecRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
     let policy_name = normalize_policy_name(
         request
             .policy_name
@@ -71,6 +70,8 @@ pub async fn enable(
     let result = async {
         // Check the unsigned state under the same lock used to install the keys.
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
+        caller.authorize_zone_action(Action::DnssecManage, &zone)?;
         let existing_keys =
             bindizr_db::dnssec_key::list_tx(&mut tx, zone.id, LockLevel::Unlocked).await?;
         if !existing_keys.is_empty() {
@@ -159,7 +160,6 @@ pub async fn update_settings(
     zone_name: &ZoneName,
     request: &UpdateDnssecSettingsRequest,
 ) -> Result<DnssecStatusResponse, ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
     if request.policy_name.is_none() && request.parent_ns_addrs.is_none() {
         return Err(ServiceError::invalid_input(
             "nothing to update: give a policy, parent nameserver addresses, or both",
@@ -179,6 +179,8 @@ pub async fn update_settings(
     let mut tx = transaction::begin_tx(cx, "failed to update DNSSEC settings").await?;
     let result = async {
         let zone = zone::lookup_by_name_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let caller = &caller.reauthenticate_tx(&mut tx).await?;
+        caller.authorize_zone_action(Action::DnssecManage, &zone)?;
         let zone = match parent_ns_addrs {
             Some(parent_ns_addrs) => {
                 bindizr_db::zone::update_parent_ns_addrs_tx(
@@ -273,11 +275,16 @@ pub async fn disable(
     zone_name: &ZoneName,
     ds_check: DsCheck,
 ) -> Result<(), ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
-
     let mut tx = transaction::begin_tx(cx, "failed to disable DNSSEC").await?;
     let result = async {
-        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let signed = super::get_signed_zone_tx(
+            &mut tx,
+            caller,
+            Action::DnssecManage,
+            zone_name,
+            LockLevel::Exclusive,
+        )
+        .await?;
         if ds_check == DsCheck::Probe {
             let delegation = super::probe_delegation(cx, &signed).await?;
             if !delegation.ds_key_tags.is_empty() {
@@ -340,11 +347,16 @@ pub async fn disable(
 /// Re-sign a zone from scratch, discarding stored signatures (recovery
 /// hatch when stored state is doubted).
 pub async fn sign(cx: &Context, caller: &Caller, zone_name: &ZoneName) -> Result<(), ServiceError> {
-    caller.authorize_global("manage DNSSEC signing")?;
-
     let mut tx = transaction::begin_tx(cx, "failed to sign zone").await?;
     let result: Result<_, ServiceError> = async {
-        let signed = super::lookup_signed_zone_tx(&mut tx, zone_name, LockLevel::Exclusive).await?;
+        let signed = super::get_signed_zone_tx(
+            &mut tx,
+            caller,
+            Action::DnssecManage,
+            zone_name,
+            LockLevel::Exclusive,
+        )
+        .await?;
         super::resign_zone_tx(
             &mut tx,
             cx,

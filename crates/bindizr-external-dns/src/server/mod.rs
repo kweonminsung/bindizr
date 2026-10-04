@@ -34,8 +34,8 @@ const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 /// An empty DomainFilter reads as "manage everything" to external-dns, so
 /// negotiation and readiness both refuse it retryably: a new grant then heals
 /// the adapter without a restart.
-const NO_MANAGEABLE_NAMES: &str = "no manageable names: grant zones to the API token with \
-                                   'bindizr token grant', or create a zone first";
+const NO_MANAGEABLE_NAMES: &str = "no manageable names: grant the API token's role record \
+                                   actions with 'bindizr role grant', or create a zone first";
 
 /// Build the webhook router served on the (localhost) provider listener.
 pub(crate) fn webhook_router(state: Arc<AppState>) -> Router {

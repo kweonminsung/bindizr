@@ -60,7 +60,7 @@ async fn secondary_lifecycle_via_cli() {
 
     // A NOTIFY key is named on the row and cleared with an empty name.
     let key_name = format!("{}-notify", app.namespace());
-    app.run_cli_success(&["tsig-key", "create", &key_name])
+    app.run_cli_success(&["tsig-key", "create", &key_name, "--role", "admin"])
         .await;
     let keyed = app
         .run_cli_success(&["secondary", "update", &name, "--notify-key", &key_name])

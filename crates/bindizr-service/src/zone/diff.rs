@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use bindizr_core::dns::Ttl;
 
 use crate::{
+    authorization::ReadableRecords,
     model::{
         record::{RecordData, RecordSetKey},
         zone::Zone,
@@ -74,14 +75,15 @@ fn record_set_values(record_set: Vec<RecordSetMember>) -> Vec<RecordDiffValue> {
 }
 
 /// Diff two serials' records at the record set level. TTL is part of a record's identity,
-/// so a TTL-only change shows as `changed`.
+/// so a TTL-only change shows as `changed`. Both sides are [`ReadableRecords`], so a
+/// diff shows only rows the caller may read.
 pub(crate) fn build_record_diff(
     zone: &Zone,
-    before: &[RecordData],
-    after: &[RecordData],
+    before: &ReadableRecords<RecordData>,
+    after: &ReadableRecords<RecordData>,
 ) -> RecordDiff {
-    let mut before_record_sets = group_record_sets(zone, before);
-    let mut after_record_sets = group_record_sets(zone, after);
+    let mut before_record_sets = group_record_sets(zone, before.as_slice());
+    let mut after_record_sets = group_record_sets(zone, after.as_slice());
 
     let mut keys: Vec<RecordSetKey> = before_record_sets.keys().cloned().collect();
     keys.extend(
