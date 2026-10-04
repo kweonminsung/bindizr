@@ -55,10 +55,46 @@ struct ResolvedRecordUpdate {
 
 /// Merge `request` onto the stored record: an omitted field keeps the
 /// record's current value. Shared, so both entry points resolve it alike.
+///
+/// An omitted field is read from the stored record, so `inherit` is that
+/// record only when the caller may read it; `None` requires every field.
 fn resolve_update(
     request: &UpdateRecordRequest,
-) -> impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError> + '_ {
-    move |zone, existing| {
+) -> impl FnOnce(&Zone, &Record, Option<&Record>) -> Result<ResolvedRecordUpdate, ServiceError> + '_
+{
+    move |zone, existing, inherit| {
+        if inherit.is_none() {
+            let mut missing = Vec::new();
+            if request.name.is_none() {
+                missing.push("name");
+            }
+            if request.record_type.is_none() {
+                missing.push("type");
+            }
+            if request.value.is_none() {
+                missing.push("value");
+            }
+            if request.ttl.is_none() {
+                missing.push("ttl");
+            }
+            let takes_priority = request
+                .record_type
+                .as_deref()
+                .and_then(|record_type| parse_record_type(record_type).ok())
+                .is_some_and(|record_type| matches!(record_type, RecordType::Mx | RecordType::Srv));
+            if takes_priority && request.priority.is_none() {
+                missing.push("priority");
+            }
+            if !missing.is_empty() {
+                return Err(ServiceError::forbidden(format!(
+                    "an update without 'record:read' on '{}' {} in zone '{}' must give every field; missing: {}",
+                    existing.name,
+                    existing.record_type,
+                    zone.name,
+                    missing.join(", ")
+                )));
+            }
+        }
         let record_type = match &request.record_type {
             Some(record_type) => parse_record_type(record_type)?,
             None => existing.record_type,
@@ -162,7 +198,7 @@ async fn update_locked(
     caller: &Caller,
     target: LockTarget<'_>,
     run: Run,
-    resolve: impl FnOnce(&Zone, &Record) -> Result<ResolvedRecordUpdate, ServiceError>,
+    resolve: impl FnOnce(&Zone, &Record, Option<&Record>) -> Result<ResolvedRecordUpdate, ServiceError>,
 ) -> Result<RecordWriteResponse, ServiceError> {
     let mut tx = transaction::begin_tx(cx, "failed to update record").await?;
 
@@ -258,7 +294,15 @@ async fn update_locked(
             }
         };
 
-        let resolved = resolve(&zone, &existing_record)?;
+        // Inheriting an omitted field reads the record.
+        let inherit = caller
+            .sees_record(
+                zone.id,
+                &existing_record.name,
+                Some(&existing_record.record_type),
+            )
+            .then_some(&existing_record);
+        let resolved = resolve(&zone, &existing_record, inherit)?;
 
         // An update moves a record from its stored identity to the requested
         // one, so `record:update` must reach both.

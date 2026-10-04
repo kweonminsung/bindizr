@@ -97,7 +97,7 @@ deny rules. How grants combine, and what each operation needs, is in
 | `zone:transfer` | A TSIG-signed AXFR/IXFR of the zone |
 | `record:read` | Listing and reading records; export, version detail, and diffs |
 | `record:create` | Adding records |
-| `record:update` | Changing records in place, found by id or name without `record:read` |
+| `record:update` | Changing records in place, found by id or name without `record:read`; without it every field must be given, since an omitted one is read from the record |
 | `record:delete` | Deleting records, found by id without `record:read` |
 | `dnssec:read` | DNSSEC status, `dnssec check-ds`; listing DNSSEC policies |
 | `dnssec:manage` | Every other DNSSEC operation; changing DNSSEC policies |

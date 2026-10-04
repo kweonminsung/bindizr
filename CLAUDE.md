@@ -338,6 +338,8 @@ each rule says which spelling is this project's.
   visible zone's denied operation is 403). Reading records needs `record:read`
   covering them; an update or delete finds its target by that or by its own
   write action, so a write-only grant reaches what it may change and no more.
+  An update fills omitted fields from the stored record, so without
+  `record:read` on it the update must give every field.
   Actions stay independent: a write or manage action never implies its read.
   A role holding one without the other works through the API, as automation
   wants; a client listing things to act on needs the read as well.
