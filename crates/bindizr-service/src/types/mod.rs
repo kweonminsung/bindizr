@@ -39,9 +39,9 @@ pub use pagination::{DEFAULT_PAGE_LIMIT, PageRequest, PaginatedResponse, Paginat
 pub use permission::{PermissionsResponse, PermittedActionsResponse, ZonePermissionsResponse};
 pub(crate) use record::build_display_value;
 pub use record::{
-    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsRequest,
-    DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, RecordItem, RecordResponse,
-    RecordTypeResponse, RecordValueRequest, RecordWriteResponse, UpdateRecordRequest,
+    BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
+    DeleteRecordsRequest, DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter,
+    RecordResponse, RecordValue, RecordWriteResponse, ServedRecordType, UpdateRecordRequest,
 };
 pub use role::{
     CreateRoleGrantRequest, CreateRoleRequest, GetRoleGrantResponse, GetRoleResponse,

@@ -38,7 +38,7 @@ use crate::{
     transaction,
     types::{
         CreateZoneRequest, ImportMode, ImportSummary, ImportZoneRequest, ImportZoneResponse,
-        RecordDiff, RecordValueRequest, Run,
+        RecordDiff, RecordValue, Run,
     },
     zone,
 };
@@ -238,9 +238,9 @@ async fn reconcile_zone_file(
             HashMap::with_capacity(parsed.records.len());
         for record in parsed.records {
             let requested = match record.value {
-                ZoneFileValue::Rdata(rdata) => RecordValueRequest::Text(rdata),
+                ZoneFileValue::Rdata(rdata) => RecordValue::Text(rdata),
                 ZoneFileValue::Segments(segments) => {
-                    RecordValueRequest::Segments(segments)
+                    RecordValue::Segments(segments)
                 }
             };
             let value = match requested.to_encoded_value(&record.record_type, record.priority) {
@@ -293,13 +293,13 @@ async fn reconcile_zone_file(
                 .push(desired.len());
             desired.push(DesiredRecord {
                 prepared: PreparedRecord {
-                    owner_name: record.owner_fqdn,
+                    raw_name: record.owner_fqdn,
                     priority: record.record_type.stored_priority(record.priority),
                     record_type: record.record_type,
                     value,
                     ttl: Some(record.ttl),
                 },
-                stored_name,
+                name: stored_name,
             });
         }
 
@@ -313,7 +313,7 @@ async fn reconcile_zone_file(
         let existing_records = match mode {
             ImportMode::Append => {
                 let mut names: Vec<OwnerName> =
-                    desired.iter().map(|d| d.stored_name.clone()).collect();
+                    desired.iter().map(|d| d.name.clone()).collect();
                 names.sort();
                 names.dedup();
                 bindizr_db::record::list_by_names_tx(
@@ -357,11 +357,11 @@ async fn reconcile_zone_file(
         }
         for add in &plan.adds {
             let records_at_name = simulated_by_name
-                .entry(add.stored_name.clone())
+                .entry(add.name.clone())
                 .or_default();
             match validate_record_add_constraints_normalized(
                 records_at_name,
-                &add.stored_name,
+                &add.name,
                 &add.prepared.record_type,
                 &add.prepared.value,
                 effective_ttl(add.prepared.ttl),
@@ -372,7 +372,7 @@ async fn reconcile_zone_file(
                 // placeholder distinct from persisted rows.
                 Ok(()) => records_at_name.push(Record {
                     id: RecordId::from(-1),
-                    name: add.stored_name.clone(),
+                    name: add.name.clone(),
                     record_type: add.prepared.record_type,
                     value: add.prepared.value.clone(),
                     ttl: effective_ttl(add.prepared.ttl),
@@ -381,7 +381,7 @@ async fn reconcile_zone_file(
                     created_at: Utc::now(),
                 }),
                 Err(e) => {
-                    errors.push(format!("{}: {}", add.prepared.owner_name, e))
+                    errors.push(format!("{}: {}", add.prepared.raw_name, e))
                 }
             }
         }
@@ -437,7 +437,7 @@ async fn reconcile_zone_file(
                 .iter()
                 .map(|add| Record {
                     id: RecordId::UNWRITTEN,
-                    name: add.stored_name.clone(),
+                    name: add.name.clone(),
                     record_type: add.prepared.record_type,
                     value: add.prepared.value.clone(),
                     ttl: effective_ttl(add.prepared.ttl),

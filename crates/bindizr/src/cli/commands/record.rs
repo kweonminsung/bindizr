@@ -1,8 +1,9 @@
 use bindizr_core::{model::record::RecordId, out, outln};
 use bindizr_service::types::{
-    BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest, DeleteRecordsRequest,
-    DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter, PaginatedResponse, Pagination,
-    RecordItem, RecordResponse, RecordValueRequest, RecordWriteResponse, Run, UpdateRecordRequest,
+    BulkRecordItem, BulkRecordsResponse, CreateBulkRecordsRequest, CreateRecordRequest,
+    DeleteRecordsRequest, DeleteRecordsResponse, GetRecordResponse, GetRecordsFilter,
+    PaginatedResponse, Pagination, RecordResponse, RecordValue, RecordWriteResponse, Run,
+    UpdateRecordRequest,
 };
 use clap::Subcommand;
 
@@ -392,7 +393,7 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
                     ));
                 }
             };
-            let records: Vec<RecordItem> = serde_json::from_value(records).map_err(|e| {
+            let records: Vec<BulkRecordItem> = serde_json::from_value(records).map_err(|e| {
                 CliError::request_with_source(format!("invalid record in '{}': {}", file, e), e)
             })?;
             let response = client::send_command::<BulkRecordsResponse>(
@@ -589,10 +590,10 @@ pub(crate) async fn handle_command(subcommand: RecordCommand) -> Result<(), CliE
 
 /// One `--value` is the record's value; several are the segments of a TXT
 /// record.
-fn to_record_value_request(mut values: Vec<String>) -> RecordValueRequest {
+fn to_record_value_request(mut values: Vec<String>) -> RecordValue {
     if values.len() == 1 {
-        RecordValueRequest::Text(values.remove(0))
+        RecordValue::Text(values.remove(0))
     } else {
-        RecordValueRequest::Segments(values)
+        RecordValue::Segments(values)
     }
 }

@@ -10,7 +10,7 @@ use crate::{
     record::{PreparedRecord, normalize_record_owner_name, parse_record_request},
     serial::{generate_serial, validate_initial_serial},
     transaction,
-    types::{CreateZoneRequest, GetZoneResponse, RecordValueRequest, ZoneWriteResponse},
+    types::{CreateZoneRequest, GetZoneResponse, RecordValue, ZoneWriteResponse},
     zone::validation::{ResolvedSoaTimers, normalize_create_zone_request, normalize_soa_timers},
 };
 
@@ -144,7 +144,7 @@ pub(crate) async fn create_tx(
         } = parse_record_request(
             "@",
             "NS",
-            &RecordValueRequest::Text(created_zone.mname.clone()),
+            &RecordValue::Text(created_zone.mname.clone()),
             None,
             None,
         )?;

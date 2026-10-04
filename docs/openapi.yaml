@@ -768,7 +768,7 @@ paths:
           spelled another way still matches. Requires `type`.
         required: false
         schema:
-          $ref: '#/components/schemas/RecordValueRequest'
+          $ref: '#/components/schemas/RecordValue'
       - name: priority
         in: query
         description: |-
@@ -3698,6 +3698,41 @@ components:
       - secondary:read
       - secondary:manage
       - access:manage
+    BulkRecordItem:
+      type: object
+      description: |-
+        A record's data fields for a bulk insertion; the zone comes from the
+        request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
+      required:
+      - name
+      - type
+      - value
+      properties:
+        name:
+          type: string
+          example: sub
+        priority:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: |-
+            MX and SRV priority, set here rather than inline in the value; other
+            record types reject it. Omitted, it is served and compared as 10.
+          example: 10
+        ttl:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
+          example: 3600
+        type:
+          type: string
+          example: A
+        value:
+          $ref: '#/components/schemas/RecordValue'
+      additionalProperties: false
     BulkRecordsResponse:
       type: object
       description: |-
@@ -3775,7 +3810,7 @@ components:
         records:
           type: array
           items:
-            $ref: '#/components/schemas/RecordItem'
+            $ref: '#/components/schemas/BulkRecordItem'
         zone_name:
           type: string
           example: example.com
@@ -3879,7 +3914,7 @@ components:
           type: string
           example: A
         value:
-          $ref: '#/components/schemas/RecordValueRequest'
+          $ref: '#/components/schemas/RecordValue'
         zone_name:
           type: string
           example: example.com
@@ -4805,9 +4840,9 @@ components:
           format: int32
           example: 3600
         type:
-          $ref: '#/components/schemas/RecordTypeResponse'
+          $ref: '#/components/schemas/ServedRecordType'
         value:
-          $ref: '#/components/schemas/RecordValueRequest'
+          $ref: '#/components/schemas/RecordValue'
         zone_id:
           type: integer
           format: int32
@@ -5338,9 +5373,9 @@ components:
                 format: int32
                 example: 3600
               type:
-                $ref: '#/components/schemas/RecordTypeResponse'
+                $ref: '#/components/schemas/ServedRecordType'
               value:
-                $ref: '#/components/schemas/RecordValueRequest'
+                $ref: '#/components/schemas/RecordValue'
               zone_id:
                 type: integer
                 format: int32
@@ -5882,42 +5917,7 @@ components:
           format: int32
           example: 300
         value:
-          $ref: '#/components/schemas/RecordValueRequest'
-    RecordItem:
-      type: object
-      description: |-
-        A record's data fields for a bulk insertion; the zone comes from the
-        request, so unlike [`CreateRecordRequest`] it carries no `zone_name`.
-      required:
-      - name
-      - type
-      - value
-      properties:
-        name:
-          type: string
-          example: sub
-        priority:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: |-
-            MX and SRV priority, set here rather than inline in the value; other
-            record types reject it. Omitted, it is served and compared as 10.
-          example: 10
-        ttl:
-          type:
-          - integer
-          - 'null'
-          format: int32
-          description: Optional; an omitted TTL is fixed to the zone's TTL at write time. Records sharing a name and type share one TTL.
-          example: 3600
-        type:
-          type: string
-          example: A
-        value:
-          $ref: '#/components/schemas/RecordValueRequest'
-      additionalProperties: false
+          $ref: '#/components/schemas/RecordValue'
     RecordResponse:
       type: object
       description: A single record wrapped in a response envelope.
@@ -5944,12 +5944,7 @@ components:
       - PTR
       - SSHFP
       - TLSA
-    RecordTypeResponse:
-      oneOf:
-      - $ref: '#/components/schemas/RecordType'
-      - $ref: '#/components/schemas/DnssecRecordType'
-      description: A user record type or a signer-generated type returned by record listing.
-    RecordValueRequest:
+    RecordValue:
       oneOf:
       - type: string
         example: 192.168.1.100
@@ -5959,7 +5954,9 @@ components:
         example:
         - hello
         - world
-      description: 'A record value as sent by the client: a single string or TXT segments.'
+      description: |-
+        A record value as the API spells it, in requests and responses alike:
+        a single string or TXT segments.
     RecordWriteResponse:
       type: object
       description: |-
@@ -6212,6 +6209,13 @@ components:
           items:
             $ref: '#/components/schemas/TransferResponse'
           description: Newest first, at most the requested `limit`.
+    ServedRecordType:
+      oneOf:
+      - $ref: '#/components/schemas/RecordType'
+      - $ref: '#/components/schemas/DnssecRecordType'
+      description: |-
+        The type of a record the zone serves: a user record type, or a
+        signer-generated one on a derived row.
     TokenResponse:
       type: object
       description: 'One token without its secret: the self lookup.'
@@ -6435,7 +6439,7 @@ components:
           example: A
         value:
           oneOf:
-          - $ref: '#/components/schemas/RecordValueRequest'
+          - $ref: '#/components/schemas/RecordValue'
           - type: 'null'
       additionalProperties: false
     UpdateSecondaryRequest:
@@ -6599,7 +6603,7 @@ components:
         type:
           $ref: '#/components/schemas/RecordType'
         value:
-          $ref: '#/components/schemas/RecordValueRequest'
+          $ref: '#/components/schemas/RecordValue'
     ZonePermissionsResponse:
       type: object
       description: The caller's actions in one zone that differ from its every-zone actions.

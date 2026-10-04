@@ -2,8 +2,7 @@
 //! the API sends structured records, and rdata assembly lives here.
 use bindizr_core::dns::record::to_quoted_charstr;
 use bindizr_service::types::{
-    RecordChange, RecordDiff, RecordDiffEntry, RecordDiffValue, RecordValueRequest,
-    VersionDiffResponse,
+    RecordChange, RecordDiff, RecordDiffEntry, RecordDiffValue, RecordValue, VersionDiffResponse,
 };
 
 use crate::cli::output::color;
@@ -14,8 +13,8 @@ fn rdata(diff_value: &RecordDiffValue, record_type: &str) -> String {
     match record_type {
         "TXT" => {
             let segments: &[String] = match &diff_value.value {
-                RecordValueRequest::Text(value) => std::slice::from_ref(value),
-                RecordValueRequest::Segments(segments) => segments,
+                RecordValue::Text(value) => std::slice::from_ref(value),
+                RecordValue::Segments(segments) => segments,
             };
             segments
                 .iter()
