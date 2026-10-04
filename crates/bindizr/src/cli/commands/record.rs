@@ -103,7 +103,7 @@ Examples:
   bindizr record list example.com --type A --sort ttl --order desc
   bindizr record list --name www
 
-Omit the zone to list records from every zone the caller can see."
+Omit the zone to list records from all zones the caller can see."
     )]
     List {
         /// Zone to list; omitted, records from every visible zone are listed

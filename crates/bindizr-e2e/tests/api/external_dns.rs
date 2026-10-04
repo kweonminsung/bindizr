@@ -140,7 +140,7 @@ async fn external_dns_domain_listing_reflects_role_grants() {
     let (scoped_name, scoped_token) = app.create_scoped_api_token().await;
     grant_zone(&app, &granted_zone, &scoped_name).await;
 
-    // The built-in role sees every zone.
+    // The built-in role sees all zones.
     let (status, body) = app
         .send_request(Method::GET, "/external-dns/domains", None)
         .await;
@@ -196,7 +196,7 @@ async fn external_dns_domain_listing_unions_split_grants() {
             .await;
         }
     };
-    // Reading everywhere and writing in a subtree syncs that subtree.
+    // Reading in all zones and writing in a subtree syncs that subtree.
     grant(split_zone.clone(), "record:read", "*").await;
     grant(split_zone.clone(), "record:create,record:delete", "*.k8s").await;
     // Without record:delete no sync can finish, so the zone stays out.

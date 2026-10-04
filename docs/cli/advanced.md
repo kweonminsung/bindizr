@@ -14,7 +14,7 @@ narrowing a right means replacing a wide grant with narrower ones.
 `--pattern` and `--types` narrow the `record:*` actions only; every other
 action in the same grant applies to the zone whole.
 
-## Actions that need every zone
+## Actions that need all zones
 
 `zone:create`, `secondary:read`, `secondary:manage`, `access:manage`, and the
 DNSSEC policy actions concern things no single zone owns, so only a grant
@@ -35,8 +35,8 @@ give it only where you would give `admin`.
 | `zone import --mode upsert` / `replace` | `record:create` and `record:delete`, with no narrowing |
 | `zone import --create` | `zone:create` as well |
 | Rollback | `zone:update`, plus `record:create` and `record:delete` with no narrowing |
-| `zone notify` | `zone:update`; for the catalog zone or every zone, `zone:update` in every zone |
-| DNSSEC policies | `dnssec:read` to list or show, `dnssec:manage` to change, both in every zone |
+| `zone notify` | `zone:update`; for the catalog zone or all zones, `zone:update` in all zones |
+| DNSSEC policies | `dnssec:read` to list or show, `dnssec:manage` to change, both in all zones |
 
 A view the zone is rebuilt from — an export, a stored version, a diff, an
 import — needs a grant with no name or type narrowing: half a zone re-applied
@@ -69,7 +69,7 @@ What a key may sign follows its role:
 | nsupdate add | `record:create` at its name and type |
 | nsupdate delete | `record:delete` at its name and type |
 | Signed AXFR/IXFR of a zone | `zone:transfer` reaching the zone |
-| Signed transfer of the catalog zone | `zone:transfer` in every zone |
+| Signed transfer of the catalog zone | `zone:transfer` in all zones |
 | Signing NOTIFY to a secondary | Nothing: an empty role is enough |
 
 An update with one record its role does not cover is refused whole; nothing is

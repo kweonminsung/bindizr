@@ -31,7 +31,7 @@ fn action_set_row_form_is_canonical() {
     assert!(ActionSet::try_from("zone:read,zone:own".to_string()).is_err());
 }
 
-/// Verify that an all-zones scope reaches every zone and a zone scope only its own.
+/// Verify that an all-zones scope reaches all zones and a zone scope only its own.
 #[test]
 fn zone_scope_reaches_its_zones() {
     let zone = ZoneId::from(1);
@@ -79,9 +79,9 @@ fn role_grants_answer_over_their_union() {
     assert!(grants.covers_whole_zone(Action::RecordRead, zone));
     assert!(!grants.covers_whole_zone(Action::RecordCreate, zone));
     assert!(grants.reaches_zone(other));
-    // Only an all-zones grant carries an action everywhere.
-    assert!(grants.permits_everywhere(Action::RecordRead));
-    assert!(!grants.permits_everywhere(Action::RecordCreate));
+    // Only an all-zones grant carries an action in all zones.
+    assert!(grants.permits_all_zones(Action::RecordRead));
+    assert!(!grants.permits_all_zones(Action::RecordCreate));
 }
 
 /// Verify that a pattern holds actions split across its own grants and those

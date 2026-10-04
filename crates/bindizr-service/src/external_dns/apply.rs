@@ -18,7 +18,7 @@ use crate::{
     zone,
 };
 
-/// Apply an ExternalDNS change set atomically: every zone's changes commit
+/// Apply an ExternalDNS change set atomically: all zones' changes commit
 /// together or none do. Only zones with a remaining delta advance their
 /// serial (once per request) and record IXFR history.
 pub async fn apply_changes(

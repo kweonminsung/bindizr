@@ -15,7 +15,7 @@ pub async fn notify(
     serial: NotifySerial,
 ) -> Result<(), ServiceError> {
     match target {
-        // The virtual catalog zone has no row to bump and lists every zone.
+        // The virtual catalog zone has no row to bump and lists all zones.
         NotifyTarget::Zone(name) if cx.config().dns.is_catalog_zone(name.as_str()) => {
             caller.authorize_action(Action::ZoneUpdate)?;
             if serial == NotifySerial::Bump {

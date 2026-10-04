@@ -44,7 +44,7 @@ distinct catalog names. See [Secondaries CLI](../cli/secondaries.md) and
 
 The registered address authorizes a secondary by where it connects from,
 which is all a loopback pair needs. Where the secondary is elsewhere, give it a TSIG
-key in a role that holds `zone:transfer` in every zone, then name it on the
+key in a role that holds `zone:transfer` in all zones, then name it on the
 secondary's primary reference. Bindizr answers under that key and each server
 page shows the syntax.
 
@@ -54,11 +54,11 @@ bindizr role grant secondaries --actions zone:transfer
 bindizr tsig-key create xfr-key --role secondaries
 ```
 
-!!! note "The grant must cover every zone"
+!!! note "The grant must cover all zones"
 
     Leave out `--zone`: a grant naming one zone does not reach the catalog
     zone, and a catalog transfer signed by a key without `zone:transfer` in
-    every zone is refused. See
+    all zones are refused. See
     [Access Control](../cli/access-control.md#secondaries-pulling-over-tsig).
 
 !!! warning "PowerDNS does not sign member transfers"

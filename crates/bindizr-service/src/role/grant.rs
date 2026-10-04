@@ -1,4 +1,4 @@
-//! A role's grants: actions in one zone or every zone.
+//! A role's grants: actions in one zone or all zones.
 
 use std::collections::HashMap;
 
@@ -24,7 +24,7 @@ use crate::{
     zone,
 };
 
-/// Grant `role_name` the request's actions in its zone, or in every zone
+/// Grant `role_name` the request's actions in its zone, or in all zones
 /// when it names none.
 pub async fn create(
     cx: &Context,
@@ -62,7 +62,7 @@ pub async fn create(
         Some(zone_name) => {
             if let Some(action) = actions.iter().find(|action| action.needs_all_zones()) {
                 return Err(ServiceError::invalid_input(format!(
-                    "'{}' acts on no zone, so its grant must cover every zone: omit zone_name",
+                    "'{}' acts on no zone, so its grant must cover all zones: omit zone_name",
                     action
                 )));
             }

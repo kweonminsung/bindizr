@@ -416,7 +416,7 @@ paths:
       tags:
       - ExternalDNS
       summary: List the records of every ExternalDNS-managed zone
-      description: 'Records of every zone the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.'
+      description: 'Records of all zones the calling token may manage, restricted to the supported record types (A, AAAA, CNAME, TXT): one record per name and type, with absolute owner names and sorted presentation-form values.'
       operationId: list_external_dns_records
       responses:
         '200':
@@ -468,7 +468,7 @@ paths:
       parameters:
       - name: bump_serial
         in: query
-        description: Bump every zone's serial first, so secondaries transfer even when nothing changed.
+        description: Bump all zones' serials first, so secondaries transfer even when nothing changed.
         required: false
         schema:
           type: boolean
@@ -502,7 +502,7 @@ paths:
       tags:
       - Role
       summary: Get the caller's permissions
-      description: 'What the calling token''s role permits, computed from its grants: the actions held in every zone, including zones created later, and per zone where a zone-scoped grant adds to them. `whole_zone` lists the record actions held with no name or type limit, as export, versions, diffs, import and rollback need. With authentication disabled every action is permitted everywhere.'
+      description: 'What the calling token''s role permits, computed from its grants: the actions held in all zones, including zones created later, and per zone where a zone-scoped grant adds to them. `whole_zone` lists the record actions held with no name or type limit, as export, versions, diffs, import and rollback need. With authentication disabled every action is permitted everywhere.'
       operationId: get_permissions
       responses:
         '200':
@@ -1325,7 +1325,7 @@ paths:
       tags:
       - Role
       summary: Grant a role actions
-      description: Grants the role actions in the named zone, or in every zone when `zone_name` is omitted. The record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list) narrow its `record:*` actions only. The built-in `admin` role cannot be changed.
+      description: Grants the role actions in the named zone, or in all zones when `zone_name` is omitted. The record name pattern (`*`, `@`, `*.sub`, or an exact relative name) and record types (`*` or a comma-separated list) narrow its `record:*` actions only. The built-in `admin` role cannot be changed.
       operationId: create_role_grant
       parameters:
       - name: name
@@ -1445,7 +1445,7 @@ paths:
       tags:
       - Secondary
       summary: List all secondaries
-      description: Lists every registered secondary, disabled ones included. An enabled secondary receives NOTIFY for every zone, may pull zones unsigned from its address, and is probed for the serial it serves.
+      description: Lists every registered secondary, disabled ones included. An enabled secondary receives NOTIFY for all zones, may pull zones unsigned from its address, and is probed for the serial it serves.
       operationId: list_secondaries
       parameters:
       - name: limit
@@ -3367,7 +3367,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: The caller's role does not permit 'zone:update' there; the catalog zone and every zone need it in all zones
+          description: The caller's role does not permit 'zone:update' there; notifying the catalog zone or all zones needs it in all zones
           content:
             application/json:
               schema:
@@ -3666,7 +3666,7 @@ components:
         One operation a grant permits, spelled `<resource>:<action>`:
 
         - `zone:read` — read a zone's status and version history
-        - `zone:create` — create zones; every zone only
+        - `zone:create` — create zones; all zones only
         - `zone:update` — change a zone's settings, send NOTIFY, roll back a version
         - `zone:delete` — delete zones
         - `zone:transfer` — answer a TSIG-signed AXFR/IXFR; TSIG keys only
@@ -3675,13 +3675,13 @@ components:
         - `record:create` — add records, including by import, nsupdate and ExternalDNS
         - `record:update` — change a record in place
         - `record:delete` — delete records, including by nsupdate and ExternalDNS
-        - `dnssec:read` — read DNSSEC status and check the parent DS; in every zone,
+        - `dnssec:read` — read DNSSEC status and check the parent DS; in all zones,
           also read signing policies
         - `dnssec:manage` — enable, disable and re-sign, manage keys and rollovers;
-          in every zone, also change signing policies
-        - `secondary:read` — list secondaries and the transfers served them; every zone only
-        - `secondary:manage` — register, change, check and remove secondaries; every zone only
-        - `access:manage` — manage roles, API tokens and TSIG keys; every zone only,
+          in all zones, also change signing policies
+        - `secondary:read` — list secondaries and the transfers served them; all zones only
+        - `secondary:manage` — register, change, check and remove secondaries; all zones only
+        - `access:manage` — manage roles, API tokens and TSIG keys; all zones only,
           and equivalent to admin since its holder can grant itself anything
       enum:
       - zone:read
@@ -3921,7 +3921,7 @@ components:
       additionalProperties: false
     CreateRoleGrantRequest:
       type: object
-      description: Request body for granting a role actions in one zone or every zone.
+      description: Request body for granting a role actions in one zone or all zones.
       required:
       - actions
       properties:
@@ -3956,8 +3956,8 @@ components:
           - string
           - 'null'
           description: |-
-            Name of an existing zone; omit to cover every zone, including later ones.
-            `zone:create`, `secondary:*` and `access:manage` need every zone.
+            Name of an existing zone; omit to cover all zones, including later ones.
+            `zone:create`, `secondary:*` and `access:manage` need all zones.
           example: example.com
       additionalProperties: false
     CreateRoleRequest:
@@ -4885,7 +4885,7 @@ components:
           type:
           - string
           - 'null'
-          description: The zone the grant covers; `null` covers every zone.
+          description: The zone the grant covers; `null` covers all zones.
           example: example.com
     GetRoleResponse:
       type: object
@@ -5429,7 +5429,7 @@ components:
                 type:
                 - string
                 - 'null'
-                description: The zone the grant covers; `null` covers every zone.
+                description: The zone the grant covers; `null` covers all zones.
                 example: example.com
         pagination:
           $ref: '#/components/schemas/Pagination'
@@ -5794,7 +5794,7 @@ components:
           minimum: 0
     PermissionsResponse:
       type: object
-      description: What the caller may do across every zone, and where zone grants add to it.
+      description: What the caller may do across all zones, and where zone grants add to it.
       required:
       - all_zones
       - zones
@@ -6606,7 +6606,7 @@ components:
           $ref: '#/components/schemas/RecordValue'
     ZonePermissionsResponse:
       type: object
-      description: The caller's actions in one zone that differ from its every-zone actions.
+      description: The caller's actions in one zone that differ from its all-zones actions.
       required:
       - zone_name
       - actions

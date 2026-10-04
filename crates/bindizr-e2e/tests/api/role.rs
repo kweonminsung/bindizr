@@ -43,7 +43,7 @@ async fn role_grant_lifecycle_over_http() {
     );
     assert_eq!(body["role_grant"]["record_types"], "A,AAAA");
 
-    // Without a zone the grant covers every zone.
+    // Without a zone the grant covers all zones.
     let (status, body) = app
         .send_request(
             Method::POST,
@@ -290,7 +290,7 @@ async fn tokens_self_grants_lists_the_bearers_role_grants() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    // The built-in role holds one grant covering every zone.
+    // The built-in role holds one grant covering all zones.
     app.set_auth_token(admin_token);
     let (status, body) = app
         .send_request(Method::GET, "/tokens/self/grants", None)
@@ -1050,7 +1050,7 @@ async fn a_record_read_grant_reads_the_zone_but_cannot_change_it() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
-/// Verify that `/permissions` reports a role's every-zone actions and, per
+/// Verify that `/permissions` reports a role's all-zones actions and, per
 /// zone, what its zone-scoped grants add, with the whole-zone record actions.
 #[tokio::test]
 #[serial_test::serial(bindizr_e2e)]
@@ -1063,7 +1063,7 @@ async fn permissions_report_what_each_zone_allows() {
     let (_, admin_token) = app.create_api_token().await;
     app.set_auth_token(admin_token);
 
-    // The built-in role holds everything everywhere, so no zone is listed.
+    // The built-in role holds everything in all zones, so no zone is listed.
     let (status, body) = app.send_request(Method::GET, "/permissions", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
@@ -1596,4 +1596,141 @@ async fn no_response_reveals_a_record_the_role_cannot_read() {
             "{role}: only {succeeded} requests succeeded"
         );
     }
+}
+
+/// Verify that an import creating its zone from a server needs the mode's
+/// all-zones record rights before any transfer starts, so `zone:create`
+/// alone cannot make the daemon fetch from an arbitrary host.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn a_zone_creating_import_needs_its_record_rights_before_fetching() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token.clone());
+
+    let (role_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&["role", "grant", &role_name, "--actions", "zone:create"])
+        .await;
+    app.set_auth_token(scoped_token.clone());
+
+    // Nothing listens there: a refusal before the fetch is 403, an attempted
+    // fetch fails as invalid input.
+    let zone_name = app.zone_name("fetched.example.com");
+    let import = json!({ "create": true, "from_server": "127.0.0.1:1", "mode": "upsert" });
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(import.clone()),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|message| message.contains("'record:create' over all zones whole")),
+        "{body}"
+    );
+
+    // The grants are read per request, so the same token sees the new one.
+    app.set_auth_token(admin_token);
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &role_name,
+        "--actions",
+        "record:create,record:delete",
+    ])
+    .await;
+    app.set_auth_token(scoped_token);
+    let (status, body) = app
+        .send_request(
+            Method::POST,
+            &format!("/zones/{zone_name}/import"),
+            Some(import),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|message| message.starts_with("AXFR from 127.0.0.1:1 failed")),
+        "{body}"
+    );
+}
+
+/// Verify that renaming a zone needs `zone:create`, so a zone-scoped
+/// `zone:update` cannot probe other zones' names through rename conflicts.
+#[tokio::test]
+#[serial_test::serial(bindizr_e2e)]
+async fn renaming_a_zone_needs_zone_create() {
+    let mut app = TestApp::start_with_options(TestAppOptions {
+        authentication_required: true,
+        ..Default::default()
+    })
+    .await;
+    let (_, admin_token) = app.create_api_token().await;
+    app.set_auth_token(admin_token.clone());
+
+    let zone_name = app.zone_name("example.com");
+    app.create_named_zone(&zone_name).await;
+    let other_zone = app.zone_name("other.com");
+    app.create_named_zone(&other_zone).await;
+
+    let (role_name, scoped_token) = app.create_scoped_api_token().await;
+    app.run_cli_success(&[
+        "role",
+        "grant",
+        &role_name,
+        "--zone",
+        &zone_name,
+        "--actions",
+        "zone:update",
+    ])
+    .await;
+    app.set_auth_token(scoped_token.clone());
+
+    // Refused before any name is looked up, taken or not.
+    for name in [other_zone.as_str(), "unused.example.net"] {
+        let (status, body) = app
+            .send_request(
+                Method::PUT,
+                &format!("/zones/{zone_name}"),
+                Some(json!({ "name": name, "dry_run": true })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .is_some_and(|message| message.contains("'zone:create' in all zones")),
+            "{body}"
+        );
+    }
+    // The settings stay the role's to change.
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(json!({ "description": "kept", "dry_run": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    app.set_auth_token(admin_token);
+    app.run_cli_success(&["role", "grant", &role_name, "--actions", "zone:create"])
+        .await;
+    app.set_auth_token(scoped_token);
+    let (status, body) = app
+        .send_request(
+            Method::PUT,
+            &format!("/zones/{zone_name}"),
+            Some(json!({ "name": "unused.example.net", "dry_run": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 }

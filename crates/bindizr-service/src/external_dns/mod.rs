@@ -82,7 +82,7 @@ pub async fn list_managed_domains(
     Ok(domains.into_iter().collect())
 }
 
-/// Records of every zone the caller may manage, restricted to the
+/// Records of all zones the caller may manage, restricted to the
 /// ExternalDNS-supported record types: one per name and type, with absolute
 /// owner names and sorted presentation-form values.
 pub async fn list_records(

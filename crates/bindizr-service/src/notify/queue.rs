@@ -141,7 +141,7 @@ impl NotifyBatch {
     }
 }
 
-/// Send the NOTIFYs a batch collected: one for every zone when any job asked
+/// Send the NOTIFYs a batch collected: one for all zones when any job asked
 /// for all, else one per zone.
 async fn send_batch(cx: &Context, batch: NotifyBatch) {
     if !batch.all_zones && batch.zones.is_empty() {

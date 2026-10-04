@@ -48,7 +48,7 @@ while a token or TSIG key still belongs to it, and the refusal names them.
 
 ### The built-in admin role
 
-The `admin` role exists from the first start: every action, in every zone,
+The `admin` role exists from the first start: every action, in all zones,
 including zones created later. It can be neither changed nor deleted. The
 first token is created with it on the daemon host:
 
@@ -62,7 +62,7 @@ A grant is a zone scope, a set of actions, and, for record actions, a name
 pattern and a type list:
 
 ```bash
-# Every zone, including zones created later: leave out --zone
+# All zones, including zones created later: leave out --zone
 bindizr role grant dns-admins --actions zone:read,zone:update,record:read
 
 # One zone, narrowed to TXT records at _acme-challenge
@@ -90,9 +90,9 @@ deny rules. How grants combine, and what each operation needs, is in
 
 | Action | Allows |
 | --- | --- |
-| `zone:read` | Zone details, `zone status`, the version list |
-| `zone:create` | Creating zones, including `zone import --create` — needs every zone |
-| `zone:update` | Zone settings, rollback (with the record actions below), NOTIFY |
+| `zone:read` | `zone status` and the version list; a zone's details come with any grant reaching it |
+| `zone:create` | Creating zones, including `zone import --create` — needs all zones |
+| `zone:update` | Zone settings, rollback (with the record actions below), NOTIFY; renaming a zone needs `zone:create` too |
 | `zone:delete` | Deleting zones |
 | `zone:transfer` | A TSIG-signed AXFR/IXFR of the zone |
 | `record:read` | Listing and reading records; export, version detail, and diffs |
@@ -101,9 +101,9 @@ deny rules. How grants combine, and what each operation needs, is in
 | `record:delete` | Deleting records, found by id without `record:read` |
 | `dnssec:read` | DNSSEC status, `dnssec check-ds`; listing DNSSEC policies |
 | `dnssec:manage` | Every other DNSSEC operation; changing DNSSEC policies |
-| `secondary:read` | Listing secondaries, their details and transfers — needs every zone |
-| `secondary:manage` | Creating, updating, deleting, and checking secondaries — needs every zone |
-| `access:manage` | Tokens, TSIG keys, and roles — needs every zone |
+| `secondary:read` | Listing secondaries, their details and transfers — needs all zones |
+| `secondary:manage` | Creating, updating, deleting, and checking secondaries — needs all zones |
+| `access:manage` | Tokens, TSIG keys, and roles — needs all zones |
 
 A response never carries a record the role cannot read: a write's preview
 shows the records it changes and the readable ones beside them, and every
@@ -112,9 +112,9 @@ A grant that writes without reading still learns what its write runs into
 — that a record exists, the TTL its name and type share, how many a delete
 matches — but never a value.
 
-Actions marked "needs every zone" are carried only by a grant without
+Actions marked "needs all zones" are carried only by a grant without
 `--zone`. `access:manage` amounts to `admin` — see
-[Actions that need every zone](advanced.md#actions-that-need-every-zone).
+[Actions that need all zones](advanced.md#actions-that-need-all-zones).
 
 ## API tokens
 
@@ -210,7 +210,7 @@ prerequisites check what is there.
 
 ### Secondaries pulling over TSIG
 
-A secondary that signs its transfers needs `zone:transfer` in every zone, so
+A secondary that signs its transfers needs `zone:transfer` in all zones, so
 it can pull the catalog zone and every member zone the catalog lists:
 
 ```bash

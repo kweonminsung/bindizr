@@ -113,6 +113,15 @@ pub async fn import_zone(
         .parse::<ImportMode>()
         .map_err(ServiceError::invalid_input)?;
 
+    // Checked before any fetch or parse: with `create` there is no zone yet,
+    // and only an all-zones grant will reach the one made.
+    if request.create {
+        caller.authorize_action(Action::ZoneCreate)?;
+        for action in import_actions(mode) {
+            caller.authorize_all_whole_zones(*action)?;
+        }
+    }
+
     let content: Cow<'_, str> = match (&request.content, &request.from_server) {
         (Some(content), None) => Cow::Borrowed(content.as_str()),
         (None, Some(server)) => {
@@ -124,10 +133,8 @@ pub async fn import_zone(
             }
             // Checked before the outbound fetch so neither a mistyped name nor
             // an unauthorized role starts a transfer; the transaction decides
-            // again. With `create` there is no zone yet.
-            if request.create {
-                caller.authorize_action(Action::ZoneCreate)?;
-            } else {
+            // again.
+            if !request.create {
                 let zone = zone::lookup_by_name(cx, zone_name).await?;
                 authorize_import(caller, mode, &zone)?;
             }
@@ -150,13 +157,17 @@ pub async fn import_zone(
     reconcile_zone_file(cx, caller, zone_name, &content, request, mode).await
 }
 
-/// Authorize each record action the import mode performs over the zone whole.
-fn authorize_import(caller: &Caller, mode: ImportMode, zone: &Zone) -> Result<(), ServiceError> {
-    let actions: &[Action] = match mode {
+/// The record actions an import mode performs.
+fn import_actions(mode: ImportMode) -> &'static [Action] {
+    match mode {
         ImportMode::Append => &[Action::RecordCreate],
         ImportMode::Upsert | ImportMode::Replace => &[Action::RecordCreate, Action::RecordDelete],
-    };
-    for action in actions {
+    }
+}
+
+/// Authorize each record action the import mode performs over the zone whole.
+fn authorize_import(caller: &Caller, mode: ImportMode, zone: &Zone) -> Result<(), ServiceError> {
+    for action in import_actions(mode) {
         caller.authorize_whole_zone(*action, zone)?;
     }
     Ok(())

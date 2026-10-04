@@ -52,7 +52,7 @@ fn grant(actions: &[Action], pattern: &str, types: &str) -> RoleGrant {
     }
 }
 
-/// Build a grant reaching every zone with the given actions.
+/// Build a grant reaching all zones with the given actions.
 fn all_zones(actions: &[Action]) -> RoleGrant {
     RoleGrant {
         zone_scope: RoleZoneScope::All,
@@ -93,7 +93,7 @@ fn token(grants: Vec<RoleGrant>) -> Caller {
     Caller::from_token(&token_record(), grants)
 }
 
-/// Verify that actions on objects no zone owns need a grant covering every zone.
+/// Verify that actions on objects no zone owns need a grant covering all zones.
 #[test]
 fn authorize_action_needs_an_all_zones_grant() {
     assert!(

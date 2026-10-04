@@ -18,7 +18,7 @@ pub struct Role {
 }
 
 impl Role {
-    /// The built-in role holding every action in every zone, ensured at
+    /// The built-in role holding every action in all zones, ensured at
     /// startup so the first token has something to authenticate into.
     pub const ADMIN: &str = "admin";
 

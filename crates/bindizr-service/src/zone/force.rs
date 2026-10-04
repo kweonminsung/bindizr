@@ -6,7 +6,7 @@ use crate::{
     serial::generate_serial, transaction, zone::version::ChangeAttribution,
 };
 
-/// Force-increment the serial of one zone by name, or of every zone.
+/// Force-increment the serial of one zone by name, or of all zones.
 pub(crate) async fn force_increment_serial(
     cx: &Context,
     target: NotifyTarget<'_>,

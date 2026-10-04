@@ -80,7 +80,7 @@ pub async fn list(cx: &Context) -> Result<Vec<Zone>, ServiceError> {
     Ok(zones.into_iter().filter(|zone| zone.enabled).collect())
 }
 
-/// Every zone, for the unauthenticated metrics endpoint.
+/// All zones, for the unauthenticated metrics endpoint.
 pub async fn count_all(cx: &Context) -> Result<u64, ServiceError> {
     Ok(bindizr_db::zone::count_by_filter(cx.db(), ZoneFilter::default()).await?)
 }

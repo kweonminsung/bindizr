@@ -176,12 +176,12 @@ impl Caller {
     pub(crate) fn authorize_action(&self, action: Action) -> Result<(), ServiceError> {
         if self
             .grants()
-            .is_none_or(|grants| grants.permits_everywhere(action))
+            .is_none_or(|grants| grants.permits_all_zones(action))
         {
             return Ok(());
         }
         Err(ServiceError::forbidden(format!(
-            "role does not permit '{}' in every zone",
+            "role does not permit '{}' in all zones",
             action
         )))
     }
@@ -334,6 +334,21 @@ impl Caller {
     ) -> Result<WholeZoneRead, ServiceError> {
         self.authorize_whole_zone(Action::RecordRead, zone)?;
         Ok(WholeZoneRead { _proof: () })
+    }
+
+    /// Authorize `action` over all zones whole: what a zone created later
+    /// needs, since only an all-zones grant reaches it.
+    pub(crate) fn authorize_all_whole_zones(&self, action: Action) -> Result<(), ServiceError> {
+        if self
+            .grants()
+            .is_none_or(|grants| grants.covers_all_whole_zones(action))
+        {
+            return Ok(());
+        }
+        Err(ServiceError::forbidden(format!(
+            "role does not permit '{}' over all zones whole",
+            action
+        )))
     }
 
     /// Authorize `action` over the zone whole. A view the zone is rebuilt from

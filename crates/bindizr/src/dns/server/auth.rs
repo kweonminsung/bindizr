@@ -119,7 +119,7 @@ pub(crate) async fn authenticate_transfer(
         if !granted {
             return Err(TransferRefusal::refused(
                 format!(
-                    "TSIG key '{}' is not granted 'zone:transfer' in every zone",
+                    "TSIG key '{}' is not granted 'zone:transfer' in all zones",
                     key.name
                 ),
                 Some(signer),

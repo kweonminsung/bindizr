@@ -149,6 +149,12 @@ async fn update_locked(
         let request = build(&existing_zone);
         let validated = normalize_create_zone_request(cx, &request)?;
 
+        // A new name is `zone:create`'s to give, and its all-zones grant sees
+        // all zones, so the conflict below reveals nothing.
+        if validated.name != existing_zone.name {
+            caller.authorize_action(Action::ZoneCreate)?;
+        }
+
         // A longer zone name lengthens every record's wire name, so the
         // records must still fit under it or the zone stops transferring.
         if validated.name != existing_zone.name {

@@ -553,7 +553,7 @@ impl From<&GetRoleResponse> for RoleRow {
     }
 }
 
-/// ZONE reads `*` for a grant covering every zone.
+/// ZONE reads `*` for a grant covering all zones.
 #[derive(Debug, Clone, PartialEq, Eq, Tabled)]
 pub(crate) struct RoleGrantRow {
     #[tabled(rename = "ID")]
